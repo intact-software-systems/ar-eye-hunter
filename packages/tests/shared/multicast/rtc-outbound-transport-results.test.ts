@@ -640,7 +640,7 @@ function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {
 }
 
 function createAck(msgId: string): ALMessage {
-    return newALAckControlMessage({ v: 3, msgId, senderId: 'self', ts: Date.now() }, {
+    return newALAckControlMessage({ v: 4, msgId, senderId: 'self', ts: Date.now(), traceId: 'trace-rtc-outbound-transport-results' }, {
         ackedMsgId: `${msgId}-acked`,
         fromPeerId: 'self',
         toPeerId: 'peer-1',

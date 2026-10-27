@@ -178,7 +178,7 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
 
 function toWsMessage(msgId: string, replyToMsgId: string | undefined): ALMessage {
     return {
-        id: { v: 3, msgId, ts: 0, senderId: 'peer-1' },
+        id: { v: 4, msgId, ts: 0, senderId: 'peer-1', traceId: 'trace-browser-rallar-message-subscriptions' },
         route: { topicId: 'app.ask', contextId: 'world', resourceId: 'resource-1' },
         payload: { typeId: 'app.ask.v1', resource: JSON.stringify({ text: 'hello' }) },
         ...(replyToMsgId === undefined ? {} : { actions: { corrId: replyToMsgId, replyToMsgId } })

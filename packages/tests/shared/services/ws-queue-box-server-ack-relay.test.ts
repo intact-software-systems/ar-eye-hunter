@@ -440,7 +440,7 @@ function toRelayPort(
 async function admitRoomMessage(owner: ServerInstance, expiresAtMs: number, msgId = 'room-message-1'): Promise<void> {
     const admittedBefore = readReceipts(owner.sockets.a!).filter((receipt) => receipt.phase === 'admitted').length;
     const message: ALMessage = {
-        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 4, msgId, ts: Date.now(), senderId: 'a', traceId: 'trace-ws-queue-box-server-ack-relay' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs },
@@ -457,7 +457,7 @@ function receiverAck(
     address: Partial<Pick<ALAckPayload, 'fromPeerId' | 'logicalRecipientPeerId' | 'toPeerId' | 'originPeerId'>> = {}
 ): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: address.fromPeerId ?? recipient,
@@ -474,7 +474,7 @@ function receiverAck(
 /** The one ACK `recipient` sends for the message `ackedMsgId`. */
 function messageAck(recipient: string, ackedMsgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${recipient}-${ackedMsgId}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `ack-${recipient}-${ackedMsgId}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
         {
             ackedMsgId,
             fromPeerId: recipient,
@@ -490,7 +490,7 @@ function messageAck(recipient: string, ackedMsgId: string): ALMessage {
 
 function repeatedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
@@ -506,7 +506,7 @@ function repeatedAck(recipient: string, index: number): ALMessage {
 
 function forgedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
         {
             ackedMsgId: `forged-message-${index}`,
             fromPeerId: recipient,

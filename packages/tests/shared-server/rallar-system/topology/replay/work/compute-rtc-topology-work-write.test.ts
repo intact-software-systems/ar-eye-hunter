@@ -101,6 +101,7 @@ describe('RTC topology complete write computation', () => {
         const input: ComputeRtcTopologyWorkInput = {
             ...fixture,
             facts: {
+                traceId: 'trace-compute-rtc-topology-work-write',
                 workEnvelope,
                 workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
                 attemptCount: entry.dequeueAudit.attempts,
@@ -531,6 +532,7 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
     const work = createGroupRevisionWork(group);
     return {
         facts: {
+            traceId: 'trace-compute-rtc-topology-work-write',
             workEnvelope: {
                 type: 'RTC_TOPOLOGY_RECOMPUTE',
                 topicId: entry.key.topicId,
@@ -604,6 +606,7 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         rttReplanPromotion: null
     };
     return {
+        traceId: 'trace-compute-rtc-topology-work-write',
         accepted,
         entry,
         sourceWorkId: 'rtc-topology:group-1:work-1:0',
@@ -668,7 +671,8 @@ function createCoalescedReturnEntry(
         expireAtEpochMs: 10_000,
         timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
         senderId: 'topology-service',
-        origin: 'automatic'
+        origin: 'automatic',
+        traceId: 'trace-compute-rtc-topology-work-write'
     } as const;
     const departure = computeCoalescedRtcTopologyGroupRevisionWork({
         ...common,

@@ -728,7 +728,7 @@ async function readReceipt(fixture: ReceiptTrackingFixture) {
 /** The server's own ACK: it speaks for itself as the recipient and is addressed to the origin. */
 function serverAck(ackedMsgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `server-ack-${ackedMsgId}`, senderId: 'server', ts: Date.now() },
+        { v: 4, msgId: `server-ack-${ackedMsgId}`, senderId: 'server', ts: Date.now(), traceId: 'trace-ws-queue-box-client-receipt-tracking' },
         {
             ackedMsgId,
             fromPeerId: 'server',

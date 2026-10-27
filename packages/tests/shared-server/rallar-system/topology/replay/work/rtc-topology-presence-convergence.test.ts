@@ -350,6 +350,7 @@ class PresenceConvergenceFixture {
 
     async enqueue(group: GroupSnapshot, origin: 'automatic' | 'commanded'): Promise<void> {
         const work = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-presence-convergence',
             aggregateRef: REF,
             groupSnapshot: group,
             origin,
@@ -394,7 +395,7 @@ class PresenceConvergenceFixture {
             authorityProof: null,
             descriptor: null,
             command: ingress.command,
-            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
+            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId: 'trace-rtc-topology-presence-convergence' }
         };
         const read = await this.service.read(mutation);
         const computed = this.service.compute(mutation, read);

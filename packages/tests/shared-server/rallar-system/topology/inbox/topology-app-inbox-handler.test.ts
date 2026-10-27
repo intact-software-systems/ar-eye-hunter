@@ -553,6 +553,7 @@ function unusedReconfigureMutation(): TopologyAppInboxMutationOwners['reconfigur
 
 function topologyOutbox(resourceId: string): ComputedRtcTopologyOutbox {
     return {
+        traceId: 'trace-topology-app-inbox-handler',
         commandId: 'handler-request',
         aggregateRef: GROUP_REF,
         acceptedCausalRevision: { groupRevision: 1, presenceRevision: 0 },

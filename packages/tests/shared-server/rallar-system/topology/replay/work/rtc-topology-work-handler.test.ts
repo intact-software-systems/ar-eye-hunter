@@ -1054,6 +1054,7 @@ interface TopologyWorkBase extends Omit<ComputedRtcTopologyOutbox, 'payloadKind'
 
 function topologyWorkBase(group: GroupSnapshot, resourceId: string): TopologyWorkBase {
     return {
+        traceId: 'trace-rtc-topology-work-handler',
         commandId: resourceId,
         aggregateRef: group.group,
         acceptedCausalRevision: group.causalRevision,

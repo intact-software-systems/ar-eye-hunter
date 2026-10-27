@@ -760,11 +760,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "idem-contract-crdt-delivery-first-{runId}",
             "ts": 0,
             "senderId": "{crdtAdminSessionId}",
-            "sessionId": "{crdtAdminSessionId}"
+            "sessionId": "{crdtAdminSessionId}",
+            "traceId": "trace-api-v1-idempotency-contract"
           },
           "route": {
             "topicId": "app.crdt",
@@ -799,11 +800,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "idem-contract-crdt-delivery-retry-{runId}",
             "ts": 0,
             "senderId": "{crdtAdminSessionId}",
-            "sessionId": "{crdtAdminSessionId}"
+            "sessionId": "{crdtAdminSessionId}",
+            "traceId": "trace-api-v1-idempotency-contract"
           },
           "route": {
             "topicId": "app.crdt",

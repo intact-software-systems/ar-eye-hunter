@@ -217,7 +217,7 @@ describe('auth mutation compute operation matrix', () => {
             const computed = computeAuthMutation({
                 command,
                 read,
-                facts: { kind: command.kind, serviceId: 'auth-service' }
+                facts: { traceId: 'trace-auth-mutation-compute', kind: command.kind, serviceId: 'auth-service' }
             });
 
             expect(computed.command).toBe(command);
@@ -234,7 +234,7 @@ describe('auth mutation compute operation matrix', () => {
             const computed = computeAuthMutation({
                 command,
                 read,
-                facts: { kind: command.kind, serviceId: 'auth-service' }
+                facts: { traceId: 'trace-auth-mutation-compute', kind: command.kind, serviceId: 'auth-service' }
             });
 
             expect(computed.outcome).toBe('replay');
@@ -250,14 +250,14 @@ describe('auth mutation compute rejections', () => {
             computeAuthMutation({
                 command: register.command,
                 read: operationMatrix[1].read,
-                facts: { kind: register.command.kind, serviceId: 'auth-service' }
+                facts: { traceId: 'trace-auth-mutation-compute', kind: register.command.kind, serviceId: 'auth-service' }
             })
         ).toThrow('Auth command/read operation differs');
         expect(() =>
             computeAuthMutation({
                 command: register.command,
                 read: register.read,
-                facts: { kind: 'logout-session', serviceId: 'auth-service' }
+                facts: { traceId: 'trace-auth-mutation-compute', kind: 'logout-session', serviceId: 'auth-service' }
             })
         ).toThrow('Auth command/facts operation differs');
 
@@ -277,7 +277,7 @@ function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationR
         computeAuthMutation({
             command,
             read,
-            facts: { kind: command.kind, serviceId: 'auth-service' }
+            facts: { traceId: 'trace-auth-mutation-compute', kind: command.kind, serviceId: 'auth-service' }
         });
     }
     catch (error) {

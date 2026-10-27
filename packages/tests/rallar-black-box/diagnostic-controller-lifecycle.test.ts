@@ -757,7 +757,7 @@ function createDiagnosticMessage(text: string): RallarMessage<RallarMessagePaylo
         receivedAtEpochMs: 1,
         payload: { text },
         raw: {
-            id: { v: 3, msgId: text, senderId: 'remote', ts: 1 },
+            id: { v: 4, msgId: text, senderId: 'remote', ts: 1, traceId: 'trace-diagnostic-controller-lifecycle' },
             route: { topicId: 'room.manual.message', contextId: 'room-a', resourceId: 'message' },
             payload: { typeId: 'room.manual.message', contentType: 'application/json', resource: JSON.stringify({ text }) }
         },

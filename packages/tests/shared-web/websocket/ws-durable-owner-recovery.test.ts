@@ -267,7 +267,13 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
     const held = createRoomOriginal(sessionId, roomA);
     const ready = createRoomOriginal(sessionId, roomB);
     const signaling = newALUnicastMessage(sessionId, { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' }, 'peer', 'signal', {});
-    const control = newALNackControlMessage({ v: 3, msgId: crypto.randomUUID(), senderId: sessionId, ts: Date.now() }, {
+    const control = newALNackControlMessage({
+        v: 4,
+        msgId: crypto.randomUUID(),
+        senderId: sessionId,
+        ts: Date.now(),
+        traceId: 'trace-ws-durable-owner-recovery'
+    }, {
         fromPeerId: sessionId,
         toPeerId: 'peer',
         msgId: 'missing',

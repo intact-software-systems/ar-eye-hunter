@@ -34,7 +34,7 @@ export function computeAuthLogoutProvenance(
         throw new TypeError('Logout proof requires the invalidated session');
     }
     const message = decodePersistedALMessage(write.entry.resource);
-    if (!isExactAppOutboxInsert(toAuthLogoutOutbox(computed.command, message.id.senderId), write)) {
+    if (!isExactAppOutboxInsert(toAuthLogoutOutbox(computed.command, message.id.senderId, message.id.traceId), write)) {
         throw new TypeError('Logout proof differs from the computed invalidation row');
     }
     const sessionInvalidation: ALSessionInvalidationAuthority = {

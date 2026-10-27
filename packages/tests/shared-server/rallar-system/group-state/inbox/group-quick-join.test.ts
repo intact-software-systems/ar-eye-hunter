@@ -234,7 +234,8 @@ describe('Quick Join through AppInbox', () => {
                 ...ingress,
                 facts: { ...ingress.facts, capacity: { defaultMaxMembers: null } }
             }, 'Tampered Quick Join ingress'),
-            1
+            1,
+            'trace-group-quick-join'
         )).rejects.toMatchObject({ status: 403 });
 
         const room = await harness.repository.readSnapshot({ ...SCOPE, groupId: 'capacity' });

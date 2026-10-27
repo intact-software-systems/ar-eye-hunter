@@ -18,6 +18,7 @@ interface AuthMutationAttemptRead {
 
 export async function readAuthMutationAttempt(
     intent: AuthMutationIntent,
+    traceId: string,
     dependencies: Readonly<{
         credentialIssuer: AuthCredentialIssuer;
         mutationService: Pick<AuthMutationService, 'read' | 'serviceId'>;
@@ -32,7 +33,7 @@ export async function readAuthMutationAttempt(
     );
     return {
         command,
-        facts: { kind: command.kind, serviceId: dependencies.mutationService.serviceId },
+        facts: { kind: command.kind, serviceId: dependencies.mutationService.serviceId, traceId },
         authoritativeState: await dependencies.mutationService.read(command)
     };
 }

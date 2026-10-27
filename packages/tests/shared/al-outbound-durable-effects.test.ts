@@ -223,7 +223,7 @@ describe('AL outbound durable effect lifecycle', () => {
         // The control commits while the batch that owes the send is still claiming.
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -373,7 +373,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 acceptedAckDuringTimeout = true;
                 await control.admit(
                     newALAckControlMessage(
-                        { v: 3, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
+                        { v: 4, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
                         {
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',
@@ -466,7 +466,7 @@ describe('AL outbound durable effect lifecycle', () => {
             expect(
                 await control.admit(
                     newALAckControlMessage(
-                        { v: 3, msgId: 'control-conflict-ack', ts: 1, senderId: 'peer-1' },
+                        { v: 4, msgId: 'control-conflict-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
                         {
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',
@@ -614,7 +614,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
         const handled = await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-missing-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-missing-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
                 {
                     msgId: 'missing-msg',
                     fromPeerId: 'peer-1',
@@ -662,7 +662,7 @@ describe('AL outbound durable effect lifecycle', () => {
             else if (entry === 'receipt') {
                 expect(
                     await runtime.acceptReceipt(newALReceiptControlMessage(
-                        { v: 3, msgId: 'late-receipt', ts: 1, senderId: 'server' },
+                        { v: 4, msgId: 'late-receipt', ts: 1, senderId: 'server', traceId: 'trace-al-outbound-durable-effects' },
                         {
                             msgId: message.id.msgId,
                             originPeerId: 'self',
@@ -709,7 +709,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
         });
         const message = newALReceiptControlMessage(
-            { v: 3, msgId: 'overlapping-receipt', ts: 1, senderId: 'server' },
+            { v: 4, msgId: 'overlapping-receipt', ts: 1, senderId: 'server', traceId: 'trace-al-outbound-durable-effects' },
             {
                 msgId: 'pending-message',
                 originPeerId: 'self',
@@ -757,7 +757,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
         const accepted = await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-expired', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-expired', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',

@@ -53,6 +53,7 @@ function updateCommand(): Extract<GroupMutationCommand, { operation: 'updateGrou
 
 function authenticatedFacts(): GroupMutationFacts {
     return {
+        traceId: 'trace-validate-group-mutation-authority',
         nowEpochMs: 1_000,
         attemptAtEpochMs: 1_000,
         expireAtEpochMs: 2_000,

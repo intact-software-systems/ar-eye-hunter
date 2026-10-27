@@ -101,6 +101,7 @@ describe('client mutation command and request projection', () => {
             'connectSession'
         );
         const facts: ClientMutationPersistedFacts = {
+            traceId: 'trace-client-mutation-command-and-request',
             nowEpochMs: 2_000,
             serviceId: 'client-state',
             eventId: 'event-1',

@@ -316,7 +316,7 @@ function toReply(msgId: string, senderId: string): RallarMessage<RallarMessagePa
         senderId,
         payload: { answer: 42 },
         raw: {
-            id: { v: 3, msgId, ts: 0, senderId },
+            id: { v: 4, msgId, ts: 0, senderId, traceId: 'trace-browser-message-reply-slot' },
             route: { topicId: 'app.ask', contextId: 'room-1', resourceId: 'resource-1' },
             payload: { typeId: 'app.ask.v1', resource: '{"answer":42}' },
             actions: { corrId: REQUEST_ID, replyToMsgId: REQUEST_ID }

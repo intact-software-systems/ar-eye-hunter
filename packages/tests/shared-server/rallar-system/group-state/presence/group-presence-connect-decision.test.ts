@@ -284,6 +284,7 @@ function connectCommand(): GroupStateMutationCommand {
             }
         },
         facts: {
+            traceId: 'trace-group-presence-connect-decision',
             nowEpochMs: 2_000,
             attemptAtEpochMs: 2_000,
             expireAtEpochMs: 604_802_000,

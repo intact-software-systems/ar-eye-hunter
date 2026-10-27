@@ -196,7 +196,13 @@ function toPendingAck(
 
 function toDeliveredAck(message: ALMessage, peerId: string): ALMessage {
     const observedAtMs = Date.now();
-    return newALAckControlMessage({ v: 3, msgId: `${message.id.msgId}-ack`, senderId: peerId, ts: observedAtMs }, {
+    return newALAckControlMessage({
+        v: 4,
+        msgId: `${message.id.msgId}-ack`,
+        senderId: peerId,
+        ts: observedAtMs,
+        traceId: 'trace-al-outbound-version-fence-lock-order'
+    }, {
         fromPeerId: peerId,
         toPeerId: message.id.senderId,
         ackedMsgId: message.id.msgId,

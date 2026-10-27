@@ -764,11 +764,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "rtt-partialcoverage-{runId}",
             "ts": 0,
             "senderId": "{rttReporter.sessionIdFrom}",
-            "sessionId": "{rttReporter.sessionIdFrom}"
+            "sessionId": "{rttReporter.sessionIdFrom}",
+            "traceId": "trace-api-v1-group-activation-partial-coverage"
           },
           "route": {
             "topicId": "rtt",

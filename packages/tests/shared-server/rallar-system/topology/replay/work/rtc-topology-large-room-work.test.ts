@@ -126,6 +126,7 @@ describe('durable topology work for large rooms', () => {
 
 function createWorkInput(previousEntry: ResourceEntry | null): RtcTopologyCoalescedGroupRevisionInput {
     return {
+        traceId: 'trace-rtc-topology-large-room-work',
         aggregateRef: GROUP_REF,
         groupSnapshot: createLargeGroupSnapshot(),
         requestedAtEpochMs: CREATED_AT_MS,

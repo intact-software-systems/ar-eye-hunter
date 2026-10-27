@@ -353,6 +353,7 @@ describe('AppClientInbox authentication', () => {
                 defaultCommandId: 'direct-mallory-targets-alice'
             }),
             {
+                traceId: 'trace-app-client-inbox-authentication',
                 nowEpochMs: Date.now(),
                 serviceId: 'server-12345678',
                 eventId: 'direct-mallory-targets-alice-event',

@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALControlAcceptance } from '../../../al-contracts/al-control.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
+import { newALTraceId } from '../../../al-contracts/trace/al-trace-id.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
@@ -194,7 +195,8 @@ export class ALInboundControlAdmission {
             pending: surface.pendingAck,
             acks: surface.acks,
             nowMs,
-            controlMsgId: this.newControlId()
+            controlMsgId: this.newControlId(),
+            traceId: newALTraceId()
         };
     }
 }

@@ -96,6 +96,7 @@ function policyCommand(): GroupMutationCommand {
 
 function policyFacts(): GroupMutationFacts {
     return {
+        traceId: 'trace-resolve-group-authority-policy',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

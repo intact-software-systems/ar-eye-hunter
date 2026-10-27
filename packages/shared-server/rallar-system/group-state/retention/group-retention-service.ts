@@ -45,6 +45,8 @@ export namespace GroupRetentionService {
         readonly ingress: Ingress;
         readonly attemptAtEpochMs: number;
         readonly attemptCount: number;
+        /** The trace of the queued command's envelope; the summary row the write enqueues carries it. */
+        readonly traceId: string;
         readonly authority: GroupPresenceSummaryStoredRead;
         readonly idempotency: GroupMutationIdempotencyRecord | null;
         readonly retirementEntries: readonly GroupRetirementEntry[];
@@ -105,7 +107,11 @@ export class GroupRetentionService {
         });
     }
 
-    async read(value: GroupRetentionService.Ingress, attemptCount: number): Promise<GroupRetentionService.Read> {
+    async read(
+        value: GroupRetentionService.Ingress,
+        attemptCount: number,
+        traceId: string
+    ): Promise<GroupRetentionService.Read> {
         const ingress = decodeGroupRetentionIngress(value);
         requirePositiveInteger(attemptCount, 'Retention attempt');
         const attemptAtEpochMs = Math.max(this.config.now(), ingress.capturedAtEpochMs);
@@ -128,6 +134,7 @@ export class GroupRetentionService {
             ingress,
             attemptAtEpochMs,
             attemptCount,
+            traceId,
             authority,
             idempotency: idempotency ?? null,
             retirementEntries,

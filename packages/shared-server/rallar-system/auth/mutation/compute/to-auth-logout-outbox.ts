@@ -8,14 +8,16 @@ import type { LogoutAuthSessionCommand } from '../auth-mutation-contracts.ts';
 
 export function toAuthLogoutOutbox(
     command: LogoutAuthSessionCommand,
-    serviceId: string
+    serviceId: string,
+    traceId: string
 ): ResourceEntry {
     const message = {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `auth-logout:${command.requestId}`,
             ts: command.capturedAtEpochMs,
-            senderId: serviceId
+            senderId: serviceId,
+            traceId
         },
         route: {
             topicId: 'auth.session.logout',

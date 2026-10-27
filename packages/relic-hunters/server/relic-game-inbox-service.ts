@@ -122,13 +122,14 @@ export class RelicGameInboxService {
             { ...timing, operation: 'read' },
             () => service.read(ingress)
         );
+        const attempt = { ...read, traceId: context.message.id.traceId };
         const computed = await timeRallarAsync(
             this.config.timing,
             { ...timing, operation: 'compute' },
-            async () => service.compute(read)
+            async () => service.compute(attempt)
         );
         await timeRallarAsync(this.config.timing, { ...timing, operation: 'validate' }, async () => {
-            const issue = service.validate(read, computed)[0];
+            const issue = service.validate(attempt, computed)[0];
             if (issue !== undefined) {
                 throw issue.cause;
             }

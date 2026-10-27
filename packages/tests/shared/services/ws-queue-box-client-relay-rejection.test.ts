@@ -102,7 +102,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
     it('never relays a session NACK to the peer it names', async () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(
-            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-ws-queue-box-client-relay-rejection' },
             { msgId: 'ordered-gapped', fromPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
         );
 
@@ -422,7 +422,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 /** The ordering-resync send: a retained room broadcast on one ordering key, with or without a receipt. */
 function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'): ALMessage {
     return {
-        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 4, msgId, ts: Date.now(), senderId: 'a', traceId: 'trace-ws-queue-box-client-relay-rejection' },
         route: { topicId: 'room.ordered', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -435,7 +435,7 @@ function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'
 /** A receipted command to one session of the room, which names its room so the room's authority admits it. */
 function roomUnicast(msgId: string, toPeerId: string): ALMessage {
     return {
-        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 4, msgId, ts: Date.now(), senderId: 'a', traceId: 'trace-ws-queue-box-client-relay-rejection' },
         route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -447,7 +447,7 @@ function roomUnicast(msgId: string, toPeerId: string): ALMessage {
 /** A receipted exclusive room broadcast on the one resource every message this helper builds names. */
 function exclusiveRoomBroadcast(msgId: string, senderId: string): ALMessage {
     return {
-        id: { v: 3, msgId, ts: Date.now(), senderId },
+        id: { v: 4, msgId, ts: Date.now(), senderId, traceId: 'trace-ws-queue-box-client-relay-rejection' },
         route: { topicId: 'room.pickup', resourceId: 'pickup-1', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -460,7 +460,7 @@ function exclusiveRoomBroadcast(msgId: string, senderId: string): ALMessage {
 function serverReceipt(msgId: string, phase: ALReceiptPayload['phase']): ALMessage {
     const observedAtEpochMs = Date.now();
     return newALReceiptControlMessage(
-        { v: 3, msgId: `receipt-${phase}-${msgId}`, senderId: 'server-1', ts: observedAtEpochMs },
+        { v: 4, msgId: `receipt-${phase}-${msgId}`, senderId: 'server-1', ts: observedAtEpochMs, traceId: 'trace-ws-queue-box-client-relay-rejection' },
         {
             msgId,
             originPeerId: 'a',

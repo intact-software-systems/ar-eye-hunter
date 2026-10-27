@@ -35,6 +35,7 @@ interface ComputedRtcTopologyOutboxBase {
     readonly resourceId: string;
     readonly requestOptions: CanonicalGroupTopologyConfigPatch;
     readonly publish: boolean;
+    readonly traceId: string;
 }
 
 export type ComputedRtcTopologyOutbox =
@@ -145,7 +146,8 @@ function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceE
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: messageId,
             ts: computed.createdAtEpochMs,
-            senderId: createdBy
+            senderId: createdBy,
+            traceId: computed.traceId
         },
         route: key,
         constraints: { expiresAtMs: computed.expireAtEpochMs },

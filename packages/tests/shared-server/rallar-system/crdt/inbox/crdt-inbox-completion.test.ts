@@ -7,6 +7,7 @@ import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mut
 import type { CrdtMutationRead } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
 import { writePSqlCrdtMutation } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
@@ -38,6 +39,17 @@ describe('CRDT inbox completion candidate', () => {
         expect(computed.completion.durableResult).toBe(computed.mutation.result);
         expect(computed.completion.reservationFinish.completedAt).toEqual(new Date(1_010));
         expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
+    });
+
+    it('stamps the reply and fan-out envelopes with the trace of the queued command', async () => {
+        const read = await createRead();
+        const computed = computeCrdtInboxMutation(read);
+        if (computed.mutation.outcome !== 'write') {
+            throw new Error('Expected an accepted CRDT append');
+        }
+
+        expect(computed.mutation.outboxWrites.map((write) => decodePersistedALMessage(write.entry.resource).id.traceId))
+            .toEqual([read.traceId, read.traceId]);
     });
 
     it('preserves rejected and replay results while validating their completion', async () => {
@@ -251,6 +263,7 @@ async function createRead() {
         command,
         read,
         serviceId: 'server',
+        traceId: 'trace-crdt-inbox-completion',
         completionFacts: { entry: createEntry(), completedAtEpochMs: 1_010, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
     };
 }

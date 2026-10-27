@@ -405,7 +405,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await control.admit(
             newALAckControlMessage(
-                { v: 3, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2' },
+                { v: 4, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2', traceId: 'trace-al-indexeddb-runtime-stores' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: msg.id.senderId,
@@ -435,7 +435,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await expect(control.admit(
             newALAckControlMessage(
-                { v: 3, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3' },
+                { v: 4, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3', traceId: 'trace-al-indexeddb-runtime-stores' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: msg.id.senderId,
@@ -521,7 +521,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' }).admit(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -601,7 +601,7 @@ describe('IndexedDB AL runtime stores', () => {
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-ordering-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-ordering-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
@@ -719,7 +719,7 @@ describe('IndexedDB AL runtime stores', () => {
                 acceptedAckDuringTimeout = true;
                 await control.admit(
                     newALAckControlMessage(
-                        { v: 3, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
+                        { v: 4, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
                         {
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',

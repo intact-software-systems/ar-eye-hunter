@@ -341,6 +341,7 @@ function createAuditStamp(): AuditStamp {
 
 function toGroupSnapshotMessage(snapshot: GroupSnapshot, topicId: string) {
     const entries = computeGroupStateSyncEntries({
+        traceId: 'trace-state-sync-routing',
         commandId: 'routing-snapshot',
         aggregateRef: snapshot.group,
         acceptedCausalRevision: snapshot.causalRevision,

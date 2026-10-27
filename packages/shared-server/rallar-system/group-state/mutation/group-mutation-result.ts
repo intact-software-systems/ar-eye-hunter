@@ -405,7 +405,8 @@ function computeMutationFollowupEntries(
                     acceptedCausalRevision: causalRevision,
                     event
                 },
-                facts.serviceId
+                facts.serviceId,
+                facts.traceId
             )
         ];
     return [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];

@@ -69,7 +69,7 @@ describe('permanent deletion of archived temporary rooms', () => {
             .toEqual(archiveReceipt);
         const events = await fixture.repository.listEvents(RETENTION_REF);
         expect(events).toEqual([...archiveEvents, expect.objectContaining({ eventType: 'group-deleted' })]);
-        const replay = fixture.retention.compute(await fixture.retention.read(deletion.ingress, 2));
+        const replay = fixture.retention.compute(await fixture.retention.read(deletion.ingress, 2, 'trace-group-retention-deletion'));
         expect(replay).toEqual({ outcome: 'replay', receipt: deletion.computed.receipt });
         await commitRetention(fixture, replay);
         expect(await fixture.repository.listEvents(RETENTION_REF)).toEqual(events);

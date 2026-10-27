@@ -338,7 +338,7 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
         await ws.acceptIncomingMessage(newALNackControlMessage(
-            { v: 3, msgId: 'nack-no-leader', senderId: SERVER_PEER_ID, ts: Date.now() },
+            { v: 4, msgId: 'nack-no-leader', senderId: SERVER_PEER_ID, ts: Date.now(), traceId: 'trace-browser-message-tracked-receipt' },
             { msgId: handle.msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason: 'no-leader', observedAtEpochMs: Date.now() }
         ));
 
@@ -473,14 +473,14 @@ function createExclusiveSend(ack: 'receiver' | 'none'): ALMessage {
 
 function createServerNack(msgId: string, reason: ALNackReason, nowMs: () => number): ALMessage {
     return newALNackControlMessage(
-        { v: 3, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: nowMs() },
+        { v: 4, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: nowMs(), traceId: 'trace-browser-message-tracked-receipt' },
         { msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: nowMs() }
     );
 }
 
 function createServerReceipt(input: CreateServerReceiptInput): ALMessage {
     return newALReceiptControlMessage(
-        { v: 3, msgId: `receipt-${input.phase}-${input.msgId}`, senderId: SERVER_PEER_ID, ts: input.nowMs() },
+        { v: 4, msgId: `receipt-${input.phase}-${input.msgId}`, senderId: SERVER_PEER_ID, ts: input.nowMs(), traceId: 'trace-browser-message-tracked-receipt' },
         {
             msgId: input.msgId,
             originPeerId: SESSION_ID,

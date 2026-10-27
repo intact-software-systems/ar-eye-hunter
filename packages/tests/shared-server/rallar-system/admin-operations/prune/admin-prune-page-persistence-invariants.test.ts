@@ -195,7 +195,7 @@ function pageWork(
 }
 
 function reservedEntry(work: AdminPrunePageWork): ResourceEntry {
-    const entry = toAdminPruneOutbox(work, 'server-1');
+    const entry = toAdminPruneOutbox(work, 'server-1', 'trace-admin-prune-page-persistence-invariants');
     return {
         ...entry,
         typeId: EnqueuedType.APP_OUTBOX,

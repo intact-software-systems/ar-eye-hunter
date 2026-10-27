@@ -220,6 +220,7 @@ describe('direct resource outbox writes', () => {
     it('computes mandatory client WS_OUTBOX data without clocks, randomness, or routes', async () => {
         const event = createClientEvent();
         const computed: ComputedClientStateSync = {
+            traceId: 'trace-direct-resource-outbox',
             commandId: 'client-command-1',
             aggregateRef: {
                 applicationId: event.applicationId,
@@ -368,6 +369,7 @@ describe('direct resource outbox writes', () => {
     it('computes immutable APP_OUTBOX topology work from accepted causal data', async () => {
         const groupSnapshot = createGroupSnapshot();
         const computed: ComputedRtcTopologyOutbox = {
+            traceId: 'trace-direct-resource-outbox',
             commandId: 'group-command-1',
             aggregateRef: groupSnapshot.group,
             acceptedCausalRevision: groupSnapshot.causalRevision,
@@ -566,6 +568,7 @@ describe('direct resource outbox writes', () => {
 
 function createComputedGroupStateSync(snapshot: GroupSnapshot): ComputedGroupStateSync {
     return {
+        traceId: 'trace-direct-resource-outbox',
         commandId: 'group-command-1',
         aggregateRef: snapshot.group,
         acceptedCausalRevision: snapshot.causalRevision,
@@ -594,6 +597,7 @@ function createComputedGroupStateSync(snapshot: GroupSnapshot): ComputedGroupSta
 
 function createComputedClientEventStateSync(event: ClientEvent): ComputedClientStateSync {
     return {
+        traceId: 'trace-direct-resource-outbox',
         commandId: 'client-command-1',
         aggregateRef: {
             applicationId: event.applicationId,
@@ -621,6 +625,7 @@ function createComputedClientEventStateSync(event: ClientEvent): ComputedClientS
 
 function createComputedClientSnapshotStateSync(snapshot: ClientSnapshot): ComputedClientStateSync {
     return {
+        traceId: 'trace-direct-resource-outbox',
         commandId: 'client-command-1',
         aggregateRef: {
             applicationId: snapshot.principal.applicationId,
@@ -650,6 +655,7 @@ function createComputedGroupEventStateSync(): ComputedGroupStateSync {
     const envelope = createDeltaEnvelopeFixture({ audienceSessionIds: [] });
     const event = envelope.event;
     return {
+        traceId: 'trace-direct-resource-outbox',
         commandId: 'group-command-1',
         aggregateRef: {
             applicationId: event.applicationId,
@@ -678,6 +684,7 @@ function createComputedGroupEventStateSync(): ComputedGroupStateSync {
 function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
     const groupSnapshot = createGroupSnapshot();
     return {
+        traceId: 'trace-direct-resource-outbox',
         commandId: 'group-command-1',
         aggregateRef: groupSnapshot.group,
         acceptedCausalRevision: groupSnapshot.causalRevision,
@@ -700,6 +707,7 @@ function createCoalescedTopologyWork(
 ): ComputedCoalescedAppOutboxWork {
     const groupSnapshot = createGroupSnapshot();
     const topologyWork = computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-direct-resource-outbox',
         aggregateRef: groupSnapshot.group,
         groupSnapshot,
         requestedAtEpochMs,

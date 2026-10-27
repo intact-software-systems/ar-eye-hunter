@@ -679,6 +679,7 @@ function disconnectCommandFor(generationId: string): ClientMutationCommand {
     return toClientMutationCommand(
         input,
         {
+            traceId: 'trace-client-mutation-principal-audience-read',
             nowEpochMs: HEARTBEAT_EPOCH_MS,
             serviceId: 'client-service',
             eventId: `event:${requestId}`,
@@ -720,6 +721,7 @@ function heartbeatCommandFor(generationId: string): ClientMutationCommand {
     return toClientMutationCommand(
         input,
         {
+            traceId: 'trace-client-mutation-principal-audience-read',
             nowEpochMs: HEARTBEAT_EPOCH_MS,
             serviceId: 'client-service',
             eventId: `event:${requestId}`,

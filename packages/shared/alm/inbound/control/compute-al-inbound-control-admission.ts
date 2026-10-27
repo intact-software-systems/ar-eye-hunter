@@ -30,6 +30,7 @@ export interface ALInboundControlAdmissionRead {
     readonly acks: readonly ALAckPayload[];
     readonly nowMs: number;
     readonly controlMsgId: string;
+    readonly traceId: string;
 }
 
 export interface ALInboundControlAdmissionCandidate {
@@ -149,7 +150,13 @@ function computeUpwardAcknowledgementWork(
             payload: {
                 kind: 'send-control',
                 msg: newALAckControlMessage(
-                    { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: controlMsgId, senderId: relayPeerId, ts: read.nowMs },
+                    {
+                        v: AL_MESSAGE_ENVELOPE_VERSION,
+                        msgId: controlMsgId,
+                        senderId: relayPeerId,
+                        ts: read.nowMs,
+                        traceId: read.traceId
+                    },
                     {
                         fromPeerId: relayPeerId,
                         toPeerId: pending.toPeerId,

@@ -103,6 +103,7 @@ describe('group presence summary replan hold', () => {
         const before = await readComputedSummary(seeded);
         expect(before.topologyReplan).toEqual({ decision: 'held-by-policy' });
         const commandedHead = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-group-presence-summary-replan-hold',
             aggregateRef: seeded.ref,
             groupSnapshot: before.snapshot,
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -133,6 +134,7 @@ describe('group presence summary replan hold', () => {
         const before = await readComputedSummary(seeded, SERVER_WINDOW);
         // A head whose series opened 4 s before the summary and whose due time still lies ahead of it.
         const pendingHead = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-group-presence-summary-replan-hold',
             aggregateRef: seeded.ref,
             groupSnapshot: before.snapshot,
             requestedAtEpochMs: BASE_EPOCH_MS - 3_000,

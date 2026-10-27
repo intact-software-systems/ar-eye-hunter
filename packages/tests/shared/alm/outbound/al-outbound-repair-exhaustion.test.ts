@@ -85,14 +85,14 @@ function toGapReport(revealing: ALMessage, trackKey: string, missingRanges: read
 
 function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason'>): ALMessage {
     return newALNackControlMessage(
-        { v: 3, msgId: controlMsgId, ts: 1, senderId: 'peer-1' },
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-exhaustion' },
         { ...report, reason: 'gap' }
     );
 }
 
 function toMissingSeqRepair(controlMsgId: string, report: Omit<ALRepairPayload, 'reason'>): ALMessage {
     return newALRepairControlMessage(
-        { v: 3, msgId: controlMsgId, ts: 1, senderId: 'peer-1' },
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-exhaustion' },
         { ...report, reason: 'missing-seq' }
     );
 }

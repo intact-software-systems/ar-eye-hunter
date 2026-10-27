@@ -457,7 +457,7 @@ Deno.test(
             );
             const command = {
                 ...ingress,
-                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
+                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId: 'trace-pglite-state-event-pagination' }
             };
             const read = await service.read(command);
             const computed = service.compute(command, read);

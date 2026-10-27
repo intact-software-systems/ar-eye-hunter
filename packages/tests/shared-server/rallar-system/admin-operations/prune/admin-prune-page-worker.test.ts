@@ -14,6 +14,7 @@ import {
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { describe, expect, it } from 'vitest';
@@ -90,6 +91,12 @@ describe('AdminPrunePageWorker', () => {
                 pageIndex: 1
             }
         });
+        // The successor page row carries the trace of the page row that wrote it.
+        expect(
+            computed.successorOutboxWrite === null
+                ? undefined
+                : decodePersistedALMessage(computed.successorOutboxWrite.entry.resource).id.traceId
+        ).toBe(command.traceId);
 
         await work.write(repository.transaction, computed);
 
@@ -617,7 +624,7 @@ function createReservedEntry(
         requestedBy: 'admin-1',
         requestedSessionId: 'session-1'
     };
-    const entry = toAdminPruneOutbox(normalized, 'server-1');
+    const entry = toAdminPruneOutbox(normalized, 'server-1', 'trace-admin-prune-page-worker');
     return {
         ...entry,
         status: EntityStatus.RESERVED,

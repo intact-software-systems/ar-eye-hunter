@@ -48,7 +48,7 @@ Deno.test('API-only purge rolls back the group retirement when save CAS loses an
         const fixture = await createArchivedRoom(database);
         const retention = fixture.runtime.groupStateService.retention;
         const ingress = retention.capture({ groupRef: REF, requestId: 'save-first', observedAtEpochMs: fixture.clock.now });
-        const stale = retention.compute(await retention.read(ingress, 1));
+        const stale = retention.compute(await retention.read(ingress, 1, 'trace-room-owned-retention'));
         const nextSave = computeRoomOwnedAppDataSave({
             read: (await fixture.owned.read(REF))[0],
             value: { quantity: 2 },
@@ -61,7 +61,7 @@ Deno.test('API-only purge rolls back the group retirement when save CAS loses an
         assert.equal((await fixture.runtime.groupsRepository.findGroup(REF))?.status, 'archived');
         assert.deepEqual((await fixture.data.findEntry(KEY))?.value, { quantity: 2 });
         assert.equal(await fixture.runtime.groupsRepository.findIdempotentGroupMutationReceipt(REF, ingress.commandId), undefined);
-        const read = await retention.read(ingress, 2);
+        const read = await retention.read(ingress, 2, 'trace-room-owned-retention');
         const retry = retention.compute(read);
         assert.deepEqual(retention.validate(read, retry), []);
         await database.begin((transaction) => retention.write(transaction, retry));
@@ -117,7 +117,7 @@ async function createArchivedRoom(database: PSqlSql): Promise<ArchivedRoom> {
         async reconcile(requestId: string) {
             const retention = runtime.groupStateService.retention;
             const ingress = retention.capture({ groupRef: REF, requestId, observedAtEpochMs: clock.now });
-            const read = await retention.read(ingress, 1);
+            const read = await retention.read(ingress, 1, 'trace-room-owned-retention');
             const computed = retention.compute(read);
             assert.deepEqual(retention.validate(read, computed), []);
             await database.begin((transaction) => retention.write(transaction, computed));
@@ -179,7 +179,10 @@ async function seedArchivedRoom(runtime: ApiV1MutationRuntime, now: number): Pro
         }),
         owner
     );
-    const command = { ...ingress, facts: toGroupMutationAttemptFacts(ingress.facts, 1, now) };
+    const command = {
+        ...ingress,
+        facts: toGroupMutationAttemptFacts({ ingressFacts: ingress.facts, attemptCount: 1, laneNowEpochMs: now, traceId: 'trace-room-owned-retention' })
+    };
     const read = await service.read(command);
     const computed = service.compute(command, read);
     assert.deepEqual(service.validate(command, read, computed), []);

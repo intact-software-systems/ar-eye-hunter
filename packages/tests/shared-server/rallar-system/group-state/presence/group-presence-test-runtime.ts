@@ -117,11 +117,19 @@ function assertGroupPresenceSummaryWorkValid(
 }
 
 /** One work row's expansion of its read, with the summary state its page would compute from that read. */
+/** The trace every test expansion carries, as the reserved row's envelope would. */
+export const SUMMARY_EXPANSION_TRACE_ID = 'trace-group-presence-test-runtime';
+
 export function toSummaryExpansion(
     command: GroupPresenceSummaryWorkData,
     read: GroupPresenceSummaryWorkRead
 ): GroupPresenceSummaryExpansionInput {
-    return { work: command, read, state: computeGroupPresenceSummaryState(command, read) };
+    return {
+        work: command,
+        read,
+        state: computeGroupPresenceSummaryState(command, read),
+        traceId: SUMMARY_EXPANSION_TRACE_ID
+    };
 }
 
 /** The single-item read: one work row expanded alone under its own reservation, as the delta and replan cases exercise it. */
@@ -131,7 +139,7 @@ export async function readSummaryWork(
     nowEpochMs: number
 ): Promise<GroupPresenceSummaryWorkRead> {
     const reads = await work.read(
-        [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+        [{ traceId: 'trace-group-presence-test-runtime', work: command, reservation: summaryReservationRead(command.commandId) }],
         nowEpochMs
     );
     const [read] = reads.right ?? [];

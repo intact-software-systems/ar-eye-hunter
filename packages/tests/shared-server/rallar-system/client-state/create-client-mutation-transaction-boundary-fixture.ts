@@ -164,7 +164,7 @@ function createReservedClientContext(): AppInboxMessageContext<ClientStateWritte
     return {
         enqueue,
         message: {
-            id: { v: 3, msgId: 'client-transaction-result', ts: now, senderId: 'alice' },
+            id: { v: 4, msgId: 'client-transaction-result', ts: now, senderId: 'alice', traceId: 'trace-create-client-mutation-transaction-boundary-fixture' },
             route: { ...entry.key },
             payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
         },

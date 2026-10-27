@@ -367,7 +367,7 @@ describe('the RTC subtree targeted repair keeps every unfinished hop expected (R
         await enqueueAndDrain(origin.manager, message);
 
         await origin.manager.acceptControlMessage(newALNackControlMessage(
-            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-rtc-relay-ownership' },
             { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);

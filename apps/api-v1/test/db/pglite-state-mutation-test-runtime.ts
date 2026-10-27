@@ -67,7 +67,12 @@ export async function applyPGliteGroupMutationIngress(
 ): Promise<void> {
     const command = {
         ...ingress,
-        facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
+        facts: {
+            ...ingress.facts,
+            attemptCount: 1,
+            attemptAtEpochMs: ingress.facts.nowEpochMs,
+            traceId: 'trace-pglite-state-mutation-test-runtime'
+        }
     };
     const read = await service.read(command);
     const computed = service.compute(command, read);

@@ -13,6 +13,8 @@ import {
 export interface GroupPresenceSummaryWorkItem {
     readonly work: GroupPresenceSummaryWorkData;
     readonly reservation: GroupPresenceSummaryReservationRead;
+    /** The trace of the row's envelope; the publications its expansion writes carry it. */
+    readonly traceId: string;
 }
 
 /** The claimed items one expansion writes, in causal order, and the claimed items it leaves to the next claim. */

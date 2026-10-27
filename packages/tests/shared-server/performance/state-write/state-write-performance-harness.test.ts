@@ -395,27 +395,31 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             groupId: 'group-7'
         };
         const scopedCommandId = `group-app-inbox:${'a'.repeat(64)}`;
-        const entry = computeGroupPresenceSummaryEntry({
-            effectKind: 'group-presence-summary',
-            aggregateRef,
-            commandId: scopedCommandId,
-            createdAtEpochMs: 1_000,
-            expireAtEpochMs: 100_000,
-            acceptedCausalRevision: { groupRevision: 4, presenceRevision: 3 },
-            event: {
-                ...aggregateRef,
-                eventId: 'summary-event',
-                eventType: 'session-connected',
-                snapshotVersion: 4,
-                causalRevision: { groupRevision: 4, presenceRevision: 3 },
-                occurredAtEpochMs: 1_000,
-                actor: { kind: 'service', serviceId: 'summary-handler' },
-                reason: null,
-                traceId: null,
-                requestId: command.commandId,
-                payload: {}
-            }
-        }, 'summary-handler');
+        const entry = computeGroupPresenceSummaryEntry(
+            {
+                effectKind: 'group-presence-summary',
+                aggregateRef,
+                commandId: scopedCommandId,
+                createdAtEpochMs: 1_000,
+                expireAtEpochMs: 100_000,
+                acceptedCausalRevision: { groupRevision: 4, presenceRevision: 3 },
+                event: {
+                    ...aggregateRef,
+                    eventId: 'summary-event',
+                    eventType: 'session-connected',
+                    snapshotVersion: 4,
+                    causalRevision: { groupRevision: 4, presenceRevision: 3 },
+                    occurredAtEpochMs: 1_000,
+                    actor: { kind: 'service', serviceId: 'summary-handler' },
+                    reason: null,
+                    traceId: null,
+                    requestId: command.commandId,
+                    payload: {}
+                }
+            },
+            'summary-handler',
+            'trace-state-write-performance-harness'
+        );
         const receipt = {
             commandId: command.commandId,
             receiptIds: [scopedCommandId],

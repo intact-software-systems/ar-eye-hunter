@@ -37,6 +37,8 @@ export interface AdminPruneRead {
     readonly nowEpochMs: number;
     readonly serviceId: string;
     readonly completionFacts: AppInboxCompletionFacts;
+    /** The trace of the queued command's envelope; every page row the command writes carries it. */
+    readonly traceId: string;
 }
 
 export interface AdminPruneAggregateWrite {
@@ -73,7 +75,7 @@ export function computeAdminPruneMutation(read: AdminPruneRead): AdminPruneCompu
     };
     return {
         result,
-        outboxWrites: computeInitialAdminPrunePages(command, read.serviceId),
+        outboxWrites: computeInitialAdminPrunePages(command, read.serviceId, read.traceId),
         aggregateWrite: command.dryRun
             ? null
             : computeAdminPruneAggregateWrite(
@@ -161,25 +163,30 @@ export function validateAdminPruneMutation(
 
 function computeInitialAdminPrunePages(
     command: AdminPruneCommand,
-    serviceId: string
+    serviceId: string,
+    traceId: string
 ): readonly AppOutboxInsert[] {
     if (command.dryRun) {
         return [];
     }
     return command.categories.map((category) =>
-        computeAppOutboxInsert(toAdminPruneOutbox({
-            kind: 'page',
-            jobId: command.jobId,
-            category,
-            requestedBy: command.requestedBy,
-            requestedSessionId: command.requestedSessionId,
-            capturedAtEpochMs: command.capturedAtEpochMs,
-            expireAtEpochMs: command.expireAtEpochMs,
-            pageSize: command.pageSize,
-            afterCursor: null,
-            pageIndex: 0,
-            appData: category === 'app-data' ? command.appData : null
-        }, serviceId))
+        computeAppOutboxInsert(toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId: command.jobId,
+                category,
+                requestedBy: command.requestedBy,
+                requestedSessionId: command.requestedSessionId,
+                capturedAtEpochMs: command.capturedAtEpochMs,
+                expireAtEpochMs: command.expireAtEpochMs,
+                pageSize: command.pageSize,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: category === 'app-data' ? command.appData : null
+            },
+            serviceId,
+            traceId
+        ))
     );
 }
 

@@ -48,7 +48,7 @@ describe('GroupStateService guarded batch write boundary', () => {
         );
         const command = {
             ...ingress,
-            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
+            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId: 'trace-write-group-mutation-behavior' }
         };
         const read = await group.durable.read(command);
         const computed = group.durable.compute(command, read);

@@ -160,7 +160,7 @@ function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]):
                 snapshotVersion: 7, deadlineAtMs: 30000
             });
             await owner.acceptControlMessage(newALAckControlMessage(
-                { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 900 },
+                { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 900, traceId: 'trace-full-stack-api-receipt-capture' },
                 {
                     ackedMsgId: 'subject', fromPeerId: 'recipient', toPeerId: 'origin', originPeerId: 'origin',
                     logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901

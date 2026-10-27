@@ -478,11 +478,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "drop-in-live-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
-            "sessionId": "{bobSessionId}"
+            "sessionId": "{bobSessionId}",
+            "traceId": "trace-api-v1-drop-in-social-preset"
           },
           "route": {
             "topicId": "room.match",

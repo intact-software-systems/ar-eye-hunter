@@ -215,7 +215,7 @@ function createObservedInboundStores(): ALInboundRuntimeStores {
 
 function createRoomSubjectMessage(): ALMessage {
     return {
-        id: { v: 3, msgId: 'subject', senderId: 'origin', ts: Date.now() },
+        id: { v: 4, msgId: 'subject', senderId: 'origin', ts: Date.now(), traceId: 'trace-ws-queue-box-server-receipt-observation' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { ...SCOPE, groupId: 'room' } },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -226,7 +226,7 @@ function createRoomSubjectMessage(): ALMessage {
 
 function createReceiverAcknowledgement(senderId = 'recipient'): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: 'ack-1', senderId, ts: Date.now() - 1 },
+        { v: 4, msgId: 'ack-1', senderId, ts: Date.now() - 1, traceId: 'trace-ws-queue-box-server-receipt-observation' },
         {
             ackedMsgId: 'subject',
             originPeerId: 'origin',
@@ -633,8 +633,14 @@ describe('terminal ACK rejection observation', () => {
             };
             const service = await createObservedServer(sink === 'absent' ? undefined : observe, undefined, { authorizer: gate.authorizer });
             expect((await service.acceptIncomingMessage(createRoomSubjectMessage(), 'origin')).right?.kind).toBe('admitted');
-            const messageA = { ...createReceiverAcknowledgement(), id: { v: 3, msgId: 'ack-A', senderId: 'recipient', ts: 900 } };
-            const messageB = { ...createReceiverAcknowledgement(), id: { v: 3, msgId: 'ack-B', senderId: 'recipient', ts: 901 } };
+            const messageA = {
+                ...createReceiverAcknowledgement(),
+                id: { v: 4, msgId: 'ack-A', senderId: 'recipient', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' }
+            };
+            const messageB = {
+                ...createReceiverAcknowledgement(),
+                id: { v: 4, msgId: 'ack-B', senderId: 'recipient', ts: 901, traceId: 'trace-ws-queue-box-server-receipt-observation' }
+            };
             const pendingA = service.acceptIncomingMessage(messageA, 'recipient');
             await gate.entered;
             const acceptedB = await service.acceptIncomingMessage(messageB, 'recipient');
@@ -842,7 +848,7 @@ describe('owned receipt count observation', () => {
         expect(aggregation.recordAck(payload).right?.receipt).toBeUndefined();
         clock.value = 30000;
         const invalid = { ...payload, toPeerId: 'wrong', fromPeerId: 'other' };
-        const identity: ALMessage['id'] = { v: 3, msgId: 'repeated', senderId: 'other', ts: 900 };
+        const identity: ALMessage['id'] = { v: 4, msgId: 'repeated', senderId: 'other', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' };
         expect(aggregation.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: identity })).toEqual({
             code: 'unauthorized',
             message:
@@ -878,13 +884,14 @@ describe('owned receipt count observation', () => {
             let identityReads = 0;
             let clockReads = 0;
             const identity: ALMessage['id'] = {
-                v: 3,
+                v: 4,
                 msgId: 'ack-1',
                 senderId: 'recipient',
                 get ts(): number {
                     identityReads += 1;
                     throw new Error('projection failure');
-                }
+                },
+                traceId: 'trace-ws-queue-box-server-receipt-observation'
             };
             const { aggregation } = createObservedAggregation(
                 sink === 'absent' ? undefined : () => {
@@ -993,7 +1000,10 @@ describe('owned ACK relay observation', () => {
         });
         const invalid = { ...createReceiverAcknowledgementPayload(), ackedMsgId: 'unowned', toPeerId: 'wrong' };
         expect(
-            relay.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: { v: 3, msgId: 'ack-relay', senderId: 'recipient', ts: 900 } })
+            relay.readRelayedAckRejection(invalid, {
+                stage: 'ingress-protocol',
+                controlIdentity: { v: 4, msgId: 'ack-relay', senderId: 'recipient', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' }
+            })
         ).toEqual({
             code: 'unauthorized',
             message: 'AL acknowledgement is not addressed to the origin it names'

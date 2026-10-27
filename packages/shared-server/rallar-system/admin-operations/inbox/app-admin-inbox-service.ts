@@ -306,6 +306,7 @@ export class AppAdminInboxService {
             authority,
             nowEpochMs,
             serviceId: this.serviceId,
+            traceId: context.message.id.traceId,
             completionFacts: this.transactionWriter.readCompletionFacts(context)
         };
     }

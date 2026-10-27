@@ -247,8 +247,8 @@ async function seedCrdtAdminDocument(
         }
     });
     const read = await mutationService.read(initial);
-    const computed = mutationService.compute({ command: initial, read });
-    assert.deepEqual(mutationService.validate({ command: initial, read, computed }), []);
+    const computed = mutationService.compute({ traceId: 'trace-crdt-admin-response-contract', command: initial, read });
+    assert.deepEqual(mutationService.validate({ traceId: 'trace-crdt-admin-response-contract', command: initial, read, computed }), []);
     await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
     await sql`
     update crdt_documents set

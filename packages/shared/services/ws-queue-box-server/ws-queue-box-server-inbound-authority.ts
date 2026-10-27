@@ -454,7 +454,8 @@ export class WsQueueBoxServerInboundAuthority {
                 v: AL_MESSAGE_ENVELOPE_VERSION,
                 msgId: this.#newControlId(),
                 senderId: this.#serverPeerId,
-                ts: observedAtEpochMs
+                ts: observedAtEpochMs,
+                traceId: message.id.traceId
             },
             payload
         );

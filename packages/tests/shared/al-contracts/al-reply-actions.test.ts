@@ -15,6 +15,7 @@ import { newALReplyMessage } from '@shared/al-contracts/reply/new-al-reply-messa
 import { toALCorrId, toALReplyActions } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import { toALReplyContextId } from '@shared/al-contracts/reply/to-al-reply-context-id.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const ROUTE = newALRoute('app.command', 'room-1', 'resource-1');
@@ -93,6 +94,27 @@ describe('the actions option of the message builders', () => {
     });
 });
 
+describe('the trace of the message builders', () => {
+    const builders: ReadonlyArray<readonly [string, (traceId?: string) => ALMessage]> = [
+        ['untargeted', (traceId) => newALUntargetedMessage('a', ROUTE, 't', {}, { traceId })],
+        ['unicast', (traceId) => newALUnicastMessage('a', ROUTE, 'b', 't', {}, { traceId })],
+        ['multicast', (traceId) => newALMulticastMessage('a', ROUTE, ROOM, 't', {}, { traceId })],
+        ['room broadcast', (traceId) => newALBroadcastMessage('a', ROUTE, 'room', 't', {}, { groupRef: ROOM, traceId })],
+        ['principal broadcast', (traceId) => newALPrincipalBroadcastMessage('a', ROUTE, PRINCIPAL, 't', {}, { traceId })]
+    ];
+
+    it.each(builders)('mints a valid trace on a %s message when the caller passes none', (_name, build) => {
+        const first = build();
+
+        expect(validateALTraceId(first.id.traceId)).toEqual([]);
+        expect(build().id.traceId).not.toBe(first.id.traceId);
+    });
+
+    it.each(builders)('keeps the trace the caller passes on a %s message', (_name, build) => {
+        expect(build('trace_01').id.traceId).toBe('trace_01');
+    });
+});
+
 describe('the server reply to a request', () => {
     it('is an at-least-once unicast to the requester on the request topic, context and room', () => {
         const request = newRequest('client-session', ROOM);
@@ -114,6 +136,12 @@ describe('the server reply to a request', () => {
         expect(reply.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'receiver' });
         expect(reply.constraints?.expiresAtMs).toBe(reply.id.ts + 30_000);
         expect(reply.actions).toEqual({ corrId: request.id.msgId, replyToMsgId: request.id.msgId });
+    });
+
+    it('carries the trace of the request', () => {
+        const request = newALUnicastMessage('client-session', ROUTE, 'server', 'app.ask.v1', {}, { traceId: 'trace_01' });
+
+        expect(newALReplyMessage(request, { senderId: 'server', typeId: 't', payload: {} }).id.traceId).toBe('trace_01');
     });
 
     it('carries the correlation of a re-ask and answers the re-ask', () => {

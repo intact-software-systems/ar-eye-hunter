@@ -468,11 +468,12 @@
             },
             "send": {
               "id": {
-                "v": 3,
+                "v": 4,
                 "msgId": "rtt-managed-burst-medium-{i}x{j}-{runId}",
                 "ts": 0,
                 "senderId": "{rtt{i}x{j}Reporter.sessionIdFrom}",
-                "sessionId": "{rtt{i}x{j}Reporter.sessionIdFrom}"
+                "sessionId": "{rtt{i}x{j}Reporter.sessionIdFrom}",
+                "traceId": "trace-api-v1-group-formation-managed-burst-medium"
               },
               "route": {
                 "topicId": "rtt",

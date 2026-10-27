@@ -68,6 +68,7 @@ export interface RtcTopologyCoalescedGroupRevisionInput {
     readonly senderId: string;
     readonly origin: TopologyWorkOrigin;
     readonly previousEntry: ResourceEntry | null;
+    readonly traceId: string;
 }
 
 export interface ComputeTopologyReplanDueAtInput {
@@ -524,7 +525,8 @@ function toCoalescedGroupRevisionMessage(
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `${resourceId}:g${data[COALESCED_APP_OUTBOX_WORK_FIELD].generation}`,
             ts: messageTsEpochMs,
-            senderId: createdBy
+            senderId: createdBy,
+            traceId: input.traceId
         },
         route: key,
         constraints: { expiresAtMs: messageExpiresAtEpochMs },

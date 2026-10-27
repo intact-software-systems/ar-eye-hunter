@@ -137,6 +137,8 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly formationAutomationEnabled: boolean;
     readonly serviceId: string | undefined;
     readonly publisherStreamId: string | undefined;
+    /** The trace of the work row's envelope; every row the write derives carries it. */
+    readonly traceId: string;
 }
 
 export function computeRtcTopologyWorkWrite(
@@ -169,14 +171,16 @@ export function computeRtcTopologyWorkWrite(
                 entry,
                 sourceWorkId: input.sourceWorkId,
                 target,
-                expireAtEpochMs: input.derivedExpireAtEpochMs
+                expireAtEpochMs: input.derivedExpireAtEpochMs,
+                traceId: input.traceId
             })),
             connectWrites: computePublicationConnectTriggerRequests({
                 automationEnabled: input.formationAutomationEnabled,
                 target,
                 sourceWorkId: input.sourceWorkId,
                 entry,
-                expireAtEpochMs: input.derivedExpireAtEpochMs
+                expireAtEpochMs: input.derivedExpireAtEpochMs,
+                traceId: input.traceId
             }).map(computeAppOutboxInsert),
             fingerprint: computeFingerprintWrite(accepted),
             delivery: accepted.decision === 'accepted' && accepted.publication

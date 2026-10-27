@@ -572,11 +572,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "rtt-activationdecay-{runId}",
             "ts": 0,
             "senderId": "{rttReporter.sessionIdFrom}",
-            "sessionId": "{rttReporter.sessionIdFrom}"
+            "sessionId": "{rttReporter.sessionIdFrom}",
+            "traceId": "trace-api-v1-activation-clock-decay"
           },
           "route": {
             "topicId": "rtt",

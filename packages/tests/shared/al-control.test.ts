@@ -68,10 +68,11 @@ const receipt: ALReceiptPayload = {
     observedAtEpochMs: 15
 };
 const controlId: ALMessage['id'] = {
-    v: 3,
+    v: 4,
     msgId: 'control-1',
     ts: 11,
-    senderId: 'sender'
+    senderId: 'sender',
+    traceId: 'trace-al-control'
 };
 
 describe('AL control message codec', () => {

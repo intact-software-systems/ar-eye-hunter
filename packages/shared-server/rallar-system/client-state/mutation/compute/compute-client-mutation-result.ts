@@ -232,7 +232,8 @@ function toClientStateSync(
             resourceId: command.aggregateRef.principalId
         },
         createdAtEpochMs: command.facts.nowEpochMs,
-        expireAtEpochMs: command.facts.expireAtEpochMs
+        expireAtEpochMs: command.facts.expireAtEpochMs,
+        traceId: command.facts.traceId
     };
     return [
         {

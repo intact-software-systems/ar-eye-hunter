@@ -5,6 +5,7 @@ import {
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { BlackBoxRallarControlSubmitInput } from '../black-box-rallar-operation-contracts.ts';
@@ -54,7 +55,8 @@ function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: s
         v: AL_MESSAGE_ENVELOPE_VERSION,
         msgId: control.msgId,
         senderId: sessionId,
-        ts: nowMs
+        ts: nowMs,
+        traceId: newALTraceId()
     }, {
         ackedMsgId: control.ackedMsgId,
         fromPeerId: sessionId,

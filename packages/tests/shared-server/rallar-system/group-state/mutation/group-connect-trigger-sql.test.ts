@@ -136,6 +136,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
         await withConnectSql(backend, async (sql, applicationId) => {
             const groupRef = { applicationId, workspaceId: 'ws', groupId: 'publication' };
             const work = computeGroupConnectTriggerEntry({
+                traceId: 'trace-group-connect-trigger-sql',
                 work: { kind: 'publication', groupRef, wakeIdentity: 'source-publication-v1' },
                 senderId: 'source-server',
                 createdAtEpochMs: 1000,
@@ -423,7 +424,8 @@ async function enqueueTopologyWork(
         senderId: 'publication-test',
         resourceId: `publication-${payloadKind}-${nowEpochMs}-${crypto.randomUUID()}`,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-        publish: true
+        publish: true,
+        traceId: 'trace-group-connect-trigger-sql'
     };
     const measurement = {
         sessionIdFrom: 'a',

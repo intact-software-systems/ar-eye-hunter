@@ -14,6 +14,7 @@ import {
     computeTopologyPromotionRequest,
     readTopologyPromotion
 } from '@shared-server/rallar-system/topology/replay/work/topology-promotion-request.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
@@ -39,6 +40,7 @@ describe('topology promotion request write', () => {
 
         expect(calls).toEqual(['group', 'policy']);
         expect(computeTopologyPromotionRequest({
+            traceId: 'trace-topology-promotion-request',
             read,
             serviceId: 'topology-service',
             entry: promotionEntry(),
@@ -71,6 +73,7 @@ describe('topology promotion request write', () => {
     it('stamps the promotion with the expiry its attempt decided, not its source row\'s', () => {
         const group = createTestGroup({ lifecycleState: 'active' });
         const promotion = computeTopologyPromotionRequest({
+            traceId: 'trace-topology-promotion-request',
             read: { group, policy: { status: 'absent' } },
             serviceId: 'topology-service',
             entry: promotionEntry(),
@@ -94,6 +97,8 @@ describe('topology promotion request write', () => {
         });
 
         expect(promotion?.audit.expiryTs.epochMilliseconds).toBe(3_601_000);
+        expect(promotion === null ? undefined : decodePersistedALMessage(promotion.resource).id.traceId)
+            .toBe('trace-topology-promotion-request');
     });
 
     it('rejects an immutable ResourceInbox collision', async () => {

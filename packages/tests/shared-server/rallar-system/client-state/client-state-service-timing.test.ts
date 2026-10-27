@@ -63,6 +63,7 @@ const TIMED_COMMAND: ClientMutationCommand = {
         operation: 'upsertPrincipal'
     },
     facts: {
+        traceId: 'trace-client-state-service-timing',
         nowEpochMs: 1_000,
         serviceId: 'client-timing-service',
         eventId: 'event-timed',

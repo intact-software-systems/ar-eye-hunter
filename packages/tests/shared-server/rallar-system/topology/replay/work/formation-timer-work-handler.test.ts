@@ -83,6 +83,7 @@ describe('formation timer work handler', () => {
             })
         };
         const entry = computeFormationTimerEntry({
+            traceId: 'trace-formation-timer-work-handler',
             work: {
                 kind: 'deadline',
                 groupRef: group.group,
@@ -151,6 +152,7 @@ describe('formation timer work handler', () => {
         await handler.onMessage(
             formationTimerMessage(),
             computeFormationTimerEntry({
+                traceId: 'trace-formation-timer-work-handler',
                 work: {
                     kind: 'retry',
                     groupRef: current.group,
@@ -196,6 +198,7 @@ describe('formation timer work handler', () => {
             handler.onMessage(
                 formationTimerMessage(),
                 computeFormationTimerEntry({
+                    traceId: 'trace-formation-timer-work-handler',
                     work: {
                         kind: 'deadline',
                         groupRef: behind.group,
@@ -230,6 +233,7 @@ describe('formation timer work handler', () => {
             handler.onMessage(
                 formationTimerMessage(),
                 computeFormationTimerEntry({
+                    traceId: 'trace-formation-timer-work-handler',
                     work: {
                         kind: 'deadline',
                         groupRef: current.group,
@@ -248,6 +252,7 @@ describe('formation timer work handler', () => {
     it('rejects timer work without the snapshot version required by the current reader', () => {
         const current = formationGroup({ formationEpoch: 3, snapshotVersion: 8 });
         const entry = computeFormationTimerEntry({
+            traceId: 'trace-formation-timer-work-handler',
             work: {
                 kind: 'retry',
                 groupRef: current.group,

@@ -1473,7 +1473,7 @@ async function emitFakeCapability(
 ): Promise<void> {
     const payload = toTestJsonValue(envelope({ kind: 'capability', senderId: capability.peerId, payload: capability, seq: 100 })) ?? null;
     const raw = {
-        id: { v: 3 as const, msgId: 'capability-message', ts: 1_100, senderId: capability.peerId },
+        id: { v: 4 as const, msgId: 'capability-message', ts: 1_100, senderId: capability.peerId, traceId: 'trace-rallar-game-match' },
         route: { topicId: 'game.topic', resourceId: 'capability', contextId: 'room-1' },
         payload: { typeId: 'game.topic.capability.v1', contentType: 'application/json' as const, resource: JSON.stringify(payload) }
     };

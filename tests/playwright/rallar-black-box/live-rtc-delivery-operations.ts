@@ -1021,7 +1021,7 @@ function toWebSocketMatrixSendCommand(
         connection: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
         data: {
             id: {
-                v: 3,
+                v: 4,
                 msgId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
                 ts: 0,
                 senderId: '{auth.sessionId}',

@@ -733,6 +733,7 @@ Deno.test(
                 const command = toClientMutationCommand(
                     input,
                     {
+                        traceId: 'trace-pglite-group-state-and-auth',
                         nowEpochMs: 2_000,
                         serviceId: 'pglite-client-service',
                         eventId: `${commandId}-event`,

@@ -32,6 +32,7 @@ export interface ComputeTopologyPromotionEntryInput {
     readonly senderId: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 /**
@@ -80,7 +81,8 @@ export function computeTopologyPromotionEntry(
             route: key,
             createdBy,
             createdAtEpochMs: input.createdAtEpochMs,
-            expireAtEpochMs: input.expireAtEpochMs
+            expireAtEpochMs: input.expireAtEpochMs,
+            traceId: input.traceId
         })),
         status: EntityStatus.NEW,
         audit: {
@@ -101,6 +103,7 @@ interface TopologyPromotionMessageInput {
     readonly createdBy: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 function toTopologyPromotionMessage(input: TopologyPromotionMessageInput): ALMessage {
@@ -109,7 +112,8 @@ function toTopologyPromotionMessage(input: TopologyPromotionMessageInput): ALMes
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: input.route.resourceId,
             ts: input.createdAtEpochMs,
-            senderId: input.createdBy
+            senderId: input.createdBy,
+            traceId: input.traceId
         },
         route: input.route,
         constraints: { expiresAtMs: input.expireAtEpochMs },

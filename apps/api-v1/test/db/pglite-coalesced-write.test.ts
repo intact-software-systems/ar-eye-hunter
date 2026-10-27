@@ -17,6 +17,7 @@ import { advanceCoalescedGeneration, topologyGroupSnapshotWithSessionIds } from 
 function computeInitialCoalescedEntry(groupId: string): ResourceEntry {
     const groupRef = { applicationId: 'prepared-coalescing', workspaceId: 'transactions', groupId };
     return computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-pglite-coalesced-write',
         aggregateRef: groupRef,
         groupSnapshot: topologyGroupSnapshotWithSessionIds(groupRef, ['session-a'], 500),
         requestedAtEpochMs: 500,

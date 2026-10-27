@@ -482,7 +482,8 @@ export class RallarServerWsRouter {
                     v: AL_MESSAGE_ENVELOPE_VERSION,
                     msgId: crypto.randomUUID(),
                     senderId: this.service.name,
-                    ts: observedAtEpochMs
+                    ts: observedAtEpochMs,
+                    traceId: message.id.traceId
                 },
                 {
                     fromPeerId: this.service.name,

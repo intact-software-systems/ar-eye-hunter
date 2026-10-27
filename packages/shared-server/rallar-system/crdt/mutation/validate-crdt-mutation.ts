@@ -14,7 +14,8 @@ export function validateCrdtMutation(
         expected = computeCrdtMutation({
             command: input.command,
             read: input.read,
-            serviceId: input.serviceId
+            serviceId: input.serviceId,
+            traceId: input.traceId
         });
     }
     catch (caught) {

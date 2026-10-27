@@ -265,6 +265,7 @@ async function persistAndReserveTopologyWork(
 ): Promise<ReservedPGliteTopologyWork> {
     const { sql, groupRef, groupSnapshot, nowEpochMs, resourceInbox } = setup;
     const outboxWrite = computeRtcTopologyOutboxInsert({
+        traceId: 'trace-pglite-topology-test-runtime',
         commandId,
         resourceId: `${commandId}:rtc-topology-recompute:explicit`,
         aggregateRef: groupRef,
@@ -320,6 +321,7 @@ async function planTopologyWorkPublication(
     ).snapshot;
     const expiresAtEpochMs = executionRepository.publicationExpireAtTimestamp();
     const publication: RtcTopologyPublication = {
+        traceId: 'trace-pglite-topology-test-runtime',
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision: topology.sourceGroupStateCausalRevision,

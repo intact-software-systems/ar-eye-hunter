@@ -258,6 +258,7 @@ function createComputedClientSnapshotStateSync(snapshot: ClientSnapshot) {
         },
         createdAtEpochMs: NOW_EPOCH_MS,
         expireAtEpochMs: NOW_EPOCH_MS + 60_000,
+        traceId: 'trace-state-sync-principal-audience',
         effects: [
             {
                 effectKind: 'principal-state' as const,
@@ -281,6 +282,7 @@ function createComputedClientEventStateSync(event: ClientEvent) {
         },
         createdAtEpochMs: NOW_EPOCH_MS,
         expireAtEpochMs: NOW_EPOCH_MS + 60_000,
+        traceId: 'trace-state-sync-principal-audience',
         effects: [
             {
                 effectKind: 'principal-state' as const,

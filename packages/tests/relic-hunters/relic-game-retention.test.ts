@@ -23,7 +23,7 @@ describe('Relic room retirement and save authority', () => {
             const freshGame = await prepareGameWrite(fixture, fixture.command, initial);
             fixture.nowEpochMs += 600_000;
             const ingress = retirement.capture({ groupRef: fixture.ref, requestId: 'archive', observedAtEpochMs: fixture.nowEpochMs });
-            const archiveRead = await retirement.read(ingress, 1);
+            const archiveRead = await retirement.read(ingress, 1, 'trace-relic-game-retention');
             const archive = retirement.compute(archiveRead);
             expect(retirement.validate(archiveRead, archive)).toEqual([]);
             expect(archive).toMatchObject({ outcome: 'write', group: { status: 'archived' } });
@@ -31,7 +31,7 @@ describe('Relic room retirement and save authority', () => {
                 await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, freshGame.computed));
                 await expect(fixture.storage.sql.begin((transaction) => retirement.write(transaction, archive)))
                     .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-                const retryRead = await retirement.read(ingress, 2);
+                const retryRead = await retirement.read(ingress, 2, 'trace-relic-game-retention');
                 const retry = retirement.compute(retryRead);
                 expect(retirement.validate(retryRead, retry)).toEqual([]);
                 await fixture.storage.sql.begin((transaction) => retirement.write(transaction, retry));
@@ -47,7 +47,7 @@ describe('Relic room retirement and save authority', () => {
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, game.computed)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const current = fixture.service.compute(await fixture.service.read(game.ingress));
+            const current = fixture.service.compute({ ...await fixture.service.read(game.ingress), traceId: 'trace-relic-game-retention' });
             expect(current.result).toMatchObject({ status: 'refused', code: 'room-unavailable' });
             expect(current.save).toBeNull();
         }
@@ -110,7 +110,7 @@ async function reconcile(
     requestId: string
 ): Promise<void> {
     const ingress = service.capture({ groupRef: fixture.ref, requestId, observedAtEpochMs: fixture.nowEpochMs });
-    const read = await service.read(ingress, 1);
+    const read = await service.read(ingress, 1, 'trace-relic-game-retention');
     const computed = service.compute(read);
     expect(service.validate(read, computed)).toEqual([]);
     await fixture.storage.sql.begin((transaction) => service.write(transaction, computed));

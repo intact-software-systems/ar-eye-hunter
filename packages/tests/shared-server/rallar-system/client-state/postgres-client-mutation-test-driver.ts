@@ -103,6 +103,7 @@ function createPostgresClientMutationExecutor(
             const command = toClientMutationCommand(
                 commandInput,
                 {
+                    traceId: 'trace-postgres-client-mutation-test-driver',
                     nowEpochMs: options.atEpochMs,
                     serviceId: options.serviceId,
                     eventId: `postgres-client-event:${commandInput.commandId}`,

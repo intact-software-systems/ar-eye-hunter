@@ -18,6 +18,7 @@ import {
     scheduleWsLifecycleRetry
 } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
@@ -149,7 +150,8 @@ function createTopologyAppOutboxOptions(
                         work,
                         senderId: input.serviceId,
                         createdAtEpochMs: input.nowEpochMs(),
-                        expireAtEpochMs: work.dueAtEpochMs + ACTIVATION_STATUS_CLOCK_EXPIRY_MS
+                        expireAtEpochMs: work.dueAtEpochMs + ACTIVATION_STATUS_CLOCK_EXPIRY_MS,
+                        traceId: newALTraceId()
                     })
                 );
             }

@@ -453,7 +453,7 @@ function computeAuth(command: AuthMutationCommand, read: AuthMutationRead) {
 }
 
 function authFacts(command: AuthMutationCommand) {
-    return { kind: command.kind, serviceId: 'auth-service' } as const;
+    return { kind: command.kind, serviceId: 'auth-service', traceId: 'trace-auth-mutation-validation' } as const;
 }
 
 function matchingSessionEntries(value: typeof session) {

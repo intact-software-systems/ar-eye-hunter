@@ -401,7 +401,7 @@ class PresenceRecipePorts {
         const frame = JSON.parse(text);
         if (frame.id.msgId === 'data-policy-blocked-semantic' || frame.id.msgId === 'data-policy-paused-semantic') {
             socket.receive(JSON.stringify({
-                id: { v: 3, msgId: 'test-nack', ts: 0, senderId: 'default-qbox-server' },
+                id: { v: 4, msgId: 'test-nack', ts: 0, senderId: 'default-qbox-server', traceId: 'trace-api-v1-group-data-policy-presence-recipe' },
                 route: { topicId: 'al-control' },
                 targets: { mode: 'unicast', toPeerId: 'bob-session' },
                 payload: { typeId: 'al.control.nack.v2', resource: JSON.stringify({ msgId: frame.id.msgId, reason: 'unauthorized' }) }

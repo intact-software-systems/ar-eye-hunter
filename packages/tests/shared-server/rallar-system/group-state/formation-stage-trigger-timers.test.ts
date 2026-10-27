@@ -524,6 +524,7 @@ describe('deadline without a plan', () => {
 
 function timerEntry(work: Pick<GroupFormationTimerWork, 'kind' | 'formationEpoch' | 'notBeforeEpochMs'>, group: Group) {
     return computeFormationTimerEntry({
+        traceId: 'trace-formation-stage-trigger-timers',
         work: { ...work, groupRef: groupRef('pure-room'), groupSnapshotVersion: group.snapshotVersion },
         senderId: 'formation-timer-test',
         createdAtEpochMs: 1_000,

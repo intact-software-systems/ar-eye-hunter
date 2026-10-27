@@ -47,7 +47,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             }
         } as const;
         const registrationRead = await auth.read(registration);
-        const registrationFacts = { kind: registration.kind, serviceId: auth.serviceId } as const;
+        const registrationFacts = { kind: registration.kind, serviceId: auth.serviceId, traceId: 'trace-pglite-auth-transaction-rollback' } as const;
         const registrationComputed = auth.compute(registration, registrationRead, registrationFacts);
         auth.validate({
             command: registration,
@@ -114,7 +114,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             tickets: agentFacts
         } as const;
         const agentRead = await auth.read(agentCommand);
-        const agentMutationFacts = { kind: agentCommand.kind, serviceId: auth.serviceId } as const;
+        const agentMutationFacts = { kind: agentCommand.kind, serviceId: auth.serviceId, traceId: 'trace-pglite-auth-transaction-rollback' } as const;
         const agentComputed = auth.compute(agentCommand, agentRead, agentMutationFacts);
         auth.validate({
             command: agentCommand,

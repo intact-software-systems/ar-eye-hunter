@@ -81,7 +81,15 @@ export async function prepareMutation(fixture: RetentionDatabaseFixture, descrip
 }
 
 export async function retryMutation(fixture: RetentionDatabaseFixture, ingress: GroupMutationIngress): Promise<GroupMutationComputed> {
-    const command = { ...ingress, facts: toGroupMutationAttemptFacts(ingress.facts, 1, fixture.nowEpochMs) };
+    const command = {
+        ...ingress,
+        facts: toGroupMutationAttemptFacts({
+            ingressFacts: ingress.facts,
+            attemptCount: 1,
+            laneNowEpochMs: fixture.nowEpochMs,
+            traceId: 'trace-group-retention-database-fixture'
+        })
+    };
     const read = await fixture.mutations.read(command);
     const computed = fixture.mutations.compute(command, read);
     expect(fixture.mutations.validate(command, read, computed)).toEqual([]);
@@ -101,7 +109,7 @@ export async function commitMutation(fixture: RetentionDatabaseFixture, computed
 
 export async function prepareRetention(fixture: RetentionDatabaseFixture, requestId: string) {
     const ingress = fixture.retention.capture({ groupRef: RETENTION_REF, requestId, observedAtEpochMs: fixture.nowEpochMs });
-    const read = await fixture.retention.read(ingress, 1);
+    const read = await fixture.retention.read(ingress, 1, 'trace-group-retention-database-fixture');
     const computed = fixture.retention.compute(read);
     expect(fixture.retention.validate(read, computed)).toEqual([]);
     return { ingress, computed };

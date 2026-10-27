@@ -392,7 +392,7 @@ it('rejects websocket ticket issuance when the presented session token differs',
         serviceId: 'auth-test-service'
     });
     const read = await service.read(command);
-    const facts = { kind: command.kind, serviceId: service.serviceId } as const;
+    const facts = { kind: command.kind, serviceId: service.serviceId, traceId: 'trace-auth-public-command-routing' } as const;
     const computed = service.compute(command, read, facts);
 
     const issues = service.validate({ command, read, facts, computed });

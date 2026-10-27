@@ -92,7 +92,13 @@ for (const enabled of [false, true]) {
                     assert.ok(batches.every((event) => event.details.claimedCount === 0 && event.details.completedCount === 0));
                     assert.ok(batches.every((event) => typeof event.details.workerId === 'string'));
                 }
-                const ack = newALAckControlMessage({ v: 3, msgId: 'ack-1', senderId: 'recipient', ts: Date.now() }, {
+                const ack = newALAckControlMessage({
+                    v: 4,
+                    msgId: 'ack-1',
+                    senderId: 'recipient',
+                    ts: Date.now(),
+                    traceId: 'trace-create-api-v1-ws-receipt-observer'
+                }, {
                     ackedMsgId: 'subject',
                     originPeerId: 'origin',
                     fromPeerId: 'recipient',

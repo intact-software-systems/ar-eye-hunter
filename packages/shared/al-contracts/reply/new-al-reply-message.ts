@@ -21,7 +21,8 @@ export function newALReplyMessage<T>(request: ALMessage, input: ALReplyMessageIn
             reliability: AL_CHANNEL_SEND_DEFAULTS.command.reliability,
             ack: AL_CHANNEL_SEND_DEFAULTS.command.ack,
             ttlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs,
-            actions: toALReplyActions(request)
+            actions: toALReplyActions(request),
+            traceId: request.id.traceId
         }
     );
 }

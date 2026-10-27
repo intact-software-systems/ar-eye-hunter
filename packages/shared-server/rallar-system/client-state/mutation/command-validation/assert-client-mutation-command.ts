@@ -1,3 +1,5 @@
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+
 import type { ValidationRecord } from '../../../protocol/validation-value.ts';
 import { requireEnum } from '../../validation/client-enum-validation.ts';
 import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
@@ -47,7 +49,8 @@ export function assertClientMutationFacts(facts: unknown): asserts facts is Clie
             'commandHash',
             'attemptCount',
             'expireAtEpochMs',
-            'disconnectedSessionRetentionMs'
+            'disconnectedSessionRetentionMs',
+            'traceId'
         ],
         'Client mutation facts'
     );
@@ -61,6 +64,9 @@ export function assertClientMutationFacts(facts: unknown): asserts facts is Clie
         value.disconnectedSessionRetentionMs,
         'Client mutation facts.disconnectedSessionRetentionMs'
     );
+    if (typeof value.traceId !== 'string' || validateALTraceId(value.traceId).length > 0) {
+        rejectClientMutation('Client mutation facts.traceId is invalid');
+    }
     if (value.expireAtEpochMs <= value.nowEpochMs) {
         rejectClientMutation('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
     }

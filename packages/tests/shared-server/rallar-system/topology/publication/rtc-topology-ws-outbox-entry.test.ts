@@ -20,6 +20,8 @@ describe('RTC topology publication WS outbox pages', () => {
             .toEqual(createPublication('work-one').groupRef);
         expect(pages[0].key.resourceId.length).toBeLessThanOrEqual(36);
         expect(message.targets).toMatchObject({ recipientPeerIds: ['session-0000'] });
+        expect(pages.map((page) => decodePersistedALMessage(page.resource).id.traceId))
+            .toEqual(pages.map(() => createPublication('work-one').traceId));
     });
 
     it('assigns distinct physical keys to publications sharing one logical route', () => {
@@ -96,6 +98,7 @@ function createPublication(workId: string, count = 1): RtcTopologyPublication {
         updatedAtEpochMs: 1000
     };
     return {
+        traceId: 'trace-rtc-topology-ws-outbox-entry',
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,

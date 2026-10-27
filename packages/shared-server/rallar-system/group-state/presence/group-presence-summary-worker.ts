@@ -62,7 +62,6 @@ import {
     type GroupPresenceSummaryWorkItem
 } from './compute-group-presence-summary-page.ts';
 import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.ts';
-import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupDeltaProvenance,
     writeGroupDeltaProvenance,
@@ -72,7 +71,8 @@ import {
     claimPendingGroupPresenceSummaryWork,
     releaseUnexpandedGroupPresenceSummaryWork,
     toDeferredGroupPresenceSummaryWork,
-    toGroupPresenceSummaryCandidates
+    toGroupPresenceSummaryCandidates,
+    toGroupPresenceSummaryWorkItem
 } from './group-presence-summary-claim.ts';
 import {
     computeGroupPresenceSummaryState,
@@ -328,14 +328,15 @@ export class GroupPresenceSummaryWork {
         if (!database) {
             throw new TypeError('Presence-summary queue processing requires a database');
         }
-        const primary = decodeCanonicalGroupPresenceSummaryWork(message, entry);
+        const primaryItem = toGroupPresenceSummaryWorkItem(message, entry);
+        const primary = primaryItem.work;
         const outbox = this.options.outboxQueueReader.outbox;
         const claimed = await this.claimSiblings(primary, entry);
         try {
             const page = await this.expandItems(
                 database,
                 primary,
-                toGroupPresenceSummaryCandidates(primary, entry, claimed)
+                toGroupPresenceSummaryCandidates(primaryItem, claimed)
             );
             if (page.outcome !== 'written') {
                 await releaseUnexpandedGroupPresenceSummaryWork(outbox, claimed);
@@ -408,7 +409,7 @@ export class GroupPresenceSummaryWork {
             : computeGroupPresenceSummaryPage({ candidates, read: candidateRead, state });
         const reads = toGroupPresenceSummaryWorkReads(page.items, candidateRead);
         const expansions = page.items.map((item, index) =>
-            this.expand({ work: item.work, read: reads[index]!, state })
+            this.expand({ work: item.work, read: reads[index]!, state, traceId: item.traceId })
         );
         const outcome = await this.writeExpansions(database, { primary, expansions, computeStartedAtMs });
         return { outcome, deferred: page.deferred };

@@ -234,7 +234,13 @@ async function refuseForGood(
     relayPeerId: string
 ): Promise<void> {
     const nack = newALNackControlMessage(
-        { v: 3, msgId: `${relayPeerId}-nack:${msg.id.msgId}`, senderId: relayPeerId, ts: Date.now() },
+        {
+            v: 4,
+            msgId: `${relayPeerId}-nack:${msg.id.msgId}`,
+            senderId: relayPeerId,
+            ts: Date.now(),
+            traceId: 'trace-al-outbound-acknowledged-receipt-timeout'
+        },
         {
             msgId: msg.id.msgId,
             fromPeerId: relayPeerId,
@@ -268,10 +274,11 @@ async function acknowledge(
     const observedAtEpochMs = Date.now();
     const ack = newALAckControlMessage(
         {
-            v: 3,
+            v: 4,
             msgId: `${recipientPeerId}-ack:${msg.id.msgId}`,
             senderId: recipientPeerId,
-            ts: observedAtEpochMs
+            ts: observedAtEpochMs,
+            traceId: 'trace-al-outbound-acknowledged-receipt-timeout'
         },
         {
             ackedMsgId: msg.id.msgId,

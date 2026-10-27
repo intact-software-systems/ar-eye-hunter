@@ -1,6 +1,7 @@
 import { createRelicGame, RELIC_PROTOCOL_VERSION } from '@relic-hunters/mod.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     describe,
     expect,
@@ -11,7 +12,8 @@ import { createTestAuthSession } from '../shared-server/rallar-system/group-stat
 import {
     connectGameSession,
     createGameFixture,
-    prepareGameWrite
+    prepareGameWrite,
+    RELIC_FIXTURE_TRACE_ID
 } from './relic-game-database-fixture.ts';
 
 describe('Relic authoritative save mutations', () => {
@@ -29,7 +31,7 @@ describe('Relic authoritative save mutations', () => {
             const conflictIndex = outcomes.findIndex((outcome) => outcome.status === 'rejected');
             expect(outcomes[conflictIndex]).toMatchObject({ status: 'rejected', reason: expect.any(RuntimeStateWriteConflictError) });
             const retryRead = await fixture.service.read(attempts[conflictIndex].ingress);
-            const retry = fixture.service.compute(retryRead);
+            const retry = fixture.service.compute({ ...retryRead, traceId: 'trace-relic-game-mutation' });
             expect(retry.result).toEqual({ status: 'initialized', gameId: fixture.ref.groupId });
             expect(retry.save).toBeNull();
             expect((await fixture.data.read(fixture.ref))[0].entry?.revision).toBe(0);
@@ -64,8 +66,8 @@ describe('Relic authoritative save mutations', () => {
             const conflictIndex = outcomes.findIndex((outcome) => outcome.status === 'rejected');
             expect(outcomes[conflictIndex]).toMatchObject({ status: 'rejected', reason: expect.any(RuntimeStateWriteConflictError) });
             const freshRead = await fixture.service.read(attempts[conflictIndex].ingress);
-            const rebased = fixture.service.compute(freshRead);
-            expect(fixture.service.validate(freshRead, rebased)).toEqual([]);
+            const rebased = fixture.service.compute({ ...freshRead, traceId: 'trace-relic-game-mutation' });
+            expect(fixture.service.validate({ ...freshRead, traceId: 'trace-relic-game-mutation' }, rebased)).toEqual([]);
             await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, rebased));
             const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
             expect(current?.players.map((player) => player.playerId).sort()).toEqual([fixture.owner.sessionId, guest.sessionId].sort());
@@ -98,8 +100,8 @@ describe('Relic authoritative save mutations', () => {
             const latest = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
             fixture.nowEpochMs -= 500;
             const resetRead = await fixture.service.read(resetIngress);
-            const reset = fixture.service.compute(resetRead);
-            expect(fixture.service.validate(resetRead, reset)).toEqual([]);
+            const reset = fixture.service.compute({ ...resetRead, traceId: 'trace-relic-game-mutation' });
+            expect(fixture.service.validate({ ...resetRead, traceId: 'trace-relic-game-mutation' }, reset)).toEqual([]);
             await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, reset));
             const afterReset = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
             if (latest === null || afterReset === null) {
@@ -138,11 +140,12 @@ describe('Relic authoritative save mutations', () => {
             await fixture.repository.updateGroup({ ...stored.value, status: 'archived', archived: stored.value.updated, deleted: null }, stored.entry.revision);
             await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const retry = fixture.service.compute(await fixture.service.read(prepared.ingress));
+            const retry = fixture.service.compute({ ...await fixture.service.read(prepared.ingress), traceId: 'trace-relic-game-mutation' });
             expect(retry.result).toMatchObject({ status: 'refused', code: 'room-unavailable' });
             expect(retry.save).toBeNull();
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(fixture.service.validate(prepared.read, { ...prepared.computed, save: null }).length).toBeGreaterThan(0);
+            expect(fixture.service.validate({ ...prepared.read, traceId: 'trace-relic-game-mutation' }, { ...prepared.computed, save: null }).length)
+                .toBeGreaterThan(0);
         }
         finally {
             await fixture.storage.close();
@@ -161,6 +164,9 @@ describe('Relic authoritative save mutations', () => {
                 requestId: 'reset-1'
             }, initial);
             expect(reset.computed.outboxWrites).toHaveLength(1);
+            // The publication the attempt writes carries the trace of its queued command.
+            expect(decodePersistedALMessage(reset.computed.outboxWrites[0]!.entry.resource).id.traceId)
+                .toBe(RELIC_FIXTURE_TRACE_ID);
             expect(reset.computed.provenance).toHaveLength(1);
             expect(reset.computed.result).toEqual({ status: 'applied', gameId: fixture.ref.groupId });
             if (reset.computed.save?.operation !== 'save') {

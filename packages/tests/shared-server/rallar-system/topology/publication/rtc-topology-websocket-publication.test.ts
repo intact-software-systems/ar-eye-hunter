@@ -360,6 +360,7 @@ async function enqueueTopologyGroupRevision(
 ): Promise<void> {
     await outboxQueueReader.outbox.enqueueIfAbsent(
         computeRtcTopologyOutboxInsert({
+            traceId: 'trace-rtc-topology-websocket-publication',
             commandId,
             aggregateRef: group.group,
             acceptedCausalRevision: group.causalRevision,

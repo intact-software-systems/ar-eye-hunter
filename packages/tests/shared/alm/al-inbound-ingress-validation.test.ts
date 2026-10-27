@@ -80,7 +80,7 @@ describe('AL inbound canonical validation', () => {
         const fixture = createFixture('rtc');
         const nowMs = Date.now();
         const control = newALAckControlMessage(
-            { v: 3, msgId: 'receipt', senderId: 'sender', ts: nowMs },
+            { v: 4, msgId: 'receipt', senderId: 'sender', ts: nowMs, traceId: 'trace-al-inbound-ingress-validation' },
             {
                 ackedMsgId: 'unknown',
                 originPeerId: 'receiver',
@@ -194,7 +194,7 @@ describe('AL inbound canonical validation', () => {
 
 function directMessage(): ALMessage {
     return {
-        id: { v: 3, msgId: 'message', senderId: 'sender', ts: Date.now() },
+        id: { v: 4, msgId: 'message', senderId: 'sender', ts: Date.now(), traceId: 'trace-al-inbound-ingress-validation' },
         route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         delivery: { reliability: 'best-effort', ack: 'none' },

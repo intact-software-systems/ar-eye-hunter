@@ -46,6 +46,7 @@ export function validateCrdtInboxMutation(
         command: read.command,
         read: read.read,
         serviceId: read.serviceId,
+        traceId: read.traceId,
         computed: computed.mutation
     })];
     issues.push(

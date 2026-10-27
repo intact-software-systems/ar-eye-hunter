@@ -148,6 +148,8 @@ export interface CrdtMutationAuthorityDecision {
 export interface CrdtMutationAttemptFacts {
     readonly command: CrdtMutationCommand;
     readonly read: CrdtMutationRead;
+    /** The trace of the queued command's envelope; every publication the mutation writes carries it. */
+    readonly traceId: string;
 }
 
 interface CrdtDocumentWriteValues {

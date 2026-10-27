@@ -61,6 +61,7 @@ function createTopologyConfigMutationTestInput(
         }
     };
     const facts: GroupTopologyConfigMutationFacts = {
+        traceId: 'trace-group-topology-config-mutation-test-fixtures',
         policyNowEpochMs: 1_000,
         attemptCount: 1,
         isPlatformAdmin: false,

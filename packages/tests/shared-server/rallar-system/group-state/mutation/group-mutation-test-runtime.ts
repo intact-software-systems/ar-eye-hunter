@@ -187,6 +187,7 @@ export function transitionCommand(
 
 export function createGroupAuthorityFacts(principalId = 'alice'): GroupMutationFacts {
     return {
+        traceId: 'trace-group-mutation-test-runtime',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

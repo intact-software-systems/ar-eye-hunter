@@ -455,7 +455,13 @@ interface ChildAckInput {
 
 function createChildAck(input: ChildAckInput): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${input.fromPeerId}-${input.status}`, senderId: input.fromPeerId, ts: Date.now() },
+        {
+            v: 4,
+            msgId: `ack-${input.fromPeerId}-${input.status}`,
+            senderId: input.fromPeerId,
+            ts: Date.now(),
+            traceId: 'trace-web-rtc-overlay-missing-recipient-repair'
+        },
         {
             ackedMsgId: input.msgId,
             fromPeerId: input.fromPeerId,

@@ -24,6 +24,7 @@ interface AppendOutboxInput {
     readonly response: RallarCrdtAppendResult;
     readonly serviceId: string;
     readonly fanout: boolean;
+    readonly traceId: string;
 }
 
 interface WsOutboxInput {
@@ -32,6 +33,7 @@ interface WsOutboxInput {
     readonly effect: 'reply' | 'fanout';
     readonly typeId: string;
     readonly payload: JsonWireValue;
+    readonly traceId: string;
 }
 
 interface ResourceEntryInput {
@@ -43,10 +45,11 @@ interface ResourceEntryInput {
 }
 
 export function toAppendOutbox(input: AppendOutboxInput): readonly ResourceEntry[] {
-    const { command, response, serviceId, fanout } = input;
+    const { command, response, serviceId, fanout, traceId } = input;
     const reply = toWsOutbox({
         command,
         serviceId,
+        traceId,
         effect: 'reply',
         typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
         payload: decodeJsonWireValue(
@@ -66,6 +69,7 @@ export function toAppendOutbox(input: AppendOutboxInput): readonly ResourceEntry
             toWsOutbox({
                 command,
                 serviceId,
+                traceId,
                 effect: 'fanout',
                 typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
                 payload: decodeJsonWireValue(command.update, 'CRDT update outbox payload')
@@ -77,18 +81,22 @@ export function toAppendOutbox(input: AppendOutboxInput): readonly ResourceEntry
 export const CRDT_AUDIT_APP_OUTBOX_TYPE = 'CRDT_AUDIT_RECORD';
 export const CRDT_AUDIT_APP_OUTBOX_TOPIC = 'rallar.crdt.audit';
 
-export function toCrdtAuditOutbox(
-    event: RallarCrdtAuditEvent,
-    command:
+export interface CrdtAuditOutboxInput {
+    readonly event: RallarCrdtAuditEvent;
+    readonly command:
         | CrdtAppendCommand
         | Readonly<{
             commandId: string;
             capturedAtEpochMs: number;
             expireAtEpochMs: number;
             documentKey: string;
-        }>,
-    serviceId: string
-): ResourceEntry {
+        }>;
+    readonly serviceId: string;
+    readonly traceId: string;
+}
+
+export function toCrdtAuditOutbox(input: CrdtAuditOutboxInput): ResourceEntry {
+    const { event, command, serviceId, traceId } = input;
     const auditExpireAtEpochMs = Math.max(
         command.expireAtEpochMs,
         command.capturedAtEpochMs +
@@ -105,7 +113,8 @@ export function toCrdtAuditOutbox(
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: command.commandId,
             ts: command.capturedAtEpochMs,
-            senderId: serviceId
+            senderId: serviceId,
+            traceId
         },
         route,
         targets: { mode: 'broadcast' as const, scope: 'all' as const },
@@ -127,14 +136,15 @@ export function toCrdtAuditOutbox(
 }
 
 function toWsOutbox(input: WsOutboxInput): ResourceEntry {
-    const { command, serviceId, effect, typeId, payload } = input;
+    const { command, serviceId, effect, typeId, payload, traceId } = input;
     const effectId = effect === 'reply' ? command.deliveryId : command.commandId;
     const message = {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `crdt:${effectId}:${effect}`,
             ts: command.capturedAtEpochMs,
-            senderId: serviceId
+            senderId: serviceId,
+            traceId
         },
         route: {
             topicId: command.responseAudience.topicId,

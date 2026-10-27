@@ -34,7 +34,7 @@ export function computeAuthMutation(input: ComputeAuthMutationInput): AuthMutati
                     kind: commandKind,
                     command: input.command,
                     read: input.read,
-                    serviceId: input.facts.serviceId
+                    facts: input.facts
                 });
             case 'issue-ws-ticket':
                 return computeAuthTicketMutation({

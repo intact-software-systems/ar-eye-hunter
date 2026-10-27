@@ -272,7 +272,7 @@ describe('RTC durable accepted-overlay readiness', () => {
                 deadlineAtMs: 2_501
             });
             await fixture.manager.acceptControlMessage(newALAckControlMessage(
-                { v: 3, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2' },
+                { v: 4, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-rtc-outbound-overlay-readiness' },
                 {
                     ackedMsgId: message.id.msgId,
                     fromPeerId: 'peer-2',
@@ -564,7 +564,7 @@ describe('RTC durable accepted-overlay readiness', () => {
             expectedPeerIds: ['peer-2']
         });
         await fixture.manager.acceptControlMessage(newALAckControlMessage(
-            { v: 3, msgId: 'recovered-ack', ts: Date.now(), senderId: 'peer-2' },
+            { v: 4, msgId: 'recovered-ack', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-rtc-outbound-overlay-readiness' },
             {
                 ackedMsgId: message.id.msgId,
                 fromPeerId: 'peer-2',

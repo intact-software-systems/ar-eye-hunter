@@ -179,7 +179,7 @@ describe('auth reservation preparation', () => {
             );
             expect(candidate.resource).toBe(JSON.stringify({
                 ...legacy,
-                id: { ...legacy.id, msgId: 'auth-owned-observation', ts: observedAtMs },
+                id: { ...legacy.id, msgId: 'auth-owned-observation', ts: observedAtMs, traceId: message.id.traceId },
                 audit: { ...legacy.audit, createdTs: observedAtMs }
             }));
             expect(candidate.key).toEqual(key);

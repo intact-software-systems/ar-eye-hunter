@@ -55,6 +55,8 @@ import {
     type AuthorityHarness
 } from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
+const FIRST_ATTEMPT = { attemptCount: 1, traceId: 'trace-topology-app-inbox-transaction' };
+
 const GROUP_REF: GroupRef = {
     ...SCOPE,
     groupId: 'topology-room'
@@ -364,8 +366,8 @@ describe('topology AppInbox transaction and idempotency', () => {
         const mutationCommand = toTopologyConfigMutationCommand(command);
         const mutation = management.mutationOwners.configMutationService;
         const read = await mutation.read(mutationCommand);
-        const computed = mutation.compute(mutationCommand, read, 1);
-        const validation = { command: mutationCommand, read, attemptCount: 1, computed };
+        const computed = mutation.compute(mutationCommand, read, FIRST_ATTEMPT);
+        const validation = { command: mutationCommand, read, attempt: FIRST_ATTEMPT, computed };
         expect(mutation.validate(validation)).toEqual([]);
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {

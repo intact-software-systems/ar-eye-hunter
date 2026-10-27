@@ -141,7 +141,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
     it('never counts an ACK batch, even one that carries a deadline', async () => {
         const { budget, runtime } = await createFullRuntime();
         const ack = newALAckControlMessage(
-            { v: 3, msgId: 'ack-at-the-bound', senderId: 'self', ts: Date.now() },
+            { v: 4, msgId: 'ack-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
             {
                 ackedMsgId: 'received-message',
                 fromPeerId: 'self',
@@ -167,7 +167,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         [
             'a NACK',
             newALNackControlMessage(
-                { v: 3, msgId: 'nack-at-the-bound', senderId: 'self', ts: Date.now() },
+                { v: 4, msgId: 'nack-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
                 {
                     fromPeerId: 'self',
                     toPeerId: 'peer-1',
@@ -180,7 +180,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         [
             'a receipt',
             newALReceiptControlMessage(
-                { v: 3, msgId: 'receipt-at-the-bound', senderId: 'self', ts: Date.now() },
+                { v: 4, msgId: 'receipt-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
                 {
                     msgId: 'received-message',
                     originPeerId: 'peer-1',

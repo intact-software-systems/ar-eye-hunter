@@ -63,7 +63,7 @@ describe('CRDT mutation service', () => {
         const command = await createAppendCommand('append-accepted', 'update-1');
 
         const read = await service.read(command);
-        const computed = service.compute({ command, read });
+        const computed = service.compute({ traceId: 'trace-crdt-mutation-service', command, read });
 
         expect(computed.command).toBe(command);
         expect(computed.read).toBe(read);
@@ -74,7 +74,7 @@ describe('CRDT mutation service', () => {
             document: { documentRevision: 1, lastAppendSequence: 1, updateCount: 1 }
         });
         expect(computed.outboxWrites.every(({ entry }) => entry.typeId === 'WS_OUTBOX')).toBe(true);
-        expect(service.validate({ command, read, computed })).toEqual([]);
+        expect(service.validate({ traceId: 'trace-crdt-mutation-service', command, read, computed })).toEqual([]);
         expect(decodeCrdtMutationResult(computed.result)).toMatchObject({
             status: 'accepted',
             documentRevision: 1,
@@ -172,7 +172,7 @@ describe('CRDT mutation service', () => {
 
         for (const command of [rebuild, compact, lifecycle, erase]) {
             const read = await service.read(command);
-            expect(service.compute({ command, read })).toMatchObject({
+            expect(service.compute({ traceId: 'trace-crdt-mutation-service', command, read })).toMatchObject({
                 outcome: 'write',
                 operation: command.operation
             });
@@ -309,7 +309,7 @@ async function readComputeValidateCrdtMutation(
     command: Awaited<ReturnType<typeof createAppendCommand>>
 ) {
     const read = await service.read(command);
-    const computed = service.compute({ command, read });
-    expect(service.validate({ command, read, computed })).toEqual([]);
+    const computed = service.compute({ traceId: 'trace-crdt-mutation-service', command, read });
+    expect(service.validate({ traceId: 'trace-crdt-mutation-service', command, read, computed })).toEqual([]);
     return computed;
 }

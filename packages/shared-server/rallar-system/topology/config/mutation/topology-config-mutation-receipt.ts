@@ -198,7 +198,8 @@ function createTopologyConfigOutbox(
         senderId: topologyWrite.command.input.updatedByPrincipalId,
         resourceId: outboxResourceId,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-        publish: true
+        publish: true,
+        traceId: topologyWrite.facts.traceId
     };
 }
 

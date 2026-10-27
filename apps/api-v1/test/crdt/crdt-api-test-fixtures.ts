@@ -83,11 +83,14 @@ export function withCompetingWrite(
                 }
             });
             const read = await service.read(command);
-            const computed = service.compute({ command, read });
+            const computed = service.compute({ traceId: 'trace-crdt-api-test-fixtures', command, read });
             if (computed.outcome !== 'write') {
                 assert.fail(`Expected competing append to write, received ${computed.outcome}`);
             }
-            assert.deepEqual(service.validate({ command, read, computed }), []);
+            assert.deepEqual(
+                service.validate({ traceId: 'trace-crdt-api-test-fixtures', command, read, computed }),
+                []
+            );
             await database.begin(async (transaction) => {
                 await writePSqlCrdtMutation(transaction, computed);
             });

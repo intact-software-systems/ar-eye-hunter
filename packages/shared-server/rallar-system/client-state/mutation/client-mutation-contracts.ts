@@ -261,6 +261,8 @@ export type ClientMutationFacts = Readonly<{
     expireAtEpochMs: number;
     /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
     disconnectedSessionRetentionMs: number;
+    /** The trace of the queued command's envelope; every publication the mutation writes carries it. */
+    traceId: string;
 }>;
 
 export type ClientMutationCommandInput = ClientMutationCommand extends infer Command ?

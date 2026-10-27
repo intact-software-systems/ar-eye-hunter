@@ -243,7 +243,7 @@ describe('ALOutboundMessageRuntime', () => {
         const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
-                { v: 3, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
@@ -270,7 +270,7 @@ describe('ALOutboundMessageRuntime', () => {
         });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
-                { v: 3, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
@@ -759,7 +759,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(
             await runtime.acceptControlMessage(
                 newALAckControlMessage(
-                    { v: 3, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
+                    { v: 4, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay', traceId: 'trace-al-outbound-message-runtime' },
                     {
                         ackedMsgId: msg.id.msgId,
                         fromPeerId: 'relay',
@@ -889,7 +889,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
@@ -938,7 +938,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1009,7 +1009,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1057,7 +1057,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-not-synced-1', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-not-synced-1', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1070,7 +1070,7 @@ describe('ALOutboundMessageRuntime', () => {
         );
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-not-synced-2', ts: 2, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-not-synced-2', ts: 2, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1116,10 +1116,11 @@ describe('ALOutboundMessageRuntime', () => {
         const nack = (serverSnapshotVersion = 1) =>
             newALNackControlMessage(
                 {
-                    v: 3,
+                    v: 4,
                     msgId: `control-duplicate-not-synced-${serverSnapshotVersion}`,
                     ts: serverSnapshotVersion,
-                    senderId: 'peer-1'
+                    senderId: 'peer-1',
+                    traceId: 'trace-al-outbound-message-runtime'
                 },
                 {
                     msgId: msg.id.msgId,
@@ -1334,7 +1335,7 @@ describe('ALOutboundMessageRuntime', () => {
         await sendStarted.promise;
         await runtime.acceptControlMessage(
             newALAckControlMessage(
-                { v: 3, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
@@ -1423,7 +1424,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-persisted-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-persisted-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',

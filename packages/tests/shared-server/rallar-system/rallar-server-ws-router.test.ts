@@ -906,7 +906,7 @@ describe('RallarServerWsRouter', () => {
         const fixture = createLargeOutboxRoom(sessionIds);
         const message: ALMessage = {
             ...createReceiverRoomBroadcast('large-room'),
-            id: { v: 3, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
+            id: { v: 4, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]!, traceId: 'trace-rallar-server-ws-router' },
             delivery,
             qos
         };

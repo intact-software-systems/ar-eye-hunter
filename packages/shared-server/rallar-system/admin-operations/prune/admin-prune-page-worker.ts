@@ -215,7 +215,7 @@ export class AdminPrunePageWorker {
         return {
             ...page,
             successorOutboxWrite: next
-                ? computeAppOutboxInsert(toAdminPruneOutbox(next, read.serviceId))
+                ? computeAppOutboxInsert(toAdminPruneOutbox(next, read.serviceId, command.traceId))
                 : null,
             expectedAggregate: read.expectedAggregate,
             aggregateSuccessor,

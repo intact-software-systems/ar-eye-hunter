@@ -235,6 +235,7 @@ function connectPresenceCommand(): GroupMutationCommand {
 
 function mutationFacts(principalId: string): GroupMutationFacts {
     return {
+        traceId: 'trace-group-lifecycle-safety-baseline',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

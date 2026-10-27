@@ -161,6 +161,7 @@ async function prepareClientStateTestMutation(
     const command = toClientMutationCommand(
         input,
         {
+            traceId: 'trace-client-state-test-runtime',
             nowEpochMs: context.nowEpochMs(),
             serviceId: context.serviceId,
             eventId: `test-client-event:${input.commandId}:${context.nextSequence()}`,

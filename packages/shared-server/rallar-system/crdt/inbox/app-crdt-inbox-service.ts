@@ -310,6 +310,7 @@ export class AppCrdtInboxService {
             command,
             read: await this.mutationReader.read(command),
             serviceId: this.serviceId,
+            traceId: appInboxContext.message.id.traceId,
             completionFacts: this.transactionWriter.readCompletionFacts(appInboxContext)
         };
         const computed = computeCrdtInboxMutation(read);

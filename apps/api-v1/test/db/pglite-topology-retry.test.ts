@@ -541,13 +541,13 @@ Deno.test(
             const firstComputed = mutation.compute(
                 command,
                 firstRead,
-                1
+                { attemptCount: 1, traceId: 'trace-pglite-topology-retry' }
             );
             assert.deepEqual(
                 mutation.validate({
                     command,
                     read: firstRead,
-                    attemptCount: 1,
+                    attempt: { attemptCount: 1, traceId: 'trace-pglite-topology-retry' },
                     computed: firstComputed
                 }),
                 []
@@ -561,11 +561,14 @@ Deno.test(
                 /conditional write conflict/
             );
             const retryRead = await mutation.read(command);
-            const retryComputed = mutation.compute(command, retryRead, 2);
+            const retryComputed = mutation.compute(command, retryRead, {
+                attemptCount: 2,
+                traceId: 'trace-pglite-topology-retry'
+            });
             const retryIssues = mutation.validate({
                 command,
                 read: retryRead,
-                attemptCount: 2,
+                attempt: { attemptCount: 2, traceId: 'trace-pglite-topology-retry' },
                 computed: retryComputed
             });
             assert.equal(retryIssues.length, 1);

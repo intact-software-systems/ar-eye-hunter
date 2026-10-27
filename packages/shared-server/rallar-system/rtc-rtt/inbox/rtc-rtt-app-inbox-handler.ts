@@ -77,7 +77,8 @@ export class RtcRttAppInboxHandler {
         const facts = {
             ...lifecycleFacts,
             commandHash: authority.command.mutationCommandHash,
-            attemptCount
+            attemptCount,
+            traceId: context.message.id.traceId
         };
         const computationInput = {
             command,

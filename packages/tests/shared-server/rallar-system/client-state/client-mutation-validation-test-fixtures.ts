@@ -101,6 +101,7 @@ export function validPrincipalCommand(): ClientMutationCommand {
 
 export function validFacts(): ClientMutationFacts {
     return {
+        traceId: 'trace-client-mutation-validation-test-fixtures',
         nowEpochMs: 1_000,
         serviceId: 'client-service',
         eventId: 'event-1',

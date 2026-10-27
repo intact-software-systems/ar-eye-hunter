@@ -233,6 +233,7 @@ function stored<T>(key: string, value: T, revision: number) {
 
 function mutationFacts(): GroupMutationFacts {
     return {
+        traceId: 'trace-group-presence-summary-storage-revision',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

@@ -157,7 +157,12 @@ export async function writeGroupSessionCleanup(
                 authorityProof: ingress.authorityProof,
                 descriptor: ingress.descriptor,
                 command: ingress.command,
-                facts: toGroupMutationAttemptFacts(ingress.facts, input.attemptCount, input.laneNowEpochMs)
+                facts: toGroupMutationAttemptFacts({
+                    ingressFacts: ingress.facts,
+                    attemptCount: input.attemptCount,
+                    laneNowEpochMs: input.laneNowEpochMs,
+                    traceId: input.context.message.id.traceId
+                })
             };
             const read = await input.groupStateService.read(command);
             const computed = input.groupStateService.compute(command, read);

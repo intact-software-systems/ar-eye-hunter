@@ -18,6 +18,7 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
+import { newALTraceId } from '../../al-contracts/trace/al-trace-id.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -485,7 +486,8 @@ export class WsQueueBoxServerReceiptAggregation {
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: this.#dependencies.newControlId(),
             senderId: this.#dependencies.serverPeerId,
-            ts: receipt.observedAtEpochMs
+            ts: receipt.observedAtEpochMs,
+            traceId: newALTraceId()
         };
         const expiresAtMs = Math.max(deadlineAtMs, receipt.observedAtEpochMs) + AL_RECEIPT_DEADLINE_GRACE_MS;
         const message = decodePersistedALMessageValue({

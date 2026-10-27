@@ -195,7 +195,7 @@ describe('PostgreSQL inbound admission', () => {
             newControlId: () => 'generated-control'
         }).admit(
             newALAckControlMessage(
-                { v: 3, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2' },
+                { v: 4, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2', traceId: 'trace-psql-admission-work' },
                 {
                     ackedMsgId: 'msg-1',
                     originPeerId: 'peer-1',
@@ -354,7 +354,7 @@ describe('PostgreSQL outbound admission', () => {
         });
         const acceptance = await control.admit(
             newALAckControlMessage(
-                { v: 3, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1', traceId: 'trace-psql-admission-work' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',

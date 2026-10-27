@@ -76,6 +76,7 @@ export interface GroupTopologyConfigMutationFacts {
      * (the contract on `MIN_APP_INBOX_FINISHED_RETENTION_MS`).
      */
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 export interface TopologyConfigMutationValidationIssue {

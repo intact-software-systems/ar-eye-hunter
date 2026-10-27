@@ -13,6 +13,7 @@ export interface GroupTopologyReconfigureCommand {
     readonly capturedAtEpochMs: number;
     readonly requestOptions: GroupTopologyConfigPatch;
     readonly publish: boolean;
+    readonly traceId: string;
 }
 
 export interface GroupTopologyReconfigureRead {

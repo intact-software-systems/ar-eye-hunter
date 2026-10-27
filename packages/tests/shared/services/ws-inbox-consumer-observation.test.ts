@@ -28,7 +28,7 @@ interface ConsumerFixtureInput {
 }
 
 const signal: ALMessage = {
-    id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: 'signal', ts: 1, senderId: 'sender' },
+    id: { traceId: 'trace-ws-inbox-consumer-observation', v: AL_MESSAGE_ENVELOPE_VERSION, msgId: 'signal', ts: 1, senderId: 'sender' },
     route: { topicId: 'topic', resourceId: 'signal', contextId: 'context' },
     targets: { mode: 'unicast', toPeerId: 'receiver' },
     payload: { typeId: 'rtc-signaling', contentType: 'application/json', resource: '{}' }

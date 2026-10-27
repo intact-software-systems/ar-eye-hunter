@@ -33,7 +33,7 @@ export class AuthInboxHandler {
         context: AppInboxMessageContext<AuthMutationResult>
     ): Promise<AuthMutationResult> {
         assertAuthInboxIdentity(intent, context);
-        const read = await readAuthMutationAttempt(intent, {
+        const read = await readAuthMutationAttempt(intent, context.message.id.traceId, {
             credentialIssuer: this.dependencies.credentialIssuer,
             mutationService: this.dependencies.mutationService,
             nowEpochMs: this.dependencies.nowEpochMs

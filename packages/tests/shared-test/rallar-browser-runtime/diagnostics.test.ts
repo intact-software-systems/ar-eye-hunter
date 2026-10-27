@@ -726,7 +726,7 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
         }
     });
     onTestFinished(() => inbound.dispose());
-    const ack = newALAckControlMessage({ v: 3, msgId: 'received-upward-17', senderId: 'relay', ts: 12 }, {
+    const ack = newALAckControlMessage({ v: 4, msgId: 'received-upward-17', senderId: 'relay', ts: 12, traceId: 'trace-diagnostics' }, {
         ackedMsgId: 'shot-4',
         originPeerId: 'origin',
         logicalRecipientPeerId: 'director',

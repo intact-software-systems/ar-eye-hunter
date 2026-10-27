@@ -139,7 +139,8 @@ Deno.test('admin prune successor outbox rejects an identical active identity', a
                 pageIndex: 1,
                 appData: null
             },
-            'server-1'
+            'server-1',
+            'trace-admin-prune-pages'
         );
         const outboxWrite = computeAppOutboxInsert(entry);
         await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write(entry);

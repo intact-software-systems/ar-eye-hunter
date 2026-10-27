@@ -409,6 +409,7 @@ class StateCacheRuntime {
     receiveSnapshotMessage = async (snapshot: GroupSnapshot): Promise<void> => {
         const createdAtEpochMs = Date.now();
         const entries = computeGroupStateSyncEntries({
+            traceId: 'trace-group-state-delta-reconciliation',
             commandId: `snapshot-${snapshot.group.groupId}`,
             aggregateRef: snapshot.group,
             acceptedCausalRevision: snapshot.causalRevision,

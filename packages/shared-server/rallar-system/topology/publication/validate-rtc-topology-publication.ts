@@ -1,5 +1,6 @@
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import {
     toRtcTopologyPublicationId
@@ -12,7 +13,7 @@ export function validateRtcTopologyPublication(
     value: unknown,
     expectedRef: GroupRef
 ): asserts value is RtcTopologyPublication {
-    const publication = record(value, 'RTC topology publication');
+    const publication = decodePublicationRecord(value, 'RTC topology publication');
     exactKeys(publication, [
         'publicationId',
         'workId',
@@ -23,11 +24,15 @@ export function validateRtcTopologyPublication(
         'recipientSessionIds',
         'snapshot',
         'expiresAtEpochMs',
-        'createdAtEpochMs'
+        'createdAtEpochMs',
+        'traceId'
     ]);
-    validateExactGroupRef(publication.groupRef, expectedRef);
+    assertExactGroupRef(publication.groupRef, expectedRef);
     nonEmptyString(publication.publicationId, 'publication id');
     nonEmptyString(publication.workId, 'work id');
+    if (typeof publication.traceId !== 'string' || validateALTraceId(publication.traceId).length > 0) {
+        throw new TypeError('RTC topology publication trace is invalid');
+    }
     const overlayVersion = publication.overlayVersion;
     const targetGroupSnapshotVersion = publication.targetGroupSnapshotVersion;
     const createdAtEpochMs = publication.createdAtEpochMs;
@@ -67,8 +72,8 @@ export function validateRtcTopologyPublication(
     }
 }
 
-function validateExactGroupRef(value: unknown, expected: GroupRef): void {
-    const ref = record(value, 'RTC topology publication group ref');
+function assertExactGroupRef(value: unknown, expected: GroupRef): asserts value is GroupRef {
+    const ref = decodePublicationRecord(value, 'RTC topology publication group ref');
     exactKeys(ref, ['applicationId', 'workspaceId', 'groupId']);
     nonEmptyString(ref.applicationId, 'group application id');
     nonEmptyString(ref.workspaceId, 'group workspace id');
@@ -84,15 +89,15 @@ function sameGroupRef(left: GroupRef, right: GroupRef): boolean {
         left.groupId === right.groupId;
 }
 
-function record(value: unknown, label: string): Record<string, unknown> {
+function decodePublicationRecord(value: unknown, label: string): JsonWireObject {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} is invalid`);
     }
-    return value as Record<string, unknown>;
+    return value as JsonWireObject;
 }
 
 function exactKeys(
-    value: Record<string, unknown>,
+    value: JsonWireObject,
     expected: readonly string[]
 ): void {
     const keys = Object.keys(value).sort();
@@ -121,7 +126,7 @@ function safeInteger(
 function causalRevision(
     value: unknown
 ): asserts value is GroupStateCausalRevision {
-    const revision = record(value, 'RTC topology source causal revision');
+    const revision = decodePublicationRecord(value, 'RTC topology source causal revision');
     exactKeys(revision, ['groupRevision', 'presenceRevision']);
     safeInteger(revision.groupRevision, 0, 'source group revision');
     safeInteger(revision.presenceRevision, 0, 'source presence revision');

@@ -29,7 +29,15 @@ describe('listing changes under optimistic concurrency', () => {
             sessionId: null,
             request: { requestId: 'hide-room', directoryListing: 'unlisted', actorPrincipalId: 'owner' }
         }, harness.sessions.owner);
-        const command = { ...ingress, facts: toGroupMutationAttemptFacts(ingress.facts, 1, harness.nowEpochMs) };
+        const command = {
+            ...ingress,
+            facts: toGroupMutationAttemptFacts({
+                ingressFacts: ingress.facts,
+                attemptCount: 1,
+                laneNowEpochMs: harness.nowEpochMs,
+                traceId: 'trace-group-directory-listing-concurrency'
+            })
+        };
         const read = await service.read(command);
         const computed = service.compute(command, read);
         expect(service.validate(command, read, computed)).toEqual([]);
@@ -45,7 +53,15 @@ describe('listing changes under optimistic concurrency', () => {
         expect(await harness.repository.readSnapshot(ROOM_REF)).toEqual(committed);
         expect(harness.database.outboxEntries.size).toBe(outboxCount);
 
-        const retry = { ...command, facts: toGroupMutationAttemptFacts(ingress.facts, 2, harness.nowEpochMs) };
+        const retry = {
+            ...command,
+            facts: toGroupMutationAttemptFacts({
+                ingressFacts: ingress.facts,
+                attemptCount: 2,
+                laneNowEpochMs: harness.nowEpochMs,
+                traceId: 'trace-group-directory-listing-concurrency'
+            })
+        };
         const fresh = await service.read(retry);
         const rebased = service.compute(retry, fresh);
         expect(service.validate(retry, fresh, rebased)).toEqual([]);
@@ -71,7 +87,7 @@ describe('listing changes under optimistic concurrency', () => {
             request: { requestId: 'quick-join-race', includeEmpty: true }
         }, harness.sessions.guest);
         const ingress = encodeJsonWireValue(await service.capture(command, harness.sessions.guest), 'Quick Join');
-        const read = await service.read(ingress, 1);
+        const read = await service.read(ingress, 1, 'trace-group-directory-listing-concurrency');
         const computed = service.compute(read);
         expect(service.validate(read, computed)).toEqual([]);
         expect(computed.result.status).toBe('joined');
@@ -83,7 +99,7 @@ describe('listing changes under optimistic concurrency', () => {
             .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(await harness.repository.readSnapshot(ROOM_REF)).toEqual(committed);
         expect(harness.database.outboxEntries.size).toBe(outboxCount);
-        const fresh = await service.read(ingress, 2);
+        const fresh = await service.read(ingress, 2, 'trace-group-directory-listing-concurrency');
         const rebased = service.compute(fresh);
 
         expect(service.validate(fresh, rebased)).toEqual([]);

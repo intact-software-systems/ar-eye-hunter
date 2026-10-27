@@ -485,7 +485,8 @@ function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: st
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot: snapshot,
         expiresAtEpochMs: 10000,
-        createdAtEpochMs
+        createdAtEpochMs,
+        traceId: 'trace-rtc-topology-mutations'
     } as const;
 }
 

@@ -596,20 +596,24 @@ describe('API-v1 state-write recipe evidence', () => {
             category: AdminPruneCommand['categories'][number],
             overrides: Partial<AdminPrunePageWork> = {}
         ): OutboxRow => {
-            const entry = toAdminPruneOutbox({
-                kind: 'page',
-                jobId: adminCommand.jobId,
-                category,
-                requestedBy: adminCommand.requestedBy,
-                requestedSessionId: adminCommand.requestedSessionId,
-                capturedAtEpochMs: adminCommand.capturedAtEpochMs,
-                expireAtEpochMs: adminCommand.expireAtEpochMs,
-                pageSize: adminCommand.pageSize,
-                afterCursor: null,
-                pageIndex: 0,
-                appData: category === 'app-data' ? adminCommand.appData : null,
-                ...overrides
-            }, 'server-1');
+            const entry = toAdminPruneOutbox(
+                {
+                    kind: 'page',
+                    jobId: adminCommand.jobId,
+                    category,
+                    requestedBy: adminCommand.requestedBy,
+                    requestedSessionId: adminCommand.requestedSessionId,
+                    capturedAtEpochMs: adminCommand.capturedAtEpochMs,
+                    expireAtEpochMs: adminCommand.expireAtEpochMs,
+                    pageSize: adminCommand.pageSize,
+                    afterCursor: null,
+                    pageIndex: 0,
+                    appData: category === 'app-data' ? adminCommand.appData : null,
+                    ...overrides
+                },
+                'server-1',
+                'trace-state-write-recipe-evidence'
+            );
             return {
                 ri_resource_id: entry.key.resourceId,
                 ri_topic_id: entry.key.topicId,

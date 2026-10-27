@@ -46,7 +46,7 @@ import {
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
 const message: ALMessage = {
-    id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000 },
+    id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000, traceId: 'trace-al-inbound-control-admission' },
     route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
     ordering: { orderingKey: 'chat', seq: 2 },
     payload: { typeId: 'chat', resource: '{"text":"hello"}' }
@@ -148,7 +148,7 @@ async function seedPendingAcknowledgement(
 
 function createAcknowledgement(fromPeerId: string, originPeerId: string = message.id.senderId): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+        { v: 4, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-al-inbound-control-admission' },
         {
             ackedMsgId: message.id.msgId,
             originPeerId,
@@ -353,6 +353,7 @@ describe('inbound control admission', () => {
         });
         // The lower relay already completed its hop; the direct leaf completes the subtree.
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: toAck('leaf', 'leaf'),
             controlOwners: TRACKED_CONTROL_OWNERS,
@@ -428,6 +429,7 @@ describe('inbound control admission', () => {
         });
         const readWith = (ack: ALAckPayload) =>
             computeALInboundControlAdmission({
+                traceId: 'trace-al-inbound-control-admission',
                 namespace: 'inbound',
                 ack,
                 controlOwners: TRACKED_CONTROL_OWNERS,
@@ -458,6 +460,7 @@ describe('inbound control admission', () => {
     it('names itself in its terminal ACK, after the recipients it relays', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
@@ -501,6 +504,7 @@ describe('inbound control admission', () => {
     it('re-originates the origin from its own message-owner row, never from what a child claimed', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
@@ -545,6 +549,7 @@ describe('inbound control admission', () => {
     it('reports every reason one acknowledgement candidate is inadmissible', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
@@ -629,6 +634,7 @@ function admitRelayAcknowledgements(
     const completedAfter: boolean[] = [];
     for (const [index, ack] of arrivals.entries()) {
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: { ...ack, toPeerId: row.selfPeerId },
             controlOwners: TRACKED_CONTROL_OWNERS,

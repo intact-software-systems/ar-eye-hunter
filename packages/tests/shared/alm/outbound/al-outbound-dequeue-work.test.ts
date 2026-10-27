@@ -1177,7 +1177,7 @@ async function writeCorruptSentMessage(stores: OutboundTestStores, msgId: string
 function createDequeuedReceipt(): ALMessage {
     return {
         ...newALReceiptControlMessage(
-            { v: 3, msgId: 'dequeued-receipt', senderId: 'server', ts: Date.now() },
+            { v: 4, msgId: 'dequeued-receipt', senderId: 'server', ts: Date.now(), traceId: 'trace-al-outbound-dequeue-work' },
             {
                 msgId: 'subject',
                 originPeerId: 'origin',

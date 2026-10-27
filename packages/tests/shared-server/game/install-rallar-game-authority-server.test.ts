@@ -831,10 +831,11 @@ function toWireValue(value: JsonWireValue | object): JsonWireValue {
 function toTestALMessage(typeId: string, payload: JsonWireValue): ALMessage {
     return {
         id: {
-            v: 3,
+            v: 4,
             msgId: `test-${typeId}`,
             ts: 1_000,
-            senderId: 'peer-a'
+            senderId: 'peer-a',
+            traceId: 'trace-install-rallar-game-authority-server'
         },
         route: {
             topicId: 'game.authority',

@@ -202,7 +202,7 @@ function createRetryEntry(attempts: number): ResourceEntry {
         appData: null
     };
     return {
-        ...toAdminPruneOutbox(work, 'server-1'),
+        ...toAdminPruneOutbox(work, 'server-1', 'trace-admin-prune-retry-lifetime'),
         status: EntityStatus.RESERVED,
         dequeueAudit: {
             startTs: Temporal.Instant.fromEpochMilliseconds(NOW),
@@ -213,6 +213,7 @@ function createRetryEntry(attempts: number): ResourceEntry {
 
 function createReservedCommand(): ReservedAdminPrunePageWork {
     return {
+        traceId: 'trace-admin-prune-retry-lifetime',
         kind: 'page',
         jobId: 'job-1',
         category: 'runtime-state',

@@ -703,7 +703,7 @@ async function readMessageWork(input: ReadMessageWorkInput): Promise<ALPersisted
 
 function createOrderedMessage(sequence: number): ALMessage {
     return {
-        id: { v: 3, msgId: `message-${sequence}`, senderId: 'sender', ts: Date.now() },
+        id: { v: 4, msgId: `message-${sequence}`, senderId: 'sender', ts: Date.now(), traceId: 'trace-al-inbound-queue-work' },
         route: { topicId: 'ordered-chat', resourceId: `message-${sequence}`, contextId: 'room' },
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         ordering: { orderingKey: 'ordered-chat', seq: sequence },

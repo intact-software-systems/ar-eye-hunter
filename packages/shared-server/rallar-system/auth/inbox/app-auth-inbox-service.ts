@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { AL_MESSAGE_ENVELOPE_VERSION, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type {
     AgentSessionTicketResponse,
     AuthSession,
@@ -558,7 +559,7 @@ export class AppAuthInboxService {
                 contextId: reservation.contextId,
                 senderId: reservation.senderId,
                 data: null
-            }, { observedAtMs, messageId: this.newAuthMessageId() });
+            }, { observedAtMs, messageId: this.newAuthMessageId(), traceId: newALTraceId() });
             const observations = await this.authInboxRepository.findAllByTopicAndResourceId(
                 placeholder.key.topicId,
                 placeholder.key.resourceId
@@ -598,7 +599,8 @@ export class AppAuthInboxService {
     ): Promise<AuthIntentReservation> {
         const candidate = toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())), {
             observedAtMs,
-            messageId: this.newAuthMessageId()
+            messageId: this.newAuthMessageId(),
+            traceId: newALTraceId()
         });
         const entry = await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
             placeholder,
@@ -659,6 +661,7 @@ function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput {
 interface AuthInboxEntryFacts {
     readonly observedAtMs: number;
     readonly messageId: string;
+    readonly traceId: string;
 }
 
 function toAuthInboxEntry(enqueue: AppInboxEnqueueInput, facts: AuthInboxEntryFacts): ResourceEntry {
@@ -672,7 +675,13 @@ function toAuthInboxEntry(enqueue: AppInboxEnqueueInput, facts: AuthInboxEntryFa
     });
     const createdBy = toAppQueueCreatedBy('auth-fact-reservation');
     const message: ALMessage = {
-        id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: facts.messageId, ts: facts.observedAtMs, senderId: createdBy },
+        id: {
+            v: AL_MESSAGE_ENVELOPE_VERSION,
+            msgId: facts.messageId,
+            ts: facts.observedAtMs,
+            senderId: createdBy,
+            traceId: facts.traceId
+        },
         route: newALRoute(key.topicId, key.contextId, key.resourceId),
         payload: { typeId: enqueue.type, contentType: 'application/json', resource: JSON.stringify(enqueue) },
         audit: { createdBy, createdTs: facts.observedAtMs }

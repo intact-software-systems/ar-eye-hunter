@@ -958,10 +958,11 @@ function createContext<Result>(
         enqueue,
         message: {
             id: {
-                v: 3,
+                v: 4,
                 msgId: resourceId,
                 ts: NOW_EPOCH_MS,
-                senderId: enqueue.senderId ?? SERVICE_ID
+                senderId: enqueue.senderId ?? SERVICE_ID,
+                traceId: 'trace-client-state-inbox-handler'
             },
             route: { ...entry.key },
             payload: {

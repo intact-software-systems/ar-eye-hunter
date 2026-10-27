@@ -250,7 +250,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "addressed-to-bob-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -336,10 +336,11 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "ack-addressed-to-bob-{runId}",
             "ts": 0,
-            "senderId": "{bobSessionId}"
+            "senderId": "{bobSessionId}",
+            "traceId": "trace-api-v1-websocket-addressed-sends"
           },
           "route": {
             "topicId": "al-control",
@@ -410,7 +411,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "addressed-to-outsider-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -473,7 +474,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "addressed-to-server-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -685,7 +686,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "addressed-from-elsewhere-{runId}",
             "ts": 0,
             "senderId": "{aliceElsewhereSessionId}",

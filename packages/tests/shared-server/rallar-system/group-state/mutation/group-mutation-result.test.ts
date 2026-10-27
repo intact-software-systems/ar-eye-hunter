@@ -16,6 +16,7 @@ import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-syst
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type {
     AuditStamp,
     GroupPresenceAdmission,
@@ -154,6 +155,19 @@ describe('group mutation receipt causal invariants', () => {
     });
 
     describe('computed group mutation validation', () => {
+        it('stamps every outbox envelope with the trace of the queued command', () => {
+            const facts = createMutationFacts();
+            const computed = computeGroupMutation({ command: createMutationCommand(), read: createMutationRead(), facts });
+            if (computed.outcome !== 'write') {
+                throw new Error('Expected group write computation');
+            }
+
+            expect(computed.outboxWrites.length).toBeGreaterThan(0);
+            for (const write of computed.outboxWrites) {
+                expect(decodePersistedALMessage(write.entry.resource).id.traceId).toBe(facts.traceId);
+            }
+        });
+
         it('accepts a semantic no-op after physical authority fences advance storage', () => {
             const command = createMutationCommand();
             const read = createMutationRead();
@@ -267,7 +281,8 @@ describe('group mutation receipt causal invariants', () => {
                             acceptedCausalRevision: computed.receipt.causalRevision,
                             event: sessionEvent
                         },
-                        facts.serviceId
+                        facts.serviceId,
+                        'trace-group-mutation-result'
                     ))
                 ]
             };
@@ -405,6 +420,7 @@ function createMutationRead(): GroupMutationRead {
 
 function createMutationFacts(): GroupMutationFacts {
     return {
+        traceId: 'trace-group-mutation-result',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

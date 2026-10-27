@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
@@ -43,6 +44,7 @@ describe('GroupTopologyReconfigureMutation', () => {
             },
             publish: true
         });
+        expect(decodePersistedALMessage(computed.outboxWrite.entry.resource).id.traceId).toBe(command.traceId);
         expect(mutation.validate(command, read, computed)).toEqual([]);
     });
 
@@ -212,7 +214,8 @@ function createCommand() {
         actorPrincipalId: 'owner',
         capturedAtEpochMs: 1_000,
         requestOptions: { degreeLimit: 7 },
-        publish: true
+        publish: true,
+        traceId: 'trace-group-topology-reconfigure-mutation'
     } as const;
 }
 

@@ -547,7 +547,8 @@ function toClientMutationPersistedFacts(
         }`,
         attemptCount: context.entry.dequeueAudit.attempts,
         expireAtEpochMs: context.message.id.ts + dependencies.finishedRetentionMs,
-        disconnectedSessionRetentionMs: dependencies.disconnectedSessionRetentionMs
+        disconnectedSessionRetentionMs: dependencies.disconnectedSessionRetentionMs,
+        traceId: context.message.id.traceId
     };
 }
 

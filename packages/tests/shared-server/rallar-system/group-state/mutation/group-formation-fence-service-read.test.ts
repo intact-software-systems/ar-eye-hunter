@@ -92,7 +92,7 @@ async function createFenceReadHarness(options: FenceReadHarnessOptions = {}): Pr
             authorityProof: null,
             descriptor: null,
             command: ingress.command,
-            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
+            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId: 'trace-group-formation-fence-service-read' }
         };
     };
     return { service, readRefs, acceptedReadRefs, captureIngress };

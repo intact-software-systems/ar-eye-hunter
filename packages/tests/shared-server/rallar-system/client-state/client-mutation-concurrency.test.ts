@@ -77,6 +77,7 @@ describe('client mutation stable-read concurrency', () => {
         const command = toClientMutationCommand(
             toExpireClientSessionMutationInput(toClientSessionExpiryCandidate(session)),
             {
+                traceId: 'trace-client-mutation-concurrency',
                 nowEpochMs: session.expiresAtEpochMs,
                 serviceId: 'client-service',
                 eventId: 'stable-client-read-event',

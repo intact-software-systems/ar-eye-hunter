@@ -338,7 +338,7 @@ describe('canonical outbound payload storage', () => {
         const original = createOutboundMessage('identity');
         const message = {
             ...original,
-            id: { ...original.id, senderId: 'sender/'.repeat(30), msgId: 'message/'.repeat(30), sessionId: 'session/'.repeat(30), traceId: 'trace/'.repeat(30) }
+            id: { ...original.id, senderId: 'sender/'.repeat(30), msgId: 'message/'.repeat(30), sessionId: 'session/'.repeat(30), traceId: 'trace-'.repeat(21) }
         };
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({

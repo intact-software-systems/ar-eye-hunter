@@ -33,10 +33,16 @@ export interface GroupTopologyConfigMutationAttemptRead {
     readonly finishedRetentionMs: number;
 }
 
+/** What one attempt of the queued command adds to its read: its count and the trace of its envelope. */
+export interface GroupTopologyConfigMutationAttempt {
+    readonly attemptCount: number;
+    readonly traceId: string;
+}
+
 export interface GroupTopologyConfigMutationValidation {
     readonly command: mutationContracts.GroupTopologyConfigMutationCommand;
     readonly read: GroupTopologyConfigMutationAttemptRead;
-    readonly attemptCount: number;
+    readonly attempt: GroupTopologyConfigMutationAttempt;
     readonly computed: mutationContracts.GroupTopologyConfigMutationComputed;
 }
 
@@ -68,7 +74,7 @@ export class GroupTopologyConfigMutationService {
     compute(
         command: mutationContracts.GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number
+        attempt: GroupTopologyConfigMutationAttempt
     ): mutationContracts.GroupTopologyConfigMutationComputed {
         const idempotency = probeTopologyConfigMutationIdempotency(
             command,
@@ -81,7 +87,7 @@ export class GroupTopologyConfigMutationService {
         return computeTopologyConfigMutation({
             command,
             read: read.state,
-            facts: toTopologyConfigMutationFacts(command, read, attemptCount),
+            facts: toTopologyConfigMutationFacts(command, read, attempt),
             serverDefaults: read.serverDefaults
         });
     }
@@ -89,8 +95,8 @@ export class GroupTopologyConfigMutationService {
     validate(
         validation: GroupTopologyConfigMutationValidation
     ): readonly mutationContracts.TopologyConfigMutationValidationIssue[] {
-        const { command, read, attemptCount } = validation;
-        const facts = toTopologyConfigMutationFacts(command, read, attemptCount);
+        const { command, read, attempt } = validation;
+        const facts = toTopologyConfigMutationFacts(command, read, attempt);
         return [
             ...validateTopologyConfigMutationPolicy(command, read.state, facts),
             ...validateTopologyConfigMutation({
@@ -122,7 +128,7 @@ export class GroupTopologyConfigMutationService {
 function toTopologyConfigMutationFacts(
     command: mutationContracts.GroupTopologyConfigMutationCommand,
     read: GroupTopologyConfigMutationAttemptRead,
-    attemptCount: number
+    attempt: GroupTopologyConfigMutationAttempt
 ): mutationContracts.GroupTopologyConfigMutationFacts {
     return {
         resolvedOverrideExpiresAtEpochMs: command.operation === 'putOverride'
@@ -134,7 +140,8 @@ function toTopologyConfigMutationFacts(
             : null,
         isPlatformAdmin: read.isPlatformAdmin,
         policyNowEpochMs: read.policyNowEpochMs,
-        attemptCount,
-        expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs
+        attemptCount: attempt.attemptCount,
+        expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs,
+        traceId: attempt.traceId
     };
 }

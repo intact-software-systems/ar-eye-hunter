@@ -22,7 +22,7 @@ import {
 
 function createAck(sequence: number) {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${sequence}`, senderId: 'a', ts: Date.now() },
+        { v: 4, msgId: `ack-${sequence}`, senderId: 'a', ts: Date.now(), traceId: 'trace-rtc-enqueue-protection' },
         {
             ackedMsgId: `subject-${sequence}`,
             fromPeerId: 'a',

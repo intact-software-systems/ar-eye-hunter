@@ -52,6 +52,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
             const atEpochMs = Date.now();
             const entries = ['first', 'second'].map((name, index) =>
                 computeRtcTopologyOutboxInsert({
+                    traceId: 'trace-topology-app-outbox-concurrency',
                     commandId: `${applicationId}-${name}`,
                     aggregateRef: groupRef,
                     acceptedCausalRevision: groupSnapshot.causalRevision,

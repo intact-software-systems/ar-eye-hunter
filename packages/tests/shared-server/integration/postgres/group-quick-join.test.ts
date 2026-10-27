@@ -103,7 +103,7 @@ describe('Postgres Quick Join contention', () => {
             await first.hold.arrived;
             const entry = await readQuickJoinEntry(first, requestId);
             const service = first.runtime.group.groupStateService.quickJoin;
-            const computed = service.compute(await service.read(decodePersistedAppInboxEnqueue(entry).authority, 1));
+            const computed = service.compute(await service.read(decodePersistedAppInboxEnqueue(entry).authority, 1, 'trace-group-quick-join'));
             if (computed.mutation === null || computed.mutation.outboxWrites.length === 0) {
                 throw new Error('Expected a selected membership write and final outbox');
             }

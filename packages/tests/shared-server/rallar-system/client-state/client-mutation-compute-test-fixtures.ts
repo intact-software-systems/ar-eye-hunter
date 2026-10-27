@@ -192,6 +192,7 @@ export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOpe
             identityDefaults: { platform: connection.platform, principalUsername: authSession.username }
         }),
         {
+            traceId: 'trace-client-mutation-compute-test-fixtures',
             nowEpochMs: 1_000,
             serviceId: 'client-service',
             eventId: `event:${requestId}`,
@@ -353,6 +354,7 @@ function command(
     return toClientMutationCommand(
         input,
         {
+            traceId: 'trace-client-mutation-compute-test-fixtures',
             nowEpochMs,
             serviceId: 'client-service',
             eventId: `event:${input.commandId}`,

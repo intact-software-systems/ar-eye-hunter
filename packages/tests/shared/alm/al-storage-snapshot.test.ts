@@ -70,14 +70,17 @@ const WORKLOAD = {
  * `revision` field, which the per-row fence compares in place of the deleted store-global scalar.
  *
  * S3a: these are the durable opt-in's figures; the volatile default adds 0 rows.
+ *
+ * I1b-i moved every topic for one reason: each envelope, and so each row that retains one, carries a required
+ * 36-character `id.traceId`.
  */
 const EXPECTED_BYTES_BY_TOPIC = {
-    AL_OUTBOUND: 1_813_460,
-    AL_OUTBOUND_MESSAGE: 1_743_590,
-    AL_ADMISSION: 104_300,
-    AL_OUTBOUND_IDENTITY: 69_760
+    AL_OUTBOUND: 1_820_740,
+    AL_OUTBOUND_MESSAGE: 1_746_530,
+    AL_ADMISSION: 106_900,
+    AL_OUTBOUND_IDENTITY: 71_770
 } as const;
-const EXPECTED_TOTAL_BYTES = 3_728_380;
+const EXPECTED_TOTAL_BYTES = 3_745_940;
 const BYTES_TOLERANCE = 0.02;
 
 /**
@@ -86,12 +89,15 @@ const BYTES_TOLERANCE = 0.02;
  * rather than at a provenance lifetime of its own, so a change to either must move these figures.
  *
  * S3a: these are the durable opt-in's figures; the volatile default adds 0 rows.
+ *
+ * I1b-i moved every topic for one reason: each envelope, and so each row that retains one, carries a required
+ * 36-character `id.traceId`.
  */
 const EXPECTED_INBOUND_BYTES_BY_TOPIC = {
-    AL_ADMISSION: 1_764_355,
-    AL_INBOUND: 61_512
+    AL_ADMISSION: 1_776_010,
+    AL_INBOUND: 61_740
 } as const;
-const EXPECTED_INBOUND_TOTAL_BYTES = 1_825_867;
+const EXPECTED_INBOUND_TOTAL_BYTES = 1_837_750;
 
 const SNAPSHOT_PATH = 'tmp/perf/alm-storage-snapshot.json';
 const DB_NAME = 'rallar-alm-storage-snapshot';

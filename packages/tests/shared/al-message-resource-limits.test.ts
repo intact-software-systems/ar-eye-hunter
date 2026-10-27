@@ -298,7 +298,7 @@ describe('AL envelope resource limits', () => {
 
 function messageFixture(): ALMessage {
     return {
-        id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'sender-1' },
+        id: { v: 4, msgId: 'message-1', ts: 1, senderId: 'sender-1', traceId: 'trace-al-message-resource-limits' },
         route: { topicId: 'app.message', contextId: 'context-1', resourceId: 'resource-1' },
         targets: { mode: 'unicast', toPeerId: 'receiver-1' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }

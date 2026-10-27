@@ -404,7 +404,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "live-only-cluster-broadcast-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -517,10 +517,11 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "ack-live-only-cluster-broadcast-{runId}",
             "ts": 0,
-            "senderId": "{bobSessionId}"
+            "senderId": "{bobSessionId}",
+            "traceId": "trace-api-v1-websocket-live-only-cluster"
           },
           "route": {
             "topicId": "al-control",

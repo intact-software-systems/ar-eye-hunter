@@ -272,7 +272,7 @@ function roomUnicast(input: RoomUnicastInput): ALMessage {
     const { msgId, toPeerId, ack, qos } = input;
     const nowMs = Date.now();
     return {
-        id: { v: 3, msgId, ts: nowMs, senderId: 'a' },
+        id: { v: 4, msgId, ts: nowMs, senderId: 'a', traceId: 'trace-ws-queue-box-server-addressed-receipts' },
         route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + 30_000 },
@@ -284,7 +284,7 @@ function roomUnicast(input: RoomUnicastInput): ALMessage {
 
 function addresseeAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-addressed-receipts' },
         {
             ackedMsgId,
             fromPeerId: recipient,

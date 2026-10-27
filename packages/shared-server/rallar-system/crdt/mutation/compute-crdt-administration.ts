@@ -22,17 +22,18 @@ export interface ComputeCrdtAdministrationInput {
     readonly command: CrdtMutationCommand;
     readonly read: CrdtMutationRead;
     readonly serviceId: string;
+    readonly traceId: string;
 }
 
 export function computeCrdtProjectionRebuild(
     input: ComputeCrdtAdministrationInput
 ): CrdtMutationComputed {
-    const { command, read, serviceId } = input;
+    const { command, read, serviceId, traceId } = input;
     if (command.operation !== 'rebuild-projection') {
         throw new TypeError('CRDT projection rebuild computation requires a rebuild command');
     }
     if (!read.document) {
-        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
+        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId, traceId });
     }
     const sourceIntegrity = verifyRallarCrdtDebugBundle(
         createRallarCrdtDebugBundle({
@@ -45,7 +46,7 @@ export function computeCrdtProjectionRebuild(
         })
     );
     if (!sourceIntegrity.valid) {
-        return computeCrdtRejectedOutcome({ command, read, code: 'integrity-invalid', serviceId });
+        return computeCrdtRejectedOutcome({ command, read, code: 'integrity-invalid', serviceId, traceId });
     }
     const document: RallarCrdtDocumentMetadata = {
         ...read.document,
@@ -58,19 +59,20 @@ export function computeCrdtProjectionRebuild(
         read,
         document,
         snapshot: null,
-        serviceId
+        serviceId,
+        traceId
     });
 }
 
 export function computeCrdtSnapshotCompact(
     input: ComputeCrdtAdministrationInput
 ): CrdtMutationComputed {
-    const { command, read, serviceId } = input;
+    const { command, read, serviceId, traceId } = input;
     if (command.operation !== 'compact') {
         throw new TypeError('CRDT snapshot compaction requires a compact command');
     }
     if (!read.document) {
-        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
+        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId, traceId });
     }
     const document: RallarCrdtDocumentMetadata = {
         ...read.document,
@@ -96,26 +98,27 @@ export function computeCrdtSnapshotCompact(
                     byteLengthOfRallarCrdtJson(snapshot) >
             read.document.quota.maxDocumentBytes
     ) {
-        return computeCrdtRejectedOutcome({ command, read, code: 'quota-exceeded', serviceId });
+        return computeCrdtRejectedOutcome({ command, read, code: 'quota-exceeded', serviceId, traceId });
     }
     return computeCrdtAcceptedAdministrationOutcome({
         command,
         read,
         document,
         snapshot,
-        serviceId
+        serviceId,
+        traceId
     });
 }
 
 export function computeCrdtLifecycleUpdate(
     input: ComputeCrdtAdministrationInput
 ): CrdtMutationComputed {
-    const { command, read, serviceId } = input;
+    const { command, read, serviceId, traceId } = input;
     if (command.operation !== 'lifecycle') {
         throw new TypeError('CRDT lifecycle computation requires a lifecycle command');
     }
     if (!read.document) {
-        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
+        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId, traceId });
     }
     const document: RallarCrdtDocumentMetadata = {
         ...read.document,
@@ -141,17 +144,18 @@ export function computeCrdtLifecycleUpdate(
         read,
         document,
         snapshot: null,
-        serviceId
+        serviceId,
+        traceId
     });
 }
 
 export function computeCrdtErase(input: ComputeCrdtAdministrationInput): CrdtMutationComputed {
-    const { command, read, serviceId } = input;
+    const { command, read, serviceId, traceId } = input;
     if (command.operation !== 'erase') {
         throw new TypeError('CRDT erase computation requires an erase command');
     }
     if (!read.document) {
-        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId });
+        return computeCrdtRejectedOutcome({ command, read, code: 'document-not-found', serviceId, traceId });
     }
     const document: RallarCrdtDocumentMetadata = {
         ...read.document,
@@ -167,7 +171,8 @@ export function computeCrdtErase(input: ComputeCrdtAdministrationInput): CrdtMut
         read,
         document,
         snapshot: null,
-        serviceId
+        serviceId,
+        traceId
     });
 }
 

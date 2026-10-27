@@ -109,9 +109,14 @@ export class GroupQuickJoinService {
         return { ...payload, authorityProof: await createGroupMutationAuthorityProof(session, payload) };
     }
 
-    async read(value: JsonWireValue | undefined, attemptCount: number): Promise<GroupQuickJoinRead> {
+    async read(value: JsonWireValue | undefined, attemptCount: number, traceId: string): Promise<GroupQuickJoinRead> {
         const ingress = decodeGroupQuickJoinIngress(value);
-        const facts = toGroupMutationAttemptFacts(ingress.facts, attemptCount, this.config.now());
+        const facts = toGroupMutationAttemptFacts({
+            ingressFacts: ingress.facts,
+            attemptCount,
+            laneNowEpochMs: this.config.now(),
+            traceId
+        });
         await this.verifyAuthority(ingress, facts.attemptAtEpochMs);
         const snapshots = await this.dependencies.repository.listSnapshots(ingress.command.scope);
         const candidates: GroupQuickJoinCandidate[] = [];

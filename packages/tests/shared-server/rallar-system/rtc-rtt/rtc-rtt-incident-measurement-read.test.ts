@@ -79,7 +79,8 @@ describe('RTC RTT submission read scope', () => {
             requestedAtEpochMs: NOW_EPOCH_MS,
             purgeAfterEpochMs: NOW_EPOCH_MS + 60_000,
             commandHash: RTT_COMMAND_HASH,
-            attemptCount: 1
+            attemptCount: 1,
+            traceId: 'trace-rtc-rtt-incident-measurement-read'
         };
         const globalRead: RtcRttMutationRead = {
             ...read,

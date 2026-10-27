@@ -134,7 +134,7 @@ Deno.test('a passive Relic producer admits new work and pending/completed replay
             await worker.groupsRepository.updateGroup({ ...stored.value, status: 'archived', archived, deleted: null }, stored.entry.revision);
             const retention = worker.groupStateService.retention;
             const ingress = retention.capture({ groupRef: ref, requestId: 'cold-delete', observedAtEpochMs: now });
-            const observed = await retention.read(ingress, 1);
+            const observed = await retention.read(ingress, 1, 'trace-create-relic-game-services');
             const computed = retention.compute(observed);
             assert.deepEqual(retention.validate(observed, computed), []);
             await database.begin((transaction) => retention.write(transaction, computed));
@@ -203,7 +203,10 @@ async function seedRoom(mutation: ApiV1MutationRuntime, now: number): Promise<vo
     });
     const service = mutation.groupStateService;
     const ingress = await service.captureMutationIngress(descriptor, owner);
-    const command = { ...ingress, facts: toGroupMutationAttemptFacts(ingress.facts, 1, now) };
+    const command = {
+        ...ingress,
+        facts: toGroupMutationAttemptFacts({ ingressFacts: ingress.facts, attemptCount: 1, laneNowEpochMs: now, traceId: 'trace-create-relic-game-services' })
+    };
     const read = await service.read(command);
     const computed = service.compute(command, read);
     assert.deepEqual(service.validate(command, read, computed), []);

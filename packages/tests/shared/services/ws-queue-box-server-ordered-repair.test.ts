@@ -276,7 +276,13 @@ function roundEvent(msgId: string): ALMessage {
 /** The receiver's NACK as its WS client sends it: addressed to the server, naming the server's track. */
 async function receiveNack(server: OrderedServer, input: NackInput): Promise<void> {
     const nack = newALNackControlMessage(
-        { v: 3, msgId: `nack-${input.msgId}-${input.fromPeerId}`, senderId: input.fromPeerId, ts: server.clock.nowMs },
+        {
+            v: 4,
+            msgId: `nack-${input.msgId}-${input.fromPeerId}`,
+            senderId: input.fromPeerId,
+            ts: server.clock.nowMs,
+            traceId: 'trace-ws-queue-box-server-ordered-repair'
+        },
         {
             msgId: input.msgId,
             fromPeerId: input.fromPeerId,
@@ -293,7 +299,7 @@ async function receiveNack(server: OrderedServer, input: NackInput): Promise<voi
 
 async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: string): Promise<void> {
     const ack = newALAckControlMessage(
-        { v: 3, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: server.clock.nowMs },
+        { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: server.clock.nowMs, traceId: 'trace-ws-queue-box-server-ordered-repair' },
         {
             ackedMsgId,
             fromPeerId: recipient,

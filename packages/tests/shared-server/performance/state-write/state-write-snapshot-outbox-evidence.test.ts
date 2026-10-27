@@ -152,6 +152,7 @@ function createOperationEntries(operation: 'profile' | 'instance', sessionCount:
     };
     const commandId = `${COMMAND.commandId}-${operation}`;
     return computeClientStateSyncEntries({
+        traceId: 'trace-state-write-snapshot-outbox-evidence',
         commandId,
         aggregateRef: snapshot.principal,
         acceptedCausalRevision: snapshot.stateRevision,

@@ -379,7 +379,7 @@ function installReceiptConflict(
 async function generateCompleteReceipt(service: WsQueueBoxServerService): Promise<void> {
     assert.equal((await service.acceptIncomingMessage(createReceiptSubject(), 'origin')).right?.kind, 'admitted');
     const ack = newALAckControlMessage(
-        { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: Date.now() },
+        { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: Date.now(), traceId: 'trace-full-stack-api-receipt-owner-fixture' },
         {
             ackedMsgId: 'subject',
             originPeerId: 'origin',
@@ -431,7 +431,7 @@ async function readCompetingReceiptBundle(store: ALOutboundAdmissionStore<WsQueu
 
 function createReceiptSubject(): ALMessage {
     return {
-        id: { v: 3, msgId: 'subject', senderId: 'origin', ts: Date.now() },
+        id: { v: 4, msgId: 'subject', senderId: 'origin', ts: Date.now(), traceId: 'trace-full-stack-api-receipt-owner-fixture' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { ...scope, groupId: 'room' } },
         constraints: { expiresAtMs: Date.now() + 30_000 },

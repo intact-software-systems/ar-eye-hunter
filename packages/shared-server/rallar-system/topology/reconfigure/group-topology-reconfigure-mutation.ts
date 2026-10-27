@@ -92,7 +92,8 @@ export class GroupTopologyReconfigureMutation {
             expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs,
             senderId: command.actorPrincipalId,
             requestOptions: toCanonicalGroupTopologyConfigPatch(command.requestOptions),
-            publish: command.publish
+            publish: command.publish,
+            traceId: command.traceId
         };
         return {
             ...outbox,

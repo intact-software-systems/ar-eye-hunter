@@ -170,7 +170,11 @@ async function expandBatch(
     });
     const commands = (await listEvents(runtime, groupId)).slice(seedEventCount).map(toSummaryCommand);
     const reads: readonly GroupPresenceSummaryWorkRead[] = (await work.read(
-        commands.map((command) => ({ work: command, reservation: summaryReservationRead(command.commandId) })),
+        commands.map((command) => ({
+            work: command,
+            reservation: summaryReservationRead(command.commandId),
+            traceId: 'trace-group-presence-summary-coalesced-slices'
+        })),
         BASE_EPOCH_MS + 10_000
     )).right ?? [];
     return commands.map((command, index) => {

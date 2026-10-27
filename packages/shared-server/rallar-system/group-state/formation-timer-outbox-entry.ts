@@ -56,6 +56,7 @@ export interface ComputeFormationTimerEntryInput {
     readonly senderId: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 export function computeFormationTimerEntry(input: ComputeFormationTimerEntryInput): ResourceEntry {
@@ -248,7 +249,8 @@ function timerEntry(
         },
         senderId: facts.serviceId,
         createdAtEpochMs: facts.nowEpochMs,
-        expireAtEpochMs: facts.expireAtEpochMs
+        expireAtEpochMs: facts.expireAtEpochMs,
+        traceId: facts.traceId
     });
 }
 
@@ -304,7 +306,8 @@ function toFormationTimerMessage({ input, work, key, createdBy }: FormationTimer
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: key.resourceId,
             ts: input.createdAtEpochMs,
-            senderId: createdBy
+            senderId: createdBy,
+            traceId: input.traceId
         },
         route: key,
         constraints: { expiresAtMs: input.expireAtEpochMs },

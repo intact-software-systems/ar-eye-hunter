@@ -238,7 +238,7 @@ const CANONICAL_SUMMARY_WORK: GroupPresenceSummaryWorkData = {
 };
 
 function createCanonicalReservation(): ReservedSummary {
-    const queued = computeGroupPresenceSummaryEntry(CANONICAL_SUMMARY_WORK, 'summary-handler');
+    const queued = computeGroupPresenceSummaryEntry(CANONICAL_SUMMARY_WORK, 'summary-handler', 'trace-group-presence-summary-work');
     const entry: ResourceEntry = {
         ...queued,
         status: EntityStatus.RESERVED,

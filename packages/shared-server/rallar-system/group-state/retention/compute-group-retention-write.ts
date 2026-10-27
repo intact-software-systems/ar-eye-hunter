@@ -43,15 +43,19 @@ export function computeGroupRetentionWrite(
         throw new TypeError('Retention write requires its observed group');
     }
     const event = toRetentionEvent(read, group);
-    const entry = computeGroupPresenceSummaryEntry({
-        effectKind: 'group-presence-summary',
-        aggregateRef: read.ingress.command.groupRef,
-        commandId: read.ingress.commandId,
-        createdAtEpochMs: event.occurredAtEpochMs,
-        expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-        acceptedCausalRevision: event.causalRevision,
-        event
-    }, read.ingress.serviceId);
+    const entry = computeGroupPresenceSummaryEntry(
+        {
+            effectKind: 'group-presence-summary',
+            aggregateRef: read.ingress.command.groupRef,
+            commandId: read.ingress.commandId,
+            createdAtEpochMs: event.occurredAtEpochMs,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
+            acceptedCausalRevision: event.causalRevision,
+            event
+        },
+        read.ingress.serviceId,
+        read.traceId
+    );
     const receipt = toGroupRetentionReceipt(read, {
         group,
         outcome: 'applied',

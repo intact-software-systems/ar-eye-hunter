@@ -9,6 +9,7 @@ export interface RtcOverlayTopologyMessageFacts {
     readonly workId: string;
     readonly createdAtEpochMs: number;
     readonly expiresAtEpochMs: number;
+    readonly traceId: string;
 }
 
 export interface RtcOverlayTopologyPublicationInput extends RtcOverlayTopologyMessageFacts {
@@ -33,7 +34,8 @@ export function materializeRtcOverlayTopologyMessages(input: RtcOverlayTopologyP
                 v: AL_MESSAGE_ENVELOPE_VERSION,
                 msgId: toRtcTopologyPublicationMessageId(input.workId),
                 ts: createdAtEpochMs,
-                senderId: 'rallar-server'
+                senderId: 'rallar-server',
+                traceId: input.traceId
             },
             route: toAppQueueKey({
                 topicId: AppTopics.overlayTopology,

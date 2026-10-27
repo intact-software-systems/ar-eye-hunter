@@ -1,4 +1,5 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -107,7 +108,8 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
                     planned: decision.currentSnapshot,
                     accepted: await this.#acceptedSnapshots.findSnapshot(entry.groupRef)
                 }) ?? decision.currentSnapshot,
-                databaseNowEpochMs
+                databaseNowEpochMs,
+                traceId: newALTraceId()
             })
             : decision.messages;
         throwIfAborted(signal);
@@ -145,6 +147,7 @@ interface CurrentRepairMessageInput {
     readonly entry: RtcTopologyDeliveryLogEntry;
     readonly currentSnapshot: RallarOverlayTopologySnapshot;
     readonly databaseNowEpochMs: number;
+    readonly traceId: string;
 }
 
 export function materializeRtcTopologyCurrentRepairMessages(
@@ -163,7 +166,8 @@ export function materializeRtcTopologyCurrentRepairMessages(
                 currentSnapshot.version
             ]),
             ts: databaseNowEpochMs,
-            senderId: 'rallar-server'
+            senderId: 'rallar-server',
+            traceId: input.traceId
         },
         route: toAppQueueKey({
             topicId: AppTopics.overlayTopology,

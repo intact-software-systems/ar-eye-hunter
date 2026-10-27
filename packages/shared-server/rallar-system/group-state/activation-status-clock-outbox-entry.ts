@@ -54,6 +54,7 @@ export interface ComputeActivationStatusClockEntryInput {
     readonly senderId: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 /**
@@ -114,7 +115,13 @@ function toActivationStatusClockMessage(
     { input, work, key, createdBy }: ToActivationStatusClockMessageInput
 ): ALMessage {
     return {
-        id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: key.resourceId, ts: input.createdAtEpochMs, senderId: createdBy },
+        id: {
+            v: AL_MESSAGE_ENVELOPE_VERSION,
+            msgId: key.resourceId,
+            ts: input.createdAtEpochMs,
+            senderId: createdBy,
+            traceId: input.traceId
+        },
         route: key,
         constraints: { expiresAtMs: input.expireAtEpochMs },
         ordering: { orderingKey: key.contextId, epoch: work.formationEpoch, seq: 0 },

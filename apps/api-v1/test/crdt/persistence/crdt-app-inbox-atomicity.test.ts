@@ -432,8 +432,8 @@ async function computeValidatedWrite(
     input: CrdtMutationCommand
 ): Promise<CrdtMutationComputedWrite> {
     const read = await service.read(input);
-    const computed = service.compute({ command: input, read });
-    assert.deepEqual(service.validate({ command: input, read, computed }), []);
+    const computed = service.compute({ traceId: 'trace-crdt-app-inbox-atomicity', command: input, read });
+    assert.deepEqual(service.validate({ traceId: 'trace-crdt-app-inbox-atomicity', command: input, read, computed }), []);
     assert.equal(computed.outcome, 'write');
     if (computed.outcome !== 'write') {
         throw new Error('Expected a CRDT write computation');
@@ -502,8 +502,8 @@ async function apply(
     input: CrdtMutationCommand
 ): Promise<void> {
     const read = await service.read(input);
-    const computed = service.compute({ command: input, read });
-    assert.deepEqual(service.validate({ command: input, read, computed }), []);
+    const computed = service.compute({ traceId: 'trace-crdt-app-inbox-atomicity', command: input, read });
+    assert.deepEqual(service.validate({ traceId: 'trace-crdt-app-inbox-atomicity', command: input, read, computed }), []);
     await sql.begin(async (transaction) => {
         await writePSqlCrdtMutation(transaction, computed);
     });

@@ -146,6 +146,7 @@ async function runRttRefresh(harness: HoldHarness, group: GroupSnapshot, version
     const resourceId = toRtcRttTopologyOutboxId(receiptId, group.group, `sha256:${'a'.repeat(64)}`);
     const atEpochMs = harness.readNowEpochMs();
     const entry = computeRtcTopologyOutboxInsert({
+        traceId: 'trace-topology-rtt-replan-hold',
         commandId: resourceId,
         aggregateRef: group.group,
         acceptedCausalRevision: group.causalRevision,

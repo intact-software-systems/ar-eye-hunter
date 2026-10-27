@@ -435,6 +435,12 @@ describe('client snapshot provenance computation', () => {
 
         // Every page build re-serializes the whole principal snapshot; one build per compute is the cost contract.
         expect(computeStateSnapshotPages).toHaveBeenCalledTimes(1);
+        // Every state-sync envelope the mutation publishes carries the trace of the queued command.
+        const outbox = computed.outcome === 'completed' && computed.mutation.outcome === 'write'
+            ? computed.mutation.outbox
+            : [];
+        expect(outbox.length).toBeGreaterThan(0);
+        expect(outbox.map(({ message }) => message.id.traceId)).toEqual(outbox.map(() => command.facts.traceId));
         const sidecarWrites = computed.outcome === 'completed' ? computed.sidecarWrites : [];
         expect(sidecarWrites.map((write) => ({
             resourceId: write.queueKey.resourceId,
@@ -444,21 +450,21 @@ describe('client snapshot provenance computation', () => {
             {
                 resourceId: '--snapshot-page--------3l3eod9ywabyf',
                 targetKind: 'scoped-principal-broadcast',
-                digest: '944b7465e368453a3792d4935a1766428c985c72a33cf03720a47a8f59471bec'
+                digest: 'acc57116dc3a576c049045a917585fcdc3d2358f586ce3db1d6989ba889c883a'
             },
             {
                 resourceId: '--snapshot-page--------24zodg2oyjb9e',
                 targetKind: 'scoped-unicast',
-                digest: 'd63bc9e0f1fffe4f06360c0a103ee7bfe4c457b1ab8044ddac761e7f2b570a26'
+                digest: '82a00e2cfb510f8c8e4f2ca59d37bd3387d7b5886f67d391305d1c76c12b8ab5'
             },
             {
                 resourceId: 'connect-1-principal-st-2r959tktplfmi',
                 targetKind: 'scoped-principal-broadcast',
-                digest: '62ce0a30664f70c5f7a92da4194dfae0827302125b008cb01cd518d11e586dd6'
+                digest: 'a77d1586179af57de54506cd68ab2e4d720fde0686439727a5184f8405a82a63'
             }
         ]);
         expect(createHash('sha256').update(JSON.stringify(sidecarWrites)).digest('hex'))
-            .toBe('3e06f98302c30781e81e570bb06be9125dc5ca281e1dbac54bed3c0914c05e11');
+            .toBe('955ef8ee1f93378c4d7744fe2cf45ea3e1d1b9592c13cdb2d784bd8ddb9708da');
     });
 });
 

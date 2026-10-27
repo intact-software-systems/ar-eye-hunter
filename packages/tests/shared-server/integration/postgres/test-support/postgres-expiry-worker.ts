@@ -322,6 +322,7 @@ async function runClientMutation(
     const command = toClientMutationCommand(
         commandInput,
         {
+            traceId: 'trace-postgres-expiry-worker',
             nowEpochMs: input.atEpochMs,
             serviceId: `postgres-state-worker-${Deno.pid}`,
             eventId: `postgres-client-event:${requestId}`,

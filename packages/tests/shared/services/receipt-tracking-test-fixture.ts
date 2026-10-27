@@ -71,7 +71,7 @@ export async function createReceiptTrackingFixture(
 
 export function roomMessage(): ALMessage {
     return {
-        id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'self' },
+        id: { v: 4, msgId: 'room-message-1', ts: Date.now(), senderId: 'self', traceId: 'trace-receipt-tracking-test-fixture' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -86,7 +86,7 @@ export function receiptMessage(
     input: ReceiptMessageInput = { msgId: 'room-message-1', expectedRecipientPeerIds: ['b', 'c'] }
 ): ALMessage {
     return newALReceiptControlMessage(
-        { v: 3, msgId: `receipt-${phase}`, senderId: 'server', ts: Date.now() },
+        { v: 4, msgId: `receipt-${phase}`, senderId: 'server', ts: Date.now(), traceId: 'trace-receipt-tracking-test-fixture' },
         {
             msgId: input.msgId,
             originPeerId: 'self',

@@ -57,7 +57,7 @@ describe('auth inbox mutation phase order', () => {
             expiredBySessionEntry: null
         };
         const command = (
-            await readAuthMutationAttempt(intent, {
+            await readAuthMutationAttempt(intent, 'trace-auth-inbox-phase-order', {
                 credentialIssuer: createCredentialIssuer([]),
                 mutationService: {
                     serviceId: 'auth-service',
@@ -330,7 +330,7 @@ function createContext(
     return {
         enqueue,
         message: {
-            id: { v: 3, msgId: entry.key.resourceId, ts: 1_000, senderId: 'auth-test-service' },
+            id: { v: 4, msgId: entry.key.resourceId, ts: 1_000, senderId: 'auth-test-service', traceId: 'trace-auth-inbox-phase-order' },
             route: { ...entry.key },
             payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
         },

@@ -69,7 +69,12 @@ export class GroupStateTestMutationExecutor {
             authorityProof: ingress.authorityProof,
             descriptor: ingress.descriptor,
             command: ingress.command,
-            facts: toGroupMutationAttemptFacts(ingress.facts, attemptCount, ingress.facts.nowEpochMs)
+            facts: toGroupMutationAttemptFacts({
+                ingressFacts: ingress.facts,
+                attemptCount: attemptCount,
+                laneNowEpochMs: ingress.facts.nowEpochMs,
+                traceId: 'trace-group-state-test-mutation-executor'
+            })
         };
         const read = await this.dependencies.durableService.read(command);
         const computed = this.dependencies.durableService.compute(command, read);
@@ -103,6 +108,7 @@ export class GroupStateTestMutationExecutor {
         );
         const { read } = await readGroupMutation(this.repository(), command, null);
         const facts: GroupMutationFacts = {
+            traceId: 'trace-group-state-test-mutation-executor',
             nowEpochMs: atEpochMs,
             attemptAtEpochMs: atEpochMs,
             expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,

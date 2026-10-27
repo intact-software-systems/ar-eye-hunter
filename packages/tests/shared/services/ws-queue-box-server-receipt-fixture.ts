@@ -145,7 +145,7 @@ export function createBridgeBus(): QueueBoxPubSubBridge {
 
 export function roomMessage(nowMs: number): ALMessage {
     return {
-        id: { v: 3, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
+        id: { v: 4, msgId: 'room-message-1', ts: nowMs, senderId: 'a', traceId: 'trace-ws-queue-box-server-receipt-fixture' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + ROOM_MESSAGE_LIFETIME_MS },

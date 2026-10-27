@@ -4,6 +4,7 @@ import { requireIssueSessionLifecycle } from '../../sessions/require-issue-sessi
 import type {
     AuthMutationCommand,
     AuthMutationDomainComputed,
+    AuthMutationFacts,
     AuthMutationRead,
     AuthMutationResult,
     IssueAuthSessionCommand,
@@ -21,7 +22,7 @@ interface ComputeAuthSessionMutationInput {
     readonly kind: AuthSessionMutationCommand['kind'];
     readonly command: AuthSessionMutationCommand;
     readonly read: AuthMutationRead;
-    readonly serviceId: string;
+    readonly facts: AuthMutationFacts;
 }
 
 interface ToConsumedAuthSessionResultInput {
@@ -44,7 +45,7 @@ export function computeAuthSessionMutation(
             return computeLogoutAuthSession(
                 input.command as LogoutAuthSessionCommand,
                 input.read as Extract<AuthMutationRead, { kind: 'logout-session'; }>,
-                input.serviceId
+                input.facts
             );
     }
 }
@@ -94,11 +95,11 @@ function computeIssueAuthSession(
 function computeLogoutAuthSession(
     command: LogoutAuthSessionCommand,
     read: Extract<AuthMutationRead, { kind: 'logout-session'; }>,
-    serviceId: string
+    facts: Pick<AuthMutationFacts, 'serviceId' | 'traceId'>
 ): AuthMutationDomainComputed {
     const result = { requestId: command.requestId, loggedOut: true };
     const outcome = read.bySession === null && read.byToken === null ? 'no-op' : 'write';
-    const logoutOutbox = read.bySession ? toAuthLogoutOutbox(command, serviceId) : null;
+    const logoutOutbox = read.bySession ? toAuthLogoutOutbox(command, facts.serviceId, facts.traceId) : null;
     return {
         command,
         read,

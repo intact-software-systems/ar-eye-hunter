@@ -30,8 +30,8 @@ export function createCrdtMutationService(
     return {
         read: async (command: CrdtMutationCommand) =>
             await dependencies.repository.readMutation(decodeCrdtMutationCommand(command)),
-        compute: ({ command, read }: CrdtMutationAttemptFacts) =>
-            computeCrdtMutation({ command, read, serviceId: dependencies.serviceId }),
+        compute: ({ command, read, traceId }: CrdtMutationAttemptFacts) =>
+            computeCrdtMutation({ command, read, traceId, serviceId: dependencies.serviceId }),
         validate: (input) =>
             validateCrdtMutation({
                 ...input,

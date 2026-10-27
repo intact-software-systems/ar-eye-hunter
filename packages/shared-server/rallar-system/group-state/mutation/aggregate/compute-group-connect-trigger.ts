@@ -133,7 +133,8 @@ function latchAwaitingPublication(
             },
             senderId: facts.serviceId,
             createdAtEpochMs: facts.nowEpochMs,
-            expireAtEpochMs: facts.expireAtEpochMs
+            expireAtEpochMs: facts.expireAtEpochMs,
+            traceId: facts.traceId
         })]
     };
 }

@@ -72,6 +72,7 @@ export interface ComputedClientStateSync {
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
     readonly effects: readonly ComputedClientStateSyncEffect[];
+    readonly traceId: string;
 }
 
 export interface ComputedGroupStateSync {
@@ -82,6 +83,7 @@ export interface ComputedGroupStateSync {
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
     readonly effects: readonly ComputedGroupStateSyncEffect[];
+    readonly traceId: string;
 }
 
 export function computeClientStateSyncEntries(
@@ -224,7 +226,8 @@ function materializeStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnaps
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: messageId,
             ts: computed.createdAtEpochMs,
-            senderId
+            senderId,
+            traceId: computed.traceId
         },
         route: key,
         targets: toStateSyncTargets(computed.audience),

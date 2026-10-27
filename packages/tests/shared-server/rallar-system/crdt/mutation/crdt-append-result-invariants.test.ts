@@ -60,7 +60,7 @@ describe('CRDT append and administration result invariants', () => {
 
     it('allows replay only for append producers', async () => {
         const command = await lifecycleCommand();
-        const computed = computeCrdtMutation({ command, read: existingRead(), serviceId: 'server-1' });
+        const computed = computeCrdtMutation({ traceId: 'trace-crdt-append-result-invariants', command, read: existingRead(), serviceId: 'server-1' });
         expect(computed.outcome).toBe('write');
 
         expect(() =>
@@ -76,6 +76,7 @@ describe('CRDT append and administration result invariants', () => {
 
         expect(() =>
             computeCrdtMutation({
+                traceId: 'trace-crdt-append-result-invariants',
                 command,
                 read: {
                     ...emptyRead(),
@@ -89,6 +90,7 @@ describe('CRDT append and administration result invariants', () => {
     it('requires exact producer update and rejection reason relationships', async () => {
         const command = await appendCommand();
         const rejected = computeCrdtMutation({
+            traceId: 'trace-crdt-append-result-invariants',
             command,
             read: {
                 ...emptyRead(),
@@ -150,6 +152,7 @@ describe('CRDT append and administration result invariants', () => {
         ] as const;
         for (const expected of producerCases) {
             const computed = computeCrdtMutation({
+                traceId: 'trace-crdt-append-result-invariants',
                 command,
                 read: expected.read,
                 serviceId: 'server-1'
@@ -165,6 +168,7 @@ describe('CRDT append and administration result invariants', () => {
         }
 
         const rejected = computeCrdtMutation({
+            traceId: 'trace-crdt-append-result-invariants',
             command,
             read: {
                 ...emptyRead(),
@@ -198,6 +202,7 @@ describe('CRDT append and administration result invariants', () => {
         const command = await rebuildCommand();
         const value = update('integrity-update');
         const rejected = computeCrdtMutation({
+            traceId: 'trace-crdt-append-result-invariants',
             command,
             read: {
                 ...existingRead(),
@@ -235,6 +240,7 @@ describe('CRDT append and administration result invariants', () => {
         for (const operation of ['compact', 'rebuild-projection'] as const) {
             const command = operation === 'compact' ? await compactCommand() : await rebuildCommand();
             const computed = computeCrdtMutation({
+                traceId: 'trace-crdt-append-result-invariants',
                 command,
                 read: existingRead(),
                 serviceId: 'server-1'

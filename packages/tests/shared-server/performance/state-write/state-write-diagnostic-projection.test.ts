@@ -214,6 +214,7 @@ describe('state-write diagnostic projection', () => {
                 defaultCommandId: profile.logicalResourceId
             }),
             {
+                traceId: 'trace-state-write-diagnostic-projection',
                 nowEpochMs: session.issuedAtEpochMs,
                 serviceId: 'PRIVATE-worker-b',
                 eventId: 'PRIVATE-read-event',

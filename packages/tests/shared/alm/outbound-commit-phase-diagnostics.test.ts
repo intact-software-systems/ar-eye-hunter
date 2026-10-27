@@ -220,7 +220,7 @@ it.each(['memory', 'indexeddb'] as const)(
         for (const fromPeerId of ['peer-1', 'peer-2']) {
             await runtime.acceptControlMessage(
                 newALAckControlMessage(
-                    { v: 3, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+                    { v: 4, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-outbound-commit-phase-diagnostics' },
                     {
                         ackedMsgId: message.id.msgId,
                         originPeerId: 'self',

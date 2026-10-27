@@ -129,7 +129,7 @@ function createRuntime(
 
 function createAcknowledgement(): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: 'control-ack', ts: 1, senderId: 'peer-2' },
+        { v: 4, msgId: 'control-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-control-storage-unavailable' },
         {
             ackedMsgId: 'acked-msg',
             originPeerId: 'peer-1',

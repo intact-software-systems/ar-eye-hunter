@@ -22,6 +22,7 @@ const LAYOUT_B: GroupLayoutIdentity = { ...LAYOUT_A, groupRevision: 5, version: 
 
 function internalFacts(mode: GroupMutationFacts['internalAuthority']): GroupMutationFacts {
     return {
+        traceId: 'trace-group-formation-fence-authority',
         nowEpochMs: 1_000,
         attemptAtEpochMs: 1_000,
         expireAtEpochMs: 100_000,

@@ -16,6 +16,7 @@ import type { GroupStateService } from '../../group-state/group-state-service-co
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
+    GroupTopologyConfigMutationAttempt,
     GroupTopologyConfigMutationAttemptRead,
     GroupTopologyConfigMutationService
 } from '../config/group-topology-config-mutation-service.ts';
@@ -230,18 +231,18 @@ export class TopologyAppInboxHandler {
         }
         const command = toTopologyConfigMutationCommand(authority.command);
         const read = await owners.configMutationService.read(command);
-        const attemptCount = context.entry.dequeueAudit.attempts;
+        const attempt = { attemptCount: context.entry.dequeueAudit.attempts, traceId: context.message.id.traceId };
         const computed = this.computeTopologyConfigOperation(
             command,
             read,
-            attemptCount,
+            attempt,
             completionFacts,
             owners.configMutationService
         );
         const validationIssues = this.validateTopologyConfigOperation(
             command,
             read,
-            attemptCount,
+            attempt,
             completionFacts,
             owners.configMutationService,
             computed
@@ -291,7 +292,8 @@ export class TopologyAppInboxHandler {
             requestOptions: fromCanonicalGroupTopologyConfigPatch(
                 authority.command.payload.requestOptions
             ),
-            publish: authority.command.payload.publish
+            publish: authority.command.payload.publish,
+            traceId: context.message.id.traceId
         };
         const read = await mutation.read(command);
         const computed = this.computeTopologyReconfigureOperation(
@@ -325,11 +327,11 @@ export class TopologyAppInboxHandler {
     private computeTopologyConfigOperation(
         command: GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number,
+        attempt: GroupTopologyConfigMutationAttempt,
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService']
     ): TopologyConfigOperationComputed {
-        const mutationComputed = mutation.compute(command, read, attemptCount);
+        const mutationComputed = mutation.compute(command, read, attempt);
         if (mutationComputed.outcome === 'idempotency-conflict') {
             return { outcome: 'idempotency-conflict', mutation: mutationComputed };
         }
@@ -350,7 +352,7 @@ export class TopologyAppInboxHandler {
     private validateTopologyConfigOperation(
         command: GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number,
+        attempt: GroupTopologyConfigMutationAttempt,
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService'],
         computed: TopologyConfigOperationComputed
@@ -358,7 +360,7 @@ export class TopologyAppInboxHandler {
         const validation = {
             command,
             read,
-            attemptCount,
+            attempt,
             computed: computed.mutation
         };
         const mutationIssues = mutation.validate(validation);

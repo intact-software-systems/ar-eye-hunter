@@ -14,6 +14,7 @@ import { writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/ap
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupRetentionService } from '@shared-server/rallar-system/group-state/retention/group-retention-service.ts';
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -151,10 +152,12 @@ describe('retention through the registered AppInbox capability', () => {
         const { inbox, reader, results } = createInbox(fixture, fixture.retention, (event) => timings.push(event));
         const command = { groupRef: RETENTION_REF, requestId: `failed-${fault}`, observedAtEpochMs: fixture.nowEpochMs };
         const ingress = fixture.retention.capture(command);
-        const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1));
+        const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1, 'trace-group-retention-inbox'));
         if (computed.outcome !== 'write') {
             throw new Error('Expected an observation write');
         }
+        expect(computed.outboxWrites.map((write) => decodePersistedALMessage(write.entry.resource).id.traceId))
+            .toEqual(computed.outboxWrites.map(() => 'trace-group-retention-inbox'));
         if (fault === 'outbox') {
             await fixture.storage.sql.begin((transaction) => writeAppOutboxInsert(transaction, computed.outboxWrites[0]));
         }

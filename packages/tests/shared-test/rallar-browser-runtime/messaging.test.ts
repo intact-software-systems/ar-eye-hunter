@@ -470,10 +470,11 @@ function inboundMessage(): RallarMessage<ChatMessagePayload> {
 function outboundMessage(): ALMessage {
     return {
         id: {
-            v: 3,
+            v: 4,
             msgId: 'ws-message-1',
             ts: 999,
-            senderId: 'bob-session'
+            senderId: 'bob-session',
+            traceId: 'trace-messaging'
         },
         route: {
             topicId: 'room.manual.message',

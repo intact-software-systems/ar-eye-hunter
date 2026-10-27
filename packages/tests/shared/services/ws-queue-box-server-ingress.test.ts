@@ -538,7 +538,7 @@ describe('WS server bounded and authorized admission', () => {
             throw new Error('Protocol refusal must precede application policy');
         });
         const message = newALAckControlMessage(
-            { v: 3, msgId: 'forged-ack', senderId: 'session-1', ts: 1 },
+            { v: 4, msgId: 'forged-ack', senderId: 'session-1', ts: 1, traceId: 'trace-ws-queue-box-server-ingress' },
             {
                 ackedMsgId: 'subject',
                 fromPeerId: 'session-1',

@@ -151,7 +151,8 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         derivedExpireAtEpochMs: Math.max(
             entry.audit.expiryTs.epochMilliseconds,
             nowEpochMs + options.finishedRetentionMs
-        )
+        ),
+        traceId: message.id.traceId
     };
     const attempt = { options, facts, mutationRead };
     const accepted = claimRttRefinementSkip(attempt);
@@ -250,7 +251,8 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
         reservationFinish,
         formationAutomationEnabled: options.formationAutomation !== undefined,
         serviceId: options.serviceId,
-        publisherStreamId: options.topologyDelivery?.publisherStreamId
+        publisherStreamId: options.topologyDelivery?.publisherStreamId,
+        traceId: facts.traceId
     };
     const computedWrite = computeRtcTopologyWorkWrite(writeInput);
     const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);

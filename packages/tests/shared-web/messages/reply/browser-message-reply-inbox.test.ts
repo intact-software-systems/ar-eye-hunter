@@ -216,7 +216,7 @@ function createReplyInboxFixture(): ReplyInboxFixture {
 
 function toRequestMessage(msgId: string, toPeerId: string): ALMessage {
     return {
-        id: { v: 3, msgId, ts: 0, senderId: 'requester-1' },
+        id: { v: 4, msgId, ts: 0, senderId: 'requester-1', traceId: 'trace-browser-message-reply-inbox' },
         route: { topicId: 'app.ask', contextId: 'room-1', resourceId: 'resource-1' },
         targets: { mode: 'unicast', toPeerId },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
@@ -226,7 +226,7 @@ function toRequestMessage(msgId: string, toPeerId: string): ALMessage {
 
 function toReplyMessage(msgId: string, senderId: string, replyToMsgId: string): ALMessage {
     return {
-        id: { v: 3, msgId, ts: 0, senderId },
+        id: { v: 4, msgId, ts: 0, senderId, traceId: 'trace-browser-message-reply-inbox' },
         route: { topicId: 'app.ask', contextId: 'room-1', resourceId: 'resource-1' },
         targets: { mode: 'unicast', toPeerId: 'requester-1' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },

@@ -102,7 +102,7 @@ Deno.test(
 
             recorder.reads.length = 0;
             const duplicateRead = await service.read(seeded[1]);
-            const duplicate = service.compute({ command: seeded[1], read: duplicateRead });
+            const duplicate = service.compute({ traceId: 'trace-crdt-persisted-contracts', command: seeded[1], read: duplicateRead });
             assert.deepEqual(rowCountsBoundTo(recorder.reads, 'seed-update-2'), [1]);
             assert.equal(duplicateRead.existingUpdate?.updateId, 'seed-update-2');
             assert.deepEqual(duplicateRead.records, []);
@@ -111,7 +111,7 @@ Deno.test(
             recorder.reads.length = 0;
             const mismatchedCommand = await command('mismatch-command', 'seed-update-2', 5_000);
             const mismatchedRead = await service.read(mismatchedCommand);
-            const mismatched = service.compute({ command: mismatchedCommand, read: mismatchedRead });
+            const mismatched = service.compute({ traceId: 'trace-crdt-persisted-contracts', command: mismatchedCommand, read: mismatchedRead });
             assert.deepEqual(rowCountsBoundTo(recorder.reads, 'seed-update-2'), [1]);
             assert.equal(mismatched.outcome, 'rejected');
             assert.equal('code' in mismatched ? mismatched.code : null, 'duplicate-hash-mismatch');
@@ -149,13 +149,13 @@ Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () =
         await apply(sql, service, await command('first', 'first', 1_000));
         const second = await command('second', 'second', 2_000);
         const observed = await service.read(second);
-        const computed = service.compute({ command: second, read: observed });
+        const computed = service.compute({ traceId: 'trace-crdt-persisted-contracts', command: second, read: observed });
         await sql`
       update crdt_documents
       set lifecycle = 'archived', last_append_sequence = 99
       where document_key = ${second.documentKey}
     `;
-        assert.deepEqual(service.validate({ command: second, read: observed, computed }), []);
+        assert.deepEqual(service.validate({ traceId: 'trace-crdt-persisted-contracts', command: second, read: observed, computed }), []);
         await assert.rejects(
             sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed)),
             CrdtMutationConflictError
@@ -342,7 +342,7 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
     `;
         const second = await command('rate-second', 'rate-second', 11_000);
         const observed = await service.read(second);
-        const computed = service.compute({ command: second, read: observed });
+        const computed = service.compute({ traceId: 'trace-crdt-persisted-contracts', command: second, read: observed });
         assert.equal(observed.actorUpdatesInWindow, 1);
         assert.ok(observed.storedSnapshotBytes > 1_000);
         assert.deepEqual(
@@ -365,8 +365,8 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
         ]);
         const computed = await Promise.all(commands.map(async (entry) => {
             const read = await service.read(entry);
-            const mutation = service.compute({ command: entry, read });
-            assert.deepEqual(service.validate({ command: entry, read, computed: mutation }), []);
+            const mutation = service.compute({ traceId: 'trace-crdt-persisted-contracts', command: entry, read });
+            assert.deepEqual(service.validate({ traceId: 'trace-crdt-persisted-contracts', command: entry, read, computed: mutation }), []);
             return mutation;
         }));
         const writes = await Promise.allSettled(
@@ -431,8 +431,8 @@ async function apply(
     input: CrdtMutationCommand
 ) {
     const read = await service.read(input);
-    const computed = service.compute({ command: input, read });
-    assert.deepEqual(service.validate({ command: input, read, computed }), []);
+    const computed = service.compute({ traceId: 'trace-crdt-persisted-contracts', command: input, read });
+    assert.deepEqual(service.validate({ traceId: 'trace-crdt-persisted-contracts', command: input, read, computed }), []);
     await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
 }
 
