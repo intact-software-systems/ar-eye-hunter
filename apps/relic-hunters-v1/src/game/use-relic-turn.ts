@@ -5,11 +5,12 @@ import {
     useState
 } from 'react';
 
-import type {
-    RelicActionInput,
-    RelicActionKind,
-    RelicEvent,
-    RelicPublicSnapshot
+import {
+    toRelicRoundTrackKey,
+    type RelicActionInput,
+    type RelicActionKind,
+    type RelicEvent,
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 
 import {
@@ -99,7 +100,7 @@ function useRelicTurnSelection(game: RelicHuntersRuntime.Connection): RelicTurnS
         setDraft({ kind: 'search' });
         setRoomId(undefined);
         setPrimedAction(undefined);
-    }, [game.roomId, game.session?.sessionId]);
+    }, [game.roomId, game.session?.sessionId, game.snapshot?.createdAtEpochMs]);
     const prime = (action: RelicActionInput) => {
         playUiSound('select');
         setDraft(action);
@@ -123,7 +124,7 @@ function useRelicTurnActions({ game, selection, viewModel, enableAmbient }: Reli
     const continueReview = useRelicReviewContinuation(game, viewModel.isAdmin);
     useEffect(() => {
         setLockedAction(undefined);
-    }, [game.roomId, game.session?.sessionId, game.snapshot?.round]);
+    }, [game.roomId, game.session?.sessionId, game.snapshot?.createdAtEpochMs, game.snapshot?.round]);
     const submit = async () => {
         const action = toSelectedRelicAction(selection.draft, selection.roomId, viewModel);
         setLockedAction(action);
@@ -225,7 +226,7 @@ function useRelicRoundClock(
         }
         const next = snapshot.roundStartedAtEpochMs + snapshot.roundTimeLimitMs - Date.now();
         setRemaining(next);
-        const key = `${snapshot.gameId}:${snapshot.round}`;
+        const key = `${toRelicRoundTrackKey(snapshot)}:${snapshot.round}`;
         if (next <= 0 && submitted.current !== key && canSubmit) {
             submitted.current = key;
             void submit();
@@ -237,6 +238,7 @@ function useRelicRoundClock(
         return () => clearInterval(interval);
     }, [
         snapshot?.gameId,
+        snapshot?.createdAtEpochMs,
         snapshot?.phase,
         snapshot?.roundStartedAtEpochMs,
         snapshot?.roundTimeLimitMs,
@@ -257,7 +259,7 @@ function useRelicTurnKeyboard({ phase, actions, canSubmit, preferences }: RelicT
         if (isTypingRelicInput(event.target) || phase !== 'planning') {
             return;
         }
-        const kind = relicActionKey(event.key);
+        const kind = toRelicActionKind(event.key);
         if (kind) {
             event.preventDefault();
             actions.selectKind(kind);
@@ -289,7 +291,7 @@ function isTypingRelicInput(target: EventTarget | null): boolean {
         (target instanceof HTMLElement && target.isContentEditable);
 }
 
-function relicActionKey(key: string): RelicActionKind | undefined {
+function toRelicActionKind(key: string): RelicActionKind | undefined {
     switch (key) {
         case '1':
             return 'move';
