@@ -109,6 +109,35 @@ test('automatically submits the reused round once in each expedition', async ({ 
         .toEqual([{ kind: 'search' }, { kind: 'search' }]);
 });
 
+test('submits the fresh default when recovery first observes an expired new expedition round', async ({ page }) => {
+    await page.clock.install({ time: Date.now() });
+    let snapshot = createRelicSnapshotWithPlayers(2, 'planning', { roundTimeLimitMs: 1_000 });
+    const commands: RelicCommand[] = [];
+    const backend = await startRelicBrowserBackend(page, {
+        rooms: [createGroupSnapshot({ onlineMemberCount: 2 })],
+        relicSnapshot: snapshot,
+        commandBodies: commands,
+        commandResponse: () => snapshot
+    });
+    await enterExpedition(page);
+    const move = page.locator('.action-picker').getByRole('button', { name: /^Move/ });
+    await move.click();
+    await expect(move).toHaveAttribute('aria-pressed', 'true');
+    snapshot = {
+        ...snapshot,
+        createdAtEpochMs: 2,
+        updatedAtEpochMs: snapshot.updatedAtEpochMs + 1,
+        roundStartedAtEpochMs: await page.evaluate(() => Date.now()) - 2_000
+    };
+    backend.publishSnapshot(snapshot);
+    await expect.poll(() =>
+        commands.filter((command) => command.kind === 'submit-action').map((command) => command.action)
+    )
+        .toEqual([{ kind: 'search' }]);
+    await page.clock.runFor(1_000);
+    expect(commands.filter((command) => command.kind === 'submit-action')).toHaveLength(1);
+});
+
 async function enterExpedition(page: Page): Promise<void> {
     await initBrowserTestTransport(page);
     await page.goto('/');

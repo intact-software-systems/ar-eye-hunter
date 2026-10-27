@@ -84,4 +84,5 @@ rejoining and starting the expedition; it does not measure a one-click replay fl
 Older observations that explicitly selected Search cover a different interaction
 sequence and must not be presented as directly comparable timings. Controlled
 browser regressions in `relic-hunters/turn-reset.spec.ts` also cover ordinary
-snapshot updates, refused Reset, and automatic submission across expedition resets.
+snapshot updates, refused Reset, automatic submission across expedition resets,
+and recovery that first observes an already-expired new round.
