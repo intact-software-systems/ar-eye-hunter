@@ -96,11 +96,15 @@ function useRelicTurnSelection(game: RelicHuntersRuntime.Connection): RelicTurnS
     useEffect(() => {
         setPrimedAction(undefined);
     }, [currentRoomId, game.snapshot?.phase, game.snapshot?.round]);
-    useEffect(() => {
+    const identityKey = JSON.stringify([game.roomId, game.session?.sessionId, game.snapshot?.createdAtEpochMs]);
+    const [previousIdentityKey, setPreviousIdentityKey] = useState(identityKey);
+    if (identityKey !== previousIdentityKey) {
+        // Re-render before effects: an already-expired new round must not submit the old draft.
+        setPreviousIdentityKey(identityKey);
         setDraft({ kind: 'search' });
         setRoomId(undefined);
         setPrimedAction(undefined);
-    }, [game.roomId, game.session?.sessionId, game.snapshot?.createdAtEpochMs]);
+    }
     const prime = (action: RelicActionInput) => {
         playUiSound('select');
         setDraft(action);
