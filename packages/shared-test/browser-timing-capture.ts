@@ -1,6 +1,5 @@
 import type { CDPSession } from '@playwright/test';
 import { startRepeating } from '../shared/resilience/start-repeating.ts';
-import { toError } from '../shared/resilience/to-error.ts';
 import type { Timers } from '../shared/resilience/timers.ts';
 
 const RENDERER_METRICS = new Set([
@@ -57,7 +56,7 @@ export class BrowserTimingCapture {
     private readonly cancellations: (() => void)[] = [];
     private stopped = false;
     private started = false;
-    private writeFailure: Error | undefined;
+    private writeFailed = false;
 
     constructor(input: BrowserTimingCapture.Input) {
         this.input = input;
@@ -68,7 +67,12 @@ export class BrowserTimingCapture {
             throw new Error('Browser timing capture can only start once');
         }
         this.started = true;
-        await this.input.renderer.send('Performance.enable', { timeDomain: 'timeTicks' });
+        try {
+            await this.input.renderer.send('Performance.enable', { timeDomain: 'timeTicks' });
+        }
+        catch {
+            throw new Error('Browser timing capture could not start');
+        }
         for (const channel of ['renderer', 'processes'] as const) {
             this.cancellations.push(startRepeating({
                 timers: this.input.timers,
@@ -94,11 +98,14 @@ export class BrowserTimingCapture {
         }
         finally {
             // Detaching aborts outstanding protocol reads; they must not block fixture teardown.
-            await Promise.all([this.input.renderer.detach(), this.input.browser.detach()]);
+            const results = await Promise.allSettled([this.input.renderer.detach(), this.input.browser.detach()]);
+            if (results.some((result) => result.status === 'rejected')) {
+                throw new Error('Browser timing capture could not detach');
+            }
         }
         this.record({ kind: 'stopped', stoppedAtEpochMs: this.input.timers.nowMs() });
-        if (this.writeFailure !== undefined) {
-            throw this.writeFailure;
+        if (this.writeFailed) {
+            throw new Error('Browser timing evidence could not be written');
         }
     }
 
@@ -136,9 +143,9 @@ export class BrowserTimingCapture {
         try {
             this.input.record(observation);
         }
-        catch (error) {
+        catch {
             // Surface storage failure to the fixture, without an unhandled rejection from its timer.
-            this.writeFailure = toError(error);
+            this.writeFailed = true;
         }
     }
 }

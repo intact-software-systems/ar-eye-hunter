@@ -71,14 +71,34 @@ describe('BrowserTimingCapture', () => {
         const browser = createProtocolChannel();
         renderer.send.mockResolvedValueOnce({}).mockResolvedValue({ metrics: [] });
         browser.send.mockResolvedValue({ processInfo: [] });
-        const failure = new Error('artifact storage unavailable');
+        const failure = new Error('secret artifact storage detail');
         const capture = new BrowserTimingCapture({
             renderer, browser, timers: createDefaultTimers(), record: () => { throw failure; }
         });
         await capture.start();
         await vi.advanceTimersByTimeAsync(1);
-        await expect(capture.stop()).rejects.toBe(failure);
+        await expect(capture.stop()).rejects.toEqual(new Error('Browser timing evidence could not be written'));
         expect(renderer.detached).toBe(true);
+        expect(browser.detached).toBe(true);
+    });
+
+    it('redacts a failed renderer initialization', async () => {
+        const renderer = createProtocolChannel();
+        const browser = createProtocolChannel();
+        renderer.send.mockRejectedValue(new Error('secret initialization detail'));
+        const capture = new BrowserTimingCapture({ renderer, browser, timers: createDefaultTimers(), record: () => undefined });
+        await expect(capture.start()).rejects.toEqual(new Error('Browser timing capture could not start'));
+        await capture.stop();
+        expect(renderer.detached).toBe(true);
+        expect(browser.detached).toBe(true);
+    });
+
+    it('redacts detach failures and still releases the other channel', async () => {
+        const renderer = createProtocolChannel();
+        const browser = createProtocolChannel();
+        renderer.detach = async () => { throw new Error('secret detach detail'); };
+        const capture = new BrowserTimingCapture({ renderer, browser, timers: createDefaultTimers(), record: () => undefined });
+        await expect(capture.stop()).rejects.toEqual(new Error('Browser timing capture could not detach'));
         expect(browser.detached).toBe(true);
     });
 

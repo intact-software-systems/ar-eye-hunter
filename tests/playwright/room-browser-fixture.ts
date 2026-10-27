@@ -1,5 +1,6 @@
 import {
     test,
+    type CDPSession,
     type Page,
     type TestInfo
 } from '@playwright/test';
@@ -57,35 +58,31 @@ async function startPageTiming(page: Page, testInfo: TestInfo, role: 'host' | 'g
     if (!browser || browser.browserType().name() !== 'chromium') {
         throw new Error('Browser timing capture requires Chromium');
     }
-    const renderer = await page.context().newCDPSession(page);
+    let renderer: CDPSession | undefined;
+    let browserSession: CDPSession | undefined;
     try {
-        const browserSession = await browser.newBrowserCDPSession();
-        try {
-            const { gpu } = await browserSession.send('SystemInfo.getInfo');
-            const artifactPath = testInfo.outputPath(`browser-timing-${role}.jsonl`);
-            writeFileSync(artifactPath, JSON.stringify({
-                kind: 'environment', startedAtEpochMs: Date.now(), role,
-                sourceRevision: process.env.RALLAR_ROOM_JOURNEY_REVISION ?? null,
-                browserVersion: browser.version(), nodeVersion: process.version,
-                platform: platform(), arch: arch(), availableParallelism: availableParallelism(), totalMemoryBytes: totalmem(),
-                rendererTimeDomain: 'timeTicks', sampleIntervalMs: 1000,
-                graphics: gpu.devices.map((device) => ({ vendor: device.vendorString, device: device.deviceString })),
-                testId: testInfo.testId, repeatEachIndex: testInfo.repeatEachIndex, retry: testInfo.retry
-            }) + '\n');
-            const capture = new BrowserTimingCapture({
-                renderer, browser: browserSession, timers: createDefaultTimers(),
-                record: (observation) => appendFileSync(artifactPath, JSON.stringify(observation) + '\n')
-            });
-            await capture.start();
-            return capture;
-        }
-        catch (error) {
-            await browserSession.detach();
-            throw error;
-        }
+        renderer = await page.context().newCDPSession(page);
+        browserSession = await browser.newBrowserCDPSession();
+        const { gpu } = await browserSession.send('SystemInfo.getInfo');
+        const artifactPath = testInfo.outputPath(`browser-timing-${role}.jsonl`);
+        writeFileSync(artifactPath, JSON.stringify({
+            kind: 'environment', startedAtEpochMs: Date.now(), role,
+            sourceRevision: process.env.RALLAR_ROOM_JOURNEY_REVISION ?? null,
+            browserVersion: browser.version(), nodeVersion: process.version,
+            platform: platform(), arch: arch(), availableParallelism: availableParallelism(), totalMemoryBytes: totalmem(),
+            rendererTimeDomain: 'timeTicks', sampleIntervalMs: 1000,
+            graphics: gpu.devices.map((device) => ({ vendor: device.vendorString, device: device.deviceString })),
+            testId: testInfo.testId, repeatEachIndex: testInfo.repeatEachIndex, retry: testInfo.retry
+        }) + '\n');
+        const capture = new BrowserTimingCapture({
+            renderer, browser: browserSession, timers: createDefaultTimers(),
+            record: (observation) => appendFileSync(artifactPath, JSON.stringify(observation) + '\n')
+        });
+        await capture.start();
+        return capture;
     }
-    catch (error) {
-        await renderer.detach();
-        throw error;
+    catch {
+        await Promise.allSettled([renderer?.detach(), browserSession?.detach()]);
+        throw new Error('Browser timing capture could not initialize');
     }
 }
