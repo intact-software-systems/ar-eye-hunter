@@ -6,7 +6,7 @@ import {
     vi
 } from 'vitest';
 
-import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarStateEventMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { StateEventCursor } from '@shared/api/state-event-types.ts';
@@ -40,7 +40,7 @@ describe('room event replay', () => {
         const facade = createRallarFacade();
         const liveEvents: GroupEvent[] = [];
         const replayEvents: GroupEvent[] = [];
-        const replayMessages: RallarMessage<GroupEvent>[] = [];
+        const replayMessages: RallarStateEventMessage<GroupEvent>[] = [];
         const live = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         const replayed = createRoomEvent({
             groupId: 'room-1',

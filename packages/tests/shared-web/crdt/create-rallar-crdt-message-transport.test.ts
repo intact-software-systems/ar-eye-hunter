@@ -67,7 +67,8 @@ describe('built-in CRDT message admission', () => {
                 id: { v: 3, msgId: 'update', senderId: 'peer', ts: 1 },
                 route: { topicId: 'crdt', contextId: 'room', resourceId: 'update' },
                 payload: { typeId: 'update', contentType: 'application/json', resource: JSON.stringify(payload) }
-            }
+            },
+            reply: vi.fn()
         };
         await listener(message);
         expect(received).toEqual([payload]);

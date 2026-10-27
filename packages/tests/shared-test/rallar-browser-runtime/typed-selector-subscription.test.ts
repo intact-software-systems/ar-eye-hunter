@@ -62,8 +62,13 @@ function toInboundMessage(transport: 'rtc' | 'ws', typeId: string, phase: string
         senderId: 'sender',
         payload: { specimen: transport, phase },
         raw,
-        receivedAtEpochMs: 123
+        receivedAtEpochMs: 123,
+        reply: unexpectedReply
     };
+}
+
+function unexpectedReply(): never {
+    throw new Error('The selector scenario never replies.');
 }
 
 it('owns one WS topic selector and one RTC subscription per listed type until replacement or close', async () => {

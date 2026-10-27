@@ -16,7 +16,9 @@ import {
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
-    newALRoute
+    newALRoute,
+    newALUnicastMessage,
+    type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -613,6 +615,84 @@ describe('Rallar typed message channel', () => {
         expect(channelMessage.qos?.durability).toEqual({ algo: 'volatile' });
         expect(roomMessage.delivery?.ack).toBe('receiver');
         expect(roomMessage.qos?.durability).toEqual({ algo: 'local-outbox' });
+    });
+
+    it('carries a send\'s corrId onto the envelope on every typed send path', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.command',
+            typeId: 'room.command.v1',
+            roomId: 'room-1',
+            purpose: 'command'
+        });
+
+        const first = await channel.send({ text: 'ask' }, { resourceId: 'corr-1' });
+        await channel.send({ text: 're-ask' }, { resourceId: 'corr-2', corrId: first.corrId });
+        await channel.sendRtc({ text: 're-ask' }, { resourceId: 'corr-3', corrId: first.corrId });
+        await channel.sendWs({ text: 're-ask' }, { resourceId: 'corr-4', corrId: first.corrId });
+        await channel.sendWs({ text: 're-ask' }, { peerId: 'peer-1', corrId: first.corrId });
+
+        const rtcMessages = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        const wsMessages = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        expect(rtcMessages[0]).not.toHaveProperty('actions');
+        expect([...rtcMessages.slice(1), ...wsMessages].map((message) => message.actions)).toEqual([
+            { corrId: first.msgId },
+            { corrId: first.msgId },
+            { corrId: first.msgId },
+            { corrId: first.msgId }
+        ]);
+    });
+
+    it('answers a received request through reply() and resolves the asker\'s awaitReply with a reply no onWs handler sees', async () => {
+        const wsCallbacks = new Map<string, Parameters<typeof webSocketQueueBox.onAnyInboxMessageDo>[1]>();
+        webSocketQueueBox.onAnyInboxMessageDo.mockImplementation((id, callback) => {
+            wsCallbacks.set(id, callback);
+            return webSocketQueueBox;
+        });
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const facade = createFacade();
+        const channel = facade.messages.room<ChatMessage>({
+            topicId: 'room.command',
+            typeId: 'room.command.v1',
+            roomId: 'room-1',
+            purpose: 'command'
+        });
+        const received: string[] = [];
+        channel.onWs(async (payload, message) => {
+            received.push(payload.text);
+            await message.reply({ text: `re: ${payload.text}` });
+        });
+        await facade.connect();
+        const asked = await channel.sendWs({ text: 'ask' }, { peerId: 'peer-1' });
+        const pending = asked.awaitReply<ChatMessage>({ timeoutMs: 5_000 });
+        const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+        const deliver = async (message: ALMessage) => {
+            for (const callback of wsCallbacks.values()) {
+                await callback.onMessage(message, toResourceEntry('room.command.v1', {}));
+            }
+        };
+
+        const route = (resourceId: string) => newALRoute('room.command', 'room-1', resourceId);
+        const answer = newALUnicastMessage('peer-1', route('r-1'), 'session-1', 'room.command.v1', { text: 'answer' }, {
+            groupRef: roomRef,
+            actions: { corrId: asked.corrId, replyToMsgId: asked.msgId }
+        });
+        const question = newALUnicastMessage('peer-1', route('r-2'), 'session-1', 'room.command.v1', { text: 'question' }, {
+            groupRef: roomRef
+        });
+
+        await deliver(answer);
+        await deliver(question);
+
+        const outcome = await pending;
+        expect(outcome.status === 'replied' ? outcome.reply.payload : outcome.status).toEqual({ text: 'answer' });
+        expect(received).toEqual(['question']);
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.at(-1)?.[0]).toMatchObject({
+            targets: { mode: 'unicast', toPeerId: 'peer-1', groupRef: roomRef },
+            route: { topicId: 'room.command', contextId: 'room-1' },
+            payload: { typeId: 'room.command.v1', resource: '{"text":"re: question"}' },
+            actions: { corrId: question.id.msgId, replyToMsgId: question.id.msgId }
+        });
     });
 
     it('retires the realtime send strategy', async () => {

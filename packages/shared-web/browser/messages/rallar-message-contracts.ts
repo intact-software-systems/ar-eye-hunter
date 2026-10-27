@@ -26,6 +26,18 @@ export interface RallarMessage<T = never> {
     readonly payload: T;
     readonly raw: ALMessage;
     readonly receivedAtEpochMs: number;
+    /** A WS unicast to the sender's session under this message's correlation; its handle observes the reply's delivery. */
+    reply<R>(payload: R, options?: RallarMessageReplyOptions): Promise<RallarMessageHandle>;
+}
+
+/** A room or people state event: built before messaging exists, or replayed locally, so it has no reply. */
+export type RallarStateEventMessage<T = never> = Omit<RallarMessage<T>, 'reply'>;
+
+export interface RallarMessageReplyOptions {
+    /** Absent, the reply takes the request's type. */
+    readonly typeId?: string;
+    /** Absent, the `command` purpose's 30 s. */
+    readonly ttlMs?: number;
 }
 
 export type RallarMessageHandler<T = never> = (
@@ -34,7 +46,7 @@ export type RallarMessageHandler<T = never> = (
 
 export type RallarStateEventListener<TEvent> = (
     event: TEvent,
-    message: RallarMessage<TEvent>
+    message: RallarStateEventMessage<TEvent>
 ) => void | Promise<void>;
 
 export interface RallarMessageSendBase<T> extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
@@ -53,6 +65,8 @@ export interface RallarMessageSendBase<T> extends Pick<RallarOperationOptions, '
      * example); absent, the product normalizes the QoS the delivery options imply.
      */
     readonly qos?: ALQosPolicyRequest;
+    /** A re-ask under an earlier request's correlation; absent, the message starts its own (its msgId). */
+    readonly corrId?: string;
 }
 
 /**
@@ -109,15 +123,34 @@ export interface RallarMessageDeliveryOutcome {
     readonly lifecycle: ALDeliveryLifecycle;
 }
 
+/** The timeout is required: an acknowledged request is terminal, so nothing else would end the wait. */
+export interface RallarMessageReplyWaitOptions {
+    readonly timeoutMs: number;
+    readonly signal?: AbortSignal;
+}
+
+/** `lifecycle` is the request's when the wait resolves; the reply payload is unvalidated. */
+export type RallarMessageReplyOutcome<T = unknown> =
+    | Readonly<{ status: 'replied'; reply: RallarMessage<T>; lifecycle: ALDeliveryLifecycle; }>
+    | Readonly<{ status: 'timeout' | 'aborted' | 'undelivered'; lifecycle: ALDeliveryLifecycle; }>;
+
 export interface RallarMessageHandle {
     readonly msgId: string;
     readonly typeId: string;
+    readonly corrId: string;
+    /** The request this message replies to; absent when the message is not a reply. */
+    readonly replyToMsgId: string | undefined;
     /** Immutable receipt of the connection acquired for this send; unassociated internal handles report absent. */
     rtcCapture(): RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     /** The current lifecycle; the deadline is applied lazily, so a read after `expiresAtMs` says `expired`. */
     lifecycle(): ALDeliveryLifecycle;
     onEvent(listener: RallarMessageDeliveryListener): RallarUnsubscribe;
     wait(options?: RallarMessageWaitOptions): Promise<RallarMessageDeliveryOutcome>;
+    /**
+     * Never throws. A timeout leaves the request as it is; `aborted` and `undelivered` end only this wait, and the
+     * first timeout ends every wait of the request.
+     */
+    awaitReply<T = unknown>(options: RallarMessageReplyWaitOptions): Promise<RallarMessageReplyOutcome<T>>;
     cancel(): void;
 }
 

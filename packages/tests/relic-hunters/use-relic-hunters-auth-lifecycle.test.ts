@@ -719,7 +719,8 @@ function toHunterMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEven
         senderId: 'default-qbox-server',
         payload: event,
         raw,
-        receivedAtEpochMs: 0
+        receivedAtEpochMs: 0,
+        reply: vi.fn()
     };
 }
 
@@ -748,7 +749,8 @@ function toRoomMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRou
         senderId: 'default-qbox-server',
         payload: event,
         raw,
-        receivedAtEpochMs: 0
+        receivedAtEpochMs: 0,
+        reply: vi.fn()
     };
 }
 

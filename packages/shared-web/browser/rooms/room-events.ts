@@ -1,7 +1,10 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { notifyStateEventListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
+import type {
+    RallarStateEventListener,
+    RallarStateEventMessage
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { toRallarStateEventMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
 import {
     rememberStateEventKey,
     replayStateEventPages,
@@ -32,7 +35,7 @@ interface RallarRoomEventSubscription {
     readonly options: RallarRoomEventOptions;
 }
 
-type UnvalidatedRallarMessage = ReturnType<typeof toRallarMessage>;
+type UnvalidatedRallarMessage = ReturnType<typeof toRallarStateEventMessage>;
 
 export interface RallarRoomEventsPort {
     list(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
@@ -155,7 +158,7 @@ class RoomEvents implements RallarRoomEventsPort {
         if (event === undefined) {
             return;
         }
-        const groupMessage: RallarMessage<GroupEvent> = { ...message, payload: event };
+        const groupMessage: RallarStateEventMessage<GroupEvent> = { ...message, payload: event };
         const subscriptions = this.matchingSubscriptions(event);
         if (subscriptions.length === 0 || this.hasSeen(event)) {
             return;
@@ -212,7 +215,7 @@ class RoomEvents implements RallarRoomEventsPort {
             id: 'room-events',
             order: 10,
             onMessage: async (message) => {
-                const rallarMessage = toRallarMessage('ws', message);
+                const rallarMessage = toRallarStateEventMessage('ws', message);
                 if (rallarMessage.typeId === AppTopics.groupStateEvent) {
                     await this.dispatch(rallarMessage);
                 }
@@ -326,8 +329,8 @@ function normalizeStateWorkspaceId(workspaceId?: string): string {
     return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
 }
 
-function toReplayGroupStateEventMessage(event: GroupEvent): RallarMessage<GroupEvent> {
-    return toRallarMessage(
+function toReplayGroupStateEventMessage(event: GroupEvent): RallarStateEventMessage<GroupEvent> {
+    return toRallarStateEventMessage(
         'replay',
         newALBroadcastMessage(
             'rallar:replay',

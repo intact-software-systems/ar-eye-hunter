@@ -1,7 +1,11 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { notifyStateEventListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
+import type {
+    RallarMessagePayload,
+    RallarStateEventListener,
+    RallarStateEventMessage
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { toRallarStateEventMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
 import type {
     RallarListPeopleEventsOptions,
     RallarPeopleEventOptions,
@@ -203,20 +207,20 @@ class RallarStateEvents implements RallarStateEventsPort {
     }
 
     private async dispatchStateEventMessage(
-        message: RallarMessage<unknown>
+        message: RallarStateEventMessage<RallarMessagePayload>
     ): Promise<void> {
         if (
             message.typeId === AppTopics.clientStateEvent &&
             isClientEventPayload(message.payload)
         ) {
             await this.dispatchPeopleStateEvent(
-                message as RallarMessage<ClientEvent>
+                message as RallarStateEventMessage<ClientEvent>
             );
         }
     }
 
     private async dispatchPeopleStateEvent(
-        message: RallarMessage<ClientEvent>
+        message: RallarStateEventMessage<ClientEvent>
     ): Promise<void> {
         const event = message.payload;
         const subscriptions = this.matchingSubscriptions(event);
@@ -251,7 +255,7 @@ class RallarStateEvents implements RallarStateEventsPort {
         this.#stopWsInbox = this.#input.wsInbox.subscribe({
             id: 'state-events',
             order: 10,
-            onMessage: async (message) => await this.dispatchStateEventMessage(toRallarMessage('ws', message))
+            onMessage: async (message) => await this.dispatchStateEventMessage(toRallarStateEventMessage('ws', message))
         });
     }
 
@@ -392,8 +396,8 @@ function normalizeStateWorkspaceId(workspaceId?: string): string {
 
 function toReplayClientStateEventMessage(
     event: ClientEvent
-): RallarMessage<ClientEvent> {
-    return toRallarMessage(
+): RallarStateEventMessage<ClientEvent> {
+    return toRallarStateEventMessage(
         'replay',
         newALBroadcastMessage(
             'rallar:replay',

@@ -6,7 +6,7 @@ import {
     onTestFinished
 } from 'vitest';
 
-import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarStateEventMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 
@@ -48,7 +48,7 @@ describe('people events', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const events: ClientEvent[] = [];
-        const messages: RallarMessage<ClientEvent>[] = [];
+        const messages: RallarStateEventMessage<ClientEvent>[] = [];
 
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         const unsubscribe = facade.people.onEvent((event, message) => {
@@ -266,7 +266,7 @@ describe('people events', () => {
         const mocks = getPeopleEventMocks();
         const facade = createRallarFacade();
         const events: ClientEvent[] = [];
-        const messages: RallarMessage<ClientEvent>[] = [];
+        const messages: RallarStateEventMessage<ClientEvent>[] = [];
         const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.people.onEvent((clientEvent, message) => {

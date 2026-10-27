@@ -15,10 +15,13 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import { BrowserMessageReplyInbox } from '@shared-web/browser/messages/reply/browser-message-reply-inbox.ts';
+import type { RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -45,6 +48,8 @@ export namespace BrowserRallarMessagesController {
         resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
         resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence;
         readMessageMaxPayloadBytes(): number;
+        /** The session's port, read when a reply is dropped. */
+        readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
     }
 }
 
@@ -58,29 +63,21 @@ export class BrowserRallarMessagesController {
         const inputValidator = new BrowserMessageInputValidator({
             readMaxPayloadBytes: input.readMessageMaxPayloadBytes
         });
+        const sender = createMessageSender(input, inputValidator);
+        this.sender = sender;
+        const sendReply: RallarMessageReplySender = async (request, payload, options) =>
+            await sender.sendReply(request, payload, options);
         this.subscriptions = new BrowserRallarMessageSubscriptions({
             wsInbox: input.wsInbox,
+            sendReply,
             readMiddleware: input.readMiddleware
         });
-        const dispatch = new BrowserRallarMessageDispatch({
+        new BrowserMessageReplyInbox({
+            wsInbox: input.wsInbox,
             deliveries: input.deliveries,
-            sessionDeliveries: input.sessionDeliveries,
-            nowMs: input.nowMs
-        });
-        this.sender = new BrowserRallarMessageSender({
-            creation: input.creation,
-            deliveries: input.deliveries,
-            dispatch,
-            sessionDeliveries: input.sessionDeliveries,
-            inputValidator,
-            connect: input.connect,
-            requireSession: input.requireSession,
-            resolveDefaultRoom: input.resolveDefaultRoom,
-            resolveCurrentRoomRef: input.resolveCurrentRoomRef,
-            toRoomId: input.toRoomId,
-            resolveRoomRef: input.resolveRoomRef,
-            resolveRoomSendFence: input.resolveRoomSendFence
-        });
+            sendReply,
+            readInboundDiagnostics: input.readInboundDiagnostics
+        }).start();
 
         this.operations = this.createOperations(
             inputValidator,
@@ -128,4 +125,28 @@ export class BrowserRallarMessagesController {
             readUsage
         };
     }
+}
+
+function createMessageSender(
+    input: BrowserRallarMessagesController.Input,
+    inputValidator: BrowserMessageInputValidator
+): BrowserRallarMessageSender {
+    return new BrowserRallarMessageSender({
+        creation: input.creation,
+        deliveries: input.deliveries,
+        dispatch: new BrowserRallarMessageDispatch({
+            deliveries: input.deliveries,
+            sessionDeliveries: input.sessionDeliveries,
+            nowMs: input.nowMs
+        }),
+        sessionDeliveries: input.sessionDeliveries,
+        inputValidator,
+        connect: input.connect,
+        requireSession: input.requireSession,
+        resolveDefaultRoom: input.resolveDefaultRoom,
+        resolveCurrentRoomRef: input.resolveCurrentRoomRef,
+        toRoomId: input.toRoomId,
+        resolveRoomRef: input.resolveRoomRef,
+        resolveRoomSendFence: input.resolveRoomSendFence
+    });
 }

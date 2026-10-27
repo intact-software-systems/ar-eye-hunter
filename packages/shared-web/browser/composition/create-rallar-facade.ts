@@ -6,6 +6,7 @@ import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
     createBrowserResyncRecoveryComposition,
+    readBrowserSessionInboundDiagnostics,
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
@@ -185,7 +186,8 @@ function createBrowserSessionMessaging(
         nowMs,
         recoveryOwners: recovery.recoveryOwners,
         state,
-        session: sessionPort
+        session: sessionPort,
+        readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
     });
     return { session, stateEvents, messaging };
 }

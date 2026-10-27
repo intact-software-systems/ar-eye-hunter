@@ -156,7 +156,8 @@ function toRoomMessage(event: RelicRoundTransitionEvent, roomId: string): Rallar
         senderId: 'default-qbox-server',
         payload: event,
         raw,
-        receivedAtEpochMs: 0
+        receivedAtEpochMs: 0,
+        reply: unusedByTheChannel
     };
 }
 

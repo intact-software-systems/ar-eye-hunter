@@ -1,4 +1,7 @@
-import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarStateEventListener,
+    RallarStateEventMessage
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarStateListener,
     RallarSubscriptionScope,
@@ -45,7 +48,7 @@ export class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
 export async function notifyStateEventListener<TEvent>(
     listener: RallarStateEventListener<TEvent>,
     event: TEvent,
-    message: RallarMessage<TEvent>
+    message: RallarStateEventMessage<TEvent>
 ): Promise<void> {
     try {
         await listener(event, message);

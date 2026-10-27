@@ -1486,7 +1486,8 @@ async function emitFakeCapability(
         senderId: capability.peerId,
         payload,
         raw,
-        receivedAtEpochMs: 1_100
+        receivedAtEpochMs: 1_100,
+        reply: vi.fn()
     };
     await Promise.all(input.handlers.wsMessageHandlers.map((handler) => handler(message)));
 }

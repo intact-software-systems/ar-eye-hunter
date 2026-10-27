@@ -810,6 +810,7 @@ function createDirectMessage(input: DirectMessageInput): RallarMessage<RallarMes
             id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
             route: { topicId: input.topicId, contextId: 'bb-group', resourceId: '' },
             payload: { typeId: input.typeId, contentType: 'application/json', resource: JSON.stringify(input.payload) }
-        }
+        },
+        reply: vi.fn()
     };
 }

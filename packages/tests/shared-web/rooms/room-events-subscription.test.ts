@@ -5,7 +5,7 @@ import {
     it
 } from 'vitest';
 
-import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarStateEventMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 
@@ -50,7 +50,7 @@ describe('room event subscriptions', () => {
         const facade = createRallarFacade();
         let roomChangeCount = 0;
         const events: GroupEvent[] = [];
-        const messages: RallarMessage<GroupEvent>[] = [];
+        const messages: RallarStateEventMessage<GroupEvent>[] = [];
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.rooms.onChange(() => {
             roomChangeCount += 1;
@@ -98,6 +98,8 @@ describe('room event subscriptions', () => {
             typeId: AppTopics.groupStateEvent,
             topicId: AppTopics.groupStateEvent
         });
+        // A state event is built before messaging exists and may be replayed locally: it has no reply.
+        expect(messages[0]).not.toHaveProperty('reply');
         expect({ event: events[0], message: messages[0] }).toEqual({
             event: matching,
             message: expect.objectContaining({
@@ -113,7 +115,7 @@ describe('room event subscriptions', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const events: GroupEvent[] = [];
-        const messages: RallarMessage<GroupEvent>[] = [];
+        const messages: RallarStateEventMessage<GroupEvent>[] = [];
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.rooms.onEvent((event, message) => {
             events.push(event);

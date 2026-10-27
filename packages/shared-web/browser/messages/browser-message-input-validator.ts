@@ -25,6 +25,9 @@ import {
 } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+const CORR_ID_MAX_BYTES = 128;
+const UTF8_ENCODER = new TextEncoder();
+
 export interface ResolvedWsMessageInput<T> {
     readonly input: RallarWsSendInput<T>;
     readonly scope: RallarMessageScope;
@@ -238,6 +241,7 @@ export class BrowserMessageInputValidator {
         this.pushOptionalNonNegativeInteger(input.ttlHops, '$.ttlHops', issues);
         this.pushOptionalNonNegativeInteger(input.ttlMs, '$.ttlMs', issues);
         issues.push(...validateQosRequest(input.qos));
+        issues.push(...validateCorrId(input.corrId));
     }
 
     /** A `room.` topic is room-scoped by its name, so the server refuses a world send on it as malformed. */
@@ -413,6 +417,17 @@ function validateQosRequest(qos: ALQosPolicyRequest | undefined): readonly Ralla
     catch (error) {
         return [{ path: '$.qos', code: 'invalid-qos', message: toError(error).message }];
     }
+}
+
+function validateCorrId(corrId: string | undefined): readonly RallarValidationIssue[] {
+    return corrId === undefined ||
+            (corrId.length > 0 && UTF8_ENCODER.encode(corrId).byteLength <= CORR_ID_MAX_BYTES)
+        ? []
+        : [{
+            path: '$.corrId',
+            code: 'invalid-corr-id',
+            message: `A corrId is a non-empty string of at most ${CORR_ID_MAX_BYTES} UTF-8 bytes.`
+        }];
 }
 
 /** A `group-leader` send addresses its room's leader, so it names a room audience: never the world (D166). */

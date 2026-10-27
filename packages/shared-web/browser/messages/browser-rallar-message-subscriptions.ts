@@ -9,14 +9,16 @@ import {
     type RallarMessageSelector,
     type RallarMessageSelectorInput
 } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
+import { toRallarMessage, type RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { isALReplyMessage } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 
 interface BrowserRallarMessageSubscriptionsInput {
     readonly wsInbox: BrowserWebSocketInbox;
+    readonly sendReply: RallarMessageReplySender;
     readMiddleware(): ApiMiddleware | undefined;
 }
 
@@ -171,15 +173,19 @@ export class BrowserRallarMessageSubscriptions {
         return false;
     }
 
+    /** A reply belongs to the request that awaits it: the reply inbox hands it to the delivery registry. */
     private async dispatch(
         transport: RallarInboundMessageTransport,
         message: ALMessage
     ): Promise<void> {
+        if (isALReplyMessage(message)) {
+            return;
+        }
         const listeners = this.matchingListeners(transport, message);
         if (listeners.size === 0) {
             return;
         }
-        const rallarMessage = toRallarMessage<never>(transport, message);
+        const rallarMessage = toRallarMessage<never>(transport, message, this.input.sendReply);
         await Promise.all(
             [...listeners].map(async (listener) => {
                 try {
