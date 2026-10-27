@@ -258,7 +258,6 @@ export type AuthMutationRead =
 export interface AuthMutationFacts {
     readonly kind: AuthMutationCommand['kind'];
     readonly serviceId: string;
-    /** The trace of the queued command's envelope; the logout publication carries it. */
     readonly traceId: string;
 }
 

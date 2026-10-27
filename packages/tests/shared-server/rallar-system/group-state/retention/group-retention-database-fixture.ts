@@ -109,7 +109,7 @@ export async function commitMutation(fixture: RetentionDatabaseFixture, computed
 
 export async function prepareRetention(fixture: RetentionDatabaseFixture, requestId: string) {
     const ingress = fixture.retention.capture({ groupRef: RETENTION_REF, requestId, observedAtEpochMs: fixture.nowEpochMs });
-    const read = await fixture.retention.read(ingress, 1, 'trace-group-retention-database-fixture');
+    const read = await fixture.retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention-database-fixture' });
     const computed = fixture.retention.compute(read);
     expect(fixture.retention.validate(read, computed)).toEqual([]);
     return { ingress, computed };

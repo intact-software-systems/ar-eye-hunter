@@ -99,7 +99,7 @@ function computeLogoutAuthSession(
 ): AuthMutationDomainComputed {
     const result = { requestId: command.requestId, loggedOut: true };
     const outcome = read.bySession === null && read.byToken === null ? 'no-op' : 'write';
-    const logoutOutbox = read.bySession ? toAuthLogoutOutbox(command, facts.serviceId, facts.traceId) : null;
+    const logoutOutbox = read.bySession ? toAuthLogoutOutbox(command, facts) : null;
     return {
         command,
         read,

@@ -3,7 +3,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { writeRoomOwnedAppData, type RoomOwnedAppData } from '../../../app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxIdempotencyConflictError, type AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import {
@@ -45,7 +45,6 @@ export namespace GroupRetentionService {
         readonly ingress: Ingress;
         readonly attemptAtEpochMs: number;
         readonly attemptCount: number;
-        /** The trace of the queued command's envelope; the summary row the write enqueues carries it. */
         readonly traceId: string;
         readonly authority: GroupPresenceSummaryStoredRead;
         readonly idempotency: GroupMutationIdempotencyRecord | null;
@@ -109,10 +108,10 @@ export class GroupRetentionService {
 
     async read(
         value: GroupRetentionService.Ingress,
-        attemptCount: number,
-        traceId: string
+        attempt: AppInboxCommandAttempt
     ): Promise<GroupRetentionService.Read> {
         const ingress = decodeGroupRetentionIngress(value);
+        const { attemptCount, traceId } = attempt;
         requirePositiveInteger(attemptCount, 'Retention attempt');
         const attemptAtEpochMs = Math.max(this.config.now(), ingress.capturedAtEpochMs);
         requireEpoch(attemptAtEpochMs, 'Retention attempt time');

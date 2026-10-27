@@ -69,7 +69,6 @@ export async function releaseUnexpandedGroupPresenceSummaryWork(
     }
 }
 
-/** One reserved summary row: its canonical work, its reservation and the trace of its envelope. */
 export function toGroupPresenceSummaryWorkItem(message: ALMessage, entry: ResourceEntry): GroupPresenceSummaryWorkItem {
     return {
         work: decodeCanonicalGroupPresenceSummaryWork(message, entry),

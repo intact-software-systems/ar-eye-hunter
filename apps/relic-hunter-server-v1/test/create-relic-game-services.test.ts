@@ -134,7 +134,7 @@ Deno.test('a passive Relic producer admits new work and pending/completed replay
             await worker.groupsRepository.updateGroup({ ...stored.value, status: 'archived', archived, deleted: null }, stored.entry.revision);
             const retention = worker.groupStateService.retention;
             const ingress = retention.capture({ groupRef: ref, requestId: 'cold-delete', observedAtEpochMs: now });
-            const observed = await retention.read(ingress, 1, 'trace-create-relic-game-services');
+            const observed = await retention.read(ingress, { attemptCount: 1, traceId: 'trace-create-relic-game-services' });
             const computed = retention.compute(observed);
             assert.deepEqual(retention.validate(observed, computed), []);
             await database.begin((transaction) => retention.write(transaction, computed));

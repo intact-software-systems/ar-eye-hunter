@@ -1,4 +1,4 @@
-import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 import {
     assertExactKeys,
@@ -18,7 +18,7 @@ export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
     const { attemptCount, attemptAtEpochMs, traceId, ...ingressFacts } = facts;
     assertGroupMutationIngressFacts(ingressFacts);
     requirePositiveSafeInteger(attemptCount, 'Group mutation attemptCount');
-    if (typeof traceId !== 'string' || validateALTraceId(traceId).length > 0) {
+    if (decodeALTraceId(traceId).left !== undefined) {
         throw new TypeError('Group mutation trace is invalid');
     }
     if (!Number.isSafeInteger(attemptAtEpochMs) || attemptAtEpochMs < facts.nowEpochMs) {

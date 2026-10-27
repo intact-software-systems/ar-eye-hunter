@@ -92,7 +92,6 @@ export namespace RelicGameMutationService {
         readonly save: RoomOwnedAppData.Read;
     }
 
-    /** One attempt of the queued command: its read and the trace of the command's envelope. */
     export interface Attempt extends Read {
         readonly traceId: string;
     }

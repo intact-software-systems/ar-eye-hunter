@@ -137,7 +137,6 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly formationAutomationEnabled: boolean;
     readonly serviceId: string | undefined;
     readonly publisherStreamId: string | undefined;
-    /** The trace of the work row's envelope; every row the write derives carries it. */
     readonly traceId: string;
 }
 

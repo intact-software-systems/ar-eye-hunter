@@ -1,4 +1,4 @@
-import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 import type { ValidationRecord } from '../../../protocol/validation-value.ts';
 import { requireEnum } from '../../validation/client-enum-validation.ts';
@@ -64,7 +64,7 @@ export function assertClientMutationFacts(facts: unknown): asserts facts is Clie
         value.disconnectedSessionRetentionMs,
         'Client mutation facts.disconnectedSessionRetentionMs'
     );
-    if (typeof value.traceId !== 'string' || validateALTraceId(value.traceId).length > 0) {
+    if (decodeALTraceId(value.traceId).left !== undefined) {
         rejectClientMutation('Client mutation facts.traceId is invalid');
     }
     if (value.expireAtEpochMs <= value.nowEpochMs) {

@@ -37,7 +37,6 @@ export interface AdminPruneRead {
     readonly nowEpochMs: number;
     readonly serviceId: string;
     readonly completionFacts: AppInboxCompletionFacts;
-    /** The trace of the queued command's envelope; every page row the command writes carries it. */
     readonly traceId: string;
 }
 

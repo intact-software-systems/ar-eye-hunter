@@ -304,7 +304,11 @@ export class GroupStateInboxService {
         const read = await timeGroupStatePhase(
             timing,
             'read',
-            () => service.read(context.enqueue.authority, timing.attempt, context.message.id.traceId)
+            () =>
+                service.read(context.enqueue.authority, {
+                    attemptCount: timing.attempt,
+                    traceId: context.message.id.traceId
+                })
         );
         if (!jsonEquals(command, read.command)) {
             throw new GroupMutationAuthorizationError('Quick Join ingress and command differ');

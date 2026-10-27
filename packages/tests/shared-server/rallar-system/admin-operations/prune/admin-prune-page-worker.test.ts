@@ -20,8 +20,25 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import { describe, expect, it } from 'vitest';
 
 const NOW = 1_700_000_000_000;
+const RESERVED_TRACE_ID = 'trace-admin-prune-page-worker';
 
 describe('AdminPrunePageWorker', () => {
+    it('decodes reserved page work with the trace of the row that carries it', () => {
+        const work = decodeAdminPruneWork(createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-trace',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        }));
+
+        expect(work.traceId).toBe(RESERVED_TRACE_ID);
+    });
+
     it('exactly decodes bounded single-category prune commands', async () => {
         const command = await createAdminPruneCommand({
             jobId: 'prune-1',
@@ -96,7 +113,7 @@ describe('AdminPrunePageWorker', () => {
             computed.successorOutboxWrite === null
                 ? undefined
                 : decodePersistedALMessage(computed.successorOutboxWrite.entry.resource).id.traceId
-        ).toBe(command.traceId);
+        ).toBe(RESERVED_TRACE_ID);
 
         await work.write(repository.transaction, computed);
 
@@ -624,7 +641,7 @@ function createReservedEntry(
         requestedBy: 'admin-1',
         requestedSessionId: 'session-1'
     };
-    const entry = toAdminPruneOutbox(normalized, 'server-1', 'trace-admin-prune-page-worker');
+    const entry = toAdminPruneOutbox(normalized, 'server-1', RESERVED_TRACE_ID);
     return {
         ...entry,
         status: EntityStatus.RESERVED,

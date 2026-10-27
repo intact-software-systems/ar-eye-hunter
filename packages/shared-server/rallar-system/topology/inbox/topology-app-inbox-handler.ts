@@ -2,7 +2,11 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { type AppInboxEnqueueInput, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    type AppInboxCommandAttempt,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '../../app-inbox/app-inbox-contracts.ts';
 import {
     computeAppInboxCompletion,
     validateAppInboxCompletion,
@@ -16,7 +20,6 @@ import type { GroupStateService } from '../../group-state/group-state-service-co
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
-    GroupTopologyConfigMutationAttempt,
     GroupTopologyConfigMutationAttemptRead,
     GroupTopologyConfigMutationService
 } from '../config/group-topology-config-mutation-service.ts';
@@ -231,7 +234,10 @@ export class TopologyAppInboxHandler {
         }
         const command = toTopologyConfigMutationCommand(authority.command);
         const read = await owners.configMutationService.read(command);
-        const attempt = { attemptCount: context.entry.dequeueAudit.attempts, traceId: context.message.id.traceId };
+        const attempt: AppInboxCommandAttempt = {
+            attemptCount: context.entry.dequeueAudit.attempts,
+            traceId: context.message.id.traceId
+        };
         const computed = this.computeTopologyConfigOperation(
             command,
             read,
@@ -327,7 +333,7 @@ export class TopologyAppInboxHandler {
     private computeTopologyConfigOperation(
         command: GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attempt: GroupTopologyConfigMutationAttempt,
+        attempt: AppInboxCommandAttempt,
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService']
     ): TopologyConfigOperationComputed {
@@ -352,7 +358,7 @@ export class TopologyAppInboxHandler {
     private validateTopologyConfigOperation(
         command: GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attempt: GroupTopologyConfigMutationAttempt,
+        attempt: AppInboxCommandAttempt,
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService'],
         computed: TopologyConfigOperationComputed

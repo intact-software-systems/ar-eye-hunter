@@ -78,11 +78,8 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
         sessionId: undefined,
         attempt: context.entry.dequeueAudit.attempts
     };
-    const read = await timeGroupStatePhase(
-        timing,
-        'read',
-        () => dependencies.service.read(ingress, timing.attempt, context.message.id.traceId)
-    );
+    const attempt = { attemptCount: timing.attempt, traceId: context.message.id.traceId };
+    const read = await timeGroupStatePhase(timing, 'read', () => dependencies.service.read(ingress, attempt));
     const computed = await timeGroupStatePhase(timing, 'compute', () => dependencies.service.compute(read));
     await timeGroupStatePhase(timing, 'validate', () => {
         const issue = dependencies.service.validate(read, computed)[0];

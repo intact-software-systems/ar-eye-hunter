@@ -1,4 +1,4 @@
-import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
@@ -30,7 +30,7 @@ export function validateRtcTopologyPublication(
     assertExactGroupRef(publication.groupRef, expectedRef);
     nonEmptyString(publication.publicationId, 'publication id');
     nonEmptyString(publication.workId, 'work id');
-    if (typeof publication.traceId !== 'string' || validateALTraceId(publication.traceId).length > 0) {
+    if (decodeALTraceId(publication.traceId).left !== undefined) {
         throw new TypeError('RTC topology publication trace is invalid');
     }
     const overlayVersion = publication.overlayVersion;

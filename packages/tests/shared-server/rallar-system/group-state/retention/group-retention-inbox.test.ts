@@ -152,7 +152,7 @@ describe('retention through the registered AppInbox capability', () => {
         const { inbox, reader, results } = createInbox(fixture, fixture.retention, (event) => timings.push(event));
         const command = { groupRef: RETENTION_REF, requestId: `failed-${fault}`, observedAtEpochMs: fixture.nowEpochMs };
         const ingress = fixture.retention.capture(command);
-        const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1, 'trace-group-retention-inbox'));
+        const computed = fixture.retention.compute(await fixture.retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention-inbox' }));
         if (computed.outcome !== 'write') {
             throw new Error('Expected an observation write');
         }

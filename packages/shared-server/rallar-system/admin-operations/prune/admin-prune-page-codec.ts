@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -37,7 +37,6 @@ export interface AdminPrunePageWork {
 
 export interface ReservedAdminPrunePageWork extends AdminPrunePageWork {
     readonly reservation: ResourceEntry;
-    /** The trace of the reserved row's envelope; the next page's row carries it. */
     readonly traceId: string;
 }
 
@@ -102,11 +101,12 @@ function requireAdminPruneOutboxIdentity(
         resourceId: `${work.jobId}:${work.category}:${work.pageIndex}`,
         contextId: work.jobId
     });
+    const traceId = decodeALTraceId(id.traceId).right;
     if (
         id.v !== AL_MESSAGE_ENVELOPE_VERSION || id.msgId !== expectedRoute.resourceId ||
         id.ts !== work.capturedAtEpochMs ||
         typeof id.senderId !== 'string' || id.senderId.length === 0 ||
-        typeof id.traceId !== 'string' || validateALTraceId(id.traceId).length > 0 ||
+        traceId === undefined ||
         route.topicId !== expectedRoute.topicId || route.resourceId !== expectedRoute.resourceId ||
         route.contextId !== expectedRoute.contextId || entry.key.topicId !== route.topicId ||
         entry.key.resourceId !== route.resourceId || entry.key.contextId !== route.contextId ||
@@ -116,7 +116,7 @@ function requireAdminPruneOutboxIdentity(
     ) {
         throw new TypeError('Admin prune work route, sender, expiry, or audit identity is invalid');
     }
-    return { senderId: id.senderId, traceId: id.traceId };
+    return { senderId: id.senderId, traceId };
 }
 
 export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string, traceId: string): ResourceEntry {

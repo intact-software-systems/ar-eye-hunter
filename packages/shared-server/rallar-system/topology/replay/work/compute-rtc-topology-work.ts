@@ -50,7 +50,7 @@ export interface RtcTopologyWorkFacts {
      * window from the attempt, so a row derived from a long-lived row near its expiry still lives its window.
      */
     readonly derivedExpireAtEpochMs: number;
-    /** The trace of the work row's envelope; the publication and every row the work derives carry it. */
+    /** From the retained work row's envelope, never re-minted, so retries and recomputes reproduce the same rows. */
     readonly traceId: string;
 }
 

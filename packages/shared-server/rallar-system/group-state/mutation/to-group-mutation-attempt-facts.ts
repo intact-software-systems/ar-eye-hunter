@@ -7,10 +7,7 @@ export interface GroupMutationAttemptFactsInput {
     readonly traceId: string;
 }
 
-/**
- * One attempt's facts: the ingress facts it reuses, its count, the lane's clock, never before the ingress, and the
- * trace of the queued command's envelope.
- */
+/** One attempt's facts: the ingress facts it reuses, its count, and the lane's clock, never before the ingress. */
 export function toGroupMutationAttemptFacts(input: GroupMutationAttemptFactsInput): GroupMutationFacts {
     const { ingressFacts, attemptCount, laneNowEpochMs, traceId } = input;
     return {

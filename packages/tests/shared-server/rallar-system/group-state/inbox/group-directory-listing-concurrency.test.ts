@@ -87,7 +87,7 @@ describe('listing changes under optimistic concurrency', () => {
             request: { requestId: 'quick-join-race', includeEmpty: true }
         }, harness.sessions.guest);
         const ingress = encodeJsonWireValue(await service.capture(command, harness.sessions.guest), 'Quick Join');
-        const read = await service.read(ingress, 1, 'trace-group-directory-listing-concurrency');
+        const read = await service.read(ingress, { attemptCount: 1, traceId: 'trace-group-directory-listing-concurrency' });
         const computed = service.compute(read);
         expect(service.validate(read, computed)).toEqual([]);
         expect(computed.result.status).toBe('joined');
@@ -99,7 +99,7 @@ describe('listing changes under optimistic concurrency', () => {
             .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(await harness.repository.readSnapshot(ROOM_REF)).toEqual(committed);
         expect(harness.database.outboxEntries.size).toBe(outboxCount);
-        const fresh = await service.read(ingress, 2, 'trace-group-directory-listing-concurrency');
+        const fresh = await service.read(ingress, { attemptCount: 2, traceId: 'trace-group-directory-listing-concurrency' });
         const rebased = service.compute(fresh);
 
         expect(service.validate(fresh, rebased)).toEqual([]);

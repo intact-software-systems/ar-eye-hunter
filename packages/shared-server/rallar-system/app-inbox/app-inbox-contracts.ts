@@ -115,6 +115,15 @@ export interface AppInboxExecutionMetadata {
     readonly attemptTelemetry: ResourceInboxAttemptTelemetry;
 }
 
+/**
+ * One attempt of a queued command, read once by its handler from the entry and the stored envelope. The trace enters
+ * the compute facts, never the logical command, so it stays out of every idempotency identity.
+ */
+export interface AppInboxCommandAttempt {
+    readonly attemptCount: number;
+    readonly traceId: string;
+}
+
 export type AppInboxMessageContext<Result> =
     & AppInboxExecutionMetadata
     & Readonly<{

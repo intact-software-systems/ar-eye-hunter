@@ -13,7 +13,6 @@ import {
 export interface GroupPresenceSummaryWorkItem {
     readonly work: GroupPresenceSummaryWorkData;
     readonly reservation: GroupPresenceSummaryReservationRead;
-    /** The trace of the row's envelope; the publications its expansion writes carry it. */
     readonly traceId: string;
 }
 

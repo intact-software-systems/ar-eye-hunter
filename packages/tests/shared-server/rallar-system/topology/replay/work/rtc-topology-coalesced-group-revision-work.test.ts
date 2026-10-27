@@ -231,10 +231,13 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     });
 
     it('keeps merged generations canonical so handler-finalized releases stay idempotent', () => {
+        // Each generation carries the trace of the change that wrote it, not the first generation's.
+        const firstChangeTraceId = 'trace-first-change';
+        const secondChangeTraceId = 'trace-second-change';
         const unexpiredBaseEpochMs = 1_800_000_000_000;
         const unexpiredExpireAtEpochMs = unexpiredBaseEpochMs + 3_600_000;
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
-            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
+            traceId: firstChangeTraceId,
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: unexpiredBaseEpochMs,
@@ -245,7 +248,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const second = computeCoalescedRtcTopologyGroupRevisionWork({
-            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
+            traceId: secondChangeTraceId,
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: unexpiredBaseEpochMs + 200,
@@ -260,6 +263,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         if (merged.audit === undefined || merged.constraints === undefined) {
             throw new TypeError('Merged topology message requires audit and constraints');
         }
+        expect(decodePersistedALMessage(first.entryWrite.entry.resource).id.traceId).toBe(firstChangeTraceId);
+        expect(merged.id.traceId).toBe(secondChangeTraceId);
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
         expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
         expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs + 200);

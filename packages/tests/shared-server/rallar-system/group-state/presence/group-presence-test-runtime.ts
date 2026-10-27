@@ -16,6 +16,9 @@ import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.
 import { createTestGroupStateRuntime, createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 
+/** The trace every test expansion carries, as the reserved row's envelope would. */
+export const SUMMARY_EXPANSION_TRACE_ID = 'trace-group-presence-test-runtime';
+
 export function createService(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number | (() => number),
@@ -117,9 +120,6 @@ function assertGroupPresenceSummaryWorkValid(
 }
 
 /** One work row's expansion of its read, with the summary state its page would compute from that read. */
-/** The trace every test expansion carries, as the reserved row's envelope would. */
-export const SUMMARY_EXPANSION_TRACE_ID = 'trace-group-presence-test-runtime';
-
 export function toSummaryExpansion(
     command: GroupPresenceSummaryWorkData,
     read: GroupPresenceSummaryWorkRead
@@ -139,7 +139,7 @@ export async function readSummaryWork(
     nowEpochMs: number
 ): Promise<GroupPresenceSummaryWorkRead> {
     const reads = await work.read(
-        [{ traceId: 'trace-group-presence-test-runtime', work: command, reservation: summaryReservationRead(command.commandId) }],
+        [{ work: command, reservation: summaryReservationRead(command.commandId), traceId: SUMMARY_EXPANSION_TRACE_ID }],
         nowEpochMs
     );
     const [read] = reads.right ?? [];

@@ -137,7 +137,6 @@ export interface GroupPresenceSummaryExpansionInput {
     readonly work: GroupPresenceSummaryWorkData;
     readonly read: GroupPresenceSummaryWorkRead;
     readonly state: GroupPresenceSummaryState;
-    /** The trace of the work row's envelope; every publication the expansion writes carries it. */
     readonly traceId: string;
 }
 

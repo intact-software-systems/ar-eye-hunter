@@ -68,8 +68,8 @@ export function prepareALInboundCommitBundle(
     input: PrepareALInboundCommitBundleInput
 ): ALInboundCommitBundle {
     const { read } = input;
-    const msg = read.kind === 'incoming' ? read.msg : read.snapshot.msg;
-    const durableEffects = computeDurableEffects(input, msg.id.traceId);
+    const msg = toPreparedALInboundMessage(read);
+    const durableEffects = computeDurableEffects(input);
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
     const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
     const ownedWorkExpiries = [
@@ -90,11 +90,13 @@ export function prepareALInboundCommitBundle(
     };
 }
 
-function computeDurableEffects(
-    input: PrepareALInboundCommitBundleInput,
-    traceId: string
-): readonly ALInboundDurableEffectWrite[] {
+function toPreparedALInboundMessage(read: PrepareALInboundCommitBundleInput['read']): ALMessage {
+    return read.kind === 'incoming' ? read.msg : read.snapshot.msg;
+}
+
+function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readonly ALInboundDurableEffectWrite[] {
     const { read, facts } = input;
+    const traceId = toPreparedALInboundMessage(read).id.traceId;
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({

@@ -1,9 +1,11 @@
 import { Either } from '../../resilience/Either.ts';
 
-export const AL_TRACE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-
 const AL_TRACE_ID_MAX_LENGTH = 128;
-const AL_TRACE_ID_FOREIGN_CHARACTER = /[^A-Za-z0-9_-]/;
+const AL_TRACE_ID_CHARACTER_CLASS = 'A-Za-z0-9_-';
+
+export const AL_TRACE_ID_PATTERN = new RegExp(`^[${AL_TRACE_ID_CHARACTER_CLASS}]{1,${AL_TRACE_ID_MAX_LENGTH}}$`);
+
+const AL_TRACE_ID_FOREIGN_CHARACTER = new RegExp(`[^${AL_TRACE_ID_CHARACTER_CLASS}]`);
 
 export interface ALTraceIdIssue {
     readonly path: '$.traceId';

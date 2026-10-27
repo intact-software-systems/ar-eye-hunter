@@ -524,7 +524,6 @@ export interface GroupMutationFacts extends GroupMutationIngressFacts {
      * window.
      */
     readonly attemptAtEpochMs: number;
-    /** The trace of the queued command's envelope; every publication the attempt writes carries it. */
     readonly traceId: string;
 }
 
