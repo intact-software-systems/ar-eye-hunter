@@ -20,6 +20,7 @@ import {
 } from 'vitest';
 
 import RoomJourneyReporter from '../../shared-test/room-journey-reporter.ts';
+import { isPlainJsonValue, type PlainJsonValue } from '../../shared/repository/compare-plain-json.ts';
 
 const testCase = { id: 'test-1', title: 'Two people share an activity', repeatEachIndex: 0 };
 let outputDirectory: string;
@@ -297,8 +298,12 @@ function createStep(title: string, duration: number): TestStep {
     };
 }
 
-async function readReport(): Promise<unknown> {
+async function readReport(): Promise<PlainJsonValue> {
     const path = join(outputDirectory, 'room-journeys.json');
     expect(existsSync(path)).toBe(true);
-    return JSON.parse(await readFile(path, 'utf8'));
+    const report = JSON.parse(await readFile(path, 'utf8'));
+    if (!isPlainJsonValue(report)) {
+        throw new Error('Room journey artifacts must contain plain JSON values.');
+    }
+    return report;
 }

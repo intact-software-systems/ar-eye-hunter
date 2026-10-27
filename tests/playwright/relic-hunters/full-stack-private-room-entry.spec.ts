@@ -306,6 +306,10 @@ roomBrowserTest(
         const link = host.getByLabel('Room link', { exact: true });
         await expect(link).toHaveValue(/#rallar-room\?/);
         const roomLink = await link.inputValue();
+        const roomId = new URLSearchParams(new URL(roomLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!roomId) {
+            throw new Error('The shared expedition must have a scoped room reference.');
+        }
         await guest.goto(roomLink);
         const guestUsername = await registerPrivateHunter(guest, 'finale-guest');
         await playPrivateExpedition(host, guest);
@@ -350,7 +354,8 @@ roomBrowserTest(
             await expect(host.locator('.profile-row strong')).toHaveText(hostUsername);
             await expect(guest.locator('.profile-row strong')).toHaveText(guestUsername);
             await expect(link).toHaveValue(roomLink);
-            await expect(guest.getByLabel('Room link', { exact: true })).toHaveValue(roomLink);
+            await expect(host.locator('.room-row.active')).toHaveAttribute('data-room-id', roomId);
+            await expect(guest.locator('.room-row.active')).toHaveAttribute('data-room-id', roomId);
             await playPrivateExpedition(host, guest);
         });
     }
@@ -606,6 +611,9 @@ async function playPrivateExpedition(host: Page, guest: Page): Promise<void> {
     await expect(host.locator('.lobby-party-row')).toHaveCount(2);
     await expect(guest.locator('.lobby-party-row')).toHaveCount(2);
     await host.locator('.lobby-begin-btn').click();
+    for (const hunter of [host, guest]) {
+        await hunter.locator('.action-picker').getByRole('button', { name: /^Search/ }).click();
+    }
     await expect(guest.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
     await host.getByRole('button', { name: 'Submit Plan' }).click();
     await guest.getByRole('button', { name: 'Submit Plan' }).click();

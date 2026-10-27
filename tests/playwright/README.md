@@ -27,11 +27,11 @@ phase with a native `test.step('room-journey:<phase>', ...)`. Assertions inside
 the step establish the user-visible outcome; an HTTP admission alone is not
 participation.
 
-| Phase       | AR Eye                                                                                                  | Relic                                                                                                             |
-| ----------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Entry       | Open a code invitation, sign in, enter the arena, and observe the shared running match.                 | Open a code invitation, register, join the expedition, and submit both plans through round two.                   |
-| Recovery    | Reload the guest and observe the same arena's running match.                                            | Reload the guest at round two and submit a plan successfully.                                                     |
-| Repeat play | After matching results, both players continue and the host starts another timed match in the same room. | After the two-player finale, reset, rejoin with the same accounts, start, and advance the same room to round two. |
+| Phase       | AR Eye                                                                                                  | Relic                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Entry       | Open a code invitation, sign in, enter the arena, and observe the shared running match.                 | Open a code invitation, register, join the expedition, and submit both plans through round two.                                  |
+| Recovery    | Reload the guest and observe the same arena's running match.                                            | Reload the guest at round two and submit a plan successfully.                                                                    |
+| Repeat play | After matching results, both players continue and the host starts another timed match in the same room. | After the two-player finale, reset, rejoin with the same accounts, start, select Search, and advance the same room to round two. |
 
 Collect three serial repetitions from a clean committed checkout. Run the two
 commands sequentially so their renderers do not compete. Each command retains
@@ -73,3 +73,8 @@ These timings include automated interactions and assertion waits: they measure
 the defined synthetic journeys, not production latency or user adoption. The
 reload checks do not establish operating-system suspension recovery. No numeric
 performance threshold or gameplay policy is introduced.
+
+Relic repeat play explicitly selects a fresh Search action: the current UI retains
+the previous Escape draft after Reset, and Escape is unavailable at the new
+entrance. This journey includes that extra choice; it does not claim Reset clears
+the draft or measure a one-click replay flow.
