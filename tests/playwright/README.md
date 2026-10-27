@@ -94,7 +94,10 @@ Set `RALLAR_BROWSER_TIMING=1` to capture both players in cases using
 `roomBrowserTest` (the two-player AR Eye private entry and Quick Join cases, and
 Relic full-stack private entry cases). Each test attempt writes `browser-timing-host.jsonl`
 and, when a guest is used, `browser-timing-guest.jsonl` in its output directory.
-The flag is off by default; the hosted AR Eye room lane enables it. It does not
+The flag is off by default; the hosted AR Eye room lane enables it. In that
+full-stack config it also retains native traces for successful cases, preserving
+the existing snapshot capture and disabled filmstrip screenshots. This lets a
+passing but stalled action be correlated with metrics. It does not
 change rendering, workflow assertions, browser topology or deadlines.
 
 Each file begins with runtime, renderer, machine and explicit source revision
@@ -117,7 +120,9 @@ CPU counter deltas for interval utilization; `ps` CPU percentage is a lifetime
 average. These system samples continue if a renderer stops responding. Match
 Chromium process IDs with the browser samples; unrelated runner processes are
 context, not attribution to the game. The timing artifact is uploaded on pass or
-failure before component tests clear the output directory.
+failure before component tests clear the output directory. The same artifact includes
+the retained native `trace.zip` files; these are broader synthetic-account test
+evidence, not redacted numeric records.
 
 For a local diagnostic, use the normal app command with this extra flag and an
 ignored output directory, for example:

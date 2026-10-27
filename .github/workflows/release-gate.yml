@@ -243,6 +243,7 @@ jobs:
           name: ar-eye-browser-timing
           path: |
             apps/ar-eye-hunter-v1/test-results/**/browser-timing-*.jsonl
+            apps/ar-eye-hunter-v1/test-results/**/trace.zip
             tmp/perf/ar-eye-browser/runner-processes.log
           if-no-files-found: error
           retention-days: 7
