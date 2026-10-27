@@ -136,6 +136,46 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         }
     },
     {
+        kind: 'messages.awaitReply',
+        title: 'Await ALM Reply',
+        description:
+            'Waits for the one reply to a prior messages.send handle, matched on its replyToMsgId. The value ' +
+            'is payload-free: status (replied, timeout, aborted, undelivered), the request\'s state and corrId, and ' +
+            'for replied the reply\'s msgId, replyToMsgId, corrId, senderId and typeId. The page ends the wait 250 ms ' +
+            'before timeoutMs, so a timeout is the command\'s value, never its failure; the first timeout ends every ' +
+            'wait of the request, and a later reply is dropped as reply-late. Replies travel over WS only.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['reply wait outcome with the request state and correlation, and the reply identity'],
+        example: {
+            kind: 'messages.awaitReply',
+            commandId: 'await-alm-reply',
+            handleId: 'alm-send-1',
+            timeoutMs: 5_000
+        }
+    },
+    {
+        kind: 'messages.reply',
+        title: 'Reply to ALM Message',
+        description: 'Replies with payload to the index-th arrival (1-based) of typeId among the last 16 the page ' +
+            'received of that type: a WS unicast to the request\'s sender session under the request\'s correlation, ' +
+            'in its room. handleId names the reply\'s own handle, so messages.observe follows its delivery. An arrival ' +
+            'the page does not hold fails the command and sends nothing.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['reply handle with its msgId and replyToMsgId'],
+        example: {
+            kind: 'messages.reply',
+            commandId: 'reply-alm-message',
+            typeId: 'alm.conformance',
+            index: 1,
+            payload: { ok: true },
+            handleId: 'alm-reply-1'
+        }
+    },
+    {
         kind: 'fault.inject',
         title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +

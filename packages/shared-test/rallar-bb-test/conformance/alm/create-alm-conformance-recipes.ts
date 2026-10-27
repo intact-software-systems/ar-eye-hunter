@@ -72,6 +72,10 @@ import { orderingGapRepair } from './scenarios/range-repair/ordering-gap-repair.
 import { repairExhausted } from './scenarios/range-repair/repair-exhausted.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
+import { replyCorrelated } from './scenarios/reply/reply-correlated.ts';
+import { replyFirstWins } from './scenarios/reply/reply-first-wins.ts';
+import { replyTimeoutLate } from './scenarios/reply/reply-timeout-late.ts';
+import { replyUndelivered } from './scenarios/reply/reply-undelivered.ts';
 import { serverCommand } from './scenarios/server-command.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
@@ -157,6 +161,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     capacity,
     capacityAge,
     capacityTracks,
+    replyCorrelated,
+    replyTimeoutLate,
+    replyUndelivered,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,
@@ -176,6 +183,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     claimFirstWins,
     claimExpiresReclaims,
     claimRefusedOnRtc,
+    replyFirstWins,
     durableTakeover,
     flushOnHide
 ];

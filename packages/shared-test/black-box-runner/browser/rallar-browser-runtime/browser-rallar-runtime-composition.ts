@@ -3,6 +3,7 @@ import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
     createBrowserResyncRecoveryComposition,
+    readBrowserSessionInboundDiagnostics,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
@@ -437,7 +438,8 @@ function createBlackBoxBrowserTransportComposition(
         wsInbox: stateEvents.wsInbox,
         recoveryOwners: recovery.recoveryOwners,
         state,
-        session: session.session
+        session: session.session,
+        readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
     });
     const realtime = createBrowserRealtimeCoreComposition({
         runtime: foundation.runtime,

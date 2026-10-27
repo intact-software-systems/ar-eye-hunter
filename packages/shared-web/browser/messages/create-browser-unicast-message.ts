@@ -10,6 +10,7 @@ import {
 } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import {
     newALRoute,
+    type ALActions,
     type ALMessage,
     type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
@@ -29,6 +30,8 @@ export interface CreateBrowserUnicastMessageInput<T> {
     readonly senderId: string;
     readonly channel: BrowserTypedChannelPolicy | undefined;
     readonly laneTtlMs: number;
+    /** Written verbatim: a public send's corrId, or the reply fields only the reply path sets. */
+    readonly actions: ALActions | undefined;
 }
 
 export interface ValidateBrowserPeerInput<T> {
@@ -69,7 +72,8 @@ export function createBrowserUnicastMessage<T>(
             reliability: defaults.reliability,
             ack: defaults.ack,
             ownership: send.ownership ?? 'shared',
-            qos: defaults.qos
+            qos: defaults.qos,
+            actions: input.actions
         }
     );
 }

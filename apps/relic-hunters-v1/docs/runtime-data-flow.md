@@ -1,6 +1,6 @@
 # Runtime Data Flow
 
-Last reviewed: 2026-10-24.
+Last reviewed: 2026-10-27.
 
 ## Modules
 
@@ -96,8 +96,9 @@ which the page shows as the command error. Accepted phase, round or expedition c
 a later action receipt also clears the displayed refusal while preserving unrelated transport failures.
 Late refusal events cannot restore a stale gameplay error over the finale. The committed provenance captures
 the private recipient audience; a session joining later does not receive historical feedback.
-A storage or session failure on the WS path is still only logged until a
-reply channel exists.
+A storage or session failure on the WS path is still only logged: the server
+sends no reply to a command. Rallar's reply channel (`handle.awaitReply`,
+`message.reply`) exists, and the planning companion below is its one Relic user.
 
 ```text
 submit-action -> applyCommand -> outbox snapshot (room) -> outbox hunter event (the hunter's principal in the room)
@@ -264,13 +265,43 @@ and it redacts unfound relic ids, names, exact hidden locations, and values into
 UI-level signals such as `relicSignal`.
 
 Generation is explicit: a player presses Ask while they are in `planning`, are
-active, and have not submitted. Requests use the existing RallarAI browser
-facade with a browser-only policy, a stable `baseStateRevision`, stale-result
-rejection, and a deterministic mock provider in development/tests. Production
-builds stay unavailable unless an app-supplied browser provider is injected.
+active, and have not submitted. The request is the RallarAI JSON request without
+its `signal`, with a stable `baseStateRevision`. The planning contract (schema id
+and version, suggestion schema, prompt, context and suggestion types,
+`decodeRelicPlanningAiContext`, `decodeRelicPlanningAiSuggestion`, and the
+deterministic `computeRelicPlanningAiSuggestion`) lives in `packages/relic-hunters`
+and is shared by the browser and the server.
 
-Accepted local suggestions become RallarAI `proposed` envelopes and are sent
-over Rallar WS on `room.relic.ai.planning` / `relic.ai.planning-proposal.v1` as
+The server is asked first. `sendRelicPlanningRequest` returns at once when no
+server peer id is known. Otherwise it sends the request on a room `command`
+channel on `room.relic.ai.planning` / `relic.ai.planning-request.v1`, addressed to
+the server peer over WS, and awaits the reply for 5 s with `handle.awaitReply`.
+The Relic server (`relic-planning-ai-topic.ts`) installs the RallarAI WebSocket
+topic with a deterministic provider: it decodes the context, answers
+`computeRelicPlanningAiSuggestion`, and validates its own suggestion before
+replying. It admits a request only in a Relic room (the request's room ref is the
+Relic scope's `GroupRef` for its room id), only for the planning schema id and
+version, and sends one reply, `relic.ai.planning-reply.v1`, to the asking session
+alone (not to the hunter's other sessions), through the outbox. A request
+that is refused, or whose context cannot be decoded, gets no reply.
+
+The browser accepts a reply only when its result decodes, its `requestId`, schema
+id and version are the request's, its `baseStateRevision` is still the current
+revision (exactly), and the suggestion passes `decodeRelicPlanningAiSuggestion`
+against the context that was asked. Any other outcome is a fallback reason: no
+server peer, `timeout`, `undelivered` (a rejected send included) or an invalid reply. On a fallback, a build
+with a local provider runs the local path below, and a build without one reads
+Unavailable. A cancelled ask (the panel unmounts or Ask is pressed again) neither
+falls back nor publishes. The local path uses the existing RallarAI browser facade
+with a browser-only policy and rejects a stale result. Its provider is the
+deterministic mock (`computeRelicPlanningAiSuggestion`) in development and tests,
+chosen by `createDefaultRelicPlanningAiProvider`; a production build has no local
+provider, so its suggestions come from the server, and Ask is enabled whenever a
+server peer id is known. An Ollama-backed planner and a typed refusal reply are
+not built.
+
+Accepted suggestions, from the server or the local provider, become RallarAI
+`proposed` envelopes and are sent over Rallar WS on `room.relic.ai.planning` / `relic.ai.planning-proposal.v1` as
 a principal broadcast in the room: only the asking hunter's own sessions in the
 room receive it, and other hunters never do. The panel's one suggestion card
 shows the hunter's newest proposal, whichever of the hunter's sessions asked for

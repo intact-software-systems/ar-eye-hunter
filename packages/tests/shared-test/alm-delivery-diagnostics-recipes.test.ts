@@ -316,6 +316,12 @@ class DeliveryLane {
             observeDelivery: async (handle) => this.receipt(handle),
             readReceipts: async (handle) => this.receipt(handle),
             cancelDelivery: async (handle) => this.receipt(handle),
+            awaitReply: async () => {
+                throw new Error('The delivery diagnostics pair awaits no reply.');
+            },
+            reply: async () => {
+                throw new Error('The delivery diagnostics pair sends no reply.');
+            },
             submitControl: async () => undefined,
             injectFault: async () => undefined,
             readStorageCounters: async () => ({ total: 0, byOwner: { 'al-admission': 0, 'al-work': 0 }, byKind: {} }),

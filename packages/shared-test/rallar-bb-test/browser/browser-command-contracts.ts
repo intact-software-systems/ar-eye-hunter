@@ -86,6 +86,8 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     submitControl: RallarBlackBoxBrowserRallarRuntimeMethod;
     injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
+    awaitReply: RallarBlackBoxBrowserRallarRuntimeMethod;
+    reply: RallarBlackBoxBrowserRallarRuntimeMethod;
     /** The page's session ledger report, read by the `stats` command; `undefined` before the page connects. */
     readAlmUsage(): Promise<unknown>;
     /** The page's congestion counters, read by the `stats` command; `undefined` before the page connects. */

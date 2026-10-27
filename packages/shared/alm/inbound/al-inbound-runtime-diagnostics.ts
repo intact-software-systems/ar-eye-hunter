@@ -113,6 +113,31 @@ export type ALInboundRuntimeDiagnosticsEvent =
         rejection: ALMessageRejection['code'];
     }>
     | Readonly<{
+        /**
+         * A reply no open slot admitted: already replied, timed out, or unobserved (no retained request, or it came
+         * over RTC).
+         */
+        kind: 'reply-late';
+        msgId: string;
+        replyToMsgId: string;
+        corrId: string;
+        typeId: string;
+        senderId: string;
+        carrier: ALDeliveryCarrier;
+        cause: 'replied' | 'timed-out' | 'unobserved';
+    }>
+    | Readonly<{
+        /** A reply whose sender is not the peer the request addressed, so the registry refused it. */
+        kind: 'reply-wrong-responder';
+        msgId: string;
+        replyToMsgId: string;
+        corrId: string;
+        typeId: string;
+        senderId: string;
+        carrier: ALDeliveryCarrier;
+        expectedSenderId: string;
+    }>
+    | Readonly<{
         kind: 'effect-drain';
         /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
         lane: ALStoreDurability;

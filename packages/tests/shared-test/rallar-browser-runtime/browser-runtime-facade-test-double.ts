@@ -34,6 +34,7 @@ import type {
     RallarTypedMessageSendOptions,
     RallarTypedPayloadHandler
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessagesUsage } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
@@ -44,10 +45,7 @@ import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import {
-    AL_VOLATILE_SESSION_LIMITS,
-    type ALVolatileSessionReport
-} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -149,12 +147,14 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
 const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 
 /** The ledger of a connected session that holds nothing, at the production limits. */
-const IDLE_SESSION_REPORT: ALVolatileSessionReport = {
+const IDLE_SESSION_REPORT: RallarMessagesUsage = {
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
     own: { admissions: 0, bytes: 0 },
     inbound: { admissions: 0, bytes: 0 },
     limits: AL_VOLATILE_SESSION_LIMITS,
-    overloaded: false
+    overloaded: false,
+    repliesHeld: 0,
+    replyWaitsOpen: 0
 };
 
 export const facadeSession: AuthSession = {

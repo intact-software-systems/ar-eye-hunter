@@ -1,8 +1,11 @@
 import type { ALQosPolicyRequest } from '@shared-web/browser/rallar-messages.ts';
+import { newALMulticastMessage, newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -12,6 +15,13 @@ import {
     resetRallarFacadeTestRuntime,
     setRallarFacadeRoomSnapshots
 } from './rallar-facade-test-runtime.ts';
+// After the facade runtime: its mocks must be registered before the fixture loads the modules they replace.
+import { createBrowserMessageSenderFixture, toQueuedMessageAdmission } from './browser-message-sender-fixture.ts';
+
+/** Either carrier's admission port; the RTC one also takes its carrier-gap mode, which these tests ignore. */
+interface EnvelopeCarrier {
+    enqueueOutboxIfAbsent(message: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult>;
+}
 
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
@@ -520,6 +530,143 @@ describe('Rallar message send', () => {
         expect(message.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'none' });
         expect(message.qos).toBeUndefined();
     });
+});
+
+describe('the send correlation and the reply path', () => {
+    const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+    it('writes no actions on a send that names no correlation, and only the corrId on a re-ask', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const rtc = captureEnvelopes(fixture.middleware.middleware.rtcRxStreamer);
+        const send = { typeId: 'app.ask.v1', payload: { text: 'ask' }, roomId: 'room' } as const;
+
+        const first = await fixture.sender.sendWs({ ...send, scope: 'room' }, undefined);
+        const reAsk = await fixture.sender.sendWs({ ...send, scope: 'room', corrId: first.msgId }, undefined);
+        const peer = await fixture.sender.sendWs({ ...send, peerId: 'peer-b', corrId: first.msgId }, undefined);
+        const multicast = await fixture.sender.sendRtc({ ...send, corrId: first.msgId }, undefined);
+
+        const [firstMessage, reAskMessage, peerMessage] = ws;
+        expect(firstMessage).not.toHaveProperty('actions');
+        expect(first.corrId).toBe(first.msgId);
+        for (const message of [reAskMessage, peerMessage, rtc[0]]) {
+            expect(message.actions).toEqual({ corrId: first.msgId });
+        }
+        expect([reAsk.corrId, peer.corrId, multicast.corrId]).toEqual([first.msgId, first.msgId, first.msgId]);
+        expect(reAsk.replyToMsgId).toBeUndefined();
+    });
+
+    it.each([
+        ['empty', ''],
+        ['longer than 128 bytes', 'é'.repeat(65)]
+    ])('refuses an %s corrId with a $.corrId issue before queueing', async (_label, corrId) => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+
+        const sending = fixture.sender.sendWs({ typeId: 'app.ask.v1', payload: {}, scope: 'room', corrId }, undefined);
+
+        await expect(sending).rejects.toSatisfy(isRallarValidationError);
+        await expect(sending).rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.corrId' })] });
+        expect(ws).toEqual([]);
+        expect(fixture.registry.size()).toBe(0);
+    });
+
+    it('sends a reply as a receipted WS unicast to the requester, in its room and route, under its correlation', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = toRoomRequest({ corrId: 'corr-0' });
+
+        const handle = await fixture.sender.sendReply(request, { answer: 42 }, undefined);
+
+        const reply = ws[0];
+        expect(reply).toMatchObject({
+            id: { senderId: fixture.middleware.session.sessionId },
+            route: { topicId: 'room.ask', contextId: 'room' },
+            targets: { mode: 'unicast', toPeerId: 'requester-1', groupRef: ROOM_REF },
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            payload: { typeId: 'app.ask.v1', resource: '{"answer":42}' },
+            actions: { corrId: 'corr-0', replyToMsgId: request.id.msgId }
+        });
+        expect(reply.constraints?.expiresAtMs).toBe(reply.id.ts + 30_000);
+        expect(reply.qos).toBeUndefined();
+        expect(handle).toMatchObject({ corrId: 'corr-0', replyToMsgId: request.id.msgId });
+    });
+
+    it('routes a reply to a room request in the room it names, whatever context the request used', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = toRoomRequest({ contextId: 'custom' });
+
+        await fixture.sender.sendReply(request, { answer: 42 }, undefined);
+
+        expect(ws[0]).toMatchObject({
+            route: { topicId: 'room.ask', contextId: ROOM_REF.groupId },
+            targets: { mode: 'unicast', toPeerId: 'requester-1', groupRef: ROOM_REF },
+            actions: { corrId: request.id.msgId, replyToMsgId: request.id.msgId }
+        });
+    });
+
+    it('refuses a reply to a request whose topic WS cannot carry, before queueing', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = toRoomRequest({ topicId: 'ask' });
+
+        const replying = fixture.sender.sendReply(request, { answer: 42 }, undefined);
+
+        await expect(replying).rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.topicId' })] });
+        expect(ws).toEqual([]);
+    });
+
+    it('lets the reply name its own type and lifetime', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = toRoomRequest({});
+
+        await fixture.sender.sendReply(request, { answer: 42 }, { typeId: 'app.answer.v1', ttlMs: 5_000 });
+
+        const reply = ws[0];
+        expect(reply.payload.typeId).toBe('app.answer.v1');
+        expect(reply.constraints?.expiresAtMs).toBe(reply.id.ts + 5_000);
+        expect(reply.actions).toEqual({ corrId: request.id.msgId, replyToMsgId: request.id.msgId });
+    });
+
+    it('replies to a request that named no room outside any room, never in the default room', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
+        const request = newALUnicastMessage(
+            'requester-1',
+            newALRoute('app.ask', 'world', 'resource-1'),
+            'session-1',
+            'app.ask.v1',
+            { question: 'ping' }
+        );
+
+        await fixture.sender.sendReply(request, { answer: 'pong' }, undefined);
+
+        expect(ws[0].targets).toEqual({ mode: 'unicast', toPeerId: 'requester-1' });
+        expect(ws[0].route).toMatchObject({ topicId: 'app.ask', contextId: 'world' });
+    });
+
+    /** Records each envelope a carrier admits, in admission order. */
+    function captureEnvelopes(carrier: EnvelopeCarrier): ALMessage[] {
+        const envelopes: ALMessage[] = [];
+        carrier.enqueueOutboxIfAbsent = async (message: ALMessage) => {
+            envelopes.push(message);
+            return await Promise.resolve(toQueuedMessageAdmission(message));
+        };
+        return envelopes;
+    }
+
+    function toRoomRequest(input: Readonly<{ corrId?: string; contextId?: string; topicId?: string; }>): ALMessage {
+        return newALMulticastMessage(
+            'requester-1',
+            newALRoute(input.topicId ?? 'room.ask', input.contextId ?? 'room', 'resource-1'),
+            ROOM_REF,
+            'app.ask.v1',
+            { question: 'ping' },
+            input.corrId === undefined ? {} : { actions: { corrId: input.corrId } }
+        );
+    }
 });
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {

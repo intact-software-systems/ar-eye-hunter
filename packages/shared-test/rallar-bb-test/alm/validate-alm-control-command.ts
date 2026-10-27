@@ -25,6 +25,8 @@ export type RallarBlackBoxTestAlmCommandKind =
     | 'messages.received'
     | 'messages.receipts'
     | 'messages.control'
+    | 'messages.awaitReply'
+    | 'messages.reply'
     | 'fault.inject'
     | 'storage.counters'
     | 'agent.reload';
@@ -45,6 +47,13 @@ export function validateAlmControlCommand(
             return validateMessagesReceivedCommand(command);
         case 'messages.control':
             return validateMessagesControlCommand(command);
+        case 'messages.awaitReply':
+            return [
+                ...validateMessagesHandleCommand(command, kind),
+                ...validateIntegerField({ record: command, key: 'timeoutMs', path: kind, minimum: 0 })
+            ];
+        case 'messages.reply':
+            return validateMessagesReplyCommand(command);
         case 'fault.inject':
             return validateFaultInjectCommand(command);
         case 'storage.counters':
@@ -211,6 +220,15 @@ function validateMessagesControlCommand(command: RallarBlackBoxTestRecord): read
         ...(typeof typeId === 'string' && !typeId.startsWith('al.control.')
             ? [toControlCommandIssue(`${path}.typeId must name an al.control.* id.`)]
             : [])
+    ];
+}
+
+/** The request is the `index`-th arrival of `typeId` the page still holds; the reply carries `payload` as given. */
+function validateMessagesReplyCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const path = 'messages.reply';
+    return [
+        ...(['connection', 'typeId', 'handleId'] as const).flatMap((key) => validateStringField(command, key, path)),
+        ...validateIntegerField({ record: command, key: 'index', path, minimum: 1 })
     ];
 }
 

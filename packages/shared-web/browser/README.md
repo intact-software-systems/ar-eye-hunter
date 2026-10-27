@@ -309,6 +309,32 @@ Message ownership is concentrated under [`messages/`](./messages/):
 - [BrowserRallarMessageSubscriptions](./messages/browser-rallar-message-subscriptions.ts)
   owns selector registries, WS inbox lifetime, RTC callback lifetime, and
   listener delivery.
+- Reply correlation is owned in [`messages/reply/`](./messages/reply/) and the delivery registry. A send takes an
+  optional `corrId` (a non-empty string of at most 128 UTF-8 bytes, refused as `$.corrId`); absent, the message
+  correlates as its `msgId`. A `RallarMessageHandle` carries `corrId`, `replyToMsgId` and
+  `awaitReply<T>({ timeoutMs, signal? })`, which never throws and resolves `replied` (with the reply
+  `RallarMessage<T>`), `timeout`, `aborted` or `undelivered`, each with the request's lifecycle. The reply timeout
+  is the caller's own clock beside the ACK timeout and the message deadline: a `timeout` leaves the request alive,
+  the first timeout ends every wait of the request, and a request deadline that lapses during the wait ends it
+  `undelivered`. A reply that arrives after the deadline is still matched and kept, so a later `awaitReply` resolves
+  `replied`.
+  [BrowserMessageReplySlot](./messages/reply/browser-message-reply-slot.ts) is the reply side of one
+  delivery-registry entry, so the registry's retention (terminal entries for 60 s, 512 entries; an entry with an
+  open reply wait outlives the age rule) is its only bound; the slot is `open`, `replied`, `timed-out`, or
+  `released` once retention drops the entry, and it keeps the first matched reply for a later wait.
+  [BrowserMessageReplyInbox](./messages/reply/browser-message-reply-inbox.ts) is the WS any-message handler
+  `message-replies` (order 15) that hands each message with `actions.replyToMsgId` to the registry, and the
+  subscriptions skip replies, so no reply reaches an `onMessage` subscriber of its type. A dropped reply states
+  `reply-late` or `reply-wrong-responder` on the session's inbound diagnostics port, payload-free (see the
+  [inbound navigation map](../../shared/alm/inbound/README.md#replies-and-their-diagnostics)).
+  `RallarMessage.reply(payload, { typeId?, ttlMs? })` goes through `BrowserRallarMessageSender.sendReply`, the one
+  place that sets `replyToMsgId`: a WS unicast to the requester's session on the request's topic, in the room's id
+  when the request named a room (the request's custom `contextId` is not used), on the `command` purpose's
+  defaults. A request on a topic that WS cannot carry rejects `reply()` with the `$.topicId` issue. Replies travel
+  over WS only: a reply that arrives over RTC is dropped with `reply-late` (cause `unobserved`) when the page subscribes to its type over RTC. Room and people
+  event listeners take `RallarStateEventMessage<T>`, the message without `reply`, because those events replay
+  locally. `messages.readUsage()` returns `RallarMessagesUsage`, the volatile ledger report with `repliesHeld`
+  (retained entries holding a matched reply) and `replyWaitsOpen` (reply waits in flight).
 - [`rallar-message-contracts.ts`](./messages/rallar-message-contracts.ts),
   [`rallar-message-selectors.ts`](./messages/rallar-message-selectors.ts), and
   [`to-rallar-message.ts`](./messages/to-rallar-message.ts) keep the public

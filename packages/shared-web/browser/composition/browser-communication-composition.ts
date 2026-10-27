@@ -1,4 +1,5 @@
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
@@ -28,6 +29,7 @@ import {
     newALPrincipalBroadcastMessage,
     newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
@@ -35,7 +37,7 @@ import type {
     RallarBrowserFacadeRuntimeContext
 } from './browser-facade-runtime-state.ts';
 
-import type { BrowserStateComposition } from './browser-runtime-composition.ts';
+import type { BrowserRuntimeFoundation, BrowserStateComposition } from './browser-runtime-composition.ts';
 
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
@@ -78,6 +80,7 @@ export interface CreateBrowserMessagingCompositionInput {
     readonly recoveryOwners: BrowserChannelRecoveryOwners;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
+    readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
 }
 
 export interface CreateBrowserRealtimeCoreCompositionInput {
@@ -129,12 +132,21 @@ export function createBrowserMessagingComposition(
         resolveRoomSendFence: (room, explicit) => input.state.roomStateStore.resolveRoomSendFence(room, explicit),
         readMessageMaxPayloadBytes: () =>
             input.state.readDefaults()?.messages?.maxPayloadBytes ??
-                RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES
+                RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+        readInboundDiagnostics: input.readInboundDiagnostics
     });
     return {
         messagesController,
         messages: messagesController.operations
     };
+}
+
+/** The connected session's port; before a connect, the one the defaults name. */
+export function readBrowserSessionInboundDiagnostics(
+    foundation: Pick<BrowserRuntimeFoundation, 'transportRuntime' | 'connectionRuntime'>
+): ALInboundRuntimeDiagnosticsSink {
+    return foundation.transportRuntime.readConnection()?.diagnosticsPorts.inboundDiagnostics ??
+        toRallarDiagnosticsPorts(foundation.connectionRuntime.readDefaults()?.diagnosticsPorts).inboundDiagnostics;
 }
 
 export function createBrowserRealtimeCoreComposition(

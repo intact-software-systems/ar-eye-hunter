@@ -6,6 +6,7 @@ import {
 
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { ALM_REPLY_WAIT_RESPONSE_MARGIN_MS } from '../../shared-test/rallar-bb-test/alm/browser-adapter-alm-commands.ts';
 import {
     createRallarBlackBoxRtcClient,
     createRallarBlackBoxRtcProvider
@@ -35,6 +36,8 @@ const ALM_COMMAND_KINDS = [
     'messages.received',
     'messages.receipts',
     'messages.control',
+    'messages.awaitReply',
+    'messages.reply',
     'fault.inject',
     'storage.counters',
     'agent.reload'
@@ -53,6 +56,11 @@ function recipeWithCommand(commandId: string, command: RallarBlackBoxTestRecord)
     };
 }
 
+/** No default budget: a reply wait's own `timeoutMs` is what the schema must require. */
+function toReplyRecipe(command: RallarBlackBoxTestRecord) {
+    return { schemaVersion: 1, recipeId: 'alm-reply', name: 'alm reply', commands: [{ commandId: 'reply-command', ...command }] };
+}
+
 interface AlmRuntimeCaptures {
     readonly sendMessage: RallarBlackBoxTestRecord[];
     readonly observeDelivery: RallarBlackBoxTestRecord[];
@@ -61,6 +69,8 @@ interface AlmRuntimeCaptures {
     readonly submitControl: RallarBlackBoxTestRecord[];
     readonly injectFault: RallarBlackBoxTestRecord[];
     readonly readStorageCounters: RallarBlackBoxTestRecord[];
+    readonly awaitReply: RallarBlackBoxTestRecord[];
+    readonly reply: RallarBlackBoxTestRecord[];
 }
 
 const RAW_CONTROL_COMMAND = {
@@ -110,6 +120,16 @@ const DELIVERY_OBSERVATION = {
     reason: 'hop evidence retained'
 };
 
+const REPLY_OUTCOME = {
+    handleId: 'handle-1',
+    status: 'replied',
+    state: 'acknowledged',
+    corrId: 'msg-1',
+    reply: { msgId: 'reply-1', replyToMsgId: 'msg-1', corrId: 'msg-1', senderId: 'bob-session', typeId: 'alm.conformance' }
+};
+
+const REPLY_SUBMISSION = { handleId: 'reply-handle-1', msgId: 'reply-1', replyToMsgId: 'msg-1' };
+
 const STORAGE_COUNTS = {
     total: 7,
     byOwner: { 'al-admission': 3, 'al-work': 4 },
@@ -124,7 +144,9 @@ function createAlmRuntimeCaptures(): AlmRuntimeCaptures {
         readReceipts: [],
         submitControl: [],
         injectFault: [],
-        readStorageCounters: []
+        readStorageCounters: [],
+        awaitReply: [],
+        reply: []
     };
 }
 
@@ -162,6 +184,14 @@ function createAlmBrowserRuntimeFake(
         readStorageCounters: async (input) => {
             captures.readStorageCounters.push(input);
             return STORAGE_COUNTS;
+        },
+        awaitReply: async (input) => {
+            captures.awaitReply.push(input);
+            return REPLY_OUTCOME;
+        },
+        reply: async (input) => {
+            captures.reply.push(input);
+            return REPLY_SUBMISSION;
         },
         readAlmUsage: async () => undefined,
         readCongestionCounters: async () => undefined,
@@ -583,6 +613,36 @@ describe('ALM recipe commands', () => {
             .toBe(false);
         expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, toPeerId: undefined }).ok).toBe(false);
         expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, msgId: undefined }).ok).toBe(false);
+    });
+
+    it('accepts a reply wait and a reply, and refuses a wait without its budget and a reply without its arrival or payload', () => {
+        const accepted = [
+            { kind: 'messages.awaitReply', connection: 'alice', handleId: 'h-1', timeoutMs: 1_750 },
+            { kind: 'messages.reply', connection: 'bob', typeId: 'alm.conformance', index: 1, payload: { ok: true }, handleId: 'reply-1' }
+        ];
+        for (const command of accepted) {
+            const schema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toReplyRecipe(command));
+            expect(schema.ok, schema.ok ? command.kind : formatJsonSchemaValidationErrors(schema.errors)).toBe(true);
+            expect(validateRallarBlackBoxTestCommand({ commandId: 'reply-command', ...command }), command.kind).toEqual({ ok: true });
+        }
+
+        const refused = [
+            { command: { kind: 'messages.awaitReply', handleId: 'h-1' }, field: 'timeoutMs' },
+            { command: { kind: 'messages.awaitReply', timeoutMs: 1_750 }, field: 'handleId' },
+            { command: { kind: 'messages.awaitReply', handleId: 'h-1', timeoutMs: 1_750, state: ['acknowledged'] }, field: 'state' },
+            { command: { kind: 'messages.reply', typeId: 'alm.conformance', index: 0, payload: 1, handleId: 'r' }, field: 'index' },
+            { command: { kind: 'messages.reply', typeId: 'alm.conformance', index: 1.5, payload: 1, handleId: 'r' }, field: 'index' },
+            { command: { kind: 'messages.reply', typeId: 'alm.conformance', index: 1, handleId: 'r' }, field: 'payload' },
+            { command: { kind: 'messages.reply', index: 1, payload: 1, handleId: 'r' }, field: 'typeId' },
+            { command: { kind: 'messages.reply', typeId: 'alm.conformance', index: 1, payload: 1 }, field: 'handleId' }
+        ];
+        for (const { command, field } of refused) {
+            const schema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toReplyRecipe(command));
+            const control = validateRallarBlackBoxTestCommand({ commandId: 'reply-command', ...command });
+            expect(schema.ok, `${command.kind} without a valid ${field}`).toBe(false);
+            expect(control.ok, `${command.kind} without a valid ${field}`).toBe(false);
+            expect(control.ok ? '' : control.error, command.kind).toContain(field);
+        }
     });
 
     it('rejects a control-protocol messages.send without a carrier', () => {
@@ -1091,6 +1151,80 @@ describe('ALM browser adapter execution', () => {
         );
     });
 
+    it('awaits a reply through the page runtime, ending the page wait before the command budget so a timeout is its value', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(captures),
+                awaitReply: async (input) => {
+                    captures.awaitReply.push(input);
+                    return input.handleId === 'handle-1'
+                        ? REPLY_OUTCOME
+                        : { handleId: 'handle-2', status: 'timeout', state: 'acknowledged', corrId: 'msg-2' };
+                }
+            }
+        });
+
+        const replied = await runtime.execute({ kind: 'messages.awaitReply', commandId: 'alm-await-reply', handleId: 'handle-1', timeoutMs: 2_000 });
+        const timedOut = await runtime.execute({ kind: 'messages.awaitReply', commandId: 'alm-await-timeout', handleId: 'handle-2', timeoutMs: 2_000 });
+
+        expect(replied.ok, replied.error?.message).toBe(true);
+        expect(replied.value).toEqual(REPLY_OUTCOME);
+        expect(timedOut.ok, timedOut.error?.message).toBe(true);
+        expect(timedOut.value).toEqual({ handleId: 'handle-2', status: 'timeout', state: 'acknowledged', corrId: 'msg-2' });
+        expect(captures.awaitReply[0]).toMatchObject({ connection: 'default', handleId: 'handle-1' });
+        const pageTimeoutMs = Number(captures.awaitReply[0]?.timeoutMs);
+        expect(pageTimeoutMs).toBeLessThanOrEqual(2_000 - ALM_REPLY_WAIT_RESPONSE_MARGIN_MS);
+        expect(pageTimeoutMs).toBeGreaterThan(2_000 - ALM_REPLY_WAIT_RESPONSE_MARGIN_MS - 500);
+        expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.reply_awaited');
+    });
+
+    it.each([
+        { field: 'status', value: { ...REPLY_OUTCOME, status: 'lost' } },
+        { field: 'state', value: { ...REPLY_OUTCOME, state: 'delivered' } },
+        { field: 'corrId', value: { ...REPLY_OUTCOME, corrId: undefined } },
+        { field: 'reply', value: { ...REPLY_OUTCOME, reply: undefined } },
+        { field: 'reply.senderId', value: { ...REPLY_OUTCOME, reply: { ...REPLY_OUTCOME.reply, senderId: 7 } } }
+    ])('fails a reply wait whose page-runtime result carries an unusable $field', async ({ field, value }) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: { ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()), awaitReply: async () => value }
+        });
+
+        const result = await runtime.execute({ kind: 'messages.awaitReply', commandId: 'alm-await-malformed', handleId: 'handle-1', timeoutMs: 2_000 });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: `The page runtime returned no usable messages.awaitReply result.${field}.`
+        });
+    });
+
+    it('replies to a received message through the page runtime and reports the reply handle', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(captures)
+        });
+
+        const result = await runtime.execute({
+            kind: 'messages.reply',
+            commandId: 'alm-reply',
+            typeId: 'alm.conformance',
+            index: 2,
+            payload: { ok: true },
+            handleId: 'reply-handle-1'
+        });
+
+        expect(result.ok, result.error?.message).toBe(true);
+        expect(result.value).toEqual(REPLY_SUBMISSION);
+        expect(captures.reply).toEqual([
+            expect.objectContaining({ connection: 'default', typeId: 'alm.conformance', index: 2, payload: { ok: true }, handleId: 'reply-handle-1' })
+        ]);
+        expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.replied');
+    });
+
     it('cancels a delivery and reads its receipts through the page runtime', async () => {
         const captures = createAlmRuntimeCaptures();
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
@@ -1233,6 +1367,12 @@ describe('ALM browser adapter execution', () => {
                 message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.toPeer ` +
                     'receiver names no peer: the room holds 2 other live sessions, not exactly one.',
                 code: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED'
+            },
+            {
+                commandId: 'alm-receipts-reply-request-unreceived',
+                message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replyRequestUnreceived}: messages.reply names ` +
+                    'no received alm.conformance message at index 3; the page holds 2.',
+                code: 'RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED'
             },
             {
                 commandId: 'alm-receipts-bad-input',

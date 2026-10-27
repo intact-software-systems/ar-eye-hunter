@@ -208,6 +208,24 @@
           "toPeerId": "golden-origin-session"
         },
         {
+          "kind": "messages.awaitReply",
+          "commandId": "messages-await-reply-v1",
+          "connection": "goldenRtc",
+          "handleId": "messages-send-to-peer-v1-handle",
+          "timeoutMs": 5000
+        },
+        {
+          "kind": "messages.reply",
+          "commandId": "messages-reply-v1",
+          "connection": "goldenWs",
+          "typeId": "room.golden.compatibility.alm.command",
+          "index": 1,
+          "payload": {
+            "text": "golden reply payload"
+          },
+          "handleId": "messages-reply-v1-handle"
+        },
+        {
           "kind": "fault.inject",
           "commandId": "fault-inject-v1",
           "faultId": "golden-drop-one-nack",

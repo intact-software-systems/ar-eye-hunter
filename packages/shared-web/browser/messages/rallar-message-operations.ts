@@ -27,6 +27,12 @@ export interface RallarWsMessageLane {
     ): RallarUnsubscribe;
 }
 
+/** The volatile ledger beside the matched replies this page's retained deliveries hold and its reply waits in flight. */
+export interface RallarMessagesUsage extends ALVolatileSessionReport {
+    readonly repliesHeld: number;
+    readonly replyWaitsOpen: number;
+}
+
 export interface RallarMessagesOperations {
     readonly rtc: RallarRtcMessageLane;
     readonly ws: RallarWsMessageLane;
@@ -36,6 +42,6 @@ export interface RallarMessagesOperations {
     room<T>(
         definition: RallarRoomMessageChannelDefinition
     ): RallarTypedMessageChannel<T>;
-    /** The connected session's volatile ledger: what it holds, its four bounds, and whether it sheds (D180). */
-    readUsage(): ALVolatileSessionReport;
+    /** The connected session's `RallarMessagesUsage`. */
+    readUsage(): RallarMessagesUsage;
 }

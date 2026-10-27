@@ -62,6 +62,19 @@ const CLAIM_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': ['claim-first-wins']
 } as const;
 
+/** The reply cells (D445): the addressed ones over WS, the correlated one on the fallback cell too, first-wins on three agents. */
+const REPLY_ADDRESSED_KEYS_BY_CARRIER = {
+    ws: ['reply-correlated', 'reply-timeout-late', 'reply-undelivered'],
+    rtc: [],
+    'rtc-with-ws-fallback': ['reply-correlated']
+} as const;
+
+const REPLY_THREE_AGENT_KEYS_BY_CARRIER = {
+    ws: ['reply-first-wins'],
+    rtc: [],
+    'rtc-with-ws-fallback': []
+} as const;
+
 /** The volatile-bound cells run in the addressed family on every carrier, under the full tag only. */
 const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as const;
 
@@ -167,6 +180,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
+        ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws,
         'backpressure-deferred',
         'own-share-under-inbound',
         'buffered-track-drains'
@@ -220,6 +234,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
+        ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
         'backpressure-hands-over'
     ]
 } as const;
@@ -246,10 +261,15 @@ describe('alm-conformance recipe family', () => {
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
                 carrier === 'ws'
-                    ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS]
+                    ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS, ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws]
                     : carrier === 'rtc'
                     ? ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS]
-                    : ['ws-unicast-receipt', 'unicast-fallback', ...VOLATILE_BOUND_KEYS]
+                    : [
+                        'ws-unicast-receipt',
+                        'unicast-fallback',
+                        ...VOLATILE_BOUND_KEYS,
+                        ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback']
+                    ]
             );
     });
 
@@ -262,9 +282,11 @@ describe('alm-conformance recipe family', () => {
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
                     ...AUDIENCE_KEYS.flatMap((key) => ['sender', 'receiver', 'sibling'].map((role) => `alm-${carrier}-${key}-${role}`)),
-                    ...[...LEADER_ACK_KEYS_BY_CARRIER[carrier], ...CLAIM_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
-                        ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
-                    ),
+                    ...[
+                        ...LEADER_ACK_KEYS_BY_CARRIER[carrier],
+                        ...CLAIM_KEYS_BY_CARRIER[carrier],
+                        ...REPLY_THREE_AGENT_KEYS_BY_CARRIER[carrier]
+                    ].flatMap((key) => ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)),
                     ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
                     ...(carrier === 'rtc-with-ws-fallback'
                         ? []
@@ -273,7 +295,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience, membership fence, leader and claim scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience, membership fence, leader, claim and reply-first-wins scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
         const threeAgentIds = [
             'receipted-audience',
             'fenced-delivery',
@@ -284,7 +306,8 @@ describe('alm-conformance recipe family', () => {
             'leader-outside-list',
             'claim-first-wins',
             'claim-expires-reclaims',
-            'claim-refused-on-rtc'
+            'claim-refused-on-rtc',
+            'reply-first-wins'
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -526,6 +549,7 @@ describe('alm-conformance recipe family', () => {
             'ws-unicast-receipt',
             'unicast-fallback',
             ...VOLATILE_BOUND_KEYS,
+            ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'backpressure-hands-over',
             'receipted-audience',
             'receipted-audience',

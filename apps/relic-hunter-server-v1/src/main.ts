@@ -19,6 +19,7 @@ import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
+import { installRelicPlanningAiTopic } from './relic-planning-ai-topic.ts';
 import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
 
 loadEnvironment();
@@ -87,6 +88,7 @@ const relicGame = installRelicHunterGame(rallar, {
     }),
     readSession: (sessionId) => rallar.runtime.authSessionRepository.findBySessionId(sessionId)
 });
+installRelicPlanningAiTopic({ websocket: rallar.ws, serverSenderId: rallar.ws.serverPeerId });
 
 installApiHttpMiddleware(app, {
     http: configuration.http,

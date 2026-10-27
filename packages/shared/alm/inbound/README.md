@@ -908,3 +908,33 @@ Semantic evidence starts with
 and [`ws-queue-box-server-ingress.test.ts`](../../../tests/shared/services/ws-queue-box-server-ingress.test.ts).
 These entry and persistence tests complement the real browser workflow; passing
 them does not by itself prove native RTC connection readiness.
+
+## Replies and their diagnostics
+
+A message whose `actions.replyToMsgId` is set is a reply. The inbound runtime admits and deduplicates it like any
+message: a copy that meets the first admission's dedup row is never delivered, so a cross-carrier duplicate or a
+retransmission of one reply reaches a consumer once. Matching a reply to its request is not inbound-runtime work.
+In the browser, [`BrowserMessageReplyInbox`](../../../shared-web/browser/messages/reply/browser-message-reply-inbox.ts)
+is a handler of the WS any-message inbox (`message-replies`, order 15), and the messaging subscriptions skip replies,
+so a reply never reaches an `onMessage` subscriber of its type. The inbox hands the reply to the delivery registry,
+whose entry for the request owns one
+[`BrowserMessageReplySlot`](../../../shared-web/browser/messages/reply/browser-message-reply-slot.ts). The slot's
+admission is `matched` (the first reply, from the unicast's addressee or any sender for an audience request),
+`wrong-responder` (the request was a unicast to another peer; judged first) or `late`. A request the registry no
+longer retains has no entry, so its reply is `late`.
+
+Replies travel over WS only. The RTC inbox keeps one callback per type, which the messaging subscriptions own, so a
+reply that arrives over RTC is not matched: when the page subscribes to its type over RTC, the subscriptions drop it and
+state `reply-late` with cause `unobserved` and `carrier: 'rtc'`, even while the request is awaited. A reply on a type
+with no RTC subscription never reaches the inbox, so nothing is stated.
+
+Each dropped reply states one event on the session's inbound diagnostics sink, built by
+[`toBrowserReplyDropDiagnostic`](../../../shared-web/browser/messages/reply/to-browser-reply-drop-diagnostic.ts) and
+typed in [`ALInboundRuntimeDiagnosticsEvent`](./al-inbound-runtime-diagnostics.ts):
+
+- `reply-late`, with `cause` `replied` (the slot already holds a reply), `timed-out` (a reply wait timed out and
+  closed the slot) or `unobserved` (no retained entry holds the request, or the reply arrived over RTC);
+- `reply-wrong-responder`, with `expectedSenderId`.
+
+Both carry `msgId`, `replyToMsgId`, `corrId`, `typeId`, `senderId` and `carrier`, and never the payload. A matched
+reply states nothing.

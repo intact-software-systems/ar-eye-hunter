@@ -760,7 +760,8 @@ function createDiagnosticMessage(text: string): RallarMessage<RallarMessagePaylo
             id: { v: 3, msgId: text, senderId: 'remote', ts: 1 },
             route: { topicId: 'room.manual.message', contextId: 'room-a', resourceId: 'message' },
             payload: { typeId: 'room.manual.message', contentType: 'application/json', resource: JSON.stringify({ text }) }
-        }
+        },
+        reply: unsupportedFacadeOperation
     };
 }
 

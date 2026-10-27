@@ -1,5 +1,8 @@
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
-import type { RallarTypedMessageChannel } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarStorageUnavailablePolicy,
+    RallarTypedMessageChannel
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
@@ -27,6 +30,7 @@ import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundDispatchPlan, ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -314,6 +318,63 @@ describe('typed message fallback identity', () => {
         expect(fixture.attempts).toEqual([]);
     });
 
+    it('keeps a re-ask\'s corrId across the admission retry on the fallback carrier', async () => {
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
+        const handle = await fixture.channel.send({ action: 'ready' }, { corrId: 'corr-0' });
+
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(fixture.attempts.map((attempt) => [attempt.carrier, attempt.message.actions])).toEqual([
+            ['rtc', { corrId: 'corr-0' }],
+            ['ws', { corrId: 'corr-0' }]
+        ]);
+        expect(handle.corrId).toBe('corr-0');
+    });
+
+    it('keeps a re-ask\'s corrId across the post-admission hand-over to WS', async () => {
+        const fixture = createChannel({ firstVerdict: ADMITTED_VERDICT });
+        const handle = await fixture.channel.send({ action: 'ready' }, { corrId: 'corr-0', ack: 'receiver' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        fixture.settlements.rtc({
+            kind: 'receipt-exhausted',
+            msgId: handle.msgId,
+            carrier: 'rtc',
+            atMs: Date.now(),
+            mode: 'receiver',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['peer-1'],
+            cause: 'budget',
+            detail: 'No receipt arrived.'
+        });
+
+        await vi.waitFor(() => expect(fixture.attempts).toHaveLength(2));
+        expect(fixture.attempts.map((attempt) => [attempt.carrier, attempt.message.actions])).toEqual([
+            ['rtc', { corrId: 'corr-0' }],
+            ['ws', { corrId: 'corr-0' }]
+        ]);
+    });
+
+    it('keeps a re-ask\'s corrId across the volatile downgrade', async () => {
+        const fixture = createChannel({
+            firstVerdict: { kind: 'storage-unavailable', cause: 'quota', detail: 'The storage quota is exhausted.' },
+            durability: 'local-outbox',
+            onStorageUnavailable: 'volatile'
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { corrId: 'corr-0' });
+
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(fixture.attempts.map((attempt) => attempt.message.qos?.durability)).toEqual([
+            { algo: 'local-outbox' },
+            { algo: 'volatile' }
+        ]);
+        expect(fixture.attempts.map((attempt) => attempt.message.actions)).toEqual([
+            { corrId: 'corr-0' },
+            { corrId: 'corr-0' }
+        ]);
+    });
+
     it('preserves excluded recipients and the sender fence on both carriers', async () => {
         const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         const handle = await fixture.channel.send({ action: 'ready' }, { exceptPeerIds: ['excluded-peer'], minSnapshotVersion: 9 });
@@ -330,6 +391,8 @@ describe('typed message fallback identity', () => {
 
 interface ChannelInput {
     readonly firstVerdict: ALDeliveryAdmissionVerdict;
+    readonly durability?: ALDurabilityAlgo;
+    readonly onStorageUnavailable?: RallarStorageUnavailablePolicy;
     readonly firstDurationMs?: number;
     readonly selectedLifetimeMs?: number;
     readonly firstPlanner?: (message: ALMessage) => ALOutboundDispatchPlan<never>;
@@ -401,7 +464,13 @@ function createChannel(input: ChannelInput): ChannelFixture {
         originalRoom: admission.originalRoom,
         attempts: admission.attempts,
         settlements: epoch.settlements,
-        channel: channels.channel<{ action: string; }>({ topicId: 'room.ready', typeId: 'ready', purpose: 'notification' })
+        channel: channels.channel<{ action: string; }>({
+            topicId: 'room.ready',
+            typeId: 'ready',
+            purpose: 'notification',
+            durability: input.durability,
+            onStorageUnavailable: input.onStorageUnavailable
+        })
     };
 }
 

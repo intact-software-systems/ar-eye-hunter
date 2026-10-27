@@ -9,6 +9,9 @@ export type {
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessagePayload,
+    RallarMessageReplyOptions,
+    RallarMessageReplyOutcome,
+    RallarMessageReplyWaitOptions,
     RallarMessageScope,
     RallarMessageSendBase,
     RallarMessageTransport,
@@ -28,6 +31,7 @@ export type {
 
 export type {
     RallarMessagesOperations,
+    RallarMessagesUsage,
     RallarRtcMessageLane,
     RallarWsMessageLane
 } from '@shared-web/browser/messages/rallar-message-operations.ts';

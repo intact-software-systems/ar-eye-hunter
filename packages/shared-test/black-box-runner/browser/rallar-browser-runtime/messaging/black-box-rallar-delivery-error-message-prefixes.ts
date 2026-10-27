@@ -11,5 +11,7 @@ export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
     /** The page has no connected session to submit a raw control from. */
     rawControlUnavailable: 'Raw control submission unavailable',
     /** A `messages.send.toPeer` or `recipientPeer` role the page could not resolve to exactly one peer. */
-    peerUnresolved: 'Message peer unresolved'
+    peerUnresolved: 'Message peer unresolved',
+    /** A `messages.reply` naming an arrival of its type the page does not hold among the last 16. */
+    replyRequestUnreceived: 'Reply request not received'
 } as const;

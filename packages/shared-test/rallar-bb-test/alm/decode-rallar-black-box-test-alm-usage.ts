@@ -1,3 +1,4 @@
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestAlmUsage } from '../rallar-black-box-test-contracts.ts';
@@ -9,17 +10,26 @@ export function decodeRallarBlackBoxTestAlmUsage(
     value: unknown
 ): Either<readonly string[], RallarBlackBoxTestAlmUsage> {
     const record = decodeRecord(value);
-    const orderingTracks = decodeCount(record.orderingTracks);
-    const deliveredMarkers = decodeCount(record.deliveredMarkers);
-    const countIssues = [
-        ...(orderingTracks === undefined ? ['orderingTracks is not a count'] : []),
-        ...(deliveredMarkers === undefined ? ['deliveredMarkers is not a count'] : [])
-    ];
+    const counts = {
+        orderingTracks: decodeCount(record.orderingTracks),
+        deliveredMarkers: decodeCount(record.deliveredMarkers),
+        repliesHeld: decodeCount(record.repliesHeld),
+        replyWaitsOpen: decodeCount(record.replyWaitsOpen)
+    };
+    const countIssues = Object.entries(counts)
+        .filter(([, count]) => count === undefined)
+        .map(([name]) => `${name} is not a count`);
     return decodeALVolatileSessionReport(value).fold(
         (issues) => Either.ofLeft<readonly string[], RallarBlackBoxTestAlmUsage>([...issues, ...countIssues]),
         (report) =>
-            orderingTracks === undefined || deliveredMarkers === undefined
-                ? Either.ofLeft(countIssues)
-                : Either.ofRight({ ...report, orderingTracks, deliveredMarkers })
+            hasEveryCount(counts)
+                ? Either.ofRight({ ...report, ...counts })
+                : Either.ofLeft(countIssues)
     );
+}
+
+function hasEveryCount(
+    counts: Readonly<Record<keyof Omit<RallarBlackBoxTestAlmUsage, keyof ALVolatileSessionReport>, number | undefined>>
+): counts is Readonly<Record<keyof typeof counts, number>> {
+    return Object.values(counts).every((count) => count !== undefined);
 }

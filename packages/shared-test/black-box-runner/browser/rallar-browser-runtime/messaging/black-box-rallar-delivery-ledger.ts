@@ -19,7 +19,11 @@ import type {
     BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendDiagnostics,
-    BlackBoxRallarMessageSendInput
+    BlackBoxRallarMessageSendInput,
+    BlackBoxRallarReplyDiagnostics,
+    BlackBoxRallarReplyInput,
+    BlackBoxRallarReplyWaitDiagnostics,
+    BlackBoxRallarReplyWaitInput
 } from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf } from '../black-box-rallar-operation-policy.ts';
 import type {
@@ -29,6 +33,10 @@ import type {
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
 import type { BlackBoxRallarTypedChannels } from './black-box-rallar-typed-channels.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
+import {
+    readBlackBoxRallarReplyWait,
+    requireBlackBoxRallarReplyToMsgId
+} from './read-black-box-rallar-reply-wait.ts';
 import {
     resolveBlackBoxRallarMessagePeer,
     resolveBlackBoxRallarRecipientPeer
@@ -269,6 +277,24 @@ export class BlackBoxRallarDeliveryLedger {
         const handle = this.#getDeliveryHandle(handleId);
         handle?.cancel();
         return toDeliveryObservation(handleId, handle?.lifecycle());
+    };
+
+    awaitReply = async (wait: BlackBoxRallarReplyWaitInput): Promise<BlackBoxRallarReplyWaitDiagnostics> =>
+        await readBlackBoxRallarReplyWait(wait, this.#getDeliveryHandle(wait.handleId));
+
+    /** The reply opens a handle of its own, which the ledger then follows like a send's. */
+    reply = async (reply: BlackBoxRallarReplyInput): Promise<BlackBoxRallarReplyDiagnostics> => {
+        const lease = this.#input.resources.lease();
+        const request = this.#input.typedChannels.requireReceived(reply.typeId, reply.index);
+        const handle = await request.reply(reply.payload);
+        this.#input.resources.assertCurrent(lease, 'Rallar reply completed after the runtime closed.');
+        this.#deliveryMsgIds.set(reply.handleId, handle.msgId);
+        this.#dropEvictedDeliveries();
+        return {
+            handleId: reply.handleId,
+            msgId: handle.msgId,
+            replyToMsgId: requireBlackBoxRallarReplyToMsgId(handle.msgId, handle.replyToMsgId)
+        };
     };
 
     #getDeliveryHandle(handleId: string): RallarMessageHandle | undefined {

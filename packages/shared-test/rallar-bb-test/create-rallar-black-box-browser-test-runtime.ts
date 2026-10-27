@@ -153,6 +153,8 @@ class BrowserCommandAdapter {
             case 'messages.received':
             case 'messages.receipts':
             case 'messages.control':
+            case 'messages.awaitReply':
+            case 'messages.reply':
             case 'fault.inject':
             case 'storage.counters':
             case 'agent.reload':

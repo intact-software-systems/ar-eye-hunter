@@ -462,7 +462,8 @@ function inboundMessage(): RallarMessage<ChatMessagePayload> {
         resourceId: 'message-1',
         payload: { text: 'received over ws' },
         raw: outboundMessage(),
-        receivedAtEpochMs: 1_000
+        receivedAtEpochMs: 1_000,
+        reply: vi.fn()
     };
 }
 

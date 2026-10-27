@@ -16,7 +16,11 @@ import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-por
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RecipeEventHistorySelection } from './recipe/validate-recipe-event-history.ts';
-import type { ResultCaptureIdentity, ResultReleaseOutcome, ResultReleaseRequest } from './result-release/result-release-protocol.ts';
+import type {
+    ResultCaptureIdentity,
+    ResultReleaseOutcome,
+    ResultReleaseRequest
+} from './result-release/result-release-protocol.ts';
 import type {
     RallarBlackBoxEventHistory,
     RallarBlackBoxEventHistoryPolicy,
@@ -52,6 +56,8 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'messages.received',
     'messages.receipts',
     'messages.control',
+    'messages.awaitReply',
+    'messages.reply',
     'fault.inject',
     'storage.counters',
     'agent.reload',
@@ -436,6 +442,23 @@ export type RallarBlackBoxTestMessagesReceiptsCommand =
     & RallarBlackBoxTestCommandBase<'messages.receipts'>
     & Readonly<{ connection?: string; handleId: string; }>;
 
+/** Waits for one reply to an earlier send's handle; a timeout is the command's value, never its failure. */
+export type RallarBlackBoxTestMessagesAwaitReplyCommand =
+    & RallarBlackBoxTestCommandBase<'messages.awaitReply'>
+    & Readonly<{ connection?: string; handleId: string; timeoutMs: number; }>;
+
+export type RallarBlackBoxTestMessagesReplyCommand =
+    & RallarBlackBoxTestCommandBase<'messages.reply'>
+    & Readonly<{
+        connection?: string;
+        /** The type of the received request; with `index`, the 1-based arrival among that type's last 16. */
+        typeId: string;
+        index: number;
+        payload: RallarBlackBoxTestJsonValue;
+        /** The reply's own handle, for `messages.observe`. */
+        handleId: string;
+    }>;
+
 export type RallarBlackBoxTestMessagesControlCommand =
     & RallarBlackBoxTestCommandBase<'messages.control'>
     & RallarBlackBoxTestMessagesControlFields;
@@ -793,6 +816,8 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestMessagesReceivedCommand
     | RallarBlackBoxTestMessagesReceiptsCommand
     | RallarBlackBoxTestMessagesControlCommand
+    | RallarBlackBoxTestMessagesAwaitReplyCommand
+    | RallarBlackBoxTestMessagesReplyCommand
     | RallarBlackBoxTestFaultInjectCommand
     | RallarBlackBoxTestStorageCountersCommand
     | RallarBlackBoxTestAgentReloadCommand

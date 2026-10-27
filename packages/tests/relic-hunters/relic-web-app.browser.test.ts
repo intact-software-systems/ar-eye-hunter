@@ -18,6 +18,7 @@ import {
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarMessage,
+    RallarMessageReplyOutcome,
     RallarTypedPayloadHandler,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -28,9 +29,11 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
 import {
     act,
     createElement,
@@ -62,6 +65,11 @@ interface MockWsAiMessage extends MockWsMessage {
     readonly raw: ALMessage;
 }
 
+type PlanningRequestAnswer = (
+    request: RallarAiJsonRequest,
+    signal: AbortSignal | undefined
+) => RallarMessageReplyOutcome<object> | Promise<RallarMessageReplyOutcome<object>>;
+
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
     roomState: undefined as RallarRoomState | undefined,
@@ -71,6 +79,13 @@ const rallarMock = vi.hoisted(() => ({
     wsAiMessageHandler: undefined as ((message: MockWsAiMessage) => void) | undefined,
     roundTransitionHandler: undefined as RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined,
     hunterEventHandler: undefined as RallarTypedPayloadHandler<RelicHunterEvent> | undefined,
+    serverPeerId: undefined as string | undefined,
+    answerPlanningRequest: undefined as PlanningRequestAnswer | undefined,
+    planningRequests: [] as RallarAiJsonRequest[],
+    localPlanningProviderOff: false,
+    localGenerateJson: vi.fn(),
+    /** Set, the planning send settles only when this does: a rejection is a send the transport refused. */
+    planningSendSettled: undefined as Promise<void> | undefined,
     wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
         status: 'queued',
@@ -113,8 +128,8 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             logout: vi.fn()
         },
         session: () => rallarMock.session,
-        // No WS server id is known, so commands take the REST fallback these tests read (C13).
-        serverPeerId: () => undefined,
+        // Absent unless a test sets it: commands then take the REST fallback these tests read (C13).
+        serverPeerId: () => rallarMock.serverPeerId,
         connect: async () => {
             rallarMock.connectCalls += 1;
         },
@@ -184,7 +199,18 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                         rallarMock.roundTransitionHandler = undefined;
                     };
                 },
-                sendRtc: async () => ({ wait: async () => ({ lifecycle: { state: 'transport-accepted' as const } }) })
+                sendRtc: async () => ({ wait: async () => ({ lifecycle: { state: 'transport-accepted' as const } }) }),
+                sendWs: async (request: RallarAiJsonRequest) => {
+                    if (definition.topicId !== RELIC_TOPICS.aiPlanning || rallarMock.answerPlanningRequest === undefined) {
+                        throw new Error(`Unexpected WS send on ${definition.topicId}`);
+                    }
+                    rallarMock.planningRequests.push(request);
+                    await rallarMock.planningSendSettled;
+                    const answer = rallarMock.answerPlanningRequest;
+                    return {
+                        awaitReply: async (options: { readonly signal?: AbortSignal; }) => await answer(request, options.signal)
+                    };
+                }
             })
         },
         data: {
@@ -227,6 +253,23 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async (
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
+// A production build has no local planning provider; these tests run as a test build, which has one.
+vi.mock('../../../apps/relic-hunters-v1/src/game/ai/create-default-relic-planning-ai-provider.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../apps/relic-hunters-v1/src/game/ai/create-default-relic-planning-ai-provider.ts')>();
+    return {
+        createDefaultRelicPlanningAiProvider: () => {
+            const provider = rallarMock.localPlanningProviderOff ? undefined : actual.createDefaultRelicPlanningAiProvider();
+            return provider && {
+                ...provider,
+                generateJson: (request: RallarAiJsonRequest) => {
+                    rallarMock.localGenerateJson();
+                    return provider.generateJson(request);
+                }
+            };
+        }
+    };
+});
+
 import App from '../../../apps/relic-hunters-v1/src/app.tsx';
 import { computePartyCoordination } from '../../../apps/relic-hunters-v1/src/game/hud/relic-party.tsx';
 
@@ -251,6 +294,11 @@ describe('Relic Hunters browser app', () => {
         rallarMock.wsAiMessageHandler = undefined;
         rallarMock.roundTransitionHandler = undefined;
         rallarMock.hunterEventHandler = undefined;
+        rallarMock.serverPeerId = undefined;
+        rallarMock.answerPlanningRequest = undefined;
+        rallarMock.planningRequests = [];
+        rallarMock.localPlanningProviderOff = false;
+        rallarMock.planningSendSettled = undefined;
         rallarMock.wsSend.mockClear();
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -511,6 +559,172 @@ describe('Relic Hunters browser app', () => {
         );
     });
 
+    it('asks the server\'s planning companion first and treats its suggestion as the local one', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        rallarMock.serverPeerId = 'default-qbox-server';
+        rallarMock.answerPlanningRequest = (request) => repliedWith(request, SERVER_SUGGESTION);
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        await waitFor(() => container.textContent?.includes('Suggestion ready') === true);
+        expect(container.textContent).toContain(SERVER_SUGGESTION.headline);
+        expect(container.textContent).not.toContain('Move toward Hallway');
+        expect(rallarMock.planningRequests).toHaveLength(1);
+        expect(rallarMock.planningRequests[0]).not.toHaveProperty('signal');
+        expect(sentPlanningProposals().map((input) => (input.payload as { value: { headline: string; }; }).value.headline))
+            .toEqual([SERVER_SUGGESTION.headline]);
+        await waitFor(() => aiPrimeButton() !== undefined);
+        await act(async () => {
+            aiPrimeButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(targetRoomButton('hallway')?.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('answers with the local companion when the server\'s planning reply times out', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        rallarMock.serverPeerId = 'default-qbox-server';
+        rallarMock.answerPlanningRequest = () => ({ status: 'timeout', lifecycle: PLANNING_REQUEST_LIFECYCLE });
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        await waitFor(() => container.textContent?.includes('Suggestion ready') === true);
+        expect(rallarMock.planningRequests).toHaveLength(1);
+        expect(container.textContent).toContain('Move toward Hallway');
+        expect(sentPlanningProposals()).toHaveLength(1);
+    });
+
+    it('publishes nothing and runs no local companion for an ask cancelled while it awaits the server', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        rallarMock.serverPeerId = 'default-qbox-server';
+        rallarMock.answerPlanningRequest = (_request, signal) =>
+            new Promise((resolve) => {
+                signal?.addEventListener('abort', () => resolve({ status: 'aborted', lifecycle: PLANNING_REQUEST_LIFECYCLE }));
+            });
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => rallarMock.planningRequests.length === 1);
+        act(() => {
+            root?.unmount();
+        });
+        root = undefined;
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        expect(sentPlanningProposals()).toEqual([]);
+        expect(rallarMock.localGenerateJson).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { label: 'its send is refused after the cancel', refuseSend: true },
+        { label: 'its request reads undelivered when the cancelled wait ends', refuseSend: false }
+    ])('runs no local companion and publishes nothing for a cancelled ask when $label', async ({ refuseSend }) => {
+        let refuse: (reason: Error) => void = () => undefined;
+        writeSession(session());
+        rallarMock.serverPeerId = 'default-qbox-server';
+        rallarMock.planningSendSettled = refuseSend
+            ? new Promise((_resolve, reject) => {
+                refuse = reject;
+            })
+            : undefined;
+        rallarMock.answerPlanningRequest = (_request, signal) =>
+            new Promise((resolve) => {
+                signal?.addEventListener('abort', () => resolve({ status: 'undelivered', lifecycle: PLANNING_REQUEST_LIFECYCLE }));
+            });
+        stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => rallarMock.planningRequests.length === 1);
+        act(() => {
+            root?.unmount();
+        });
+        root = undefined;
+        refuse(new Error('The WS connection closed before the send was admitted.'));
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        expect(sentPlanningProposals()).toEqual([]);
+        expect(rallarMock.localGenerateJson).not.toHaveBeenCalled();
+    });
+
+    describe('in a build without a local companion', () => {
+        beforeEach(() => {
+            rallarMock.localPlanningProviderOff = true;
+        });
+
+        it('asks the server, which alone answers', async () => {
+            writeSession(session());
+            rallarMock.serverPeerId = 'default-qbox-server';
+            rallarMock.answerPlanningRequest = (request) => repliedWith(request, SERVER_SUGGESTION);
+            stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+            await renderApp();
+            await waitFor(() => aiAskButton() !== undefined && !aiAskButton()!.disabled);
+            await act(async () => {
+                aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            });
+
+            await waitFor(() => container.textContent?.includes('Suggestion ready') === true);
+            expect(container.textContent).toContain(SERVER_SUGGESTION.headline);
+            expect(sentPlanningProposals()).toHaveLength(1);
+        });
+
+        it('reads unavailable and publishes nothing when the server\'s reply times out', async () => {
+            writeSession(session());
+            rallarMock.serverPeerId = 'default-qbox-server';
+            rallarMock.answerPlanningRequest = () => ({ status: 'timeout', lifecycle: PLANNING_REQUEST_LIFECYCLE });
+            stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+            await renderApp();
+            await waitFor(() => aiAskButton() !== undefined && !aiAskButton()!.disabled);
+            await act(async () => {
+                aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            });
+
+            await waitFor(() => container.querySelector('#hud-ai')?.textContent?.includes('Unavailable') === true);
+            expect(rallarMock.planningRequests).toHaveLength(1);
+            expect(container.querySelectorAll('.relic-ai-card')).toHaveLength(0);
+            expect(sentPlanningProposals()).toEqual([]);
+        });
+
+        it('offers no Ask before the server is known', async () => {
+            writeSession(session());
+            stubSnapshotFetch(snapshotWithPlayers(1, 'planning'));
+
+            await renderApp();
+            await waitFor(() => aiAskButton() !== undefined);
+
+            expect(aiAskButton()?.disabled).toBe(true);
+            expect(container.querySelector('#hud-ai')?.textContent).toContain('Unavailable');
+        });
+    });
+
     it('primes the normal draft from a local browser AI suggestion', async () => {
         const snapshot = snapshotWithPlayers(1, 'planning');
         writeSession(session());
@@ -710,6 +924,12 @@ describe('Relic Hunters browser app', () => {
             .find((button) => button.textContent === 'Ask');
     }
 
+    function sentPlanningProposals(): RallarWsSendInput<object>[] {
+        return rallarMock.wsSend.mock.calls
+            .map(([input]) => input)
+            .filter((input) => input.typeId === RELIC_TYPES.aiPlanningProposal);
+    }
+
     function aiPrimeButton(): HTMLButtonElement | undefined {
         return container.querySelector<HTMLButtonElement>('.relic-ai-prime') ?? undefined;
     }
@@ -832,7 +1052,8 @@ function toHunterEventMessage(event: RelicHunterEvent): RallarMessage<RelicHunte
         senderId: 'default-qbox-server',
         payload: event,
         raw,
-        receivedAtEpochMs: Date.now()
+        receivedAtEpochMs: Date.now(),
+        reply: unrepliedInTheseTests
     };
 }
 
@@ -861,7 +1082,8 @@ function toRoundTransitionMessage(event: RelicRoundTransitionEvent): RallarMessa
         senderId: 'default-qbox-server',
         payload: event,
         raw,
-        receivedAtEpochMs: Date.now()
+        receivedAtEpochMs: Date.now(),
+        reply: unrepliedInTheseTests
     };
 }
 
@@ -978,4 +1200,37 @@ function toOwnPrincipalProposal() {
         'relic.ai.planning-proposal.v1',
         {}
     );
+}
+
+/** The browser app replies to no server event. */
+function unrepliedInTheseTests(): never {
+    throw new Error('The Relic browser app does not reply to a server event.');
+}
+
+const SERVER_SUGGESTION = {
+    headline: 'Scout the Hallway before the others do',
+    action: { kind: 'move', targetRoomId: 'hallway' },
+    rationale: 'The server companion read the same public turn.',
+    risks: [],
+    confidence: 'medium'
+} as const;
+
+const PLANNING_REQUEST_LIFECYCLE = createInitialALDeliveryLifecycle({
+    msgId: 'planning-request-1',
+    typeId: RELIC_TYPES.aiPlanningRequest,
+    ackMode: 'receiver',
+    receiptAlgo: 'receiver',
+    expiresAtMs: undefined,
+    submittedAtMs: 0
+});
+
+/** The Relic server's reply: the deterministic companion's result for exactly this request. */
+function repliedWith(request: RallarAiJsonRequest, suggestion: object): RallarMessageReplyOutcome<object> {
+    const payload = createRallarAiJsonResult({
+        request,
+        provider: createRallarAiMockProvider({ providerId: 'relic-planning-deterministic' }),
+        value: suggestion,
+        generationId: 'server-generation-1'
+    });
+    return { status: 'replied', reply: { payload } as RallarMessage<object>, lifecycle: PLANNING_REQUEST_LIFECYCLE };
 }

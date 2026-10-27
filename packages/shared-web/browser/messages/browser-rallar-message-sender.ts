@@ -7,6 +7,8 @@ import {
 import type {
     RallarMessageHandle,
     RallarMessagePayload,
+    RallarMessageReplyOptions,
+    RallarMessageSendBase,
     RallarRoomAudienceInput,
     RallarRtcSendInput,
     RallarTypedMessageSendStrategy,
@@ -24,6 +26,7 @@ import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.t
 import {
     newALRoute,
     toALGroupTargetKey,
+    type ALActions,
     type ALBroadcastMessageBuilderOptions,
     type ALMessage,
     type ALPrincipalBroadcastTarget,
@@ -33,6 +36,7 @@ import {
     type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { toALPrincipalBroadcastTargets } from '@shared/al-contracts/read-al-principal-broadcast-target.ts';
+import { toALReplyActions } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -46,6 +50,7 @@ import {
     validateBrowserPeerInput,
     validateBrowserPeerServer
 } from './create-browser-unicast-message.ts';
+import { toBrowserReplySendInput } from './reply/to-browser-reply-send-input.ts';
 import {
     validateBrowserRtcPeerSend,
     type BrowserRtcPeerSend
@@ -68,6 +73,14 @@ interface CreateWsMessageInput<T> {
     readonly payloadValidation: CapturedMessagePayload;
     readonly session: AuthSession;
     readonly channel: BrowserTypedChannelPolicy | undefined;
+    readonly actions: ALActions | undefined;
+}
+
+interface ScopedSend<T> {
+    readonly send: RallarWsSendInput<T>;
+    readonly carrier: 'ws' | 'rtc';
+    readonly channel: BrowserTypedChannelPolicy | undefined;
+    readonly actions: ALActions | undefined;
 }
 
 interface ResolvedWsAudience<T> {
@@ -127,7 +140,7 @@ export class BrowserRallarMessageSender {
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         if (input.scope === 'world') {
-            return await this.sendScoped(input, 'rtc', channel);
+            return await this.sendScoped({ send: input, carrier: 'rtc', channel, actions: toSendActions(input) });
         }
         const capture = toBrowserRtcCaptureIntent(input);
         const target = this.resolveRtcMessageTarget(input);
@@ -154,29 +167,43 @@ export class BrowserRallarMessageSender {
         input: RallarWsSendInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
-        return await this.sendScoped(input, 'ws', channel);
+        return await this.sendScoped({ send: input, carrier: 'ws', channel, actions: toSendActions(input) });
     }
 
-    private async sendScoped<T>(
-        input: RallarWsSendInput<T>,
-        carrier: 'ws' | 'rtc',
-        channel: BrowserTypedChannelPolicy | undefined
+    /**
+     * The browser's one place that sets `replyToMsgId`: a WS unicast to the requester's session on the `command`
+     * purpose's delivery defaults, addressed by `toBrowserReplySendInput`.
+     */
+    public async sendReply<R>(
+        request: ALMessage,
+        payload: R,
+        options: RallarMessageReplyOptions | undefined
     ): Promise<RallarMessageHandle> {
-        const capture = toBrowserRtcCaptureIntent(input);
-        const { room, resolved } = this.resolveWsAudience(input);
+        return await this.sendScoped({
+            send: toBrowserReplySendInput(request, payload, options),
+            carrier: 'ws',
+            channel: undefined,
+            actions: toALReplyActions(request)
+        });
+    }
+
+    private async sendScoped<T>(scoped: ScopedSend<T>): Promise<RallarMessageHandle> {
+        const { send, carrier, channel } = scoped;
+        const capture = toBrowserRtcCaptureIntent(send);
+        const { room, resolved } = this.resolveWsAudience(send);
         const { roomRef } = resolved;
 
         throwIfMessageIssues([
             ...this.input.inputValidator.validateWs(resolved),
-            ...this.input.inputValidator.validateWsOrdering(input),
-            ...validateBrowserPeerInput({ send: input, roomRef })
+            ...this.input.inputValidator.validateWsOrdering(send),
+            ...validateBrowserPeerInput({ send, roomRef })
         ]);
 
-        const payloadValidation = this.capturePayload(input.payload);
+        const payloadValidation = this.capturePayload(send.payload);
         const context = await this.input.connect(capture.options);
         const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         throwIfMessageIssues(validateBrowserPeerServer({
-            peerId: input.peerId,
+            peerId: send.peerId,
             strategy: 'ws',
             serverPeerId: context.middleware.webSocketQueueBox.serverPeerId
         }));
@@ -186,7 +213,8 @@ export class BrowserRallarMessageSender {
             room,
             payloadValidation,
             session,
-            channel
+            channel,
+            actions: scoped.actions
         });
 
         return this.startDelivery({
@@ -290,7 +318,8 @@ export class BrowserRallarMessageSender {
                 payload: parseCapturedPayload(payloadValidation),
                 senderId: this.input.requireSession().sessionId,
                 channel,
-                laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+                laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
+                actions: toSendActions(peer.send)
             }),
             canFallback: peer.strategy === 'rtc-with-ws-fallback',
             payloadIssues: payloadValidation.issues,
@@ -393,12 +422,13 @@ export class BrowserRallarMessageSender {
             payload: parseCapturedPayload(input.payloadValidation),
             senderId: input.session.sessionId,
             channel: input.channel,
-            laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+            laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
+            actions: input.actions
         });
     }
 
     private createWsMessage<T>(
-        { resolved, room, payloadValidation, session, channel }: CreateWsMessageInput<T>
+        { resolved, room, payloadValidation, session, channel, actions }: CreateWsMessageInput<T>
     ): ALMessage {
         const { input, scope, roomId, roomRef } = resolved;
         const defaults = toBrowserMessageSendDefaults({
@@ -413,7 +443,7 @@ export class BrowserRallarMessageSender {
             input.resourceId ?? this.input.creation.newResourceId()
         );
         const payload = parseCapturedPayload(payloadValidation);
-        const options = this.toWsBroadcastOptions(input, room, defaults);
+        const options = { ...this.toWsBroadcastOptions(input, room, defaults), actions };
         if (scope !== 'principal') {
             const listed = { ...options, groupRef: roomRef, recipientPeerIds: input.recipientPeerIds };
             return this.input.creation.createBroadcast(session.sessionId, route, scope, input.typeId, payload, listed);
@@ -482,10 +512,15 @@ export class BrowserRallarMessageSender {
                 qos: defaults.qos,
                 nextHopPeerIds: input.nextHopPeerIds,
                 overlayId: input.overlayId ?? toScopedOverlayId(target.roomRef),
-                fanoutLimit: input.fanoutLimit
+                fanoutLimit: input.fanoutLimit,
+                actions: toSendActions(input)
             }
         );
     }
+}
+
+function toSendActions(send: Pick<RallarMessageSendBase<never>, 'corrId'>): ALActions | undefined {
+    return send.corrId === undefined ? undefined : { corrId: send.corrId };
 }
 
 /** The parser sees only the immutable JSON already accepted by the configured validator. */

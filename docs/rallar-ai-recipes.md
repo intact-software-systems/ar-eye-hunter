@@ -158,16 +158,20 @@ installRallarServerAiWebSocketTopic({
     config: {
         requestTopicId: 'room.ai.generate',
         requestTypeId: 'rallar.ai.generate-json.request.v1',
-        resultTopicId: 'room.ai.generated',
-        resultTypeId: 'rallar.ai.generate-json.result.v1',
+        requestScope: 'room',
         requestFanout: 'none',
-        resultFanout: 'outbox',
-        resultScope: 'room',
+        replyTypeId: 'rallar.ai.generate-json.reply.v1',
+        replyFanout: 'outbox',
         maxPayloadBytes: 256 * 1024,
         serverSenderId: 'rallar-ai-server'
     }
 });
 ```
+
+The WebSocket topic answers each request with one reply to the asking session
+alone, under the request's correlation (`newALReplyMessage`), so a browser
+awaits it with `handle.awaitReply({ timeoutMs })`. Relic Hunters' planning
+companion is the worked example (`apps/relic-hunter-server-v1/src/relic-planning-ai-topic.ts`).
 
 `decodedHttpRouter` is the application-owned HTTP adapter that supplies a
 JSON-wire body plus explicit actor and room identity. Framework request

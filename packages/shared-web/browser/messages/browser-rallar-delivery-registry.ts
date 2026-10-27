@@ -1,12 +1,17 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
+    RallarMessage,
     RallarMessageDeliveryListener,
     RallarMessageDeliveryOutcome,
     RallarMessageHandle,
+    RallarMessagePayload,
+    RallarMessageReplyOutcome,
+    RallarMessageReplyWaitOptions,
     RallarMessageWaitOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALCorrId } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import {
     createInitialALDeliveryLifecycle,
     isALDeliveryTerminal,
@@ -26,13 +31,18 @@ import {
     BrowserMessageFallbackController,
     type BrowserMessageFallbackCandidate
 } from './browser-message-fallback-controller.ts';
+import { BrowserMessageReplySlot } from './reply/browser-message-reply-slot.ts';
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
     readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly msgId: string;
+    readonly corrId: string;
+    readonly replyToMsgId: string | undefined;
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
+    readonly replyDeadlines: Set<DeliveryDeadlineTimer>;
+    readonly replySlot: BrowserMessageReplySlot;
     lifecycle: ALDeliveryLifecycle;
     /**
      * The carrier of the last settlement seen, which is the one a cancel is recorded against; after a
@@ -70,6 +80,11 @@ export namespace BrowserRallarDeliveryRegistry {
         readonly maxEntries: number;
         /** Reaches every carrier owner the message was admitted to; the registry records the `cancelled` settlement itself. */
         cancel(msgId: string): void;
+    }
+
+    export interface ReplyCounts {
+        readonly repliesHeld: number;
+        readonly replyWaitsOpen: number;
     }
 }
 
@@ -122,6 +137,9 @@ export class BrowserRallarDeliveryRegistry {
         for (const wait of observation.waits.values()) {
             wait.updateDeadline();
         }
+        for (const deadline of observation.replyDeadlines) {
+            this.rescheduleDeadlineTimer(deadline);
+        }
     }
 
     /** The dispatch hands the admitted RTC leg of an `rtc-with-ws-fallback` send to the one fallback owner (D56). */
@@ -148,6 +166,23 @@ export class BrowserRallarDeliveryRegistry {
         }
     }
 
+    /** A reply to a msgId the registry no longer retains is `unobserved`: it has no entry, so it has no slot. */
+    recordReply(reply: RallarMessage<RallarMessagePayload>): BrowserMessageReplySlot.Admission {
+        const replyToMsgId = reply.raw.actions?.replyToMsgId;
+        const entry = replyToMsgId === undefined ? undefined : this.entries.get(replyToMsgId);
+        return entry === undefined
+            ? { kind: 'late', cause: 'unobserved' }
+            : entry.observation.replySlot.record(reply);
+    }
+
+    getReplyCounts(): BrowserRallarDeliveryRegistry.ReplyCounts {
+        const slots = [...this.entries.values()].map(({ observation }) => observation.replySlot);
+        return {
+            repliesHeld: slots.filter((slot) => slot.holdsReply()).length,
+            replyWaitsOpen: slots.reduce((waits, slot) => waits + slot.getWaitCount(), 0)
+        };
+    }
+
     /** Ends one observation whose captured transport no longer exists. */
     release(msgId: string): void {
         const observation = this.entries.get(msgId)?.observation;
@@ -156,10 +191,11 @@ export class BrowserRallarDeliveryRegistry {
         }
     }
 
-    /** Session end/replacement preserves terminal evidence and releases every live observation. */
+    /** Session end/replacement preserves terminal evidence, releases every live observation and ends every reply wait. */
     releaseAll(): void {
-        for (const entry of [...this.entries.values()]) {
-            this.releaseObservation(entry.observation);
+        for (const { observation } of [...this.entries.values()]) {
+            this.releaseObservation(observation);
+            observation.replySlot.endWaits(observation.lifecycle);
         }
     }
 
@@ -180,8 +216,11 @@ export class BrowserRallarDeliveryRegistry {
         return {
             rtcCapture,
             msgId: message.id.msgId,
+            corrId: toALCorrId(message),
+            replyToMsgId: message.actions?.replyToMsgId,
             listeners: new Set(),
             waits: new Map(),
+            replyDeadlines: new Set(),
             lifecycle: createInitialALDeliveryLifecycle({
                 msgId: message.id.msgId,
                 typeId: message.payload.typeId,
@@ -191,7 +230,10 @@ export class BrowserRallarDeliveryRegistry {
                 submittedAtMs: this.input.nowMs()
             }),
             carrier,
-            terminalAtMs: undefined
+            terminalAtMs: undefined,
+            replySlot: new BrowserMessageReplySlot(
+                message.targets?.mode === 'unicast' ? message.targets.toPeerId : undefined
+            )
         };
     }
 
@@ -199,10 +241,13 @@ export class BrowserRallarDeliveryRegistry {
         return {
             msgId: observation.lifecycle.msgId,
             typeId: observation.lifecycle.typeId,
+            corrId: observation.corrId,
+            replyToMsgId: observation.replyToMsgId,
             rtcCapture: () => observation.rtcCapture,
             lifecycle: () => this.readLifecycle(observation),
             onEvent: (listener) => subscribeToObservation(observation, listener),
             wait: async (options) => await this.wait(observation, options ?? {}),
+            awaitReply: async (options) => await this.awaitReply(observation, options),
             cancel: () => this.cancel(observation)
         };
     }
@@ -216,6 +261,7 @@ export class BrowserRallarDeliveryRegistry {
         }
 
         settleReachedWaits(observation, next);
+        observation.replySlot.settleLifecycle(next);
         notifyObservationListeners(observation, next);
     }
 
@@ -274,7 +320,24 @@ export class BrowserRallarDeliveryRegistry {
         });
     }
 
-    /** The only place a timer exists: one for the caller's timeout, one for the message deadline. */
+    /** The message deadline ends a reply wait `undelivered` when it lapses, whoever reads the lifecycle first. */
+    private async awaitReply<T>(
+        observation: DeliveryObservation,
+        options: RallarMessageReplyWaitOptions
+    ): Promise<RallarMessageReplyOutcome<T>> {
+        const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
+        observation.replyDeadlines.add(deadline);
+        this.scheduleDeadlineTimer(deadline);
+        try {
+            return await observation.replySlot.awaitReply<T>(() => this.readLifecycle(observation), options);
+        }
+        finally {
+            observation.replyDeadlines.delete(deadline);
+            clearTimeout(deadline.timerId);
+        }
+    }
+
+    /** The only place a delivery wait's timers exist: one for the caller's timeout, one for the message deadline. */
     private startWait(
         observation: DeliveryObservation,
         options: RallarMessageWaitOptions,
@@ -295,8 +358,7 @@ export class BrowserRallarDeliveryRegistry {
         };
 
         const updateDeadline = (): void => {
-            clearTimeout(deadline.timerId);
-            this.scheduleDeadlineTimer(deadline);
+            this.rescheduleDeadlineTimer(deadline);
         };
         observation.waits.set(waitId, { until: options.until, resolve, release, updateDeadline });
         options.signal?.addEventListener('abort', () => {
@@ -314,6 +376,11 @@ export class BrowserRallarDeliveryRegistry {
         updateDeadline();
     }
 
+    private rescheduleDeadlineTimer(deadline: DeliveryDeadlineTimer): void {
+        clearTimeout(deadline.timerId);
+        this.scheduleDeadlineTimer(deadline);
+    }
+
     /** Re-read the current deadline if a timer fires before the wall clock reaches it. */
     private scheduleDeadlineTimer(deadline: DeliveryDeadlineTimer): void {
         const expiresAtMs = deadline.observation.lifecycle.expiresAtMs;
@@ -327,7 +394,10 @@ export class BrowserRallarDeliveryRegistry {
         }, Math.max(1, expiresAtMs - this.input.nowMs()));
     }
 
-    /** Retention runs only here: aged terminal entries, then the oldest terminal, then the oldest live ones. */
+    /**
+     * Retention runs only here: aged terminal entries without an open reply wait, then the oldest terminal, then the
+     * oldest live ones. Every dropped entry releases its reply slot.
+     */
     private retainEntries(): void {
         this.dropAgedTerminalEntries();
         this.dropOldestTerminalEntries();
@@ -336,23 +406,31 @@ export class BrowserRallarDeliveryRegistry {
 
     private dropAgedTerminalEntries(): void {
         const nowMs = this.input.nowMs();
-        for (const [msgId, entry] of this.entries) {
+        for (const entry of this.entries.values()) {
             const terminalAtMs = entry.observation.terminalAtMs;
-            if (terminalAtMs !== undefined && nowMs - terminalAtMs > this.input.retainTerminalMs) {
-                this.entries.delete(msgId);
+            if (
+                terminalAtMs !== undefined && nowMs - terminalAtMs > this.input.retainTerminalMs &&
+                entry.observation.replySlot.getWaitCount() === 0
+            ) {
+                this.dropTerminalEntry(entry.observation);
             }
         }
     }
 
     private dropOldestTerminalEntries(): void {
-        for (const [msgId, entry] of this.entries) {
+        for (const entry of this.entries.values()) {
             if (this.entries.size <= this.input.maxEntries) {
                 return;
             }
             if (entry.observation.terminalAtMs !== undefined) {
-                this.entries.delete(msgId);
+                this.dropTerminalEntry(entry.observation);
             }
         }
+    }
+
+    private dropTerminalEntry(observation: DeliveryObservation): void {
+        this.entries.delete(observation.msgId);
+        observation.replySlot.release(observation.lifecycle);
     }
 
     private releaseOldestEntries(): void {
@@ -362,6 +440,7 @@ export class BrowserRallarDeliveryRegistry {
                 break;
             }
             this.entries.delete(msgId);
+            entry.observation.replySlot.release(computeALDeliveryUnobservable(entry.observation.lifecycle));
             evicted.push(entry.observation);
         }
 

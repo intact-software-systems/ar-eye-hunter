@@ -21,6 +21,7 @@ import {
     resolveBlackBoxRallarTopicId,
     resolveBlackBoxRallarTypeId
 } from '../connection/black-box-rallar-connection-policy.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
 
 export interface TypedChannelRoute {
@@ -41,6 +42,9 @@ interface TypedChannelMessageEvent {
     readonly message: RallarMessage<RallarMessagePayload>;
 }
 
+/** `messages.reply` names a request by its arrival among the last this many of its type the page received. */
+const RECEIVED_MESSAGES_RETAINED_PER_TYPE = 16;
+
 export namespace BlackBoxRallarTypedChannels {
     export interface Input {
         readonly messages: BlackBoxBrowserMessagesDependency;
@@ -51,9 +55,30 @@ export namespace BlackBoxRallarTypedChannels {
 
 export class BlackBoxRallarTypedChannels {
     readonly #input: BlackBoxRallarTypedChannels.Input;
+    /**
+     * Oldest first, per type. Close releases every subscription together (`cleanupWsSubscriptions`), so each release
+     * forgets the arrivals of every type: a typed and a selector subscription are released in the same close.
+     */
+    readonly #receivedByType = new Map<string, RallarMessage<RallarMessagePayload>[]>();
 
     constructor(input: BlackBoxRallarTypedChannels.Input) {
         this.#input = input;
+    }
+
+    /**
+     * The `index`-th (from 1) of the last arrivals of `typeId` this page still holds, oldest first: a duplicate copy
+     * counts as an arrival. An arrival the page does not hold fails the `messages.reply` that names it.
+     */
+    requireReceived(typeId: string, index: number): RallarMessage<RallarMessagePayload> {
+        const received = this.#receivedByType.get(typeId) ?? [];
+        const message = received[index - 1];
+        if (message === undefined) {
+            throw new Error(
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replyRequestUnreceived}: messages.reply names no ` +
+                    `received ${typeId} message at index ${index}; the page holds ${received.length}.`
+            );
+        }
+        return message;
     }
 
     open(
@@ -96,6 +121,7 @@ export class BlackBoxRallarTypedChannels {
             return () => {
                 unsubscribeWs();
                 unsubscribeRtc();
+                this.#receivedByType.clear();
             };
         });
         return channel;
@@ -158,12 +184,21 @@ export class BlackBoxRallarTypedChannels {
                 for (const unsubscribe of unsubscribeRtc) {
                     unsubscribe();
                 }
+                this.#receivedByType.clear();
             };
         });
     }
 
+    #retainReceived(message: RallarMessage<RallarMessagePayload>): void {
+        const received = this.#receivedByType.get(message.typeId) ?? [];
+        received.push(message);
+        received.splice(0, received.length - RECEIVED_MESSAGES_RETAINED_PER_TYPE);
+        this.#receivedByType.set(message.typeId, received);
+    }
+
     #recordMessage(event: TypedChannelMessageEvent): void {
         const { config, topic, transport, message } = event;
+        this.#retainReceived(message);
         this.#input.diagnostics.emit({
             kind: 'message',
             topic,

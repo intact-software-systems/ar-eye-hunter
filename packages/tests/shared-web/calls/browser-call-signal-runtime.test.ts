@@ -233,7 +233,8 @@ function toMessage<T>(payload: T): RallarMessage<T> {
             id: { v: 3, msgId: 'signal-1', senderId: 'peer-caller', ts: 1 },
             route: { topicId: 'app.rallar.calls', contextId: 'call-1', resourceId: '' },
             payload: { typeId: 'app.rallar.calls.invite.v1', contentType: 'application/json', resource: JSON.stringify(payload) }
-        }
+        },
+        reply: unsupportedCallOperation
     };
 }
 

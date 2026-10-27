@@ -103,6 +103,19 @@ describe('Hetzner ALM conformance catalog', () => {
         expect(shared).toEqual([]);
     });
 
+    // The reply cells' lane evidence is local and the hosted full read's; manifests 18 and 22 stay as recorded.
+    it('carries no reply command in either hosted ALM conformance manifest', () => {
+        const catalog = createHetznerDistributedManifestCatalog();
+        for (const fileName of ['/18-alm-conformance-2-agent.json', '/22-alm-conformance-3-agent.json']) {
+            const manifest = catalog.find((candidate) => candidate.filePath.endsWith(fileName))!.manifest;
+            const replyCommands = toHetznerManifestCommands(manifest)
+                .filter((command) => command.kind === 'messages.awaitReply' || command.kind === 'messages.reply')
+                .map((command) => command.commandId);
+
+            expect(replyCommands, fileName).toEqual([]);
+        }
+    });
+
     it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
         const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));

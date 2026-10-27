@@ -1,5 +1,6 @@
 import type {
     RallarMessagePayload,
+    RallarMessageReplyOutcome,
     RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
@@ -426,6 +427,51 @@ export interface BlackBoxRallarDeliveryHandleInput {
 export interface BlackBoxRallarDeliveryObserveInput extends BlackBoxRallarDeliveryHandleInput {
     readonly state: readonly ALDeliveryState[];
     readonly timeoutMs: number;
+}
+
+export interface BlackBoxRallarReplyWaitInput extends BlackBoxRallarDeliveryHandleInput {
+    readonly timeoutMs: number;
+}
+
+/** A reply to the `index`-th arrival (1-based) of `typeId` among the last 16 the page received of that type. */
+export interface BlackBoxRallarReplyInput {
+    readonly connection: string;
+    readonly typeId: string;
+    readonly index: number;
+    readonly payload: RallarMessagePayload;
+    /** The reply's own handle, which `messages.observe` follows. */
+    readonly handleId: string;
+}
+
+/** Who answered and under which correlation; what the reply carried stays in the page. */
+export interface BlackBoxRallarReplyIdentity {
+    readonly msgId: string;
+    readonly replyToMsgId: string;
+    readonly corrId: string;
+    readonly senderId: string;
+    readonly typeId: string;
+}
+
+/** The request's lifecycle state and correlation when the wait ended, and for `replied` the reply's identity. */
+export type BlackBoxRallarReplyWaitDiagnostics =
+    | Readonly<{
+        handleId: string;
+        status: 'replied';
+        state: ALDeliveryState;
+        corrId: string;
+        reply: BlackBoxRallarReplyIdentity;
+    }>
+    | Readonly<{
+        handleId: string;
+        status: Exclude<RallarMessageReplyOutcome<RallarMessagePayload>['status'], 'replied'>;
+        state: ALDeliveryState;
+        corrId: string;
+    }>;
+
+export interface BlackBoxRallarReplyDiagnostics {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly replyToMsgId: string;
 }
 
 export interface BlackBoxRallarStorageCountersInput {

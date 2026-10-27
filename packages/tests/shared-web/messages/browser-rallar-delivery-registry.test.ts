@@ -1,5 +1,9 @@
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
-import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessage,
+    RallarMessageHandle,
+    RallarMessagePayload
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import {
@@ -412,6 +416,172 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
     });
 
+    describe('reply correlation', () => {
+        it('mints the handle corrId from the msgId and carries no replyToMsgId on a request', () => {
+            const harness = new DeliveryRegistryHarness();
+
+            const handle = harness.registry.open(toTestMessage('msg-1'), 'ws');
+
+            expect(handle.corrId).toBe('msg-1');
+            expect(handle.replyToMsgId).toBeUndefined();
+        });
+
+        it('keeps a re-ask under the correlation it names', () => {
+            const harness = new DeliveryRegistryHarness();
+
+            const handle = harness.registry.open({ ...toTestMessage('msg-2'), actions: { corrId: 'msg-1' } }, 'ws');
+
+            expect(handle.corrId).toBe('msg-1');
+        });
+
+        it('names the request on a reply\'s own handle', () => {
+            const harness = new DeliveryRegistryHarness();
+
+            const handle = harness.registry.open(
+                { ...toTestMessage('reply-1'), actions: { corrId: 'msg-1', replyToMsgId: 'msg-1' } },
+                'ws'
+            );
+
+            expect(handle.corrId).toBe('msg-1');
+            expect(handle.replyToMsgId).toBe('msg-1');
+        });
+
+        it('resolves awaitReply with the matched reply and the request lifecycle', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+            const reply = toReply('reply-1', 'responder-1', 'msg-1');
+
+            expect(harness.registry.recordReply(reply)).toEqual({ kind: 'matched' });
+
+            const outcome = await pending;
+            expect(outcome.status).toBe('replied');
+            expect(outcome).toMatchObject({ reply, lifecycle: { state: 'acknowledged' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('answers a reply from another sender than the unicast addressed wrong-responder', () => {
+            const harness = new DeliveryRegistryHarness();
+            harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-2', 'msg-1'))).toEqual({
+                kind: 'wrong-responder',
+                expectedSenderId: 'responder-1'
+            });
+        });
+
+        it('answers a reply to a msgId it never opened late and unobserved', () => {
+            const harness = new DeliveryRegistryHarness();
+
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-unknown'))).toEqual({
+                kind: 'late',
+                cause: 'unobserved'
+            });
+        });
+
+        it('leaves the request as it was when the reply wait times out', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            const before = handle.lifecycle();
+            const pending = handle.awaitReply({ timeoutMs: 500 });
+
+            await harness.advanceMs(500);
+
+            expect(await pending).toEqual({ status: 'timeout', lifecycle: before });
+            expect(handle.lifecycle()).toBe(before);
+            expect(harness.cancelledMsgIds).toEqual([]);
+        });
+
+        it('keeps a best-effort request\'s reply wait open once the transport accepted it', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toBestEffortTestMessage('msg-1'), targets: { mode: 'unicast', toPeerId: 'responder-1' } },
+                'ws'
+            );
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS, 'none'));
+            harness.registry.record(toAttemptSentSettlement('msg-1', START_MS));
+            const reply = toReply('reply-1', 'responder-1', 'msg-1');
+
+            expect(handle.lifecycle().state).toBe('transport-accepted');
+            expect(harness.registry.recordReply(reply)).toEqual({ kind: 'matched' });
+            expect(await pending).toMatchObject({ status: 'replied', reply, lifecycle: { state: 'transport-accepted' } });
+        });
+
+        it('resolves a reply that arrives after the request deadline replied, though no read applied the deadline', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                'ws'
+            );
+            const pending = handle.awaitReply({ timeoutMs: 5_000 });
+            harness.setNowMs(START_MS + 1_001);
+            const reply = toReply('reply-1', 'responder-1', 'msg-1');
+
+            expect(harness.registry.recordReply(reply)).toEqual({ kind: 'matched' });
+
+            expect(await pending).toMatchObject({ status: 'replied', reply, lifecycle: { state: 'expired' } });
+        });
+
+        it('resolves a lone reply wait undelivered when the request deadline lapses before its timeout', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                'ws'
+            );
+            const pending = handle.awaitReply({ timeoutMs: 5_000 });
+
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'expired' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('resolves a lone reply wait undelivered when its timeout fires as the request deadline lapses', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                'ws'
+            );
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'expired' } });
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({ kind: 'matched' });
+        });
+
+        it('resolves a reply wait undelivered at the deadline a carrier shortened after the wait opened', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const message = {
+                ...toUnicastTestMessage('msg-1', 'responder-1'),
+                constraints: { expiresAtMs: START_MS + 5_000 }
+            };
+            const handle = harness.registry.open(message, 'ws');
+            const pending = handle.awaitReply({ timeoutMs: 10_000 });
+
+            harness.registry.updateDeadline({ ...message, constraints: { expiresAtMs: START_MS + 1_000 } });
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'expired' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('resolves an open reply wait undelivered when the request fails', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+
+            harness.registry.record(toCancelledSettlement('msg-1', START_MS));
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'cancelled' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+    });
+
     describe('retention', () => {
         it('releases the oldest non-terminal entry unobservable once maxEntries is exceeded', async () => {
             const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
@@ -482,6 +652,68 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(harness.registry.size()).toBe(2);
         });
 
+        it('spares an aged terminal entry while a reply wait on it is open, and drops it once the wait ends', async () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: 1_000, maxEntries: MAX_ENTRIES });
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+            const pending = handle.awaitReply({ timeoutMs: 5_000 });
+
+            harness.setNowMs(START_MS + 1_001);
+            harness.registry.open(toTestMessage('msg-2'), 'rtc');
+
+            expect(harness.registry.getHandle('msg-1')).toBe(handle);
+            await harness.advanceMs(5_000);
+            expect((await pending).status).toBe('timeout');
+            harness.registry.open(toTestMessage('msg-3'), 'rtc');
+            expect(harness.registry.getHandle('msg-1')).toBeUndefined();
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({
+                kind: 'late',
+                cause: 'unobserved'
+            });
+        });
+
+        it('resolves a reply wait undelivered when the count bound releases its live request', async () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            const pending = handle.awaitReply({ timeoutMs: 5_000 });
+
+            harness.registry.open(toTestMessage('msg-2'), 'rtc');
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'unobservable' } });
+            expect(vi.getTimerCount()).toBe(0);
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({
+                kind: 'late',
+                cause: 'unobserved'
+            });
+        });
+
+        it('resolves a reply wait undelivered when the count bound drops its acknowledged request', async () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+            const pending = handle.awaitReply({ timeoutMs: 5_000 });
+
+            harness.registry.open(toTestMessage('msg-2'), 'rtc');
+
+            expect(await pending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'acknowledged' } });
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('keeps the reply slot a listener re-opens for the same message while the count bound releases it', () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
+            const request = toUnicastTestMessage('msg-1', 'responder-1');
+            const released = harness.registry.open(request, 'ws');
+            released.onEvent((lifecycle) => {
+                if (lifecycle.state === 'unobservable') {
+                    harness.registry.open(request, 'ws');
+                }
+            });
+
+            harness.registry.open(toTestMessage('msg-2'), 'rtc');
+
+            expect(harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'))).toEqual({ kind: 'matched' });
+        });
+
         it('drops the oldest terminal entry before releasing a younger non-terminal one', () => {
             const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
             harness.registry.open(toTestMessage('msg-1'), 'rtc');
@@ -492,6 +724,40 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
             expect(harness.registry.size()).toBe(2);
             expect(live.lifecycle().state).toBe('submitted');
+        });
+    });
+
+    describe('reply counts', () => {
+        it('counts the replies the retained entries hold and the reply waits in flight', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const waiting = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
+            harness.registry.open(toUnicastTestMessage('msg-3', 'responder-1'), 'ws');
+            const first = waiting.awaitReply({ timeoutMs: 1_000 });
+            const second = waiting.awaitReply({ timeoutMs: 1_000 });
+            harness.registry.recordReply(toReply('reply-3', 'responder-1', 'msg-3'));
+
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 1, replyWaitsOpen: 2 });
+
+            harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'));
+            await Promise.all([first, second]);
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 2, replyWaitsOpen: 0 });
+        });
+
+        it('stops counting and matching an entry retention dropped', () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
+            harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.recordReply(toReply('reply-1', 'responder-1', 'msg-1'));
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 1, replyWaitsOpen: 0 });
+
+            harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
+
+            expect(harness.registry.getHandle('msg-1')).toBeUndefined();
+            expect(harness.registry.recordReply(toReply('reply-2', 'responder-1', 'msg-1'))).toEqual({
+                kind: 'late',
+                cause: 'unobserved'
+            });
+            expect(harness.registry.getReplyCounts()).toEqual({ repliesHeld: 0, replyWaitsOpen: 0 });
         });
     });
 
@@ -537,6 +803,36 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(settled.lifecycle().state).toBe('acknowledged');
             expect(harness.registry.size()).toBe(2);
             expect((await pending).lifecycle.state).toBe('unobservable');
+        });
+
+        it('keeps a reply matched before the session ended for a later awaitReply', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+            const reply = toReply('reply-1', 'responder-1', 'msg-1');
+            harness.registry.recordReply(reply);
+
+            harness.registry.releaseAll();
+
+            expect(await handle.awaitReply({ timeoutMs: 1_000 })).toMatchObject({ status: 'replied', reply });
+        });
+
+        it('resolves open reply waits undelivered, an acknowledged request\'s too', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const live = harness.registry.open(toUnicastTestMessage('msg-1', 'responder-1'), 'ws');
+            const acknowledged = harness.registry.open(toUnicastTestMessage('msg-2', 'responder-1'), 'ws');
+            harness.registry.record(toAcknowledgementSettlement('msg-2', START_MS));
+            const livePending = live.awaitReply({ timeoutMs: 5_000 });
+            const acknowledgedPending = acknowledged.awaitReply({ timeoutMs: 5_000 });
+
+            harness.registry.releaseAll();
+
+            expect(await livePending).toMatchObject({ status: 'undelivered', lifecycle: { state: 'unobservable' } });
+            expect(await acknowledgedPending).toMatchObject({
+                status: 'undelivered',
+                lifecycle: { state: 'acknowledged' }
+            });
+            expect(vi.getTimerCount()).toBe(0);
         });
     });
 });
@@ -593,6 +889,30 @@ function toTestMessage(msgId: string): ALMessage {
         route: { topicId: 'room.chat', contextId: 'room-1', resourceId: 'chat' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         payload: { typeId: 'chat.message.v1', resource: '{}' }
+    };
+}
+
+function toUnicastTestMessage(msgId: string, toPeerId: string): ALMessage {
+    return { ...toTestMessage(msgId), targets: { mode: 'unicast', toPeerId } };
+}
+
+function toReply(msgId: string, senderId: string, replyToMsgId: string): RallarMessage<RallarMessagePayload> {
+    const raw: ALMessage = {
+        ...toTestMessage(msgId),
+        id: { v: 3, msgId, ts: START_MS, senderId },
+        actions: { corrId: replyToMsgId, replyToMsgId }
+    };
+    return {
+        transport: 'ws',
+        typeId: raw.payload.typeId,
+        topicId: raw.route.topicId,
+        contextId: raw.route.contextId,
+        resourceId: raw.route.resourceId,
+        senderId,
+        payload: {},
+        raw,
+        receivedAtEpochMs: START_MS,
+        reply: vi.fn()
     };
 }
 

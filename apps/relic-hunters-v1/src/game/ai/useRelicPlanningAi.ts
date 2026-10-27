@@ -1,4 +1,11 @@
-import { RELIC_TOPICS, RELIC_TYPES, type RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import {
+    decodeRelicPlanningAiSuggestion,
+    RELIC_TOPICS,
+    RELIC_TYPES,
+    type RelicPlanningAiContext,
+    type RelicPlanningAiSuggestion,
+    type RelicPublicSnapshot
+} from '@relic-hunters/mod.ts';
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar, type RallarMessage } from '@shared-web/browser/rallar.ts';
 import {
@@ -12,24 +19,23 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import type { ActionDraft, RelicGameViewModel } from '../game-view-model.ts';
 import type { Lang } from '../lang.ts';
 import type { SceneObjective } from '../scene/objectives.ts';
+import { createDefaultRelicPlanningAiProvider } from './create-default-relic-planning-ai-provider.ts';
 import { isRelicPlanningAiProposalOfPrincipal } from './is-relic-planning-ai-proposal-of-principal.ts';
 import {
     addRelicPlanningAiProposal,
     buildRelicPlanningAiContext,
     canGenerateRelicPlanningAi,
-    createRelicPlanningAiMockProvider,
     createRelicPlanningAiRequest,
     isRelicPlanningAiRevisionCurrent,
     pruneRelicPlanningAiProposals,
     relicPlanningAiBaseStateRevision,
     relicPlanningAiDedupeKey,
-    validateRelicPlanningAiSuggestion,
-    type RelicPlanningAiContext,
     type RelicPlanningAiProposal,
+    type RelicPlanningAiRequest,
     type RelicPlanningAiState,
-    type RelicPlanningAiStatus,
-    type RelicPlanningAiSuggestion
+    type RelicPlanningAiStatus
 } from './relic-planning-ai.ts';
+import { sendRelicPlanningRequest } from './send-relic-planning-request.ts';
 
 export type UseRelicPlanningAiInput = Readonly<{
     snapshot?: RelicPublicSnapshot;
@@ -43,6 +49,7 @@ export type UseRelicPlanningAiInput = Readonly<{
     provider?: RallarAiJsonProvider;
     enabled?: boolean;
     now?: () => number;
+    /** Local generation only: the server request and the proposal send to the hunter's sessions emit none. */
     diagnostics?: (event: RallarAiDiagnosticEvent) => void;
 }>;
 
@@ -94,7 +101,7 @@ export function useRelicPlanningAi({
             ? relicPlanningAiDedupeKey({ snapshot, localPlayerId, baseStateRevision })
             : undefined, [baseStateRevision, localPlayerId, snapshot]);
     const defaultProvider = useMemo(
-        () => provider ?? (defaultBrowserAiProviderEnabled() ? createRelicPlanningAiMockProvider() : undefined),
+        () => provider ?? createDefaultRelicPlanningAiProvider(),
         [provider]
     );
 
@@ -191,11 +198,14 @@ export function useRelicPlanningAi({
         const currentContext = contextRef.current;
         const currentRevision = revisionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!enabled || !currentContext || !currentRevision || !dedupeKey || !snapshot || !localPrincipalId) {
+        if (
+            !enabled || !currentContext || !currentRevision || !dedupeKey || !snapshot || !currentRoomId ||
+            !localPrincipalId
+        ) {
             setStatus('disabled');
             return;
         }
-        if (!defaultProvider) {
+        if (rallar.serverPeerId() === undefined && !defaultProvider) {
             setStatus('unavailable');
             setError('Browser AI is not configured for this build.');
             return;
@@ -207,48 +217,31 @@ export function useRelicPlanningAi({
         setStatus('generating');
         setError(undefined);
 
-        const ai = createRallarBrowserAi({
-            rallar,
-            provider: defaultProvider,
-            policy: BROWSER_AI_POLICY,
-            diagnostics,
-            readCurrentStateRevision: () => revisionRef.current
-        });
-
         try {
-            const draftResult = await ai.generateJson<RelicPlanningAiSuggestion, RelicPlanningAiContext>(
-                createRelicPlanningAiRequest({
+            const suggestion = await readRelicPlanningSuggestion({
+                request: createRelicPlanningAiRequest({
                     context: currentContext,
                     baseStateRevision: currentRevision,
-                    dedupeKey,
-                    signal: abort.signal
-                })
-            );
-            if (
-                !isRelicPlanningAiRevisionCurrent(
-                    draftResult.baseStateRevision,
-                    revisionRef.current ?? '',
-                    'exact'
-                )
-            ) {
-                setStatus('stale');
+                    dedupeKey
+                }),
+                context: currentContext,
+                roomId: currentRoomId,
+                provider: defaultProvider,
+                diagnostics,
+                readCurrentContext: () => contextRef.current ?? currentContext,
+                readCurrentRevision: () => revisionRef.current,
+                signal: abort.signal
+            });
+            if (abort.signal.aborted || suggestion.kind === 'aborted') {
+                return;
+            }
+            if (suggestion.kind !== 'suggested') {
+                setStatus(suggestion.kind === 'invalid' ? 'error' : suggestion.kind);
+                setError(suggestion.kind === 'invalid' ? suggestion.reason : undefined);
                 return;
             }
 
-            const validation = validateRelicPlanningAiSuggestion(
-                draftResult.value,
-                contextRef.current ?? currentContext
-            );
-            if (!validation.ok) {
-                setStatus('error');
-                setError(validation.reason);
-                return;
-            }
-
-            const proposed = transitionRallarAiResultLifecycle({
-                ...draftResult,
-                value: validation.suggestion
-            }, 'proposed');
+            const proposed = transitionRallarAiResultLifecycle(suggestion.result, 'proposed');
             const proposal: RelicPlanningAiProposal = {
                 result: proposed,
                 senderId: localPlayerId,
@@ -268,16 +261,7 @@ export function useRelicPlanningAi({
                 })
             );
             setStatus('ready');
-
-            await ai.broadcastJson({
-                result: proposed,
-                transport: 'messages.ws',
-                roomId: currentRoomId,
-                scope: 'principal',
-                principalId: localPrincipalId,
-                topicId: RELIC_TOPICS.aiPlanning,
-                typeId: RELIC_TYPES.aiPlanningProposal
-            });
+            await sendRelicPlanningProposalToOwnSessions(proposed, currentRoomId, localPrincipalId);
         }
         catch (err) {
             if (abort.signal.aborted) {
@@ -301,9 +285,10 @@ export function useRelicPlanningAi({
         snapshot
     ]);
 
+    const canAnswer = !!defaultProvider || rallar.serverPeerId() !== undefined;
     const visibleStatus = deriveVisibleStatus({
         canAsk,
-        provider: defaultProvider,
+        canAnswer,
         status,
         localProposal,
         baseStateRevision
@@ -311,7 +296,7 @@ export function useRelicPlanningAi({
 
     return {
         status: visibleStatus,
-        canGenerate: canAsk && !!defaultProvider && visibleStatus !== 'generating',
+        canGenerate: canAsk && canAnswer && visibleStatus !== 'generating',
         error,
         localProposal,
         proposals,
@@ -342,15 +327,93 @@ function acceptRemoteProposal(
     );
 }
 
+interface ReadRelicPlanningSuggestionInput {
+    readonly request: RelicPlanningAiRequest;
+    readonly context: RelicPlanningAiContext;
+    readonly roomId: string;
+    readonly provider: RallarAiJsonProvider | undefined;
+    readonly diagnostics: UseRelicPlanningAiInput['diagnostics'];
+    readonly readCurrentContext: () => RelicPlanningAiContext;
+    readonly readCurrentRevision: () => string | undefined;
+    readonly signal: AbortSignal;
+}
+
+type RelicPlanningSuggestionOutcome =
+    | Readonly<{ kind: 'suggested'; result: RallarAiJsonResult<RelicPlanningAiSuggestion>; }>
+    | Readonly<{ kind: 'aborted' | 'stale' | 'unavailable'; }>
+    | Readonly<{ kind: 'invalid'; reason: string; }>;
+
+async function readRelicPlanningSuggestion(
+    input: ReadRelicPlanningSuggestionInput
+): Promise<RelicPlanningSuggestionOutcome> {
+    const answered = await sendRelicPlanningRequest(rallar, {
+        roomId: input.roomId,
+        request: input.request,
+        context: input.context,
+        currentBaseStateRevision: input.readCurrentRevision,
+        signal: input.signal
+    });
+    if (answered.right !== undefined) {
+        return { kind: 'suggested', result: answered.right };
+    }
+    // A cancelled ask ends here whatever the wait read: a refused send or an undelivered request then is no fallback.
+    if (input.signal.aborted || answered.left === 'aborted') {
+        return { kind: 'aborted' };
+    }
+    return input.provider === undefined
+        ? { kind: 'unavailable' }
+        : await readLocalRelicPlanningSuggestion(input, input.provider);
+}
+
+async function readLocalRelicPlanningSuggestion(
+    input: ReadRelicPlanningSuggestionInput,
+    provider: RallarAiJsonProvider
+): Promise<RelicPlanningSuggestionOutcome> {
+    const ai = createRallarBrowserAi({
+        rallar,
+        provider,
+        policy: BROWSER_AI_POLICY,
+        diagnostics: input.diagnostics,
+        readCurrentStateRevision: input.readCurrentRevision
+    });
+    const draftResult = await ai.generateJson<RelicPlanningAiSuggestion, RelicPlanningAiContext>({
+        ...input.request,
+        signal: input.signal
+    });
+    if (!isRelicPlanningAiRevisionCurrent(draftResult.baseStateRevision, input.readCurrentRevision() ?? '', 'exact')) {
+        return { kind: 'stale' };
+    }
+    const suggestion = decodeRelicPlanningAiSuggestion(draftResult.value, input.readCurrentContext());
+    return suggestion.right === undefined
+        ? { kind: 'invalid', reason: suggestion.left! }
+        : { kind: 'suggested', result: { ...draftResult, value: suggestion.right } };
+}
+
+/** The hunter's other sessions in the room see the suggestion read-only; none of them may submit it. */
+async function sendRelicPlanningProposalToOwnSessions(
+    result: RallarAiJsonResult<RelicPlanningAiSuggestion>,
+    roomId: string,
+    principalId: string
+): Promise<void> {
+    await rallar.messages.ws.send({
+        topicId: RELIC_TOPICS.aiPlanning,
+        typeId: RELIC_TYPES.aiPlanningProposal,
+        payload: result,
+        roomId,
+        scope: 'principal',
+        principalId
+    });
+}
+
 function deriveVisibleStatus({
     canAsk,
-    provider,
+    canAnswer,
     status,
     localProposal,
     baseStateRevision
 }: Readonly<{
     canAsk: boolean;
-    provider?: RallarAiJsonProvider;
+    canAnswer: boolean;
     status: RelicPlanningAiStatus;
     localProposal?: RelicPlanningAiProposal;
     baseStateRevision?: string;
@@ -358,7 +421,7 @@ function deriveVisibleStatus({
     if (!canAsk) {
         return 'disabled';
     }
-    if (!provider) {
+    if (!canAnswer) {
         return 'unavailable';
     }
     if (
@@ -373,17 +436,4 @@ function deriveVisibleStatus({
         return 'stale';
     }
     return status;
-}
-
-function defaultBrowserAiProviderEnabled(): boolean {
-    const env = (import.meta as {
-        env?: Readonly<{ DEV?: boolean; MODE?: string; VITEST?: string; }>;
-    }).env;
-    const processEnv = (globalThis as {
-        process?: { env?: Readonly<Record<string, string | undefined>>; };
-    }).process?.env;
-    return !!env?.DEV ||
-        env?.MODE === 'test' ||
-        !!env?.VITEST ||
-        !!processEnv?.VITEST;
 }

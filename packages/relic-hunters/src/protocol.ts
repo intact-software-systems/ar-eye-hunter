@@ -16,6 +16,8 @@ export const RELIC_TYPES = {
     snapshot: 'relic.snapshot.v1',
     event: 'relic.event.v1',
     aiPlanningProposal: 'relic.ai.planning-proposal.v1',
+    aiPlanningRequest: 'relic.ai.planning-request.v1',
+    aiPlanningReply: 'relic.ai.planning-reply.v1',
     hunter: 'relic.hunter.v1'
 } as const;
 

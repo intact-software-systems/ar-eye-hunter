@@ -31,7 +31,7 @@ function toScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]) {
 }
 
 describe('three-agent ALM run', () => {
-    it('selects exactly the receipted-audience, membership fence, leader and claim scenarios for the three-agent family on every carrier', () => {
+    it('selects exactly the receipted-audience, membership fence, leader, claim and reply-first-wins scenarios for the three-agent family on every carrier', () => {
         const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
         const expectedKeys = {
             ws: [
@@ -45,7 +45,8 @@ describe('three-agent ALM run', () => {
                 'no-leader-refused',
                 'leader-outside-list',
                 'claim-first-wins',
-                'claim-expires-reclaims'
+                'claim-expires-reclaims',
+                'reply-first-wins'
             ],
             rtc: [
                 ...rtcScenarioKeys,

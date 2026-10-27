@@ -354,7 +354,9 @@ class ScaleActor {
                     limits: { maxAdmissions: 1_000, maxBytes: 4_194_304, maxAgeMs: 300_000, maxTracks: 64 },
                     overloaded: false,
                     orderingTracks: 85,
-                    deliveredMarkers: 85
+                    deliveredMarkers: 85,
+                    repliesHeld: 0,
+                    replyWaitsOpen: 0
                 }),
                 readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 readStorageCounters: async (command) =>

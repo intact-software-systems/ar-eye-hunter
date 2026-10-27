@@ -15,7 +15,9 @@ export type RelicRoomKind =
 
 export type RelicActionKind = 'move' | 'search' | 'steal' | 'escape';
 
-export type RelicGamePhase = 'lobby' | 'planning' | 'review' | 'finished';
+export const RELIC_GAME_PHASES = ['lobby', 'planning', 'review', 'finished'] as const;
+
+export type RelicGamePhase = (typeof RELIC_GAME_PHASES)[number];
 
 export type RelicExpeditionSetupSource =
     | 'default'
@@ -515,7 +517,7 @@ function isRelicCommandKind(value: unknown): value is RelicCommand['kind'] {
 }
 
 function isRelicGamePhase(value: unknown): value is RelicGamePhase {
-    return isOneOf<RelicGamePhase>(value, ['lobby', 'planning', 'review', 'finished']);
+    return isOneOf<RelicGamePhase>(value, RELIC_GAME_PHASES);
 }
 
 function isRelicRoom(value: unknown): value is RelicRoom {

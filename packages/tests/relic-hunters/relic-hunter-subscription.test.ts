@@ -120,7 +120,8 @@ function toMessage(
         senderId: 'default-qbox-server',
         payload: event,
         raw,
-        receivedAtEpochMs: 0
+        receivedAtEpochMs: 0,
+        reply: unusedByTheChannel
     };
 }
 

@@ -15,6 +15,7 @@ const AL_VOLATILE_INBOUND_COUNTED_LIFETIME_MS = 30_000;
 const AL_ORDERING_TRACKS_PER_STORE = 256;
 const AL_DELIVERED_MARKERS_PER_STORE = 256;
 const BROWSER_INBOUND_STORES = 2;
+const BROWSER_DELIVERY_REGISTRY_ENTRIES = 512;
 
 const HEAP: GrowthClassification = { growthClass: 'heap' };
 /** The committed `appInbox.finishedRetentionMs` default; the run keeps it, so these rows grow for its whole length. */
@@ -674,5 +675,22 @@ export const GROWTH_SURFACES: readonly GrowthSurface[] = [
         owner: 'packages/shared-test/rallar-bb-test/runtime/event-history.ts',
         classification: { growthClass: 'count-capped', cap: { source: 'workload-event-history' } },
         readers: [toBrowserReading('eventHistory', 'retainedEvents')]
+    },
+    {
+        id: 83,
+        name: 'browser reply slots, the replies held (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/reply/browser-message-reply-slot.ts',
+        classification: { growthClass: 'count-capped', cap: BROWSER_DELIVERY_REGISTRY_ENTRIES },
+        readers: [toBrowserReading('rallar', 'alm', 'repliesHeld')]
+    },
+    {
+        id: 84,
+        name: 'browser reply waits open (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/reply/browser-message-reply-slot.ts',
+        classification: {
+            growthClass: 'unbounded',
+            missingBound: 'one wait per awaitReply call; each ends by its required timeoutMs and no count caps them'
+        },
+        readers: [toBrowserReading('rallar', 'alm', 'replyWaitsOpen')]
     }
 ];
