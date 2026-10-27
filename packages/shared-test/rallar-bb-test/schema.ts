@@ -714,6 +714,18 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         ackedMsgId: stringSchema,
         toPeerId: stringSchema
     }),
+    'messages.awaitReply': strictCommandSchema('messages.awaitReply', {
+        connection: stringSchema,
+        handleId: stringSchema,
+        timeoutMs: { type: 'integer', minimum: 0 }
+    }),
+    'messages.reply': strictCommandSchema('messages.reply', {
+        connection: stringSchema,
+        typeId: stringSchema,
+        index: { type: 'integer', minimum: 1 },
+        payload: anySchema,
+        handleId: stringSchema
+    }),
     'fault.inject': {
         oneOf: [
             ...['ws', 'rtc'].map((carrier) =>

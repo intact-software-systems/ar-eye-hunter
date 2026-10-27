@@ -160,7 +160,7 @@ a current control server.
 
 ## ALM Commands
 
-Eight command kinds drive the Application Layer Messaging surface. All eight are
+Eleven command kinds drive the Application Layer Messaging surface. All eleven are
 browser-only: the in-process runner adapter refuses them with the
 `browser-only-command` code rather than translating one into an `rtc.send`, and
 that refusal fails the step.
@@ -259,6 +259,26 @@ the verdict a recipe asserts on the addressee's page. `msgId`, `ackedMsgId` and
 `{resultCache.<wait>.value.event.payload.senderId}` of an earlier message wait. A
 token no earlier command returned fails the command as invalid input. A page with
 no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
+
+`messages.awaitReply` names `handleId`, an earlier `messages.send` handle, and `timeoutMs`, which it requires,
+and optionally `connection`. It waits for the one reply to that request, matched on the reply's `replyToMsgId`, and
+returns a payload-free value: `{ handleId, status, state, corrId }`, with `status` one of `replied`, `timeout`,
+`aborted` and `undelivered`, `state` the request's lifecycle state when the wait ended and `corrId` its correlation;
+`replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId }`. What the reply carried stays in the page.
+The page ends its wait 250 ms before `timeoutMs`, so a `timeout` is the command's value and never its failure, unlike
+`messages.observe`; the first timeout ends every wait of the request, and a reply arriving after it is dropped with a
+`reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal without reaching
+its addressee (`acknowledged`, or `transport-accepted` with no receipt to wait for) reads `undelivered`. A handle the
+page never sent, or no longer retains, fails the command as invalid input. Replies travel over WS only.
+
+`messages.reply` names `typeId`, `index`, `payload` and `handleId`, and optionally `connection`. The typed channel
+recorder keeps the last 16 messages of each type the page received, oldest first, and a duplicate copy counts as an
+arrival; `index` (from 1) picks one of them. The page replies with `payload` through that message's own `reply()`: a
+WS unicast to the request's sender session under the request's correlation, in its room, on the `command` purpose's
+delivery defaults. `handleId` names the reply's own handle, so `messages.observe` and `messages.receipts` follow its
+delivery. It returns `{ handleId, msgId, replyToMsgId }`. An `index` past the arrivals the page holds fails the command
+with `RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED` and sends nothing. The page forgets its arrivals when its
+connection closes.
 
 The `receipted-audience` conformance scenarios run on three agents: `sender`,
 `receiver` and `recipient-b` (D45). Every send asks for `all-logical-recipients`. The
@@ -423,6 +443,32 @@ send: `recipient-b` sends on its own connection, and its handle id names the rol
   'unsupported'` and no carrier attempt.
 
 The hosted manifests 18 and 22 withhold the claim cells, so they stay as recorded.
+
+The `reply` conformance scenarios (`scenarios/reply/`, D445) run in the full scope with a browser responder, since
+the API server has no generic reply topic. Replies travel over WS only, and a reply to a room request routes on the
+room id. The sender reads the identity of a reply from the value its `messages.awaitReply` stated: a `wait` on the
+adapter's `rallar.bb.messages.reply_awaited` diagnostic for that command, whose `contains` names the request's
+`{resultCache…}` msgId, since an `assert` compares with no token.
+
+- `reply-correlated` (`ws`, `rtc-with-ws-fallback`, the addressed family): the sender's `command` to `toPeer:
+  'receiver'` reads `replied`; the reply's `replyToMsgId` and `corrId` and the request's `corrId` are the request's
+  msgId, the reply takes the request's type, and its `senderId` is the session the request's receipt confirmed. The
+  receiver replies to its one arrival and reads its reply `acknowledged`.
+- `reply-timeout-late` (`ws`, addressed): the sender's reply wait reads `timeout` after 1000 ms on an `acknowledged`
+  request. Only then does it release the receiver with a second `command`; the receiver replies to the first, and the
+  sender waits for its own `reply-late` inbound diagnostic with `cause` `timed-out`.
+- `reply-undelivered` (`ws`, addressed, the `deadline-expiry` pattern): a WS drop fault held until released keeps the
+  request, whose `ttlMs` is 7500, from its only carrier, and the receiver never receives it. A reply wait arms no
+  deadline timer, so a deadline that lapses during the wait leaves it to its own timeout; the sender first observes
+  the request `expired`, and its reply wait then reads `undelivered` on the `expired` request.
+- `reply-first-wins` (`ws`, three agents): a room request asking for `all-logical-recipients`, which both recipients
+  answer. The sender reads `replied` once and waits for one `reply-late` with `cause` `replied`; after its receipt
+  window it finds the reply's `senderId` among the recipients its receipt confirmed. Each recipient reads its reply
+  `acknowledged` and keeps its page through a closing window.
+
+A reply from a session the unicast request did not address is dropped as `reply-wrong-responder`. No product path
+sends one, so that case is pinned at the matcher's unit level, not in a cell. The hosted manifests 18 and 22 withhold
+the reply cells, so they stay as recorded.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that

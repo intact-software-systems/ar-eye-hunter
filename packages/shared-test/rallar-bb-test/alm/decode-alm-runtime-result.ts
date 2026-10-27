@@ -26,9 +26,11 @@ import {
 } from './decode-alm-delivery-failure.ts';
 import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
+    RallarBlackBoxTestMessagesAwaitReplyResultValue,
     RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
     RallarBlackBoxTestMessagesReplayResultValue,
+    RallarBlackBoxTestMessagesReplyResultValue,
     RallarBlackBoxTestMessagesSendResultValue,
     RallarBlackBoxTestStorageCountersResultValue
 } from './rallar-black-box-alm-result-values.ts';
@@ -83,6 +85,13 @@ const ALM_ATTEMPT_OUTCOMES: Readonly<Record<ALDeliveryAttemptOutcome, true>> = {
     unroutable: true,
     refused: true
 };
+
+const ALM_REPLY_WAIT_STATUSES: readonly RallarBlackBoxTestMessagesAwaitReplyResultValue['status'][] = [
+    'replied',
+    'timeout',
+    'aborted',
+    'undelivered'
+];
 
 /** Keyed by every fallback reason, so a new reason fails to compile here instead of decoding as an invalid result. */
 const ALM_FALLBACK_REASONS: Readonly<Record<ALDeliveryFallbackReason, true>> = {
@@ -185,6 +194,49 @@ export function decodeAlmDeliveryResultValue(
         attemptCarriers: requireAlmAttemptCarriersField(record, path, attemptOutcomes.length),
         attemptRefusalReasons: requireAlmAttemptRefusalReasonsField(record, path),
         reason: readAlmOptionalStringField(record, path, 'reason')
+    };
+}
+
+/** Only the identity of a reply crosses back: a payload the page returned is not copied into the value. */
+export function decodeAlmMessagesAwaitReplyResultValue(
+    value: unknown
+): RallarBlackBoxTestMessagesAwaitReplyResultValue {
+    const record = decodeAlmRuntimeRecord(value);
+    const path = 'messages.awaitReply result';
+    const status = ALM_REPLY_WAIT_STATUSES.find((candidate) => candidate === record.status);
+    if (status === undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.status`);
+    }
+    const handleId = requireAlmStringField(record, path, 'handleId');
+    const state = requireAlmDeliveryState(record, path, 'state');
+    const corrId = requireAlmStringField(record, path, 'corrId');
+    if (status !== 'replied') {
+        return { handleId, status, state, corrId };
+    }
+    const reply = requireAlmRecordField(record, path, 'reply');
+    const replyPath = `${path}.reply`;
+    return {
+        handleId,
+        status,
+        state,
+        corrId,
+        reply: {
+            msgId: requireAlmStringField(reply, replyPath, 'msgId'),
+            replyToMsgId: requireAlmStringField(reply, replyPath, 'replyToMsgId'),
+            corrId: requireAlmStringField(reply, replyPath, 'corrId'),
+            senderId: requireAlmStringField(reply, replyPath, 'senderId'),
+            typeId: requireAlmStringField(reply, replyPath, 'typeId')
+        }
+    };
+}
+
+export function decodeAlmMessagesReplyResultValue(value: unknown): RallarBlackBoxTestMessagesReplyResultValue {
+    const record = decodeAlmRuntimeRecord(value);
+    const path = 'messages.reply result';
+    return {
+        handleId: requireAlmStringField(record, path, 'handleId'),
+        msgId: requireAlmStringField(record, path, 'msgId'),
+        replyToMsgId: requireAlmStringField(record, path, 'replyToMsgId')
     };
 }
 

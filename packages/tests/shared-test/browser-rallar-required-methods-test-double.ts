@@ -7,6 +7,8 @@ type BrowserRallarRequiredTestMethods = Pick<
     | 'observeDelivery'
     | 'cancelDelivery'
     | 'readReceipts'
+    | 'awaitReply'
+    | 'reply'
     | 'submitControl'
     | 'injectFault'
     | 'readStorageCounters'
@@ -28,6 +30,8 @@ export function createBrowserRallarRequiredMethodsTestDouble(): BrowserRallarReq
         observeDelivery: unsupported,
         cancelDelivery: unsupported,
         readReceipts: unsupported,
+        awaitReply: unsupported,
+        reply: unsupported,
         submitControl: unsupported,
         injectFault: unsupported,
         readStorageCounters: unsupported,

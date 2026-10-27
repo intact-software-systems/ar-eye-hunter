@@ -23,7 +23,8 @@ import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conform
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
-import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     AL_DELIVERY_STATES,
@@ -1481,5 +1482,157 @@ it.each(
     expect(result.ok, result.error?.message).toBe(state !== 'rejected' && state !== 'failed');
     if (state === 'rejected' || state === 'failed') {
         expect(runtime.state().failures.some((failure) => failure.error?.code === 'RALLAR_BLACK_BOX_ASSERT_FAILED')).toBe(true);
+    }
+});
+
+/** A reply the sender's inbox hands the registry: its own identity, the request's correlation, never its payload. */
+function toInboundReply(requestMsgId: string): RallarMessage<RallarMessagePayload> {
+    return {
+        ...toInboundRequest('reply-1', vi.fn()),
+        payload: { secret: 'reply payload' },
+        raw: {
+            id: { v: 3, msgId: 'reply-1', ts: Date.now(), senderId: 'bob-session' },
+            route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+            payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
+            actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
+        }
+    };
+}
+
+function toInboundRequest(
+    msgId: string,
+    reply: RallarMessage<RallarMessagePayload>['reply']
+): RallarMessage<RallarMessagePayload> {
+    return {
+        transport: 'ws',
+        roomId: 'room-1',
+        senderId: 'bob-session',
+        typeId: 'alm.conformance',
+        topicId: 'alm.conformance',
+        contextId: 'room-1',
+        resourceId: 'room-1',
+        payload: { n: 1 },
+        raw: {
+            id: { v: 3, msgId, ts: Date.now(), senderId: 'bob-session' },
+            route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+            payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' }
+        },
+        receivedAtEpochMs: Date.now(),
+        reply
+    };
+}
+
+/** The reply handle the product's `reply()` opens: a unicast back to the requester under its correlation. */
+function openReplyDelivery(requestMsgId: string): RallarMessageHandle {
+    return facade.deliveries.open({
+        id: { v: 3, msgId: `reply-to-${requestMsgId}`, ts: Date.now(), senderId: 'client-1' },
+        route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+        payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
+        delivery: { ack: 'receiver', reliability: 'at-least-once' },
+        actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
+    }, 'ws');
+}
+
+interface ReceivingRuntime {
+    readonly runtime: BlackBoxRallarRuntime;
+    receive(message: RallarMessage<RallarMessagePayload>): void;
+}
+
+/** A send opens the typed channel, whose WS subscription then records what arrives. */
+async function loadReceivingRuntime(): Promise<ReceivingRuntime> {
+    const runtime = await loadDeliveryRuntime();
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+    const handler = facade.records.typedWsHandlers[0];
+    if (handler === undefined) {
+        throw new Error('The typed channel subscription was not recorded.');
+    }
+    return {
+        runtime,
+        receive: (message) => {
+            void handler(message.payload, message);
+        }
+    };
+}
+
+it('awaits the reply of a retained handle and reports it without its payload', async () => {
+    const runtime = await loadDeliveryRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+
+    const awaiting = runtime.awaitReply({ ...query, timeoutMs: 1_000 });
+    expect(facade.deliveries.recordReply(toInboundReply(delivery.msgId))).toEqual({ kind: 'matched' });
+
+    expect(await awaiting).toEqual({
+        handleId: 'h-1',
+        status: 'replied',
+        state: 'queued',
+        corrId: delivery.msgId,
+        reply: {
+            msgId: 'reply-1',
+            replyToMsgId: delivery.msgId,
+            corrId: delivery.msgId,
+            senderId: 'bob-session',
+            typeId: 'alm.conformance'
+        }
+    });
+});
+
+it('reports a reply wait that times out as its value, and one whose request ended undelivered', async () => {
+    const runtime = await loadDeliveryRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+
+    const awaiting = runtime.awaitReply({ ...query, timeoutMs: 50 });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await awaiting).toEqual({ handleId: 'h-1', status: 'timeout', state: 'queued', corrId: delivery.msgId });
+
+    const cancelled = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(cancelled.handle);
+    await runtime.sendMessage({ ...send, handleId: 'h-2' });
+    await runtime.cancelDelivery({ ...query, handleId: 'h-2' });
+    expect(await runtime.awaitReply({ ...query, handleId: 'h-2', timeoutMs: 1_000 })).toEqual({
+        handleId: 'h-2',
+        status: 'undelivered',
+        state: 'cancelled',
+        corrId: cancelled.msgId
+    });
+});
+
+it('refuses a reply wait on a handle this page never sent', async () => {
+    const runtime = await loadDeliveryRuntime();
+    await runtime.connect(connection);
+
+    await expect(runtime.awaitReply({ ...query, handleId: 'h-never', timeoutMs: 100 }))
+        .rejects.toThrow('messages.awaitReply names no retained handle h-never.');
+});
+
+it('replies to the received message of a type by its arrival, and follows the reply under its own handle', async () => {
+    const { runtime, receive } = await loadReceivingRuntime();
+    const reply = vi.fn(async () => openReplyDelivery('request-2'));
+    receive(toInboundRequest('request-1', vi.fn()));
+    receive(toInboundRequest('request-2', reply));
+
+    expect(await runtime.reply({ connection: 'aliceAlm', typeId: 'alm.conformance', index: 2, payload: { ok: true }, handleId: 'reply-h' }))
+        .toEqual({ handleId: 'reply-h', msgId: 'reply-to-request-2', replyToMsgId: 'request-2' });
+    expect(reply).toHaveBeenCalledWith({ ok: true });
+    expect(await runtime.readReceipts({ connection: 'aliceAlm', handleId: 'reply-h' })).toMatchObject({ handleId: 'reply-h', state: 'submitted' });
+});
+
+it('keeps the last 16 received messages of a type and refuses a reply to an arrival it does not hold', async () => {
+    const { runtime, receive } = await loadReceivingRuntime();
+    const replies = Array.from({ length: 17 }, (_, index) => vi.fn(async () => openReplyDelivery(`request-${index + 1}`)));
+    replies.forEach((reply, index) => receive(toInboundRequest(`request-${index + 1}`, reply)));
+
+    expect(await runtime.reply({ connection: 'aliceAlm', typeId: 'alm.conformance', index: 1, payload: 1, handleId: 'oldest-held' }))
+        .toMatchObject({ replyToMsgId: 'request-2' });
+    for (const [typeId, index] of [['alm.conformance', 17], ['alm.other', 1]] as const) {
+        await expect(runtime.reply({ connection: 'aliceAlm', typeId, index, payload: 1, handleId: 'none' })).rejects.toThrow(
+            `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replyRequestUnreceived}: messages.reply names no received ${typeId} message at index ${index}`
+        );
     }
 });

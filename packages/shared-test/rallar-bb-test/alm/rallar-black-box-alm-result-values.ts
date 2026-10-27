@@ -55,6 +55,26 @@ export interface RallarBlackBoxTestMessagesObserveResultValue
     readonly reason: string | undefined;
 }
 
+/** Payload-free: the request's correlation and lifecycle, and for `replied` the reply's identity. */
+export type RallarBlackBoxTestMessagesAwaitReplyResultValue =
+    | Readonly<{
+        handleId: string;
+        status: 'replied';
+        state: ALDeliveryState;
+        corrId: string;
+        reply: Readonly<{ msgId: string; replyToMsgId: string; corrId: string; senderId: string; typeId: string; }>;
+    }>
+    | Readonly<
+        { handleId: string; status: 'timeout' | 'aborted' | 'undelivered'; state: ALDeliveryState; corrId: string; }
+    >;
+
+/** The reply's own handle and identity; its payload stays in the page. */
+export interface RallarBlackBoxTestMessagesReplyResultValue {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly replyToMsgId: string;
+}
+
 export interface RallarBlackBoxTestStorageCountersResultValue {
     readonly total: number;
     readonly byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;

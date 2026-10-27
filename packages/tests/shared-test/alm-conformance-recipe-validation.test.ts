@@ -27,6 +27,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
+ * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
@@ -48,6 +49,9 @@ const CARRIER_SCENARIO_IDS = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
+        'reply-correlated',
+        'reply-timeout-late',
+        'reply-undelivered',
         'backpressure-deferred',
         'own-share-under-inbound',
         'buffered-track-drains',
@@ -63,6 +67,7 @@ const CARRIER_SCENARIO_IDS = {
         'leader-outside-list',
         'claim-first-wins',
         'claim-expires-reclaims',
+        'reply-first-wins',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -126,6 +131,7 @@ const CARRIER_SCENARIO_IDS = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
+        'reply-correlated',
         'backpressure-hands-over',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
         'principal-delivery',

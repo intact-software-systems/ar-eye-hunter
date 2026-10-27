@@ -21,6 +21,8 @@ import type {
     BlackBoxRallarHealthInput,
     BlackBoxRallarMessageReplayDiagnostics,
     BlackBoxRallarMessageSendDiagnostics,
+    BlackBoxRallarReplyDiagnostics,
+    BlackBoxRallarReplyWaitDiagnostics,
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarWsSendDiagnostics
@@ -84,6 +86,8 @@ export interface BlackBoxRallarRuntime {
     observeDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     cancelDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     readReceipts(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
+    awaitReply(input: unknown): Promise<BlackBoxRallarReplyWaitDiagnostics>;
+    reply(input: unknown): Promise<BlackBoxRallarReplyDiagnostics>;
     submitControl(input: unknown): Promise<BlackBoxRallarControlSubmitDiagnostics>;
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;

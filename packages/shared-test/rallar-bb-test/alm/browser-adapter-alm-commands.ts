@@ -16,8 +16,10 @@ import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
     decodeAlmDeliveryResultValue,
+    decodeAlmMessagesAwaitReplyResultValue,
     decodeAlmMessagesControlResultValue,
     decodeAlmMessagesReplayResultValue,
+    decodeAlmMessagesReplyResultValue,
     decodeAlmMessagesSendResultValue,
     decodeAlmStorageCountersResultValue
 } from './decode-alm-runtime-result.ts';
@@ -122,6 +124,7 @@ const ALM_ERROR_CODES = {
     replayUnavailable: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE',
     rawControlUnavailable: 'RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE',
     peerUnresolved: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED',
+    replyRequestUnreceived: 'RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
     messagesNotReceived: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
     messagesReceivedWhileAbsent: 'RALLAR_BLACK_BOX_ALM_MESSAGES_RECEIVED_WHILE_ABSENT'
@@ -132,7 +135,8 @@ const ALM_PAGE_RUNTIME_ERROR_CODE_KEYS: readonly (keyof typeof BLACK_BOX_RALLAR_
     'scriptedPortsUnavailable',
     'replayUnavailable',
     'rawControlUnavailable',
-    'peerUnresolved'
+    'peerUnresolved',
+    'replyRequestUnreceived'
 ];
 
 // The adapter's own abort fires a hair before the page's observe deadline, so the cancelled and
@@ -148,6 +152,13 @@ const ALM_INBOUND_MESSAGE_TOPICS: readonly string[] = [
 ];
 
 const ALM_RECEIVED_POLL_INTERVAL_MS = 10;
+
+/**
+ * The page ends a reply wait this long before the command's own budget, so a timeout comes back as the command's
+ * value instead of losing the race to the adapter's abort.
+ */
+export const ALM_REPLY_WAIT_RESPONSE_MARGIN_MS = 250;
+
 const ALM_DIAGNOSTIC_SOURCE = 'browser-adapter';
 
 export async function dispatchAlmBrowserCommand(
@@ -166,6 +177,10 @@ export async function dispatchAlmBrowserCommand(
             return await countAlmReceivedMessages({ port, command, context });
         case 'messages.control':
             return await submitAlmControl({ port, command, context });
+        case 'messages.awaitReply':
+            return await awaitAlmReply({ port, command, context });
+        case 'messages.reply':
+            return await replyToAlmMessage({ port, command, context });
         case 'fault.inject':
             return await injectAlmFault({ port, command, context });
         case 'storage.counters':
@@ -221,6 +236,40 @@ function submitAlmControl(
                 (message) => Promise.reject(new TypeError(message)),
                 async () => decodeAlmMessagesControlResultValue(await runtime.submitControl(control))
             )
+    });
+}
+
+function awaitAlmReply(
+    input: AlmBrowserCommandInput<'messages.awaitReply'>
+): Promise<RallarBlackBoxTestCommandOutcome> {
+    const connection = input.port.resolveConnection(input.command, input.context);
+    const wait = {
+        ...input.port.resolveCommandFields(input.command, input.context),
+        connection,
+        timeoutMs: Math.max(0, readAlmWaitTimeoutMs(input.command, input.port.now) - ALM_REPLY_WAIT_RESPONSE_MARGIN_MS)
+    };
+    return runAlmRuntimeCommand({
+        port: input.port,
+        command: input.command,
+        context: input.context,
+        connection,
+        topic: 'rallar.bb.messages.reply_awaited',
+        invoke: async (runtime) => decodeAlmMessagesAwaitReplyResultValue(await runtime.awaitReply(wait))
+    });
+}
+
+function replyToAlmMessage(
+    input: AlmBrowserCommandInput<'messages.reply'>
+): Promise<RallarBlackBoxTestCommandOutcome> {
+    const connection = input.port.resolveConnection(input.command, input.context);
+    const reply = { ...input.port.resolveCommandFields(input.command, input.context), connection };
+    return runAlmRuntimeCommand({
+        port: input.port,
+        command: input.command,
+        context: input.context,
+        connection,
+        topic: 'rallar.bb.messages.replied',
+        invoke: async (runtime) => decodeAlmMessagesReplyResultValue(await runtime.reply(reply))
     });
 }
 

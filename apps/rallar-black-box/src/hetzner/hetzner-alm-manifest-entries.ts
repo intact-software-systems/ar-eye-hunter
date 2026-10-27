@@ -26,6 +26,10 @@ import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scen
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
+import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
+import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
+import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
+import { replyUndelivered } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-undelivered.ts';
 import { capacityAge } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-age.ts';
 import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
 import type {
@@ -97,6 +101,11 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'claim-first-wins', carriers: claimFirstWins.carriers },
     { scenarioKey: 'claim-expires-reclaims', carriers: claimExpiresReclaims.carriers },
     { scenarioKey: 'claim-refused-on-rtc', carriers: claimRefusedOnRtc.carriers },
+    // The reply cells' lane evidence is local and the hosted full read's; manifests 18 and 22 stay as recorded.
+    { scenarioKey: 'reply-correlated', carriers: replyCorrelated.carriers },
+    { scenarioKey: 'reply-timeout-late', carriers: replyTimeoutLate.carriers },
+    { scenarioKey: 'reply-undelivered', carriers: replyUndelivered.carriers },
+    { scenarioKey: 'reply-first-wins', carriers: replyFirstWins.carriers },
     // The age and track bound cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
     { scenarioKey: 'capacity-age', carriers: capacityAge.carriers },
     { scenarioKey: 'capacity-tracks', carriers: capacityTracks.carriers },

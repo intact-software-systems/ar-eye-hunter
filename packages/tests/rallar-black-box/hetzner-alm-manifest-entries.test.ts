@@ -148,7 +148,7 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion and the fairness cells where they run', () => {
+    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion, the fairness and the reply cells where they run', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
         // bound, congestion and fairness cells keep manifest 18 as recorded.
@@ -164,7 +164,11 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-backpressure-deferred`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-own-share-under-inbound`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-buffered-track-drains`),
-            'alm-rtc-churn-bounded-tracks'
+            'alm-rtc-churn-bounded-tracks',
+            'alm-ws-reply-correlated',
+            'alm-rtc-with-ws-fallback-reply-correlated',
+            'alm-ws-reply-timeout-late',
+            'alm-ws-reply-undelivered'
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 
@@ -177,7 +181,7 @@ describe('ALM conformance hosted lane families', () => {
         ]);
     });
 
-    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader and claim cells wherever they run', () => {
+    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader, claim and reply cells wherever they run', () => {
         const withheld = [
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.flatMap((carrier) => ['fenced-delivery', 'fenced-catch-up'].map((key) => `alm-${carrier}-${key}`)),
             'alm-ws-fenced-rejection',
@@ -188,7 +192,8 @@ describe('ALM conformance hosted lane families', () => {
             'alm-ws-claim-first-wins',
             'alm-rtc-with-ws-fallback-claim-first-wins',
             'alm-ws-claim-expires-reclaims',
-            'alm-rtc-claim-refused-on-rtc'
+            'alm-rtc-claim-refused-on-rtc',
+            'alm-ws-reply-first-wins'
         ];
         const defined = toFamilyCells(['three-agent']);
 

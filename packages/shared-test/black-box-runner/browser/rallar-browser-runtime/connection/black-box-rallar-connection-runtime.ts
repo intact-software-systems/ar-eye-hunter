@@ -53,6 +53,10 @@ import {
     decodeBlackBoxRallarStorageCountersInput
 } from '../messaging/decode-black-box-rallar-messaging-input.ts';
 import {
+    decodeBlackBoxRallarReplyInput,
+    decodeBlackBoxRallarReplyWaitInput
+} from '../messaging/decode-black-box-rallar-reply-input.ts';
+import {
     decodeBlackBoxRallarSendCommand,
     decodeBlackBoxRallarWsSendInput
 } from '../messaging/decode-black-box-rallar-send-input.ts';
@@ -90,6 +94,8 @@ export namespace BlackBoxRallarConnectionRuntime {
         | 'observeDelivery'
         | 'cancelDelivery'
         | 'readReceipts'
+        | 'awaitReply'
+        | 'reply'
         | 'submitControl'
         | 'injectFault'
         | 'readStorageCounters';
@@ -214,6 +220,10 @@ export class BlackBoxRallarConnectionRuntime {
                 await deliveryLedger.readReceipts(
                     requireBlackBoxRallarInput(decodeBlackBoxRallarDeliveryHandleInput(input))
                 ),
+            awaitReply: async (input) =>
+                await deliveryLedger.awaitReply(requireBlackBoxRallarInput(decodeBlackBoxRallarReplyWaitInput(input))),
+            reply: async (input) =>
+                await deliveryLedger.reply(requireBlackBoxRallarInput(decodeBlackBoxRallarReplyInput(input))),
             submitControl: async (input) =>
                 await deliveryLedger.submitControl(
                     requireBlackBoxRallarInput(decodeBlackBoxRallarControlSubmitInput(input))
