@@ -1,5 +1,5 @@
-import { newALEventRoute, newALUnicastMessage, readALTargetGroupRef, type ALMessage } from './al-contract.ts';
-import { AL_CHANNEL_SEND_DEFAULTS } from './resolve-al-channel-send-defaults.ts';
+import { newALEventRoute, newALUnicastMessage, readALTargetGroupRef, type ALMessage } from '../al-contract.ts';
+import { AL_CHANNEL_SEND_DEFAULTS } from '../resolve-al-channel-send-defaults.ts';
 import { toALReplyActions } from './to-al-reply-actions.ts';
 
 export interface ALReplyMessageInput<T> {

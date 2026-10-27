@@ -11,9 +11,9 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { newALReplyMessage } from '@shared/al-contracts/new-al-reply-message.ts';
+import { newALReplyMessage } from '@shared/al-contracts/reply/new-al-reply-message.ts';
+import { isALReplyMessage, toALCorrId, toALReplyActions } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
-import { isALReplyMessage, toALCorrId, toALReplyActions } from '@shared/al-contracts/to-al-reply-actions.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const ROUTE = newALRoute('app.command', 'room-1', 'resource-1');
