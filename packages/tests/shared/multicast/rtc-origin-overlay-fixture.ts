@@ -149,7 +149,7 @@ export function createOriginReceiverMulticast(resourceId: string): ALMessage {
         ORIGIN_ROOM,
         'chat.message.v1',
         { text: resourceId },
-        { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000 }
+        { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
     );
 }
 

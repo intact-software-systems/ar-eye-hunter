@@ -7,6 +7,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -295,7 +296,8 @@ function writeCongestionHandOverDiagnostic(
         cause: 'backpressured',
         action: 'hand-over',
         priority: normalizeALQosPolicy(result.message).effective.congestion.opts.priority,
-        msgId: result.message.id.msgId
+        msgId: result.message.id.msgId,
+        ...toALMessageTrace(result.message)
     });
 }
 

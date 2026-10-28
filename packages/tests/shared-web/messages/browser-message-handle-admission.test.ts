@@ -294,7 +294,14 @@ describe('a send its carrier refuses congested', () => {
         const fixture = createCongestedRtcFixture((event) => diagnostics.push(event));
 
         const handle = await fixture.sender.sendTyped(
-            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback', reliability: 'best-effort' },
+            {
+                typeId: 'room.ready',
+                payload: true,
+                strategy: 'rtc-with-ws-fallback',
+                reliability: 'best-effort',
+                traceId: 'trace-hand-over',
+                corrId: 'corr-hand-over'
+            },
             undefined
         );
         const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
@@ -312,7 +319,9 @@ describe('a send its carrier refuses congested', () => {
             cause: 'backpressured',
             action: 'hand-over',
             priority: 0,
-            msgId: handle.msgId
+            msgId: handle.msgId,
+            traceId: 'trace-hand-over',
+            corrId: 'corr-hand-over'
         }]);
     });
 

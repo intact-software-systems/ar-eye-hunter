@@ -41,7 +41,7 @@ function createBestEffortMulticast(resourceId: string): ALMessage {
         ORIGIN_ROOM,
         'chat.message.v1',
         { text: resourceId },
-        { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+        { reliability: 'best-effort', ack: 'none', ttlMs: 30_000, traceId: `trace-${resourceId}` }
     );
 }
 
@@ -75,7 +75,9 @@ describe('the RTC origin\'s congestion drop, by its cause', () => {
             cause: 'backpressured',
             action: 'drop',
             priority: 0,
-            msgId: message.id.msgId
+            msgId: message.id.msgId,
+            traceId: 'trace-backpressured',
+            corrId: message.id.msgId
         }]);
     });
 

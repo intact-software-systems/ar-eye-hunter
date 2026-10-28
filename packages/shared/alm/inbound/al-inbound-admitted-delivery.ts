@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { toALMessageTraceOrNull } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
@@ -353,7 +354,8 @@ export class ALInboundAdmittedDelivery {
             carrier: effect.carrier,
             attempts: effect.attempts,
             atEpochMs: this.dependencies.clock.nowMs(),
-            disposition
+            disposition,
+            ...toALMessageTraceOrNull(observed?.msg)
         });
     }
 

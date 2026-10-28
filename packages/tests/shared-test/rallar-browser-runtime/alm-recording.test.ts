@@ -44,7 +44,16 @@ function requirePorts(): RallarDiagnosticsPortsInput {
 }
 
 function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
-    ports.outboundDiagnostics?.({ kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'defer', priority: 0, msgId: 'msg-1' });
+    ports.outboundDiagnostics?.({
+        kind: 'congestion',
+        carrier: 'rtc',
+        cause: 'backpressured',
+        action: 'defer',
+        priority: 0,
+        msgId: 'msg-1',
+        traceId: 'trace-msg-1',
+        corrId: 'msg-1'
+    });
     ports.inboundDiagnostics?.({
         kind: 'admission-outcome',
         workerId: 'worker-1',
@@ -52,7 +61,9 @@ function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
         typeId: 'test.delivery',
         carrier: 'rtc',
         outcome: 'unauthorized',
-        reason: 'unauthorized'
+        reason: 'unauthorized',
+        traceId: 'trace-msg-1',
+        corrId: 'msg-1'
     });
     ports.storage?.({ kind: 'ordering-tracks', storeId: 'store-1', tracks: 3 });
     ports.storage?.({

@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import { toALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
     type ALOutboundRuntimeDiagnosticsSink
@@ -29,7 +30,9 @@ export function writeALOutboundControlAdmissionDiagnostic(
         targetMsgId: input.targetMsgId,
         outcome: admitted.kind,
         reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
-        // Last, so a match on `typeId`, `targetMsgId` and `outcome` in their emitted order still finds a receipt.
-        ...(input.receiptPhase === undefined ? {} : { phase: input.receiptPhase })
+        // Straight after the reason, so a match on `typeId`, `targetMsgId`, `outcome`, `reason` and `phase` in their
+        // emitted order finds a receipt; the trace appends after both, so it moves neither match.
+        ...(input.receiptPhase === undefined ? {} : { phase: input.receiptPhase }),
+        ...toALMessageTrace(control)
     });
 }

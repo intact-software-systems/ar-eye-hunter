@@ -3,6 +3,7 @@ import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -305,7 +306,8 @@ export class ALInboundMessageRuntime {
                 msgId: msg.id.msgId,
                 typeId: msg.payload.typeId,
                 carrier: toALDeliveryCarrier(source),
-                ...toALInboundAdmissionDiagnostics(admitted)
+                ...toALInboundAdmissionDiagnostics(admitted),
+                ...toALMessageTrace(msg)
             });
         }
         catch { /* Optional diagnostics cannot change mandatory work. */ }

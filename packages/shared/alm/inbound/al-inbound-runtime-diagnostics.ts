@@ -2,6 +2,12 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '../../al-contracts/al-control-type-ids.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import {
+    toALMessageTrace,
+    toALMessageTraceOrNull,
+    type ALMessageTrace,
+    type ALMessageTraceOrNull
+} from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { Either } from '../../resilience/Either.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
@@ -45,6 +51,9 @@ export interface ALInboundDispatchDecision {
     readonly attempts: number;
     readonly atEpochMs: number;
     readonly disposition: ALInboundDispatchDisposition;
+    /** Null when the decision came before the stored message was read: a shutdown or an expired row. */
+    readonly traceId: string | null;
+    readonly corrId: string | null;
 }
 
 /** One concrete WS selection; exact callback settlement is not a native application receipt. */
@@ -57,9 +66,14 @@ export interface ALInboundConsumerInvocation {
     readonly outcome: 'returned' | 'retry' | 'threw' | 'not-invoked';
     readonly beganAtMs: number;
     readonly settledAtMs: number;
+    readonly traceId: string;
+    readonly corrId: string;
 }
 
-/** Registered AL callback/admission facts, after earlier receive processing; never native arrival time. */
+/**
+ * Registered AL callback/admission facts, after earlier receive processing; never native arrival time. The trace
+ * and correlation are the ACK's own, which names the trace of the message it acknowledges.
+ */
 export type ALInboundRtcAckIngress =
     & Readonly<{
         kind: 'rtc-ack-ingress';
@@ -85,7 +99,8 @@ export type ALInboundRtcAckIngress =
             outcome: 'rejected';
             rejection: ALMessageRejection['code'];
         }>
-    );
+    )
+    & ALMessageTrace;
 
 export type ALInboundRuntimeDiagnosticsEvent =
     | ALInboundDispatchDecision
@@ -104,6 +119,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
         outcome: ALInboundAdmissionOutcome;
         /** The plan's drop reason, the rejection's code, or the acceptance kind that carries neither. */
         reason: string;
+        traceId: string;
+        corrId: string;
     }>
     | Readonly<{
         /** A value that never decoded as an AL envelope, so it has no message identity, only its source. */
@@ -120,22 +137,24 @@ export type ALInboundRuntimeDiagnosticsEvent =
         kind: 'reply-late';
         msgId: string;
         replyToMsgId: string;
-        corrId: string;
         typeId: string;
         senderId: string;
         carrier: ALDeliveryCarrier;
         cause: 'replied' | 'timed-out' | 'unobserved';
+        traceId: string;
+        corrId: string;
     }>
     | Readonly<{
         /** A reply whose sender is not the peer the request addressed, so the registry refused it. */
         kind: 'reply-wrong-responder';
         msgId: string;
         replyToMsgId: string;
-        corrId: string;
         typeId: string;
         senderId: string;
         carrier: ALDeliveryCarrier;
         expectedSenderId: string;
+        traceId: string;
+        corrId: string;
     }>
     | Readonly<{
         kind: 'effect-drain';
@@ -204,6 +223,12 @@ export type ALInboundRuntimeDiagnosticsEvent =
         batchStartedAtMs: number;
         /** When this claim's own work began, so `startedAtMs − batchStartedAtMs` is its wait behind earlier claims. */
         startedAtMs: number;
+        /**
+         * The claimed message's trace and correlation. Null where `typeId` is: a reference or a buffered release
+         * retains no envelope to read them from.
+         */
+        traceId: string | null;
+        corrId: string | null;
     }>
     | Readonly<{
         kind: 'rotation-alive';
@@ -270,6 +295,20 @@ export function toALInboundClaimIdentity(payload: ALInboundDurableEffect): ALInb
             return { msgId: payload.message.msgId, typeId: null, subjectMsgId: payload.message.msgId };
         case 'release-buffered':
             return { msgId: null, typeId: null, subjectMsgId: null };
+    }
+}
+
+/** Only a retained message or control keeps its envelope; a reference and a buffered release keep no trace. */
+export function toALInboundClaimTrace(payload: ALInboundDurableEffect): ALMessageTraceOrNull {
+    switch (payload.kind) {
+        case 'admit-message':
+        case 'admit-control':
+        case 'send-control':
+            return toALMessageTrace(payload.msg);
+        case 'dispatch-local':
+        case 'forward-message':
+        case 'release-buffered':
+            return toALMessageTraceOrNull(undefined);
     }
 }
 
@@ -355,6 +394,12 @@ export namespace ALInboundRtcAckObservation {
         readonly toPeerId: string;
     }
 
+    /** The received ACK: the hop it crossed, and the trace and correlation every event of it ends with. */
+    export interface Received {
+        readonly identity: Identity;
+        readonly trace: ALMessageTrace;
+    }
+
     export interface AdmissionInput {
         readonly pass: 'initial' | 'after-authority-refresh';
         readonly admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance> | 'threw';
@@ -364,16 +409,16 @@ export namespace ALInboundRtcAckObservation {
 /** Closed optional facts of one registered RTC ACK invocation; never admission or routing policy. */
 export class ALInboundRtcAckObservation {
     private readonly dependencies: ALInboundRtcAckObservation.Dependencies;
-    private readonly identity: ALInboundRtcAckObservation.Identity;
+    private readonly received: ALInboundRtcAckObservation.Received;
     private readonly sink: ALInboundRuntimeDiagnosticsSink;
 
     constructor(
         dependencies: ALInboundRtcAckObservation.Dependencies,
-        identity: ALInboundRtcAckObservation.Identity,
+        received: ALInboundRtcAckObservation.Received,
         sink: ALInboundRuntimeDiagnosticsSink
     ) {
         this.dependencies = dependencies;
-        this.identity = identity;
+        this.received = received;
         this.sink = sink;
     }
 
@@ -389,12 +434,15 @@ export class ALInboundRtcAckObservation {
             }
             return new this(
                 dependencies,
-                Object.freeze({
-                    controlMsgId: message.id.msgId,
-                    controlSenderId: message.id.senderId,
-                    fromPeerId,
-                    toPeerId: dependencies.sessionId
-                }),
+                {
+                    identity: Object.freeze({
+                        controlMsgId: message.id.msgId,
+                        controlSenderId: message.id.senderId,
+                        fromPeerId,
+                        toPeerId: dependencies.sessionId
+                    }),
+                    trace: Object.freeze(toALMessageTrace(message))
+                },
                 sink
             );
         }
@@ -405,10 +453,11 @@ export class ALInboundRtcAckObservation {
         try {
             recordALInboundDiagnostic(this.sink, {
                 kind: 'rtc-ack-ingress',
-                ...this.identity,
+                ...this.received.identity,
                 carrier: 'rtc',
                 stage: 'callback-entered',
-                observedAtEpochMs: this.dependencies.epochNow()
+                observedAtEpochMs: this.dependencies.epochNow(),
+                ...this.received.trace
             });
         }
         catch { /* Optional projection and clock cannot block mandatory admission. */ }
@@ -418,21 +467,23 @@ export class ALInboundRtcAckObservation {
         try {
             const identity = {
                 kind: 'rtc-ack-ingress',
-                ...this.identity,
+                ...this.received.identity,
                 carrier: 'rtc',
                 pass: input.pass,
                 observedAtEpochMs: this.dependencies.epochNow()
             } as const;
+            const { trace } = this.received;
             let event: ALInboundRtcAckIngress;
             if (input.admitted === 'threw') {
-                event = { ...identity, stage: 'admission-threw' };
+                event = { ...identity, stage: 'admission-threw', ...trace };
             }
             else if (input.admitted.left) {
                 event = {
                     ...identity,
                     stage: 'admission-returned',
                     outcome: 'rejected',
-                    rejection: input.admitted.left.code
+                    rejection: input.admitted.left.code,
+                    ...trace
                 };
             }
             else {
@@ -440,7 +491,8 @@ export class ALInboundRtcAckObservation {
                     ...identity,
                     stage: 'admission-returned',
                     outcome: 'accepted',
-                    acceptance: input.admitted.right!.kind
+                    acceptance: input.admitted.right!.kind,
+                    ...trace
                 };
             }
             recordALInboundDiagnostic(this.sink, event);

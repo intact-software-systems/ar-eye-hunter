@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import { toALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import type {
     ALOutboundCommitBundleOutcome,
@@ -31,6 +32,9 @@ export interface ALOutboundReceiptConfirmationDiagnostic {
     readonly commitOutcome: ALOutboundCommitBundleOutcome;
     /** The logical fact passed to the emitter on commit, before carrier/lane/time stamping. */
     readonly settlement: Extract<ALOutboundSettlementFact, { kind: 'acknowledgement'; }> | null;
+    /** The receipt control's own trace and correlation; its trace is the one of the message it confirms. */
+    readonly traceId: string;
+    readonly corrId: string;
 }
 
 export interface ALOutboundReceiptConfirmationDiagnosticInput {
@@ -65,7 +69,8 @@ export function toALOutboundReceiptConfirmationDiagnostic(
         candidateAfter: toReceiptSnapshot(write?.value),
         candidateExpiresAtMs: write?.expireAtTimestamp ?? null,
         commitOutcome: input.commitOutcome,
-        settlement: toReceiptSettlementSnapshot(input.settlement)
+        settlement: toReceiptSettlementSnapshot(input.settlement),
+        ...toALMessageTrace(input.control)
     });
 }
 

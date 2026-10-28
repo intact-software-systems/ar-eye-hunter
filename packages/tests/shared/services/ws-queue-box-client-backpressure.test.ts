@@ -82,7 +82,7 @@ function roomSend(
         ROOM,
         'chat.message.v1',
         {},
-        { reliability, ack: 'none', ttlMs: 30_000, qos }
+        { reliability, ack: 'none', ttlMs: 30_000, qos, traceId: `trace-${resourceId}` }
     );
 }
 
@@ -139,7 +139,9 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
             cause: 'backpressured',
             action: 'drop',
             priority: 0,
-            msgId: message.id.msgId
+            msgId: message.id.msgId,
+            traceId: 'trace-full-socket',
+            corrId: message.id.msgId
         }]);
     });
 
@@ -172,7 +174,9 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
             cause: 'backpressured',
             action: 'defer',
             priority: 5,
-            msgId: message.id.msgId
+            msgId: message.id.msgId,
+            traceId: 'trace-deferred',
+            corrId: message.id.msgId
         })));
         const fullSocketAttempts = readNotReadyAttempts(client, message.id.msgId)
             .filter((attempt) => attempt.detail === 'WS socket is backpressured');

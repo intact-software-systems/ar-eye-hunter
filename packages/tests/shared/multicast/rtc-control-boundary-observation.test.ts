@@ -360,7 +360,10 @@ describe('exact RTC ACK boundary observations', () => {
                         controlSenderId: ack.id.senderId,
                         fromPeerId: hop.fromPeerId,
                         toPeerId: hop.toPeerId,
-                        carrier: 'rtc'
+                        carrier: 'rtc',
+                        // Every hop's ACK travels under the trace of the message it acknowledges.
+                        traceId: hop.subject.id.traceId,
+                        corrId: ack.id.msgId
                     };
                     expect(inbound.get(hop.toPeerId)).toContainEqual(expect.objectContaining({
                         kind: 'acknowledgement-association',

@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALAckPayload } from '../../../al-contracts/al-control.ts';
+import { toALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkBatchObservations } from '../../work/al-work-batch-observations.ts';
@@ -47,6 +48,7 @@ export namespace ALInboundAcknowledgementEvidence {
         readonly defer: ALWorkObservationDeferral | undefined;
     }
 
+    /** The ACK's own trace and correlation close it; its trace is the one of the message it acknowledges. */
     export interface Identity {
         readonly controlMsgId: string;
         readonly controlSenderId: string;
@@ -58,6 +60,8 @@ export namespace ALInboundAcknowledgementEvidence {
         readonly carrier: ALDeliveryCarrier;
         readonly status: ALAckPayload['status'];
         readonly producerObservedAtEpochMs: number;
+        readonly traceId: string;
+        readonly corrId: string;
     }
 
     export interface Candidate {
@@ -334,6 +338,7 @@ function toAcknowledgementIdentity(
         toPeerId: ack.toPeerId,
         carrier,
         status: ack.status,
-        producerObservedAtEpochMs: ack.observedAtEpochMs
+        producerObservedAtEpochMs: ack.observedAtEpochMs,
+        ...toALMessageTrace(msg)
     });
 }

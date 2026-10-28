@@ -65,12 +65,14 @@ describe('BrowserMessageReplyInbox', () => {
             kind: 'reply-late',
             msgId: 'reply-2',
             replyToMsgId: REQUEST_ID,
-            corrId: REQUEST_ID,
             typeId: 'app.ask.v1',
             senderId: 'responder-1',
             carrier: 'ws',
-            cause: 'replied'
+            cause: 'replied',
+            traceId: 'trace-browser-message-reply-inbox',
+            corrId: REQUEST_ID
         }]);
+        expect(Object.keys(fixture.diagnostics[0]!).slice(-2)).toEqual(['traceId', 'corrId']);
     });
 
     it('emits reply-late timed-out for a reply after the wait timed out', async () => {
@@ -112,12 +114,14 @@ describe('BrowserMessageReplyInbox', () => {
             kind: 'reply-wrong-responder',
             msgId: 'reply-1',
             replyToMsgId: REQUEST_ID,
-            corrId: REQUEST_ID,
             typeId: 'app.ask.v1',
             senderId: 'responder-2',
             carrier: 'ws',
-            expectedSenderId: 'responder-1'
+            expectedSenderId: 'responder-1',
+            traceId: 'trace-browser-message-reply-inbox',
+            corrId: REQUEST_ID
         }]);
+        expect(Object.keys(fixture.diagnostics[0]!).slice(-2)).toEqual(['traceId', 'corrId']);
     });
 
     it('leaves a message that is not a reply to the other handlers', async () => {

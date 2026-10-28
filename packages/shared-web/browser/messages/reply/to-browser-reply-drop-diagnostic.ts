@@ -1,6 +1,6 @@
 import type { BrowserMessageReplySlot } from '@shared-web/browser/messages/reply/browser-message-reply-slot.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { toALCorrId } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 
@@ -17,12 +17,12 @@ export function toBrowserReplyDropDiagnostic(drop: BrowserReplyDrop): ALInboundR
     const identity = {
         msgId: message.id.msgId,
         replyToMsgId: drop.replyToMsgId,
-        corrId: toALCorrId(message),
         typeId: message.payload.typeId,
         senderId: message.id.senderId,
         carrier: drop.carrier
     };
+    const trace = toALMessageTrace(message);
     return admission.kind === 'late'
-        ? { kind: 'reply-late', ...identity, cause: admission.cause }
-        : { kind: 'reply-wrong-responder', ...identity, expectedSenderId: admission.expectedSenderId };
+        ? { kind: 'reply-late', ...identity, cause: admission.cause, ...trace }
+        : { kind: 'reply-wrong-responder', ...identity, expectedSenderId: admission.expectedSenderId, ...trace };
 }

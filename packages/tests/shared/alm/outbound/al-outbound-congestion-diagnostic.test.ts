@@ -86,7 +86,7 @@ describe('the congestion decision of an outbound admission', () => {
             diagnostics: (event) => events.push(event),
             budget: new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS)
         });
-        const message = createOutboundMessage('congested');
+        const message = createOutboundMessage('congested', { traceId: 'trace-congested' });
 
         const result = await runtime.enqueueAllIfAbsent([message]);
 
@@ -97,7 +97,9 @@ describe('the congestion decision of an outbound admission', () => {
             cause: 'backpressured',
             action: 'drop',
             priority: 0,
-            msgId: message.id.msgId
+            msgId: message.id.msgId,
+            traceId: 'trace-congested',
+            corrId: message.id.msgId
         }]);
     });
 

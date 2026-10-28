@@ -12,6 +12,7 @@ import {
     type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -248,6 +249,8 @@ export interface ALOutboundCongestionDiagnostic {
     readonly action: 'drop' | 'defer' | 'hand-over';
     readonly priority: number;
     readonly msgId: string;
+    readonly traceId: string;
+    readonly corrId: string;
 }
 
 /**
@@ -278,7 +281,10 @@ export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 /** What the write transaction returned, or that the admission settled before opening one. */
 export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired' | 'not-attempted';
 
-/** The QR terminal fact for one exact ACK/hop; sent establishes local submission, not recipient delivery. */
+/**
+ * The QR terminal fact for one exact ACK/hop; sent establishes local submission, not recipient delivery. The trace
+ * and correlation are the ACK's own, which names the trace of the message it acknowledges.
+ */
 export interface ALOutboundRtcAckSubmission {
     readonly kind: 'rtc-ack-submission';
     readonly controlMsgId: string;
@@ -290,6 +296,8 @@ export interface ALOutboundRtcAckSubmission {
     readonly submissionAttempted: boolean;
     /** Terminal observer time, after QR's settlement microtask; not the instant native send ran. */
     readonly observedAtEpochMs: number;
+    readonly traceId: string;
+    readonly corrId: string;
 }
 
 /** One hand-off of the session's messages that the RTC carrier's rate limiter or open circuit breaker refused. */
@@ -350,6 +358,8 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         readOperationCount: number;
         commitDurationMs: number;
         commitOutcome: ALOutboundCommitBundleOutcome;
+        traceId: string;
+        corrId: string;
     }>
     | Readonly<{
         kind: 'control-admission';
@@ -366,6 +376,9 @@ export type ALOutboundRuntimeDiagnosticsEvent =
          * so absence means "not a receipt" rather than a missing phase.
          */
         phase?: ALReceiptPayload['phase'];
+        /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
+        traceId: string;
+        corrId: string;
     }>
     | Readonly<{
         kind: 'effect-drain';
@@ -795,7 +808,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 cause: plan.congestionDrop.cause,
                 action: 'drop',
                 priority: plan.congestionDrop.priority,
-                msgId: msg.id.msgId
+                msgId: msg.id.msgId,
+                ...toALMessageTrace(msg)
             });
         }
         const lane = this.resolveLaneForPlan(plan);
@@ -958,7 +972,8 @@ export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongesti
         cause: 'backpressured',
         action: 'defer',
         priority: policy.effective.congestion.opts.priority,
-        msgId: message.id.msgId
+        msgId: message.id.msgId,
+        ...toALMessageTrace(message)
     });
 }
 

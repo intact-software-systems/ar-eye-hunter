@@ -90,7 +90,7 @@ it.each(['memory', 'indexeddb'] as const)(
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
-        const message = createOutboundMessage('msg-commit-phases');
+        const message = createOutboundMessage('msg-commit-phases', { traceId: 'trace-commit-phases' });
         const enqueued = await runtime.enqueueIfAbsent(message);
 
         expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
@@ -103,8 +103,14 @@ it.each(['memory', 'indexeddb'] as const)(
             typeId: 'chat.private-text.v1',
             origin: 'send',
             readOperationCount: FIRST_SEND_READ_OPERATIONS,
-            commitOutcome: 'committed'
+            commitOutcome: 'committed',
+            traceId: 'trace-commit-phases',
+            corrId: message.id.msgId
         });
+        // A recipe matches the serialized prefix after the sender's peer id; the trace only appends.
+        const keys = Object.keys(phases!);
+        expect(keys.slice(0, 6)).toEqual(['kind', 'lane', 'senderId', 'msgId', 'typeId', 'origin']);
+        expect(keys.slice(-2)).toEqual(['traceId', 'corrId']);
         expect(phases?.readDurationMs).toBeGreaterThanOrEqual(0);
         expect(phases?.commitDurationMs).toBeGreaterThanOrEqual(0);
         expect(senderQueueWaitsOf(diagnostics)[0]).toMatchObject({
@@ -237,18 +243,22 @@ it.each(['memory', 'indexeddb'] as const)(
         }
 
         const verdict = { kind: 'control-admission', typeId: AL_CONTROL_ACK_TYPE_ID, targetMsgId: message.id.msgId };
+        const trace = { traceId: 'trace-outbound-commit-phase-diagnostics' };
         expect(controlAdmissionsOf(diagnostics)).toEqual([
-            { ...verdict, msgId: 'control-peer-1', outcome: 'committed', reason: 'none' },
+            { ...verdict, msgId: 'control-peer-1', outcome: 'committed', reason: 'none', ...trace, corrId: 'control-peer-1' },
             {
                 ...verdict,
                 msgId: 'control-peer-2',
                 outcome: 'rejected',
-                reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+                reason: 'AL acknowledgement confirms no peer of the pending outbound receipt',
+                ...trace,
+                corrId: 'control-peer-2'
             }
         ]);
-        // Only a receipt has a phase: an ACK's verdict states none (R-S3a-9).
+        // Only a receipt has a phase: an ACK's verdict states none (R-S3a-9) and ends with its trace.
         for (const admission of controlAdmissionsOf(diagnostics)) {
             expect(admission).not.toHaveProperty('phase');
+            expect(Object.keys(admission).slice(-2)).toEqual(['traceId', 'corrId']);
         }
         await runtime.dispose();
     }

@@ -467,7 +467,9 @@ describe('WS client receipt admission edges', () => {
                 confirmedRecipientPeerIds: confirmed,
                 unconfirmedRecipientPeerIds: unconfirmed,
                 complete
-            }
+            },
+            traceId: 'trace-receipt-tracking-test-fixture',
+            corrId: 'receipt-complete'
         });
         expect(before.clientRecord?.version).not.toBe(7);
         const acknowledgement = fixture.settlements.filter((event) => event.kind === 'acknowledgement').at(-1)!;
@@ -692,7 +694,9 @@ describe('WS client receipt admission edges', () => {
                 targetMsgId: 'room-message-1',
                 outcome: 'committed',
                 reason: 'none',
-                phase: 'admitted'
+                phase: 'admitted',
+                traceId: 'trace-receipt-tracking-test-fixture',
+                corrId: 'receipt-admitted'
             },
             {
                 kind: 'control-admission',
@@ -701,14 +705,17 @@ describe('WS client receipt admission edges', () => {
                 targetMsgId: 'unsent-message',
                 outcome: 'rejected',
                 reason: 'AL receipt names no retained outbound message of its origin',
-                phase: 'complete'
+                phase: 'complete',
+                traceId: 'trace-receipt-tracking-test-fixture',
+                corrId: 'receipt-complete'
             }
         ]);
     });
 
-    // R-S3a-9: a recipe waits for the `complete` receipt by matching the serialized event in its key order. The
-    // phase comes last, so a wait that names no phase still matches the same event.
-    it('states the receipt phase after the outcome and reason of the serialized diagnostic', async () => {
+    // R-S3a-9: a recipe waits for the `complete` receipt by matching the serialized event in its key order, the
+    // phase straight after the reason, so a wait that names no phase still matches the same event. The control's
+    // trace appends after the phase, so neither match moves.
+    it('states the receipt phase after the outcome and reason of the serialized diagnostic, then its trace', async () => {
         const fixture = await createReceiptTrackingFixture();
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
 
@@ -716,8 +723,9 @@ describe('WS client receipt admission edges', () => {
 
         const [admission] = fixture.diagnostics.filter((event) => event.kind === 'control-admission');
         expect(JSON.stringify(admission)).toBe(
-            '{"kind":"control-admission","msgId":"receipt-admitted","typeId":"al.control.receipt.v1","targetMsgId":"room-message-1","outcome":"committed","reason":"none","phase":"admitted"}'
+            '{"kind":"control-admission","msgId":"receipt-admitted","typeId":"al.control.receipt.v1","targetMsgId":"room-message-1","outcome":"committed","reason":"none","phase":"admitted","traceId":"trace-receipt-tracking-test-fixture","corrId":"receipt-admitted"}'
         );
+        expect(Object.keys(admission!).slice(-3)).toEqual(['phase', 'traceId', 'corrId']);
     });
 });
 

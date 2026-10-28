@@ -94,7 +94,7 @@ it.each(['memory', 'indexeddb'] as const)(
     'names the message an ingress committed and the drain that delivered it over %s',
     async (kind) => {
         const { runtime, diagnostics, delivered } = createRuntime({ kind });
-        const message = createInboundTestMessage({ msgId: 'committed-delivery' });
+        const message = createInboundTestMessage({ msgId: 'committed-delivery', traceId: 'trace-committed-delivery' });
 
         await runtime.ready();
         const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
@@ -107,7 +107,9 @@ it.each(['memory', 'indexeddb'] as const)(
             typeId: 'chat.private-text.v1',
             carrier: 'rtc',
             outcome: 'committed',
-            reason: 'admitted'
+            reason: 'admitted',
+            traceId: 'trace-committed-delivery',
+            corrId: 'committed-delivery'
         }]);
 
         await expect.poll(() => delivered).toEqual(['dispatched']);
@@ -128,7 +130,7 @@ it.each(['memory', 'indexeddb'] as const)(
         }]);
 
         // The one claim that drain ran, named: the delivery effect holds a reference to the message,
-        // which carries its id and not its type.
+        // which carries its id and neither its type nor its trace.
         const settled = claimsOf(diagnostics);
         expect(settled.map((event) => ({
             kind: event.kind,
@@ -137,7 +139,9 @@ it.each(['memory', 'indexeddb'] as const)(
             typeId: event.typeId,
             payloadKind: event.payloadKind,
             attempts: event.attempts,
-            outcome: event.outcome
+            outcome: event.outcome,
+            traceId: event.traceId,
+            corrId: event.corrId
         }))).toEqual([{
             kind: 'claim-settled',
             workerId: DIAGNOSTICS_WORKER_ID,
@@ -145,8 +149,11 @@ it.each(['memory', 'indexeddb'] as const)(
             typeId: null,
             payloadKind: 'dispatch-local',
             attempts: 1,
-            outcome: 'completed'
+            outcome: 'completed',
+            traceId: null,
+            corrId: null
         }]);
+        expect(Object.keys(settled[0]!).slice(-2)).toEqual(['traceId', 'corrId']);
 
         // The batch's phases account for the claim it ran. Both read the same row's own wait, the
         // claim to its batch's run loop and the drain to the batch's own earlier start, so the
@@ -164,7 +171,7 @@ it.each(['memory', 'indexeddb'] as const)(
     'splits a delivery wait into its reservation and intra-batch halves over %s',
     async (kind) => {
         const { runtime, diagnostics, delivered } = createRuntime({ kind });
-        const message = createInboundTestMessage({ msgId: 'split-wait', acknowledged: true });
+        const message = createInboundTestMessage({ msgId: 'split-wait', acknowledged: true, traceId: 'trace-split-wait' });
 
         await runtime.ready();
         await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
@@ -180,6 +187,8 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(dispatch.subjectMsgId).toBe(message.id.msgId);
         expect(control.subjectMsgId).toBe(message.id.msgId);
         expect(control.msgId).not.toBe(message.id.msgId);
+        // The ACK the admission generated travels under the trace of the message it acknowledges.
+        expect([control.traceId, control.corrId]).toEqual(['trace-split-wait', control.msgId]);
         expect(dispatch.dueAtMs).toBeLessThanOrEqual(dispatch.batchStartedAtMs);
         expect(dispatch.startedAtMs).toBeGreaterThanOrEqual(dispatch.batchStartedAtMs);
         expect(dispatch.queueWaitMs).toBe(Math.max(0, dispatch.batchStartedAtMs - dispatch.dueAtMs));
@@ -222,7 +231,7 @@ it.each(
             kind: 'memory',
             readPendingAdmissionAuthority
         });
-        const message = createInboundTestMessage({ msgId: `retained-${outcome}` });
+        const message = createInboundTestMessage({ msgId: `retained-${outcome}`, traceId: `trace-retained-${outcome}` });
 
         await runtime.ready();
         setNextInboundCommitConflicted(stores.admissionStore);
@@ -242,7 +251,9 @@ it.each(
             typeId: 'chat.private-text.v1',
             payloadKind: 'admit-message',
             attempts: 1,
-            outcome
+            outcome,
+            traceId: `trace-retained-${outcome}`,
+            corrId: `retained-${outcome}`
         });
     }
 );
@@ -260,7 +271,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 nack: { enabled: false, reason: 'unauthorized', missingRanges: [] }
             })
         });
-        const message = createInboundTestMessage({ msgId: 'unauthorized-drop' });
+        const message = createInboundTestMessage({ msgId: 'unauthorized-drop', traceId: 'trace-unauthorized-drop' });
 
         await runtime.ready();
         const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
@@ -274,7 +285,9 @@ it.each(['memory', 'indexeddb'] as const)(
             typeId: 'chat.private-text.v1',
             carrier: 'rtc',
             outcome: 'unauthorized',
-            reason: 'unauthorized'
+            reason: 'unauthorized',
+            traceId: 'trace-unauthorized-drop',
+            corrId: 'unauthorized-drop'
         }]);
         expect(delivered).toEqual([]);
     }
