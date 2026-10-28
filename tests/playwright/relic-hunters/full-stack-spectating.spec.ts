@@ -1,12 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { roomBrowserTest } from '../room-browser-fixture.ts';
 
-test('watches through visible controls, recovers watching, and promotes only before an expedition starts', async ({ browser }) => {
-    test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-    const hostContext = await browser.newContext();
-    const watcherContext = await browser.newContext();
-    try {
-        const host = await hostContext.newPage();
-        const watcher = await watcherContext.newPage();
+roomBrowserTest(
+    'watches through visible controls, recovers watching, and promotes only before an expedition starts',
+    async ({ page: host, guest: watcher }) => {
+        roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
         await registerSpectatingHunter(host, 'host');
         await host.getByRole('button', { name: 'New Room', exact: true }).click();
         await expect(host.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
@@ -55,19 +53,12 @@ test('watches through visible controls, recovers watching, and promotes only bef
             .toHaveAttribute('data-scene-ready', 'true', { timeout: 30_000 });
         await expect(watcher.getByRole('button', { name: 'Leave room', exact: true })).toHaveCount(0);
     }
-    finally {
-        await hostContext.close();
-        await watcherContext.close();
-    }
-});
+);
 
-test('offers Watch for a full player roster without allowing promotion', async ({ browser }) => {
-    test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-    const hostContext = await browser.newContext();
-    const watcherContext = await browser.newContext();
-    try {
-        const host = await hostContext.newPage();
-        const watcher = await watcherContext.newPage();
+roomBrowserTest(
+    'offers Watch for a full player roster without allowing promotion',
+    async ({ page: host, guest: watcher }) => {
+        roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
         await registerSpectatingHunter(host, 'full-host');
         // A one-player capacity exercises the same server admission limit without unrelated player scenes.
         await host.route('**/groups/requests/*', async (route) => {
@@ -92,11 +83,7 @@ test('offers Watch for a full player roster without allowing promotion', async (
         await expect(host.locator('.lobby-begin-btn')).toBeEnabled();
         await expect(host.locator('.lobby-party-row')).toHaveCount(1);
     }
-    finally {
-        await hostContext.close();
-        await watcherContext.close();
-    }
-});
+);
 
 async function registerSpectatingHunter(page: Page, role: string): Promise<void> {
     const suffix = crypto.randomUUID();

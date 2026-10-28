@@ -55,7 +55,7 @@ test('retains labelled rows after failure and refreshes capacity and admission c
     unavailable = true;
     await refresh.click();
     await expect(operations.getByText('Last loaded arenas — refresh to check availability.')).toBeVisible();
-    await expect(operations.getByRole('button', { name: /Previously loaded/ })).toBeVisible();
+    await expect(operations.getByRole('button', { name: /Previously loaded.*Request to join/ })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('retained-directory.png'), fullPage: true });
     unavailable = false;
     entries = [directoryArena('Available', false), directoryArena('At capacity', true)];
