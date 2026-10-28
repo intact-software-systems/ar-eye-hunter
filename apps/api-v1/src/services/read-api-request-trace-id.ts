@@ -10,7 +10,7 @@ declare module 'jsr:@hono/hono@4.11.9' {
 export function readApiRequestTraceId(context: Context): string {
     const traceId: string | undefined = context.get('traceId');
     if (traceId === undefined) {
-        throw new TypeError('API request trace is missing: the HTTP timing middleware did not run');
+        throw new Error('API request trace is missing: the HTTP timing middleware did not run');
     }
     return traceId;
 }

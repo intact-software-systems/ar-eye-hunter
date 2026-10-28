@@ -203,6 +203,17 @@ Deno.test('HTTP timing middleware echoes, records and exposes a valid x-request-
     assert.deepEqual(trace, { echoed: 'trace_Valid-1', read: 'trace_Valid-1', recorded: 'trace_Valid-1' });
 });
 
+Deno.test('HTTP timing middleware echoes the trace on a route that returns its own Response', async () => {
+    const app = new Hono();
+    app.use('/api/*', createHttpTimingMiddleware({ timing: () => undefined }));
+    app.post('/api/raw', () => Response.json({ ok: true }, { headers: { 'content-type': 'application/json' } }));
+
+    const response = await app.request('/api/raw', { method: 'POST', headers: { 'x-request-id': 'trace-raw-response' } });
+
+    assert.equal(response.headers.get('x-request-id'), 'trace-raw-response');
+    assert.match(response.headers.get('server-timing') ?? '', /^total;dur=/);
+});
+
 Deno.test('HTTP timing middleware keeps a 128-character x-request-id', async () => {
     const longest = 'a'.repeat(128);
 
@@ -235,9 +246,9 @@ Deno.test('HTTP timing middleware mints a trace when x-request-id is absent', as
     assert.notEqual(first.read, second.read);
 });
 
-Deno.test('readApiRequestTraceId refuses a context the timing middleware never traced', () => {
+Deno.test('readApiRequestTraceId refuses an untraced context as a programmer invariant, never a TypeError', () => {
     assert.throws(
         () => readApiRequestTraceId(createContextDouble({ path: '/api/untraced', headers: {} }, new Headers())),
-        /request trace/u
+        (error) => error instanceof Error && !(error instanceof TypeError) && /request trace/u.test(error.message)
     );
 });

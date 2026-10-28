@@ -245,22 +245,18 @@ export class GroupStateInboxService {
             authority: encodeAppInboxCommand(authorized, 'Group mutation AppInbox authority'),
             data: encodeAppInboxCommand(enqueue.data, 'Group mutation AppInbox command')
         };
-        const placeholder: AppInboxEnqueueInput = {
+        const storedPlaceholder: AppInboxEnqueue = {
             type: received.type,
             topicId: toAuthenticatedGroupMutationQueueKey(received).topicId,
             resourceId: received.resourceId,
             contextId: received.contextId,
             senderId: received.senderId,
-            traceId,
             data: null
         };
+        const placeholder: AppInboxEnqueueInput = { ...storedPlaceholder, traceId };
         // Captured before the reservation's transaction opens; only the winner's facts are stored and reused.
         const materialized: AppInboxEnqueue = {
-            type: placeholder.type,
-            topicId: placeholder.topicId,
-            resourceId: placeholder.resourceId,
-            contextId: placeholder.contextId,
-            senderId: placeholder.senderId,
+            ...storedPlaceholder,
             authority: encodeAppInboxCommand(
                 await this.groupStateService.captureAppInboxMutationIngress(
                     authorized.descriptor,

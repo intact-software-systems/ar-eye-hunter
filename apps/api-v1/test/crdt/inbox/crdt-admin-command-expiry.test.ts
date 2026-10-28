@@ -33,11 +33,13 @@ interface CrdtAdminExpiryCase {
 
 Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', async () => {
     const commands: CrdtMutationCommand[] = [];
+    const reservationTraceIds: string[] = [];
     const stopAfterCapture = new Error('command captured');
     let nextId = 0;
     const mutations = createCrdtAdminMutations({
         appCrdtInboxService: {
             writeHttpAdminCommandUntilCompletion: async (reservation) => {
+                reservationTraceIds.push(reservation.traceId);
                 commands.push(await reservation.materialize());
                 throw stopAfterCapture;
             }
@@ -79,6 +81,8 @@ Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', asyn
         'lifecycle',
         'erase'
     ]);
+    // Each reservation carries the request trace into the AppInbox placeholder it becomes.
+    assert.deepEqual(reservationTraceIds, ['trace-admin-fixture', 'trace-admin-fixture', 'trace-admin-fixture']);
     for (const command of commands) {
         assert.equal(command.capturedAtEpochMs, CAPTURED_AT_EPOCH_MS);
         assert.equal(

@@ -36,10 +36,6 @@ export function createHttpTimingMiddleware(
         let thrown: Error | undefined;
 
         c.set('traceId', request.traceId);
-        if (!request.isWebSocketUpgrade) {
-            c.header('x-request-id', request.traceId);
-        }
-
         try {
             await next();
         }
@@ -73,6 +69,9 @@ function writeHttpRequestTiming(c: Context, timing: RallarTimingSink, outcome: H
     const failed = thrown !== undefined || httpStatus >= 400;
     if (httpStatus !== 101) {
         c.header('server-timing', `total;dur=${Math.round(durationMs * 100) / 100}`);
+    }
+    if (!request.isWebSocketUpgrade) {
+        c.header('x-request-id', request.traceId);
     }
     recordRallarTiming({
         sink: timing,

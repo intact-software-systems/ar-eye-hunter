@@ -42,6 +42,7 @@ Deno.test('auth logout accepts only the case-sensitive path request ID', async (
     });
 
     assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-request-id'), 'trace-logout');
     assert.deepEqual(await response.json(), { loggedOut: true });
     assert.deepEqual(calls, [{
         requestId: REQUEST_ID,

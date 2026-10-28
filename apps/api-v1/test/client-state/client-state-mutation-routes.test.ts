@@ -1,3 +1,4 @@
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -48,6 +49,28 @@ Deno.test('client mutation routes hand the request trace to the AppInbox enqueue
     assert.equal(traced.headers.get('x-request-id'), 'trace-client-route');
     assert.equal(bodyTraced.status, 400);
     assert.deepEqual(processCalls.map((enqueue) => enqueue.traceId), ['trace-client-route']);
+});
+
+Deno.test('a mutation route the timing middleware never traced fails as an unexpected 500, not a client error', async () => {
+    const processCalls: AppInboxEnqueueInput[] = [];
+    const deps = createClientRouteDeps({
+        session: createAuthSession('alice'),
+        clientService: {},
+        processClientAppInbox: (input) => {
+            processCalls.push(input);
+            return Promise.resolve(toClientStateWritten(createClientSnapshot('alice')));
+        }
+    });
+    const app = new Hono();
+    clientStateRoutes.registerClientStateRoutes(app, deps);
+
+    const response = await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/client-route-untraced-request',
+        { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alice' }) }
+    );
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(processCalls, []);
 });
 
 Deno.test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {

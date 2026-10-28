@@ -315,7 +315,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
             toTopologyMutationRequestPath(mutation.path, mutation.requestId),
             {
                 method: mutation.method,
-                headers: { authorization: 'Bearer token' },
+                headers: { authorization: 'Bearer token', 'x-request-id': `trace-${mutation.requestId}` },
                 ...(mutation.body === undefined ? {} : { body: JSON.stringify(mutation.body) })
             }
         );
@@ -336,6 +336,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
         const command = await value.enqueue.materialize();
         assert.equal(value.authority.accessToken, 'owner-token');
         assert.equal(value.enqueue.requestId, command.requestId);
+        assert.equal(value.enqueue.traceId, `trace-${value.enqueue.requestId}`);
         assert.equal(value.enqueue.callerId, 'owner');
         assert.deepEqual(command.actor, {
             principalId: 'owner',

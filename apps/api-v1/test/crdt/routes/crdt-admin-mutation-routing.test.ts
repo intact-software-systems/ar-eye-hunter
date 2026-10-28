@@ -10,6 +10,7 @@ import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../../src
 import * as crdtAdminRoutes from '../../../src/crdt/register-crdt-admin-routes.ts';
 import { createTracedApiTestApp } from '../../services/create-traced-api-test-app.ts';
 
+const ROUTING_TRACE_ID = 'trace-crdt-admin-routing';
 const NOW = 1_700_000_000_000;
 const SESSION: IssuedAuthSession = {
     clientId: 'platform-admin',
@@ -63,6 +64,12 @@ Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay dir
         'erase'
     ]);
     assert.ok(fixture.mutationCalls.every((call) => call.input.adminSession === SESSION));
+    assert.deepEqual(fixture.mutationCalls.map((call) => call.input.traceId), [
+        ROUTING_TRACE_ID,
+        ROUTING_TRACE_ID,
+        ROUTING_TRACE_ID,
+        ROUTING_TRACE_ID
+    ]);
 });
 
 function createCrdtAdminRoutingFixture(): CrdtAdminRoutingFixture {
@@ -361,6 +368,7 @@ async function post(app: Hono, path: string, body: JsonWireValue): Promise<Respo
         headers: {
             authorization: 'Bearer token',
             'x-client-id': SESSION.clientId,
+            'x-request-id': ROUTING_TRACE_ID,
             'content-type': 'application/json'
         },
         body: JSON.stringify(body)
