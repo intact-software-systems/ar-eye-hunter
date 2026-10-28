@@ -50,7 +50,8 @@ function toBlackBoxRallarReplyWaitDiagnostics(
             replyToMsgId: requireBlackBoxRallarReplyToMsgId(reply.raw.id.msgId, reply.raw.actions?.replyToMsgId),
             corrId: toALCorrId(reply.raw),
             senderId: reply.senderId,
-            typeId: reply.typeId
+            typeId: reply.typeId,
+            traceId: reply.traceId
         }
     };
 }

@@ -168,7 +168,8 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`, `principalId`, `recipientPeer`,
 `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`,
-`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
 `ownership` (`shared`, `exclusive`) and `resourceId` pass unchanged to the product's typed send options of the same
 names; absent, the send is `shared` on a fresh resource id, as a product send is. A recipe that names a
 `resourceId` lets two agents' sends meet on one resource key, which an exclusive claim needs.
@@ -270,7 +271,7 @@ no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
 and optionally `connection`. It waits for the one reply to that request, matched on the reply's `replyToMsgId`, and
 returns a payload-free value: `{ handleId, status, state, corrId }`, with `status` one of `replied`, `timeout`,
 `aborted` and `undelivered`, `state` the request's lifecycle state when the wait ended and `corrId` its correlation;
-`replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId }`. What the reply carried stays in the page.
+`replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId, traceId }`. What the reply carried stays in the page.
 The page ends its wait 250 ms before `timeoutMs`, so a `timeout` is the command's value and never its failure, unlike
 `messages.observe`; the first timeout ends every wait of the request, and a reply arriving after it is dropped with a
 `reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal in any state other
@@ -282,7 +283,8 @@ recorder keeps the last 16 messages of each type the page received, oldest first
 arrival; `index` (from 1) picks one of them. The page replies with `payload` through that message's own `reply()`: a
 WS unicast to the request's sender session under the request's correlation, in its room, on the `command` purpose's
 delivery defaults. `handleId` names the reply's own handle, so `messages.observe` and `messages.receipts` follow its
-delivery. It returns `{ handleId, msgId, replyToMsgId }`. An `index` past the arrivals the page holds fails the command
+delivery. It returns `{ handleId, msgId, replyToMsgId, traceId, corrId }`, the reply handle's own trace and its
+correlation, which is the request's. An `index` past the arrivals the page holds fails the command
 with `RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED` and sends nothing. The page forgets its arrivals when its
 connection closes.
 
@@ -352,7 +354,8 @@ same three agents, over `ws` and `rtc`, in the full scope. Every room send carri
 roster of its sender's cached room snapshot as `targets.rosterVersion`, beside
 `minSnapshotVersion`; a received message event's `data` states it as `rosterVersion`
 right after `typeId` (absent for a unicast, or for a room send whose sender cached no
-snapshot). The roster moves by the self-service membership route the ensure step
+snapshot); `traceId` and `corrId` are its last two keys, after `payload`, so the serialized prefix a wait matches
+on is unchanged. The roster moves by the self-service membership route the ensure step
 already uses: `leave-roster` writes `{ status: 'left' }` for the page's own principal,
 which advances the group's roster and snapshot versions, and the next scenario's
 `ensure-member` joins it again. The three-agent run starts `recipient-b` only once the

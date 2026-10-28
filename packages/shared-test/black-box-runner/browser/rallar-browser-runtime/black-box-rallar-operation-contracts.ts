@@ -403,6 +403,10 @@ export interface BlackBoxRallarMessageSendDiagnostics {
     readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
     readonly status: ALDeliveryState;
     readonly reason: string | undefined;
+    /** The handle's: the trace the page minted for this send. */
+    readonly traceId: string;
+    /** The handle's correlation: the send's own `msgId` unless the send named one. */
+    readonly corrId: string;
 }
 
 export interface BlackBoxRallarDeliveryObservation
@@ -457,6 +461,7 @@ export interface BlackBoxRallarReplyIdentity {
     readonly corrId: string;
     readonly senderId: string;
     readonly typeId: string;
+    readonly traceId: string;
 }
 
 /** The request's lifecycle state and correlation when the wait ended, and for `replied` the reply's identity. */
@@ -479,6 +484,8 @@ export interface BlackBoxRallarReplyDiagnostics {
     readonly handleId: string;
     readonly msgId: string;
     readonly replyToMsgId: string;
+    readonly traceId: string;
+    readonly corrId: string;
 }
 
 export interface BlackBoxRallarStorageCountersInput {

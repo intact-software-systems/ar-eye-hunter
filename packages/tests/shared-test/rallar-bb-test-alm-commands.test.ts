@@ -57,7 +57,7 @@ function recipeWithCommand(commandId: string, command: RallarBlackBoxTestRecord)
 }
 
 /** No default budget: a reply wait's own `timeoutMs` is what the schema must require. */
-function toReplyRecipe(command: RallarBlackBoxTestRecord) {
+function toReplyRecipe(command: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
     return { schemaVersion: 1, recipeId: 'alm-reply', name: 'alm reply', commands: [{ commandId: 'reply-command', ...command }] };
 }
 
@@ -96,7 +96,9 @@ const SEND_DIAGNOSTICS = {
     msgId: 'msg-1',
     carrier: 'ws',
     status: 'accepted',
-    reason: undefined
+    reason: undefined,
+    traceId: 'trace-send-1',
+    corrId: 'corr-send-1'
 };
 
 const REJECTED_SEND_DIAGNOSTICS = {
@@ -104,7 +106,9 @@ const REJECTED_SEND_DIAGNOSTICS = {
     msgId: 'msg-rejected',
     carrier: 'ws',
     status: 'rejected',
-    reason: '$.payload: Payload exceeds 65536 bytes.'
+    reason: '$.payload: Payload exceeds 65536 bytes.',
+    traceId: 'trace-rejected',
+    corrId: 'msg-rejected'
 };
 
 const DELIVERY_OBSERVATION = {
@@ -131,10 +135,23 @@ const REPLY_OUTCOME = {
     status: 'replied',
     state: 'acknowledged',
     corrId: 'msg-1',
-    reply: { msgId: 'reply-1', replyToMsgId: 'msg-1', corrId: 'msg-1', senderId: 'bob-session', typeId: 'alm.conformance' }
+    reply: {
+        msgId: 'reply-1',
+        replyToMsgId: 'msg-1',
+        corrId: 'msg-1',
+        senderId: 'bob-session',
+        typeId: 'alm.conformance',
+        traceId: 'trace-reply-1'
+    }
 };
 
-const REPLY_SUBMISSION = { handleId: 'reply-handle-1', msgId: 'reply-1', replyToMsgId: 'msg-1' };
+const REPLY_SUBMISSION = {
+    handleId: 'reply-handle-1',
+    msgId: 'reply-1',
+    replyToMsgId: 'msg-1',
+    traceId: 'trace-reply-1',
+    corrId: 'msg-1'
+};
 
 const STORAGE_COUNTS = {
     total: 7,
@@ -226,7 +243,9 @@ function inboundMessageEvent(msgId: string) {
             typeId: 'alm.conformance',
             topicId: 'alm.topic',
             transport: 'ws',
-            payload: { n: 1 }
+            payload: { n: 1 },
+            traceId: 'trace-inbound-1',
+            corrId: msgId
         }
     } as const;
 }
@@ -699,7 +718,9 @@ describe('ALM browser adapter execution', () => {
             handleId: 'handle-1',
             msgId: 'msg-1',
             carrier: 'ws',
-            status: 'accepted'
+            status: 'accepted',
+            traceId: 'trace-send-1',
+            corrId: 'corr-send-1'
         });
         expect(observed.ok, observed.error?.message).toBe(true);
         expect(observed.value).toEqual({
@@ -998,7 +1019,9 @@ describe('ALM browser adapter execution', () => {
             msgId: 'msg-rejected',
             carrier: 'ws',
             status: 'rejected',
-            reason: '$.payload: Payload exceeds 65536 bytes.'
+            reason: '$.payload: Payload exceeds 65536 bytes.',
+            traceId: 'trace-rejected',
+            corrId: 'msg-rejected'
         });
         expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.sent');
     });
@@ -1239,7 +1262,9 @@ describe('ALM browser adapter execution', () => {
         { field: 'state', value: { ...REPLY_OUTCOME, state: 'delivered' } },
         { field: 'corrId', value: { ...REPLY_OUTCOME, corrId: undefined } },
         { field: 'reply', value: { ...REPLY_OUTCOME, reply: undefined } },
-        { field: 'reply.senderId', value: { ...REPLY_OUTCOME, reply: { ...REPLY_OUTCOME.reply, senderId: 7 } } }
+        { field: 'reply.senderId', value: { ...REPLY_OUTCOME, reply: { ...REPLY_OUTCOME.reply, senderId: 7 } } },
+        { field: 'reply.traceId', value: { ...REPLY_OUTCOME, reply: { ...REPLY_OUTCOME.reply, traceId: undefined } } },
+        { field: 'reply.traceId', value: { ...REPLY_OUTCOME, reply: { ...REPLY_OUTCOME.reply, traceId: 'trace with spaces' } } }
     ])('fails a reply wait whose page-runtime result carries an unusable $field', async ({ field, value }) => {
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,
@@ -1368,6 +1393,62 @@ describe('ALM browser adapter execution', () => {
         expect(result.error).toMatchObject({
             code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
             message: `The page runtime returned no usable delivery observation.${field}.`
+        });
+    });
+
+    it.each([
+        { field: 'traceId', value: { ...SEND_DIAGNOSTICS, traceId: undefined } },
+        { field: 'traceId', value: { ...SEND_DIAGNOSTICS, traceId: 'trace with spaces' } },
+        { field: 'corrId', value: { ...SEND_DIAGNOSTICS, corrId: undefined } }
+    ])('fails a send whose page-runtime result carries an unusable $field', async ({ field, value }) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                sendMessage: async () => value
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'messages.send',
+            commandId: 'alm-send-unusable-identity',
+            connection: 'aliceRtc',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            handleId: 'handle-1'
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: `The page runtime returned no usable messages.send result.${field}.`
+        });
+    });
+
+    it.each([
+        { field: 'traceId', value: { ...REPLY_SUBMISSION, traceId: undefined } },
+        { field: 'traceId', value: { ...REPLY_SUBMISSION, traceId: 'trace with spaces' } },
+        { field: 'corrId', value: { ...REPLY_SUBMISSION, corrId: undefined } }
+    ])('fails a reply whose page-runtime result carries an unusable $field', async ({ field, value }) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: { ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()), reply: async () => value }
+        });
+
+        const result = await runtime.execute({
+            kind: 'messages.reply',
+            commandId: 'alm-reply-unusable-identity',
+            typeId: 'alm.conformance',
+            index: 1,
+            payload: { ok: true },
+            handleId: 'reply-handle-1'
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: `The page runtime returned no usable messages.reply result.${field}.`
         });
     });
 

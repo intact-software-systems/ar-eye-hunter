@@ -156,9 +156,17 @@ beforeEach(() => {
 it('projects queued, submitted and acknowledged evidence without bridging settlements', async () => {
     const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
-    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    facade.behavior.typedSend.mockResolvedValue({ ...delivery.handle, traceId: 'trace-send-1', corrId: 'corr-send-1' });
     await runtime.connect(connection);
-    expect(await runtime.sendMessage(send)).toEqual({ handleId: 'h-1', msgId: delivery.msgId, carrier: 'ws', status: 'queued', reason: undefined });
+    expect(await runtime.sendMessage(send)).toEqual({
+        handleId: 'h-1',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        status: 'queued',
+        reason: undefined,
+        traceId: 'trace-send-1',
+        corrId: 'corr-send-1'
+    });
     expect(await runtime.observeDelivery({ ...query, state: ['queued'], timeoutMs: 100 })).toEqual({
         handleId: 'h-1',
         state: 'queued',
@@ -1665,7 +1673,8 @@ it('awaits the reply of a retained handle and reports it without its payload', a
             replyToMsgId: delivery.msgId,
             corrId: delivery.msgId,
             senderId: 'bob-session',
-            typeId: 'alm.conformance'
+            typeId: 'alm.conformance',
+            traceId: 'trace-delivery'
         }
     });
 });
@@ -1708,7 +1717,13 @@ it('replies to the received message of a type by its arrival, and follows the re
     receive(toInboundRequest('request-2', reply));
 
     expect(await runtime.reply({ connection: 'aliceAlm', typeId: 'alm.conformance', index: 2, payload: { ok: true }, handleId: 'reply-h' }))
-        .toEqual({ handleId: 'reply-h', msgId: 'reply-to-request-2', replyToMsgId: 'request-2' });
+        .toEqual({
+            handleId: 'reply-h',
+            msgId: 'reply-to-request-2',
+            replyToMsgId: 'request-2',
+            traceId: 'trace-delivery',
+            corrId: 'request-2'
+        });
     expect(reply).toHaveBeenCalledWith({ ok: true });
     expect(await runtime.readReceipts({ connection: 'aliceAlm', handleId: 'reply-h' })).toMatchObject({ handleId: 'reply-h', state: 'submitted' });
 });

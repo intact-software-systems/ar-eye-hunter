@@ -351,7 +351,13 @@ function createTrafficRuntime(scenario: TrafficScenario): RallarBlackBoxBrowserT
             health: async () => ({ connected: true }),
             readAlmUsage: async () => HEALTHY,
             readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
-            sendMessage: async (command) => ({ handleId: command.handleId, carrier: command.carrier, status: 'acknowledged' }),
+            sendMessage: async (command) => ({
+                handleId: command.handleId,
+                carrier: command.carrier,
+                status: 'acknowledged',
+                traceId: 'trace-scale-send',
+                corrId: String(command.handleId)
+            }),
             observeDelivery: async (command) => {
                 await sleep(scenario.ackDelayMs ?? 0);
                 return createTrafficReceipt(scenario, String(command.handleId));
