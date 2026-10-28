@@ -8,9 +8,10 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { createAlmConformanceRecipes, type AlmConformanceScenario } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
     assessAlmConformanceIdentity,
+    hasAlmIdentityEvidence,
     type AlmConformanceIdentityInput,
     type AlmConformanceIdentityParticipant
 } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
@@ -534,6 +535,23 @@ describe('ALM recipe identity assessment', () => {
         expect(withCopies([])).toEqual([`${send.commandId}: no received copy joins the fallback send.`]);
     });
 
+    // The local lane assesses exactly the senders this admits, so each kind of evidence must count on its own.
+    it.each(
+        [
+            ['a fallback-marker send', 'fallback-within-deadline', 'rtc-with-ws-fallback'],
+            ['a traced request', 'server-originated', 'ws'],
+            ['pinned receipt roles', 'delivery-baseline', 'ws']
+        ] as const
+    )('counts a sender whose evidence is %s', (_label, scenarioId, carrier) => {
+        expect(hasAlmIdentityEvidence(toGeneratedScenario(scenarioId, carrier).sender)).toBe(true);
+    });
+
+    it('does not count a sender whose plain send pins no receipt roles', () => {
+        const { sender } = toGeneratedScenario('delivery-baseline', 'ws');
+        const { almReceiptRoles: _pinned, ...metadata } = sender.metadata ?? {};
+        expect(hasAlmIdentityEvidence({ ...sender, metadata })).toBe(false);
+    });
+
     it('raises nothing for a non-fallback identity send whose receiver count lists no copy', () => {
         const transcript = new IdentityTranscript('lifecycle');
         expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, []))).toEqual([]);
@@ -749,6 +767,10 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
         }
         return { sender, receiver };
     }
+    return toGeneratedScenario(TRANSCRIPT_SCENARIO_IDS[kind], carrier);
+}
+
+function toGeneratedScenario(scenarioId: string, carrier: AlmConformanceCarrier): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
         carrier,
@@ -756,7 +778,7 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
         senderConnection: 'sender',
         receiverConnection: 'receiver',
         deadlineMs: 18_000
-    }).find((candidate) => candidate.scenarioId === TRANSCRIPT_SCENARIO_IDS[kind]);
+    }).find((candidate) => candidate.scenarioId === scenarioId);
     if (!scenario) {
         throw new Error('Generated identity scenario missing.');
     }

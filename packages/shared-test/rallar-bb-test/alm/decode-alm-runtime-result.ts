@@ -361,10 +361,10 @@ function requireAlmStringField(
     return value;
 }
 
-function requireAlmTraceIdField(record: RallarBlackBoxTestRecord, path: string, field = 'traceId'): string {
-    return decodeALTraceId(record[field]).fold(
+function requireAlmTraceIdField(record: RallarBlackBoxTestRecord, path: string): string {
+    return decodeALTraceId(record.traceId).fold(
         () => {
-            throw toAlmInvalidRuntimeResultError(`${path}.${field}`);
+            throw toAlmInvalidRuntimeResultError(`${path}.traceId`);
         },
         (traceId) => traceId
     );

@@ -411,9 +411,10 @@ I1b-ii-a adds the maintainer's rulings R11–R12 of 2026-10-28:
 
 I1b-ii-b adds the maintainer's rulings R13–R16 of 2026-10-28:
 
-- **R13:** the distributed-run rows' `payloadSummary` is renamed `identitySummary` on both row kinds. Refined at the
-  Task 3 review: `identitySummary` is the field of event and diagnostic evidence entries, and result and failure
-  evidence entries carry `detailSummary` instead.
+- **R13:** the distributed-run rows' `payloadSummary` is renamed `identitySummary` on both row kinds. Refined during
+  the I1b-ii-b review: `identitySummary` is the field of event and diagnostic evidence entries, and result and failure
+  evidence entries carry `detailSummary` instead, a result's error details or value JSON and a failure's next action;
+  each summary is absent on the other kinds.
 - **R14:** api-v1 ships a receipted server publication, so the admin receipt entry is observable by recipe.
 - **R15:** that publication is the group-state delta, receiver-receipted, and it lands in I1b-ii-b.
 - **R16:** the maintainer approved the seven-task I1b-ii-b plan as written.
@@ -633,8 +634,8 @@ recipes' assertion surface (R7). Docs close PC9. The hosted manifests regenerate
 I1b-ii also owns the trace on harness identity: the black-box runner's compared response headers and the harness raw
 control, which minted its own trace in `submit-black-box-raw-control.ts` until I1b-ii-a (D459).
 
-**As applied (I1b-ii-a).** I1b-ii lands as two pull requests (R11). I1b-ii-a puts the trace on the runtime, and
-I1b-ii-b puts it on the harness identity, makes the diagnostics class payload-free and closes PC9.
+**As applied (I1b-ii-a).** I1b-ii lands as two pull requests (R11). I1b-ii-a puts the trace on the runtime; I1b-ii-b
+follows below.
 
 - The formation cycle keeps the trace of the message that caused each submission. Its four ports share one
   `GroupSystemCommandSubmission` and one `GroupSystemCommandPort`, the trace rides
@@ -662,7 +663,7 @@ payload-free, receipts the group-state delta and adds the server-originated cell
 - The harness send and reply results, the `messages.awaitReply` reply and the typed-channel message event carry
   `traceId` and `corrId`, the new fields appended last; the event's `data` ends with
   `...toALMessageTrace(message.raw)`, so the prefix the recipes match is unchanged. One `requireAlmTraceIdField`
-  decodes the trace with `decodeALTraceId` in every lane decoder (D460).
+  decodes the trace with `decodeALTraceId` for the send, reply, awaitReply and control decoders (D460).
 - The console-warning bridge sends a fixed `BlackBoxRallarConsoleWarningPattern` token and `source: 'console.warn'`
   for string arguments only, and no `ws.send` result or `send_failed` diagnostic copies the sent payload. The
   distributed-run event and diagnostic rows carry `identitySummary` from one `toDistributedRunIdentitySummary`, whose

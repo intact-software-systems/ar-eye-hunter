@@ -36,9 +36,10 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
-import { readAlmReceiptRolesEntries } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
-import { toTracedRequests } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-server-originated-identity.ts';
+import {
+    assessAlmConformanceIdentity,
+    hasAlmIdentityEvidence
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
     createTwoAgentRun,
@@ -255,17 +256,6 @@ test.describe('ALM conformance lane', () => {
     }
 });
 
-/**
- * Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions; a
- * sender's traced requests join to the deltas and the receipt they cause.
- */
-function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
-    return scenario.scenarioId === 'delivery-lifecycle' ||
-        scenario.scenarioId === 'delivery-reload' ||
-        readAlmReceiptRolesEntries(scenario.sender).length > 0 ||
-        toTracedRequests(scenario.sender.commands).length > 0;
-}
-
 /** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
 function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
     const requested = (value ?? '')
@@ -423,7 +413,7 @@ async function runAlmConformanceScenarios(
             .toBe(true);
         expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
             .toBe(true);
-        if (hasIdentityEvidence(scenario)) {
+        if (hasAlmIdentityEvidence(scenario.sender)) {
             await assertScenarioIdentity(run, scenario, [
                 { role: 'sender', agent: run.sender, outcome: outcome.sender },
                 { role: 'receiver', agent: run.receiver, outcome: outcome.receiver }
@@ -452,7 +442,7 @@ async function runThreeAgentScenarios(
             const name = role === 'third' ? thirdRole : role;
             expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${name}: ${outcome[role].summary}`).toBe(true);
         }
-        if (hasIdentityEvidence(scenario)) {
+        if (hasAlmIdentityEvidence(scenario.sender)) {
             await assertScenarioIdentity(run, scenario, [
                 { role: 'sender', agent: run.sender, outcome: outcome.sender },
                 { role: 'receiver', agent: run.receiver, outcome: outcome.receiver },

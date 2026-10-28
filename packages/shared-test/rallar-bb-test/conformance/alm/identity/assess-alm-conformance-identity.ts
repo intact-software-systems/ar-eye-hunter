@@ -61,13 +61,10 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
     if (issues.length > 0 || !sender || !receiver) {
         return issues;
     }
-    const sends = sender.participant.recipe.commands.filter(isIdentitySend);
-    if (
-        sends.length === 0 && readAlmReceiptRolesEntries(sender.participant.recipe).length === 0 &&
-        toTracedRequests(sender.participant.recipe.commands).length === 0
-    ) {
-        return ['ALM lifecycle, reload, pinned receipt or traced request sender evidence is missing.'];
+    if (!hasAlmIdentityEvidence(sender.participant.recipe)) {
+        return ['ALM lifecycle, reload, fallback, pinned receipt or traced request sender evidence is missing.'];
     }
+    const sends = sender.participant.recipe.commands.filter(isIdentitySend);
     issues.push(...assessAlmReceiptRoleIdentity({
         sender,
         recipients: recorded.filter((participant): participant is RecordedAlmConformanceParticipant =>
@@ -82,6 +79,12 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
     ));
     issues.push(...assessAlmServerOriginatedIdentity({ sender, receiver }));
     return issues;
+}
+
+/** The one decision of which sender recipes this assessment joins; the local ALM lane selects its cells with it. */
+export function hasAlmIdentityEvidence(sender: RallarBlackBoxTestRecipe): boolean {
+    return sender.commands.some(isIdentitySend) || readAlmReceiptRolesEntries(sender).length > 0 ||
+        toTracedRequests(sender.commands).length > 0;
 }
 
 /** Every scenario declares the sender and the receiver; each declared role has exactly one agent of its own. */

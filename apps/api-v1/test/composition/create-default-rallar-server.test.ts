@@ -5,18 +5,19 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from '../db/api-v1-test-pglite-database.ts';
 import {
-    createNativeSessionTestFixture,
-    issueSameUserSessions,
-    writeNativeGroupCreate,
-    writeNativeGroupPresence,
-    type NativeGroupSessionFlow,
-    type NativeSessionTestFixture
-} from '../db/native-session-test-fixture.ts';
+    createPGliteTracedRallarServer,
+    issueTracedTestSession,
+    waitFor,
+    writeTracedRequest,
+    type PGliteTracedRallarServer
+} from '../db/pglite-traced-rallar-test-runtime.ts';
 
-const DELTA_SETTLE_TIMEOUT_MS = 30_000;
+const DELTA_GROUP_REF: GroupRef = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'delta-sender-room' };
+const DELTA_GROUP_PATH = `/api/state/apps/${DELTA_GROUP_REF.applicationId}/workspaces/${DELTA_GROUP_REF.workspaceId}/groups`;
 
 interface GroupDeltaRow {
     readonly senderId: string;
@@ -58,52 +59,50 @@ Deno.test({
     sanitizeOps: false,
     sanitizeResources: false,
     fn: async () => {
-        const fixture = await createNativeSessionTestFixture();
-        let primaryFailure: Error | undefined;
+        const server = await createPGliteTracedRallarServer();
         try {
-            const deltas = await writeGroupWithPresence(fixture);
+            const deltas = await writeGroupWithPresence(server);
 
-            assert.ok(deltas.length > 0, 'the group and its presence wrote group-state deltas');
             assert.deepEqual(
-                deltas.filter((row) => row.senderId !== fixture.runtime.wsQBoxServerService.name || row.ack !== 'receiver'),
+                deltas.filter((row) => row.senderId !== server.rallar.runtime.wsQBoxServerService.name || row.ack !== 'receiver'),
                 []
             );
         }
-        catch (cause) {
-            primaryFailure = cause instanceof Error ? cause : new Error(String(cause));
-            throw cause;
-        }
         finally {
-            await fixture.stop([], primaryFailure);
+            await server.stop();
         }
     }
 });
 
-async function writeGroupWithPresence(fixture: NativeSessionTestFixture): Promise<readonly GroupDeltaRow[]> {
-    const baseUrl = await fixture.start();
-    const [session] = await issueSameUserSessions(fixture.runtime, fixture.sessionTtlMs);
-    assert.ok(session, 'the auth AppInbox issues a session');
-    const groupRef: GroupRef = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'delta-sender-room' };
-    const flow: NativeGroupSessionFlow = { baseUrl, session, groupRef, generationId: 'delta-sender-generation', index: 0 };
-    assert.equal((await writeNativeGroupCreate(flow)).status, 201);
-    assert.ok((await writeNativeGroupPresence(flow)).status < 300, 'the presence connect is accepted');
-    return await readGroupDeltaRows(fixture);
+async function writeGroupWithPresence(server: PGliteTracedRallarServer): Promise<readonly GroupDeltaRow[]> {
+    const owner = await issueTracedTestSession(server.rallar.runtime, 'owner');
+    await writeTracedRequest(server.app, owner, {
+        path: `${DELTA_GROUP_PATH}/requests/delta-sender-group-create`,
+        method: 'POST',
+        traceId: 'trace-delta-sender-create',
+        body: {
+            groupId: DELTA_GROUP_REF.groupId,
+            displayName: DELTA_GROUP_REF.groupId,
+            kind: 'room',
+            joinMode: 'open',
+            createdByPrincipalId: owner.clientId
+        }
+    });
+    await writeTracedRequest(server.app, owner, {
+        path: `${DELTA_GROUP_PATH}/${DELTA_GROUP_REF.groupId}/sessions/${owner.sessionId}/requests/delta-sender-presence-connect`,
+        method: 'PUT',
+        traceId: 'trace-delta-sender-presence',
+        body: { principalId: owner.clientId, generationId: 'delta-sender-generation', connectionGenerationId: 'delta-sender-generation' }
+    });
+    return await waitFor('the group and its presence to write group-state deltas', () => readGroupDeltaRows(server.sql));
 }
 
-async function readGroupDeltaRows(fixture: NativeSessionTestFixture): Promise<readonly GroupDeltaRow[]> {
-    const deadline = performance.now() + DELTA_SETTLE_TIMEOUT_MS;
-    do {
-        const rows = await fixture.databaseLifecycle.database<GroupDeltaRow[]>`
-            select ri_resource::jsonb #>> '{id,senderId}' as "senderId",
-                   ri_resource::jsonb #>> '{delivery,ack}' as ack
-            from resource_inbox
-            where ri_type_id = 'WS_OUTBOX' and ri_resource::jsonb #>> '{payload,typeId}' = ${AppTopics.groupStateEvent}
-        `;
-        if (rows.length > 0) {
-            return rows;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    while (performance.now() < deadline);
-    return [];
+async function readGroupDeltaRows(sql: PGliteSql): Promise<readonly GroupDeltaRow[] | undefined> {
+    const rows = await sql<GroupDeltaRow[]>`
+        select ri_resource::jsonb #>> '{id,senderId}' as "senderId",
+               ri_resource::jsonb #>> '{delivery,ack}' as ack
+        from resource_inbox
+        where ri_type_id = 'WS_OUTBOX' and ri_resource::jsonb #>> '{payload,typeId}' = ${AppTopics.groupStateEvent}
+    `;
+    return rows.length > 0 ? rows : undefined;
 }
