@@ -91,7 +91,7 @@ No CI lane runs either proof; they are manual acceptance runs (owner: Knut-Helge
   owns bounded wire observations and scoped snapshot assembly. WS recipes
   inspect `completedSnapshot` after complete assembly; `observedSnapshotPage`
   permits detecting a leaked page even when its snapshot never completes.
-  [WS waits](./ws/ws-wait-expectations.ts) require an uninterrupted observation
+  [WS count waits](./ws/wait-for-ws-message-count.ts) require an uninterrupted observation
   window for absence and count evidence. WS and RTC count waits use the same
   [count bounds](./expectations/wait-count-bound.ts#toWaitCountBound).
 - [RtcClientProvider](./rtc-provider.ts#RtcClientProvider) owns transport calls
