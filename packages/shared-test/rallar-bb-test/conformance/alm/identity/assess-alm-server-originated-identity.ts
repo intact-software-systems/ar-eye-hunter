@@ -1,9 +1,10 @@
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
+
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand
 } from '../../../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
-import { ALM_ADMIN_REALTIME_PATH } from '../scenarios/server-originated.ts';
 import { toConnectedSessionIds } from './assess-alm-acknowledged-identity.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
@@ -13,7 +14,8 @@ export interface AlmServerOriginatedIdentityInput {
     readonly receiver: RecordedAlmConformanceParticipant;
 }
 
-const REQUEST_TRACE_HEADER = 'x-request-id';
+/** The platform admin's read of this API process's ALM receipt entries, which the receiver's recipe sends. */
+export const ALM_ADMIN_REALTIME_PATH = '/api/admin/operations/realtime';
 
 /**
  * A send the server originates carries the trace of the request that caused it: each traced request's response
@@ -46,7 +48,7 @@ function assessTraceEcho(
     sender: RecordedAlmConformanceParticipant,
     request: RallarBlackBoxTestHttpRequestCommand
 ): readonly string[] {
-    const echoed = toAlmJsonPathValue(toRecordedAlmResultValue(sender, request), `headers.${REQUEST_TRACE_HEADER}`);
+    const echoed = toAlmJsonPathValue(toRecordedAlmResultValue(sender, request), `headers.${AL_TRACE_ID_HTTP_HEADER}`);
     return echoed === toRequestTraceId(request)
         ? []
         : [`${request.commandId}: the response does not echo the request trace.`];
@@ -96,5 +98,5 @@ function assessAdminReceipt(
 }
 
 function toRequestTraceId(request: RallarBlackBoxTestHttpRequestCommand): string | undefined {
-    return request.request.headers?.[REQUEST_TRACE_HEADER];
+    return request.request.headers?.[AL_TRACE_ID_HTTP_HEADER];
 }

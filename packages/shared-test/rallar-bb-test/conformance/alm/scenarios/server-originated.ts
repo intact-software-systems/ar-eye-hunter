@@ -1,3 +1,5 @@
+import { AppTopics } from '@shared/api/api-config.ts';
+
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand,
@@ -18,12 +20,8 @@ import {
     type AlmConformanceSelfMembershipStatus
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
+import { ALM_ADMIN_REALTIME_PATH } from '../identity/assess-alm-server-originated-identity.ts';
 import { toPauseCommand } from '../to-pause-command.ts';
-
-/** The platform admin's read of this API process's ALM receipt entries. */
-export const ALM_ADMIN_REALTIME_PATH = '/api/admin/operations/realtime';
-
-const GROUP_STATE_EVENT_TOPIC_ID = 'group-state.event';
 
 /** The server's group-state deltas reach a page over WS only. */
 const SERVER_ORIGINATED_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
@@ -46,7 +44,7 @@ export const serverOriginated: AlmConformanceScenarioDefinition = {
     carriers: SERVER_ORIGINATED_CARRIERS,
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
-    messageSelector: { topicId: GROUP_STATE_EVENT_TOPIC_ID },
+    messageSelector: { topicId: AppTopics.groupStateEvent },
     toSenderCommands: (sender) =>
         TRACED_STATUSES.flatMap((status) =>
             toTracedSelfMembershipCommands(sender, status, toRequestTraceId(sender, status))
@@ -92,7 +90,7 @@ function toTracedDeltaWait(
             topic: 'rallar.browser.ws.message',
             connection: toConnectionName(receiver),
             payloadFields: {
-                'data.topicId': GROUP_STATE_EVENT_TOPIC_ID,
+                'data.topicId': AppTopics.groupStateEvent,
                 'data.traceId': traceId,
                 'data.payload.event.traceId': traceId
             }

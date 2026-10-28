@@ -38,6 +38,7 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import { readAlmReceiptRolesEntries } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
+import { toTracedRequests } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-server-originated-identity.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
     createTwoAgentRun,
@@ -255,14 +256,14 @@ test.describe('ALM conformance lane', () => {
 });
 
 /**
- * Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions; the
- * server-originated cell joins request traces to the deltas and the receipt they cause.
+ * Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions; a
+ * sender's traced requests join to the deltas and the receipt they cause.
  */
 function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
     return scenario.scenarioId === 'delivery-lifecycle' ||
         scenario.scenarioId === 'delivery-reload' ||
-        scenario.scenarioId === 'server-originated' ||
-        readAlmReceiptRolesEntries(scenario.sender).length > 0;
+        readAlmReceiptRolesEntries(scenario.sender).length > 0 ||
+        toTracedRequests(scenario.sender.commands).length > 0;
 }
 
 /** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */

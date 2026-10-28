@@ -1,3 +1,5 @@
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
+
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -26,7 +28,6 @@ import {
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
-const REQUEST_TRACE_HEADER = 'x-request-id';
 
 export type AlmConformanceSelfMembershipStatus = 'active' | 'left';
 
@@ -37,6 +38,14 @@ interface AlmConformanceSelfMembershipWrite {
     readonly commandName: string;
     readonly requestName: AlmConformanceEnsureRequest;
     readonly purpose: string;
+}
+
+interface AlmConformanceSelfMembershipWriteInput {
+    readonly step: AlmConformanceStepInput;
+    readonly status: AlmConformanceSelfMembershipStatus;
+    readonly write: AlmConformanceSelfMembershipWrite;
+    /** The request's own headers; undefined sends none beyond the page's authentication. */
+    readonly headers: Readonly<Record<string, string>> | undefined;
 }
 
 const SELF_MEMBERSHIP_WRITES: Readonly<Record<AlmConformanceSelfMembershipStatus, AlmConformanceSelfMembershipWrite>> =
@@ -110,7 +119,7 @@ export function toSelfMembershipCommand(
     step: AlmConformanceStepInput,
     status: AlmConformanceSelfMembershipStatus
 ): RallarBlackBoxTestHttpRequestCommand {
-    return toSelfMembershipWriteCommand(step, status, SELF_MEMBERSHIP_WRITES[status]);
+    return toSelfMembershipWriteCommand({ step, status, write: SELF_MEMBERSHIP_WRITES[status], headers: undefined });
 }
 
 /**
@@ -123,14 +132,13 @@ export function toTracedSelfMembershipCommands(
     traceId: string
 ): readonly RallarBlackBoxTestCommand[] {
     const write = TRACED_SELF_MEMBERSHIP_WRITES[status];
-    const command = toSelfMembershipWriteCommand(step, status, write);
     return [
-        { ...command, request: { ...command.request, headers: { [REQUEST_TRACE_HEADER]: traceId } } },
+        toSelfMembershipWriteCommand({ step, status, write, headers: { [AL_TRACE_ID_HTTP_HEADER]: traceId } }),
         toResultAssertion({
             step,
             name: `assert-${write.commandName}-echo`,
             resultName: write.commandName,
-            field: `headers.${REQUEST_TRACE_HEADER}`,
+            field: `headers.${AL_TRACE_ID_HTTP_HEADER}`,
             operator: 'equals',
             expected: traceId
         })
@@ -138,9 +146,7 @@ export function toTracedSelfMembershipCommands(
 }
 
 function toSelfMembershipWriteCommand(
-    step: AlmConformanceStepInput,
-    status: AlmConformanceSelfMembershipStatus,
-    write: AlmConformanceSelfMembershipWrite
+    { step, status, write, headers }: AlmConformanceSelfMembershipWriteInput
 ): RallarBlackBoxTestHttpRequestCommand {
     const group = step.input.group;
     return {
@@ -156,6 +162,7 @@ function toSelfMembershipWriteCommand(
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
                 `/requests/${toEnsureRequestId(step, write.requestName)}`,
+            ...(headers === undefined ? {} : { headers }),
             body: {
                 status
             }

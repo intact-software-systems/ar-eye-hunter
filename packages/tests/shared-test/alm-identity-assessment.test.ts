@@ -568,28 +568,12 @@ describe('ALM recipe identity assessment', () => {
             .toContain(`${checkpoint.key}: the recovered original must carry the original send's trace.`);
     });
 
+    // The cell's defects are pinned on its assessor (alm-server-originated-identity.test.ts); this joins it to the entry.
     it('joins the server-originated cell: each traced request reaches the receiver and the admin read confirms it', () => {
         expect(assessAlmConformanceIdentity(new IdentityTranscript('server-originated').input())).toEqual([]);
     });
 
-    it('rejects a traced request whose response echoes another trace', () => {
-        const transcript = new IdentityTranscript('server-originated');
-        const request = transcript.sender.command('http.request', 3);
-        recordAt(transcript.sender.result(request).value, 'headers')['x-request-id'] = 'trace-other';
-        expect(assessAlmConformanceIdentity(transcript.input()))
-            .toEqual([`${request.commandId}: the response does not echo the request trace.`]);
-    });
-
-    it('rejects a receiver delta that carries another trace than its request', () => {
-        const transcript = new IdentityTranscript('server-originated');
-        const request = transcript.sender.command('http.request', 2);
-        recordAt(transcript.receiver.result(transcript.receiver.command('wait', 0)).value, 'event', 'payload', 'data')
-            .traceId = 'trace-other';
-        expect(assessAlmConformanceIdentity(transcript.input()))
-            .toEqual([`${request.commandId}: the receiver's delta does not carry the request trace.`]);
-    });
-
-    it('rejects an admin read that lists no receipt of the last trace confirmed by the receiver', () => {
+    it('reports the server-originated assessor\'s issue through the entry', () => {
         const transcript = new IdentityTranscript('server-originated');
         const request = transcript.sender.command('http.request', 3);
         const read = transcript.receiver.command('http.request', 2);

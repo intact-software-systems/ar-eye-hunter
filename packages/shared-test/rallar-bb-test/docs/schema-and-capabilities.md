@@ -581,7 +581,10 @@ for its ACK to settle, reads `GET /api/admin/operations/realtime` (the lane's re
 rejoin's trace and `lastSettlementKind` `acknowledgement`. Those entries are process-local, so the cell runs in the
 one-process local lane: hosted manifest 18 withholds it, since its combined connect carries the scenario topic's
 selector. The identity assessment joins the echo, the one receiver wait that names each trace, the delta's `msgId`, and
-the admin entry of the last trace, confirmed by the receiver's own session.
+the admin entry of the last trace, confirmed by the receiver's own session. The traces are the same in every run, since
+neither a wait's `payloadFields` nor an assert's `expected` resolves placeholders, so an API process that outlives one
+run may still list an earlier run's entry under the trace; the session join, not the recipe assert, scopes the entry to
+the run.
 
 The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
 sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's
