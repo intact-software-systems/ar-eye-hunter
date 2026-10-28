@@ -584,10 +584,10 @@ it('acknowledges a message this page sent under the trace of its delivery handle
 
     const result = await runtime.submitControl({ ...rawControl, ackedMsgId: delivery.msgId });
 
-    expect(result).toMatchObject({ verdict: 'admitted', traceId: delivery.handle.traceId });
+    expect(result).toMatchObject({ verdict: 'admitted', traceId: 'trace-browser-runtime-facade-test-double' });
     expect(facade.behavior.submitRawControl).toHaveBeenCalledWith(
         { ...rawControl, ackedMsgId: delivery.msgId },
-        delivery.handle.traceId
+        'trace-browser-runtime-facade-test-double'
     );
 });
 

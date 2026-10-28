@@ -892,6 +892,32 @@ describe('ALM browser adapter execution', () => {
         });
         expect(unknownAck.value).not.toHaveProperty('traceId');
 
+        const untraced = { msgId: 'control-1', typeId: 'al.control.ack.v1', carrier: 'rtc', verdict: 'admitted' };
+        for (
+            const [label, submission] of [
+                ['an admitted result without a trace', untraced],
+                ['a trace outside the trace grammar', { ...untraced, traceId: 'bad trace!' }],
+                ['a trace on the unknown-ack refusal', {
+                    ...untraced,
+                    verdict: 'refused',
+                    reason: 'acked-message-unknown',
+                    traceId: 'trace-acked-received'
+                }]
+            ] as const
+        ) {
+            const malformed = await createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
+                rallarRuntime: {
+                    ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                    submitControl: async () => submission as never
+                }
+            }).execute({ ...RAW_CONTROL_COMMAND, commandId: 'alm-raw-control-malformed-trace' });
+            expect(malformed.error, label).toMatchObject({
+                code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+                message: 'The page runtime returned no usable messages.control result.traceId.'
+            });
+        }
+
         const refusing = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,
             rallarRuntime: {

@@ -388,7 +388,10 @@ export interface BlackBoxRallarControlSubmitDiagnostics {
     readonly typeId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict['kind'];
-    /** The verdict's own detail; undefined for `admitted`, `duplicate` and `pending`, which carry none. */
+    /**
+     * The verdict's own detail, undefined for `admitted`, `duplicate` and `pending`, which carry none; or the
+     * harness's own `acked-message-unknown`, on a refusal before any admission.
+     */
     readonly reason: string | undefined;
     /** The trace the envelope carried, that of the acknowledged message; undefined when the control was refused unadmitted. */
     readonly traceId: string | undefined;
