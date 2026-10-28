@@ -4,6 +4,7 @@ import { validateStoredMember } from '../../persistence/validate-persisted-group
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import {
     readsGroupActiveMemberPrincipalIds,
+    readsGroupActiveMembers,
     readsGroupLayoutRows,
     readsGroupLifecyclePolicy
 } from '../read/group-mutation-read-scope.ts';
@@ -14,6 +15,7 @@ export function assertGroupMutationOperationReads(
 ): void {
     assertConnectTriggerRead(read, command);
     assertLifecyclePolicyRead(read, command);
+    assertActiveMembersRead(read, command);
     assertActiveMemberPrincipalIdsRead(read, command);
     assertPlannedLayoutIdentityRead(read, command);
 }
@@ -63,45 +65,51 @@ function assertLifecyclePolicyRead(
     }
 }
 
-/**
- * The full active roster is loaded only when a transition pins its
- * electorate, an admission decision resolves managers or participation
- * capacity, or a group-authority command resolves the manager initiator.
- */
+/** Validate complete member facts even when compute does not need a separate electorate. */
+function assertActiveMembersRead(read: GroupMutationRead, command: GroupMutationCommand): void {
+    if (!readsGroupActiveMembers(command.operation)) {
+        if (read.activeMembers !== null) {
+            throw new TypeError('Group mutation read must not carry active members for this operation');
+        }
+        return;
+    }
+    if (!Array.isArray(read.activeMembers)) {
+        throw new TypeError('Group mutation read is missing the active member rows');
+    }
+    const principalIds = new Set<string>();
+    for (const member of read.activeMembers) {
+        validateStoredMember(member, command.aggregateRef, 'Active roster member');
+        if (principalIds.has(member.principalId)) {
+            throw new TypeError('Active roster contains a duplicate principal');
+        }
+        principalIds.add(member.principalId);
+        if (member.status !== 'active') {
+            throw new TypeError('Active roster contains an inactive member');
+        }
+    }
+}
+
 function assertActiveMemberPrincipalIdsRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
-    if (readsGroupActiveMemberPrincipalIds(command.operation)) {
-        if (read.activeMemberPrincipalIds === null || read.activeMembers === null) {
-            throw new TypeError('Group mutation read is missing the active member principal ids');
-        }
-        const principalIds = new Set<string>();
-        for (const member of read.activeMembers) {
-            if (principalIds.has(member.principalId)) {
-                throw new TypeError('Active roster contains a duplicate principal');
-            }
-            principalIds.add(member.principalId);
-            validateStoredMember(member, command.aggregateRef, 'Active roster member');
-            if (member.status !== 'active') {
-                throw new TypeError('Active roster contains an inactive member');
-            }
-        }
-        const players = read.activeMembers.filter((member) => member.role !== 'spectator').map((member) =>
-            member.principalId
-        ).sort();
-        if (serializeCanonicalJson(players) !== serializeCanonicalJson(read.activeMemberPrincipalIds)) {
-            throw new TypeError('Active roster player identities differ from the member rows');
-        }
-        for (const principalId of read.activeMemberPrincipalIds) {
-            requireNonEmptyString(principalId, 'Group mutation active member principal id');
+    if (!readsGroupActiveMemberPrincipalIds(command.operation)) {
+        if (read.activeMemberPrincipalIds !== null) {
+            throw new TypeError('Group mutation read must not carry active member principal ids for this operation');
         }
         return;
     }
-    if (read.activeMemberPrincipalIds !== null || read.activeMembers !== null) {
-        throw new TypeError(
-            'Group mutation read must not carry active member principal ids for this operation'
-        );
+    if (!Array.isArray(read.activeMemberPrincipalIds) || read.activeMembers === null) {
+        throw new TypeError('Group mutation read is missing the active member principal ids');
+    }
+    const players = read.activeMembers.filter((member) => member.role !== 'spectator').map((member) =>
+        member.principalId
+    ).sort();
+    if (serializeCanonicalJson(players) !== serializeCanonicalJson(read.activeMemberPrincipalIds)) {
+        throw new TypeError('Active roster player identities differ from the member rows');
+    }
+    for (const principalId of read.activeMemberPrincipalIds) {
+        requireNonEmptyString(principalId, 'Group mutation active member principal id');
     }
 }
 

@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { type GroupMutationFacts, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
@@ -8,7 +14,7 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { describe, expect, it } from 'vitest';
+
 import {
     admissionFor,
     createMutationCommand,
@@ -48,7 +54,7 @@ describe('convergent group and presence state', () => {
         const read: GroupMutationRead = {
             ...base,
             group: storedEntry(groupStorageKey(), { ...base.group.value, activeMemberCount: 2 }),
-            activeMemberPrincipalIds: ['alice', 'bob'],
+            activeMemberPrincipalIds: null,
             activeMembers: [base.actorMember, bob],
             lifecyclePolicy: { status: 'present', policy: resolveGroupLifecyclePolicyPreset('optimistic') },
             targetMember: bob,
@@ -56,7 +62,7 @@ describe('convergent group and presence state', () => {
         };
         const facts = createMutationFacts();
         const computed = computeGroupMutation({ command, read, facts });
-        if (computed.outcome !== 'write') {
+        if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
             throw new Error('Expected write');
         }
         const wrongMember = {
@@ -68,9 +74,7 @@ describe('convergent group and presence state', () => {
             members: [wrongMember],
             guard: {
                 ...computed.guard,
-                value: computed.guard.kind === 'group'
-                    ? { ...computed.guard.value, activeMemberCount: 3 }
-                    : computed.guard.value
+                value: { ...computed.guard.value, activeMemberCount: 3 }
             }
         };
 
@@ -79,7 +83,7 @@ describe('convergent group and presence state', () => {
                 command,
                 read,
                 facts,
-                computed: malformed as never
+                computed: malformed
             }).map((issue) => issue.path)
         ).toEqual(expect.arrayContaining([
             'computed.members.0.principalId',

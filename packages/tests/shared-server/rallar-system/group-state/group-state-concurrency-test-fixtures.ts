@@ -151,7 +151,7 @@ export function createMutationRead(): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         lifecyclePolicy: null,
-        activeMemberPrincipalIds: [actor.member.principalId],
+        activeMemberPrincipalIds: null,
         activeMembers: [actor.member],
         plannedLayoutRow: null,
         connectTriggerLatch: null,

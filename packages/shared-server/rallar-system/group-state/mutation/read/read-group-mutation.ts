@@ -61,12 +61,7 @@ export async function readGroupMutationWithSnapshot(
 }
 
 function readsExactGroupMutation(command: GroupMutationCommand): boolean {
-    return command.operation !== 'appointDirector' && (
-        !readsGroupActiveMemberPrincipalIds(command.operation) ||
-        command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite' ||
-        command.operation === 'upsertMember' || command.operation === 'setGroupMemberRole' ||
-        command.operation === 'transferGroupOwnership' || command.operation === 'updateGroup'
-    );
+    return command.operation !== 'appointDirector' && !readsGroupActiveMemberPrincipalIds(command.operation);
 }
 
 async function readSequentialGroupMutationWithPolicy(

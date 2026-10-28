@@ -179,7 +179,7 @@ function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         ...baseRead(lifecycleState),
         actorMember: null,
         actorMemberEntry: null,
-        activeMemberPrincipalIds: ['alice', 'bob'],
+        activeMemberPrincipalIds: null,
         activeMembers: [member('alice', 'owner'), member('bob', 'member')],
         lifecyclePolicy: {
             status: 'present',

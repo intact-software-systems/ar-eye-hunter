@@ -194,7 +194,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
             status: 'present',
             policy: resolveGroupLifecyclePolicyPreset('optimistic')
         },
-        activeMemberPrincipalIds: ['owner'],
+        activeMemberPrincipalIds: null,
         activeMembers: [owner],
         plannedLayoutRow: null,
         connectTriggerLatch: null,

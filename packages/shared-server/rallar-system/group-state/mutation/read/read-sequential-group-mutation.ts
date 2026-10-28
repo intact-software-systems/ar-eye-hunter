@@ -8,7 +8,7 @@ import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
-import { readsGroupActiveMemberPrincipalIds } from './group-mutation-read-scope.ts';
+import { readsGroupActiveMemberPrincipalIds, readsGroupActiveMembers } from './group-mutation-read-scope.ts';
 import {
     readGroupMutationRelatedEntries,
     type SequentialRelatedEntries
@@ -29,10 +29,12 @@ export async function readSequentialGroupMutation({
     // Read after the group entry whose revision anchors the write guard:
     // membership writes bump that revision, so a roster older than the guard
     // could pin a stale electorate the compare-and-set would never catch.
-    const activeMembers = readsGroupActiveMemberPrincipalIds(command.operation)
+    const activeMembers = readsGroupActiveMembers(command.operation)
         ? (await repository.listMembers(command.aggregateRef)).filter((member) => member.status === 'active')
         : null;
-    const activeMemberPrincipalIds = activeMembers === null ? null : toActiveMemberPrincipalIds(activeMembers);
+    const activeMemberPrincipalIds = readsGroupActiveMemberPrincipalIds(command.operation) && activeMembers !== null
+        ? toActiveMemberPrincipalIds(activeMembers)
+        : null;
     const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);
     const related = await readGroupMutationRelatedEntries({
         repository,

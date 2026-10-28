@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 
-import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, storedEntry } from './group-mutation-test-runtime.ts';
+import {
+    createGroupAuthorityFacts,
+    createGroupAuthorityRead,
+    groupRef,
+    storedEntry
+} from './group-mutation-test-runtime.ts';
 
 const ACTOR = {
     actorPrincipalId: 'alice',
@@ -99,7 +108,7 @@ function createMissingGroupRead(operation: GroupMutationCommand['operation']): G
         group: null,
         lifecyclePolicy: operation === 'planGroupLayout' ? { status: 'absent' } : null,
         activeMembers: operation === 'planGroupLayout' || operation === 'updateGroup' ? [] : null,
-        activeMemberPrincipalIds: operation === 'planGroupLayout' || operation === 'updateGroup' ? [] : null
+        activeMemberPrincipalIds: operation === 'planGroupLayout' ? [] : null
     };
 }
 

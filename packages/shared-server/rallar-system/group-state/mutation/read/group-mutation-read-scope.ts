@@ -34,22 +34,23 @@ export function readsGroupLifecyclePolicy(
     );
 }
 
-/**
- * The operations that need the full active roster: a transition pins its
- * electorate, an admission decision resolves current managers, and both
- * group-authority families resolve the manager initiator from it.
- */
+/** Complete member rows support participation capacity as well as authority and electorate decisions. */
+export function readsGroupActiveMembers(
+    operation: GroupMutationCommand['operation']
+): boolean {
+    return readsGroupActiveMemberPrincipalIds(operation) ||
+        isGroupAdmissionPolicyReadOperation(operation) ||
+        operation === 'setGroupMemberRole' || operation === 'transferGroupOwnership' ||
+        operation === 'updateGroup';
+}
+
+/** Sorted player identities are needed only for electorate and manager decisions. */
 export function readsGroupActiveMemberPrincipalIds(
     operation: GroupMutationCommand['operation']
 ): boolean {
-    return (
-        isGroupLifecycleTransitionOperation(operation) ||
+    return isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
-        isGroupAdmissionDecisionOperation(operation) ||
-        isGroupAdmissionPolicyReadOperation(operation) ||
-        operation === 'setGroupMemberRole' || operation === 'transferGroupOwnership' ||
-        operation === 'updateGroup'
-    );
+        isGroupAdmissionDecisionOperation(operation);
 }
 
 /**
