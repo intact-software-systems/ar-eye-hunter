@@ -281,6 +281,9 @@ async function expectEveryTimedSuccess(createTimed: CreateTimedGroupStateService
             status: 'ok',
             ...expectedTimingIdentity(operation)
         });
+        if (operation !== 'read' && operation !== 'readWithSnapshot') {
+            expect(timingEvents[index], operation).not.toHaveProperty('traceId');
+        }
     }
 }
 
@@ -327,7 +330,6 @@ async function expectTimedOperationRejection(
 function expectedTimingIdentity(operation: TimedAsyncOperation) {
     const empty = {
         requestId: undefined,
-        traceId: undefined,
         applicationId: undefined,
         workspaceId: undefined,
         groupId: undefined,

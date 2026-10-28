@@ -292,7 +292,7 @@ function toGroupStateTimingEventInput(
         operation,
         serviceId,
         requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
-        traceId: details.traceId,
+        ...(details.traceId === undefined ? {} : { traceId: details.traceId }),
         applicationId: typeof details.applicationId === 'string' ? details.applicationId : undefined,
         workspaceId: typeof details.workspaceId === 'string' ? details.workspaceId : undefined,
         groupId: typeof details.groupId === 'string' ? details.groupId : undefined,

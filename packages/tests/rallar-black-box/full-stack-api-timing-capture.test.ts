@@ -693,4 +693,31 @@ describe('safe trace projection', () => {
             expect(toSafeApiTimingRecord(JSON.stringify({ ...transactionLine, traceId }))).not.toHaveProperty('traceId');
         }
     );
+
+    it.each([['a space', 'trace with space'], ['a quote', 'trace"1'], ['513 characters', 'a'.repeat(513)], ['a number', 1]])(
+        'keeps a safe trace on a layout promotion and drops one with %s',
+        (_label, traceId) => {
+            expect(toSafeApiTimingRecord(JSON.stringify({ ...promotionLine, traceId: 'trace-safe-promotion' })))
+                .toEqual({ ...promotionLine, traceId: 'trace-safe-promotion' });
+            expect(toSafeApiTimingRecord(JSON.stringify({ ...promotionLine, traceId }))).toEqual(promotionLine);
+        }
+    );
 });
+
+const promotionLine = {
+    type: 'rallar.timing',
+    component: 'group-topology-publication',
+    operation: 'promote',
+    status: 'ok',
+    durationMs: 3.25,
+    atEpochMs: 1234,
+    serviceId: 'api-1',
+    applicationId: 'application-1',
+    workspaceId: 'workspace-1',
+    groupId: 'group-1',
+    details: {
+        expected: 'group=8;presence=5;version=1;state=active',
+        planned: 'group=9;presence=6;version=2;state=active',
+        outcome: 'promoted-newer'
+    }
+};

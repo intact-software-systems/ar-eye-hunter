@@ -384,8 +384,7 @@ export class GroupPresenceSummaryWork {
         const read = await timeRallarAsync(
             this.options.timing,
             toGroupPresenceSummaryTimingEvent({
-                work: primary.work,
-                traceId: primary.traceId,
+                item: primary,
                 operation: 'read',
                 serviceId: this.options.serviceId,
                 details: { coalescedWorkCount: candidates.length }
@@ -475,8 +474,7 @@ export class GroupPresenceSummaryWork {
         const outcome = await timeRallarAsync(
             this.options.timing,
             toGroupPresenceSummaryTimingEvent({
-                work: primary.work,
-                traceId: primary.traceId,
+                item: primary,
                 operation: 'write',
                 serviceId: this.options.serviceId,
                 details: effectDetails
@@ -599,13 +597,7 @@ export class GroupPresenceSummaryWork {
         const { item, operation, details, startedAtMs } = input;
         recordRallarTiming({
             sink: this.options.timing,
-            event: toGroupPresenceSummaryTimingEvent({
-                work: item.work,
-                traceId: item.traceId,
-                operation,
-                serviceId: this.options.serviceId,
-                details
-            }),
+            event: toGroupPresenceSummaryTimingEvent({ item, operation, serviceId: this.options.serviceId, details }),
             status: 'ok',
             durationMs: nowMs() - startedAtMs
         });

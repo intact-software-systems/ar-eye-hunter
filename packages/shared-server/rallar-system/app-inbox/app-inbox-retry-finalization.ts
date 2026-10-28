@@ -10,6 +10,7 @@ import type {
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
+    recordRallarTiming,
     timeRallarAsync,
     type RallarTimingDetails,
     type RallarTimingSink
@@ -59,6 +60,33 @@ export function createAppInboxRetryFinalizer(
             async () => await finalizeAppInboxRetry(dependencies, work)
         );
     };
+}
+
+/** The dequeuer's exhaustion telemetry holds the entry and no decoded message, so its line names no trace. */
+export function recordAppInboxRetryExhaustionTiming(
+    timing: RallarTimingSink | undefined,
+    exhaustion: AppInboxRetryFinalization
+): void {
+    recordRallarTiming({
+        sink: timing,
+        event: {
+            component: 'app-inbox-handler',
+            operation: 'retry-exhaustion',
+            requestId: exhaustion.entry.key.resourceId,
+            details: {
+                processingAttempts: exhaustion.processingAttempts,
+                reservationAttempt: exhaustion.reservationAttempt,
+                selectedLane: exhaustion.lane,
+                classification: exhaustion.classification,
+                exhaustion: exhaustion.exhausted,
+                source: exhaustion.failure.source,
+                queueAgeMs: exhaustion.queueAgeMs,
+                dueAgeMs: exhaustion.dueAgeMs
+            }
+        },
+        status: 'ok',
+        durationMs: 0
+    });
 }
 
 function createAppInboxRetryFinalizationWork(

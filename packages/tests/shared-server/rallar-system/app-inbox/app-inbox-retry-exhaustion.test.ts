@@ -5,7 +5,10 @@ import {
 } from 'vitest';
 
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
+import {
+    createAppInboxRetryFinalizer,
+    recordAppInboxRetryExhaustionTiming
+} from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type {
@@ -51,6 +54,18 @@ describe('AppInbox retry exhaustion', () => {
         await finalizeRetry(toExhaustion(harness.entry));
 
         expect(timing.map((event) => event.operation)).toEqual(['transaction']);
+        expect(timing[0]).not.toHaveProperty('traceId');
+    });
+
+    it('names no trace on the retry-exhaustion telemetry line, which holds the entry and no decoded message', () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createAtomicHarness({ attempts: 20 });
+
+        recordAppInboxRetryExhaustionTiming((event) => timing.push(event), toExhaustion(harness.entry));
+
+        expect(timing.map((event) => [event.component, event.operation, event.requestId])).toEqual([
+            ['app-inbox-handler', 'retry-exhaustion', harness.entry.key.resourceId]
+        ]);
         expect(timing[0]).not.toHaveProperty('traceId');
     });
 

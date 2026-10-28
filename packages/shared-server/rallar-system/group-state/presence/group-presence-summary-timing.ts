@@ -11,10 +11,14 @@ import type { GroupPresenceSummaryComputedWork } from './group-presence-summary-
 export namespace GroupPresenceSummaryTiming {
     export type Phase = 'claim' | 'read' | 'compute' | 'write' | 'committed-output-observed';
 
-    export interface EventInput {
+    /** A unit of summary work and the trace of the queued message it came from. */
+    export interface TracedWork {
         readonly work: GroupPresenceSummaryWorkData;
-        /** The trace of the queued message the work came from. */
         readonly traceId: string;
+    }
+
+    export interface EventInput {
+        readonly item: TracedWork;
         readonly operation: Phase;
         readonly serviceId: string;
         readonly details: RallarTimingDetails;
@@ -23,18 +27,14 @@ export namespace GroupPresenceSummaryTiming {
     export interface CommittedOutputInput {
         readonly timing: RallarTimingSink;
         readonly serviceId: string;
-        readonly expansions: readonly Readonly<{
-            work: GroupPresenceSummaryWorkData;
-            traceId: string;
-            computed: GroupPresenceSummaryComputedWork;
-        }>[];
+        readonly expansions: readonly (TracedWork & Readonly<{ computed: GroupPresenceSummaryComputedWork; }>)[];
     }
 }
 
 export function toGroupPresenceSummaryTimingEvent(
     input: GroupPresenceSummaryTiming.EventInput
 ): RallarTimingEventInput {
-    const { work, traceId, operation, serviceId, details } = input;
+    const { item: { work, traceId }, operation, serviceId, details } = input;
     return {
         component: 'group-presence-summary',
         operation,
@@ -58,8 +58,7 @@ export function recordGroupPresenceSummaryCommittedOutputs(
                 recordRallarTiming({
                     sink: input.timing,
                     event: toGroupPresenceSummaryTimingEvent({
-                        work: expansion.work,
-                        traceId: expansion.traceId,
+                        item: expansion,
                         operation: 'committed-output-observed',
                         serviceId: input.serviceId,
                         details: {
