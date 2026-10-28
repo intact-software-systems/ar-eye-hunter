@@ -71,7 +71,11 @@ export function canChangeGroupLifecycle(
 export function canCommandGroupAuthority(
     input: CanCommandGroupAuthorityInput
 ): GroupPolicyResult {
-    const blocked = denyUnlessActiveGroupMember(findActorGroupMember(input.snapshot, input.actor));
+    const member = findActorGroupMember(input.snapshot, input.actor);
+    if (member?.role === 'spectator') {
+        return denyGroupPolicy('forbidden-role', 'Spectators cannot command group authority.');
+    }
+    const blocked = denyUnlessActiveGroupMember(member);
     if (blocked) {
         return blocked;
     }

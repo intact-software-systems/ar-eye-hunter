@@ -47,10 +47,22 @@ describe('GroupStateService mutation exact reads', () => {
                     key: groupStateGroupStorageKey(ref)
                 },
                 {
+                    selectorId: 'members',
+                    kind: 'prefix',
+                    namespace: 'group-state:members',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
                     selectorId: 'presence-summary',
                     kind: 'key',
                     namespace: 'group-state:presence-summaries',
                     key: groupStateGroupStorageKey(ref)
+                },
+                {
+                    selectorId: 'presence-sessions',
+                    kind: 'prefix',
+                    namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
                     selectorId: 'lifecycle-policy',
@@ -150,10 +162,22 @@ describe('GroupStateService mutation exact reads', () => {
                     key: groupStateGroupStorageKey(ref)
                 },
                 {
+                    selectorId: 'members',
+                    kind: 'prefix',
+                    namespace: 'group-state:members',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
                     selectorId: 'presence-summary',
                     kind: 'key',
                     namespace: 'group-state:presence-summaries',
                     key: groupStateGroupStorageKey(ref)
+                },
+                {
+                    selectorId: 'presence-sessions',
+                    kind: 'prefix',
+                    namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
                     selectorId: 'idempotency:0',
@@ -349,6 +373,7 @@ function joinCommand(
         requestId: `join-${principalId}`,
         targetPrincipalId: principalId,
         input: {
+            participation: null,
             inviteToken: null,
             joinCode: null,
             actorPrincipalId: principalId,
@@ -368,6 +393,7 @@ function updateCommand(
         commandId: requestId,
         requestId,
         input: {
+            maxSpectators: null,
             slug: null,
             displayName: null,
             description: null,

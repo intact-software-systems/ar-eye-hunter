@@ -9,6 +9,10 @@ export interface GroupDirectoryEntry {
     readonly kind: Group['kind'];
     readonly joinMode: Group['joinMode'];
     readonly memberCount: number;
+    readonly playerCount: number;
+    readonly onlinePlayerCount: number;
+    readonly spectatorCount: number;
+    readonly maxSpectators: number;
     readonly onlineMemberCount: number;
     readonly maxMembers: number | null;
     readonly isFull: boolean;

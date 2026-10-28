@@ -200,7 +200,7 @@ export class RelicGameMutationService {
         serverPeerId: string
     ): Promise<RelicPublicSnapshot | null> {
         const read = await this.read(this.capture(captureRelicGameCommand(command), null, serverPeerId));
-        const denial = authorizeRelicGameMutation(read);
+        const denial = authorizeRelicGameMutation(read, true);
         if (denial !== null) {
             throw new RelicGameMutationRefusedError(denial);
         }
@@ -208,6 +208,38 @@ export class RelicGameMutationService {
         return entry === null
             ? null
             : toPublicRelicSnapshot(decodeStoredRelicSave(entry.value, entry.schemaVersion, command.gameId));
+    }
+
+    async canRequestPlanning(sessionId: string, gameId: string, serverPeerId: string): Promise<boolean> {
+        const session = await this.dependencies.sessions.findBySessionId(sessionId);
+        if (!session) {
+            return false;
+        }
+        const command: RelicGameMutationService.CommandInput = {
+            operation: 'ensure',
+            gameId,
+            requestId: 'planning-authorization',
+            traceId: 'planning-authorization',
+            actor: { clientId: session.clientId, sessionId, issuedAtEpochMs: session.issuedAtEpochMs },
+            authorization: 'group-policy',
+            move: null
+        };
+        const read = await this.read(this.capture(captureRelicGameCommand(command), null, serverPeerId));
+        if (authorizeRelicGameMutation(read) !== null || read.save.entry === null) {
+            return false;
+        }
+        if (
+            !read.group || !canSendGroupMessage({
+                snapshot: read.group.snapshot,
+                actor: { principalId: session.clientId, sessionId },
+                senderSessionId: sessionId,
+                nowEpochMs: read.attemptAtEpochMs
+            }).allowed
+        ) {
+            return false;
+        }
+        const state = decodeStoredRelicSave(read.save.entry.value, read.save.entry.schemaVersion, gameId);
+        return state.players.some((player) => player.playerId === sessionId);
     }
 
     compute(attempt: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
@@ -255,7 +287,8 @@ export class RelicGameMutationRefusedError extends Error {
 }
 
 function authorizeRelicGameMutation(
-    read: RelicGameMutationService.Read
+    read: RelicGameMutationService.Read,
+    readOnly = false
 ): RelicGameMutationService.Refusal | null {
     const { command } = read.ingress;
     const session = read.session;
@@ -271,20 +304,39 @@ function authorizeRelicGameMutation(
         });
     }
     const group = read.group;
-    if (group === null || group.snapshot.group.status !== 'active') {
+    if (
+        group === null || group.snapshot.group.status !== 'active' ||
+        (group.snapshot.group.expiresAtEpochMs !== null &&
+            group.snapshot.group.expiresAtEpochMs <= read.attemptAtEpochMs)
+    ) {
         return refusal(command, {
             code: 'room-unavailable',
             message: 'The expedition room is no longer available.',
             httpStatus: 404
         });
     }
-    if (command.authorization === 'group-policy') {
+    const member = group.snapshot.members.find((entry) => entry.principalId === session.clientId);
+    if (member?.status !== 'active') {
+        return refusal(command, {
+            code: 'active-membership-required',
+            message: 'An active room membership is required.',
+            httpStatus: 403
+        });
+    }
+    if (!readOnly && member.role === 'spectator') {
+        return refusal(command, {
+            code: 'spectator-read-only',
+            message: 'Spectators cannot change an expedition.',
+            httpStatus: 403
+        });
+    }
+    if (readOnly || command.authorization === 'group-policy') {
         const input = {
             snapshot: group.snapshot,
             actor: { principalId: session.clientId, sessionId: session.sessionId },
             nowEpochMs: read.attemptAtEpochMs
         };
-        const policy = command.operation === 'reset'
+        const policy = readOnly ? canReadGroupSnapshot(input) : command.operation === 'reset'
             ? canUpdateGroupSnapshot(input)
             : command.operation === 'command'
             ? canSendGroupMessage({ ...input, senderSessionId: session.sessionId })

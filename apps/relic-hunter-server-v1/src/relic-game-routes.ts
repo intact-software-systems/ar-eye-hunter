@@ -11,7 +11,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { RelicHunterGameService } from './relic-game-service.ts';
 
 export interface RelicGameRoutesDependencies {
-    readonly relicGame: Pick<RelicHunterGameService, 'ensureSnapshot' | 'applyCommand' | 'reset'>;
+    readonly relicGame: Pick<RelicHunterGameService, 'readSnapshot' | 'ensureSnapshot' | 'applyCommand' | 'reset'>;
     readonly sessions: AuthSessionRepository;
 }
 
@@ -27,6 +27,7 @@ export function initRelicGameRoutes(app: Hono, dependencies: RelicGameRoutesDepe
         }
     });
     registerRelicSnapshotRoute(app, dependencies);
+    registerRelicInitializeRoute(app, dependencies);
     registerRelicCommandRoute(app, dependencies);
     registerRelicResetRoute(app, dependencies);
     return app;
@@ -36,6 +37,19 @@ function registerRelicSnapshotRoute(app: Hono, { relicGame, sessions }: RelicGam
     app.get('/api/relic/games/:gameId', async (c) => {
         try {
             const request = await readRelicRestRequest(c, sessions, crypto.randomUUID());
+            const snapshot = await relicGame.readSnapshot(c.req.param('gameId'), request);
+            return snapshot === null ? c.body(null, 204) : c.json(snapshot);
+        }
+        catch (error) {
+            return toRelicRestErrorResponse(c, toError(error));
+        }
+    });
+}
+
+function registerRelicInitializeRoute(app: Hono, { relicGame, sessions }: RelicGameRoutesDependencies): void {
+    app.post('/api/relic/games/:gameId/initialize/requests/:requestId', async (c) => {
+        try {
+            const request = await readRelicRestRequest(c, sessions, c.req.param('requestId'));
             return c.json(await relicGame.ensureSnapshot(c.req.param('gameId'), request));
         }
         catch (error) {

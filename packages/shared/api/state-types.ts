@@ -89,6 +89,7 @@ export interface CreateGroupRequest extends MutationActorInput {
     readonly directoryListing?: GroupDirectoryListing;
     readonly retention?: GroupRetentionIntent;
     readonly maxMembers?: number;
+    readonly maxSpectators?: number;
     readonly maxSessionsPerMember?: number;
     readonly metadata?: ApiJsonObject;
     readonly createdByPrincipalId: string;
@@ -106,6 +107,7 @@ export interface UpdateGroupRequest extends MutationActorInput {
     readonly joinMode?: GroupJoinMode;
     readonly directoryListing?: GroupDirectoryListing;
     readonly maxMembers?: number;
+    readonly maxSpectators?: number;
     readonly maxSessionsPerMember?: number;
     readonly metadata?: ApiJsonObject;
     readonly expiresAtEpochMs?: number;
@@ -124,6 +126,7 @@ export interface AppointGroupDirectorRequest extends MutationActorInput {
 }
 
 export interface JoinGroupRequest extends MutationActorInput {
+    readonly participation?: 'player' | 'spectator';
     readonly inviteToken?: string;
     readonly joinCode?: string;
 }

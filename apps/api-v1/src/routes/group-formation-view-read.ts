@@ -294,7 +294,7 @@ function resolveManagerPrincipalIds(
         groupKey: toGroupLifecycleElectionKey(groupRef),
         activePrincipalIds: new Set(
             authority.group.members
-                .filter((member) => member.status === 'active')
+                .filter((member) => member.status === 'active' && member.role !== 'spectator')
                 .map((member) => member.principalId)
         ),
         rankByPrincipalId: null

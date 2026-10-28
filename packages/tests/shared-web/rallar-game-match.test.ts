@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import { createMessageDelivery } from './messages/test-message-delivery.ts';
+import { createGameRoomStateFixture } from './rallar-game-room-state-fixture.ts';
 
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
@@ -59,6 +60,54 @@ const roomRef: GroupRef = {
 };
 
 describe('Rallar Game match', () => {
+    it('keeps spectator synchronization while refusing gameplay and host authority', async () => {
+        const fake = createFakeRallar({ localRole: 'spectator', directorPeerId: 'peer-b', directorIsFresh: true });
+        const match = createMatch(fake);
+        await match.start();
+        const writes = await Promise.all([
+            match.reportCapability({ canHost: true }),
+            match.sendInput({ x: 1 }),
+            match.sendPresence({ x: 2 }),
+            match.sendIntent({ action: 'start' }),
+            match.publishEvent({ kind: 'damage' }),
+            match.publishSnapshot({ tick: 9 })
+        ]);
+        expect(writes.every((result) => result.status === 'skipped')).toBe(true);
+        expect(match.canAppointDirector().allowed).toBe(false);
+        expect((await match.appointIfElected()).status).toBe('not-authorized');
+        expect((await match.requestSync({ reason: 'watch' })).status).toBe('sent');
+        expect(fake.realtimeSendCount + fake.roomRealtimeSendCount).toBe(0);
+        match.stop();
+    });
+
+    it('rejects gameplay from a spectator before invoking the game authority', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
+        const state = fake.rallar.rooms.state();
+        const watcherState = {
+            ...state,
+            members: state.members.map((member) => member.principalId === 'principal-b' ? { ...member, role: 'spectator' as const } : member)
+        };
+        fake.rallar.rooms.state = () => createGameRoomStateFixture(roomRef, watcherState.members);
+        const accepted: string[] = [];
+        const match = createMatch(fake, {
+            onInput: () => {
+                accepted.push('input');
+            },
+            onIntent: () => {
+                accepted.push('intent');
+            },
+            onPresence: () => {
+                accepted.push('presence');
+            }
+        });
+        await match.start();
+        await fake.emitRealtime('game-input', 'peer-b', envelope({ kind: 'input', senderId: 'peer-b', seq: 1, payload: { x: 4 } }));
+        await fake.emitRealtime('game-input', 'peer-b', envelope({ kind: 'presence', senderId: 'peer-b', seq: 1, payload: { x: 4 } }));
+        await emitRelayIntent(fake, 1);
+        expect(accepted).toEqual([]);
+        match.stop();
+    });
+
     it('configures the director relay with the game wire topics', async () => {
         const fake = createFakeRallar();
         const match = createMatch(fake);
@@ -70,7 +119,7 @@ describe('Rallar Game match', () => {
             intentTypeId: 'game.topic.intent.v1',
             outputTypeId: 'game.topic.event.v1',
             snapshotTypeId: 'game.topic.snapshot.v1',
-            syncRequestTypeId: 'game.topic.sync-request.v1',
+            syncRequestTypeId: 'rallar.game.snapshot-request.v1',
             heartbeatTypeId: 'game.topic.heartbeat.v1'
         });
     });
@@ -134,7 +183,7 @@ describe('Rallar Game match', () => {
         expect(fake.wsSend.mock.calls[0][0].payload).toMatchObject({
             protocol: 'test.game.v1',
             kind: 'capability',
-            roomId: 'room-1',
+            roomRef,
             senderId: 'peer-a',
             payload: {
                 peerId: 'peer-a',
@@ -373,10 +422,8 @@ describe('Rallar Game match', () => {
 
         const result = await match.appointIfElected();
 
-        expect(result.status).toBe('not-authorized');
-        expect(result.reason).toBe(
-            'Only active room members can appoint the browser director.'
-        );
+        expect(result.status).toBe('not-ready');
+        expect(result.reason).toBe('Current room participation is not confirmed.');
     });
 
     it('waits for local membership before metadata-backed director appointment', async () => {
@@ -392,7 +439,7 @@ describe('Rallar Game match', () => {
         const result = await match.appointIfElected();
 
         expect(result.status).toBe('not-ready');
-        expect(result.reason).toBe('Cannot confirm local room membership yet.');
+        expect(result.reason).toBe('Current room participation is not confirmed.');
         expect(match.diagnostics().issues).toContain('director-eligibility-not-ready');
     });
 
@@ -463,12 +510,16 @@ describe('Rallar Game match', () => {
         await match.start();
 
         const result = await match.sendPresence({ x: 7 });
-
+        if (!expectedRoomRef) {
+            expect(result.status).toBe('not-ready');
+            expect(fake.realtimeSendCount).toBe(0);
+            return;
+        }
         expect(result).toMatchObject({ status: 'sent', transport: 'realtime' });
         expect(fake.realtimeSendJson).toHaveBeenCalledWith(expect.objectContaining({
             roomId: expectedRoomRef ? undefined : expectedRoomId,
             roomRef: expectedRoomRef,
-            data: expect.objectContaining({ roomId: expectedRoomId, payload: { x: 7 } })
+            data: expect.objectContaining({ roomRef: expectedRoomRef, payload: { x: 7 } })
         }));
         expect(match.status()).toMatchObject({ roomId: expectedRoomId, roomRef: expectedRoomRef });
     });
@@ -893,7 +944,7 @@ function envelope<T>(input: TestEnvelopeInput<T>): RallarGameEnvelope<T> {
     return createRallarGameEnvelope({
         protocol: 'test.game.v1',
         kind,
-        roomId: 'room-1',
+        roomRef,
         matchId,
         senderId,
         seq,
@@ -949,7 +1000,7 @@ async function emitRelayIntent(fake: FakeRallar, seq: number, transport: 'rtc' |
 interface FakeRallarOptions {
     readonly directorPeerId?: string;
     readonly directorIsFresh?: boolean;
-    readonly localRole?: 'owner' | 'admin' | 'member';
+    readonly localRole?: 'owner' | 'admin' | 'member' | 'spectator';
     readonly localStatus?: 'active' | 'left' | 'removed' | 'banned' | 'invited';
     readonly localSessionIds?: readonly string[];
     readonly localMemberKnown?: boolean;
@@ -1142,15 +1193,10 @@ function createFakeRallarRoomState(options: FakeRallarOptions): RallarRoomState 
         isOnline: true,
         sessionIds: ['peer-b']
     };
-    return {
-        rooms: [],
-        currentRoomId: 'room-1',
-        currentRoomRef: roomRef,
-        members: [
-            ...(options.localMemberKnown === false ? [] : [localMember]),
-            ...(options.remoteMemberKnown === false ? [] : [remoteMember])
-        ]
-    };
+    return createGameRoomStateFixture(roomRef, [
+        ...(options.localMemberKnown === false ? [] : [localMember]),
+        ...(options.remoteMemberKnown === false ? [] : [remoteMember])
+    ]);
 }
 
 function createFakeRallarState(options: FakeRallarOptions): FakeRallarState {

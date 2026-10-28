@@ -42,6 +42,8 @@ export interface CanSendGroupMessageInput {
     readonly minSnapshotVersion?: number;
     readonly nowEpochMs?: number;
     readonly preActivationAppData?: GroupPreActivationAppData;
+    /** Set only by the trusted protocol validator for an exact read-only sync request. */
+    readonly readOnlyRequest?: boolean;
 }
 
 export function canSendGroupMessage(
@@ -74,6 +76,9 @@ export function canSendGroupMessage(
     );
     if (memberDenial) {
         return memberDenial;
+    }
+    if (findGroupMember(input.snapshot, principalId)?.role === 'spectator' && input.readOnlyRequest !== true) {
+        return denyGroupPolicy('forbidden-role', 'Spectators cannot send application data.');
     }
     if (
         input.preActivationAppData === 'blocked-until-active' &&

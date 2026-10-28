@@ -805,7 +805,7 @@ describe('useRallarArena auth lifecycle', () => {
             await vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0].onPresence?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'presence',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
                 seq: 1,
                 directorEpoch: 0,
@@ -836,6 +836,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         expect(mockRallar.rooms.createAndSwitch).toHaveBeenCalledWith({
             displayName: expect.stringContaining('AR Eye Hunter Arena:'),
+            maxSpectators: 16,
             joinMode: 'open',
             retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
         });
@@ -869,6 +870,10 @@ function directoryArena(groupId: string): GroupDirectoryEntry {
         joinMode: 'open',
         memberCount: 1,
         onlineMemberCount: 1,
+        playerCount: 1,
+        onlinePlayerCount: 1,
+        spectatorCount: 0,
+        maxSpectators: 16,
         maxMembers: 256,
         isFull: false,
         lifecycleState: 'forming',

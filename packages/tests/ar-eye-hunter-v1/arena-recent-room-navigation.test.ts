@@ -24,7 +24,11 @@ describe('arena recent-room navigation', () => {
             mockRallar.rooms.join.mockImplementation(async (roomRef) => createGroupSnapshotFixture({ ...roomRef, sessionIds: [session.sessionId] }));
             for (const groupId of ['room-a', 'room-b']) {
                 await act(async () => {
-                    arenaRoomEntry.enter({ roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId }, joinCode: null });
+                    arenaRoomEntry.enter({
+                        roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId },
+                        joinCode: null,
+                        participation: 'preserve'
+                    });
                     await arenaRoomEntry.resume();
                     await arenaRecentRooms.whenIdle();
                 });

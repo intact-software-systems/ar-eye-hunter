@@ -84,7 +84,7 @@ async function receiveSnapshot(snapshot: ArenaSnapshot): Promise<void> {
         config.onSnapshot?.(createRallarGameEnvelope({
             protocol: 'ar-eye-hunter.v1',
             kind: 'snapshot',
-            roomId: 'arena-1',
+            roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
             senderId: 'director',
             seq: 1,
             directorEpoch: 1,

@@ -35,6 +35,7 @@ export function createCorruptionMutationRead(): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
@@ -67,6 +68,7 @@ export function createIdentityMutationRead(): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
@@ -99,6 +101,7 @@ export function createSnapshotAssemblyMutationRead(): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null

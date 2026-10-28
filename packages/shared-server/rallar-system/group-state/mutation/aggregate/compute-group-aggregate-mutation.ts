@@ -10,6 +10,12 @@ import {
 } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import { GROUP_RETENTION_METADATA_KEY, readGroupRetentionState } from '@shared/api/group-retention.ts';
+import {
+    countGroupPlayers,
+    GROUP_SPECTATOR_CAPACITY_METADATA_KEY,
+    isGroupSpectator,
+    readGroupSpectatorCapacity
+} from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
@@ -76,13 +82,25 @@ export function computeUpdate(
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
     const next = computeUpdatedGroup(command, current, audit);
-    if (next.maxMembers !== null && next.maxMembers < next.activeMemberCount) {
+    if (
+        next.maxMembers !== null &&
+        next.maxMembers < countGroupPlayers(toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs))
+    ) {
         return rejected({
             command,
             read,
             facts,
             rejectionCode: 'group-mutation-rejected',
-            message: 'Group maxMembers cannot be lower than activeMemberCount.'
+            message: 'Group maxMembers cannot be lower than the player count.'
+        });
+    }
+    if (readGroupSpectatorCapacity(next.metadata) < (read.activeMembers ?? []).filter(isGroupSpectator).length) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Spectator capacity cannot be lower than the spectator count.'
         });
     }
     if (sameGroupIgnoringVersions(current, next)) {
@@ -258,11 +276,12 @@ function computeUpdatedGroup(
             joinMode: command.input.joinMode ?? current.joinMode,
             maxMembers: command.input.maxMembers ?? current.maxMembers,
             maxSessionsPerMember: command.input.maxSessionsPerMember ?? current.maxSessionsPerMember,
-            metadata: computeUpdatedGroupMetadata(
-                current.metadata,
-                command.input.metadata,
-                command.input.directoryListing
-            ),
+            metadata: computeUpdatedGroupMetadata({
+                current: current.metadata,
+                replacement: command.input.metadata,
+                directoryListing: command.input.directoryListing,
+                maxSpectators: command.input.maxSpectators
+            }),
             snapshotVersion: current.snapshotVersion + 1,
             metadataVersion: current.metadataVersion + 1,
             updated: audit,
@@ -332,10 +351,15 @@ function mergeJoinCode(metadata: Group['metadata'], joinCode: JoinCodeMetadata):
     return { ...metadata, [RALLAR_GROUP_JOIN_CODE_METADATA_KEY]: { ...joinCode } };
 }
 
+interface ComputeUpdatedGroupMetadataInput {
+    readonly current: Group['metadata'];
+    readonly replacement: Group['metadata'] | null;
+    readonly directoryListing: GroupDirectoryListing | undefined;
+    readonly maxSpectators: number | null;
+}
+
 function computeUpdatedGroupMetadata(
-    current: Group['metadata'],
-    replacement: Group['metadata'] | null,
-    directoryListing: GroupDirectoryListing | undefined
+    { current, replacement, directoryListing, maxSpectators }: ComputeUpdatedGroupMetadataInput
 ): Group['metadata'] {
     const metadata = { ...structuredClone(replacement ?? current) };
     // Generic metadata replacement does not own discovery policy, even when it carries a stale copy.
@@ -343,6 +367,11 @@ function computeUpdatedGroupMetadata(
     const setting = directoryListing ?? current[GROUP_DIRECTORY_LISTING_METADATA_KEY];
     if (setting !== undefined) {
         metadata[GROUP_DIRECTORY_LISTING_METADATA_KEY] = setting;
+    }
+    delete metadata[GROUP_SPECTATOR_CAPACITY_METADATA_KEY];
+    const spectatorCapacity = maxSpectators ?? current[GROUP_SPECTATOR_CAPACITY_METADATA_KEY];
+    if (spectatorCapacity !== undefined) {
+        metadata[GROUP_SPECTATOR_CAPACITY_METADATA_KEY] = spectatorCapacity;
     }
     delete metadata[GROUP_RETENTION_METADATA_KEY];
     const retention = readGroupRetentionState(current);

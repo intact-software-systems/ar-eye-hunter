@@ -46,7 +46,13 @@ export function toPolicySnapshot(
     nowEpochMs: number
 ): GroupSnapshot {
     const stored = requireGroup(read, ref);
-    const members = [read.actorMember, read.targetMember, read.authorityMember, read.directorMember]
+    const members = [
+        ...(read.activeMembers ?? []),
+        read.actorMember,
+        read.targetMember,
+        read.authorityMember,
+        read.directorMember
+    ]
         .filter((member): member is GroupMember => member !== null)
         .filter(
             (member, index, values) =>

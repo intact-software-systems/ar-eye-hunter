@@ -1,7 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+    useEffect,
+    useState,
+    type FormEvent
+} from 'react';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { ARENA_ROOM_SCOPE, arenaRecentRooms, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
+import {
+    ARENA_ROOM_SCOPE,
+    arenaRecentRooms,
+    arenaRoomEntry
+} from '../game/arena-runtime/arena-room-entry.ts';
 
 interface ArenaRoomEntryProps {
     readonly arena: ArenaConnection;
@@ -11,6 +19,7 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
     const [entry, setEntry] = useState(arenaRoomEntry.getState());
     const [reference, setReference] = useState('');
     const [code, setCode] = useState('');
+    const [participation, setParticipation] = useState<'preserve' | 'spectator'>('preserve');
     useEffect(() => arenaRoomEntry.onChange(setEntry), []);
     useEffect(() => {
         if (entry.status === 'entered' || entry.status === 'idle') {
@@ -21,7 +30,8 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
         event.preventDefault();
         arenaRoomEntry.enter({
             roomRef: { ...ARENA_ROOM_SCOPE, groupId: reference.trim() },
-            joinCode: code.trim() || null
+            joinCode: code.trim() || null,
+            participation
         });
         if (arena.connectionState === 'connected') {
             void arenaRoomEntry.resume();
@@ -32,6 +42,8 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
         <section className="panel stack" aria-label="Shared room entry">
             <h3>Enter a shared arena</h3>
             <ArenaRoomEntryForm
+                participation={participation}
+                setParticipation={setParticipation}
                 reference={reference}
                 setReference={setReference}
                 code={code}
@@ -121,6 +133,8 @@ function ArenaRecentRooms({ arena, joining }: ArenaRecentRoomsProps) {
 }
 
 interface ArenaRoomEntryFormProps {
+    readonly participation: 'preserve' | 'spectator';
+    readonly setParticipation: (participation: 'preserve' | 'spectator') => void;
     readonly reference: string;
     readonly setReference: (reference: string) => void;
     readonly code: string;
@@ -129,9 +143,22 @@ interface ArenaRoomEntryFormProps {
     readonly joining: boolean;
 }
 
-function ArenaRoomEntryForm({ reference, setReference, code, setCode, submit, joining }: ArenaRoomEntryFormProps) {
+function ArenaRoomEntryForm(
+    { participation, setParticipation, reference, setReference, code, setCode, submit, joining }:
+        ArenaRoomEntryFormProps
+) {
     return (
         <form className="stack" onSubmit={submit}>
+            <label>
+                Participation<select
+                    value={participation}
+                    onChange={(event) =>
+                        setParticipation(event.target.value === 'spectator' ? 'spectator' : 'preserve')}
+                >
+                    <option value="preserve">Enter room</option>
+                    <option value="spectator">Watch</option>
+                </select>
+            </label>
             <label>
                 Room reference<input
                     value={reference}

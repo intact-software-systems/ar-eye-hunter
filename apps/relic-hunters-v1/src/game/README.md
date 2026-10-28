@@ -14,6 +14,7 @@ and `use-relic-hunters.ts` binds its immutable snapshots to React.
 | Legal actions and accepted snapshot derivation   | `game-view-model.ts` and `relic-snapshot-ordering.ts`                                                                                   |
 | Draft, keyboard, round clock, and submission     | `use-relic-turn.ts` with `hud/relic-plan.tsx`                                                                                           |
 | HUD reveal timing and local preferences          | `use-relic-playback.ts` and `use-relic-preferences.ts`                                                                                  |
+| Diagnostic defaults and snapshot summaries | `relic-runtime-diagnostics.ts` |
 | Command transport and repair                     | Runtime with `send-relic-ws-command.ts` and `to-relic-command-phase.ts`                                                                 |
 | Map, intel, timeline, score, overlays            | Named files under `hud/`                                                                                                                |
 | Advisory AI and proposal validation              | `ai/`                                                                                                                                   |

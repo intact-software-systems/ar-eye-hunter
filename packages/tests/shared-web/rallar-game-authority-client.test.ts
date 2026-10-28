@@ -27,6 +27,7 @@ import {
 } from '@shared/rallar-game/mod.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMessageDelivery } from './messages/test-message-delivery.ts';
+import { createGameRoomStateFixture } from './rallar-game-room-state-fixture.ts';
 
 interface Command {
     readonly action: string;
@@ -72,6 +73,28 @@ const authority: RallarGameAuthorityRef = {
 
 describe('Rallar Game Authority browser client', () => {
     afterEach(() => vi.useRealTimers());
+
+    it('does not enqueue spectator commands, presence, or snapshot repair', async () => {
+        const fake = createFakeRallar();
+        const state = fake.rallar.rooms.state();
+        fake.rallar.rooms.state = () =>
+            createGameRoomStateFixture(roomRef, [{
+                principalId: 'principal-a',
+                username: 'alice',
+                role: 'spectator',
+                status: 'active',
+                isOwner: false,
+                isOnline: true,
+                sessionIds: ['peer-a']
+            }]);
+        const client = createClient(fake, { peerAssist: { enabled: true, snapshotRepair: true } });
+        await client.start();
+        expect((await client.sendCommand({ action: 'start' })).status).toBe('skipped');
+        expect((await client.publishPresence({ x: 1 })).status).toBe('skipped');
+        expect((await client.publishSnapshotRepair({ tick: 2 })).status).toBe('skipped');
+        expect(client.status().pendingCommandCount).toBe(0);
+        client.stop();
+    });
 
     it.each(['queued', 'rejected', 'superseded', 'timeout'] as const)('waits for command admission and cleans pending commands on %s', async (state) => {
         vi.useFakeTimers();
@@ -369,7 +392,7 @@ describe('Rallar Game Authority browser client', () => {
         expect(client.status().peerAssist.snapshotRepairEnabled).toBe(false);
     });
 
-    it('accepts RTC snapshot repair only when enabled and app-approved', async () => {
+    it.each([false, true])('rechecks the peer role after snapshot repair approval (demoted=%s)', async (demoted) => {
         const fake = createFakeRallar();
         const repairRequests: RallarGameAuthorityEnvelope<Snapshot>[] = [];
         const snapshots: RallarGameAuthorityEnvelope<Snapshot>[] = [];
@@ -381,6 +404,14 @@ describe('Rallar Game Authority browser client', () => {
                 snapshotRepair: true,
                 acceptSnapshotRepair: async (snapshot) => {
                     repairRequests.push(snapshot);
+                    if (demoted) {
+                        const state = fake.rallar.rooms.state();
+                        fake.rallar.rooms.state = () =>
+                            createGameRoomStateFixture(
+                                roomRef,
+                                state.members.map((member) => member.sessionIds.includes('peer-b') ? { ...member, role: 'spectator' } : member)
+                            );
+                    }
                     return true;
                 }
             }
@@ -394,7 +425,7 @@ describe('Rallar Game Authority browser client', () => {
         );
 
         expect(repairRequests.map((snapshot) => snapshot.payload)).toEqual([{ tick: 5 }]);
-        expect(snapshots.map((snapshot) => snapshot.payload)).toEqual([{ tick: 5 }]);
+        expect(snapshots.map((snapshot) => snapshot.payload)).toEqual(demoted ? [] : [{ tick: 5 }]);
         expect(client.status().peerAssist.snapshotRepairEnabled).toBe(true);
     });
 
@@ -506,12 +537,18 @@ function createFakeAuthorityLifecycle(): FakeAuthorityLifecycle {
         accessToken: 'token',
         expiresAtEpochMs: Date.now() + 60_000
     };
-    const roomState = {
-        rooms: [],
-        currentRoomId: 'room-1',
-        currentRoomRef: roomRef,
-        members: []
-    };
+    const roomState = createGameRoomStateFixture(
+        roomRef,
+        ['a', 'b'].map((id) => ({
+            principalId: `principal-${id}`,
+            username: id,
+            role: 'member',
+            status: 'active',
+            isOwner: false,
+            isOnline: true,
+            sessionIds: [`peer-${id}`]
+        }))
+    );
     const rtcStatus: RallarRtcStatus = {
         sessionId: 'peer-a',
         laneId: 'game-snapshot',
@@ -694,6 +731,7 @@ function message<T>(input: AuthorityMessageFixtureInput<T>): RallarMessage<T> {
         raw: {
             id: { v: 4, msgId: 'authority-fixture', senderId: input.senderId, ts: 1_000, traceId: 'trace-rallar-game-authority-client' },
             route: { topicId: 'game.authority', contextId: 'room-1', resourceId: 'resource-1' },
+            targets: { mode: 'multicast', groupRef: roomRef },
             payload: { typeId: input.typeId, contentType: 'application/json', resource: JSON.stringify(input.payload) }
         },
         receivedAtEpochMs: Date.now(),

@@ -1,13 +1,11 @@
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+
 import {
     estimateRallarMotionVelocity
 } from '@shared/rallar-motion/mod.ts';
-import { blocksShot } from '../arenaLayout.ts';
+
 import {
-    chooseTouchAimCandidate,
-    shouldFireHeldWeapon,
-    type Point2,
-    type TouchAimCandidate
+    shouldFireHeldWeapon
 } from '../mobileInput.ts';
 import {
     applyPlayerHitAccepted,
@@ -25,7 +23,6 @@ import type {
     EyeTargetState,
     PlayerHitAccepted,
     PlayerInputState,
-    RemotePlayer,
     ShotIntent,
     Vec3Tuple,
     WeaponKind
@@ -39,7 +36,6 @@ import type {
 import {
     createArenaEventEffect,
     createImpact,
-    createTouchAimPulse,
     createTracer,
     updateTransientEffects
 } from './arena-scene-effects.ts';
@@ -47,23 +43,21 @@ import { syncAdaptiveAudio, triggerHaptic } from './arena-scene-feedback.ts';
 import {
     addTuple,
     clamp,
-    distanceTuple,
-    dotTuple,
     forwardFromAngles,
-    normalizeTuple,
     round3,
     scaleTuple,
-    subTuple,
     vector3
 } from './arena-scene-geometry.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
+import { findPredictedPlayerHit } from './arena-shot-aim.ts';
 import {
     isHostileEye,
     syncEyeAttackCues,
     syncPickupAvatars,
     syncTargetAvatars
 } from './arena-target-view.ts';
+
 const BASE_FOV = 0.94;
 
 interface ArenaSceneStepInput extends BabylonArenaProps {
@@ -76,6 +70,16 @@ export function runFrame(input: ArenaSceneStepInput): void {
     const dtMs = runtime.hitStopUntilEpochMs > now ? Math.min(rawDtMs, 8) : rawDtMs;
     runtime.lastFrameEpochMs = now;
     reconcileSceneObservations(input);
+    if (input.spectating) {
+        syncScenePresentation(input, now);
+        runtime.camera.position = new Vector3(
+            0,
+            runtime.arenaState.layout.halfSize * 1.6,
+            -runtime.arenaState.layout.halfSize
+        );
+        runtime.camera.setTarget(Vector3.Zero());
+        return;
+    }
     advancePlayerPrediction(input, dtMs, now);
     syncScenePresentation(input, now);
     if (input.networkEnabled) {
@@ -97,7 +101,9 @@ export function runFrame(input: ArenaSceneStepInput): void {
 function reconcileSceneObservations(input: ArenaSceneStepInput): void {
     const { runtime, arenaSnapshot, authority, remoteEvents } = input;
     if (runtime.simulation.reconcile({ snapshot: arenaSnapshot, authority }) && arenaSnapshot) {
-        syncLocalPlayerFromSnapshot(runtime, input.localSessionId, arenaSnapshot);
+        if (!input.spectating) {
+            syncLocalPlayerFromSnapshot(runtime, input.localSessionId, arenaSnapshot);
+        }
     }
     for (const event of remoteEvents) {
         if (runtime.appliedEventIds.has(event.id)) {
@@ -152,7 +158,19 @@ function syncScenePresentation(input: ArenaSceneStepInput, now: number): void {
         threatCount: runtime.arenaState.targets.filter(isHostileEye).length,
         distanceFactor: runtime.audioSettings.reducedIntensity ? 0.55 : 1
     });
-    syncRemoteAvatars(runtime, input.remotePlayers);
+    const players = new Map(input.remotePlayers);
+    for (const player of runtime.arenaState.players) {
+        if (input.spectating || player.sessionId !== input.localSessionId) {
+            const existing = players.get(player.sessionId);
+            if (!existing || existing.pose.seq <= player.seq) {
+                players.set(player.sessionId, {
+                    pose: { ...player, score: player.score ?? 0, sentAtEpochMs: player.updatedAtEpochMs },
+                    lastSeenEpochMs: now
+                });
+            }
+        }
+    }
+    syncRemoteAvatars(runtime, players);
     syncRemoteShots(runtime, input.remoteShots);
     syncRemotePlayerHits(runtime, input.remotePlayerHits, localPlayerId);
     syncCamera(runtime, now);
@@ -181,6 +199,9 @@ interface ArenaShotPresentation {
     readonly touchAssisted: boolean;
 }
 export function fireLocalShot(input: ArenaLocalShotInput): void {
+    if (input.spectating) {
+        return;
+    }
     reconcileSceneObservations(input);
     const { runtime, localUsername, localColor, roomId } = input;
     const now = runtime.clock.nowEpochMs();
@@ -536,168 +557,6 @@ function animateTargets(
         };
     });
     return { ...state, targets };
-}
-
-interface FindPredictedPlayerHitInput {
-    readonly nowEpochMs: number;
-    readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
-    readonly localSessionId: string;
-    readonly origin: Vec3Tuple;
-    readonly direction: Vec3Tuple;
-    readonly range: number;
-}
-
-function findPredictedPlayerHit(
-    { remotePlayers, localSessionId, origin, direction, range, nowEpochMs }: FindPredictedPlayerHitInput
-): Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; }> | undefined {
-    const ray = normalizeTuple(direction);
-    let best:
-        | Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; distance: number; }>
-        | undefined;
-    for (const [sessionId, remote] of remotePlayers) {
-        if (sessionId === localSessionId) {
-            continue;
-        }
-        if (
-            remote.pose.vitals?.deadUntilEpochMs &&
-            remote.pose.vitals.deadUntilEpochMs > nowEpochMs
-        ) {
-            continue;
-        }
-        const toTarget = subTuple(remote.pose.position, origin);
-        const along = dotTuple(toTarget, ray);
-        if (along < 0 || along > range) {
-            continue;
-        }
-        const impact = addTuple(origin, scaleTuple(ray, along));
-        const miss = distanceTuple(impact, remote.pose.position);
-        if (miss > 0.95) {
-            continue;
-        }
-        if (!best || along < best.distance) {
-            best = {
-                targetSessionId: sessionId,
-                targetSeq: remote.pose.seq,
-                impact,
-                distance: along
-            };
-        }
-    }
-    return best;
-}
-
-interface ResolveTouchShotDirectionInput {
-    readonly runtime: ArenaSceneRuntime;
-    readonly event: PointerEvent;
-    readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
-    readonly localSessionId: string;
-}
-
-interface TouchShotDirection {
-    readonly direction: Vec3Tuple;
-    readonly assisted: boolean;
-}
-
-export function resolveTouchShotDirection(
-    { runtime, event, remotePlayers, localSessionId }: ResolveTouchShotDirectionInput
-): TouchShotDirection {
-    const rect = runtime.engine.getRenderingCanvas()?.getBoundingClientRect();
-    const renderWidth = runtime.engine.getRenderWidth();
-    const renderHeight = runtime.engine.getRenderHeight();
-    const x = rect
-        ? (event.clientX - rect.left) * (renderWidth / Math.max(1, rect.width))
-        : event.offsetX;
-    const y = rect
-        ? (event.clientY - rect.top) * (renderHeight / Math.max(1, rect.height))
-        : event.offsetY;
-    const point = { x, y };
-    const origin = runtime.localPlayer.position;
-    const candidate = chooseTouchAimCandidate({
-        point,
-        candidates: buildTouchAimCandidates({
-            runtime: runtime,
-            remotePlayers: remotePlayers,
-            localSessionId: localSessionId,
-            origin: origin
-        })
-    });
-    if (candidate) {
-        createTouchAimPulse(runtime, candidate.world);
-        return {
-            direction: normalizeTuple(subTuple(candidate.world, origin)),
-            assisted: true
-        };
-    }
-
-    const ray = runtime.scene.createPickingRay(x, y, Matrix.Identity(), runtime.camera);
-    return {
-        direction: normalizeTuple([ray.direction.x, ray.direction.y, ray.direction.z]),
-        assisted: false
-    };
-}
-
-interface BuildTouchAimCandidatesInput {
-    readonly runtime: ArenaSceneRuntime;
-    readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
-    readonly localSessionId: string;
-    readonly origin: Vec3Tuple;
-}
-
-function buildTouchAimCandidates(
-    { runtime, remotePlayers, localSessionId, origin }: BuildTouchAimCandidatesInput
-): readonly TouchAimCandidate[] {
-    const candidates: TouchAimCandidate[] = [];
-    for (const target of runtime.arenaState.targets) {
-        const world = target.position;
-        const screen = projectWorldToScreen(runtime, world);
-        if (!screen) {
-            continue;
-        }
-        candidates.push({
-            id: target.id,
-            kind: 'eye',
-            screen,
-            world,
-            distance: distanceTuple(origin, world),
-            blocked: blocksShot(runtime.arenaState.layout, origin, world)
-        });
-    }
-
-    for (const [sessionId, remote] of remotePlayers) {
-        if (sessionId === localSessionId) {
-            continue;
-        }
-        const world = remote.pose.position;
-        const screen = projectWorldToScreen(runtime, world);
-        if (!screen) {
-            continue;
-        }
-        candidates.push({
-            id: sessionId,
-            kind: 'player',
-            screen,
-            world,
-            distance: distanceTuple(origin, world),
-            blocked: blocksShot(runtime.arenaState.layout, origin, world)
-        });
-    }
-    return candidates;
-}
-
-function projectWorldToScreen(runtime: ArenaSceneRuntime, world: Vec3Tuple): Point2 | undefined {
-    const projected = Vector3.Project(
-        vector3(world),
-        Matrix.Identity(),
-        runtime.scene.getTransformMatrix(),
-        runtime.camera.viewport.toGlobal(
-            runtime.engine.getRenderWidth(),
-            runtime.engine.getRenderHeight()
-        )
-    );
-    if (projected.z < 0 || projected.z > 1) {
-        return undefined;
-    }
-    return { x: projected.x, y: projected.y };
 }
 
 function freezeInput(input: MutableInputState): PlayerInputState {

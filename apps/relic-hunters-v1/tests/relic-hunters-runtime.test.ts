@@ -501,7 +501,8 @@ describe('RelicHuntersRuntime', () => {
         await reading.promise;
         backend.roomEntry.enter({
             roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'new-private-room' },
-            joinCode: 'new-room-code'
+            joinCode: 'new-room-code',
+            participation: 'preserve'
         });
         await vi.waitFor(() => expect(backend.roomEntry.getState().status).toBe('entered'));
         await vi.waitFor(() => expect(runtime.getState().snapshot?.roomId).toBe('new-private-room'));
@@ -781,6 +782,54 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().diagnostics.lastCommandDelivery).toBe('acknowledged');
     });
 
+    it('requires explicit departure before an unfinished participant can watch through either entry path', async () => {
+        const backend = new RelicRuntimeBackend();
+        const admission = vi.spyOn(backend, 'joinRoom');
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            username: 'Alice',
+            kind: 'join-expedition'
+        }, { senderId: 'alice-session', now: 30 })).state;
+        backend.deliverSnapshot(toPublicRelicSnapshot(game));
+        await runtime.getState().watchRoom('room-1');
+        expect(admission).not.toHaveBeenCalled();
+        backend.roomEntry.enter({
+            roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'other-room' },
+            joinCode: null,
+            participation: 'spectator'
+        });
+        expect(backend.roomEntry.getState().status).toBe('idle');
+        expect(runtime.getState().roomId).toBe('room-1');
+        expect(runtime.getState().error).toContain('Leave the expedition room');
+        await runtime.getState().leaveRoom();
+        await runtime.getState().watchRoom('other-room');
+        expect(admission).toHaveBeenCalledWith('other-room', 'spectator');
+    });
+
+    it('fences a delayed command after participation changes even when player status returns', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const pending = Promise.withResolvers<RelicWsCommandDelivery | undefined>();
+        backend.sendWsCommand = () => pending.promise;
+        const send = runtime.getState().startExpedition();
+        const playerState = backend.roomState();
+        const room = playerState.currentRoom;
+        if (!room) {
+            throw new Error('Expected current room');
+        }
+        backend.setRooms({ ...playerState, currentRoom: { ...room, members: room.members.map((member) => ({ ...member, role: 'spectator' })) } });
+        expect(runtime.getState().participation).toBe('spectator');
+        backend.setRooms(playerState);
+        pending.resolve(undefined);
+        await send;
+        expect(backend.commands).toEqual([]);
+        expect(runtime.getState().diagnostics.commandInFlight).toBeUndefined();
+    });
+
     it('uses REST only while no WS server is known', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = createRuntime(backend);
@@ -1037,9 +1086,6 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
             this.snapshotListeners.delete(listener);
         };
     }
-    public onRtcSnapshotMessage() {
-        return () => undefined;
-    }
     public onAuthoritySnapshotMessage() {
         return () => undefined;
     }
@@ -1065,6 +1111,12 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     }
     public async joinRoom(roomId: string) {
         this.admit(roomId);
+    }
+    public async initializeGame(roomId: string) {
+        return relicSnapshot(roomId, 20);
+    }
+    public async leaveRoom(_roomId: string) {
+        this.setRooms({ rooms: [], members: [] });
     }
     public async resetGame(roomId: string) {
         return relicSnapshot(roomId, 30);
@@ -1136,8 +1188,15 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
 
 function stateFor(roomId: string): RallarRoomState {
     const ref = { applicationId: 'rallar-server', workspaceId: 'default', groupId: roomId };
-    const currentRoom = createGroupSnapshotFixture({ ...ref, sessionIds: ['alice-session'] });
-    return { rooms: [], currentRoomId: roomId, currentRoomRef: ref, currentRoom, members: [] };
+    const fixture = createGroupSnapshotFixture({ ...ref, sessionIds: ['client-1'] });
+    const currentRoom = { ...fixture, activeSessions: fixture.activeSessions.map((entry) => ({ ...entry, sessionId: 'alice-session' })) };
+    return {
+        rooms: [],
+        currentRoomId: roomId,
+        currentRoomRef: ref,
+        currentRoom,
+        members: [{ principalId: 'client-1', username: 'Alice', role: 'owner', status: 'active', isOwner: true, isOnline: true, sessionIds: ['alice-session'] }]
+    };
 }
 
 function relicSnapshot(roomId: string, atEpochMs: number): RelicPublicSnapshot {
@@ -1152,6 +1211,10 @@ function directoryEntry(groupId: string): GroupDirectoryEntry {
         joinMode: 'open',
         memberCount: 1,
         onlineMemberCount: 1,
+        playerCount: 1,
+        onlinePlayerCount: 1,
+        spectatorCount: 0,
+        maxSpectators: 16,
         maxMembers: null,
         isFull: false,
         lifecycleState: 'active',

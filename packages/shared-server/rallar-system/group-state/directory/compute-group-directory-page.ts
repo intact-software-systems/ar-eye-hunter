@@ -1,6 +1,12 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import { readGroupRetentionState } from '@shared/api/group-retention.ts';
+import {
+    countGroupPlayers,
+    countOnlineGroupPlayers,
+    isGroupSpectator,
+    readGroupSpectatorCapacity
+} from '@shared/api/group-spectating.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
@@ -39,7 +45,7 @@ export function computeGroupDirectoryPage(
             position: {
                 order: query.order,
                 groupId: snapshot.group.groupId,
-                onlineMemberCount: snapshot.onlineMemberCount,
+                onlineMemberCount: countOnlineGroupPlayers(snapshot),
                 peerRttMs: query.order === 'peer-rtt'
                     ? computeGroupPeerRtt(snapshot, peerRtt, input.nowEpochMs)
                     : null
@@ -73,8 +79,8 @@ export function matchesGroupDirectoryQuery(
  * or skipped. Pages are a best-effort view of a live lobby, not a consistent snapshot.
  */
 export function compareGroupDirectoryOrder(left: GroupSnapshot, right: GroupSnapshot): number {
-    if (left.onlineMemberCount !== right.onlineMemberCount) {
-        return right.onlineMemberCount - left.onlineMemberCount;
+    if (countOnlineGroupPlayers(left) !== countOnlineGroupPlayers(right)) {
+        return countOnlineGroupPlayers(right) - countOnlineGroupPlayers(left);
     }
     return left.group.groupId < right.group.groupId ? -1 : left.group.groupId > right.group.groupId ? 1 : 0;
 }
@@ -150,9 +156,13 @@ function toGroupDirectoryEntry(
         kind: group.kind,
         joinMode: group.joinMode,
         memberCount: snapshot.memberCount,
+        playerCount: countGroupPlayers(snapshot),
+        onlinePlayerCount: countOnlineGroupPlayers(snapshot),
+        spectatorCount: snapshot.members.filter(isGroupSpectator).length,
+        maxSpectators: readGroupSpectatorCapacity(group.metadata),
         onlineMemberCount: snapshot.onlineMemberCount,
         maxMembers,
-        isFull: maxMembers !== null && group.activeMemberCount >= maxMembers,
+        isFull: maxMembers !== null && countGroupPlayers(snapshot) >= maxMembers,
         lifecycleState: group.lifecycleState,
         peerRttMs: position.peerRttMs
     };

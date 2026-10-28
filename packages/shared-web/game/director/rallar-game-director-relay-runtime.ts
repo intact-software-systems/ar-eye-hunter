@@ -5,20 +5,16 @@ import type {
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult
 } from '@shared-web/browser/rallar.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { RallarGameEnvelope, RallarGameEnvelopeKind } from '../envelopes.ts';
 import type {
     RallarGameEnvelopeHandler,
     RallarGameMatchConfig,
     RallarGameTypeIds
 } from '../match/rallar-game-match-contracts.ts';
+import { readRallarGameSessionRole } from '../match/rallar-game-participation.ts';
 import type { RallarGameSendResult } from '../transport/rallar-game-send-result.ts';
 import type { RallarGameFreshDirectorStatus } from './rallar-game-fresh-director-status.ts';
-
-type RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> = RallarDirectorRelayHandle<
-    RallarGameEnvelope<TIntent>,
-    RallarGameEnvelope<TEvent>,
-    RallarGameEnvelope<TSnapshot>
->;
 
 export namespace RallarGameDirectorRelayRuntime {
     export interface EnvelopeInput<T> {
@@ -59,7 +55,13 @@ export namespace RallarGameDirectorRelayRuntime {
 /** Owns the match director-relay lifecycle and reliable director transport. */
 export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     private readonly input: RallarGameDirectorRelayRuntime.Input<TInput, TIntent, TSnapshot, TEvent, TPresence>;
-    private relay: RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> | undefined;
+    private relay:
+        | RallarDirectorRelayHandle<
+            RallarGameEnvelope<TIntent>,
+            RallarGameEnvelope<TEvent>,
+            RallarGameEnvelope<TSnapshot>
+        >
+        | undefined;
 
     constructor(
         input: RallarGameDirectorRelayRuntime.Input<TInput, TIntent, TSnapshot, TEvent, TPresence>
@@ -154,7 +156,37 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         return { status: 'sent', transport: 'local' };
     }
 
-    private createRelay(): RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> {
+    private async readSnapshot(): Promise<RallarGameEnvelope<TSnapshot> | undefined> {
+        const { config } = this.input;
+        const sessionId = config.rallar.session()?.sessionId;
+        const state = config.rallar.rooms.state();
+        const roomRef = config.roomRef ?? state.currentRoomRef;
+        const role = readRallarGameSessionRole(state, sessionId, config);
+        if (this.input.isStopped() || !roomRef || role === undefined || role === 'spectator') {
+            return undefined;
+        }
+        const snapshot = await config.readSnapshot?.();
+        const currentState = config.rallar.rooms.state();
+        const currentRoomRef = config.roomRef ?? currentState.currentRoomRef;
+        const currentRole = readRallarGameSessionRole(currentState, sessionId, config);
+        if (
+            snapshot === undefined || this.input.isStopped() || config.rallar.session()?.sessionId !== sessionId ||
+            !currentRoomRef || !isSameGroupRef(roomRef, currentRoomRef) || currentRole === undefined ||
+            currentRole === 'spectator'
+        ) {
+            return undefined;
+        }
+        const director = this.input.readFreshDirectorStatus();
+        return !director?.isDirector ? undefined : this.input.createEnvelope('snapshot', snapshot, {
+            directorEpoch: director.appointment.epoch
+        });
+    }
+
+    private createRelay(): RallarDirectorRelayHandle<
+        RallarGameEnvelope<TIntent>,
+        RallarGameEnvelope<TEvent>,
+        RallarGameEnvelope<TSnapshot>
+    > {
         const { config, typeIds } = this.input;
         return config.rallar.director.createRelay<
             RallarGameEnvelope<TIntent>,
@@ -171,20 +203,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
             syncRequestTypeId: typeIds.syncRequest,
             heartbeatIntervalMs: Math.max(500, this.input.heartbeatTtlMs / 2),
             snapshotIntervalMs: config.autoSnapshotIntervalMs,
-            readSnapshot: config.readSnapshot
-                ? async () => {
-                    const snapshot = await config.readSnapshot?.();
-                    if (snapshot === undefined) {
-                        return undefined;
-                    }
-                    const director = this.input.readFreshDirectorStatus();
-                    return !director?.isDirector
-                        ? undefined
-                        : this.input.createEnvelope('snapshot', snapshot, {
-                            directorEpoch: director.appointment.epoch
-                        });
-                }
-                : undefined,
+            readSnapshot: config.readSnapshot ? () => this.readSnapshot() : undefined,
             onIntent: async (message) =>
                 await this.input.handleEnvelope({
                     message,
@@ -214,7 +233,11 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         });
     }
 
-    private ensureRelay(): RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> {
+    private ensureRelay(): RallarDirectorRelayHandle<
+        RallarGameEnvelope<TIntent>,
+        RallarGameEnvelope<TEvent>,
+        RallarGameEnvelope<TSnapshot>
+    > {
         if (this.input.isStopped()) {
             throw new Error('Cannot create Rallar Game relay after match stop.');
         }

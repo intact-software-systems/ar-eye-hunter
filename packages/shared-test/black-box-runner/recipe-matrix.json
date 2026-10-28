@@ -3312,6 +3312,32 @@
         ]
       },
       "description": "No-browser API-v1 activation degraded band from partial coverage, the arm api-v1-activation-clock-decay cannot reach: with one planned edge a lapsed observation is a rate of zero and the band is failed, not degraded. Three members plan two or three edges and exactly one is ever reported, named by reading the manager's own next hop out of the published layout so the recipe never guesses the topology. minimumViableRate 0.25 against successRate 0.95 puts a single observed edge above the floor and below success whatever the planner chose. degraded is a dwell-held band so one instantaneous reading cannot reach it, the group must still be connecting because partial coverage is not activation, and the formation view must agree with the group row."
+    },
+    {
+      "id": "api-v1-group-spectating",
+      "recipe": "tests/api-v1/api-v1-group-spectating.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-spectating",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Independent player/spectator capacity, role recovery, failed promotion, governed bypass denial, promotion and directory counts through authenticated HTTP."
     }
   ]
 }

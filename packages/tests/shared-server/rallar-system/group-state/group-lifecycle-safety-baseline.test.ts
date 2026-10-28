@@ -166,6 +166,7 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
@@ -201,6 +202,7 @@ function joinCommand(): GroupMutationCommand {
         requestId: 'safety-join',
         targetPrincipalId: 'carol',
         input: {
+            participation: null,
             inviteToken: null,
             joinCode: null,
             actorPrincipalId: 'carol',

@@ -12,6 +12,7 @@ import {
 import type { RallarGameEnvelopeHandler, RallarGameMatchConfig } from './rallar-game-match-contracts.ts';
 import type { RallarGameMatchEgressRuntime } from './rallar-game-match-egress-runtime.ts';
 import type { RallarGameMatchStatusRuntime } from './rallar-game-match-status-runtime.ts';
+import { readRallarGameSessionRole } from './rallar-game-participation.ts';
 
 export namespace RallarGameMatchRoutingRuntime {
     export interface Input<TInput, TIntent, TSnapshot, TEvent, TPresence> {
@@ -45,11 +46,11 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
         options: RallarGameMatchEgressRuntime.EnvelopeOptions
     ): RallarGameEnvelope<T> {
         const room = this.input.readRoomTarget();
-        const roomId = options.roomId ?? room.roomId;
-        const senderId = options.senderId ?? this.input.readLocalPeerId();
-        if (!roomId) {
-            throw new Error('Cannot create Rallar Game envelope without a room.');
+        const roomRef = room.roomRef;
+        if (!roomRef || (options.roomId !== undefined && options.roomId !== roomRef.groupId)) {
+            throw new Error('Cannot create Rallar Game envelope without the exact scoped room.');
         }
+        const senderId = options.senderId ?? this.input.readLocalPeerId();
         if (!senderId) {
             throw new Error('Cannot create Rallar Game envelope without a local session.');
         }
@@ -57,7 +58,7 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
         return createRallarGameEnvelope({
             protocol: this.input.config.protocol,
             kind,
-            roomId,
+            roomRef,
             matchId: this.input.config.matchId,
             senderId,
             seq: this.nextSequence++,
@@ -76,13 +77,21 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
             requireFreshDirectorSender?: boolean;
         }> = {}
     ): boolean {
+        const role = readRallarGameSessionRole(
+            this.input.config.rallar.rooms.state(),
+            envelope.senderId,
+            this.input.readRoomTarget()
+        );
+        if (role === undefined || (role === 'spectator' && kind !== 'sync-request')) {
+            return false;
+        }
         const status = this.input.status.current;
         const senderId = options.requireFreshDirectorSender
             ? status.directorPeerId
             : options.senderId;
         return this.sequenceTracker.accept(envelope, {
             protocol: this.input.config.protocol,
-            roomId: this.input.readRoomTarget().roomId,
+            roomRef: this.input.readRoomTarget().roomRef,
             matchId: this.input.config.matchId,
             senderId,
             minDirectorEpoch: options.checkDirectorEpoch === false

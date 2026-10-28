@@ -26,6 +26,7 @@ export function readsGroupLifecyclePolicy(
         isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||
+        operation === 'setGroupMemberRole' || operation === 'transferGroupOwnership' ||
         operation === 'applyPlannedLayout' ||
         // The status write bands against the activation rates and reads the
         // replanning mode for its remediation axis.
@@ -44,7 +45,10 @@ export function readsGroupActiveMemberPrincipalIds(
     return (
         isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
-        isGroupAdmissionDecisionOperation(operation)
+        isGroupAdmissionDecisionOperation(operation) ||
+        isGroupAdmissionPolicyReadOperation(operation) ||
+        operation === 'setGroupMemberRole' || operation === 'transferGroupOwnership' ||
+        operation === 'updateGroup'
     );
 }
 

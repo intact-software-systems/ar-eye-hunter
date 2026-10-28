@@ -1,13 +1,25 @@
-import { useCallback, useEffect, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type Dispatch,
+    type RefObject,
+    type SetStateAction
+} from 'react';
 
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { rallar, type RallarDirectorStatus, type RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import {
+    rallar,
+    type RallarDirectorStatus,
+    type RallarUnsubscribe
+} from '@shared-web/browser/rallar.ts';
 import type { RallarGameHostAppointResult } from '@shared-web/game/director/rallar-game-director-appointment-contracts.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { ALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { DirectorAttemptSource, DirectorAttemptState } from '../arena-connection-contracts.ts';
+import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import { toCapabilityDelivery, toDirectorAttemptState } from './to-director-attempt-state.ts';
 
 interface ArenaDirectorAppointmentInput {
@@ -56,6 +68,9 @@ class ArenaDirectorAppointment {
     }
 
     async appoint(source: DirectorAttemptSource): Promise<void> {
+        if (isCurrentArenaSpectator()) {
+            return;
+        }
         const attempt = this.start(source);
         if (!attempt.roomId || !attempt.match) {
             this.finish(attempt, {

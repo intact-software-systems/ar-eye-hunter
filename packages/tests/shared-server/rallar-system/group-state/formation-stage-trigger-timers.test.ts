@@ -48,6 +48,7 @@ function createPhasedGroupCommand(policy: GroupLifecyclePolicy): Extract<GroupMu
         commandId: 'create-phased',
         requestId: 'create-phased',
         input: {
+            maxSpectators: null,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
             reason: null,

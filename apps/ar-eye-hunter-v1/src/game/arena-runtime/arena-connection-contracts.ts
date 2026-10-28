@@ -151,6 +151,7 @@ export interface ArenaConnection {
     readonly authStorageKind: AuthSessionStorageKind;
     readonly authGeneration: number;
     readonly networkEnabled: boolean;
+    readonly spectating: boolean;
     readonly logoutQuiesced: boolean;
     readonly aiStatus: ArenaAiStatus;
     readonly aiError?: string;
@@ -176,6 +177,9 @@ export interface ArenaConnection {
     ): Promise<GroupSnapshot | undefined>;
     quickJoinArenaRoom(): Promise<'joined' | 'unavailable' | undefined>;
     joinRoom(roomId: string): Promise<void>;
+    watchRoom(roomId: string): Promise<void>;
+    joinAsPlayer(): Promise<void>;
+    leaveRoom(): Promise<void>;
     appointSelfAsDirector(): Promise<void>;
     refreshDiagnostics(options?: ArenaDiagnosticsRefreshOptions): Promise<void>;
     requestArenaSync(): Promise<void>;

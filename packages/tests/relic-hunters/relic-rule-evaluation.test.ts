@@ -25,9 +25,20 @@ describe('Relic command evaluation', () => {
             action: { kind: 'search' }
         }, { senderId: 'alice', now: 20 });
 
-        expect(result.left).toEqual({ code: 'expedition-not-started', message: 'The expedition has not started.' });
+        expect(result.left).toEqual({ code: 'participant-required', message: 'Join the expedition before sending game commands.' });
         expect(result.right).toBeUndefined();
         expect(state).toEqual(before);
+    });
+
+    it('never creates a participant through a forged start command', () => {
+        const result = applyRelicCommand(undefined, {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            kind: 'start-expedition',
+            gameId: 'room-1',
+            username: 'Watcher'
+        }, { senderId: 'watcher', now: 20 });
+        expect(result.left?.code).toBe('participant-required');
+        expect(result.right).toBeUndefined();
     });
 
     it('returns invalid expedition geometry as a typed construction refusal', () => {
@@ -83,7 +94,7 @@ describe('Relic command evaluation', () => {
             username: 'Bob'
         }, { senderId: 'bob', now: 2 });
 
-        expect(result.left).toMatchObject({ code: 'administrator-required' });
+        expect(result.left).toMatchObject({ code: 'participant-required' });
         expect(result.right).toBeUndefined();
         expect(unassigned).toEqual(before);
     });

@@ -75,6 +75,7 @@ function createNewGroupCommand(): GroupMutationCommand {
         commandId: 'create-absent',
         requestId: 'create-absent',
         input: {
+            maxSpectators: null,
             ...ACTOR,
             slug: null,
             displayName: 'Created',
@@ -97,7 +98,8 @@ function createMissingGroupRead(operation: GroupMutationCommand['operation']): G
         ...read,
         group: null,
         lifecyclePolicy: operation === 'planGroupLayout' ? { status: 'absent' } : null,
-        activeMemberPrincipalIds: operation === 'planGroupLayout' ? [] : null
+        activeMembers: operation === 'planGroupLayout' || operation === 'updateGroup' ? [] : null,
+        activeMemberPrincipalIds: operation === 'planGroupLayout' || operation === 'updateGroup' ? [] : null
     };
 }
 
@@ -133,6 +135,7 @@ function createMissingGroupCommand(
         ...identity,
         operation,
         input: {
+            maxSpectators: null,
             ...ACTOR,
             slug: null,
             displayName: 'Updated',

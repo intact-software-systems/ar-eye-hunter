@@ -20,6 +20,7 @@ import { auditStamp, noOp, requireGroup } from '../group-mutation-result.ts';
 import { computeGroupMembershipWrite } from '../write/compute-group-membership-write.ts';
 import { resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
 import {
+    assertGovernedParticipationChange,
     assertUpsertActivationAllowed,
     assertUpsertAuthority,
     assertUpsertRoleChange,
@@ -55,6 +56,7 @@ export function computeJoin(
             },
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
+            participation: command.input.participation ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
             joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
             expectedJoinCodeVerifier: stored.value.joinMode === 'code' ? (joinCodeMetadata?.verifier ?? '') : undefined,
@@ -62,10 +64,20 @@ export function computeJoin(
         })
     );
     const existing = read.targetMember ?? undefined;
-    if (existing?.status === 'active') {
+    const role = command.input.participation === 'spectator'
+        ? 'spectator'
+        : command.input.participation === 'player' && existing?.role === 'spectator'
+        ? 'member'
+        : existing?.status === 'active'
+        ? existing.role
+        : 'member';
+    if (existing?.status === 'active' && existing.role === role) {
         return noOp(command, read, facts);
     }
-    const status = resolveAdmittedMemberStatus({ read, facts, existing });
+    const status = role === 'spectator' ? 'active' : resolveAdmittedMemberStatus({ read, facts, existing });
+    if (existing?.status === 'active' && status === 'pending') {
+        throw new GroupMutationRejectedError('Player promotion requires admission approval.');
+    }
     if (existing?.status === 'pending' && status === 'pending') {
         return noOp(command, read, facts);
     }
@@ -73,7 +85,7 @@ export function computeJoin(
     const member: GroupMember = {
         ...command.aggregateRef,
         principalId: command.targetPrincipalId,
-        role: existing?.role ?? 'member',
+        role,
         updated: audit,
         left: null,
         removed: null,
@@ -89,7 +101,7 @@ export function computeJoin(
         read,
         facts,
         members: [member],
-        eventType: groupMemberEventType(status)
+        eventType: existing?.status === 'active' ? 'member-role-changed' : groupMemberEventType(status)
     });
 }
 
@@ -192,6 +204,7 @@ export function computeGovernedMember(
     };
     const status = governedMemberStatus(command, base);
     const role = governedMemberRole(command, read, base);
+    assertGovernedParticipationChange({ command, read, facts, role });
     if (base.status === status && base.role === role) {
         return noOp(command, read, facts);
     }
@@ -232,6 +245,7 @@ export function computeTransfer(
     if (actor.principalId === target.principalId) {
         return noOp(command, read, facts);
     }
+    assertGovernedParticipationChange({ command, read, facts, role: 'owner' });
     const audit = auditStamp(command, facts, actor.principalId);
     return computeGroupMembershipWrite({
         command,
@@ -255,15 +269,16 @@ export function computeUpsertMember(
     assertUpsertAuthority({ command, read, facts, isSelf });
     assertUpsertRoleChange(command, read, isSelf);
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+    const existing = findTargetMember(read);
+    const role = command.input.role ?? (existing?.status === 'active' ? existing.role : 'member');
     assertUpsertActivationAllowed({
         command,
         snapshot,
+        role,
         nowEpochMs: facts.attemptAtEpochMs,
         capacity: facts.capacity
     });
-    const existing = findTargetMember(read);
-    const status = resolveUpsertMemberStatus(command, read, facts);
-    const role = command.input.role ?? existing?.role ?? 'member';
+    const status = resolveUpsertMemberStatus({ command, read, facts, role });
     const invitedByPrincipalId = command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;
     const invitationExpiresAtEpochMs = command.input.invitationExpiresAtEpochMs ??
         existing?.invitationExpiresAtEpochMs ?? null;

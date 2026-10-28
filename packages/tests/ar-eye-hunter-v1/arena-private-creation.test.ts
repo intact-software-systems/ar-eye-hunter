@@ -45,6 +45,7 @@ describe('AR Eye private arena creation', () => {
         expect(mockRallar.rooms.createAndSwitch).toHaveBeenCalledWith({
             displayName: expect.stringContaining('AR Eye Hunter Arena:'),
             joinMode: 'code',
+            maxSpectators: 16,
             retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
         });
     });

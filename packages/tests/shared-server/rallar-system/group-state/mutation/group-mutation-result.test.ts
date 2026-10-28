@@ -360,6 +360,7 @@ function createMutationCommand(): GroupMutationCommand {
         commandId: 'pure-command',
         requestId: 'pure-command',
         input: {
+            maxSpectators: null,
             slug: null,
             displayName: 'After',
             description: null,
@@ -439,7 +440,8 @@ function createMutationRead(): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         lifecyclePolicy: null,
-        activeMemberPrincipalIds: null,
+        activeMemberPrincipalIds: ['alice'],
+        activeMembers: [actorMember],
         plannedLayoutRow: null,
         acceptedLayoutRow: null
     };

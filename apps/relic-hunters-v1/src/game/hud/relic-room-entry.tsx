@@ -10,21 +10,32 @@ interface RelicRoomEntryProps {
 interface RelicRoomEntryDraft {
     readonly reference: string;
     readonly code: string;
+    readonly participation: 'preserve' | 'spectator';
 }
 
 export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
+    const watchBlocked = game.participation === 'player' && game.snapshot?.phase !== 'finished' &&
+        game.snapshot?.players.some((player) => player.playerId === game.session?.sessionId) === true;
     const owner = game.roomEntry;
     const [entry, setEntry] = useState(owner.getState());
-    const [draft, setDraft] = useState<RelicRoomEntryDraft>({ reference: '', code: '' });
+    const [draft, setDraft] = useState<RelicRoomEntryDraft>({ reference: '', code: '', participation: 'preserve' });
     useEffect(() => owner.onChange(setEntry), [owner]);
     useEffect(() => {
-        setDraft({ reference: entry.destination?.roomRef.groupId ?? '', code: entry.destination?.joinCode ?? '' });
+        setDraft({
+            reference: entry.destination?.roomRef.groupId ?? '',
+            code: entry.destination?.joinCode ?? '',
+            participation: entry.destination?.participation === 'spectator' ? 'spectator' : 'preserve'
+        });
     }, [entry.destination]);
     const submit = (event: FormEvent) => {
         event.preventDefault();
+        if (draft.participation === 'spectator' && watchBlocked) {
+            return;
+        }
         owner.enter({
             roomRef: { ...RELIC_ROOM_SCOPE, groupId: draft.reference.trim() },
-            joinCode: draft.code.trim() || null
+            joinCode: draft.code.trim() || null,
+            participation: draft.participation
         });
     };
     const pending = entry.status !== 'idle' && entry.status !== 'entered';
@@ -36,6 +47,7 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
                 setDraft={setDraft}
                 submit={submit}
                 joining={entry.status === 'joining'}
+                watchBlocked={watchBlocked}
             />
             {pending && entry.destination && <p>Room destination: {entry.destination.roomRef.groupId}</p>}
             {pending && entry.destination && !game.session && <p>Sign in to enter this room.</p>}
@@ -116,13 +128,14 @@ function RelicRecentRooms({ game, joining }: RelicRecentRoomsProps) {
 }
 
 interface RelicRoomEntryFormProps {
+    readonly watchBlocked: boolean;
     readonly draft: RelicRoomEntryDraft;
     readonly setDraft: (draft: RelicRoomEntryDraft) => void;
     readonly submit: (event: FormEvent) => void;
     readonly joining: boolean;
 }
 
-function RelicRoomEntryForm({ draft, setDraft, submit, joining }: RelicRoomEntryFormProps) {
+function RelicRoomEntryForm({ draft, setDraft, submit, joining, watchBlocked }: RelicRoomEntryFormProps) {
     return (
         <form className="stack" onSubmit={submit}>
             <label>
@@ -143,7 +156,27 @@ function RelicRoomEntryForm({ draft, setDraft, submit, joining }: RelicRoomEntry
                 Open the host’s link or enter its room reference. Unlisted rooms need no code; code rooms require one
                 unless you are already a member.
             </small>
-            <button type="submit" disabled={!draft.reference.trim() || joining}>Enter room</button>
+            <label>
+                Participation<select
+                    aria-label="Participation"
+                    value={draft.participation}
+                    onChange={(event) =>
+                        setDraft({
+                            ...draft,
+                            participation: event.target.value === 'spectator' ? 'spectator' : 'preserve'
+                        })}
+                >
+                    <option value="preserve">Enter room</option>
+                    <option value="spectator" disabled={watchBlocked}>Watch</option>
+                </select>
+            </label>
+            {watchBlocked && <small>Leave the expedition room before watching another expedition.</small>}
+            <button
+                type="submit"
+                disabled={!draft.reference.trim() || joining || draft.participation === 'spectator' && watchBlocked}
+            >
+                {draft.participation === 'spectator' ? 'Watch room' : 'Enter room'}
+            </button>
         </form>
     );
 }

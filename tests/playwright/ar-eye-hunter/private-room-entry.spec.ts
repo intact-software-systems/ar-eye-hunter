@@ -1,7 +1,8 @@
 import {
     expect,
     test,
-    type Page
+    type Page,
+    type Response
 } from '@playwright/test';
 
 import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
@@ -488,4 +489,95 @@ async function openOperationsPanel(page: Page): Promise<void> {
     if (await button.isVisible()) {
         await button.click();
     }
+}
+
+test(
+    'watches a live arena, keeps the role after reload, promotes explicitly and leaves',
+    async ({ browser }, testInfo) => {
+        test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local full-stack server.');
+        const hostContext = await browser.newContext();
+        const watcherContext = await browser.newContext();
+        try {
+            const host = await hostContext.newPage();
+            const watcher = await watcherContext.newPage();
+            const hostOperations = await openOperations(host, '/');
+            await signIn(host, 'alice');
+            const creation = host.waitForResponse((response) =>
+                response.request().method() === 'POST' && /\/groups\/requests\//.test(response.url())
+            );
+            await hostOperations.getByRole('button', { name: 'New Arena', exact: true }).click();
+            const created = await creation;
+            await setSpectatingArenaCapacity(host, created, 1);
+            const link = hostOperations.getByLabel('Room link', { exact: true });
+            await expect(link).toHaveValue(/#rallar-room\?/);
+            const roomName = await hostOperations.locator('.room-row.active span').innerText();
+            const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
+            if (await appoint.isEnabled()) {
+                await appoint.click();
+            }
+            const startMatch = hostOperations.getByRole('button', { name: '5m', exact: true });
+            await expect(startMatch).toBeEnabled();
+            await startMatch.click();
+            const hostCanvas = host.getByLabel('AR Eye Hunter gameplay canvas');
+            await expect(hostCanvas).toHaveAttribute('data-arena-match-id', /^match:/);
+            const matchId = await hostCanvas.getAttribute('data-arena-match-id');
+            if (!matchId) {
+                throw new Error('The host must publish an accepted match.');
+            }
+            const watcherOperations = await openOperations(watcher, '/');
+            await signIn(watcher, 'bob');
+            await watcherOperations.getByRole('button', { name: 'Refresh', exact: true }).click();
+            await expect(watcherOperations.getByRole('button', { name: new RegExp(`${roomName}.*Full`) }))
+                .toBeDisabled();
+            await watcherOperations.getByRole('button', { name: `Watch ${roomName}`, exact: true }).click();
+            const canvas = watcher.getByLabel('AR Eye Hunter gameplay canvas');
+            await expect(canvas).toHaveAttribute('data-arena-participation', 'spectator');
+            await expect(canvas).toHaveAttribute('data-arena-match-id', matchId);
+            await expect(watcherOperations.getByText('Watching', { exact: true })).toBeVisible();
+            await expect(canvas).toHaveAttribute('data-arena-shot-sequence', '0');
+            await canvas.click({ position: { x: 400, y: 200 }, force: true });
+            await expect(canvas).toHaveAttribute('data-arena-shot-sequence', '0');
+            await expect(canvas).toHaveAttribute('data-arena-avatar-count', /^[1-9]\d*$/, { timeout: 20_000 });
+            await watcher.reload();
+            await openOperationsPanel(watcher);
+            await expect(canvas).toHaveAttribute('data-arena-participation', 'spectator');
+            await expect(canvas).toHaveAttribute('data-arena-match-id', matchId);
+            await expect(watcherOperations.getByRole('button', { name: 'Join as player', exact: true })).toBeVisible();
+            await watcher.screenshot({ path: testInfo.outputPath('watching-arena.png'), fullPage: true });
+            await watcherOperations.getByRole('button', { name: 'Join as player', exact: true }).click();
+            await expect(watcherOperations.locator('.error-panel')).toBeVisible();
+            await expect(canvas).toHaveAttribute('data-arena-participation', 'spectator');
+            await setSpectatingArenaCapacity(host, created, 2);
+            await watcherOperations.getByRole('button', { name: 'Join as player', exact: true }).click();
+            await expect(canvas).toHaveAttribute('data-arena-participation', 'player');
+            await watcherOperations.getByRole('button', { name: 'Leave arena', exact: true }).click();
+            await expect(watcher.locator('.arena-shell')).toHaveAttribute('data-room-ready', 'false');
+        }
+        finally {
+            await watcherContext.close();
+            await hostContext.close();
+        }
+    }
+);
+
+async function setSpectatingArenaCapacity(page: Page, created: Response, maxMembers: number): Promise<void> {
+    const snapshot = await created.json();
+    const request = created.request();
+    const authorization = await request.headerValue('authorization');
+    if (!authorization) {
+        throw new Error('The room owner request must be authenticated.');
+    }
+    const body = request.postDataJSON();
+    const response = await page.request.put(
+        created.url().replace(/\/groups\/.*$/, `/groups/${snapshot.group.groupId}/requests/${crypto.randomUUID()}`),
+        {
+            headers: {
+                authorization,
+                'x-client-id': await request.headerValue('x-client-id') ?? '',
+                'x-session-id': await request.headerValue('x-session-id') ?? ''
+            },
+            data: { maxMembers, actorPrincipalId: body.actorPrincipalId, actorSessionId: body.actorSessionId }
+        }
+    );
+    expect(response.ok(), await response.text()).toBe(true);
 }

@@ -9,6 +9,7 @@ import {
 import type { RallarGameMatchConfig, RallarGameTypeIds } from '../match/rallar-game-match-contracts.ts';
 import type { RallarGameMatchRoutingRuntime } from '../match/rallar-game-match-routing-runtime.ts';
 import type { RallarGameMatchStatusRuntime } from '../match/rallar-game-match-status-runtime.ts';
+import { readRallarGameSessionRole } from '../match/rallar-game-participation.ts';
 import type { RallarGameSendResult } from '../transport/rallar-game-send-result.ts';
 import {
     DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS,
@@ -66,7 +67,10 @@ export class RallarGameHostElectionRuntime<TInput, TIntent, TSnapshot, TEvent, T
         }
 
         return electRallarGameHost({
-            peerIds,
+            peerIds: peerIds.filter((peerId) => {
+                const role = readRallarGameSessionRole(roomState, peerId, this.input.readRoomTarget());
+                return role !== undefined && role !== 'spectator';
+            }),
             capabilities,
             capabilityTtlMs: this.capabilityTtlMs,
             scoreHost: this.input.config.scoreHost ?? scoreRallarGameHostCapability

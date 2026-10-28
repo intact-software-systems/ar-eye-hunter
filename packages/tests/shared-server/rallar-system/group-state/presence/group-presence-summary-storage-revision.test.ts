@@ -195,6 +195,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
             policy: resolveGroupLifecyclePolicyPreset('optimistic')
         },
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null

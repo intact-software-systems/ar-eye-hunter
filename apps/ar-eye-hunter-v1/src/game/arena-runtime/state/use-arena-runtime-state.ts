@@ -18,6 +18,8 @@ import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 
+import { isArenaSpectator } from '../arena-participation.ts';
+
 import type { AvatarProfile } from '../../avatarProfile.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type {
@@ -46,6 +48,8 @@ import type {
 export function useArenaRuntimeState() {
     const state = useArenaStateOwners();
     const { scheduler, simulation, presence, diagnostics } = state;
+    const currentRoom = state.rooms.rooms.find((room) => room.roomId === state.rooms.roomId);
+    const spectating = isArenaSpectator(currentRoom?.snapshot, state.auth.session?.clientId);
     const clearRoomScopedArenaState = useCallback(() => {
         scheduler.resetReliableArenaSnapshotScheduler();
         simulation.clearSimulation();
@@ -69,6 +73,7 @@ export function useArenaRuntimeState() {
         ...state.scheduler,
         ...state.network,
         ...state.ai,
+        spectating,
         clearRoomScopedArenaState,
         resetForSignedOutAuth
     };

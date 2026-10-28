@@ -59,7 +59,7 @@ export function useRelicTurn(
     const selection = useRelicTurnSelection(game);
     const viewModel = computeRelicGameViewModel({
         snapshot: game.snapshot,
-        localPlayerId: game.session?.sessionId,
+        localPlayerId: game.participation === 'player' ? game.session?.sessionId : undefined,
         draft: selection.draft,
         lang: preferences.lang,
         revealedEvents
@@ -80,7 +80,7 @@ export function useRelicTurn(
         timeRemainingMs,
         sceneObjective: deriveSceneObjective({
             snapshot: game.snapshot,
-            localPlayerId: game.session?.sessionId,
+            localPlayerId: game.participation === 'player' ? game.session?.sessionId : undefined,
             primedAction: selection.primedAction
         }),
         planning: game.snapshot?.phase === 'planning' && !!player && !player.escaped && !player.defeated,
@@ -96,7 +96,12 @@ function useRelicTurnSelection(game: RelicHuntersRuntime.Connection): RelicTurnS
     useEffect(() => {
         setPrimedAction(undefined);
     }, [currentRoomId, game.snapshot?.phase, game.snapshot?.round]);
-    const identityKey = JSON.stringify([game.roomId, game.session?.sessionId, game.snapshot?.createdAtEpochMs]);
+    const identityKey = JSON.stringify([
+        game.roomId,
+        game.session?.sessionId,
+        game.participation,
+        game.snapshot?.createdAtEpochMs
+    ]);
     const [previousIdentityKey, setPreviousIdentityKey] = useState(identityKey);
     if (identityKey !== previousIdentityKey) {
         // Re-render before effects: an already-expired new round must not submit the old draft.

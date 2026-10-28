@@ -4172,7 +4172,7 @@ components:
               properties:
                 role:
                   type: string
-                  enum: [owner, admin, member]
+                  enum: [owner, admin, member, spectator]
                 activePresenceSessionCount:
                   type: integer
                   format: int64
@@ -6408,7 +6408,7 @@ components:
           type: string
         role:
           type: string
-          enum: [owner, admin, member]
+          enum: [owner, admin, member, spectator]
         status:
           type: string
           enum: [invited, pending, active, left, removed, banned]
@@ -6928,11 +6928,16 @@ components:
         maxMembers:
           type: integer
           format: int64
+        maxSpectators:
+          type: integer
+          minimum: 0
+          maximum: 64
+          description: Spectator capacity stored in reserved metadata.rallarSpectatorCapacity. Creation defaults to 0; update omission preserves the current value.
         maxSessionsPerMember:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead.
+          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
@@ -6972,11 +6977,16 @@ components:
         maxMembers:
           type: integer
           format: int64
+        maxSpectators:
+          type: integer
+          minimum: 0
+          maximum: 64
+          description: Spectator capacity stored in reserved metadata.rallarSpectatorCapacity. Creation defaults to 0; update omission preserves the current value.
         maxSessionsPerMember:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation.
+          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
@@ -7036,6 +7046,10 @@ components:
     JoinGroupRequest:
       type: object
       properties:
+        participation:
+          type: string
+          enum: [player, spectator]
+          description: Omission preserves an active role and defaults new admissions to player. Explicit player promotes under player capacity and formation admission; spectator uses separate capacity.
         inviteToken:
           type: string
           description: Reserved for token-verifier invite flows; ordinary invite-only groups require an active invited-member record accepted through the invite workflow.
@@ -7116,7 +7130,7 @@ components:
       properties:
         role:
           type: string
-          enum: [owner, admin, member]
+          enum: [owner, admin, member, spectator]
         reason:
           type: string
     TransferGroupOwnershipRequest:
@@ -7249,6 +7263,10 @@ components:
         - joinMode
         - memberCount
         - onlineMemberCount
+        - playerCount
+        - onlinePlayerCount
+        - spectatorCount
+        - maxSpectators
         - maxMembers
         - isFull
         - lifecycleState
@@ -7270,6 +7288,14 @@ components:
         onlineMemberCount:
           type: integer
           format: int64
+        playerCount:
+          type: integer
+        onlinePlayerCount:
+          type: integer
+        spectatorCount:
+          type: integer
+        maxSpectators:
+          type: integer
         maxMembers:
           type: integer
           format: int64

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, type SetStateAction } from 'react';
 import {
+    arenaMembershipSnapshot,
     arenaRoomRef,
     ArenaRuntimeTestHarness,
     arenaSnapshot,
@@ -236,7 +237,7 @@ describe('arena game realtime acceptance and egress', () => {
         await act(async () => oldReceive?.({ peerId: 'peer-1', data: peerShotMessage(arenaRoomRef) }));
         expect(arena.current?.remoteShots.map((shot) => shot.id)).toEqual(['peer-1:1:3']);
         const nextRoomRef = { ...arenaRoomRef, groupId: 'arena-2' };
-        const nextRoom = { rooms: [], currentRoomId: 'arena-2', currentRoomRef: nextRoomRef };
+        const nextRoom = { rooms: [], currentRoomId: 'arena-2', currentRoomRef: nextRoomRef, currentRoom: arenaMembershipSnapshot() };
         mockRallar.rooms.state.mockReturnValue(nextRoom);
         mockRallar.rooms.createAndSwitch.mockResolvedValue({ group: nextRoomRef });
         mockRallar.rooms.refresh.mockResolvedValue(nextRoom);
@@ -268,7 +269,7 @@ describe('arena game realtime acceptance and egress', () => {
         await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
         const receive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
         const nextRoomRef = { ...arenaRoomRef, workspaceId: 'next-workspace' };
-        mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoomId: 'arena-1', currentRoomRef: nextRoomRef });
+        mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoomId: 'arena-1', currentRoomRef: nextRoomRef, currentRoom: arenaMembershipSnapshot() });
         await act(async () => {
             receive?.({ peerId: 'peer-1', data: peerShotMessage(arenaRoomRef) });
             receive?.({ peerId: 'peer-1', data: peerShotMessage(nextRoomRef) });
@@ -340,7 +341,7 @@ describe('arena game realtime acceptance and egress', () => {
             await config?.onIntent?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'intent',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: session.sessionId,
                 seq: 1,
                 directorEpoch: 1,
@@ -529,7 +530,7 @@ describe('arena game realtime acceptance and egress', () => {
             await config?.onIntent?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'intent',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: session.sessionId,
                 seq: 1,
                 directorEpoch: 1,
@@ -558,7 +559,7 @@ describe('arena game realtime acceptance and egress', () => {
             config?.onIntent?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'intent',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
                 seq: 1,
                 directorEpoch: 1,
@@ -594,7 +595,7 @@ describe('arena game realtime acceptance and egress', () => {
             const intent = createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'intent',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
                 seq: 1,
                 directorEpoch: 1,
@@ -626,7 +627,7 @@ describe('arena game realtime acceptance and egress', () => {
         const intent = createRallarGameEnvelope({
             protocol: 'ar-eye-hunter.v1',
             kind: 'intent',
-            roomId: 'arena-1',
+            roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
             senderId: 'peer-1',
             seq: 1,
             directorEpoch: 1,
@@ -689,7 +690,7 @@ describe('arena game realtime acceptance and egress', () => {
             completion = config?.onIntent?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'intent',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
                 seq: 1,
                 directorEpoch: 1,
@@ -754,7 +755,7 @@ describe('arena game realtime acceptance and egress', () => {
             createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'intent',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
                 seq: 1,
                 directorEpoch: 1,
@@ -812,7 +813,7 @@ describe('arena game realtime acceptance and egress', () => {
                 createRallarGameEnvelope({
                     protocol: 'ar-eye-hunter.v1',
                     kind: 'snapshot',
-                    roomId: 'arena-1',
+                    roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                     senderId: 'peer-1',
                     seq: 1,
                     directorEpoch: 1,
@@ -826,7 +827,7 @@ describe('arena game realtime acceptance and egress', () => {
                 createRallarGameEnvelope({
                     protocol: 'ar-eye-hunter.v1',
                     kind: 'intent',
-                    roomId: 'arena-1',
+                    roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                     senderId: 'peer-1',
                     seq: 1,
                     directorEpoch: 1,
@@ -967,7 +968,7 @@ function directorEnvelope<T>(kind: 'snapshot' | 'event', payload: T) {
     return createRallarGameEnvelope({
         protocol: 'ar-eye-hunter.v1',
         kind,
-        roomId: 'arena-1',
+        roomRef: arenaRoomRef,
         senderId: 'director-session',
         seq: 1,
         directorEpoch: 1,

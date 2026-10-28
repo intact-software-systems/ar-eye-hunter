@@ -2,7 +2,7 @@ import type {
     RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { RelicCommandDeliveryRow } from '../relic-command-delivery-row.tsx';
-import type { RelicRuntimeDiagnostics } from '../relic-hunters-runtime.ts';
+import type { RelicRuntimeDiagnostics } from '../relic-runtime-diagnostics.ts';
 
 interface RallarDiagnosticsPanelProps {
     readonly diagnostics: RelicRuntimeDiagnostics;

@@ -1,5 +1,6 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
+import { countGroupPlayers, isGroupSpectator, readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { denyUnlessGroupLifecycleManager } from './group-lifecycle-manager-policy.ts';
 import {
@@ -21,6 +22,7 @@ export interface CanJoinGroupInput {
     readonly actor: GroupPolicyActor;
     readonly nowEpochMs?: number;
     readonly capacity?: GroupPolicyCapacityConfig;
+    readonly participation?: 'player' | 'spectator';
     readonly joinCode?: string;
     readonly joinCodeVerifier?: string;
     readonly expectedJoinCodeVerifier?: string;
@@ -35,6 +37,7 @@ export interface CanConnectGroupPresenceSessionInput {
 }
 
 export interface CanActivateGroupMemberInput {
+    readonly role?: GroupMember['role'];
     readonly snapshot: GroupSnapshot;
     readonly targetPrincipalId: string;
     readonly nowEpochMs?: number;
@@ -63,12 +66,25 @@ export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
     if (memberDenial) {
         return memberDenial;
     }
+    const role = input.participation === 'spectator'
+        ? 'spectator'
+        : input.participation === 'player' && member?.role === 'spectator'
+        ? 'member'
+        : member?.status === 'active'
+        ? member.role
+        : 'member';
+    const capacityDenial = denyGroupParticipationCapacity({
+        snapshot: input.snapshot,
+        member,
+        role,
+        capacity: input.capacity
+    });
+    if (capacityDenial) {
+        return capacityDenial;
+    }
     // Credentials authorize admission; they do not revoke existing membership.
     if (member?.status === 'active') {
         return GROUP_POLICY_ALLOWED;
-    }
-    if (wouldExceedMemberCap(input.snapshot, member, input.capacity)) {
-        return denyGroupPolicy('group-full', 'Group member capacity has been reached.');
     }
     switch (input.snapshot.group.joinMode) {
         case 'open':
@@ -134,9 +150,13 @@ export function canActivateGroupMember(
         return lifecycleDenial;
     }
     const member = findGroupMember(input.snapshot, input.targetPrincipalId);
-    return wouldExceedMemberCap(input.snapshot, member, input.capacity)
-        ? denyGroupPolicy('group-full', 'Group member capacity has been reached.')
-        : GROUP_POLICY_ALLOWED;
+    return denyGroupParticipationCapacity({
+        snapshot: input.snapshot,
+        member,
+        role: input.role ?? member?.role ?? 'member',
+        capacity: input.capacity
+    }) ??
+        GROUP_POLICY_ALLOWED;
 }
 
 export function canDecideGroupAdmission(
@@ -195,13 +215,31 @@ function canUseJoinCode(input: CanJoinGroupInput): GroupPolicyResult {
     return GROUP_POLICY_ALLOWED;
 }
 
-function wouldExceedMemberCap(
-    snapshot: GroupSnapshot,
-    member: GroupMember | undefined,
-    capacity: GroupPolicyCapacityConfig | undefined
-): boolean {
-    const cap = snapshot.group.maxMembers ?? capacity?.defaultMaxMembers ?? null;
-    return cap !== null &&
-        member?.status !== 'active' &&
-        snapshot.group.activeMemberCount >= cap;
+interface DenyGroupParticipationCapacityInput {
+    readonly snapshot: GroupSnapshot;
+    readonly member: GroupMember | undefined;
+    readonly role: GroupMember['role'];
+    readonly capacity: GroupPolicyCapacityConfig | undefined;
+}
+
+function denyGroupParticipationCapacity(
+    { snapshot, member, role, capacity }: DenyGroupParticipationCapacityInput
+): GroupPolicyResult | undefined {
+    const spectator = role === 'spectator';
+    if (member?.status === 'active' && (member.role === 'spectator') === spectator) {
+        return undefined;
+    }
+    if (spectator && (member?.role === 'owner' || member?.role === 'admin')) {
+        return denyGroupPolicy('forbidden-role', 'Transfer ownership or demote before watching.');
+    }
+    const cap = spectator
+        ? readGroupSpectatorCapacity(snapshot.group.metadata)
+        : snapshot.group.maxMembers ?? capacity?.defaultMaxMembers ?? null;
+    const count = spectator ? snapshot.members.filter(isGroupSpectator).length : countGroupPlayers(snapshot);
+    return cap !== null && count >= cap
+        ? denyGroupPolicy(
+            'group-full',
+            spectator ? 'Spectator capacity has been reached.' : 'Player capacity has been reached.'
+        )
+        : undefined;
 }

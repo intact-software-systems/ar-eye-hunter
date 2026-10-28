@@ -1,11 +1,21 @@
 import { useCallback } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { GAME_PROTOCOL, type GameRealtimeMessage, type RemotePlayer, type RemoteShot } from '../../types.ts';
+import {
+    GAME_PROTOCOL,
+    type GameRealtimeMessage,
+    type RemotePlayer,
+    type RemoteShot
+} from '../../types.ts';
+import { isCurrentArenaPlayerSession } from '../arena-participation.ts';
 import { toValidatedPlayerPose } from '../state/to-validated-player-pose.ts';
 import { acceptArenaDirectorShot } from './arena-director-peer-message.ts';
 
@@ -47,7 +57,8 @@ export function useArenaPeerMessageHandlers(input: ArenaPeerMessageHandlersInput
     const acceptPeerShot = useCallback((reception: ArenaPeerShotReception) => {
         const { message, roomRef, peerId, isCurrent } = reception;
         if (
-            !isCurrent() || message?.protocol !== GAME_PROTOCOL || message.kind !== 'director-shot-accepted' ||
+            !isCurrent() || !isCurrentArenaPlayerSession(peerId, input.nowMs()) ||
+            message?.protocol !== GAME_PROTOCOL || message.kind !== 'director-shot-accepted' ||
             !message.roomRef || typeof message.roomRef.applicationId !== 'string' ||
             typeof message.roomRef.workspaceId !== 'string' || typeof message.roomRef.groupId !== 'string' ||
             !isSameGroupRef(message.roomRef, roomRef)
@@ -64,7 +75,7 @@ export function useArenaPeerMessageHandlers(input: ArenaPeerMessageHandlersInput
 
 function acceptArenaMotion(input: ArenaPeerMessageHandlersInput, reception: ArenaMotionReception): void {
     const { peerId, message, isCurrent } = reception;
-    if (!isCurrent() || message.protocol !== GAME_PROTOCOL) {
+    if (!isCurrent() || !isCurrentArenaPlayerSession(peerId, input.nowMs()) || message.protocol !== GAME_PROTOCOL) {
         return;
     }
 

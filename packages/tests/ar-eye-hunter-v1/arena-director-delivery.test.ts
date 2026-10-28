@@ -690,7 +690,7 @@ function directorEnvelope<T>(payload: T, sentAtEpochMs: number) {
     return createRallarGameEnvelope({
         protocol: 'ar-eye-hunter.v1',
         kind: 'intent',
-        roomId: 'arena-1',
+        roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
         senderId: session.sessionId,
         seq: 1,
         directorEpoch: 1,

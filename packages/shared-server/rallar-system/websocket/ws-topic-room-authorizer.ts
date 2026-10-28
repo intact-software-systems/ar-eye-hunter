@@ -1,3 +1,4 @@
+import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
 import {
     blocksGroupPreActivationData,
     canSendGroupMessage
@@ -120,6 +121,7 @@ async function readRoomPolicyDenial(
             sessionId: input.senderId
         },
         senderSessionId: input.senderId,
+        readOnlyRequest: input.senderId === input.message.id.senderId && isRallarGameSnapshotRequest(input.message),
         minSnapshotVersion: input.minSnapshotVersion,
         nowEpochMs: dependencies.nowEpochMs(),
         ...(preActivationAppData === undefined ? {} : { preActivationAppData })

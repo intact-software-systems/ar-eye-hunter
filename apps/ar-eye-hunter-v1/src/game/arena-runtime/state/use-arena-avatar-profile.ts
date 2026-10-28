@@ -1,9 +1,10 @@
+import { useEffect } from 'react';
+import type { RefObject } from 'react';
+
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarAiJsonProvider } from '@shared/rallar-ai/mod.ts';
-import { useEffect } from 'react';
-import type { RefObject } from 'react';
 
 import {
     createAvatarProfileMockProvider,
@@ -15,6 +16,7 @@ import {
 import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
 import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
 import type { ArenaSnapshot } from '../../types.ts';
+import { isCurrentArenaSpectator } from '../arena-participation.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();
 
@@ -25,20 +27,22 @@ interface ArenaAvatarProfileInput {
     readonly networkGenerationRef: RefObject<number>;
     readonly roomId: string | undefined;
     readonly session: AuthSession | undefined;
+    readonly spectating: boolean;
 }
 
 export function useArenaAvatarProfile(input: ArenaAvatarProfileInput): void {
     useEffect(() => startArenaAvatarProfileGeneration(input), [
         input.isCurrentNetworkGeneration,
         input.roomId,
-        input.session
+        input.session,
+        input.spectating
     ]);
 }
 
 function startArenaAvatarProfileGeneration(
     input: ArenaAvatarProfileInput
 ): (() => void) | undefined {
-    if (!input.session) {
+    if (!input.session || !input.roomId || input.spectating) {
         input.localAvatarProfileRef.current = undefined;
         return undefined;
     }
@@ -72,7 +76,7 @@ function startArenaAvatarProfileGeneration(
             })
         })
         .then((result) => {
-            if (cancelled || !input.isCurrentNetworkGeneration(generation)) {
+            if (cancelled || isCurrentArenaSpectator() || !input.isCurrentNetworkGeneration(generation)) {
                 return;
             }
             const validation = validateAvatarProfile(result.value, session.sessionId);
@@ -81,7 +85,7 @@ function startArenaAvatarProfileGeneration(
                 : defaultProfile;
         })
         .catch(() => {
-            if (!cancelled && input.isCurrentNetworkGeneration(generation)) {
+            if (!cancelled && !isCurrentArenaSpectator() && input.isCurrentNetworkGeneration(generation)) {
                 input.localAvatarProfileRef.current = defaultProfile;
             }
         });

@@ -79,7 +79,7 @@ Deno.test('room authority reads membership before one current-session expiry clo
             events.push('group');
             return Promise.resolve({
                 group: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
-                members: [{ principalId: 'alice', status: 'active' }],
+                members: [{ principalId: 'alice', status: 'active', role: 'member' }],
                 activeSessions: [
                     {
                         principalId: 'alice',
@@ -180,7 +180,7 @@ Deno.test('CRDT room authority refuses a snapshot returned from another workspac
         readGroupSnapshot: () =>
             Promise.resolve({
                 group: { applicationId: 'app-1', workspaceId: 'other-workspace', groupId: 'group-1' },
-                members: [{ principalId: 'alice', status: 'active' }],
+                members: [{ principalId: 'alice', status: 'active', role: 'member' }],
                 activeSessions: [{
                     principalId: 'alice',
                     sessionId: 'session-1',
@@ -200,4 +200,38 @@ Deno.test('CRDT room authority refuses a snapshot returned from another workspac
         }),
         { allowed: false, code: 'authorization-scope-denied', publicationAuthority: null }
     );
+});
+
+Deno.test('room spectators may read CRDT but fresh mutation authority refuses their writes', async () => {
+    let role: 'member' | 'spectator' = 'spectator';
+    const dependencies = {
+        readGroupSnapshot: () =>
+            Promise.resolve({
+                group: ROOM_DOCUMENT.roomRef!,
+                members: [{ principalId: 'alice', status: 'active' as const, role }],
+                activeSessions: [{ principalId: 'alice', sessionId: 'session-1', status: 'active' as const, expiresAtEpochMs: NOW + 1_000 }]
+            }),
+        readClientSnapshot: () => Promise.resolve(undefined),
+        nowEpochMs: () => NOW
+    };
+    const read = createApiCrdtDocumentAccessAuthorizer(dependencies);
+    const write = createApiCrdtDocumentAuthorizer(dependencies);
+    const command = await appendCommand({
+        now: NOW,
+        commandId: 'spectator-command',
+        updateId: 'spectator-update',
+        actor: { actorId: 'alice', principalId: 'alice', sessionId: 'session-1', serverId: 'server-1' }
+    });
+    const roomCommand = {
+        ...command,
+        document: ROOM_DOCUMENT,
+        responseAudience: { kind: 'room' as const, senderSessionId: 'session-1', topicId: 'room.crdt', contextId: 'group-1' }
+    };
+    const session = { clientId: 'alice', username: 'alice', sessionId: 'session-1', expiresAtEpochMs: NOW + 1_000 };
+    assert.equal((await read({ document: ROOM_DOCUMENT, actorPrincipalId: 'alice', sessionId: 'session-1' })).allowed, true);
+    assert.equal((await write(roomCommand, session)).allowed, false);
+    role = 'member';
+    assert.equal((await write(roomCommand, session)).allowed, true);
+    role = 'spectator';
+    assert.equal((await write(roomCommand, session)).allowed, false);
 });

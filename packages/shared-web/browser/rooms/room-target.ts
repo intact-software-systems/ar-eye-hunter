@@ -38,7 +38,7 @@ export function toJoinRoomTarget(
     return {
         roomId: room.roomId ?? room.roomRef?.groupId,
         roomRef: room.roomRef,
-        options: room
+        options: { ...room, ...options }
     };
 }
 

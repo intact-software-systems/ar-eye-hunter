@@ -37,7 +37,17 @@ describe('room creation through the browser facade and HTTP workflow', () => {
         respond(() => json(snapshot));
         const facade = createRallarFacade();
 
-        await expect(facade.rooms.create({ groupId: 'new-room', displayName: 'Friends', description: 'Private arena', joinMode: 'code', maxMembers: 8, scope }))
+        await expect(
+            facade.rooms.create({
+                groupId: 'new-room',
+                displayName: 'Friends',
+                description: 'Private arena',
+                joinMode: 'code',
+                maxMembers: 8,
+                maxSpectators: 16,
+                scope
+            })
+        )
             .resolves.toEqual(snapshot);
 
         expect(requests).toHaveLength(2);
@@ -48,6 +58,7 @@ describe('room creation through the browser facade and HTTP workflow', () => {
             description: 'Private arena',
             joinMode: 'code',
             maxMembers: 8,
+            maxSpectators: 16,
             actorPrincipalId: 'principal-1',
             actorSessionId: 'session-1'
         });

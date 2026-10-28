@@ -41,7 +41,7 @@ test(
 
         entries = [publicExpedition()];
         await page.clock.fastForward(30_000);
-        await expect(page.getByRole('button', { name: /New public expedition.*1 online/ })).toBeEnabled();
+        await expect(page.getByRole('button', { name: /New public expedition.*1 player/ })).toBeEnabled();
         await expect(page.getByRole('region', { name: 'Expedition hosting' }).getByText('room-1', { exact: true }))
             .toBeVisible();
         await expect(page.getByRole('button', { name: '✓ Ready', exact: true })).toBeDisabled();
@@ -69,6 +69,10 @@ function publicExpedition(): GroupDirectoryEntry {
         displayName: 'Relic Hunters: New public expedition',
         kind: 'room',
         joinMode: 'open',
+        playerCount: 1,
+        onlinePlayerCount: 1,
+        spectatorCount: 0,
+        maxSpectators: 16,
         memberCount: 1,
         onlineMemberCount: 1,
         maxMembers: 4,

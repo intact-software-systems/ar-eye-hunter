@@ -142,6 +142,35 @@ describe('directory measured peer RTT', () => {
             .toEqual(['cursor is not a cursor issued for this directory order']);
     });
 
+    it('ranks online players ahead of spectators and projects both capacity classes separately', () => {
+        const watched = createRoomSnapshot('a-watched', ['player', 'watcher-1', 'watcher-2']);
+        const room = {
+            ...watched,
+            group: { ...watched.group, maxMembers: 3, metadata: { rallarSpectatorCapacity: 16 } },
+            members: watched.members.map((member) =>
+                member.principalId.includes('watcher')
+                    ? { ...member, role: 'spectator' as const }
+                    : member
+            )
+        };
+        const result = computeDirectoryPage({
+            rooms: [room, createRoomSnapshot('z-players', ['p1', 'p2'])],
+            search: '',
+            rttMeasurements: []
+        });
+        expect(result.entries.map((entry) => entry.groupRef.groupId)).toEqual(['z-players', 'a-watched']);
+        expect(result.entries[1]).toMatchObject({
+            memberCount: 4,
+            onlineMemberCount: 3,
+            playerCount: 2,
+            onlinePlayerCount: 1,
+            spectatorCount: 2,
+            maxSpectators: 16,
+            maxMembers: 3,
+            isFull: false
+        });
+    });
+
     it('rejects an unsupported order instead of silently returning default order', () => {
         expect(decodeGroupDirectoryQuery(new URLSearchParams('order=nearest')).left)
             .toEqual(['order must be online-members or peer-rtt']);

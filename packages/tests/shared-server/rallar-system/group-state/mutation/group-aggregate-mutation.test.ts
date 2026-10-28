@@ -55,14 +55,14 @@ describe('group aggregate mutation computation', () => {
         expect(() =>
             computeGroupMutation({
                 command: explicitRotate,
-                read,
+                read: { ...read, activeMemberPrincipalIds: null, activeMembers: null },
                 facts: codeFacts
             })
         ).toThrow(/resolved.*join code|explicit|command/i);
         expect(() =>
             computeGroupMutation({
                 command: omittedRotate,
-                read,
+                read: { ...read, activeMemberPrincipalIds: null, activeMembers: null },
                 facts: createMutationFacts()
             })
         ).toThrow(/resolved.*join code|generated|missing/i);

@@ -1,6 +1,7 @@
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarGameMatchConfig } from '../match/rallar-game-match-contracts.ts';
+import { readRallarGameSessionRole } from '../match/rallar-game-participation.ts';
 import type { RallarGameHostElectionResult } from './election.ts';
 import type {
     RallarGameDirectorAppointmentContext,
@@ -57,6 +58,17 @@ export class RallarGameDirectorAppointmentRuntime<TInput, TIntent, TSnapshot, TE
             localPrincipalId
         };
 
+        const role = readRallarGameSessionRole(roomState, localPeerId, room);
+        if (role === undefined) {
+            return appointmentDenied({
+                context,
+                status: 'not-ready',
+                reason: 'Current room participation is not confirmed.'
+            });
+        }
+        if (role === 'spectator') {
+            return appointmentDenied({ context, status: 'not-authorized', reason: 'Spectators cannot direct a game.' });
+        }
         if (config.canAppointDirector) {
             return config.canAppointDirector(context);
         }

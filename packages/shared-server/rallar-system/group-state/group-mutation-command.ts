@@ -91,6 +91,8 @@ function toCreateCommand(
 ): GroupMutationCommand {
     const commandId = request.requestId ?? randomId();
     const retention = toInitialGroupRetentionState(request.retention);
+    const metadata = { ...structuredClone(request.metadata ?? {}) };
+    delete metadata.rallarSpectatorCapacity;
     return {
         operation: 'createGroup',
         aggregateRef: { ...scope, groupId: request.groupId },
@@ -107,9 +109,11 @@ function toCreateCommand(
                 ? {}
                 : { lifecyclePolicy: toNormalizedGroupLifecyclePolicy(request.lifecyclePolicy) }),
             maxMembers: request.maxMembers ?? null,
+            maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
             metadata: {
-                ...structuredClone(request.metadata ?? {}),
+                ...metadata,
+                ...(request.maxSpectators === undefined ? {} : { rallarSpectatorCapacity: request.maxSpectators }),
                 ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
             },
             createdByPrincipalId: request.createdByPrincipalId,
@@ -139,6 +143,7 @@ function toUpdateCommand(
             joinMode: request.joinMode ?? null,
             ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
             maxMembers: request.maxMembers ?? null,
+            maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
             metadata: request.metadata ? structuredClone(request.metadata) : null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
@@ -181,6 +186,7 @@ function toJoinCommand(
         targetPrincipalId: request.actorPrincipalId,
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: {
+            participation: request.participation ?? null,
             inviteToken: request.inviteToken ?? null,
             joinCode: request.joinCode ? normalizeJoinCode(request.joinCode) : null,
             ...toGroupMutationActorInput(request)

@@ -11,10 +11,11 @@ import {
     GAME_COMBAT_LANE_ID,
     GAME_PROTOCOL,
     type PlayerHitIntent,
-    type PlayerShot,
-    type ShotAccepted
+    type ShotAccepted,
+    type ShotIntent
 } from '../../types.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaPeerShotMessage } from '../messages/use-arena-peer-message-handlers.ts';
 
 interface ArenaCombatActionsInput {
@@ -29,7 +30,7 @@ interface ArenaCombatActionsInput {
 }
 
 interface ArenaLocalShot {
-    readonly shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>;
+    readonly shot: Omit<ShotIntent, 'sessionId' | 'username' | 'color'>;
     readonly accepted: ShotAccepted;
 }
 
@@ -52,7 +53,7 @@ function sendArenaShot(input: ArenaCombatActionsInput, local: ArenaLocalShot): v
     const session = input.sessionRef.current;
     const roomId = input.roomIdRef.current;
     const match = input.arenaMatchRef.current;
-    if (!session || !roomId || !match || !input.isNetworkEnabled()) {
+    if (!session || !roomId || !match || !input.isNetworkEnabled() || isCurrentArenaSpectator()) {
         return;
     }
     const generation = input.networkGenerationRef.current;
@@ -99,7 +100,7 @@ function sendArenaShot(input: ArenaCombatActionsInput, local: ArenaLocalShot): v
 function sendArenaPlayerHit(input: ArenaCombatActionsInput, intent: PlayerHitIntent): void {
     const session = input.sessionRef.current;
     const match = input.arenaMatchRef.current;
-    if (!session || !input.isNetworkEnabled() || !match?.status().directorIsFresh) {
+    if (!session || !input.isNetworkEnabled() || isCurrentArenaSpectator() || !match?.status().directorIsFresh) {
         return;
     }
     const fullIntent: PlayerHitIntent = {

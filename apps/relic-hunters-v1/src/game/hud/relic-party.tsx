@@ -43,6 +43,11 @@ export function RelicPartyControls({ game, turn, preferences }: RelicPartyContro
         preferences.enableAmbient();
         await game.joinExpedition(characterId);
     };
+    if (game.participation === 'spectator') {
+        return (
+            <p role="status">Watching{game.snapshot ? ' the expedition' : ' — waiting for the expedition to start'}.</p>
+        );
+    }
     return (
         <>
             <CharacterSelect
@@ -86,18 +91,17 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
     const { game, turn, preferences, characterId, join } = props;
     const { lang } = preferences;
     const currentPlayer = turn.viewModel.currentPlayer;
-    const summary = game.rooms.find((room) => room.roomId === game.roomId);
     const startBlocker = game.snapshot
         ? computeLobbyStartBlocker({
             snapshot: game.snapshot,
             currentPlayer,
             isAdmin: turn.viewModel.isAdmin,
-            onlineMemberCount: summary?.onlineMemberCount,
+            onlineMemberCount: game.onlinePlayerCount,
             lang
         })
         : undefined;
     if (game.snapshot && game.snapshot.phase !== 'lobby') {
-        return !currentPlayer ? <button type="button" onClick={() => void join()}>Join Expedition</button> : null;
+        return !currentPlayer ? <p>The expedition has started. Join the next expedition.</p> : null;
     }
     return (
         <>
@@ -105,7 +109,7 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
                 <LobbyPartyPanel
                     snapshot={game.snapshot}
                     localPlayerId={game.session?.sessionId}
-                    onlineMemberCount={summary?.onlineMemberCount}
+                    onlineMemberCount={game.onlinePlayerCount}
                     startBlocker={startBlocker}
                     lang={lang}
                 />
@@ -118,7 +122,13 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
                         </button>
                     )
                     : (
-                        <button type="button" className="primary lobby-ready-btn" onClick={() => void join()}>
+                        <button
+                            type="button"
+                            className="primary lobby-ready-btn"
+                            disabled={!game.snapshot || game.snapshot.players.length >= 4 ||
+                                game.participation !== 'player'}
+                            onClick={() => void join()}
+                        >
                             {lang === 'no' ? 'Bli med som' : 'Join as'} {findRelicCharacter(characterId).name}
                         </button>
                     )}

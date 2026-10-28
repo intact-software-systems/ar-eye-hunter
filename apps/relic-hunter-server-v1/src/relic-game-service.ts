@@ -65,6 +65,21 @@ export class RelicHunterGameService {
         this.options = options;
     }
 
+    async readSnapshot(
+        gameId: string,
+        request: RelicHunterGameService.RestRequest
+    ): Promise<RelicPublicSnapshot | null> {
+        return await this.options.mutations.readCurrentSnapshot({
+            operation: 'ensure',
+            gameId,
+            move: null,
+            requestId: request.requestId,
+            traceId: request.traceId,
+            actor: toActor(request.session),
+            authorization: this.options.mode
+        }, this.rallar.ws.serverPeerId);
+    }
+
     async ensureSnapshot(gameId: string, request: RelicHunterGameService.RestRequest): Promise<RelicPublicSnapshot> {
         return await this.execute({
             operation: 'ensure',

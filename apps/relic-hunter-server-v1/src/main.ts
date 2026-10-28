@@ -84,7 +84,12 @@ const relicGame = installRelicHunterGame(rallar, {
     }),
     readSession: (sessionId) => rallar.runtime.authSessionRepository.findBySessionId(sessionId)
 });
-installRelicPlanningAiTopic({ websocket: rallar.ws, serverSenderId: rallar.ws.serverPeerId });
+installRelicPlanningAiTopic({
+    websocket: rallar.ws,
+    serverSenderId: rallar.ws.serverPeerId,
+    canRequestPlanning: (sessionId, gameId) =>
+        relicServices.relicGameMutations.canRequestPlanning(sessionId, gameId, rallar.ws.serverPeerId)
+});
 
 installApiHttpMiddleware(app, {
     http: configuration.http,

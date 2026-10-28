@@ -20,7 +20,7 @@ export type GroupStatus = 'active' | 'archived' | 'deleted';
 
 export type GroupMemberStatus = 'invited' | 'pending' | 'active' | 'left' | 'removed' | 'banned';
 
-export type GroupRole = 'owner' | 'admin' | 'member';
+export type GroupRole = 'owner' | 'admin' | 'member' | 'spectator';
 
 export type GroupJoinMode = 'invite-only' | 'code' | 'open';
 

@@ -21,6 +21,7 @@ import {
     type PickupIntent
 } from '../../types.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
 
 interface ArenaWorldActionsInput extends Pick<ArenaMatchDelivery, 'publishMatchLifecycleOutput'> {
@@ -72,7 +73,7 @@ export function useArenaWorldActions(
 function sendArenaPickupIntent(input: ArenaWorldActionsInput, intent: PickupIntent): void {
     const session = input.sessionRef.current;
     const match = input.arenaMatchRef.current;
-    if (!session || !input.isNetworkEnabled() || !match?.status().directorIsFresh) {
+    if (!session || !input.isNetworkEnabled() || isCurrentArenaSpectator() || !match?.status().directorIsFresh) {
         return;
     }
     const generation = input.networkGenerationRef.current;
@@ -106,7 +107,10 @@ async function startArenaMatchFromIntent(
     const session = input.sessionRef.current;
     const roomId = input.roomIdRef.current;
     const match = input.arenaMatchRef.current;
-    if (!session || !roomId || !input.isNetworkEnabled() || !match?.status().directorIsFresh) {
+    if (
+        !session || !roomId || !input.isNetworkEnabled() || isCurrentArenaSpectator() ||
+        !match?.status().directorIsFresh
+    ) {
         return;
     }
     const nowEpochMs = input.nowMs();
@@ -121,7 +125,7 @@ async function startArenaMatchFromIntent(
 
 function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: ArenaSnapshot): void {
     const director = input.directorStatusRef.current;
-    if (!input.isNetworkEnabled() || !director.isDirector || !director.isFresh) {
+    if (!input.isNetworkEnabled() || isCurrentArenaSpectator() || !director.isDirector || !director.isFresh) {
         return;
     }
     const generation = input.networkGenerationRef.current;

@@ -13,7 +13,7 @@ import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
-import { readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
+import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
 
 interface ReadExactGroupMutationInput {
     readonly repository: GroupStateRepository;
@@ -44,7 +44,7 @@ export async function readExactGroupMutation({
         includeGroup: true,
         includePresenceSummary: true,
         includeLifecyclePolicy: readsGroupLifecyclePolicy(command.operation),
-        includeGroupSnapshot,
+        includeGroupSnapshot: includeGroupSnapshot || readsGroupActiveMemberPrincipalIds(command.operation),
         authSessionId,
         requestIds: idempotencyKey === null ? [] : [idempotencyKey],
         memberPrincipalIds: uniqueDefined([actorPrincipalId, targetPrincipalId]),
@@ -85,6 +85,11 @@ function assembleExactGroupMutationRead(
         : director?.principalId === targetPrincipalId
         ? targetMemberEntry
         : null;
+    const activeMembers = readsGroupActiveMemberPrincipalIds(command.operation)
+        ? read.groupSnapshot.status === 'read'
+            ? (read.groupSnapshot.snapshot?.members ?? []).filter((member) => member.status === 'active')
+            : null
+        : null;
     return {
         idempotency: idempotencyKey === null ? null : exactEntry(read.idempotency, idempotencyKey),
         group,
@@ -107,7 +112,10 @@ function assembleExactGroupMutationRead(
         authorityPresenceSessionEntries: [],
         presenceSummary: read.presenceSummaries[0] ?? null,
         lifecyclePolicy: read.lifecyclePolicy,
-        activeMemberPrincipalIds: null,
+        activeMemberPrincipalIds:
+            activeMembers?.filter((member) => member.role !== 'spectator').map((member) => member.principalId).sort() ??
+                null,
+        activeMembers,
         connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null

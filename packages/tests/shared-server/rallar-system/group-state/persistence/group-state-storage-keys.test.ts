@@ -364,6 +364,7 @@ function createMutationRead(): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null

@@ -1,13 +1,18 @@
 import { useCallback, useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
-import type { RemotePlayer } from '../../types.ts';
+import type { ArenaSnapshot, RemotePlayer } from '../../types.ts';
 import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
+import { isArenaPlayerSession, isCurrentArenaSpectator } from '../arena-participation.ts';
 import { arenaRecentRooms, arenaRoomEntry } from '../arena-room-entry.ts';
 
 interface ArenaConnectionSessionLifecycleInput {
@@ -21,6 +26,8 @@ interface ArenaConnectionSessionLifecycleInput {
     readonly setConnectionState: Dispatch<SetStateAction<ArenaConnectionState>>;
     readonly setDirectorStatus: Dispatch<SetStateAction<RallarDirectorStatus>>;
     readonly setError: Dispatch<SetStateAction<string | undefined>>;
+    readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
+    readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
     readonly setRemotePlayers: Dispatch<SetStateAction<ReadonlyMap<string, RemotePlayer>>>;
     readonly setRoomId: Dispatch<SetStateAction<string | undefined>>;
     readonly setRooms: Dispatch<SetStateAction<readonly RallarRoomSummary[]>>;
@@ -108,13 +115,35 @@ async function connectArenaSession(input: ArenaConnectionSessionLifecycleInput):
 }
 
 function startArenaSessionSubscriptions(input: ArenaConnectionSessionLifecycleInput): () => void {
+    let spectating = isCurrentArenaSpectator();
     const subscriptions = rallar.subscriptions()
         .add(
             rallar.rooms.onChange((state) => {
-                if (input.roomIdRef.current !== state.currentRoomId) {
+                const nextSpectating = isCurrentArenaSpectator();
+                if (input.roomIdRef.current !== state.currentRoomId || spectating !== nextSpectating) {
+                    input.bumpNetworkGeneration();
+                    spectating = nextSpectating;
                     input.clearRoomScopedArenaState();
                     input.roomIdRef.current = state.currentRoomId;
                 }
+                const snapshot = input.arenaSnapshotRef.current;
+                if (snapshot) {
+                    const players = snapshot.players.filter((player) =>
+                        isArenaPlayerSession(state.currentRoom, player.sessionId, input.nowMs())
+                    );
+                    if (players.length !== snapshot.players.length) {
+                        const next = { ...snapshot, players };
+                        input.arenaSnapshotRef.current = next;
+                        input.setArenaSnapshot(next);
+                    }
+                }
+                input.setRemotePlayers((previous) =>
+                    new Map(
+                        [...previous].filter(([sessionId]) =>
+                            isArenaPlayerSession(state.currentRoom, sessionId, input.nowMs())
+                        )
+                    )
+                );
                 input.setRooms(state.rooms);
                 input.setRoomId(state.currentRoomId);
                 input.setDirectorStatus(

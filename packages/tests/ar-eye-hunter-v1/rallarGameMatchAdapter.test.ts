@@ -32,10 +32,10 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
         expect(GAME_AI_TOPIC_ID).toMatch(/^room\./);
     });
 
-    it('sends director intents and sync requests on the two derived command channel ids (C12)', () => {
+    it('uses the arena intent topic and the trusted public snapshot request protocol', () => {
         expect(resolveRallarGameTypeIds(GAME_DIRECTOR_TOPIC_ID)).toMatchObject({
             intent: 'room.ar-eye-hunter.director.intent.v1',
-            syncRequest: 'room.ar-eye-hunter.director.sync-request.v1'
+            syncRequest: 'rallar.game.snapshot-request.v1'
         });
     });
 

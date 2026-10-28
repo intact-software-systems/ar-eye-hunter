@@ -34,6 +34,17 @@ import type {
     RemotePlayer
 } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
+vi.mock('@shared-web/browser/rallar.ts', async () => {
+    const { createGroupSnapshotFixture } = await import('../shared-web/authoritative-group-fixtures.ts');
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'players',
+        groupId: 'arena-1',
+        sessionIds: ['attacker', 'target', 'picker']
+    });
+    return { rallar: { rooms: { state: () => ({ currentRoom: snapshot }) } } };
+});
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface IncomingFixture {

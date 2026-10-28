@@ -32,10 +32,12 @@ export function BabylonArena(props: BabylonArenaProps) {
                     </div>
                 </div>
             )}
-            <div className="crosshair" aria-hidden="true">
-                <span />
-            </div>
-            <ArenaSceneControls controls={controls} runtimeRef={runtimeRef} />
+            {!props.spectating && (
+                <div className="crosshair" aria-hidden="true">
+                    <span />
+                </div>
+            )}
+            {!props.spectating && <ArenaSceneControls controls={controls} runtimeRef={runtimeRef} />}
             <div className="mobile-rotate-prompt" role="status">
                 <strong>Rotate for combat</strong>
                 <span>Landscape gives your thumbs room to misbehave.</span>
@@ -73,6 +75,6 @@ function useArenaCanvasRuntime(props: BabylonArenaProps): ArenaCanvasView {
             audioSettings: controls.audioSettings,
             clock: { nowEpochMs: Date.now, nowMonotonicMs: () => performance.now() }
         });
-    }, [props.localColor, props.localSessionId, props.localUsername, props.roomId]);
+    }, [props.localColor, props.localSessionId, props.localUsername, props.roomId, props.spectating]);
     return { canvasRef, runtimeRef, controls };
 }

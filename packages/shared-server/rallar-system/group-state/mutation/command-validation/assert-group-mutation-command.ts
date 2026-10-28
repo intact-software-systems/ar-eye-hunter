@@ -104,6 +104,10 @@ function assertAggregateOperationInput(
     input: JsonWireObject
 ): void {
     if (operation === 'createGroup' || operation === 'updateGroup') {
+        assertNullableInteger(input, 'maxSpectators');
+        if (typeof input.maxSpectators === 'number' && input.maxSpectators > 64) {
+            throw new TypeError('Group maxSpectators must be at most 64');
+        }
         const metadataIssues = validateGroupDirectoryListingMetadata(input.metadata);
         if (metadataIssues.length > 0) {
             throw metadataIssues[0];
@@ -170,6 +174,9 @@ function assertMembershipOperationInput(
     switch (operation) {
         case 'joinGroup':
         case 'acceptGroupInvite':
+            if (input.participation !== null) {
+                requireOneOf(input.participation, ['player', 'spectator'], 'Group participation');
+            }
             assertNullableString(input, 'inviteToken');
             assertNullableString(input, 'joinCode');
             return;
@@ -177,11 +184,11 @@ function assertMembershipOperationInput(
             assertNullableInteger(input, 'invitationExpiresAtEpochMs', true);
             return;
         case 'setGroupMemberRole':
-            requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
+            requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
             return;
         case 'upsertMember':
             if (input.role !== null) {
-                requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
+                requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
             }
             // 'pending' is deliberately absent: only the admission decision may
             // compute it, never client input (plan decision 5.1).
@@ -325,6 +332,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'joinMode',
         'directoryListing',
         'maxMembers',
+        'maxSpectators',
         'maxSessionsPerMember',
         'metadata',
         'createdByPrincipalId',
@@ -342,6 +350,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'joinMode',
         'directoryListing',
         'maxMembers',
+        'maxSpectators',
         'maxSessionsPerMember',
         'metadata',
         'expiresAtEpochMs',
@@ -367,8 +376,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     ],
     pauseGroupTransport: ACTOR_INPUT_KEYS,
     resumeGroupTransport: ACTOR_INPUT_KEYS,
-    joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
-    acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
+    joinGroup: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode'],
+    acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode'],
     createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],
     revokeGroupInvite: ACTOR_INPUT_KEYS,
     grantGroupAdmission: ACTOR_INPUT_KEYS,

@@ -1,5 +1,5 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 import type { RallarFacade, RallarRoomRealtimeJsonChannel, RallarRoomRealtimeJsonDefaults } from '@shared-web/browser/rallar.ts';
@@ -62,6 +62,7 @@ const gameRoomRef: GroupRef = { applicationId: 'relic-hunters', workspaceId: 'ex
 describe('Relic scene realtime motion networking', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.spyOn(Date, 'now').mockReturnValue(1000);
         rallarMock.room.mockReset();
         rallarMock.roomSend.mockResolvedValue({
             status: 'sent',
@@ -76,6 +77,53 @@ describe('Relic scene realtime motion networking', () => {
             laneId: RELIC_MOTION_LANE_ID
         });
         rallarMock.roomState.mockReturnValue(createRoomState('flowing'));
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('rejects impersonated player motion and spectator motion without modifying the buffer', () => {
+        const runtime = sceneRuntime();
+        const payload = motionPayload({ pid: 'bob-session', seq: 1 });
+        expect(applyRelicMotionPayload({ runtime, payload, senderPeerId: 'alice-session', receivedAtEpochMs: 1000 })).toBe(false);
+        const state = createRoomState('flowing');
+        rallarMock.roomState.mockReturnValue({
+            ...state,
+            currentRoom: state.currentRoom &&
+                {
+                    ...state.currentRoom,
+                    members: state.currentRoom.members.map((member) => member.principalId === 'bob-session' ? { ...member, role: 'spectator' } : member)
+                }
+        });
+        expect(applyRelicMotionPayload({ runtime, payload, senderPeerId: 'bob-session', receivedAtEpochMs: 1000 })).toBe(false);
+        expect(runtime.motion.buffer.sample('bob-session', 1100)).toBeUndefined();
+    });
+
+    it.each(['session', 'group'] as const)('stops receiving and publishing motion at %s expiry without a cache update', async (expiry) => {
+        const state = createRoomState('flowing');
+        const room = state.currentRoom;
+        if (!room) {
+            throw new Error('The expiry scenario requires an admitted room.');
+        }
+        rallarMock.roomState.mockReturnValue({
+            ...state,
+            currentRoom: {
+                ...room,
+                group: { ...room.group, expiresAtEpochMs: expiry === 'group' ? 2000 : null },
+                activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: expiry === 'session' ? 2000 : 60_000 }))
+            }
+        });
+        const runtime = sceneRuntime();
+        expect(
+            applyRelicMotionPayload({ runtime, payload: motionPayload({ pid: 'bob-session', seq: 1 }), senderPeerId: 'bob-session', receivedAtEpochMs: 1000 })
+        ).toBe(true);
+        await broadcastLocalPosition(runtime);
+        expect(rallarMock.roomSend).toHaveBeenCalledTimes(1);
+        vi.mocked(Date.now).mockReturnValue(2000);
+        expect(
+            applyRelicMotionPayload({ runtime, payload: motionPayload({ pid: 'bob-session', seq: 2 }), senderPeerId: 'bob-session', receivedAtEpochMs: 1500 })
+        ).toBe(false);
+        await broadcastLocalPosition(runtime);
+        expect(rallarMock.roomSend).toHaveBeenCalledTimes(1);
     });
 
     it('sends local avatar motion through a Rallar room realtime channel', async () => {
@@ -201,7 +249,7 @@ describe('Relic scene realtime motion networking', () => {
         const [laneId, receive] = registration;
         const data = motionPayload({ pid: 'bob-session', ox: 2, oz: 3 });
         await receive({
-            peerId: 'bob-peer',
+            peerId: 'bob-session',
             laneId,
             data,
             event: new MessageEvent('message', { data: JSON.stringify(data) }),
@@ -241,7 +289,7 @@ describe('Relic scene realtime motion networking', () => {
                 r: 1.2,
                 seq: 7
             }),
-            senderPeerId: 'bob-peer',
+            senderPeerId: 'bob-session',
             receivedAtEpochMs: 1_000
         })).toBe(true);
 
@@ -252,7 +300,7 @@ describe('Relic scene realtime motion networking', () => {
             rotation: [0, 1.2, 0],
             metadata: {
                 roomId: 'entrance',
-                senderPeerId: 'bob-peer',
+                senderPeerId: 'bob-session',
                 phase: 'walk'
             }
         });
@@ -267,7 +315,7 @@ describe('Relic scene realtime motion networking', () => {
         const runtime = sceneRuntime();
         const payload = { ...motionPayload({ pid: 'bob-session' }), roomRef };
 
-        expect(applyRelicMotionPayload({ runtime: runtime, payload: payload, senderPeerId: 'bob-peer', receivedAtEpochMs: 1_000 })).toBe(false);
+        expect(applyRelicMotionPayload({ runtime: runtime, payload: payload, senderPeerId: 'bob-session', receivedAtEpochMs: 1_000 })).toBe(false);
         expect(runtime.motion.buffer.sample('bob-session', 1_100)).toBeUndefined();
         expect(runtime.motion.diagnostics.acceptedSamples).toBe(0);
     });
@@ -276,7 +324,7 @@ describe('Relic scene realtime motion networking', () => {
         const runtime = sceneRuntime();
         const payload = { ...motionPayload({ pid: 'bob-session' }), roomRef: undefined };
 
-        expect(applyRelicMotionPayload({ runtime: runtime, payload: payload, senderPeerId: 'bob-peer', receivedAtEpochMs: 1_000 })).toBe(false);
+        expect(applyRelicMotionPayload({ runtime: runtime, payload: payload, senderPeerId: 'bob-session', receivedAtEpochMs: 1_000 })).toBe(false);
         expect(runtime.motion.buffer.sample('bob-session', 1_100)).toBeUndefined();
     });
 
@@ -287,7 +335,7 @@ describe('Relic scene realtime motion networking', () => {
         expect(applyRelicMotionPayload({
             runtime,
             payload: motionPayload({ pid: 'bob-session' }),
-            senderPeerId: 'bob-peer',
+            senderPeerId: 'bob-session',
             receivedAtEpochMs: 1_000
         })).toBe(false);
         expect(runtime.motion.buffer.sample('bob-session', 1_100)).toBeUndefined();
@@ -297,13 +345,13 @@ describe('Relic scene realtime motion networking', () => {
         const runtime = sceneRuntime();
         const first = motionPayload({ pid: 'bob-session', seq: 9 });
 
-        expect(applyRelicMotionPayload({ runtime: runtime, payload: first, senderPeerId: 'bob-peer', receivedAtEpochMs: 1_000 })).toBe(true);
-        expect(applyRelicMotionPayload({ runtime: runtime, payload: first, senderPeerId: 'bob-peer', receivedAtEpochMs: 1_020 })).toBe(false);
+        expect(applyRelicMotionPayload({ runtime: runtime, payload: first, senderPeerId: 'bob-session', receivedAtEpochMs: 1_000 })).toBe(true);
+        expect(applyRelicMotionPayload({ runtime: runtime, payload: first, senderPeerId: 'bob-session', receivedAtEpochMs: 1_020 })).toBe(false);
         expect(
             applyRelicMotionPayload({
                 runtime: runtime,
                 payload: motionPayload({ pid: 'bob-session', seq: 8 }),
-                senderPeerId: 'bob-peer',
+                senderPeerId: 'bob-session',
                 receivedAtEpochMs: 1_040
             })
         ).toBe(false);
@@ -323,7 +371,7 @@ describe('Relic scene realtime motion networking', () => {
         applyRelicMotionPayload({
             runtime: runtime,
             payload: motionPayload({ pid: 'bob-session', roomId: 'entrance' }),
-            senderPeerId: 'bob-peer',
+            senderPeerId: 'bob-session',
             receivedAtEpochMs: 1_000
         });
 
@@ -399,7 +447,15 @@ function createRoomState(transportState: 'flowing' | 'halted'): ReturnType<Ralla
     const snapshot = createGroupSnapshotFixture({ ...gameRoomRef, sessionIds: ['alice-session', 'bob-session'] });
     return {
         rooms: [],
-        members: [],
+        members: snapshot.members.map((member) => ({
+            principalId: member.principalId,
+            username: member.principalId,
+            role: member.role,
+            status: member.status,
+            isOwner: member.role === 'owner',
+            isOnline: true,
+            sessionIds: [member.principalId]
+        })),
         currentRoomId: gameRoomRef.groupId,
         currentRoomRef: gameRoomRef,
         currentRoom: { ...snapshot, group: { ...snapshot.group, transportState } }

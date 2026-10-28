@@ -10,7 +10,11 @@ import type {
 } from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
-import type { RallarCreateRoomInput, RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import type {
+    RallarCreateRoomInput,
+    RallarDirectorStatus,
+    RallarRoomSummary
+} from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -24,7 +28,7 @@ import type {
     DirectorAttemptSource,
     DirectorAttemptState
 } from '../arena-connection-contracts.ts';
-import { arenaRoomEntry } from '../arena-room-entry.ts';
+import { ARENA_ROOM_SCOPE, arenaRoomEntry } from '../arena-room-entry.ts';
 import { ARENA_ROOM_NAME_THEME } from './arena-room-name-theme.ts';
 import {
     OPEN_ARENA_DIRECTORY_QUERY,
@@ -67,6 +71,9 @@ export function useArenaSessionActions(
     | 'createArenaRoom'
     | 'quickJoinArenaRoom'
     | 'joinRoom'
+    | 'watchRoom'
+    | 'joinAsPlayer'
+    | 'leaveRoom'
     | 'appointSelfAsDirector'
 > {
     const authentication = useArenaAuthentication(input);
@@ -151,7 +158,10 @@ async function authenticateArena(
 function useArenaRoomActions(
     input: ArenaSessionActionsInput,
     refreshRooms: ArenaConnection['refreshRooms']
-): Pick<ArenaConnection, 'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom'> {
+): Pick<
+    ArenaConnection,
+    'createArenaRoom' | 'quickJoinArenaRoom' | 'joinRoom' | 'watchRoom' | 'joinAsPlayer' | 'leaveRoom'
+> {
     const createArenaRoom = useCallback(
         (joinMode: GroupJoinMode = 'open', directoryListing?: GroupDirectoryListing) =>
             createAndSelectArenaRoom(input, refreshRooms, {
@@ -178,7 +188,18 @@ function useArenaRoomActions(
         input.clearRoomScopedArenaState,
         refreshRooms
     ]);
-    return { createArenaRoom, quickJoinArenaRoom, joinRoom };
+    const watchRoom = useCallback(async (roomId: string) => {
+        arenaRoomEntry.enter({
+            roomRef: { ...ARENA_ROOM_SCOPE, groupId: roomId },
+            joinCode: null,
+            participation: 'spectator'
+        });
+        await arenaRoomEntry.resume();
+        await refreshRooms();
+    }, [refreshRooms]);
+    const joinAsPlayer = useCallback(() => promoteArenaSpectator(input, refreshRooms), [input.roomIdRef, refreshRooms]);
+    const leaveRoom = useCallback(() => leaveArenaRoom(input, refreshRooms), [input.roomIdRef, refreshRooms]);
+    return { createArenaRoom, quickJoinArenaRoom, joinRoom, watchRoom, joinAsPlayer, leaveRoom };
 }
 
 async function quickJoinArena(
@@ -257,6 +278,7 @@ async function createAndSelectArenaRoom(
     try {
         snapshot = await rallar.rooms.createAndSwitch({
             displayName,
+            maxSpectators: 16,
             ...options,
             retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
         });
@@ -327,4 +349,46 @@ function useArenaAutomaticAppointment(input: ArenaSessionActionsInput): void {
         }, 750);
         return () => window.clearTimeout(timer);
     }, [attemptDirectorAppointment, connectionState, roomId]);
+}
+
+async function promoteArenaSpectator(
+    input: ArenaSessionActionsInput,
+    refreshRooms: ArenaConnection['refreshRooms']
+): Promise<void> {
+    const roomId = input.roomIdRef.current;
+    const session = input.sessionRef.current;
+    if (!roomId || !session) {
+        return;
+    }
+    input.setError(undefined);
+    try {
+        await rallar.rooms.join(roomId, { participation: 'player' });
+        await refreshRooms();
+    }
+    catch (error) {
+        if (input.roomIdRef.current === roomId && input.sessionRef.current === session) {
+            input.setError(error instanceof Error ? error.message : String(error));
+        }
+    }
+}
+
+async function leaveArenaRoom(
+    input: ArenaSessionActionsInput,
+    refreshRooms: ArenaConnection['refreshRooms']
+): Promise<void> {
+    const roomId = input.roomIdRef.current;
+    const session = input.sessionRef.current;
+    if (!roomId || !session) {
+        return;
+    }
+    input.setError(undefined);
+    try {
+        await rallar.rooms.leave(roomId);
+        await refreshRooms();
+    }
+    catch (error) {
+        if (input.roomIdRef.current === roomId && input.sessionRef.current === session) {
+            input.setError(error instanceof Error ? error.message : String(error));
+        }
+    }
 }
