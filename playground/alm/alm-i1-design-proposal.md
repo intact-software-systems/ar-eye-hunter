@@ -419,11 +419,13 @@ names one attempt. A retry with a new trace is not an idempotency conflict.
 
 **As applied (I1b-i).** The grammar is stated once: `AL_TRACE_ID_MAX_LENGTH` (128) and
 `AL_TRACE_ID_CHARACTER_CLASS` (`A-Za-z0-9_-`) build `AL_TRACE_ID_PATTERN`. `decodeALTraceId` refuses an absent value
-`missing` and any other bad value `malformed`, and every trace validator calls it. The module has no barrel: consumers
-import `al-contracts/trace/al-trace-id.ts`, as they import `reply/`. The middleware writes the `x-request-id` echo once,
-after `next()`, beside `server-timing`, so a route that returns its own `Response` echoes it too. A WebSocket upgrade
-gets the trace on its context but no echo, on its 101 and on its refusals alike. `readApiRequestTraceId` throws a
-plain `Error` when the middleware did not run, so a route without the trace answers 500 as an invariant failure.
+`missing` and any other bad value `malformed`. Every server and persisted trace validator calls it; the browser send
+validator calls `validateALTraceId`, the string-level sibling it delegates to, so every trace check uses one grammar.
+The module has no barrel: consumers import `al-contracts/trace/al-trace-id.ts`, as they import `reply/`. The
+middleware writes the `x-request-id` echo once, after `next()`, beside `server-timing`, so a route that returns its
+own `Response` echoes it too. A WebSocket upgrade gets the trace on its context but no echo, on its 101 and on its
+refusals alike. `readApiRequestTraceId` throws a plain `Error` when the middleware did not run, so a route without
+the trace answers 500 as an invariant failure.
 
 ### 6.b The envelope: `traceId` required, version 4 (R8, D447)
 
@@ -625,10 +627,11 @@ control, which mints its own trace today (`submit-black-box-raw-control.ts`).
   work-derived from the work row or the event, replies from the request, controls from the subject message,
   autonomous publications mint. As applied: no mint inside a pure compute; `RtcTopologyPublication.traceId` is
   persisted; controls inherit with no persisted shape change; the complete set of server mints is in §6.e.
-- **D452** The request body `traceId` is removed; `AuditStamp`, `GroupEvent` and `ClientEvent` keep
-  `string | null` for rows written before I1b. As applied: `MutationActorInput.traceId` is removed, not made
-  required, because the actor input is hashed into the logical command and the trace stays outside the idempotency
-  identity; the stamp and the events are filled from the handler facts.
+- **D452** The request body `traceId` is removed; `MutationActorInput.traceId: string` is filled from the envelope;
+  `AuditStamp`, `GroupEvent` and `ClientEvent` keep `string | null` for rows written before I1b. As applied:
+  `MutationActorInput.traceId` is removed, not made required, because the actor input is hashed into the logical
+  command and the trace stays outside the idempotency identity; the stamp and the events are filled from the
+  handler facts.
 - **D453** Proof as in §6.g; the raw WS recipes move to version 4; lane trace evidence is I1b-ii. As applied: Deno
   end-to-end pins for api-v1 group creation and the Relic REST and WS commands; the response-header echo is pinned by
   Deno route tests, because the black-box runner drops `x-request-id`.

@@ -171,8 +171,9 @@ repair and checkpoint restore carry it unchanged. One trace has three carriers:
 A WS-origin command carries its inbound envelope's trace. Only a server action
 with no request behind it mints a trace, at its enqueue or publication boundary:
 the sweeps, the timers, the topology work cycle's derived commands, the topology
-planner's local publication, replay repair, reconnect hydration and a socket close. The audit stamp is the trace: a group or
-client event names the trace of the HTTP request that caused it. The request
+planner's local publication, replay repair, reconnect hydration and a socket
+close. The audit stamp is the trace: a group or client event names the trace of
+the request (HTTP `x-request-id` or WS envelope) whose command ran. The request
 bodies carry no trace, and `AuditStamp.traceId` stays `string | null` only for
 rows written before I1b-i. A persisted topology publication or envelope from
 before version 4 is refused, with no backfill. `id.sessionId` is unchanged: the
@@ -354,7 +355,8 @@ ALM supports RTC and WS as first-class carriers.
   transport attempts.
 - A transport switch preserves expiry and correlation identity (I1a: the envelope's
   `actions` ride every re-shaping of the first envelope) and trace identity (I1b-i:
-  the envelope's `id.traceId` rides with it); ordering and supersedence tracks are per carrier runtime, so a message handed to another carrier leaves its
+  the envelope's `id.traceId` rides with it); ordering and supersedence tracks
+  are per carrier runtime, so a message handed to another carrier leaves its
   track on the first.
 
 **CURRENT:** Both RTC and WS use the AL envelope and core admission runtimes.
