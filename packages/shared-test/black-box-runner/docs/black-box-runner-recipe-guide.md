@@ -385,7 +385,7 @@ WS `send` results preserve observable send metadata in `actual`:
 - `sendResult.status`
 - `sendResult.readyState` and `sendResult.readyStateName`
 - `sendResult.bufferedAmount`
-- `sendResult.wirePayload`
+- `sendResult.wirePayloadLength`
 - `sendStartedAtEpochMs`, `sendEndedAtEpochMs`, and `sendLatencyMs`
 
 These fields can be extracted with `outputPath` or `outputs`, then compared with

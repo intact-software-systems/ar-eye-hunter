@@ -1162,14 +1162,6 @@ describe('rallar-bb browser adapter auth', () => {
                 }
             }
         ]);
-        expect(result.value).toMatchObject({
-            sent: {
-                resourceId: 'message-alice',
-                payload: {
-                    sentBy: 'alice',
-                    sessionId: 'session-1'
-                }
-            }
-        });
+        expect(JSON.stringify(result.value)).not.toContain('message-alice');
     });
 });

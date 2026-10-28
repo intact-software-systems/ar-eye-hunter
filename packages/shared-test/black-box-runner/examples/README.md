@@ -323,7 +323,7 @@ Use `outputPath` and `outputs` to pass IDs, tokens, and observed status values
 between HTTP, WS, RTC, ASSERT, and SET steps.
 
 WS sends expose `sendResult.status`, `sendResult.readyStateName`,
-`sendResult.bufferedAmount`, `sendResult.wirePayload`, and send timing fields.
+`sendResult.bufferedAmount`, `sendResult.wirePayloadLength`, and send timing fields.
 RTC sends expose provider `sendResult` values when available, including failed
 provider responses when the provider attaches them to the thrown error.
 

@@ -838,6 +838,7 @@ describe('distributed recipes monitor', () => {
                     protocolVersion: 1,
                     runId: 'run-1',
                     agentId: 'agent-b',
+                    commandId: 'start-b',
                     eventId: 'live-warning-diagnostic',
                     atEpochMs: 2_060,
                     payload: {
@@ -852,7 +853,6 @@ describe('distributed recipes monitor', () => {
                             message: 'rallar.browser.ws.unhandled_message',
                             transport: 'ws',
                             groupId: 'bb-group',
-                            distributedRunId: 'dist-1',
                             data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
                         }
                     }
@@ -1149,7 +1149,7 @@ describe('distributed run monitor strict diagnostic decoding', () => {
             topic: 'rallar.browser.rtc.data_channel_mismatch',
             severity: 'warning',
             transport: 'realtime',
-            message: 'rallar.browser.rtc.data_channel_mismatch',
+            message: 'Received data channel for different data channel name.',
             laneId: 'rtc-realtime',
             expectedChannelLabel: 'rtc-realtime',
             observedChannelLabel: 'rtc-data-channel',

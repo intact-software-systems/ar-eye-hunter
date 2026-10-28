@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
@@ -43,9 +44,7 @@ async function tryStartHttpServer(
         return await startHttpServer(handler);
     }
     catch (error) {
-        const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown; }).code)
-            : '';
+        const code = decodeErrorCode(error);
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;
         }
@@ -53,7 +52,14 @@ async function tryStartHttpServer(
     }
 }
 
-function json(response: ServerResponse, statusCode: number, body: unknown): void {
+function decodeErrorCode(error: unknown): string {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return '';
+    }
+    return String(error.code);
+}
+
+function json(response: ServerResponse, statusCode: number, body: ApiJsonValue): void {
     response.writeHead(statusCode, {
         'Content-Type': 'application/json'
     });
@@ -658,10 +664,10 @@ describe('executeBlackBox', () => {
 
             readyState = FakeWebSocket.CONNECTING;
             bufferedAmount = 0;
-            onopen: ((event: unknown) => void) | undefined;
-            onmessage: ((event: { data: unknown; }) => void) | undefined;
-            onclose: ((event: unknown) => void) | undefined;
-            onerror: ((event: unknown) => void) | undefined;
+            onopen: ((event: { url: string; }) => void) | undefined;
+            onmessage: ((event: { data: string; }) => void) | undefined;
+            onclose: ((event: { code?: number; reason?: string; wasClean: boolean; }) => void) | undefined;
+            onerror: ((event: Event) => void) | undefined;
 
             public readonly url: string;
 
@@ -675,8 +681,8 @@ describe('executeBlackBox', () => {
                 }, 0);
             }
 
-            send(data: unknown): void {
-                this.bufferedAmount = String(data).length;
+            send(data: string): void {
+                this.bufferedAmount = data.length;
                 setTimeout(() => {
                     this.onmessage?.({
                         data
@@ -727,7 +733,7 @@ describe('executeBlackBox', () => {
                                 outputPath: 'sendResult.status',
                                 outputs: {
                                     wsReadyState: 'sendResult.readyStateName',
-                                    wsWirePayload: 'sendResult.wirePayload',
+                                    wsWirePayloadLength: 'sendResult.wirePayloadLength',
                                     echoedKind: 'matchedMessage.data.kind'
                                 },
                                 scenarioExecutionNumber: 1,
@@ -756,7 +762,9 @@ describe('executeBlackBox', () => {
             expect(report.summary.failure).toBe(0);
             expect(report.outputs.wsSendStatus).toBe('sent');
             expect(report.outputs.wsReadyState).toBe('OPEN');
-            expect(report.outputs.wsWirePayload).toBe('{"kind":"bb.echo","payload":{"text":"hello ws"}}');
+            expect(report.outputs.wsWirePayloadLength).toBe(48);
+            const { matchedMessage: _echoedMessage, ...sendDetails } = report.resultsByName.sendEchoWs[0].actual;
+            expect(JSON.stringify(sendDetails)).not.toContain('hello ws');
             expect(report.outputs.echoedKind).toBe('bb.echo');
             expect(typeof report.resultsByName.sendEchoWs[0].actual.sendLatencyMs).toBe('number');
         }

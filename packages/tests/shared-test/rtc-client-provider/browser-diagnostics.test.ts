@@ -270,4 +270,5 @@ Deno.test('createRallarBrowserRtcProvider records runtime send failure diagnosti
     assertEquals(runtimeChannelDiagnostic?.data?.summary?.statuses?.closed, 1);
     assertEquals(providerSendFailed?.data?.response?.results?.[0]?.result?.status, 'closed');
     assertEquals(providerSendFailed?.data?.error?.message, 'Rallar browser RTC send failed for 1 peer(s). status=closed');
+    assertEquals(JSON.stringify(providerSendFailed?.data).includes('hello bob'), false);
 });

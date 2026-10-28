@@ -155,7 +155,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
             return response;
         }
         catch (error) {
-            const diagnostics = { sent: message, response, error: toBrowserErrorDetails(error) };
+            const diagnostics = { response, error: toBrowserErrorDetails(error) };
             this.diagnostic('rallar.browser.provider.send_failed', diagnostics);
             throw new RallarBrowserOperationError({ cause: toBrowserError(error), sendResult: response, diagnostics });
         }

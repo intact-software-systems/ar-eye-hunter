@@ -187,6 +187,10 @@ describe('remote browser count dispatch', () => {
         expect(report.resultsByName.sendRemoteWs3[0].status).toBe('SUCCESS');
         expect(report.resultsByName.sendRemoteWs3[0].actual.matchedCount).toBe(2);
         expect(report.resultsByName.sendRemoteWs3[0].actual.sendResult.status).toBe('sent');
+        // The fake control server echoes the whole command in its result, so only the runner-owned details are scanned.
+        const { result: _remoteResult, sendResult, ...details } = report.resultsByName.sendRemoteWs2[0].actual;
+        const { remoteResult: _remoteSendResult, ...sendStatus } = sendResult;
+        expect(JSON.stringify({ details, sendStatus })).not.toContain('ping-1');
     });
 
     it('counts frames on a remote RTC wait', async () => {

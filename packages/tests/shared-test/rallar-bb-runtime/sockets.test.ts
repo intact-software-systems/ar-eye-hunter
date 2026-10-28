@@ -54,6 +54,7 @@ describe('rallar-bb runtime sockets', () => {
                 queued: true
             }
         });
+        expect(JSON.stringify(sendResult.value)).not.toContain('hello');
         expect(sockets[0].sent).toEqual(['{"text":"hello"}']);
         expect(toRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
             data: '{"text":"hello"}'

@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { toRallarBrowserEventInput } from '../../shared-test/rallar-bb-test/browser/to-rallar-browser-event-input.ts';
 import {
     createDefaultRallarBlackBoxBrowserTestRuntime,
     createDefaultRallarBlackBoxTestRuntime,
@@ -226,6 +227,28 @@ describe('rallar-bb-test runtime diagnostics', () => {
             }
         });
         expect(assertResult.ok).toBe(true);
+    });
+
+    it('normalizes a bridged console warning with its topic as the message', () => {
+        const input = toRallarBrowserEventInput({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.ws.unhandled_message',
+            connection: 'aliceRtc',
+            transport: 'ws',
+            severity: 'warning',
+            data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
+        });
+
+        expect(input).toMatchObject({
+            kind: 'diagnostic',
+            severity: 'warning',
+            payload: {
+                topic: 'rallar.browser.ws.unhandled_message',
+                message: 'rallar.browser.ws.unhandled_message',
+                data: { pattern: 'unhandled-ws-message', source: 'console.warn' },
+                source: 'browser-rallar-runtime'
+            }
+        });
     });
 
     it('names the producer of a simulated runtime command diagnostic', async () => {

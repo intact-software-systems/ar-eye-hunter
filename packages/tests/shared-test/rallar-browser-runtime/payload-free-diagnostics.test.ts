@@ -49,7 +49,7 @@ it('keeps every application payload out of the lane diagnostics while message ev
     });
     await deliverInboundMessages();
     console.warn('Unhandled WS message', secretPayload);
-    console.warn(secretPayload);
+    console.warn({ ...secretPayload, note: 'Unhandled WS message' });
 
     const diagnostics = events.filter((event) => event.kind === 'diagnostic');
     const messages = events.filter((event) => event.kind === 'message');

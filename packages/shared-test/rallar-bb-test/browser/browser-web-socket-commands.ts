@@ -189,7 +189,7 @@ export class BrowserWebSocketCommands {
             status: queued ? 'queued' : 'sent',
             queued
         };
-        return { status: 'ok', value: { connection, sent: data, sendObservation } };
+        return { status: 'ok', value: { connection, sendObservation } };
     }
 
     /** Only a structured Rallar envelope in browser-rallar provider mode travels over the Rallar signaling socket. */

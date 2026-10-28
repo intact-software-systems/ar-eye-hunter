@@ -68,7 +68,7 @@ describe('distributed recipes history', () => {
                             diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
                             topic: 'rallar.browser.rtc.data_channel_mismatch',
                             severity: 'warning',
-                            message: 'rallar.browser.rtc.data_channel_mismatch',
+                            message: 'Received data channel for different data channel name.',
                             transport: 'realtime',
                             groupId: 'bb-group',
                             peerId: 'agent-b',
