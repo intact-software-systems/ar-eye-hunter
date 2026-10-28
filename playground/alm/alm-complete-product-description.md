@@ -1007,7 +1007,7 @@ ACK names, so its entry lists the sessions that acknowledged it under the trace 
 ends `receipt-exhausted` naming the rest. A client-state event and every snapshot page stay unreceipted: a principal
 audience names no room to confirm against, and a snapshot page is superseded by the next.
 
-**CURRENT — I1b-ii-a, the trace on the runtime:** every message-scoped runtime
+**CURRENT — I1b-ii, the trace on the runtime and the harness:** every message-scoped runtime
 diagnostic ends with the message's `traceId`, then its `corrId`, after a
 receipt's `phase` too. Two kinds carry both as `null` together where no decoded
 message exists: a `dispatch-decision` made before the stored message is read,
@@ -1020,19 +1020,21 @@ receipt observations, every delivery settlement and each admin receipt entry on
 trace of the message that caused it, so a join, its formation timers and its
 activation publication follow one trace. The black-box runner compares the
 echoed `x-request-id`, and the harness raw control acknowledges under the
-acknowledged message's trace.
+acknowledged message's trace. The harness send, reply and awaitReply results and
+the typed-channel message event carry `traceId` and `corrId`, and the conformance
+lane's identity assessors require the receiver's trace to equal the sender's,
+across the reload and fallback cells too. No diagnostic the lane records carries
+a message payload: the console-warning bridge sends a fixed pattern token, no
+`ws.send` result copies the sent payload, and the distributed-run rows carry an
+identity summary. The sentinel-payload guards
+`payload-free-diagnostics.test.ts` and `distributed-run-identity-summary.test.ts`
+prove it. Message evidence events keep their payloads as the recipes' assertion
+surface.
 
-**PLANNED — F1, S1, and I1b-ii-b, end-to-end observability:** There is no shared
-lifecycle event stream, IndexedDB cost telemetry, or payload-safe logging
-contract. F1 adds the AL-owned IndexedDB counter and ALM metrics in the lanes,
-S1 the lifecycle events. The trace itself is carried end to end since I1b-i, and
-it is on the runtime diagnostics, the timing lines and the receipts since
-I1b-ii-a. I1b-ii-b puts the trace on the harness identity, the `messages.send`
-result and the typed-channel message event, and proves sender and receiver
-trace equality in the lane. It adds the payload-free diagnostics contract: no
-diagnostic the conformance lane records may carry a message payload, which a
-sentinel-payload guard proves. Message evidence events keep their payloads as
-the recipes' assertion surface.
+**PLANNED — F1 and S1, end-to-end observability:** There is no shared
+lifecycle event stream, IndexedDB cost telemetry, or product-wide payload-safe
+logging contract. F1 adds the AL-owned IndexedDB counter and ALM metrics in the
+lanes, S1 the lifecycle events.
 
 **PLANNED — I2a, storage health:** In production the storage-reset sink does
 nothing, and no storage-health or recovery event exists. I2a puts the following
@@ -1196,7 +1198,8 @@ browser the `corrId` send input, the handle's `corrId`, `replyToMsgId` and
 `awaitReply`, and `RallarMessage.reply()`. I1b-i added the trace surface: the
 builders' `traceId` option, `newALTraceId` and `decodeALTraceId`, and in the
 browser the `traceId` send input, the handle's `traceId`, `RallarMessage.traceId`
-and an `x-request-id` on every api request. Two parts are absent:
+and an `x-request-id` on every api request. I1b-ii added `toALMessageTrace`
+and `AL_TRACE_ID_HTTP_HEADER`, the `x-request-id` header name. Two parts are absent:
 
 - the channel's storage-unavailable policy (I2a);
 - `local-checkpoint` with its per-store settings (I2b).

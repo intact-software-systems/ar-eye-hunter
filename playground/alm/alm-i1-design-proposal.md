@@ -409,6 +409,15 @@ I1b-ii-a adds the maintainer's rulings R11–R12 of 2026-10-28:
   identity and the payload-free diagnostics class, which closes PC9.
 - **R12:** the maintainer approved the six-task I1b-ii-a plan as written.
 
+I1b-ii-b adds the maintainer's rulings R13–R16 of 2026-10-28:
+
+- **R13:** the distributed-run rows' `payloadSummary` is renamed `identitySummary` on both row kinds. Refined at the
+  Task 3 review: `identitySummary` is the field of event and diagnostic evidence entries, and result and failure
+  evidence entries carry `detailSummary` instead.
+- **R14:** api-v1 ships a receipted server publication, so the admin receipt entry is observable by recipe.
+- **R15:** that publication is the group-state delta, receiver-receipted, and it lands in I1b-ii-b.
+- **R16:** the maintainer approved the seven-task I1b-ii-b plan as written.
+
 ### 6.a One identity, three carriers (R6, D447)
 
 The trace id is one string with one grammar, `[A-Za-z0-9_-]{1,128}` (a UUID fits), owned by
@@ -622,11 +631,10 @@ results, the framework conformance fixtures, the realtime lane, the director dia
 recipes' assertion surface (R7). Docs close PC9. The hosted manifests regenerate from their builders.
 
 I1b-ii also owns the trace on harness identity: the black-box runner's compared response headers and the harness raw
-control, which mints its own trace today (`submit-black-box-raw-control.ts`).
+control, which minted its own trace in `submit-black-box-raw-control.ts` until I1b-ii-a (D459).
 
 **As applied (I1b-ii-a).** I1b-ii lands as two pull requests (R11). I1b-ii-a puts the trace on the runtime, and
-I1b-ii-b, next and outcome-shaped, owns the harness send and message identity, the payload-free diagnostics class
-and PC9.
+I1b-ii-b puts it on the harness identity, makes the diagnostics class payload-free and closes PC9.
 
 - The formation cycle keeps the trace of the message that caused each submission. Its four ports share one
   `GroupSystemCommandSubmission` and one `GroupSystemCommandPort`, the trace rides
@@ -637,8 +645,8 @@ and PC9.
   that complete set (D456). The AppInbox timing lines are among the producers that set it.
 - The ws-receipt facts carry the trace: the outbound receipt facts, the business-socket and ACK facts, `ack-count`,
   `receipt-outbox` and `ack-rejection`. `ALDeliverySettlement.traceId` is required, `cancel` takes the caller's trace,
-  and the admin receipt entry and its OpenAPI schema require `traceId` (D457). No recipe can observe the admin entry's
-  trace yet, so its recipe assertion joins I1b-ii-b's server-originated cell.
+  and the admin receipt entry and its OpenAPI schema require `traceId` (D457). The server-originated cell asserts the
+  admin entry's trace by recipe (D463, D464).
 - `toALMessageTrace(message)` appends `traceId` then `corrId` last on every message-scoped runtime diagnostic,
   after `control-admission`'s optional `phase` too, because a recipe wait matches `reason` and `phase` as neighbours
   (D458). `dispatch-decision` and `claim-settled` carry both as `null` together where no decoded message exists.
@@ -648,10 +656,30 @@ and PC9.
   message's trace, read from a retained received message or the page's own delivery handle; an unknown message is
   refused `acked-message-unknown` before any admission, and the raw control no longer mints (D459).
 
-Still planned for I1b-ii-b: `traceId` and `corrId` on the harness `messages.send` result value and the typed-channel
-message event, the assessors' sender and receiver trace equality across the reload and fallback cells, the
-server-originated cell, the payload-free diagnostics class with its sentinel guard, the regenerated hosted manifests
-and the docs that close PC9.
+**As applied (I1b-ii-b).** I1b-ii-b puts the trace on the harness identity, makes the diagnostics class
+payload-free, receipts the group-state delta and adds the server-originated cell, under R13–R16; PC9 is resolved.
+
+- The harness send and reply results, the `messages.awaitReply` reply and the typed-channel message event carry
+  `traceId` and `corrId`, the new fields appended last; the event's `data` ends with
+  `...toALMessageTrace(message.raw)`, so the prefix the recipes match is unchanged. One `requireAlmTraceIdField`
+  decodes the trace with `decodeALTraceId` in every lane decoder (D460).
+- The console-warning bridge sends a fixed `BlackBoxRallarConsoleWarningPattern` token and `source: 'console.warn'`
+  for string arguments only, and no `ws.send` result or `send_failed` diagnostic copies the sent payload. The
+  distributed-run event and diagnostic rows carry `identitySummary` from one `toDistributedRunIdentitySummary`, whose
+  keys are, in order, kind, topic, transport, messageId, distributedRunId, groupId, roomId, typeId, topicId,
+  contextId, resourceId, status, msgId, handleId, traceId and corrId; result and failure entries carry
+  `detailSummary` (R13). Two sentinel guards pin the class, and message evidence keeps its payloads (R7, D461).
+- The identity assessors live in `conformance/alm/identity/`. After the `msgId` join they require the receiver's
+  trace to equal the sender's; the `messages.received` value lists each matched copy's `msgId`, `traceId`, `corrId`
+  and `transport`, so `assessAlmReceivedTraceIdentity` joins the fallback cells, and the reload assessor compares
+  the recovered original's trace (D462).
+- The group-state delta is receiver-receipted under the WS service peer id, so the admin receipt entry records the
+  receiving sessions' `acknowledgement` under the delta's trace, or `receipt-exhausted`; client-state events and
+  snapshot pages stay unreceipted (R14, R15, D463).
+- The `server-originated` cell sends two self-membership writes under `AL_TRACE_ID_HTTP_HEADER`, waits for each
+  delta's trace on the receiver's `group-state.event` message, and asserts the admin entry's `acknowledgement` under
+  the last write's trace; `assessAlmServerOriginatedIdentity` joins the three. It runs in the local lane only, and
+  the hosted manifests are unchanged (D464).
 
 ### 6.i Decisions
 
@@ -685,17 +713,28 @@ and the docs that close PC9.
 - **D454** I1b-ii as in §6.h: diagnostics and harness identity, the payload-free diagnostics class with its sentinel
   guard, message evidence keeps payloads (R7), docs close PC9. Harness identity includes the runner's compared
   response headers and the harness raw control's trace. As applied: I1b-ii lands as I1b-ii-a, the runtime half
-  (D455–D459), and I1b-ii-b, next and outcome-shaped (R11).
+  (D455–D459), and I1b-ii-b, the harness half (D460–D464), which closes PC9 (R11).
 - **D455** (I1b-ii-a) The formation cycle submits one `GroupSystemCommandSubmission` through one
   `GroupSystemCommandPort` under the causing message's trace; twelve mint sites remain, listed in the roadmap's D455.
 - **D456** (I1b-ii-a) `RallarTimingEvent.traceId` on every request- or message-scoped timing line; the HTTP
   `requestId` equals it; the JSDoc names the producers without one.
 - **D457** (I1b-ii-a) The receipt observations, `ALDeliverySettlement.traceId` and the admin receipt entry carry the
-  trace; the entry's recipe assertion joins I1b-ii-b.
+  trace; the server-originated cell asserts the entry's trace by recipe (D463, D464).
 - **D458** (I1b-ii-a) `toALMessageTrace` appends `traceId` then `corrId` last on every message-scoped diagnostic,
   after `phase`; two kinds are nullable together.
 - **D459** (I1b-ii-a) The runner compares `x-request-id`; the raw control inherits the acknowledged message's trace or
   is refused `acked-message-unknown`.
+- **D460** (I1b-ii-b) The harness send, reply and awaitReply values and the typed-channel event carry `traceId` and
+  `corrId` appended last; the lane decodes them with the shared grammar.
+- **D461** (I1b-ii-b) The payload-free diagnostics class: the console bridge's fixed pattern token and source, the
+  `ws.send` result without its payload, the rows' `identitySummary` (R13), and the sentinel guards.
+- **D462** (I1b-ii-b) The assessors join sender and receiver by `msgId` and require trace equality; the
+  `messages.received` identities make the fallback cells joinable; the reload check compares the recovered
+  original's trace.
+- **D463** (I1b-ii-b) Group-state deltas are receiver-receipted under the WS service peer id (R14, R15); the admin
+  receipt entry is observable by recipe.
+- **D464** (I1b-ii-b) The server-originated cell: scenario `server-originated`, its message selector and its
+  assessor, withheld from the hosted combined manifests.
 
 ### 6.j Corrections and carries
 
@@ -707,3 +746,10 @@ and the docs that close PC9.
   identity exists on the hydration unicast and is not a planned part.
 - Carries: a trace on the realtime JSON lane (no msgId there); authored trace sentinels in receiver waits (the
   recipes keep payload sentinels); `traceparent` interoperability; a trace column beside the stored audit JSON.
+- I1b-ii-b carries: the RTC send results keep their `sent` copy; the Analyze index carries no event payload JSON,
+  so a diagnostic's free-text `data.reason` reaches it only through the row's message, and a bounded named `reason`
+  field is an optional follow-up; api-v1's timing middleware and CORS lists, shared-web's `send-api-http-request.ts`
+  and the runner's `normalize-black-box-response-headers.ts` keep their own `x-request-id` literal beside
+  `AL_TRACE_ID_HTTP_HEADER`; the harness `http.request` states no expected response header, so a traced write
+  asserts its echo; the server-originated cell stays out of the hosted combined manifests, whose connect carries one
+  message selector.

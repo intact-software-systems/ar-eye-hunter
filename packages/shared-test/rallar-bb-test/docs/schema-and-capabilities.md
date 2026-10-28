@@ -283,8 +283,8 @@ recorder keeps the last 16 messages of each type the page received, oldest first
 arrival; `index` (from 1) picks one of them. The page replies with `payload` through that message's own `reply()`: a
 WS unicast to the request's sender session under the request's correlation, in its room, on the `command` purpose's
 delivery defaults. `handleId` names the reply's own handle, so `messages.observe` and `messages.receipts` follow its
-delivery. It returns `{ handleId, msgId, replyToMsgId, traceId, corrId }`, the reply handle's own trace and its
-correlation, which is the request's. An `index` past the arrivals the page holds fails the command
+delivery. It returns `{ handleId, msgId, replyToMsgId, traceId, corrId }`; the reply inherits the request's trace
+and correlation. An `index` past the arrivals the page holds fails the command
 with `RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED` and sends nothing. The page forgets its arrivals when its
 connection closes.
 
@@ -1338,7 +1338,10 @@ signaling socket it is `{ connection, via, rallar, sendObservation }` and its
 `rallar.browser.ws.send_completed` diagnostic omits the payload too; over a raw
 browser WebSocket it is `{ connection, sendObservation }`. Message evidence
 (`kind: "message"` events and wait results) keeps its payloads as the assertion
-surface.
+surface. The sentinel-payload guard
+`packages/tests/shared-test/rallar-browser-runtime/payload-free-diagnostics.test.ts`
+proves both halves: the page's diagnostics exclude a sentinel payload, and its
+message evidence keeps it.
 
 `assert` is a small browser-agent evidence check. It reads only whitelisted
 runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,
