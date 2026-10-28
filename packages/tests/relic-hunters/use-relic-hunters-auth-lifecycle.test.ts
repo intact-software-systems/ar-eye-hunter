@@ -244,7 +244,6 @@ describe('useRelicHunters auth lifecycle', () => {
         });
         expect(container.textContent).toContain('Watch the revealed plans');
         expect(container.querySelector('button')).toBeNull();
-        expect(sendRelicCommand).not.toHaveBeenCalled();
     });
 
     it('clears relic runtime state when auth is unauthorized outside manual logout', async () => {

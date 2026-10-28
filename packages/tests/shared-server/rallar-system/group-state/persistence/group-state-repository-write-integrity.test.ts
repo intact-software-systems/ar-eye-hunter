@@ -6,6 +6,7 @@ import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import {
@@ -14,7 +15,8 @@ import {
     createMutationFacts,
     createMutationRead,
     groupAdmissionStorageKey,
-    memberFor
+    memberFor,
+    requireMutationGroupAndActor
 } from '../group-state-concurrency-test-fixtures.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import {
@@ -41,8 +43,14 @@ describe('convergent group and presence state', () => {
             }
         });
         const bob = memberFor('bob');
+        const base = createMutationRead();
+        requireMutationGroupAndActor(base);
         const read: GroupMutationRead = {
-            ...createMutationRead(),
+            ...base,
+            group: storedEntry(groupStorageKey(), { ...base.group.value, activeMemberCount: 2 }),
+            activeMemberPrincipalIds: ['alice', 'bob'],
+            activeMembers: [base.actorMember, bob],
+            lifecyclePolicy: { status: 'present', policy: resolveGroupLifecyclePolicyPreset('optimistic') },
             targetMember: bob,
             targetMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob)
         };
@@ -61,7 +69,7 @@ describe('convergent group and presence state', () => {
             guard: {
                 ...computed.guard,
                 value: computed.guard.kind === 'group'
-                    ? { ...computed.guard.value, activeMemberCount: 2 }
+                    ? { ...computed.guard.value, activeMemberCount: 3 }
                     : computed.guard.value
             }
         };

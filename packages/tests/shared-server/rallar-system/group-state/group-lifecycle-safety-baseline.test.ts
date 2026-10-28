@@ -123,6 +123,7 @@ function groupIn(lifecycleState: GroupLifecycleState): Group {
     return createTestGroup({
         ...groupRef('pure-room'),
         ownerPrincipalId: 'alice',
+        activeMemberCount: 2,
         lifecycleState,
         formationEpoch: lifecycleState === 'forming' ? 0 : 1,
         created: audit('alice'),
@@ -178,6 +179,8 @@ function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         ...baseRead(lifecycleState),
         actorMember: null,
         actorMemberEntry: null,
+        activeMemberPrincipalIds: ['alice', 'bob'],
+        activeMembers: [member('alice', 'owner'), member('bob', 'member')],
         lifecyclePolicy: {
             status: 'present',
             policy: resolveGroupLifecyclePolicyPreset('optimistic')

@@ -40,7 +40,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register/requests/bb-register-founder-001-{runId}-spectating",
+        "path": "/api/auth/register/requests/bb-spectating-register-founder-{runId}",
         "body": {
           "username": "spectating-founder-{runId}",
           "password": "{clientPassword}",
@@ -60,7 +60,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-founder-002-{runId}-spectating",
+        "path": "/api/auth/login/requests/bb-spectating-login-founder-{runId}",
         "body": {
           "username": "spectating-founder-{runId}",
           "password": "{clientPassword}"
@@ -104,7 +104,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register/requests/bb-register-probe-003-{runId}",
+        "path": "/api/auth/register/requests/bb-spectating-register-probe-{runId}",
         "body": {
           "username": "spectating-probe-{runId}",
           "password": "{clientPassword}",
@@ -124,7 +124,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-probe-004-{runId}",
+        "path": "/api/auth/login/requests/bb-spectating-login-probe-{runId}",
         "body": {
           "username": "spectating-probe-{runId}",
           "password": "{clientPassword}"
@@ -168,7 +168,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/register/requests/bb-register-observer-001-{runId}-spectating",
+        "path": "/api/auth/register/requests/bb-spectating-register-observer-{runId}",
         "body": {
           "username": "spectating-observer-{runId}",
           "password": "{clientPassword}",
@@ -188,7 +188,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-observer-002-{runId}-spectating",
+        "path": "/api/auth/login/requests/bb-spectating-login-observer-{runId}",
         "body": {
           "username": "spectating-observer-{runId}",
           "password": "{clientPassword}"
@@ -232,7 +232,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/watch-create-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-spectating-watch-create-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
@@ -257,7 +257,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/watch-probe-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-watch-probe-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"
@@ -276,7 +276,11 @@
               "status": "active"
             }
           ],
-          "memberCount": 2
+          "memberCount": 2,
+          "causalRevision": {
+            "groupRevision": 2,
+            "presenceRevision": 0
+          }
         }
       }
     },
@@ -286,7 +290,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/watch-probe-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-watch-probe-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"
@@ -305,7 +309,11 @@
               "status": "active"
             }
           ],
-          "memberCount": 2
+          "memberCount": 2,
+          "causalRevision": {
+            "groupRevision": 2,
+            "presenceRevision": 0
+          }
         }
       }
     },
@@ -315,7 +323,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/recover-probe-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-recover-probe-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"
@@ -342,7 +350,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}/role/requests/role-full-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}/role/requests/bb-spectating-role-full-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
@@ -352,7 +360,17 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-full",
+          "status": 403,
+          "denial": {
+            "code": "group-full",
+            "message": "Player capacity has been reached."
+          }
+        }
       }
     },
     {
@@ -361,7 +379,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/play-full-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-play-full-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"
@@ -371,7 +389,17 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-full",
+          "status": 403,
+          "denial": {
+            "code": "group-full",
+            "message": "Player capacity has been reached."
+          }
+        }
       }
     },
     {
@@ -380,7 +408,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/owner-watch-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-owner-watch-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
@@ -390,7 +418,17 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "denial": {
+            "code": "forbidden-role",
+            "message": "Transfer ownership or demote before watching."
+          }
+        }
       }
     },
     {
@@ -456,7 +494,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/expand-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/bb-spectating-expand-{runId}",
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
@@ -475,7 +513,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/promote-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-promote-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"
@@ -504,7 +542,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/watch-again-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-watch-again-{runId}",
         "headers": {
           "Authorization": "{probeAuthHeader}",
           "x-client-id": "{probeClientId}"

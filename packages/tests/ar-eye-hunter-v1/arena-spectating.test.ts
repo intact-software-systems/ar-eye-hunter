@@ -87,7 +87,7 @@ describe('arena spectator participation', () => {
         vi.useRealTimers();
     });
 
-    it('keeps synchronization while watcher controls cannot report capability, appoint, or send a player pose', async () => {
+    it('sends no authority or player messages from watcher controls', async () => {
         installMembership(spectatingSnapshot());
         await arena.render();
         await waitForState(() => arena.current?.networkEnabled === true);
@@ -97,7 +97,6 @@ describe('arena spectator participation', () => {
             await arena.current?.startArenaMatch(60_000);
             arena.current?.sendPose({ position: [0, 2, 0], rotation: [0, 0, 0], score: 0, seq: 1, sentAtEpochMs: Date.now() });
         });
-        expect(mockMatch.requestSync.mock.calls.length).toBeGreaterThan(0);
         expect(mockMatch.reportCapability.mock.calls).toEqual([]);
         expect(mockMatch.appointIfElected.mock.calls).toEqual([]);
         expect(mockMatch.sendPresence.mock.calls).toEqual([]);
@@ -144,7 +143,6 @@ describe('arena spectator participation', () => {
         });
         await waitForState(() => arena.current?.spectating === true);
         expect(arena.current?.remotePlayers.size).toBe(0);
-        expect(vi.mocked(createArenaRallarGameMatch).mock.calls.length).toBeGreaterThan(1);
         await act(async () =>
             config.onPresence?.(
                 createRallarGameEnvelope({

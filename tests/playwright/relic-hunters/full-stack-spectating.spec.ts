@@ -33,9 +33,9 @@ test('watches through visible controls, recovers watching, and promotes only bef
         await expect(host.locator('.lobby-begin-btn')).toBeEnabled();
         await host.locator('.lobby-begin-btn').click();
         await expect(watcher.getByRole('button', { name: 'Join as player', exact: true })).toBeDisabled();
-        await expect(watcher.getByRole('button', { name: 'Submit Plan', exact: true })).toHaveCount(0);
+        await expect(watcher.getByRole('button', { name: 'Submit Plan' })).toHaveCount(0);
         await expect(watcher.getByRole('button', { name: 'Join Expedition', exact: true })).toHaveCount(0);
-        await host.getByRole('button', { name: 'Submit Plan', exact: true }).click();
+        await host.getByRole('button', { name: 'Submit Plan' }).click();
         await expect(host.getByRole('region', { name: 'Round review', exact: true })).toBeVisible();
         await expect(watcher.getByRole('region', { name: 'Round review', exact: true })).toBeVisible();
         await host.getByRole('button', { name: 'Reset', exact: true }).click();

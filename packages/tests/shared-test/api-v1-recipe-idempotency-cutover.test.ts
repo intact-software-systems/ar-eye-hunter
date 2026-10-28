@@ -113,6 +113,12 @@ const identityRejectionSteps = new Set([
 const apiV1RecipeDirectory = 'packages/shared-test/black-box-runner/tests/api-v1';
 const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestIdentityReuse[] = [
     {
+        actionNames: ['replayWatch', 'watchFullPlayerRoom'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-spectating.json`,
+        kind: 'sequential-replay',
+        requestId: 'bb-spectating-watch-probe-{runId}'
+    },
+    {
         actionNames: [
             'rejectConflictingAlicePrincipalReplay',
             'replayEquivalentAlicePrincipal',

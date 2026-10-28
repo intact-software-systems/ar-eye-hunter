@@ -194,12 +194,12 @@ function mutationRead(storageRevision: number): GroupMutationRead {
             status: 'present',
             policy: resolveGroupLifecyclePolicyPreset('optimistic')
         },
-        activeMemberPrincipalIds: null,
-        activeMembers: null,
+        activeMemberPrincipalIds: ['owner'],
+        activeMembers: [owner],
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
+    };
 }
 
 function member(principalId: string, role: GroupMember['role']): GroupMember {
