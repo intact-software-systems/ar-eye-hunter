@@ -148,7 +148,8 @@ the typed result or failure visible without crossing a feature-blind module.
 Every browser HTTP request to api-v1 or the Relic server builds its headers with
 `newApiRequestHeaders` in [send-api-http-request.ts](./api/send-api-http-request.ts),
 which mints a fresh `x-request-id` trace per request, so a retry carries a new
-trace. [`point-read.ts`](./state-read/point-read.ts) and the Relic client use it
+trace; a caller that continues an earlier operation's trace names it in
+`ApiRequestOptions.traceId`, which is validated before any fetch. [`point-read.ts`](./state-read/point-read.ts) and the Relic client use it
 with their own `fetch`, because they need the raw `Response`, and read a failed
 body with the same `readApiErrorBody`.
 

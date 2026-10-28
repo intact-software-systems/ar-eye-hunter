@@ -448,7 +448,8 @@ above.
 The trace bump (D447) moved the envelope from `v: 3` to `v: 4` with a required `id.traceId`. On the
 server, a row an older build wrote holds an older envelope and fails decoding `unsupported` at its
 next read; no row is migrated. A persisted topology publication from before `v: 4` has no `traceId`
-and is refused as corrupt, with no backfill. A page still running an older build sends older
+and is refused as unsupported: replay treats it as a gap and re-hydrates from current topology, and
+listings skip it, with no backfill. A page still running an older build sends older
 envelopes and controls, refused `unsupported` until it reloads; it refuses this build's `v: 4`
 symmetrically.
 
