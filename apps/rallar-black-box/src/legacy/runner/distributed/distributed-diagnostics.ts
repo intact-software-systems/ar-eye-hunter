@@ -22,7 +22,7 @@ export function distributedDiagnosticSearchText(
         row.diagnosticTypeId,
         row.message,
         row.summary,
-        row.payloadSummary,
+        row.identitySummary,
         row.connection,
         row.actor,
         row.groupId,

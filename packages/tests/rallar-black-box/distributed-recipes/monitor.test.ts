@@ -98,7 +98,7 @@ describe('distributed recipes monitor', () => {
             failedCount: 1
         });
         expect(monitor.events.map((event) => event.summary)).toEqual(['payload received']);
-        expect(monitor.events[0].payloadSummary).toContain('topic=message.received');
+        expect(monitor.events[0].identitySummary).toContain('topic=message.received');
         expect(monitor.failures.map((failure) => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map((item) => item.label)).toContain('result failed');
     });

@@ -21,7 +21,7 @@ import {
 export interface DistributedArtifactEvidenceRowsInput extends Omit<ControlRunEvidenceRowsInput, 'commandLinks'> {
     readonly analysis: DistributedRunAnalysis;
     readonly summaryLimit: number;
-    readonly payloadSummaryLimit: number;
+    readonly identitySummaryLimit: number;
 }
 
 /**
@@ -42,7 +42,7 @@ export function toDistributedArtifactEvidenceRows(
         ...toControlRunResultRows(controlRunInput),
         ...toMonitorEventRows(controlRunInput),
         ...toControlRunEventRows(controlRunInput)
-    ].map((entry) => toBoundedEvidenceEntry(entry, input.summaryLimit, input.payloadSummaryLimit));
+    ].map((entry) => toBoundedEvidenceEntry(entry, input.summaryLimit, input.identitySummaryLimit));
 }
 
 function toAnalysisFailureRows(analysis: DistributedRunAnalysis): DistributedArtifactEvidenceEntry[] {
@@ -63,7 +63,7 @@ function toAnalysisFailureRow(analysis: DistributedRunFailedAnalysis): Distribut
         status: 'failed',
         category: failure.category,
         summary: `${failure.title} ${failure.likelyCause}`,
-        payloadSummary: [
+        identitySummary: [
             failure.nextAction,
             failure.affectedAgents.length > 0 ? `Affected agents: ${failure.affectedAgents.join(', ')}` : undefined,
             failure.affectedRegions.length > 0 ? `Affected regions: ${failure.affectedRegions.join(', ')}` : undefined,
@@ -101,7 +101,7 @@ function toMonitorFailureRow(
         status: 'failed',
         category: explanation?.category ?? failure.kind,
         summary: failure.message,
-        payloadSummary: [failure.code, explanation?.likelyCause, explanation?.nextAction].filter(Boolean).join(' · ')
+        identitySummary: [failure.code, explanation?.likelyCause, explanation?.nextAction].filter(Boolean).join(' · ')
     };
 }
 
@@ -137,7 +137,7 @@ function toMonitorEventRow(
         status: event.kind,
         category: 'event',
         summary: event.summary,
-        payloadSummary: event.payloadSummary
+        identitySummary: event.identitySummary
     };
 }
 
@@ -168,6 +168,6 @@ function toMonitorDiagnosticRow(
         status: 'diagnostic',
         category: 'diagnostic',
         summary: diagnostic.summary,
-        payloadSummary: diagnostic.payloadSummary
+        identitySummary: diagnostic.identitySummary
     };
 }

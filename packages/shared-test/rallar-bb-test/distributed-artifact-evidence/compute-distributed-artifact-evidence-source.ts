@@ -1,6 +1,6 @@
 import {
+    DEFAULT_DISTRIBUTED_ARTIFACT_IDENTITY_SUMMARY_LIMIT,
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
-    DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
     DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
     MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT,
@@ -33,9 +33,9 @@ export function computeDistributedArtifactEvidenceSource(
             DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
             MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
         ),
-        payloadSummaryLimit: resolveEvidenceTextLimit(
-            input.limits.payloadSummary,
-            DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
+        identitySummaryLimit: resolveEvidenceTextLimit(
+            input.limits.identitySummary,
+            DEFAULT_DISTRIBUTED_ARTIFACT_IDENTITY_SUMMARY_LIMIT,
             MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
         )
     });

@@ -1,6 +1,7 @@
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxRuntimeDiagnosticPayload } from '../diagnostics.ts';
 import type {
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
@@ -9,16 +10,12 @@ import {
     computeDistributedRunCorrelatedFailureKeys,
     type DistributedRunMonitorFailureIndex
 } from './distributed-run-monitor-failure-index.ts';
-import {
-    decodeFirstNonBlankText,
-    toDistributedRunEventSummary,
-    toDistributedRunPayloadSummary,
-    toDistributedRunPayloadTopic
-} from './distributed-run-payload-summary.ts';
+import { decodeFirstNonBlankText } from './distributed-run-payload-summary.ts';
 import type {
     DistributedRunRuntimeDiagnosticCounts,
     DistributedRunRuntimeDiagnosticRow
 } from './distributed-run-row-contracts.ts';
+import { toDistributedRunIdentitySummary } from './to-distributed-run-identity-summary.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
@@ -46,7 +43,6 @@ function toDistributedRunRuntimeDiagnosticRow(
         payload.topic,
         runtimeEvent.topic,
         payload.diagnosticTypeId,
-        toDistributedRunPayloadTopic(event.payload),
         event.kind
     ) ?? 'runtime.diagnostic';
     const diagnosticTypeId = decodeFirstNonBlankText(payload.diagnosticTypeId, topic) ?? topic;
@@ -57,12 +53,9 @@ function toDistributedRunRuntimeDiagnosticRow(
         runtimeEvent.message,
         payload.reason,
         data.message,
-        data.reason,
-        toDistributedRunEventSummary(event)
+        data.reason
     ) ?? topic;
-    const payloadSummary = toDistributedRunPayloadSummary(
-        payload.data ?? payload.payload ?? runtimeEvent.payload ?? event.payload
-    );
+    const identitySummary = toDistributedRunIdentitySummary(event.payload);
 
     return {
         eventId: event.eventId ?? `${event.agentId}-${event.commandId ?? 'diagnostic'}-${index}`,
@@ -82,17 +75,17 @@ function toDistributedRunRuntimeDiagnosticRow(
             topicId: decodeFirstNonBlankText(payload.topicId, data.topicId),
             contextId: decodeFirstNonBlankText(payload.contextId, data.contextId),
             resourceId: decodeFirstNonBlankText(payload.resourceId, data.resourceId),
-            payloadSummary
+            identitySummary
         }),
-        payloadSummary,
+        identitySummary,
         ...toDiagnosticContextFields(payload, runtimeEvent, data)
     };
 }
 
 function toDiagnosticContextFields(
-    payload: Readonly<Record<string, unknown>>,
-    runtimeEvent: Readonly<Record<string, unknown>>,
-    data: Readonly<Record<string, unknown>>
+    payload: RallarBlackBoxTestRecord,
+    runtimeEvent: RallarBlackBoxTestRecord,
+    data: RallarBlackBoxTestRecord
 ): Partial<DistributedRunRuntimeDiagnosticRow> {
     return {
         connection: decodeFirstNonBlankText(payload.connection, runtimeEvent.connection),
@@ -138,19 +131,19 @@ export function computeDistributedRunRuntimeDiagnosticCounts(
 
 function decodeRuntimeDiagnosticPayload(
     payload: unknown
-): (RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>) | undefined {
+): (RallarBlackBoxRuntimeDiagnosticPayload & RallarBlackBoxTestRecord) | undefined {
     const envelope = decodeRecord(payload);
     const nested = decodeRecord(envelope.payload);
     if (isCanonicalRuntimeDiagnosticPayload(nested)) {
-        return nested as RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>;
+        return nested as RallarBlackBoxRuntimeDiagnosticPayload & RallarBlackBoxTestRecord;
     }
     if (isCanonicalRuntimeDiagnosticPayload(envelope)) {
-        return envelope as RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>;
+        return envelope as RallarBlackBoxRuntimeDiagnosticPayload & RallarBlackBoxTestRecord;
     }
     return undefined;
 }
 
-function isCanonicalRuntimeDiagnosticPayload(value: Record<string, unknown>): boolean {
+function isCanonicalRuntimeDiagnosticPayload(value: RallarBlackBoxTestRecord): boolean {
     return value.diagnosticSchemaVersion === 1;
 }
 
@@ -185,7 +178,7 @@ function toDiagnosticSummary(
         topicId?: string;
         contextId?: string;
         resourceId?: string;
-        payloadSummary: string;
+        identitySummary: string;
     }>
 ): string {
     const selector = [
@@ -198,7 +191,7 @@ function toDiagnosticSummary(
         input.transport,
         input.message,
         selector,
-        input.payloadSummary
+        input.identitySummary
     ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ');
 }
 

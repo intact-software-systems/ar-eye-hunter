@@ -617,10 +617,10 @@ export function DistributedRunMonitorPanel({
                                                 'event'}
                                         </small>
                                         <small>{event.summary}</small>
-                                        {event.payloadSummary !==
+                                        {event.identitySummary !==
                                                 event.summary && (
                                             <small>
-                                                {event.payloadSummary}
+                                                {event.identitySummary}
                                             </small>
                                         )}
                                     </div>

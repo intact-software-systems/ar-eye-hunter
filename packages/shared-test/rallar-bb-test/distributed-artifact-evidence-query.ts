@@ -53,7 +53,7 @@ export function toDistributedArtifactEvidenceSearchHaystack(
             entry.failureDetails?.name,
             entry.failureDetails?.message,
             entry.failureDetails?.stack,
-            entry.payloadSummary,
+            entry.identitySummary,
             entry.summary,
             entry.category,
             entry.status,

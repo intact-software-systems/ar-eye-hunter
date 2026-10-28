@@ -588,8 +588,8 @@ Work:
 
 - Add a structured diagnostics path from the browser Rallar facade/runtime into Rallar Trace, Event Stream, and RTC
   Diagnostics.
-- Capture unhandled WebSocket message events with type ID, topic ID, route/context/resource IDs, sender ID, and a
-  payload summary.
+- Capture unhandled WebSocket message events with type ID, topic ID, route/context/resource IDs, sender ID, and an
+  `identitySummary` of `key=value` identity pairs that never carries the payload.
 - Capture RTC data-channel mismatch events with peer ID, expected channel/lane label, observed channel label, current
   RTC connection state, and whether the event was ignored or accepted.
 - Add severity levels such as `info`, `warn`, and `error`.
@@ -613,10 +613,10 @@ Results:
 
 - The Distributed Recipes monitor now derives structured runtime diagnostics from linked control-run browser-agent
   events that carry normalized `rallar-bb-test` diagnostic payloads.
-- WS diagnostics surface message/type/topic/context/resource IDs, sender, group, payload summary, severity, agent,
+- WS diagnostics surface message/type/topic/context/resource IDs, sender, group, identity summary, severity, agent,
   command, and source metadata.
 - RTC diagnostics surface peer/lane metadata, expected versus observed data-channel labels, accepted/ignored state,
-  group, payload summary, severity, agent, command, and source metadata.
+  group, identity summary, severity, agent, command, and source metadata.
 - The monitor now includes diagnostic counts, WS/RTC count split, a filterable `Runtime Diagnostics` section, and
   diagnostic timeline entries.
 - Diagnostics are correlated to failures by command ID or near-time same-agent evidence, while remaining observable
@@ -789,7 +789,7 @@ Completed notes:
 - Added a shared `deriveDistributedRunWarningRegressionReport(...)` helper that checks visible monitor evidence,
   distributed artifact evidence, warning diagnostic type IDs, composite drilldown recipe IDs, and configured
   high-severity diagnostic failures.
-- Distributed run event rows now retain a compact `payloadSummary`, so live receive payload IDs and topic evidence can
+- Distributed run event rows now retain a compact `identitySummary`, so live receive message IDs and topic evidence can
   be visible in the SPA monitor instead of only in raw artifacts.
 - Expanded the live distributed Playwright flow to:
   - preserve distributed-run IDs in WS, RTC, and realtime payloads so asynchronous receive events can be linked back to

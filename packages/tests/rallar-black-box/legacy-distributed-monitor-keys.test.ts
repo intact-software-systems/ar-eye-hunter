@@ -94,7 +94,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             kind: 'event',
             agentId,
             summary: label,
-            payloadSummary: label
+            identitySummary: label
         })),
         runtimeDiagnostics: events.map(({ agentId, label }) => ({
             eventId: 'event-1',
@@ -106,7 +106,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             diagnosticTypeId: 'runtime.warning',
             message: label,
             summary: label,
-            payloadSummary: label,
+            identitySummary: label,
             correlatedFailureKeys: []
         })),
         compositeDrilldowns: []

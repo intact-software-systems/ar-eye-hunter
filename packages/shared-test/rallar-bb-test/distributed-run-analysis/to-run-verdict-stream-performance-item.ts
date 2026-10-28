@@ -14,7 +14,7 @@ export function toRunVerdictStreamPerformanceItem(
     }>
 ): RunCausalTrailItem | undefined {
     const streamPerformanceEvent = input.monitor.events.find((event) =>
-        isRtcStreamPerformanceFailureText(`${event.topic ?? ''} ${event.summary} ${event.payloadSummary}`)
+        isRtcStreamPerformanceFailureText(`${event.topic ?? ''} ${event.summary} ${event.identitySummary}`)
     );
     const isStreamPerformanceFailure = input.firstActionCategory === 'rtc-stream-performance' ||
         isRtcStreamPerformanceFailureText(`${input.firstFailure.code ?? ''} ${input.firstFailure.message}`);

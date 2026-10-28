@@ -24,10 +24,12 @@ const LINEAR_GROWTH_LIMIT = 2.5;
 // embeds their summaries, so all four digests moved with that row contract. The monitor, membership
 // and report digests were recaptured again when recipe progress rows dropped the manifest's removed
 // required flag; re-inserting it reproduces the previous digests and the verdict digest is unchanged.
-const SCALE_MONITOR_SHA256 = '0e0e4ddf08de46d0b726eab462c649b948ee739d6881d460dd1e31b20be3a61e';
-const SCALE_REPORT_SHA256 = '2411c1128b0fac55394ae7789232b87a1308c0b0f73eaa774d238ffdd191a0a9';
-const SCALE_VERDICT_SHA256 = '7543e629a454ed1e871d15547998a359a1761cc878dd85b88a2325f86661119c';
-const SCALE_MEMBERSHIP_MONITOR_SHA256 = 'ddaa1988ae0367fc951f4c7231a9d43e8670541156012253704ce2034dc373ea';
+// All four were recaptured when event and diagnostic rows took identitySummary, a payload-free key=value
+// identity list that the diagnostic summaries embed, in place of their payload text.
+const SCALE_MONITOR_SHA256 = '92d2fab78c0481ff54fd6abf2dfc9b61bd8de2dde80b9438154ff070cb74c5bf';
+const SCALE_REPORT_SHA256 = '9e28de05b61f1c9023c013de786973fb11645bb169aba918cd94b41e55257831';
+const SCALE_VERDICT_SHA256 = 'cd4efb96b8b89e2d6715e8419f4d29ed30aed993dbddc2d1cb9aa56ab821057c';
+const SCALE_MEMBERSHIP_MONITOR_SHA256 = '7a1dc85c44d5ad6ae0e876167a6f59ae0c7abe738e588ca9dc2bea124e53a9cc';
 
 describe('distributed run monitor indexed derivation', () => {
     it('preserves the complete monitor, report, and verdict observables at 5,000 scale', () => {
@@ -1743,6 +1745,6 @@ function windowDiagnostic(atEpochMs: number): Omit<DistributedRunRuntimeDiagnost
         diagnosticTypeId: 'rtc.window',
         message: 'Window diagnostic.',
         summary: 'Window diagnostic.',
-        payloadSummary: ''
+        identitySummary: ''
     };
 }

@@ -55,7 +55,7 @@ export interface DistributedArtifactEvidenceEntry {
     /** Absent in a size-bounded projection. */
     readonly category?: string;
     readonly summary: string;
-    readonly payloadSummary: string;
+    readonly identitySummary: string;
     /** Absent for evidence that is not a failed result, or a failed result whose error carries no details. */
     readonly failureDetails?: DistributedArtifactEvidenceFailureDetails;
 }
@@ -197,11 +197,11 @@ export type DistributedArtifactEvidenceWindowResult =
     | DistributedArtifactEvidenceWindowAccepted
     | DistributedArtifactEvidenceWindowRejected;
 
-/** Bounds of an evidence index: entries kept, and characters of each summary and payload summary; each is clamped to its maximum. */
+/** Bounds of an evidence index: entries kept, and characters of each summary and identity summary; each is clamped to its maximum. */
 export interface DistributedArtifactEvidenceLimits {
     readonly index: number;
     readonly summary: number;
-    readonly payloadSummary: number;
+    readonly identitySummary: number;
 }
 
 export interface ComputeDistributedArtifactEvidenceInput {
@@ -226,7 +226,7 @@ export const MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT = 2_000;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT = 100;
 export const MAX_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT = 500;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT = 240;
-export const DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT = 600;
+export const DEFAULT_DISTRIBUTED_ARTIFACT_IDENTITY_SUMMARY_LIMIT = 600;
 export const MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT = 2_000;
 export const MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES = 20_000;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE = 64;
@@ -235,5 +235,5 @@ export const MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE = 100;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS: DistributedArtifactEvidenceLimits = {
     index: DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     summary: DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
-    payloadSummary: DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT
+    identitySummary: DEFAULT_DISTRIBUTED_ARTIFACT_IDENTITY_SUMMARY_LIMIT
 };

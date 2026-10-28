@@ -67,7 +67,7 @@ export function projectAnalyzeEvidenceEntry(
             ? { category: boundedText(entry.category, MAX_METADATA_BYTES) }
             : {}),
         summary: boundedText(entry.summary, MAX_SUMMARY_BYTES),
-        payloadSummary: boundedText(entry.payloadSummary),
+        identitySummary: boundedText(entry.identitySummary),
         ...(entry.failureDetails
             ? { failureDetails: projectFailureDetails(entry.failureDetails, true) }
             : {})
@@ -135,7 +135,7 @@ function projectMinimalEvidenceEntry(
         kind: entry.kind,
         sourceFile: boundedText(entry.sourceFile, 128),
         summary: boundedText(entry.summary, 256),
-        payloadSummary: '',
+        identitySummary: '',
         ...(entry.failureDetails
             ? { failureDetails: projectFailureDetails(entry.failureDetails, false) }
             : {})

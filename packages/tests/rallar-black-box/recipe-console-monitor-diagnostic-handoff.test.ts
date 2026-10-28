@@ -257,7 +257,7 @@ function diagnostic(
         diagnosticTypeId,
         message: diagnosticTypeId,
         summary: diagnosticTypeId,
-        payloadSummary: '{}',
+        identitySummary: '{}',
         correlatedFailureKeys: [failureKey]
     };
 }

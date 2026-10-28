@@ -25,14 +25,14 @@ export function resolveEvidenceTextLimit(limit: number, defaultLimit: number, ma
 export function toBoundedEvidenceEntry(
     entry: DistributedArtifactEvidenceEntry,
     summaryLimit: number,
-    payloadSummaryLimit: number
+    identitySummaryLimit: number
 ): DistributedArtifactEvidenceEntry {
     return {
         ...entry,
         summary: toBoundedEvidenceText(entry.summary, summaryLimit),
-        payloadSummary: toBoundedEvidenceText(entry.payloadSummary, payloadSummaryLimit),
+        identitySummary: toBoundedEvidenceText(entry.identitySummary, identitySummaryLimit),
         ...(entry.failureDetails
-            ? { failureDetails: toBoundedFailureDetails(entry.failureDetails, summaryLimit, payloadSummaryLimit) }
+            ? { failureDetails: toBoundedFailureDetails(entry.failureDetails, summaryLimit, identitySummaryLimit) }
             : {})
     };
 }

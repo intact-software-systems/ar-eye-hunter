@@ -77,18 +77,18 @@ export function AnalyzeInspector({
                         )
                     )}
             </dl>
-            {entry.payloadSummary && entry.kind === 'result' && entry.failureDetails
+            {entry.identitySummary && entry.kind === 'result' && entry.failureDetails
                 ? (
                     <details className={styles.rawPayload}>
                         <summary>Raw payload JSON</summary>
-                        <pre>{entry.payloadSummary}</pre>
+                        <pre>{entry.identitySummary}</pre>
                     </details>
                 )
-                : entry.payloadSummary
+                : entry.identitySummary
                 ? (
                     <div className={styles.payload}>
-                        <h3>Payload summary</h3>
-                        <pre>{entry.payloadSummary}</pre>
+                        <h3>Identity summary</h3>
+                        <pre>{entry.identitySummary}</pre>
                     </div>
                 )
                 : null}

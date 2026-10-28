@@ -844,7 +844,7 @@ function createConnection(
             receivedAtEpochMs: 1,
             isRefreshing: false
         }
-    } as unknown as RecipeConsoleControlConnection;
+    } as RecipeConsoleControlConnection;
 }
 
 function controlRun(runId: string, updatedAtEpochMs: number): ControlRunSnapshot {
@@ -1055,7 +1055,7 @@ function evidenceEntry(id: string) {
         kind: 'event' as const,
         sourceFile: 'events.jsonl',
         summary: id,
-        payloadSummary: '{}'
+        identitySummary: '{}'
     };
 }
 
