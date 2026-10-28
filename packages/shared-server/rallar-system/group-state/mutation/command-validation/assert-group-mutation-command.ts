@@ -118,42 +118,10 @@ function assertAggregateOperationInput(
     }
     switch (operation) {
         case 'createGroup':
-            assertNullableString(input, 'slug');
-            requireNonEmptyString(input.displayName, 'Group displayName');
-            assertNullableString(input, 'description');
-            requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-            requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-            assertNullableInteger(input, 'maxMembers', true);
-            assertNullableInteger(input, 'maxSessionsPerMember', true);
-            requireRecord(input.metadata, 'Group metadata');
-            requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
-            assertNullableInteger(input, 'expiresAtEpochMs', true);
-            assertNullableInteger(input, 'purgeAfterEpochMs', true);
-            if (input.lifecyclePolicy !== undefined) {
-                requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
-            }
+            assertCreateGroupInput(input);
             return;
         case 'updateGroup':
-            assertNullableString(input, 'slug');
-            assertNullableString(input, 'displayName');
-            assertNullableString(input, 'description');
-            if (input.kind !== null) {
-                requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-            }
-            if (input.status !== null) {
-                requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
-            }
-            if (input.joinMode !== null) {
-                requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-            }
-            assertNullableInteger(input, 'maxMembers', true);
-            assertNullableInteger(input, 'maxSessionsPerMember', true);
-            if (input.metadata !== null) {
-                requireRecord(input.metadata, 'Group metadata');
-            }
-            assertNullableInteger(input, 'expiresAtEpochMs', true);
-            assertNullableInteger(input, 'emptySinceEpochMs', true);
-            assertNullableInteger(input, 'purgeAfterEpochMs', true);
+            assertUpdateGroupInput(input);
             return;
         case 'appointDirector':
             requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
@@ -165,6 +133,46 @@ function assertAggregateOperationInput(
         default:
             return;
     }
+}
+
+function assertCreateGroupInput(input: JsonWireObject): void {
+    assertNullableString(input, 'slug');
+    requireNonEmptyString(input.displayName, 'Group displayName');
+    assertNullableString(input, 'description');
+    requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+    requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+    assertNullableInteger(input, 'maxMembers', true);
+    assertNullableInteger(input, 'maxSessionsPerMember', true);
+    requireRecord(input.metadata, 'Group metadata');
+    requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
+    assertNullableInteger(input, 'expiresAtEpochMs', true);
+    assertNullableInteger(input, 'purgeAfterEpochMs', true);
+    if (input.lifecyclePolicy !== undefined) {
+        requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
+    }
+}
+
+function assertUpdateGroupInput(input: JsonWireObject): void {
+    assertNullableString(input, 'slug');
+    assertNullableString(input, 'displayName');
+    assertNullableString(input, 'description');
+    if (input.kind !== null) {
+        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+    }
+    if (input.status !== null) {
+        requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
+    }
+    if (input.joinMode !== null) {
+        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+    }
+    assertNullableInteger(input, 'maxMembers', true);
+    assertNullableInteger(input, 'maxSessionsPerMember', true);
+    if (input.metadata !== null) {
+        requireRecord(input.metadata, 'Group metadata');
+    }
+    assertNullableInteger(input, 'expiresAtEpochMs', true);
+    assertNullableInteger(input, 'emptySinceEpochMs', true);
+    assertNullableInteger(input, 'purgeAfterEpochMs', true);
 }
 
 function assertMembershipOperationInput(

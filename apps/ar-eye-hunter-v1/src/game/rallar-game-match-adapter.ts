@@ -59,7 +59,7 @@ export interface ArenaRallarGameMatchConfig {
     readonly onIntent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
     readonly onSnapshot?: RallarGameEnvelopeHandler<ArenaSnapshot>;
     readonly onEvent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
-    readonly onSyncRequest?: RallarGameEnvelopeHandler<unknown>;
+    readonly onSyncRequest?: RallarGameEnvelopeHandler<object>;
 }
 
 export function createArenaRallarGameMatch(

@@ -103,8 +103,9 @@ function isGroupRefInput(value: unknown): value is GroupRef {
         return false;
     }
     return (
-        typeof (value as { applicationId?: unknown; }).applicationId === 'string' &&
-        typeof (value as { groupId?: unknown; }).groupId === 'string' &&
+        'applicationId' in value && typeof value.applicationId === 'string' &&
+        'workspaceId' in value && typeof value.workspaceId === 'string' &&
+        'groupId' in value && typeof value.groupId === 'string' &&
         !Object.prototype.hasOwnProperty.call(value, 'roomId') &&
         !Object.prototype.hasOwnProperty.call(value, 'roomRef')
     );
