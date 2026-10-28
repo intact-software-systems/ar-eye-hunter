@@ -4722,7 +4722,7 @@ components:
           type: string
         mode:
           type: string
-          enum: [hop, subtree, receiver]
+          enum: [hop, subtree, receiver, leader]
         confirmedPeerIds:
           type: array
           items:

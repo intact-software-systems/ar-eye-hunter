@@ -424,6 +424,21 @@ describe('full-stack private upstream receipt capture', () => {
         expect(toSafeApiWsReceiptObservation({ ...observation, traceId: undefined })).toBeUndefined();
     });
 
+    it.each(
+        TRACED_OBSERVATIONS.filter((observation) => 'ack' in observation).flatMap((observation) =>
+            [
+                { controlMsgId: undefined },
+                { controlMsgId: 'unsafe identity' },
+                { controlSenderId: undefined },
+                { controlSenderId: 'unsafe identity' },
+                { controlCreatedAtEpochMs: undefined },
+                { controlCreatedAtEpochMs: -1 }
+            ].map((corruption) => ({ observation, corruption }))
+        )
+    )('refuses a $observation.kind record whose control identity is $corruption', ({ observation, corruption }) => {
+        expect(toSafeApiWsReceiptObservation({ ...observation, ...corruption })).toBeUndefined();
+    });
+
     it('retains closed terminal aggregate, currentness and relay refusals with their actual owner and stage', () => {
         expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
         const absent = { ...ACK_REJECTION, stage: 'ingress-protocol', failedGuards: ['aggregate-absent'], deadlineAtMs: undefined };

@@ -22,11 +22,16 @@ interface ReceiptReturnField {
 
 const SOCKET_REJECTION_CODES = ['malformed', 'unsupported', 'unauthorized', 'oversized', 'capacity'];
 
-const ACK_REJECTION_FIELDS: readonly ReceiptReturnField[] = [
+/** The control that carried an ACK, and the trace it names; every ACK-identified kind requires all of it. */
+const ACK_CONTROL_FIELDS: readonly ReceiptReturnField[] = [
     { name: 'controlMsgId', kind: 'identity' },
     { name: 'controlSenderId', kind: 'identity' },
     { name: 'controlCreatedAtEpochMs', kind: 'number' },
-    { name: 'traceId', kind: 'identity' },
+    { name: 'traceId', kind: 'identity' }
+];
+
+const ACK_REJECTION_FIELDS: readonly ReceiptReturnField[] = [
+    ...ACK_CONTROL_FIELDS,
     { name: 'rejectionCode', kind: ['unauthorized'] }
 ];
 
@@ -486,20 +491,16 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
     };
 }
 
-/** The ACK, its control and the trace it names; a record without a safe ACK or trace has no identity. */
+/** The ACK, its control and the trace it names; a record without all of them safe has no identity. */
 function toSafeAckIdentity(
     record: Readonly<Record<string, unknown>>,
     kind: SafeApiWsReceiptObservationDto['kind']
 ): SafeApiWsReceiptObservationDto | undefined {
     const ack = toSafeAck(record.ack);
-    if (!ack || !isSafeApiTimingIdentity(record.traceId)) {
-        return undefined;
-    }
-    const fields: Record<string, ApiJsonValue> = {};
-    retainSafeIdentity(fields, record, 'controlMsgId');
-    retainSafeIdentity(fields, record, 'controlSenderId');
-    retainSafeNumber(fields, record, 'controlCreatedAtEpochMs');
-    return { kind, serverPeerId: String(record.serverPeerId), ack, traceId: record.traceId, ...fields };
+    const control = toSafeClosedReceiptFields(record, ACK_CONTROL_FIELDS);
+    return ack === undefined || control === undefined
+        ? undefined
+        : { kind, serverPeerId: String(record.serverPeerId), ack, ...control };
 }
 
 function toSafeAggregate(record: unknown): ApiJsonObject | undefined {
