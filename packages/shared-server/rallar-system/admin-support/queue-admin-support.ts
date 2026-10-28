@@ -25,6 +25,7 @@ export class QueueAdminSupport {
             dependencies: this.dependencies,
             operation: 'explain.request',
             adminSession: input.adminSession,
+            traceId: input.traceId,
             timing: {
                 requestId: input.request.requestId,
                 queueKey: input.request.queueKey
@@ -33,6 +34,7 @@ export class QueueAdminSupport {
                 const queueNarrative = input.request.queueKey
                     ? await this.explainQueueItem({
                         adminSession: input.adminSession,
+                        traceId: input.traceId,
                         request: {
                             queueKey: input.request.queueKey,
                             includeExpired: true
@@ -55,6 +57,7 @@ export class QueueAdminSupport {
             dependencies: this.dependencies,
             operation: 'explain.queue-item',
             adminSession: input.adminSession,
+            traceId: input.traceId,
             timing: { queueKey: input.request.queueKey },
             readNarrative: async () => {
                 const queueKey = requireQueueKey(input.request.queueKey);

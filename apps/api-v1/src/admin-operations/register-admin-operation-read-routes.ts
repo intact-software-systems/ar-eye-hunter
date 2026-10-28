@@ -26,6 +26,7 @@ import {
     requireApiAdminSession as defaultRequireApiAdminSession,
     type ApiAdminAuthDependencies
 } from '../services/admin-auth-service.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 
 type AdminOperationReadRouteUseCases = Pick<
     AdminOperationUseCases,
@@ -135,7 +136,8 @@ export function registerAdminOperationReadRoutes(
                 (adminSession, request) =>
                     dependencies.operations.metricsReset.execute({
                         adminSession,
-                        request: readMetricsResetRequest(request)
+                        request: readMetricsResetRequest(request),
+                        traceId: readApiRequestTraceId(context)
                     })
             )
     );
@@ -148,6 +150,7 @@ export function registerAdminOperationReadRoutes(
                 (adminSession, request) =>
                     dependencies.operations.crdtIntegrity.execute({
                         adminSession,
+                        traceId: readApiRequestTraceId(context),
                         request: {
                             document: decodeCrdtDocumentRequest(
                                 decodeCrdtAdminJsonObject(
@@ -168,6 +171,7 @@ export function registerAdminOperationReadRoutes(
                 (adminSession, request) =>
                     dependencies.operations.crdtDebugExport.execute({
                         adminSession,
+                        traceId: readApiRequestTraceId(context),
                         request: decodeCrdtDebugExportRequest(
                             decodeCrdtAdminJsonObject(
                                 request,

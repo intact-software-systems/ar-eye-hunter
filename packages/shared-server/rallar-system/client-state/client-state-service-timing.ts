@@ -43,6 +43,8 @@ interface ClientStatePhaseTimingInput {
 interface ClientStateMutationCommitTimingInput {
     readonly timing: ClientStateMutationTiming;
     readonly writes: readonly ClientMutationComputedWrite[];
+    /** The trace of the queued message whose attempt commits the writes. */
+    readonly traceId: string;
 }
 
 interface RecordClientStateMutationCommitInput extends ClientStateMutationCommitTimingInput {
@@ -95,6 +97,7 @@ export function timeClientStateReadPhase<T>(
             operation: input.operation,
             serviceId: input.timing.serviceId,
             requestId: input.command.requestId ?? undefined,
+            traceId: input.command.facts.traceId,
             ...input.command.aggregateRef
         },
         action
@@ -168,6 +171,7 @@ function recordClientStateMutationCommit(input: RecordClientStateMutationCommitI
                 operation: 'mutation.write',
                 serviceId: input.timing.serviceId,
                 requestId: write.receipt.requestId ?? undefined,
+                traceId: input.traceId,
                 ...write.receipt.aggregateRef
             },
             status: input.status,
@@ -187,6 +191,7 @@ function toMutationTiming(
         operation,
         serviceId,
         requestId: command.requestId ?? undefined,
+        traceId: command.facts.traceId,
         ...command.aggregateRef,
         details: {
             attempt: command.facts.attemptCount,

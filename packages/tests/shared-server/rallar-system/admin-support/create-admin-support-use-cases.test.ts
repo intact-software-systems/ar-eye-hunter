@@ -67,6 +67,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainQueueItem({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-queue-item',
             request: {
                 queueKey: QUEUE_KEY,
                 includeExpired: true
@@ -117,6 +118,7 @@ describe('admin support use cases', () => {
         expect(timingEvents).toHaveLength(1);
         expect(timingEvents[0]).toMatchObject({
             operation: 'explain.queue-item',
+            traceId: 'trace-admin-support-queue-item',
             principalId: 'platform-admin',
             sessionId: 'admin-session',
             details: {
@@ -143,6 +145,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainRequest({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-request',
             request
         });
 
@@ -165,6 +168,7 @@ describe('admin support use cases', () => {
             status: 'ok',
             serviceId: 'test-server',
             requestId: 'request-1',
+            traceId: 'trace-admin-support-request',
             principalId: 'platform-admin',
             sessionId: 'admin-session'
         });
@@ -176,6 +180,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainClient({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-test',
             request: {
                 scope: SCOPE,
                 principalId: 'missing-player'
@@ -257,6 +262,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainClient({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-test',
             request: {
                 scope: SCOPE,
                 principalId: 'player-1',
@@ -405,6 +411,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainGroup({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-test',
             request: {
                 groupRef,
                 principalId: 'player-1',
@@ -480,6 +487,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainGroup({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-test',
             request: {
                 groupRef
             }
@@ -611,6 +619,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainCrdtDocument({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-test',
             request: {
                 document,
                 includeIntegrity: true,
@@ -699,6 +708,7 @@ describe('admin support use cases', () => {
 
         const result = await service.explainQueueItem({
             adminSession: createAdminSession(),
+            traceId: 'trace-admin-support-test',
             request: {
                 queueKey: QUEUE_KEY,
                 includeExpired: true

@@ -14,8 +14,15 @@ export type RallarTimingEvent = Readonly<{
     serviceId?: string;
     requestId?: string;
     /**
-     * The trace of the request or message the line describes. Absent where the producer holds no decoded message or
-     * request: the AppInbox dequeue pass, the dequeue-pass boundary and the computed queue failure among them.
+     * The trace of the request or message the line describes. Absent exactly where the producer holds neither:
+     * - the AppInbox dequeue pass and the dequeue-pass boundary, the computed queue failure's transaction line, and the
+     *   retry-exhaustion transaction and telemetry lines, which hold a queue entry but no decoded message;
+     * - the ALM outbound dequeue, captured-policy and Postgres release lines and the queuebox pub/sub lines, which see
+     *   claimed rows, batches or key notices, never a decoded message;
+     * - the group-state service's ingress captures, sweeps and storage reads (every operation but a queued mutation's
+     *   read), the principal group list and the REST snapshot read diagnostics, whose contracts carry no message;
+     * - process and harness samples: event-loop lag, heap, the Postgres statement census, the black-box control
+     *   server's lines and the state-write benchmark SQL.
      */
     traceId?: string;
     applicationId?: string;

@@ -61,6 +61,8 @@ interface PlannedLayoutPromotionAttempt {
     readonly read: GroupMutationRead;
     readonly computed: GroupMutationComputed;
     readonly startedAtMs: number;
+    /** The trace of the publication message whose attempt promotes the layout. */
+    readonly traceId: string;
 }
 
 export interface GroupStateInboxHandlerDependencies {
@@ -131,7 +133,13 @@ export class GroupStateInboxHandler {
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
         const promotion = command.command.operation === 'applyPlannedLayout'
-            ? { command: command.command, read: resultRead.mutationRead, computed, startedAtMs }
+            ? {
+                command: command.command,
+                read: resultRead.mutationRead,
+                computed,
+                startedAtMs,
+                traceId: command.facts.traceId
+            }
             : undefined;
         if (!isCommittableMutation(computed)) {
             this.validateMutation(command, resultRead.mutationRead, computed);
@@ -316,6 +324,7 @@ export class GroupStateInboxHandler {
                 operation: 'promote',
                 serviceId: timing.serviceId,
                 requestId: command.requestId ?? undefined,
+                traceId: attempt.traceId,
                 applicationId: command.aggregateRef.applicationId,
                 workspaceId: command.aggregateRef.workspaceId,
                 groupId: command.aggregateRef.groupId,

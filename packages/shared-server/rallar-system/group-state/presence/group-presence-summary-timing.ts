@@ -13,6 +13,8 @@ export namespace GroupPresenceSummaryTiming {
 
     export interface EventInput {
         readonly work: GroupPresenceSummaryWorkData;
+        /** The trace of the queued message the work came from. */
+        readonly traceId: string;
         readonly operation: Phase;
         readonly serviceId: string;
         readonly details: RallarTimingDetails;
@@ -23,6 +25,7 @@ export namespace GroupPresenceSummaryTiming {
         readonly serviceId: string;
         readonly expansions: readonly Readonly<{
             work: GroupPresenceSummaryWorkData;
+            traceId: string;
             computed: GroupPresenceSummaryComputedWork;
         }>[];
     }
@@ -31,12 +34,13 @@ export namespace GroupPresenceSummaryTiming {
 export function toGroupPresenceSummaryTimingEvent(
     input: GroupPresenceSummaryTiming.EventInput
 ): RallarTimingEventInput {
-    const { work, operation, serviceId, details } = input;
+    const { work, traceId, operation, serviceId, details } = input;
     return {
         component: 'group-presence-summary',
         operation,
         serviceId,
         requestId: work.commandId,
+        traceId,
         applicationId: work.aggregateRef.applicationId,
         workspaceId: work.aggregateRef.workspaceId,
         groupId: work.aggregateRef.groupId,
@@ -55,6 +59,7 @@ export function recordGroupPresenceSummaryCommittedOutputs(
                     sink: input.timing,
                     event: toGroupPresenceSummaryTimingEvent({
                         work: expansion.work,
+                        traceId: expansion.traceId,
                         operation: 'committed-output-observed',
                         serviceId: input.serviceId,
                         details: {

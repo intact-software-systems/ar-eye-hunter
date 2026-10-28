@@ -327,6 +327,7 @@ async function expectTimedOperationRejection(
 function expectedTimingIdentity(operation: TimedAsyncOperation) {
     const empty = {
         requestId: undefined,
+        traceId: undefined,
         applicationId: undefined,
         workspaceId: undefined,
         groupId: undefined,
@@ -337,6 +338,7 @@ function expectedTimingIdentity(operation: TimedAsyncOperation) {
         return {
             ...empty,
             requestId: 'timing-read-request',
+            traceId: 'trace-timing-read',
             applicationId: 'timing-app',
             workspaceId: 'timing-workspace',
             groupId: 'timing-group'

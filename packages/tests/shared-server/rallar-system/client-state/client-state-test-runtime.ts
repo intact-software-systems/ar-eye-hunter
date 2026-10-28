@@ -194,7 +194,7 @@ async function writeClientStateTestMutation(
     computed: ClientMutationComputedWrite
 ): Promise<void> {
     await timeClientStateMutationCommit(
-        { timing: context.mutationTiming, writes: [computed] },
+        { timing: context.mutationTiming, writes: [computed], traceId: 'trace-client-state-test-runtime' },
         async () =>
             await context.runtimeRepository.begin(async (runtime) => {
                 const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);

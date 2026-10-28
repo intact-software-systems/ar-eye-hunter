@@ -20,6 +20,7 @@ export class CrdtAdminSupport {
             dependencies: this.dependencies,
             operation: 'explain.crdt-document',
             adminSession: input.adminSession,
+            traceId: input.traceId,
             timing: {},
             readNarrative: async () => {
                 const repository = this.dependencies.crdtAdminRepository;

@@ -54,6 +54,7 @@ describe('retention through the registered AppInbox capability', () => {
                 ...RETENTION_REF,
                 serviceId: 'retention-inbox-test',
                 requestId: command.requestId,
+                traceId: decodePersistedALMessage(entry.resource).id.traceId,
                 status: 'ok',
                 details: { attempt: 1 }
             });

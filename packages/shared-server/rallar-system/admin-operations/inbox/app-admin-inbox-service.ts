@@ -39,6 +39,8 @@ import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
+    type RallarTimingDetails,
+    type RallarTimingEventInput,
     type RallarTimingSink
 } from '../../observability/timing.ts';
 import type { AdminExpiredDataPruner } from '../admin-expired-data-pruner.ts';
@@ -124,6 +126,13 @@ export interface AppAdminPruneExpiredInput {
 
 type AdminPruneTimingOperation = 'read' | 'compute' | 'validate' | 'semantic-identity';
 
+/** One phase line of the prune command, under the trace of the request or the queued message it belongs to. */
+interface AdminPrunePhase {
+    readonly operation: AdminPruneTimingOperation;
+    readonly identity: AdminPruneTimingIdentity;
+    readonly traceId: string;
+}
+
 export class AppAdminInboxService {
     private readonly dependencies: AppAdminInboxServiceDependencies;
     private readonly config: AppAdminInboxServiceConfig;
@@ -183,9 +192,10 @@ export class AppAdminInboxService {
             appData: normalizedRequest.appData,
             dryRun: normalizedRequest.dryRun
         });
-        this.recordPhase('semantic-identity', identity, {
-            semanticHash: identity.semanticHash
-        });
+        this.recordPhase(
+            { operation: 'semantic-identity', identity, traceId: input.traceId },
+            { semanticHash: identity.semanticHash }
+        );
 
         const key = toAdminPruneQueueKey(identity);
         const reservation = await this.reservationClient.reserveMaterializedEntry(
@@ -246,19 +256,17 @@ export class AppAdminInboxService {
         const command = decodeAdminPruneCommand(value);
         assertAdminPruneQueueIdentity(command, context);
 
+        const phase = { identity: toAdminPruneTimingIdentity(command), traceId: context.message.id.traceId };
         const read = await this.timeAdminPrunePhase(
-            'read',
-            command,
+            { ...phase, operation: 'read' },
             async () => await this.read(command, context)
         );
         const computed = await this.timeAdminPrunePhase(
-            'compute',
-            command,
+            { ...phase, operation: 'compute' },
             () => Promise.resolve(computeAdminPruneMutation(read))
         );
         const issues = await this.timeAdminPrunePhase(
-            'validate',
-            command,
+            { ...phase, operation: 'validate' },
             () => Promise.resolve(validateAdminPruneMutation(read, computed))
         );
         throwOnAdminPruneValidationIssues(issues);
@@ -348,45 +356,29 @@ export class AppAdminInboxService {
         }
     }
 
-    private async timeAdminPrunePhase<T>(
-        operation: AdminPruneTimingOperation,
-        identity: AdminPruneTimingIdentity | AdminPruneCommand,
-        action: () => Promise<T>
-    ): Promise<T> {
-        const timingIdentity = toAdminPruneTimingIdentity(identity);
-        return await timeRallarAsync(
-            this.config.timing,
-            {
-                component: 'admin-prune-inbox',
-                operation,
-                serviceId: this.serviceId,
-                requestId: timingIdentity.requestId,
-                principalId: timingIdentity.requestedBy,
-                sessionId: timingIdentity.requestedSessionId
-            },
-            action
-        );
+    private async timeAdminPrunePhase<T>(phase: AdminPrunePhase, action: () => Promise<T>): Promise<T> {
+        return await timeRallarAsync(this.config.timing, this.toPhaseEvent(phase), action);
     }
 
-    private recordPhase(
-        operation: AdminPruneTimingOperation,
-        identity: Pick<AdminPruneIdempotencyIdentityInput, 'requestId' | 'requestedBy' | 'requestedSessionId'>,
-        details: Readonly<Record<string, string | number | boolean | undefined>>
-    ): void {
+    private recordPhase(phase: AdminPrunePhase, details: RallarTimingDetails): void {
         recordRallarTiming({
             sink: this.config.timing,
-            event: {
-                component: 'admin-prune-inbox',
-                operation,
-                serviceId: this.serviceId,
-                requestId: identity.requestId,
-                principalId: identity.requestedBy,
-                sessionId: identity.requestedSessionId,
-                details
-            },
+            event: { ...this.toPhaseEvent(phase), details },
             status: 'ok',
             durationMs: 0
         });
+    }
+
+    private toPhaseEvent(phase: AdminPrunePhase): RallarTimingEventInput {
+        return {
+            component: 'admin-prune-inbox',
+            operation: phase.operation,
+            serviceId: this.serviceId,
+            requestId: phase.identity.requestId,
+            traceId: phase.traceId,
+            principalId: phase.identity.requestedBy,
+            sessionId: phase.identity.requestedSessionId
+        };
     }
 }
 

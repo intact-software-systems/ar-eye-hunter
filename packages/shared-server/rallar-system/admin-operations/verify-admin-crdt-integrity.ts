@@ -37,6 +37,7 @@ export class VerifyAdminCrdtIntegrity {
                 component: 'admin-operations',
                 operation: 'crdt.integrity',
                 serviceId: this.options.serviceId,
+                traceId: input.traceId,
                 applicationId: document.applicationId,
                 workspaceId: document.workspaceId,
                 principalId: input.adminSession.clientId,

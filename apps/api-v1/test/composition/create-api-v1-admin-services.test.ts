@@ -37,6 +37,7 @@ Deno.test('admin services read current websocket status after construction', asy
     });
     const support = await services.support.explainClient({
         adminSession: ADMIN_SESSION,
+        traceId: 'trace-api-v1-admin-services',
         request: {
             scope: { applicationId: 'app', workspaceId: 'workspace' },
             principalId: 'admin'
@@ -90,6 +91,7 @@ Deno.test(
             () =>
                 services.support.explainClient({
                     adminSession: ADMIN_SESSION,
+                    traceId: 'trace-api-v1-admin-services',
                     request: {
                         scope: { applicationId: 'app', workspaceId: 'workspace' },
                         principalId: 'admin'

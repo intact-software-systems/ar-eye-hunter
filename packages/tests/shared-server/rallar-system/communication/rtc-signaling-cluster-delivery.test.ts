@@ -180,6 +180,7 @@ describe('the RTC signaling relay', () => {
                 operation: 'local-send',
                 status: 'ok',
                 sessionId: 'receiver',
+                traceId: 'trace-offer-1',
                 details: { msgId: local.id.msgId, senderId: 'sender', recipientCount: 1, sentCount: 1 }
             }),
             expect.objectContaining({
@@ -187,6 +188,7 @@ describe('the RTC signaling relay', () => {
                 operation: 'cluster-notice',
                 status: 'ok',
                 sessionId: 'remote',
+                traceId: 'trace-offer-2',
                 details: { msgId: remote.id.msgId, senderId: 'sender', recipientCount: 0, sentCount: 0 }
             })
         ]));
@@ -274,7 +276,10 @@ async function connectReceiver(fixture: ServerIngressFixture): Promise<Simulated
     return receiver;
 }
 
-function signalingMessage(offerId: string, { sdp = 'sdp', toId = 'receiver' } = {}): ALMessage {
+function signalingMessage(
+    offerId: string,
+    { sdp = 'sdp', toId = 'receiver', traceId = `trace-${offerId}` } = {}
+): ALMessage {
     return newALUnicastMessage(
         'sender',
         newALEventRoute(AppTopics.rtcSignaling, toId, 'offer'),
@@ -290,6 +295,7 @@ function signalingMessage(offerId: string, { sdp = 'sdp', toId = 'receiver' } = 
             signalType: 'Offer',
             offerId,
             payload: { description: { type: 'offer', sdp }, candidate: null }
-        }
+        },
+        { traceId }
     );
 }

@@ -22,6 +22,7 @@ interface ReadTimedAdminSupportNarrativeInput {
     readonly dependencies: AdminSupportExecutionDependencies;
     readonly operation: AdminSupportOperation;
     readonly adminSession: AuthSession;
+    readonly traceId: string;
     readonly timing: AdminSupportTimingDimensions;
     readonly readNarrative: () => Promise<AdminSupportNarrativeResponse>;
 }
@@ -69,6 +70,7 @@ function toAdminSupportTimingEvent(
         operation: input.operation,
         serviceId: input.dependencies.serverId,
         requestId: input.timing.requestId,
+        traceId: input.traceId,
         principalId: input.adminSession.clientId,
         sessionId: input.adminSession.sessionId,
         details: {

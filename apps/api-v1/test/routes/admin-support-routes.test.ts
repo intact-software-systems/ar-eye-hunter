@@ -1,9 +1,10 @@
 import type { AdminSupportUseCases, AdminSupportWriteInput } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AdminSupportExplainQueueItemRequest, AdminSupportNarrativeResponse, AdminSupportTarget } from '@shared/api/admin-support/admin-support-types.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as adminSupportRoutes from '../../src/routes/admin-support-routes.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const ADMIN_SESSION: IssuedAuthSession = {
@@ -78,6 +79,7 @@ Deno.test('admin support queue route forwards request body and admin session', a
         headers: {
             authorization: 'Bearer admin-token',
             'x-client-id': 'platform-admin',
+            'x-request-id': 'trace-admin-support-queue-item',
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
@@ -88,7 +90,8 @@ Deno.test('admin support queue route forwards request body and admin session', a
     assert.deepEqual(calls, [
         {
             request: requestBody,
-            adminSession: ADMIN_SESSION
+            adminSession: ADMIN_SESSION,
+            traceId: 'trace-admin-support-queue-item'
         }
     ]);
 });
@@ -152,7 +155,7 @@ function createApp(
             support?: Partial<AdminSupportUseCases>;
         } = {}
 ): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     const { support, ...routeOptions } = options;
     adminSupportRoutes.registerAdminSupportRoutes(app, {
         adminClientIds: ['platform-admin'],

@@ -20,6 +20,8 @@ import type { RallarServerWsStatus } from '../websocket/router/rallar-server-ws-
 export interface AdminSupportWriteInput<TRequest> {
     readonly adminSession: AuthSession;
     readonly request: TRequest;
+    /** The trace of the admin HTTP request; its timing line names it. */
+    readonly traceId: string;
 }
 
 export type AdminSupportQueueEntrySource = 'resource_inbox' | 'resource_inbox_results';

@@ -46,6 +46,7 @@ export class ResetAdminMetrics {
                 operation: 'metrics.reset',
                 serviceId: this.options.serverId,
                 requestId: input.request.requestId,
+                traceId: input.traceId,
                 principalId: input.adminSession.clientId,
                 sessionId: input.adminSession.sessionId,
                 details: {

@@ -178,6 +178,7 @@ function recordRtcSignalingRelayTiming(
             component: 'rtc-signaling-relay',
             operation,
             sessionId: relay.recipientSessionId,
+            traceId: relay.message.id.traceId,
             details: {
                 msgId: relay.message.id.msgId,
                 senderId: relay.message.id.senderId,

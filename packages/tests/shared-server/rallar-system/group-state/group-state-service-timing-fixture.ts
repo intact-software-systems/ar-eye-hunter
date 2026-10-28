@@ -282,7 +282,8 @@ const timingCommand = {
     command: {
         requestId: 'timing-read-request',
         aggregateRef: timingGroupRef
-    }
+    },
+    facts: { traceId: 'trace-timing-read' }
 } as never;
 const timingAuthority = {} as never;
 const timingCleanup = {

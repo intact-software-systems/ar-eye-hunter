@@ -73,6 +73,7 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
         component: 'group-retention',
         serviceId: dependencies.serviceId,
         requestId: command.requestId,
+        traceId: context.message.id.traceId,
         scope: command.groupRef,
         groupId: command.groupRef.groupId,
         principalId: undefined,

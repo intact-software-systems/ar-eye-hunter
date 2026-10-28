@@ -13,6 +13,7 @@ import type {
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -46,12 +47,15 @@ interface ClientMutationTransactionBoundaryFixture {
     readonly handler: ClientStateInboxHandler;
     readonly observedSnapshots: ClientSnapshot[];
     readonly results: TestResourceInboxResults;
+    /** The mutation timing lines, recorded only with `recordMutationTiming`. */
+    readonly timing: RallarTimingEvent[];
 }
 
 export async function createClientMutationTransactionBoundaryFixture(
     options: ClientMutationTransactionBoundaryOptions = {}
 ): Promise<ClientMutationTransactionBoundaryFixture> {
     const actions: string[] = [];
+    const timing: RallarTimingEvent[] = [];
     const observedSnapshots: ClientSnapshot[] = [];
     const computedSnapshots: ClientSnapshot[] = [];
     const queue = new InMemoryQueueBox();
@@ -97,13 +101,16 @@ export async function createClientMutationTransactionBoundaryFixture(
         mutationTiming: {
             serviceId: 'client-inbox-service',
             sink: options.recordMutationTiming
-                ? (event) => actions.push(event.operation)
+                ? (event) => {
+                    actions.push(event.operation);
+                    timing.push(event);
+                }
                 : undefined
         },
         serviceId: 'client-inbox-service',
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     });
-    return { actions, computedSnapshots, context, handler, observedSnapshots, results };
+    return { actions, computedSnapshots, context, handler, observedSnapshots, results, timing };
 }
 
 interface ObservedMutationEffects {

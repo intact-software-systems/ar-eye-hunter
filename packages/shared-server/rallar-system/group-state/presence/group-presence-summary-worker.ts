@@ -107,12 +107,13 @@ export interface GroupPresenceSummaryWorkOptions {
 
 interface GroupPresenceSummaryExpansion {
     readonly work: GroupPresenceSummaryWorkData;
+    readonly traceId: string;
     readonly read: GroupPresenceSummaryWorkRead;
     readonly computed: GroupPresenceSummaryComputedWork;
 }
 
 interface WriteGroupPresenceSummaryExpansionsInput {
-    readonly primary: GroupPresenceSummaryWorkData;
+    readonly primary: GroupPresenceSummaryWorkItem;
     readonly expansions: readonly GroupPresenceSummaryExpansion[];
     readonly computeStartedAtMs: number;
 }
@@ -125,7 +126,7 @@ interface ReadTopologyReplanPolicyFactsInput {
 }
 
 interface RecordGroupPresenceSummaryPhaseInput {
-    readonly work: GroupPresenceSummaryWorkData;
+    readonly item: GroupPresenceSummaryWorkItem;
     readonly operation: GroupPresenceSummaryTiming.Phase;
     readonly details: RallarTimingDetails;
     readonly startedAtMs: number;
@@ -328,15 +329,14 @@ export class GroupPresenceSummaryWork {
         if (!database) {
             throw new TypeError('Presence-summary queue processing requires a database');
         }
-        const primaryItem = toGroupPresenceSummaryWorkItem(message, entry);
-        const primary = primaryItem.work;
+        const primary = toGroupPresenceSummaryWorkItem(message, entry);
         const outbox = this.options.outboxQueueReader.outbox;
         const claimed = await this.claimSiblings(primary, entry);
         try {
             const page = await this.expandItems(
                 database,
                 primary,
-                toGroupPresenceSummaryCandidates(primaryItem, claimed)
+                toGroupPresenceSummaryCandidates(primary, claimed)
             );
             if (page.outcome !== 'written') {
                 await releaseUnexpandedGroupPresenceSummaryWork(outbox, claimed);
@@ -361,13 +361,13 @@ export class GroupPresenceSummaryWork {
 
     /** The pending summary rows of the reserved row's group that this claim takes with it. */
     private async claimSiblings(
-        primary: GroupPresenceSummaryWorkData,
+        primary: GroupPresenceSummaryWorkItem,
         entry: ResourceEntry
     ): Promise<readonly ResourceEntry[]> {
         const claimStartedAtMs = nowMs();
         const claimed = await claimPendingGroupPresenceSummaryWork(this.options.outboxQueueReader.outbox, entry);
         this.recordPhase({
-            work: primary,
+            item: primary,
             operation: 'claim',
             details: { coalescedWorkCount: claimed.length + 1 },
             startedAtMs: claimStartedAtMs
@@ -378,13 +378,14 @@ export class GroupPresenceSummaryWork {
     /** Reads the group once for every candidate, then expands and writes the page of them one AL payload can carry. */
     private async expandItems(
         database: PSqlSql,
-        primary: GroupPresenceSummaryWorkData,
+        primary: GroupPresenceSummaryWorkItem,
         candidates: readonly GroupPresenceSummaryWorkItem[]
     ): Promise<GroupPresenceSummaryPageOutcome> {
         const read = await timeRallarAsync(
             this.options.timing,
             toGroupPresenceSummaryTimingEvent({
-                work: primary,
+                work: primary.work,
+                traceId: primary.traceId,
                 operation: 'read',
                 serviceId: this.options.serviceId,
                 details: { coalescedWorkCount: candidates.length }
@@ -403,7 +404,7 @@ export class GroupPresenceSummaryWork {
         }
         const computeStartedAtMs = nowMs();
         const candidateRead = candidateReads[0]!;
-        const state = this.expandState(primary, candidateRead);
+        const state = this.expandState(primary.work, candidateRead);
         const page = candidates.length === 1
             ? { items: candidates, deferred: [] }
             : computeGroupPresenceSummaryPage({ candidates, read: candidateRead, state });
@@ -461,7 +462,7 @@ export class GroupPresenceSummaryWork {
             deltaCount: coalesced.downstreamOutboxWrites.length
         };
         this.recordPhase({
-            work: primary,
+            item: primary,
             operation: 'compute',
             details: effectDetails,
             startedAtMs: computeStartedAtMs
@@ -474,7 +475,8 @@ export class GroupPresenceSummaryWork {
         const outcome = await timeRallarAsync(
             this.options.timing,
             toGroupPresenceSummaryTimingEvent({
-                work: primary,
+                work: primary.work,
+                traceId: primary.traceId,
                 operation: 'write',
                 serviceId: this.options.serviceId,
                 details: effectDetails
@@ -560,7 +562,7 @@ export class GroupPresenceSummaryWork {
         if (issue !== undefined) {
             throw issue.cause;
         }
-        return { work: expansion.work, read: expansion.read, computed };
+        return { work: expansion.work, traceId: expansion.traceId, read: expansion.read, computed };
     }
 
     private validateCoalesced(
@@ -594,10 +596,16 @@ export class GroupPresenceSummaryWork {
     }
 
     private recordPhase(input: RecordGroupPresenceSummaryPhaseInput): void {
-        const { work, operation, details, startedAtMs } = input;
+        const { item, operation, details, startedAtMs } = input;
         recordRallarTiming({
             sink: this.options.timing,
-            event: toGroupPresenceSummaryTimingEvent({ work, operation, serviceId: this.options.serviceId, details }),
+            event: toGroupPresenceSummaryTimingEvent({
+                work: item.work,
+                traceId: item.traceId,
+                operation,
+                serviceId: this.options.serviceId,
+                details
+            }),
             status: 'ok',
             durationMs: nowMs() - startedAtMs
         });

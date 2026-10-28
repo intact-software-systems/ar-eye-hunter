@@ -82,7 +82,7 @@ describe('AppAdminInboxService initial prune command', () => {
     it('normalizes defaults and captures volatile command facts once before enqueue', async () => {
         const harness = new AdminInboxHarness();
         const pending = harness.service.pruneExpired({
-            traceId: 'trace-test-fixture',
+            traceId: 'trace-admin-prune-default',
             adminSession: createAdminSession('admin', 'admin-session'),
             requestId: 'default-prune-request',
             request: {}
@@ -144,6 +144,12 @@ describe('AppAdminInboxService initial prune command', () => {
         await dequeueInitialCommand(harness);
         await expect(pending).resolves.toMatchObject({ right: { status: 'dry-run' } });
         expect(harness.readWorkCounts().wake).toBe(1);
+        expect(harness.timingEvents.map((event) => [event.operation, event.traceId])).toEqual([
+            ['semantic-identity', 'trace-admin-prune-default'],
+            ['read', 'trace-admin-prune-default'],
+            ['compute', 'trace-admin-prune-default'],
+            ['validate', 'trace-admin-prune-default']
+        ]);
     });
 
     it('rejects app-data without a namespace before volatile or mutation work', async () => {

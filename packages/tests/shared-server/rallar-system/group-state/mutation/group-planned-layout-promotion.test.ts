@@ -480,6 +480,7 @@ describe('applyPlannedLayout through the inbox lane', () => {
                 operation: 'promote',
                 status: 'ok',
                 groupId: LANE_GROUP_REF.groupId,
+                traceId: 'trace-group-planned-layout-promotion',
                 details: {
                     expected: 'group=4;presence=6;version=3;state=active',
                     planned: 'group=4;presence=7;version=4;state=active',

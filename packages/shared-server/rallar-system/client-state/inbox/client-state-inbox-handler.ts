@@ -360,7 +360,7 @@ export class ClientStateInboxHandler {
         computed: Extract<AuthorisedWsConnectOperationComputed, { outcome: 'completed'; }>
     ): Promise<ClientStateWritten> {
         return await timeClientStateMutationCommit(
-            { timing: this.dependencies.mutationTiming, writes: computed.writes },
+            { timing: this.dependencies.mutationTiming, writes: computed.writes, traceId: context.message.id.traceId },
             async () =>
                 await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
@@ -378,7 +378,7 @@ export class ClientStateInboxHandler {
     private async writeMutationOperation(input: WriteClientMutationOperationInput): Promise<ClientStateWritten> {
         const { context, computed } = input;
         return await timeClientStateMutationCommit(
-            { timing: this.dependencies.mutationTiming, writes: computed.writes },
+            { timing: this.dependencies.mutationTiming, writes: computed.writes, traceId: context.message.id.traceId },
             async () =>
                 await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
@@ -404,7 +404,7 @@ export class ClientStateInboxHandler {
     ): Promise<readonly ClientStateWritten[]> {
         const { context, computed } = input;
         return await timeClientStateMutationCommit(
-            { timing: this.dependencies.mutationTiming, writes: computed.writes },
+            { timing: this.dependencies.mutationTiming, writes: computed.writes, traceId: context.message.id.traceId },
             async () =>
                 await this.dependencies.transactionWriter.writeComputedMutation(
                     context,

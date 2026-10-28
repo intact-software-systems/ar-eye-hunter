@@ -185,6 +185,7 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
         headers: {
             authorization: 'Bearer admin-token',
             'x-client-id': 'platform-admin',
+            'x-request-id': 'trace-admin-metrics-reset-route',
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -206,7 +207,8 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
                 categories: ['rtc-topology'],
                 reason: 'operator-test'
             },
-            adminSession: ADMIN_SESSION
+            adminSession: ADMIN_SESSION,
+            traceId: 'trace-admin-metrics-reset-route'
         }
     ]);
 });

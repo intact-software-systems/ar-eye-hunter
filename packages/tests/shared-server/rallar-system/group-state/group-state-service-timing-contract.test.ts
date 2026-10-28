@@ -225,6 +225,7 @@ describe('group presence summary phase timing', () => {
             component: 'group-presence-summary',
             serviceId: 'producer-api',
             requestId: `connect-${producer.ref.groupId}`,
+            traceId: 'trace-group-delta-producer-fixture',
             applicationId: producer.ref.applicationId,
             workspaceId: producer.ref.workspaceId,
             groupId: producer.ref.groupId,

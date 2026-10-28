@@ -45,13 +45,15 @@ describe('VerifyAdminCrdtIntegrity', () => {
 
         const result = await verifyIntegrity.execute({
             adminSession: createAdminSession(),
-            request: { document: DOCUMENT }
+            request: { document: DOCUMENT },
+            traceId: 'trace-admin-crdt-integrity'
         });
 
         expect(documents).toEqual([DOCUMENT]);
         expect(result.valid).toBe(true);
         expect(timingEvents[0]).toMatchObject({
             operation: 'crdt.integrity',
+            traceId: 'trace-admin-crdt-integrity',
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             details: {

@@ -39,8 +39,8 @@ describe('client-state service timing', () => {
             'event:mutation.read:ok',
             'write'
         ]);
-        expect(fixture.events.map((event) => [event.operation, event.serviceId, event.status])).toEqual([
-            ['mutation.read', 'client-timing-service', 'ok']
+        expect(fixture.events.map((event) => [event.operation, event.serviceId, event.status, event.traceId])).toEqual([
+            ['mutation.read', 'client-timing-service', 'ok', 'trace-client-state-service-timing']
         ]);
     });
 });
@@ -163,6 +163,11 @@ describe('client mutation service timing', () => {
             'mutation.write',
             'observe'
         ]);
+        expect(fixture.timing.map((event) => [event.operation, event.traceId])).toEqual([
+            ['mutation.compute', 'trace-create-client-mutation-transaction-boundary-fixture'],
+            ['mutation.validate', 'trace-create-client-mutation-transaction-boundary-fixture'],
+            ['mutation.write', 'trace-create-client-mutation-transaction-boundary-fixture']
+        ]);
     });
 
     it('records a failed write only after the transaction action has exited', async () => {
@@ -173,9 +178,10 @@ describe('client mutation service timing', () => {
             {
                 timing: {
                     serviceId: 'client-timing-service',
-                    sink: (event) => actions.push(`event:${event.operation}:${event.status}`)
+                    sink: (event) => actions.push(`event:${event.operation}:${event.status}:${event.traceId}`)
                 },
-                writes: [TIMED_COMPUTED]
+                writes: [TIMED_COMPUTED],
+                traceId: 'trace-failed-client-write'
             },
             async () => {
                 actions.push('transaction');
@@ -191,7 +197,7 @@ describe('client mutation service timing', () => {
         expect(actions).toEqual([
             'transaction',
             'transaction-exited',
-            'event:mutation.write:error'
+            'event:mutation.write:error:trace-failed-client-write'
         ]);
     });
 });

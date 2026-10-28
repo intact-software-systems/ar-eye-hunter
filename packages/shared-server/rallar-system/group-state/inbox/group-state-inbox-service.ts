@@ -299,6 +299,7 @@ export class GroupStateInboxService {
             component: 'group-quick-join',
             serviceId: this.serviceId,
             requestId: command.requestId,
+            traceId: context.message.id.traceId,
             scope: command.scope,
             groupId: undefined,
             principalId: command.actorPrincipalId,
