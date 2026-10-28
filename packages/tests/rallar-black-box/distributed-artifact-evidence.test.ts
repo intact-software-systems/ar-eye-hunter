@@ -20,6 +20,7 @@ import {
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { computeDistributedRunAnalysis } from '../shared-test/distributed-artifact-analysis/distributed-artifact-files-fixture.ts';
 
+const SENTINEL = 'payload must never enter diagnostics';
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T12:00:00.000Z');
 const TIMEOUT_STACK = [
     'RALLAR_BLACK_BOX_TIMEOUT: Rallar black-box command timeout reached.',
@@ -265,10 +266,10 @@ describe('distributed artifact evidence index', () => {
         const fromFiles = evidenceIndex({
             files,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            limits: { index: 4, summary: 28, identitySummary: 32 }
+            limits: { index: 4, summary: 28, identitySummary: 32, detailSummary: 32 }
         });
         const fromPrecomputed = computeDistributedArtifactEvidenceIndex(
-            toPrecomputedEvidenceInput(files, { index: 4, summary: 28, identitySummary: 32 })
+            toPrecomputedEvidenceInput(files, { index: 4, summary: 28, identitySummary: 32, detailSummary: 32 })
         );
 
         expect(fromFiles).toEqual(fromPrecomputed);
@@ -276,7 +277,8 @@ describe('distributed artifact evidence index', () => {
         expect(fromFiles.entries).toHaveLength(4);
         expect(fromFiles.omittedEntryCount).toBe(fromFiles.totalEntries - 4);
         expect(fromFiles.entries.every((entry) => entry.summary.length <= 28)).toBe(true);
-        expect(fromFiles.entries.every((entry) => entry.identitySummary.length <= 32)).toBe(true);
+        expect(fromFiles.entries.every((entry) => (entry.identitySummary ?? entry.detailSummary ?? '').length <= 32))
+            .toBe(true);
         expect(fromFiles.entries.map((entry) => entry.atEpochMs)).toEqual([320, 340, 340, 500]);
     });
 
@@ -358,7 +360,7 @@ describe('distributed artifact evidence index', () => {
         });
     });
 
-    it('promotes the reported timeout fingerprint without changing its raw identity summary', () => {
+    it('promotes the reported timeout fingerprint without changing its raw detail summary', () => {
         const files = EVIDENCE_FILES;
         const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
         controlRun.results[0].error = {
@@ -372,7 +374,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            limits: { index: 100, summary: 600, identitySummary: 600 }
+            limits: { index: 100, summary: 600, identitySummary: 600, detailSummary: 600 }
         });
         const failedResult = index.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc');
 
@@ -382,7 +384,8 @@ describe('distributed artifact evidence index', () => {
             message: 'Rallar black-box command timeout reached.',
             stack: TIMEOUT_STACK
         });
-        expect(failedResult?.identitySummary).toBe(JSON.stringify({
+        expect(failedResult).not.toHaveProperty('identitySummary');
+        expect(failedResult?.detailSummary).toBe(JSON.stringify({
             name: 'RALLAR_BLACK_BOX_TIMEOUT',
             stack: TIMEOUT_STACK
         }));
@@ -416,7 +419,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            limits: { index: 100, summary: 24, identitySummary: 48 }
+            limits: { index: 100, summary: 24, identitySummary: 600, detailSummary: 48 }
         });
         const details = index.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc')?.failureDetails;
 
@@ -514,6 +517,70 @@ describe('distributed artifact evidence index', () => {
                 topic: 'orphan.topic'
             })
         ]));
+    });
+
+    it('carries an identity summary on event and diagnostic entries and a detail summary on result and failure entries', () => {
+        const index = evidenceIndex({
+            files: evidenceFilesWithoutCommandLinks(),
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
+        });
+        const kinds = new Set(index.entries.map((entry) => entry.kind));
+
+        expect([...kinds].sort()).toEqual(['diagnostic', 'event', 'failure', 'result']);
+        for (const entry of index.entries) {
+            const carriesIdentity = entry.kind === 'event' || entry.kind === 'diagnostic';
+            expect(Object.hasOwn(entry, 'identitySummary'), entry.id).toBe(carriesIdentity);
+            expect(Object.hasOwn(entry, 'detailSummary'), entry.id).toBe(!carriesIdentity);
+        }
+    });
+
+    it('bounds detail summaries by their own limit', () => {
+        const index = evidenceIndex({
+            files: EVIDENCE_FILES,
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            limits: { index: 100, summary: 600, identitySummary: 600, detailSummary: 12 }
+        });
+        const details = index.entries.flatMap((entry) => entry.detailSummary ?? []);
+
+        expect(details.length).toBeGreaterThan(0);
+        expect(details.every((detail) => detail.length <= 12)).toBe(true);
+        expect(index.entries.some((entry) => (entry.identitySummary?.length ?? 0) > 12)).toBe(true);
+    });
+
+    it('fills a control run diagnostic entry from the identity list and never from its payload', () => {
+        const files = evidenceFilesWithoutCommandLinks();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        controlRun.events.push({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run-evidence-search',
+            agentId: 'agent-orphan',
+            commandId: 'orphan-command',
+            atEpochMs: 420,
+            eventId: 'send-failed',
+            payload: {
+                diagnosticSchemaVersion: 1,
+                kind: 'diagnostic',
+                topic: 'rallar.browser.ws.send_failed',
+                transport: 'ws',
+                data: { msgId: 'm-1', handleId: 'h-1', traceId: 't-1', corrId: 'm-1', payload: { secret: SENTINEL } }
+            }
+        });
+        const index = evidenceIndex({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
+        });
+        const sendFailed = index.entries.find((entry) => entry.id.includes('send-failed'));
+
+        expect(sendFailed).toMatchObject({ kind: 'diagnostic', sourceFile: 'control-run.json' });
+        expect(sendFailed?.identitySummary).toBe(
+            'kind=diagnostic topic=rallar.browser.ws.send_failed transport=ws msgId=m-1 handleId=h-1 traceId=t-1 corrId=m-1'
+        );
+        expect(JSON.stringify(index.entries)).not.toContain(SENTINEL);
+        expect(searchDistributedArtifactEvidence(index, { query: 'traceId=t-1' }).totalMatches).toBe(1);
+        expect(searchDistributedArtifactEvidence(index, { query: SENTINEL }).totalMatches).toBe(0);
     });
 
     it('uses collision-safe stable IDs for distinct raw evidence', () => {
@@ -655,7 +722,7 @@ describe('distributed artifact evidence search', () => {
         }
         const failureDetailsOnly = {
             ...index,
-            entries: [{ ...result, summary: '', identitySummary: '' }],
+            entries: [{ ...result, summary: '', detailSummary: '' }],
             totalEntries: 1,
             omittedEntryCount: 0
         };

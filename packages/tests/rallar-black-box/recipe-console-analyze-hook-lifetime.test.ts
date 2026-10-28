@@ -1055,7 +1055,7 @@ function evidenceEntry(id: string) {
         kind: 'event' as const,
         sourceFile: 'events.jsonl',
         summary: id,
-        identitySummary: '{}'
+        identitySummary: 'kind=event'
     };
 }
 

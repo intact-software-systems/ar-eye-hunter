@@ -1,6 +1,7 @@
 import type {
     DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceFailureDetails
+    DistributedArtifactEvidenceFailureDetails,
+    DistributedArtifactEvidenceLimits
 } from '../distributed-artifact-evidence-contracts.ts';
 
 const MINIMUM_EVIDENCE_TEXT_LIMIT = 8;
@@ -24,15 +25,19 @@ export function resolveEvidenceTextLimit(limit: number, defaultLimit: number, ma
 /** Summary texts and failure details collapse their whitespace and end in an ellipsis past their limit. */
 export function toBoundedEvidenceEntry(
     entry: DistributedArtifactEvidenceEntry,
-    summaryLimit: number,
-    identitySummaryLimit: number
+    limits: Omit<DistributedArtifactEvidenceLimits, 'index'>
 ): DistributedArtifactEvidenceEntry {
     return {
         ...entry,
-        summary: toBoundedEvidenceText(entry.summary, summaryLimit),
-        identitySummary: toBoundedEvidenceText(entry.identitySummary, identitySummaryLimit),
+        summary: toBoundedEvidenceText(entry.summary, limits.summary),
+        ...(entry.identitySummary === undefined
+            ? {}
+            : { identitySummary: toBoundedEvidenceText(entry.identitySummary, limits.identitySummary) }),
+        ...(entry.detailSummary === undefined
+            ? {}
+            : { detailSummary: toBoundedEvidenceText(entry.detailSummary, limits.detailSummary) }),
         ...(entry.failureDetails
-            ? { failureDetails: toBoundedFailureDetails(entry.failureDetails, summaryLimit, identitySummaryLimit) }
+            ? { failureDetails: toBoundedFailureDetails(entry.failureDetails, limits.summary, limits.detailSummary) }
             : {})
     };
 }

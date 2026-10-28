@@ -348,7 +348,7 @@ function entry(
         kind: 'event' as const,
         sourceFile: 'events.jsonl',
         summary: `Evidence ${index + 1}`,
-        identitySummary: '{}',
+        identitySummary: 'kind=event',
         ...fields
     };
 }

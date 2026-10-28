@@ -74,18 +74,18 @@
     gap: 4px 8px;
 }
 
-.payload,
+.evidenceSummary,
 .rawPayload {
     display: grid;
     gap: 7px;
 }
 
-.payload h3 {
+.evidenceSummary h3 {
     margin: 0;
     font-size: 13px;
 }
 
-.payload pre,
+.evidenceSummary pre,
 .rawPayload pre {
     max-height: 240px;
     margin: 0;

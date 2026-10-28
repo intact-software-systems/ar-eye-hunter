@@ -2,7 +2,10 @@ import type {
     DistributedRunAnalysis,
     DistributedRunFailedAnalysis
 } from '../distributed-artifact-analysis.ts';
-import type { DistributedArtifactEvidenceEntry } from '../distributed-artifact-evidence-contracts.ts';
+import type {
+    DistributedArtifactEvidenceEntry,
+    DistributedArtifactEvidenceLimits
+} from '../distributed-artifact-evidence-contracts.ts';
 import type {
     DistributedRunEventRow,
     DistributedRunFailureRow,
@@ -20,8 +23,7 @@ import {
 
 export interface DistributedArtifactEvidenceRowsInput extends Omit<ControlRunEvidenceRowsInput, 'commandLinks'> {
     readonly analysis: DistributedRunAnalysis;
-    readonly summaryLimit: number;
-    readonly identitySummaryLimit: number;
+    readonly textLimits: Omit<DistributedArtifactEvidenceLimits, 'index'>;
 }
 
 /**
@@ -42,7 +44,7 @@ export function toDistributedArtifactEvidenceRows(
         ...toControlRunResultRows(controlRunInput),
         ...toMonitorEventRows(controlRunInput),
         ...toControlRunEventRows(controlRunInput)
-    ].map((entry) => toBoundedEvidenceEntry(entry, input.summaryLimit, input.identitySummaryLimit));
+    ].map((entry) => toBoundedEvidenceEntry(entry, input.textLimits));
 }
 
 function toAnalysisFailureRows(analysis: DistributedRunAnalysis): DistributedArtifactEvidenceEntry[] {
@@ -63,7 +65,7 @@ function toAnalysisFailureRow(analysis: DistributedRunFailedAnalysis): Distribut
         status: 'failed',
         category: failure.category,
         summary: `${failure.title} ${failure.likelyCause}`,
-        identitySummary: [
+        detailSummary: [
             failure.nextAction,
             failure.affectedAgents.length > 0 ? `Affected agents: ${failure.affectedAgents.join(', ')}` : undefined,
             failure.affectedRegions.length > 0 ? `Affected regions: ${failure.affectedRegions.join(', ')}` : undefined,
@@ -101,7 +103,7 @@ function toMonitorFailureRow(
         status: 'failed',
         category: explanation?.category ?? failure.kind,
         summary: failure.message,
-        identitySummary: [failure.code, explanation?.likelyCause, explanation?.nextAction].filter(Boolean).join(' · ')
+        detailSummary: [failure.code, explanation?.likelyCause, explanation?.nextAction].filter(Boolean).join(' · ')
     };
 }
 

@@ -152,13 +152,15 @@ this denser path:
    normal inspector. This is separate from **Inspect evidence**.
 3. Read the retained multiline stack at the top of the inspector, before the
    source and command metadata.
-4. Expand **Raw payload JSON** only when you need to verify the preserved
-   payload summary against the source artifact.
+4. Expand **Raw payload JSON** only when you need to verify the result's
+   preserved error details against the source artifact.
 
 Failed-result rows repeat compact code and runtime markers plus the actionable
 message, so filtered evidence remains identifiable before opening the
-inspector. Results without structured failure details, and non-result evidence,
-keep the existing expanded payload-summary presentation.
+inspector. A result without structured failure details shows its value under
+**Detail**, as a failure shows its next action. An event or a diagnostic shows
+its **Identity summary**: the message, trace and scope identifiers, never the
+payload.
 
 ## Legacy Header And Tabs
 

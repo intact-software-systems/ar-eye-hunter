@@ -25,7 +25,8 @@ const LINEAR_GROWTH_LIMIT = 2.5;
 // and report digests were recaptured again when recipe progress rows dropped the manifest's removed
 // required flag; re-inserting it reproduces the previous digests and the verdict digest is unchanged.
 // All four were recaptured when event and diagnostic rows took identitySummary, a payload-free key=value
-// identity list that the diagnostic summaries embed, in place of their payload text.
+// identity list that the diagnostic summaries embed, in place of their payload text; the identity list
+// of event rows also changed its separator from ", " to " ".
 const SCALE_MONITOR_SHA256 = '92d2fab78c0481ff54fd6abf2dfc9b61bd8de2dde80b9438154ff070cb74c5bf';
 const SCALE_REPORT_SHA256 = '9e28de05b61f1c9023c013de786973fb11645bb169aba918cd94b41e55257831';
 const SCALE_VERDICT_SHA256 = 'cd4efb96b8b89e2d6715e8419f4d29ed30aed993dbddc2d1cb9aa56ab821057c';

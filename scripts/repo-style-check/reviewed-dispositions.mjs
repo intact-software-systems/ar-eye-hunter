@@ -2518,10 +2518,10 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'distributed-run-observation',
         maximumMagnitude: 21
     }),
-    // The handoff classifier takes arbitrary monitor evidence by design (its tests feed null, malformed and frozen
-    // input): fields and array items are read behind try/catch for hostile getters, then narrowed by decodeRecord,
-    // Array.isArray, decodeBoundedText or decodeIdentity before any pattern runs. The two contract fields are the
-    // public untyped input shape.
+    // The handoff classifier takes arbitrary monitor evidence by design (its tests feed null, malformed, frozen and
+    // revoked-proxy input): fields and array items are read behind try/catch for hostile getters, then narrowed by
+    // decodeHandoffRecord (a throwing inspection is an absent record), Array.isArray, decodeBoundedText or
+    // decodeIdentity before any pattern runs. The two contract fields are the public untyped input shape.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
         rule: 'boundary.unknown',
@@ -2608,12 +2608,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'createSelection',
         maximumMagnitude: 1
-    }),
-    Object.freeze({
-        path: 'packages/tests/rallar-black-box/recipe-console-analyze-worker-ui.test.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined,
-        maximumMagnitude: 3
     }),
     Object.freeze({
         path: 'packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts',

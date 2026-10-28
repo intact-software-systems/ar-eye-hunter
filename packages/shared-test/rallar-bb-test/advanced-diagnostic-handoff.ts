@@ -63,8 +63,8 @@ const DIAGNOSTIC_SIGNAL_FIELDS = [
 export function deriveAdvancedDiagnosticHandoffTargets(
     input: unknown
 ): readonly AdvancedDiagnosticHandoffTarget[] {
-    const root = decodeRecord(input);
-    const failure = decodeRecord(read(root, 'failure'));
+    const root = decodeHandoffRecord(input);
+    const failure = decodeHandoffRecord(read(root, 'failure'));
     const failureSignals = textSignals(failure, FAILURE_SIGNAL_FIELDS);
     const failureCode = decodeBoundedText(read(failure, 'code'))?.trim().toUpperCase();
     const failureKey = decodeIdentity(read(failure, 'key'));
@@ -104,7 +104,7 @@ function diagnosticSignalsForFailure(value: unknown, failureKey: string): readon
     const signals: string[] = [];
     const limit = Math.min(value.length, ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS);
     for (let index = 0; index < limit; index += 1) {
-        const diagnostic = decodeRecord(readIndex(value, index));
+        const diagnostic = decodeHandoffRecord(readIndex(value, index));
         if (!hasCorrelatedFailureKey(read(diagnostic, 'correlatedFailureKeys'), failureKey)) {
             continue;
         }
@@ -196,6 +196,16 @@ function decodeIdentity(value: unknown): string | undefined {
     }
     const clean = value.trim();
     return clean.length > 0 ? clean : undefined;
+}
+
+/** A value whose inspection throws, such as a revoked proxy, is an absent record. */
+function decodeHandoffRecord(value: unknown): RallarBlackBoxTestRecord {
+    try {
+        return decodeRecord(value);
+    }
+    catch {
+        return {};
+    }
 }
 
 function read(record: RallarBlackBoxTestRecord, key: string): unknown {

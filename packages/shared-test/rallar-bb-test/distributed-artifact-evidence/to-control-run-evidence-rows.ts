@@ -114,7 +114,7 @@ function toControlRunResultRow(
         status,
         category: 'command',
         summary: result.error?.message ?? result.result?.error?.message ?? `${kind ?? 'command'} ${status}`,
-        identitySummary: decodeEvidenceValueSummary(
+        detailSummary: decodeEvidenceValueSummary(
             result.error?.details ?? result.result?.error?.details ?? result.result?.value
         ),
         ...(failureDetails ? { failureDetails } : {})

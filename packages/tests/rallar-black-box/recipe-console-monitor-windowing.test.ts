@@ -621,7 +621,7 @@ function diagnosticRow(
         diagnosticTypeId: 'runtime-warning',
         message: `Diagnostic ${index}`,
         summary: `Diagnostic ${index}`,
-        identitySummary: '{}',
+        identitySummary: 'kind=diagnostic',
         correlatedFailureKeys: []
     };
 }
@@ -644,7 +644,7 @@ function eventRow(index: number): DistributedRunEventRow {
         kind: 'runtime',
         agentId: `agent-${index}`,
         summary: `Event ${index}`,
-        identitySummary: '{}'
+        identitySummary: 'kind=runtime'
     };
 }
 

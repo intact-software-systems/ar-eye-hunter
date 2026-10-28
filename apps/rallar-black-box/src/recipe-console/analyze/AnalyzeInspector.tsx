@@ -77,25 +77,31 @@ export function AnalyzeInspector({
                         )
                     )}
             </dl>
-            {entry.identitySummary && entry.kind === 'result' && entry.failureDetails
+            {entry.detailSummary && entry.kind === 'result' && entry.failureDetails
                 ? (
                     <details className={styles.rawPayload}>
                         <summary>Raw payload JSON</summary>
-                        <pre>{entry.identitySummary}</pre>
+                        <pre>{entry.detailSummary}</pre>
                     </details>
                 )
+                : entry.detailSummary
+                ? <EvidenceSummary heading="Detail" text={entry.detailSummary} />
                 : entry.identitySummary
-                ? (
-                    <div className={styles.payload}>
-                        <h3>Identity summary</h3>
-                        <pre>{entry.identitySummary}</pre>
-                    </div>
-                )
+                ? <EvidenceSummary heading="Identity summary" text={entry.identitySummary} />
                 : null}
             <footer>
                 <span>{model.workspace.source === 'bundle-envelope' ? 'Imported envelope' : 'Artifact files'}</span>
                 <span>{model.workspace.support}</span>
             </footer>
         </section>
+    );
+}
+
+function EvidenceSummary({ heading, text }: Readonly<{ heading: string; text: string; }>) {
+    return (
+        <div className={styles.evidenceSummary}>
+            <h3>{heading}</h3>
+            <pre>{text}</pre>
+        </div>
     );
 }

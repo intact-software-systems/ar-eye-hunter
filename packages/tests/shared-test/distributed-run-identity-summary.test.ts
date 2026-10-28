@@ -74,4 +74,13 @@ describe('distributed run identity summary', () => {
             'corrId=corr-1'
         ].join(' '));
     });
+
+    it('reads the data of a nested runtime diagnostic payload', () => {
+        const summary = toDistributedRunIdentitySummary({
+            topic: 'rallar.browser.ws.send_failed',
+            payload: { diagnosticSchemaVersion: 1, transport: 'ws', data: { msgId: 'm-1', traceId: 't-1' } }
+        });
+
+        expect(summary).toBe('topic=rallar.browser.ws.send_failed transport=ws msgId=m-1 traceId=t-1');
+    });
 });

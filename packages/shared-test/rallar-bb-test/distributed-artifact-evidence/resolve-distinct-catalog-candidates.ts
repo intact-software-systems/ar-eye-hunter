@@ -118,7 +118,8 @@ function toCanonicalEvidenceEntry(entry: DistributedArtifactEvidenceEntry): stri
         entry.status ?? null,
         entry.category ?? null,
         entry.summary,
-        entry.identitySummary,
+        entry.identitySummary ?? null,
+        entry.detailSummary ?? null,
         entry.failureDetails
             ? [
                 entry.failureDetails.code ?? null,
