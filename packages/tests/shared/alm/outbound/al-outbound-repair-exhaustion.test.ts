@@ -226,6 +226,7 @@ describe('the repair budget runs out', () => {
                 carrier: 'ws',
                 atMs: expect.any(Number),
                 lane: 'durable',
+                traceId: first.id.traceId,
                 trackedReceiptAlgo: 'none',
                 verdict: {
                     kind: 'skipped',

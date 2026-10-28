@@ -529,7 +529,8 @@ function toNotReady(msgId: string, attemptId: string): ALDeliverySettlement {
         outcome: 'not-ready',
         submissionAttempted: false,
         detail: 'RTC relay edge is not permitted by current server room topology',
-        willRetry: true
+        willRetry: true,
+        traceId: 'trace-browser-rtc-peer-send'
     };
 }
 
@@ -543,7 +544,8 @@ function toExhausted(msgId: string): ALDeliverySettlement {
         confirmedPeerIds: [],
         unconfirmedPeerIds: [DIRECTOR],
         detail: 'The receipt ran out of retries after 3 of 3.',
-        cause: 'budget'
+        cause: 'budget',
+        traceId: 'trace-browser-rtc-peer-send'
     };
 }
 
@@ -559,7 +561,8 @@ function toReceipt(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettlem
         expectedRecipientPeerIds: [DIRECTOR],
         confirmedRecipientPeerIds: [DIRECTOR],
         unconfirmedRecipientPeerIds: [],
-        complete: true
+        complete: true,
+        traceId: 'trace-browser-rtc-peer-send'
     };
 }
 

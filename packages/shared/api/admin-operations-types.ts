@@ -107,6 +107,8 @@ export interface AdminOperationsAlmReceiptEntry {
     readonly lastSettlementKind: ALDeliverySettlement['kind'];
     readonly receiptExhausted: boolean;
     readonly updatedAtEpochMs: number;
+    /** The trace of the message's latest receipt fact. */
+    readonly traceId: string;
 }
 
 export interface AdminOperationsAlmReceiptDiagnostics {

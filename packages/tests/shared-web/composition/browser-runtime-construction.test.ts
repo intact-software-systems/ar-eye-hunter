@@ -167,7 +167,8 @@ describe('browser runtime construction', () => {
             expectedRecipientPeerIds: ['second-hop'],
             confirmedRecipientPeerIds: ['second-hop'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-browser-runtime-construction'
         });
         expect(secondHandle.lifecycle().state).toBe('acknowledged');
         sinks[0]({
@@ -181,7 +182,8 @@ describe('browser runtime construction', () => {
             expectedRecipientPeerIds: ['first-hop'],
             confirmedRecipientPeerIds: ['first-hop'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-browser-runtime-construction'
         });
         expect(firstHandle.lifecycle().state).toBe('acknowledged');
         await first.disconnect();
@@ -213,7 +215,8 @@ describe('browser runtime construction', () => {
                 expectedRecipientPeerIds: ['sibling-hop'],
                 confirmedRecipientPeerIds: ['sibling-hop'],
                 unconfirmedRecipientPeerIds: [],
-                complete: true
+                complete: true,
+                traceId: 'trace-browser-runtime-construction'
             });
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
@@ -278,7 +281,8 @@ describe('browser runtime construction', () => {
             expectedRecipientPeerIds: ['stale'],
             confirmedRecipientPeerIds: ['stale'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-browser-runtime-construction'
         });
         expect(handle.lifecycle().state).toBe('queued');
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
@@ -293,7 +297,8 @@ describe('browser runtime construction', () => {
                 expectedRecipientPeerIds: ['current'],
                 confirmedRecipientPeerIds: ['current'],
                 unconfirmedRecipientPeerIds: [],
-                complete: true
+                complete: true,
+                traceId: 'trace-browser-runtime-construction'
             });
             expect(handle.lifecycle().state).toBe('acknowledged');
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
@@ -342,7 +347,8 @@ describe('browser runtime construction', () => {
                 expectedRecipientPeerIds: ['current'],
                 confirmedRecipientPeerIds: ['current'],
                 unconfirmedRecipientPeerIds: [],
-                complete: true
+                complete: true,
+                traceId: 'trace-browser-runtime-construction'
             });
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
@@ -375,7 +381,8 @@ describe('browser runtime construction', () => {
             expectedRecipientPeerIds: ['failed'],
             confirmedRecipientPeerIds: ['failed'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-browser-runtime-construction'
         });
         expect(handle.lifecycle().state).toBe('queued');
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
@@ -390,7 +397,8 @@ describe('browser runtime construction', () => {
                 expectedRecipientPeerIds: ['retry'],
                 confirmedRecipientPeerIds: ['retry'],
                 unconfirmedRecipientPeerIds: [],
-                complete: true
+                complete: true,
+                traceId: 'trace-browser-runtime-construction'
             });
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });

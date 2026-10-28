@@ -618,7 +618,8 @@ describe('outbound control admission identity', () => {
                 carrier: 'rtc',
                 lane: 'durable',
                 atMs: expect.any(Number),
-                detail: 'The not-yet-in-sync retry budget of 2 ran out.'
+                detail: 'The not-yet-in-sync retry budget of 2 ran out.',
+                traceId: 'trace-al-outbound-control-admission'
             }]);
     });
 
@@ -643,7 +644,8 @@ describe('outbound control admission identity', () => {
                 cause: 'hop-refused',
                 hopPeerId: 'receiver',
                 nackReason: reason,
-                detail: `Hop receiver refused the message: ${reason}.`
+                detail: `Hop receiver refused the message: ${reason}.`,
+                traceId: 'trace-al-outbound-control-admission'
             });
         }
     );
@@ -677,7 +679,8 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'message',
             relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
-            detail: 'The server relay refused the message: resync-required.'
+            detail: 'The server relay refused the message: resync-required.',
+            traceId: 'trace-al-outbound-control-admission'
         }]);
     });
 
@@ -718,7 +721,8 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'message',
             relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-            detail: 'The server relay refused the message: unauthorized.'
+            detail: 'The server relay refused the message: unauthorized.',
+            traceId: 'trace-al-outbound-control-admission'
         }]);
     });
 
@@ -735,7 +739,8 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'message',
             relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' },
-            detail: 'The server relay refused the message: membership-fenced.'
+            detail: 'The server relay refused the message: membership-fenced.',
+            traceId: 'trace-al-outbound-control-admission'
         }]);
     });
 
@@ -750,7 +755,8 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'message',
             relayRejection: { relay: 'peer', peerId: 'receiver', reason: 'membership-fenced' },
-            detail: 'Hop receiver refused the message: membership-fenced.'
+            detail: 'Hop receiver refused the message: membership-fenced.',
+            traceId: 'trace-al-outbound-control-admission'
         }]);
     });
 

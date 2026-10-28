@@ -37,7 +37,8 @@ function toAttempt(
         outcome,
         submissionAttempted: outcome === 'sent',
         detail: undefined,
-        willRetry: outcome === 'not-ready'
+        willRetry: outcome === 'not-ready',
+        traceId: 'trace-resolve-al-delivery-fallback-trigger'
     };
 }
 
@@ -68,7 +69,8 @@ const RTC_ACKNOWLEDGEMENT: ALDeliverySettlement = {
     expectedRecipientPeerIds: ['b'],
     confirmedRecipientPeerIds: [],
     unconfirmedRecipientPeerIds: ['b'],
-    complete: false
+    complete: false,
+    traceId: 'trace-resolve-al-delivery-fallback-trigger'
 };
 
 describe('the declared retryable outcomes (D56)', () => {
@@ -90,7 +92,8 @@ describe('the declared retryable outcomes (D56)', () => {
                 carrier: 'ws',
                 atMs: 1,
                 relayRejection: { relay: 'trusted-server', reason: 'held-by-other' },
-                detail: 'The server relay refused the message: held-by-other.'
+                detail: 'The server relay refused the message: held-by-other.',
+                traceId: 'trace-resolve-al-delivery-fallback-trigger'
             },
             leg: 'ws',
             notReadyRun: 0
@@ -169,7 +172,8 @@ describe('the declared retryable outcomes (D56)', () => {
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: 1,
-            attemptId: 'a'
+            attemptId: 'a',
+            traceId: 'trace-resolve-al-delivery-fallback-trigger'
         };
         expect(
             toTrigger([
@@ -192,7 +196,8 @@ describe('the declared retryable outcomes (D56)', () => {
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['b'],
             cause: 'budget',
-            detail: 'The receipt ran out of retries after 3 of 3.'
+            detail: 'The receipt ran out of retries after 3 of 3.',
+            traceId: 'trace-resolve-al-delivery-fallback-trigger'
         }])).toEqual({
             kind: 'fall-back',
             reason: 'receipt-exhausted',
@@ -203,7 +208,8 @@ describe('the declared retryable outcomes (D56)', () => {
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: 1,
-            detail: 'The not-yet-in-sync retry budget of 3 ran out.'
+            detail: 'The not-yet-in-sync retry budget of 3 ran out.',
+            traceId: 'trace-resolve-al-delivery-fallback-trigger'
         }])).toEqual({
             kind: 'fall-back',
             reason: 'not-yet-in-sync-exhausted',

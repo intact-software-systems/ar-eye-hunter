@@ -1373,7 +1373,8 @@ function computePortAcknowledgement(
         expectedRecipientPeerIds: receiptEvidence.expectedRecipientPeerIds,
         confirmedRecipientPeerIds: receiptEvidence.confirmedRecipientPeerIds,
         unconfirmedRecipientPeerIds: receiptEvidence.unconfirmedRecipientPeerIds,
-        complete: receiptEvidence.unconfirmedRecipientPeerIds.length === 0
+        complete: receiptEvidence.unconfirmedRecipientPeerIds.length === 0,
+        traceId: toPortMessageTrace(message).traceId
     });
 }
 

@@ -378,6 +378,7 @@ export function toALOutboundCommitSettlements<TPrepared>(
     const superseded = toALOutboundSupersededMsgIds(input.bundle).map((msgId): ALOutboundSettlementFact => ({
         kind: 'superseded',
         msgId,
+        traceId: input.msg.id.traceId,
         replacementMsgId: input.msg.id.msgId,
         detail: 'A newer message replaced this one at its admission.'
     }));

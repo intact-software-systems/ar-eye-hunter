@@ -424,7 +424,8 @@ function toSupersededFact(predecessor: ALMessage, replacement: ALMessage): ALOut
         kind: 'superseded',
         msgId: predecessor.id.msgId,
         replacementMsgId: replacement.id.msgId,
-        detail: 'A newer message replaced this one at its admission.'
+        detail: 'A newer message replaced this one at its admission.',
+        traceId: replacement.id.traceId
     };
 }
 
@@ -441,7 +442,8 @@ function toSupersededLifecycle(
                 carrier: 'ws',
                 atMs: 0,
                 replacementMsgId: fact.replacementMsgId,
-                detail: fact.detail
+                detail: fact.detail,
+                traceId: 'trace-outbound-admission-verdict'
             }]
             : []
     );

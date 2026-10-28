@@ -50,9 +50,14 @@ export interface WsQueueBoxServerReceiptSocketFacts {
 }
 
 export interface WsQueueBoxServerReceiptAckFacts {
-    readonly controlMsgId: string | undefined;
-    readonly controlSenderId: string | undefined;
-    readonly controlCreatedAtEpochMs: number | undefined;
+    readonly controlMsgId: string;
+    readonly controlSenderId: string;
+    readonly controlCreatedAtEpochMs: number;
+    /**
+     * The ACK control's own trace, which equals its subject's in production because the ACK is built with it; on
+     * `ack-count` the counted aggregate's trace instead, when one is live.
+     */
+    readonly traceId: string;
     readonly ack: ALAckPayload;
 }
 
@@ -61,6 +66,7 @@ export interface WsQueueBoxServerReceiptBusinessFacts {
     readonly senderId: string;
     readonly typeId: string;
     readonly topicId: string;
+    readonly traceId: string;
 }
 
 export interface WsQueueBoxServerReceiptAggregateFacts {
@@ -73,11 +79,8 @@ export interface WsQueueBoxServerReceiptAggregateFacts {
 }
 
 export interface WsQueueBoxServerReceiptCountSource {
-    readonly source: 'local' | 'relayed' | 'direct';
+    readonly source: 'local' | 'relayed';
     readonly relayPublisherId: string | undefined;
-    readonly controlMsgId: string | undefined;
-    readonly controlSenderId: string | undefined;
-    readonly controlCreatedAtEpochMs: number | undefined;
 }
 
 export interface WsQueueBoxServerReceiptOutboxVerdict {
@@ -157,6 +160,8 @@ export type WsQueueBoxServerReceiptObservation =
         readonly kind: 'receipt-outbox';
         readonly serverPeerId: string;
         readonly receiptControlMsgId: string;
+        /** The issued receipt's trace: its aggregate's subject message's. */
+        readonly traceId: string;
         readonly receipt: ALReceiptPayload;
         readonly deadlineAtMs: number;
         readonly verdict: WsQueueBoxServerReceiptOutboxVerdict;
@@ -173,6 +178,8 @@ interface WsQueueBoxServerReceiptAckRejectionIdentity {
     readonly controlMsgId: string;
     readonly controlSenderId: string;
     readonly controlCreatedAtEpochMs: number;
+    /** The refused control's own trace; a refusal without a decoded control identity records nothing. */
+    readonly traceId: string;
     readonly rejectionCode: 'unauthorized';
 }
 
@@ -210,6 +217,7 @@ export function toWsQueueBoxServerReceiptAckFacts(message: ALMessage): WsQueueBo
             controlMsgId: message.id.msgId,
             controlSenderId: message.id.senderId,
             controlCreatedAtEpochMs: message.id.ts,
+            traceId: message.id.traceId,
             ack: toImmutableWsQueueBoxServerReceiptAck(ack)
         });
     }
@@ -226,7 +234,8 @@ export function toWsQueueBoxServerReceiptBusinessFacts(
         msgId: message.id.msgId,
         senderId: message.id.senderId,
         typeId: message.payload.typeId,
-        topicId: message.route.topicId
+        topicId: message.route.topicId,
+        traceId: message.id.traceId
     });
 }
 

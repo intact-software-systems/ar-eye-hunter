@@ -104,6 +104,7 @@ export class WsQueueBoxServerAckRelay {
                     controlMsgId: observation.controlIdentity.msgId,
                     controlSenderId: observation.controlIdentity.senderId,
                     controlCreatedAtEpochMs: observation.controlIdentity.ts,
+                    traceId: observation.controlIdentity.traceId,
                     rejectionCode: 'unauthorized',
                     owner: 'ack-relay',
                     stage: observation.stage,
@@ -132,6 +133,7 @@ export class WsQueueBoxServerAckRelay {
                 controlMsgId: message.id.msgId,
                 controlSenderId: message.id.senderId,
                 controlCreatedAtEpochMs: message.id.ts,
+                traceId: message.id.traceId,
                 ack: toImmutableWsQueueBoxServerReceiptAck(ack)
             })
             : undefined;

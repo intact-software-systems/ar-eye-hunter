@@ -32,7 +32,8 @@ export interface ALOutboundReceiptConfirmationDiagnostic extends ALMessageTrace 
     readonly candidateExpiresAtMs: number | null;
     readonly commitOutcome: ALOutboundCommitBundleOutcome;
     /** The logical fact passed to the emitter on commit, before carrier/lane/time stamping. */
-    readonly settlement: Extract<ALOutboundSettlementFact, { kind: 'acknowledgement'; }> | null;
+    /** The diagnostic's own trailing trace names the request, so the snapshot omits the fact's. */
+    readonly settlement: Omit<Extract<ALOutboundSettlementFact, { kind: 'acknowledgement'; }>, 'traceId'> | null;
 }
 
 export interface ALOutboundReceiptConfirmationDiagnosticInput {

@@ -497,8 +497,8 @@ export class WsQueueBoxClientService {
         return await this.inboundRuntime.writeRetainedDeliveriesDueNow(messages);
     }
 
-    cancelOutbox(msgId: string): ALOutboundCancelOutcome {
-        return this.outboundRuntime.cancel(msgId);
+    cancelOutbox(msgId: string, traceId: string): ALOutboundCancelOutcome {
+        return this.outboundRuntime.cancel(msgId, traceId);
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {

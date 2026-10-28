@@ -48,6 +48,7 @@ export async function readALOutboundDequeueWait<TPrepared>(
     input.settlements({
         kind: 'attempt-settled',
         msgId: msg.id.msgId,
+        traceId: msg.id.traceId,
         attemptId: input.effect.effectId,
         outcome: 'not-ready',
         submissionAttempted: false,

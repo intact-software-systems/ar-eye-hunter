@@ -60,7 +60,8 @@ function toAdmission(
         carrier: 'rtc',
         atMs: AT_MS,
         verdict,
-        trackedReceiptAlgo
+        trackedReceiptAlgo,
+        traceId: 'trace-al-delivery-failure'
     };
 }
 
@@ -74,7 +75,8 @@ function toAttemptSettled(outcome: ALDeliveryAttemptOutcome): ALDeliverySettleme
         outcome,
         submissionAttempted: outcome === 'sent',
         detail: `attempt ${outcome}`,
-        willRetry: false
+        willRetry: false,
+        traceId: 'trace-al-delivery-failure'
     };
 }
 
@@ -88,7 +90,8 @@ function toReceiptExhausted(exhaustion: ALDeliveryReceiptExhaustion): ALDelivery
         confirmedPeerIds: ['b'],
         unconfirmedPeerIds: ['c'],
         ...exhaustion,
-        detail: 'The receipt ended.'
+        detail: 'The receipt ended.',
+        traceId: 'trace-al-delivery-failure'
     };
 }
 
@@ -100,7 +103,8 @@ const SERVER_REFUSAL: ALDeliverySettlement = {
     carrier: 'ws',
     atMs: AT_MS,
     relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-    detail: 'The server relay refused the message: unauthorized.'
+    detail: 'The server relay refused the message: unauthorized.',
+    traceId: 'trace-al-delivery-failure'
 };
 
 interface FailureCase {
@@ -206,7 +210,8 @@ const FAILURE_CASES: readonly FailureCase[] = [
                 carrier: 'rtc',
                 atMs: AT_MS,
                 reason: 'rate-limited',
-                detail: 'rate-limited at rtc'
+                detail: 'rate-limited at rtc',
+                traceId: 'trace-al-delivery-failure'
             }
         ],
         state: 'failed',
@@ -275,7 +280,8 @@ const FAILURE_CASES: readonly FailureCase[] = [
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: AT_MS,
-            detail: 'Message deadline elapsed before fallback.'
+            detail: 'Message deadline elapsed before fallback.',
+            traceId: 'trace-al-delivery-failure'
         }],
         state: 'expired',
         failure: { kind: 'expired' },
@@ -318,7 +324,8 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
                     carrier: 'rtc',
                     atMs: AT_MS,
                     reason: 'unsupported',
-                    detail: 'receiver over rtc'
+                    detail: 'receiver over rtc',
+                    traceId: 'trace-al-delivery-failure'
                 }],
                 state: 'submitted'
             },
@@ -330,7 +337,8 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
                     carrier: 'rtc',
                     atMs: AT_MS,
                     replacementMsgId: 'msg-2',
-                    detail: 'Replaced.'
+                    detail: 'Replaced.',
+                    traceId: 'trace-al-delivery-failure'
                 }],
                 state: 'superseded'
             },
@@ -345,7 +353,8 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
                     kind: 'cancelled',
                     msgId: MSG_ID,
                     carrier: 'rtc',
-                    atMs: AT_MS
+                    atMs: AT_MS,
+                    traceId: 'trace-al-delivery-failure'
                 }],
                 state: 'cancelled'
             }

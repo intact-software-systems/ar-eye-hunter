@@ -33,7 +33,8 @@ function toAdmission(carrier: ALDeliveryCarrier): ALDeliverySettlement {
         carrier,
         atMs: 2_000,
         verdict: { kind: 'admitted', durable: false, queuedAttempts: 1 },
-        trackedReceiptAlgo: 'receiver'
+        trackedReceiptAlgo: 'receiver',
+        traceId: 'trace-al-delivery-carrier-fallback'
     };
 }
 
@@ -53,7 +54,8 @@ function toReceipt(
         expectedRecipientPeerIds: ['b', 'c'],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: ['b', 'c'].filter((peerId) => !confirmed.includes(peerId)),
-        complete
+        complete,
+        traceId: 'trace-al-delivery-carrier-fallback'
     };
 }
 
@@ -67,7 +69,8 @@ function toExhausted(carrier: ALDeliveryCarrier): ALDeliverySettlement {
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['b', 'c'],
         cause: 'budget',
-        detail: EXHAUSTED_DETAIL
+        detail: EXHAUSTED_DETAIL,
+        traceId: 'trace-al-delivery-carrier-fallback'
     };
 }
 
@@ -78,7 +81,8 @@ const HAND_OVER: ALDeliverySettlement = {
     atMs: 3_000,
     to: 'ws',
     reason: 'receipt-exhausted',
-    detail: EXHAUSTED_DETAIL
+    detail: EXHAUSTED_DETAIL,
+    traceId: 'trace-al-delivery-carrier-fallback'
 };
 
 describe('a hand-over to the fallback carrier (D56, Q3)', () => {
@@ -117,7 +121,8 @@ describe('a hand-over to the fallback carrier (D56, Q3)', () => {
                 carrier: 'rtc',
                 atMs: 5_000,
                 relayRejection: { relay: 'peer', peerId: 'relay-1', reason: 'resync-required' },
-                detail: 'Hop relay-1 refused the message: resync-required.'
+                detail: 'Hop relay-1 refused the message: resync-required.',
+                traceId: 'trace-al-delivery-carrier-fallback'
             } satisfies ALDeliverySettlement
         ].reduce(computeALDeliveryLifecycle, acknowledged);
 
@@ -146,7 +151,8 @@ describe('a hand-over to the fallback carrier (D56, Q3)', () => {
             outcome: 'cancelled',
             submissionAttempted: false,
             detail: 'The message was cancelled before its carrier ran.',
-            willRetry: false
+            willRetry: false,
+            traceId: 'trace-al-delivery-carrier-fallback'
         }]);
 
         expect(next.evidence.attempts).toMatchObject([{ carrier: 'rtc', outcome: 'cancelled' }]);

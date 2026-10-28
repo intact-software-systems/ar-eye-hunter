@@ -31,7 +31,8 @@ function createAdmittedLifecycle(): ALDeliveryLifecycle {
         carrier: 'rtc',
         atMs: AT_MS,
         verdict: { kind: 'admitted', durable: false, queuedAttempts: 1 },
-        trackedReceiptAlgo: 'receiver'
+        trackedReceiptAlgo: 'receiver',
+        traceId: 'trace-al-delivery-receipt-ends'
     });
 }
 
@@ -49,7 +50,8 @@ function toReceiptExhausted(
         confirmedPeerIds,
         unconfirmedPeerIds,
         cause: 'budget',
-        detail: EXHAUSTED_DETAIL
+        detail: EXHAUSTED_DETAIL,
+        traceId: 'trace-al-delivery-receipt-ends'
     };
 }
 
@@ -102,7 +104,8 @@ describe('receipt ends (D56, R-S3a-4)', () => {
             expectedRecipientPeerIds: ['b'],
             confirmedRecipientPeerIds: ['b'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-al-delivery-receipt-ends'
         });
 
         const late = computeALDeliveryLifecycle(
@@ -122,7 +125,8 @@ describe('receipt ends (D56, R-S3a-4)', () => {
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: AT_MS,
-            detail: 'The not-yet-in-sync retry budget of 3 ran out.'
+            detail: 'The not-yet-in-sync retry budget of 3 ran out.',
+            traceId: 'trace-al-delivery-receipt-ends'
         });
 
         expect(next).toEqual(admitted);

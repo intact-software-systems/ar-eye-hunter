@@ -19,7 +19,7 @@ describe('browser session delivery observation', () => {
         const oldEpoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
         fixture.feed.close();
         const nextEpoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
-        oldEpoch.settlements.ws({ kind: 'cancelled', msgId: handle.msgId, carrier: 'ws', atMs: 0 });
+        oldEpoch.settlements.ws({ kind: 'cancelled', msgId: handle.msgId, carrier: 'ws', atMs: 0, traceId: 'trace-browser-delivery-observation' });
         expect(handle.lifecycle().state).toBe('submitted');
         nextEpoch.settlements.ws({
             kind: 'acknowledgement',
@@ -32,7 +32,8 @@ describe('browser session delivery observation', () => {
             expectedRecipientPeerIds: ['current-hop'],
             confirmedRecipientPeerIds: ['current-hop'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-browser-delivery-observation'
         });
         expect((await waiting).lifecycle.state).toBe('acknowledged');
         await vi.advanceTimersByTimeAsync(101);

@@ -246,6 +246,8 @@ export type ALDeliverySettlement =
          * admission, refusal and fallback facts, and a cancel the runtime states for its whole lifetime.
          */
         lane?: ALStoreDurability;
+        /** The trace of the request whose commit stated it: the message's own, the replacement's on `superseded`. */
+        traceId: string;
     }>;
 
 export type ALDeliverySettlementSink = (settlement: ALDeliverySettlement) => void;

@@ -316,7 +316,7 @@ describe('AL outbound dequeue work', () => {
             for (const entry of entries) {
                 await outbox.enqueueIfAbsent(entry);
             }
-            runtime.cancel(cancelled.id.msgId);
+            runtime.cancel(cancelled.id.msgId, cancelled.id.traceId);
             const reserveEntries = outbox.reserveEntries.bind(outbox);
             vi.spyOn(outbox, 'reserveEntries').mockImplementation(async (input) => {
                 const reserved = await reserveEntries(input);
@@ -351,7 +351,7 @@ describe('AL outbound dequeue work', () => {
         try {
             await runtime.ready();
             await outbox.enqueueIfAbsent(queued);
-            runtime.cancel(message.id.msgId);
+            runtime.cancel(message.id.msgId, message.id.traceId);
             await runOutboundWorkTask(runtime);
             expect(timings.filter((event) => event.stage === 'admission-start')).toHaveLength(0);
             expect(timings.filter((event) => event.stage === 'attempt-settled')).toEqual([

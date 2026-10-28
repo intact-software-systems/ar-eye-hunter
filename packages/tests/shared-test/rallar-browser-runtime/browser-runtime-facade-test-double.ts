@@ -559,7 +559,8 @@ export function openFacadeDelivery(
             carrier,
             atMs: Date.now(),
             verdict,
-            trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+            trackedReceiptAlgo: handle.lifecycle().receiptAlgo,
+            traceId: 'trace-browser-runtime-facade-test-double'
         });
     }
     return handle;

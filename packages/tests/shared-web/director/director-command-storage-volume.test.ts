@@ -155,7 +155,8 @@ function recordDirectorReceipt(
         expectedRecipientPeerIds: ['director'],
         confirmedRecipientPeerIds: ['director'],
         unconfirmedRecipientPeerIds: [],
-        complete: true
+        complete: true,
+        traceId: 'trace-director-command-storage-volume'
     });
 }
 

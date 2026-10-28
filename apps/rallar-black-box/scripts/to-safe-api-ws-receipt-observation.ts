@@ -26,6 +26,7 @@ const ACK_REJECTION_FIELDS: readonly ReceiptReturnField[] = [
     { name: 'controlMsgId', kind: 'identity' },
     { name: 'controlSenderId', kind: 'identity' },
     { name: 'controlCreatedAtEpochMs', kind: 'number' },
+    { name: 'traceId', kind: 'identity' },
     { name: 'rejectionCode', kind: ['unauthorized'] }
 ];
 
@@ -43,6 +44,7 @@ const BUSINESS_SOCKET_FIELDS: readonly ReceiptReturnField[] = [
     { name: 'senderId', kind: 'identity' },
     { name: 'typeId', kind: 'identity' },
     { name: 'topicId', kind: 'identity' },
+    { name: 'traceId', kind: 'identity' },
     { name: 'connectionId', kind: 'identity' },
     { name: 'fromPeerId', kind: 'identity', optional: true },
     { name: 'scopeDisposition', kind: ['authorized', 'refused', 'unobserved'] },
@@ -193,7 +195,7 @@ export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptO
 
 function toSafeReceiptReturn(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
     const receipt = toSafeReceipt(record.receipt);
-    if (!receipt || !isSafeApiTimingIdentity(record.receiptControlMsgId)) {
+    if (!receipt || !isSafeApiTimingIdentity(record.receiptControlMsgId) || !isSafeApiTimingIdentity(record.traceId)) {
         return undefined;
     }
     const contract = RECEIPT_RETURN_FIELDS[String(record.kind)];
@@ -205,6 +207,7 @@ function toSafeReceiptReturn(record: Readonly<Record<string, unknown>>): SafeApi
         kind: record.kind as SafeApiWsReceiptObservationDto['kind'],
         serverPeerId: String(record.serverPeerId),
         receiptControlMsgId: record.receiptControlMsgId,
+        traceId: record.traceId,
         receipt,
         ...fields
     };
@@ -349,9 +352,9 @@ function isSafeAckRejectionGuards(value: unknown, allowed: readonly string[]): v
 }
 
 function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
-    const ack = toSafeAck(record.ack);
+    const identity = toSafeAckIdentity(record, 'socket-decision');
     if (
-        !ack || !isSafeApiTimingIdentity(record.connectionId) ||
+        !identity || !isSafeApiTimingIdentity(record.connectionId) ||
         !isAllowedApiTimingString(record.scopeDisposition, ['authorized', 'refused', 'unobserved']) ||
         !isAllowedApiTimingString(record.outcome, [
             'rejected',
@@ -381,7 +384,7 @@ function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeAp
         fields.authenticatedScope = scope;
     }
     return {
-        ...toSafeAckIdentity(record, 'socket-decision', ack),
+        ...identity,
         ...fields,
         connectionId: record.connectionId,
         scopeDisposition: record.scopeDisposition,
@@ -390,11 +393,11 @@ function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeAp
 }
 
 function toSafeAckCount(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
-    const ack = toSafeAck(record.ack);
+    const identity = toSafeAckIdentity(record, 'ack-count');
     const before = record.before === undefined ? undefined : toSafeAggregate(record.before);
     const after = record.after === undefined ? undefined : toSafeAggregate(record.after);
     if (
-        !ack || !isAllowedApiTimingString(record.source, ['local', 'relayed', 'direct']) ||
+        !identity || !isAllowedApiTimingString(record.source, ['local', 'relayed']) ||
         !isAllowedApiTimingString(record.outcome, ['rejected', 'partial', 'complete']) ||
         !isNonNegativeApiTimingNumber(record.countAtEpochMs) ||
         (record.before !== undefined && before === undefined) || (record.after !== undefined && after === undefined)
@@ -411,7 +414,7 @@ function toSafeAckCount(record: Readonly<Record<string, unknown>>): SafeApiWsRec
     retainSafeIdentity(fields, record, 'relayPublisherId');
     retainSafeRejection(fields, record);
     return {
-        ...toSafeAckIdentity(record, 'ack-count', ack),
+        ...identity,
         ...fields,
         source: record.source,
         outcome: record.outcome,
@@ -420,9 +423,9 @@ function toSafeAckCount(record: Readonly<Record<string, unknown>>): SafeApiWsRec
 }
 
 function toSafeAckRelay(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
-    const ack = toSafeAck(record.ack);
+    const identity = toSafeAckIdentity(record, 'ack-relay');
     if (
-        !ack ||
+        !identity ||
         !isAllowedApiTimingString(record.outcome, [
             'provenance-refused',
             'budget-refused',
@@ -432,7 +435,7 @@ function toSafeAckRelay(record: Readonly<Record<string, unknown>>): SafeApiWsRec
     ) {
         return undefined;
     }
-    return { ...toSafeAckIdentity(record, 'ack-relay', ack), outcome: record.outcome };
+    return { ...identity, outcome: record.outcome };
 }
 
 function toSafeReceiptOutbox(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
@@ -440,7 +443,8 @@ function toSafeReceiptOutbox(record: Readonly<Record<string, unknown>>): SafeApi
     const verdict = toSafeOutboxVerdict(record.verdict);
     if (
         !receipt || !verdict || !isSafeApiTimingIdentity(record.receiptControlMsgId) ||
-        !isNonNegativeApiTimingNumber(record.deadlineAtMs) || !isNonNegativeApiTimingNumber(record.entryCount) ||
+        !isSafeApiTimingIdentity(record.traceId) || !isNonNegativeApiTimingNumber(record.deadlineAtMs) ||
+        !isNonNegativeApiTimingNumber(record.entryCount) ||
         !isAllowedApiTimingString(record.trackedReceiptAlgo, ['none', 'hop', 'subtree', 'receiver', 'leader'])
     ) {
         return undefined;
@@ -449,6 +453,7 @@ function toSafeReceiptOutbox(record: Readonly<Record<string, unknown>>): SafeApi
         kind: 'receipt-outbox',
         serverPeerId: String(record.serverPeerId),
         receiptControlMsgId: record.receiptControlMsgId,
+        traceId: record.traceId,
         receipt,
         verdict,
         deadlineAtMs: record.deadlineAtMs,
@@ -481,16 +486,20 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
     };
 }
 
+/** The ACK, its control and the trace it names; a record without a safe ACK or trace has no identity. */
 function toSafeAckIdentity(
     record: Readonly<Record<string, unknown>>,
-    kind: SafeApiWsReceiptObservationDto['kind'],
-    ack: ApiJsonObject
-): SafeApiWsReceiptObservationDto {
+    kind: SafeApiWsReceiptObservationDto['kind']
+): SafeApiWsReceiptObservationDto | undefined {
+    const ack = toSafeAck(record.ack);
+    if (!ack || !isSafeApiTimingIdentity(record.traceId)) {
+        return undefined;
+    }
     const fields: Record<string, ApiJsonValue> = {};
     retainSafeIdentity(fields, record, 'controlMsgId');
     retainSafeIdentity(fields, record, 'controlSenderId');
     retainSafeNumber(fields, record, 'controlCreatedAtEpochMs');
-    return { kind, serverPeerId: String(record.serverPeerId), ack, ...fields };
+    return { kind, serverPeerId: String(record.serverPeerId), ack, traceId: record.traceId, ...fields };
 }
 
 function toSafeAggregate(record: unknown): ApiJsonObject | undefined {

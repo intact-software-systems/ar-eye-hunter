@@ -106,7 +106,8 @@ describe('arena director delivery and appointment', () => {
                 outcome: 'not-ready',
                 submissionAttempted: false,
                 detail: 'connecting',
-                willRetry: true
+                willRetry: true,
+                traceId: 'trace-arena-director-delivery'
             });
         });
         expect(arena.current?.directorAttempt).toMatchObject({ status: 'pending', capabilityDelivery: { state: 'pending' } });
@@ -218,7 +219,8 @@ describe('arena director delivery and appointment', () => {
                 outcome: 'sent',
                 submissionAttempted: true,
                 detail: undefined,
-                willRetry: false
+                willRetry: false,
+                traceId: 'trace-arena-director-delivery'
             });
         });
         expect(arena.current?.directorAttempt).toMatchObject({ status: 'pending', capabilityDelivery: { state: 'confirmed', evidence: 'transport-accepted' } });
@@ -679,7 +681,8 @@ function recordReceipt(delivery: MessageDeliveryFixture, confirmed: readonly str
         expectedRecipientPeerIds: expected,
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: expected.filter((peerId) => !confirmed.includes(peerId)),
-        complete
+        complete,
+        traceId: 'trace-arena-director-delivery'
     });
 }
 

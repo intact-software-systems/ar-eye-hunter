@@ -74,7 +74,14 @@ describe('message handle admission', () => {
     it('retains synchronous transport settlement that arrives before admission returns', async () => {
         const fixture = createBrowserMessageSenderFixture();
         fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => {
-            fixture.registry.record({ kind: 'attempt-started', msgId: message.id.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'sync' });
+            fixture.registry.record({
+                kind: 'attempt-started',
+                msgId: message.id.msgId,
+                carrier: 'ws',
+                atMs: Date.now(),
+                attemptId: 'sync',
+                traceId: 'trace-browser-message-handle-admission'
+            });
             fixture.registry.record({
                 kind: 'attempt-settled',
                 msgId: message.id.msgId,
@@ -84,7 +91,8 @@ describe('message handle admission', () => {
                 outcome: 'sent',
                 submissionAttempted: true,
                 detail: undefined,
-                willRetry: false
+                willRetry: false,
+                traceId: 'trace-browser-message-handle-admission'
             });
             return toQueuedMessageAdmission(message);
         };

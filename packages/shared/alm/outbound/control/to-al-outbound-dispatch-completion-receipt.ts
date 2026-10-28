@@ -45,6 +45,7 @@ export function toALOutboundDispatchCompletionReceipt<TPrepared>(
             nextHopPeerIds: tracking.nextHopPeerIds,
             completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks)
         },
-        complete: true
+        complete: true,
+        traceId: read.msg.id.traceId
     });
 }

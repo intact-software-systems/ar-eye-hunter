@@ -116,7 +116,8 @@ describe('the receipt budget runs out (Q6)', () => {
             confirmedPeerIds: ['peer-1'],
             unconfirmedPeerIds: ['peer-2'],
             cause: 'budget',
-            detail: 'The receipt ran out of retries after 3 of 3.'
+            detail: 'The receipt ran out of retries after 3 of 3.',
+            traceId: fixture.message.id.traceId
         }]);
         expect(await readReceipt(fixture)).toBeUndefined();
     });

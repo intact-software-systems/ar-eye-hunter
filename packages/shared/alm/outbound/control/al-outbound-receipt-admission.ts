@@ -123,7 +123,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             durableEffects: []
         });
         const settlement = status === 'committed'
-            ? toALOutboundReceiptSettlement(candidate.read, candidate.write)
+            ? toALOutboundReceiptSettlement(candidate.read, candidate.write, control.id.traceId)
             : undefined;
         // Snapshot the exact fact before an external settlement sink can mutate its retained arrays.
         const confirmation = diagnostics === undefined ? undefined : toALOutboundReceiptConfirmationDiagnostic({

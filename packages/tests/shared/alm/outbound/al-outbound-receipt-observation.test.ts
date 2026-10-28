@@ -122,6 +122,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
             expect(observations).toEqual([expect.objectContaining({
                 kind: 'receipt-work',
                 receiptControlMsgId: 'complete-receipt',
+                traceId: 'trace-al-outbound-receipt-observation',
                 effectKind: 'send-prepared',
                 callbackOutcome: 'completed',
                 stage: 'send',

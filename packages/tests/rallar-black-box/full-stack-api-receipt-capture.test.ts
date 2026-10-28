@@ -79,7 +79,8 @@ const BUSINESS_SOCKET_DECISION = {
     fromPeerId: 'origin',
     authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
     scopeDisposition: 'authorized',
-    outcome: 'admitted'
+    outcome: 'admitted',
+    traceId: 'trace-receipt-subject-1'
 };
 
 const ACK_REJECTION = {
@@ -93,7 +94,8 @@ const ACK_REJECTION = {
     stage: 'runtime-protocol',
     failedGuards: ['already-confirmed', 'deadline-expired'],
     validationAtEpochMs: 30000,
-    deadlineAtMs: 30000
+    deadlineAtMs: 30000,
+    traceId: 'trace-receipt-control-1'
 };
 
 const CURRENTNESS_ACK_REJECTION = {
@@ -106,7 +108,8 @@ const CURRENTNESS_ACK_REJECTION = {
     owner: 'inbound-authority',
     stage: 'admission-currentness',
     connectionId: 'recipient',
-    failedGuards: ['connection-closed']
+    failedGuards: ['connection-closed'],
+    traceId: 'trace-receipt-control-1'
 };
 
 const RELAY_ACK_REJECTION = {
@@ -118,7 +121,8 @@ const RELAY_ACK_REJECTION = {
     rejectionCode: 'unauthorized',
     owner: 'ack-relay',
     stage: 'ingress-protocol',
-    failedGuards: ['origin-addressee-mismatch']
+    failedGuards: ['origin-addressee-mismatch'],
+    traceId: 'trace-receipt-control-1'
 };
 
 function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]): string {
@@ -327,7 +331,99 @@ async function removeReceiptCaptureDirectory(directory: string, bodyFailed: bool
     }
 }
 
+const RECEIPT = {
+    msgId: 'subject',
+    originPeerId: 'origin',
+    snapshotVersion: 7,
+    observedAtEpochMs: 1000,
+    phase: 'complete',
+    expectedRecipientPeerIds: ['recipient'],
+    confirmedRecipientPeerIds: ['recipient']
+};
+
+const ACK = {
+    ackedMsgId: 'subject',
+    originPeerId: 'origin',
+    fromPeerId: 'recipient',
+    toPeerId: 'origin',
+    logicalRecipientPeerId: 'recipient',
+    carrier: 'ws',
+    status: 'delivered',
+    observedAtEpochMs: 900
+};
+
+/** One closed record of every kind, each naming its trace. */
+const TRACED_OBSERVATIONS = [
+    BUSINESS_SOCKET_DECISION,
+    ACK_REJECTION,
+    CURRENTNESS_ACK_REJECTION,
+    RELAY_ACK_REJECTION,
+    {
+        kind: 'socket-decision',
+        serverPeerId: 'server',
+        ack: ACK,
+        controlMsgId: 'ack-A',
+        controlSenderId: 'recipient',
+        controlCreatedAtEpochMs: 900,
+        traceId: 'trace-receipt-control-1',
+        connectionId: 'recipient',
+        scopeDisposition: 'authorized',
+        outcome: 'control',
+        handled: true
+    },
+    {
+        kind: 'ack-count',
+        serverPeerId: 'server',
+        ack: ACK,
+        controlMsgId: 'ack-A',
+        controlSenderId: 'recipient',
+        controlCreatedAtEpochMs: 900,
+        traceId: 'trace-receipt-subject-1',
+        source: 'local',
+        outcome: 'partial',
+        countAtEpochMs: 1000
+    },
+    {
+        kind: 'ack-relay',
+        serverPeerId: 'server',
+        ack: ACK,
+        controlMsgId: 'ack-A',
+        controlSenderId: 'recipient',
+        controlCreatedAtEpochMs: 900,
+        traceId: 'trace-receipt-control-1',
+        outcome: 'published'
+    },
+    {
+        kind: 'receipt-outbox',
+        serverPeerId: 'server',
+        receiptControlMsgId: 'receipt-1',
+        traceId: 'trace-receipt-subject-1',
+        receipt: RECEIPT,
+        verdict: { kind: 'duplicate' },
+        deadlineAtMs: 30000,
+        entryCount: 0,
+        trackedReceiptAlgo: 'none'
+    },
+    {
+        kind: 'receipt-publication',
+        serverPeerId: 'server',
+        receiptControlMsgId: 'receipt-1',
+        traceId: 'trace-receipt-subject-1',
+        receipt: RECEIPT,
+        publisherId: 'publisher-1',
+        publishCall: 'returned',
+        directCall: 'not-called',
+        outcome: 'returned'
+    }
+];
+
 describe('full-stack private upstream receipt capture', () => {
+    it.each(TRACED_OBSERVATIONS)('keeps the trace of a $kind record and refuses the record for an unsafe one', (observation) => {
+        expect(toSafeApiWsReceiptObservation(observation)).toEqual(observation);
+        expect(toSafeApiWsReceiptObservation({ ...observation, traceId: 'trace with <script>' })).toBeUndefined();
+        expect(toSafeApiWsReceiptObservation({ ...observation, traceId: undefined })).toBeUndefined();
+    });
+
     it('retains closed terminal aggregate, currentness and relay refusals with their actual owner and stage', () => {
         expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
         const absent = { ...ACK_REJECTION, stage: 'ingress-protocol', failedGuards: ['aggregate-absent'], deadlineAtMs: undefined };
@@ -341,7 +437,8 @@ describe('full-stack private upstream receipt capture', () => {
             owner: 'receipt-aggregation',
             stage: 'ingress-protocol',
             failedGuards: ['aggregate-absent'],
-            validationAtEpochMs: 30000
+            validationAtEpochMs: 30000,
+            traceId: 'trace-receipt-control-1'
         });
         for (const stage of ['post-authorizer-currentness', 'admission-currentness']) {
             for (const guard of ['connection-replaced', 'connection-closed']) {
@@ -355,7 +452,8 @@ describe('full-stack private upstream receipt capture', () => {
                     owner: 'inbound-authority',
                     stage,
                     connectionId: 'recipient',
-                    failedGuards: [guard]
+                    failedGuards: [guard],
+                    traceId: 'trace-receipt-control-1'
                 };
                 expect(toSafeApiWsReceiptObservation(current)).toEqual(current);
             }
@@ -369,7 +467,8 @@ describe('full-stack private upstream receipt capture', () => {
             rejectionCode: 'unauthorized',
             owner: 'ack-relay',
             stage: 'ingress-protocol',
-            failedGuards: ['origin-addressee-mismatch']
+            failedGuards: ['origin-addressee-mismatch'],
+            traceId: 'trace-receipt-control-1'
         };
         expect(toSafeApiWsReceiptObservation(relay)).toEqual(relay);
     });
@@ -487,7 +586,8 @@ describe('full-stack private upstream receipt capture', () => {
             connectionId: 'origin',
             scopeDisposition: 'unobserved',
             outcome: 'rejected',
-            rejectionCode: 'unauthorized'
+            rejectionCode: 'unauthorized',
+            traceId: 'trace-receipt-subject-1'
         });
     });
 
@@ -514,12 +614,14 @@ describe('full-stack private upstream receipt capture', () => {
             fromPeerId: 'origin',
             authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
             scopeDisposition: 'authorized',
-            outcome: 'admitted'
+            outcome: 'admitted',
+            traceId: 'trace-full-stack-api-receipt-owner-fixture'
         });
         expect(records.filter((record) => record.kind === 'ack-count')).toEqual([
             expect.objectContaining({
                 serverPeerId: 'server',
                 controlMsgId: 'ack-1',
+                traceId: 'trace-full-stack-api-receipt-owner-fixture',
                 source: 'local',
                 outcome: 'complete',
                 ack: expect.objectContaining({ ackedMsgId: 'subject', logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered' }),

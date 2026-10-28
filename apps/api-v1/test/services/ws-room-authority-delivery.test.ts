@@ -218,6 +218,7 @@ Deno.test('a room send behind the server snapshot is retained at ingress with it
                 senderId: 'alice',
                 typeId: 'chat.message.v1',
                 topicId: 'room.chat',
+                traceId: message.id.traceId,
                 connectionId: 'alice',
                 fromPeerId: 'alice',
                 authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },

@@ -24,6 +24,7 @@ Deno.test('private receipt observer uses the existing console sink with real pro
         kind: 'receipt-outbox',
         serverPeerId: 'server',
         receiptControlMsgId: 'receipt-1',
+        traceId: 'trace-receipt-subject-1',
         deadlineAtMs: 30000,
         receipt: {
             msgId: 'subject',
@@ -42,6 +43,8 @@ Deno.test('private receipt observer uses the existing console sink with real pro
     const event = JSON.parse(logs[0]);
     assert.equal(event.serviceId, 'api');
     assert.equal(event.details.publisherId, 'publisher');
+    assert.equal(event.traceId, 'trace-receipt-subject-1');
+    assert.equal(event.wsReceipt.traceId, 'trace-receipt-subject-1');
     assert.deepEqual(event.wsReceipt.receipt.expectedRecipientPeerIds, ['peer']);
 });
 
@@ -116,6 +119,7 @@ for (const enabled of [false, true]) {
                     assert.equal(records[0].wsReceipt.outcome, 'rejected');
                     assert.equal(records[0].wsReceipt.connectionId, 'missing-connection');
                     assert.equal(records[0].wsReceipt.scopeDisposition, 'unobserved');
+                    assert.equal(records[0].traceId, 'trace-create-api-v1-ws-receipt-observer');
                     assert.equal(typeof records[0].details.publisherId, 'string');
                     assert.equal(typeof records[0].serviceId, 'string');
                 }

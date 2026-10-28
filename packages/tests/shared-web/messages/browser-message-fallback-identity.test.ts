@@ -17,12 +17,14 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
+import { BrowserMessageFallbackController } from '@shared-web/browser/messages/browser-message-fallback-controller.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
@@ -82,7 +84,14 @@ describe('typed message fallback identity', () => {
         const handle = await fixture.channel.send({ action: 'ready' });
         await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
         expect(handle.lifecycle().evidence.attempts).toHaveLength(1);
-        fixture.settlements.ws({ kind: 'attempt-started', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'ws-attempt' });
+        fixture.settlements.ws({
+            kind: 'attempt-started',
+            msgId: handle.msgId,
+            carrier: 'ws',
+            atMs: Date.now(),
+            attemptId: 'ws-attempt',
+            traceId: 'trace-browser-message-fallback-identity'
+        });
         expect(handle.lifecycle().evidence.attempts).toMatchObject([
             { carrier: 'rtc', outcome: 'unroutable' },
             { carrier: 'ws', attemptId: 'ws-attempt' }
@@ -162,7 +171,14 @@ describe('typed message fallback identity', () => {
             submissionAttempted: false,
             detail: expect.stringContaining('unsupported')
         })]);
-        fixture.settlements.ws({ kind: 'attempt-started', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'ws-attempt' });
+        fixture.settlements.ws({
+            kind: 'attempt-started',
+            msgId: handle.msgId,
+            carrier: 'ws',
+            atMs: Date.now(),
+            attemptId: 'ws-attempt',
+            traceId: 'trace-browser-message-fallback-identity'
+        });
         expect(handle.lifecycle().evidence.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc', 'ws']);
     });
 
@@ -345,7 +361,8 @@ describe('typed message fallback identity', () => {
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['peer-1'],
             cause: 'budget',
-            detail: 'No receipt arrived.'
+            detail: 'No receipt arrived.',
+            traceId: 'trace-browser-message-fallback-identity'
         });
 
         await vi.waitFor(() => expect(fixture.attempts).toHaveLength(2));
@@ -412,13 +429,45 @@ describe('typed message fallback identity', () => {
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['peer-1'],
             cause: 'budget',
-            detail: 'No receipt arrived.'
+            detail: 'No receipt arrived.',
+            traceId: 'trace-hand-over'
         });
 
         await vi.waitFor(() => expect(fixture.attempts).toHaveLength(2));
         expect(fixture.attempts.map((attempt) => [attempt.carrier, attempt.message.id.traceId])).toEqual([
             ['rtc', 'trace-hand-over'],
             ['ws', 'trace-hand-over']
+        ]);
+    });
+
+    it('states the send\'s trace on each carrier admission and on the fallback it starts', async () => {
+        const recorded = vi.spyOn(BrowserMessageFallbackController.prototype, 'recordSettlement');
+        onTestFinished(() => recorded.mockRestore());
+        const fixture = createChannel({ firstVerdict: ADMITTED_VERDICT });
+        const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver', traceId: 'trace-hand-over' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        fixture.settlements.rtc({
+            kind: 'receipt-exhausted',
+            msgId: handle.msgId,
+            carrier: 'rtc',
+            atMs: Date.now(),
+            mode: 'receiver',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['peer-1'],
+            cause: 'budget',
+            detail: 'No receipt arrived.',
+            traceId: 'trace-hand-over'
+        });
+
+        const stated = () =>
+            recorded.mock.results.flatMap((result) => result.type === 'return' ? result.value : [])
+                .map((settlement) => [settlement.carrier, settlement.kind, settlement.traceId]);
+        await vi.waitFor(() => expect(stated()).toContainEqual(['ws', 'admission', 'trace-hand-over']));
+        expect(stated()).toEqual([
+            ['rtc', 'admission', 'trace-hand-over'],
+            ['rtc', 'carrier-fallback', 'trace-hand-over'],
+            ['ws', 'admission', 'trace-hand-over']
         ]);
     });
 

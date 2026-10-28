@@ -355,7 +355,7 @@ it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work af
     await owner.drain();
     expect(owner.native.sent).toEqual([]);
     if (ending === 'cancel') {
-        owner.service.cancelOutbox(original.id.msgId);
+        owner.service.cancelOutbox(original.id.msgId, original.id.traceId);
     }
     if (ending === 'dispose') {
         await owner.service.close();

@@ -262,8 +262,8 @@ export class WebRtcOverlayMulticastManager {
         await disposingOutbound;
     }
 
-    cancel(msgId: string): ALOutboundCancelOutcome {
-        return this.outboundRuntime.cancel(msgId);
+    cancel(msgId: string, traceId: string): ALOutboundCancelOutcome {
+        return this.outboundRuntime.cancel(msgId, traceId);
     }
 
     async handOver(msgId: string): Promise<void> {

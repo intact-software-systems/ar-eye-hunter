@@ -81,7 +81,7 @@ describe('a volatile session over a simulated hour', () => {
                 await runtime.handOver(message.id.msgId);
             }
             endedMsgIds.add(`never-sent-${step}`);
-            runtime.cancel(`never-sent-${step}`);
+            runtime.cancel(`never-sent-${step}`, 'trace-al-session-retention-long-run');
         }
         // The sends of the step before left at their 30 s deadline; each of the last step's opens a counted track.
         expect(budget.readReport(Date.now()).usage).toMatchObject({
@@ -111,7 +111,7 @@ describe('a volatile session over a simulated hour', () => {
         endedMsgIds.add('after-the-hour');
         await runtime.handOver('after-the-hour');
         endedMsgIds.add('after-the-hour-cancelled');
-        runtime.cancel('after-the-hour-cancelled');
+        runtime.cancel('after-the-hour-cancelled', 'trace-al-session-retention-long-run');
 
         expect(backend.peekKeys()).toEqual([]);
         // The ended ids, kept for the row retention: each repository holds only the id the last call added.

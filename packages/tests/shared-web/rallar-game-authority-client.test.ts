@@ -101,7 +101,8 @@ describe('Rallar Game Authority browser client', () => {
                     ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
                     : state === 'rejected'
                     ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
-                    : { kind: 'superseded', detail: 'Replaced' }
+                    : { kind: 'superseded', detail: 'Replaced' },
+                traceId: 'trace-rallar-game-authority-client'
             });
         }
         const result = await sending;
@@ -143,7 +144,8 @@ describe('Rallar Game Authority browser client', () => {
                     ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
                     : state === 'rejected'
                     ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
-                    : { kind: 'superseded', detail: 'Replaced' }
+                    : { kind: 'superseded', detail: 'Replaced' },
+                traceId: 'trace-rallar-game-authority-client'
             });
         }
         expect(await sending).toMatchObject({ status: state === 'queued' ? 'sent' : 'failed', transport: 'rtc', raw: delivery.handle });
@@ -218,7 +220,8 @@ describe('Rallar Game Authority browser client', () => {
             msgId: delivery.handle.msgId,
             atMs: Date.now(),
             verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
-            trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo
+            trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo,
+            traceId: 'trace-rallar-game-authority-client'
         });
 
         expect(await sending).toMatchObject({ status: 'sent', raw: delivery.handle });
@@ -234,7 +237,8 @@ describe('Rallar Game Authority browser client', () => {
             expectedRecipientPeerIds: ['server-1', 'peer-b'],
             confirmedRecipientPeerIds: ['server-1'],
             unconfirmedRecipientPeerIds: ['peer-b'],
-            complete: false
+            complete: false,
+            traceId: 'trace-rallar-game-authority-client'
         });
         expect(delivery.handle.lifecycle().state).toBe('queued');
         expect(client.status().pendingCommandCount).toBe(1);

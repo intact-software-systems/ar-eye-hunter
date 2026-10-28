@@ -109,7 +109,8 @@ export function toALOutboundReceiptMutation(
  */
 export function toALOutboundReceiptSettlement(
     read: ALOutboundReceiptAdmissionRead,
-    write: ALOutboundReceiptWrite
+    write: ALOutboundReceiptWrite,
+    traceId: string
 ): ALOutboundSettlementFact {
     const nextHopPeerIds = read.stored?.policy.ackTracking?.nextHopPeerIds ?? [];
     return toALOutboundAcknowledgementFact({
@@ -118,7 +119,8 @@ export function toALOutboundReceiptSettlement(
             nextHopPeerIds,
             completedHopPeerIds: nextHopPeerIds.filter((peerId) => write.value.ackedPeerIds.includes(peerId))
         },
-        complete: read.receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value)
+        complete: read.receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value),
+        traceId
     });
 }
 

@@ -5,6 +5,7 @@ import {
     isALDeliveryFallbackPastDeadline,
     resolveALDeliveryFallbackTrigger
 } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 /**
  * The admitted RTC leg of an `rtc-with-ws-fallback` send: what a hand-over needs, and the dispatch's own
@@ -86,6 +87,7 @@ export class BrowserMessageFallbackController {
         const fallback: ALDeliverySettlement = {
             kind: 'carrier-fallback',
             msgId: settlement.msgId,
+            traceId: watch.candidate.message.id.traceId,
             carrier: 'rtc',
             atMs,
             to: 'ws',
@@ -98,14 +100,9 @@ export class BrowserMessageFallbackController {
     /** A hand-over that fails leaves the WS leg to try anyway: the RTC owner is gone or disposed. */
     private async writeFallback(candidate: BrowserMessageFallbackCandidate): Promise<void> {
         const msgId = candidate.message.id.msgId;
-        await candidate.context.middleware.rtcRxStreamer.handOverOutbox(msgId).catch(
-            (error: unknown) => {
-                console.error(
-                    `AL RTC hand-over of ${msgId} failed; admitting it on WS anyway`,
-                    error
-                );
-            }
-        );
+        await candidate.context.middleware.rtcRxStreamer.handOverOutbox(msgId).catch((caught) => {
+            console.error(`AL RTC hand-over of ${msgId} failed; admitting it on WS anyway`, toError(caught));
+        });
         await candidate.readmit();
     }
 }

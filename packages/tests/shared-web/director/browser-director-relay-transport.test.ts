@@ -69,7 +69,8 @@ describe('director delivery admission', () => {
             msgId: rtc.handle.msgId,
             atMs: Date.now(),
             verdict: state === 'queued' ? { kind: 'admitted', durable: true, queuedAttempts: 1 } : { kind: 'superseded', detail: 'Newer state' },
-            trackedReceiptAlgo: rtc.handle.lifecycle().receiptAlgo
+            trackedReceiptAlgo: rtc.handle.lifecycle().receiptAlgo,
+            traceId: 'trace-browser-director-relay-transport'
         });
         expect(await sending).toEqual({ status: 'sent', rtc: rtc.handle });
         expect(ws).not.toHaveBeenCalled();
@@ -256,7 +257,8 @@ describe('director command', () => {
             carrier: 'ws',
             atMs: Date.now(),
             relayRejection: { relay: 'trusted-server', reason: 'held-by-other' },
-            detail: 'The server relay refused the message: held-by-other.'
+            detail: 'The server relay refused the message: held-by-other.',
+            traceId: 'trace-browser-director-relay-transport'
         });
         const transport = createTransport(
             createMessageDelivery('rtc', undefined),
@@ -490,7 +492,8 @@ function toNoLeaderCommand(carrier: 'rtc' | 'ws'): MessageDeliveryFixture {
         carrier: 'ws',
         atMs: Date.now(),
         relayRejection: { relay: 'trusted-server', reason: 'no-leader' },
-        detail: 'The server relay refused the message: no-leader.'
+        detail: 'The server relay refused the message: no-leader.',
+        traceId: 'trace-browser-director-relay-transport'
     });
     return command;
 }
@@ -507,7 +510,8 @@ function recordDirectorReceipt(command: MessageDeliveryFixture): void {
         expectedRecipientPeerIds: ['director'],
         confirmedRecipientPeerIds: ['director'],
         unconfirmedRecipientPeerIds: [],
-        complete: true
+        complete: true,
+        traceId: 'trace-browser-director-relay-transport'
     });
 }
 

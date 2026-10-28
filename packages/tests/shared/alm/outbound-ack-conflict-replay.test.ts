@@ -89,7 +89,8 @@ it.each(
             carrier: 'rtc',
             atMs: nowMs,
             verdict: admitted.verdict,
-            trackedReceiptAlgo: admitted.trackedReceiptAlgo
+            trackedReceiptAlgo: admitted.trackedReceiptAlgo,
+            traceId: 'trace-outbound-ack-conflict-replay'
         });
         await runOutboundWorkTask(runtime);
         expect(handle.lifecycle().state).toBe('transport-accepted');

@@ -657,10 +657,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
      * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first call
      * states the `cancelled` settlement.
      */
-    cancel(msgId: string): ALOutboundCancelOutcome {
+    cancel(msgId: string, traceId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);
         if (outcome === 'cancelled') {
-            this.emitSettlement({ kind: 'cancelled', msgId }, undefined);
+            this.emitSettlement({ kind: 'cancelled', msgId, traceId }, undefined);
         }
         return outcome;
     }

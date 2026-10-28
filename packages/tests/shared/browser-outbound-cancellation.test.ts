@@ -45,10 +45,10 @@ describe('browser carrier cancellation ports', () => {
         });
         onTestFinished(() => ws.close());
 
-        expect(rtc.cancelOutbox('pending-message')).toBe('cancelled');
-        expect(ws.cancelOutbox('pending-message')).toBe('cancelled');
-        expect(rtc.cancelOutbox('pending-message')).toBe('already-cancelled');
-        expect(ws.cancelOutbox('pending-message')).toBe('already-cancelled');
+        expect(rtc.cancelOutbox('pending-message', 'trace-browser-outbound-cancellation')).toBe('cancelled');
+        expect(ws.cancelOutbox('pending-message', 'trace-browser-outbound-cancellation')).toBe('cancelled');
+        expect(rtc.cancelOutbox('pending-message', 'trace-browser-outbound-cancellation')).toBe('already-cancelled');
+        expect(ws.cancelOutbox('pending-message', 'trace-browser-outbound-cancellation')).toBe('already-cancelled');
         expect(settlements).toMatchObject([
             { kind: 'cancelled', msgId: 'pending-message', carrier: 'rtc' },
             { kind: 'cancelled', msgId: 'pending-message', carrier: 'ws' }

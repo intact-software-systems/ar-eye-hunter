@@ -4716,7 +4716,7 @@ components:
 
     AdminOperationsAlmReceiptEntry:
       type: object
-      required: [msgId, mode, confirmedPeerIds, unconfirmedPeerIds, lastSettlementKind, receiptExhausted, updatedAtEpochMs]
+      required: [msgId, mode, confirmedPeerIds, unconfirmedPeerIds, lastSettlementKind, receiptExhausted, updatedAtEpochMs, traceId]
       properties:
         msgId:
           type: string
@@ -4753,6 +4753,10 @@ components:
           type: boolean
         updatedAtEpochMs:
           type: integer
+        traceId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{1,128}$'
+          description: The trace of the message's latest receipt fact.
 
     AdminOperationsStateResponse:
       allOf:

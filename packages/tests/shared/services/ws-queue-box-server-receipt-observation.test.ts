@@ -465,7 +465,8 @@ describe('private upstream receipt observation', () => {
             stage: 'ingress-protocol',
             failedGuards: ['aggregate-absent'],
             validationAtEpochMs: expect.any(Number),
-            deadlineAtMs: undefined
+            deadlineAtMs: undefined,
+            traceId: 'trace-ws-queue-box-server-receipt-observation'
         });
         expect(events).toContainEqual(expect.objectContaining({
             kind: 'socket-decision',
@@ -668,7 +669,8 @@ describe('terminal ACK rejection observation', () => {
                     stage: 'runtime-protocol',
                     failedGuards: ['aggregate-absent'],
                     validationAtEpochMs: expect.any(Number),
-                    deadlineAtMs: undefined
+                    deadlineAtMs: undefined,
+                    traceId: 'trace-ws-queue-box-server-receipt-observation'
                 }]);
             }
             if (sink === 'mutating') {
@@ -707,7 +709,8 @@ describe('terminal ACK rejection observation', () => {
                 owner: 'inbound-authority',
                 stage: 'post-authorizer-currentness',
                 connectionId: 'recipient',
-                failedGuards: [guard]
+                failedGuards: [guard],
+                traceId: 'trace-ws-queue-box-server-receipt-observation'
             }]);
             expect(events).toContainEqual(expect.objectContaining({ kind: 'socket-decision', scopeDisposition: 'authorized', outcome: 'rejected' }));
             expect(events.filter((event) => event.kind === 'ack-count')).toEqual([]);
@@ -840,16 +843,17 @@ describe('admission currentness observation at the owned authority boundary', ()
 });
 
 describe('owned receipt count observation', () => {
-    it('preserves every coexisting protocol issue in validation order without changing its rejection prose', () => {
+    it('preserves every coexisting protocol issue in validation order without changing its rejection prose', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation, clock } = createObservedAggregation((event) => events.push(event), async () => {
             throw new Error('no enqueue expected');
         });
         const payload = createReceiverAcknowledgementPayload();
-        expect(aggregation.recordAck(payload).right?.receipt).toBeUndefined();
+        await aggregation.acceptControlMessage(createReceiverAcknowledgement());
+        expect(events).toMatchObject([{ kind: 'ack-count', outcome: 'partial' }]);
         clock.value = 30000;
         const invalid = { ...payload, toPeerId: 'wrong', fromPeerId: 'other' };
-        const identity: ALMessage['id'] = { v: 4, msgId: 'repeated', senderId: 'other', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' };
+        const identity: ALMessage['id'] = { v: 4, msgId: 'repeated', senderId: 'other', ts: 900, traceId: 'trace-receipt-control-1' };
         expect(aggregation.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: identity })).toEqual({
             code: 'unauthorized',
             message:
@@ -866,11 +870,11 @@ describe('owned receipt count observation', () => {
             stage: 'ingress-protocol',
             failedGuards: ['origin-addressee-mismatch', 'sender-recipient-mismatch', 'already-confirmed', 'deadline-expired'],
             validationAtEpochMs: 30000,
-            deadlineAtMs: 30000
+            deadlineAtMs: 30000,
+            traceId: 'trace-receipt-control-1'
         });
-        expect(aggregation.recordAck(invalid).left?.message).toBe(
-            'AL acknowledgement is not addressed to the origin it names; AL acknowledgement speaks for another recipient than its sender; AL acknowledgement confirms a peer the receipt already counted; AL acknowledgement arrived after its receipt deadline'
-        );
+        await aggregation.acceptControlMessage(newALAckControlMessage(identity, invalid));
+        expect(events.at(-1)).toMatchObject({ kind: 'ack-count', controlMsgId: 'repeated', outcome: 'rejected' });
         const outside = { ...invalid, logicalRecipientPeerId: 'outside' };
         expect(aggregation.readRelayedAckRejection(outside, { stage: 'runtime-protocol', controlIdentity: identity })?.code).toBe('unauthorized');
         expect(events).toContainEqual(expect.objectContaining({
@@ -926,26 +930,37 @@ describe('owned receipt count observation', () => {
         }
     });
 
-    it('retains partial, duplicate, outside-audience and deadline decisions with the owned clock and exact frozen sets', () => {
+    it('retains partial, duplicate, outside-audience and deadline decisions with the owned clock and exact frozen sets', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation, clock } = createObservedAggregation((event) => events.push(event), async () => {
             throw new Error('no enqueue expected');
         });
         const payload = createReceiverAcknowledgementPayload();
-        expect(aggregation.recordAck(payload).right?.receipt).toBeUndefined();
-        expect(aggregation.recordAck(payload).left?.code).toBe('unauthorized');
-        expect(aggregation.recordAck({ ...payload, fromPeerId: 'outside', logicalRecipientPeerId: 'outside' }).left?.code).toBe('unauthorized');
+        const id = createReceiverAcknowledgement().id;
+        await aggregation.acceptControlMessage(newALAckControlMessage({ ...id, msgId: 'ack-partial' }, payload));
+        await aggregation.acceptControlMessage(newALAckControlMessage({ ...id, msgId: 'ack-duplicate' }, payload));
+        await aggregation.acceptControlMessage(
+            newALAckControlMessage(
+                { ...id, msgId: 'ack-outside', senderId: 'outside' },
+                { ...payload, fromPeerId: 'outside', logicalRecipientPeerId: 'outside' }
+            )
+        );
         clock.value = 30000;
-        expect(aggregation.recordAck({ ...payload, fromPeerId: 'other', logicalRecipientPeerId: 'other' }).left?.code).toBe('unauthorized');
+        await aggregation.acceptControlMessage(
+            newALAckControlMessage(
+                { ...id, msgId: 'ack-late', senderId: 'other' },
+                { ...payload, fromPeerId: 'other', logicalRecipientPeerId: 'other' }
+            )
+        );
         expect(aggregation.sweep(30000)).toMatchObject([
             { receipt: { phase: 'timed-out', confirmedRecipientPeerIds: ['recipient'] } }
         ]);
         expect(events.map((event) => event.kind === 'ack-count' ? { source: event.source, clock: event.countAtEpochMs, outcome: event.outcome } : undefined))
             .toEqual([
-                { source: 'direct', clock: 1000, outcome: 'partial' },
-                { source: 'direct', clock: 1000, outcome: 'rejected' },
-                { source: 'direct', clock: 1000, outcome: 'rejected' },
-                { source: 'direct', clock: 30000, outcome: 'rejected' }
+                { source: 'local', clock: 1000, outcome: 'partial' },
+                { source: 'local', clock: 1000, outcome: 'rejected' },
+                { source: 'local', clock: 1000, outcome: 'rejected' },
+                { source: 'local', clock: 30000, outcome: 'rejected' }
             ]);
         expect(events[0]).toMatchObject({ before: { confirmedRecipientPeerIds: [] }, after: { confirmedRecipientPeerIds: ['recipient'] } });
         expect(events[1]).toMatchObject({ before: { confirmedRecipientPeerIds: ['recipient'] }, after: { confirmedRecipientPeerIds: ['recipient'] } });
@@ -1006,7 +1021,7 @@ describe('owned ACK relay observation', () => {
         expect(
             relay.readRelayedAckRejection(invalid, {
                 stage: 'ingress-protocol',
-                controlIdentity: { v: 4, msgId: 'ack-relay', senderId: 'recipient', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' }
+                controlIdentity: { v: 4, msgId: 'ack-relay', senderId: 'recipient', ts: 900, traceId: 'trace-receipt-control-1' }
             })
         ).toEqual({
             code: 'unauthorized',
@@ -1021,7 +1036,8 @@ describe('owned ACK relay observation', () => {
             rejectionCode: 'unauthorized',
             owner: 'ack-relay',
             stage: 'ingress-protocol',
-            failedGuards: ['origin-addressee-mismatch']
+            failedGuards: ['origin-addressee-mismatch'],
+            traceId: 'trace-receipt-control-1'
         }]);
         expect(relay.readRelayedAckRejection(invalid)?.code).toBe('unauthorized');
         expect(events).toHaveLength(1);
@@ -1051,6 +1067,7 @@ describe('owned ACK relay observation', () => {
             expect.objectContaining({
                 kind: 'ack-relay',
                 controlMsgId: 'ack-1',
+                traceId: 'trace-ws-queue-box-server-receipt-observation',
                 outcome: 'publication-failed',
                 ack: expect.objectContaining({ ackedMsgId: 'other-subject' })
             })
@@ -1083,7 +1100,7 @@ describe('private evidence does not control delivery', () => {
             );
             await aggregation.acceptControlMessage(createReceiverAcknowledgement());
             await expect(aggregation.acceptControlMessage(createReceiverAcknowledgement('other'))).rejects.toThrow('mandatory settlement failed');
-            expect(aggregation.recordAck(createReceiverAcknowledgementPayload()).left?.message).toBe(
+            expect(aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload())?.message).toBe(
                 'AL acknowledgement names no receipt this server aggregates'
             );
             if (sink !== 'absent') {
@@ -1324,4 +1341,82 @@ it('retains the closed actual storage failure cause while excluding arbitrary en
     const event = events.find((event) => event.kind === 'receipt-outbox');
     expect(event).toMatchObject({ verdict: { kind: 'storage-unavailable', cause: 'quota' }, trackedReceiptAlgo: 'none' });
     expect(JSON.stringify(event)).not.toContain('PRIVATE_FAILURE_PROSE');
+});
+
+describe('receipt observations name the trace', () => {
+    const SUBJECT_TRACE = 'trace-receipt-subject-1';
+    const CONTROL_TRACE = 'trace-receipt-control-1';
+
+    function withTrace(message: ALMessage, traceId: string): ALMessage {
+        return { ...message, id: { ...message.id, traceId } };
+    }
+
+    it('names the subject trace on the subject, count, outbox and receipt kinds and the control trace on its socket decision', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const engine = new InboxOutboxEngine();
+        const service = await createObservedServer((event) => events.push(event), undefined, {
+            inboundStores: createObservedInboundStores(),
+            queueEngine: engine
+        });
+        expect((await service.acceptIncomingMessage(withTrace(createRoomSubjectMessage(), SUBJECT_TRACE), 'origin')).right?.kind)
+            .toBe('admitted');
+        await waitForReceiptCompletion(service, engine, ['admitted']);
+        expect((await service.acceptIncomingMessage(withTrace(createReceiverAcknowledgement(), CONTROL_TRACE), 'recipient')).right?.kind)
+            .toBe('control');
+        await waitForReceiptCompletion(service, engine, ['admitted', 'complete']);
+
+        const tracesByKind = new Map<string, Set<string>>();
+        for (const event of events) {
+            tracesByKind.set(event.kind, (tracesByKind.get(event.kind) ?? new Set()).add(event.traceId));
+        }
+        expect(Object.fromEntries([...tracesByKind].map(([kind, traces]) => [kind, [...traces]]))).toEqual({
+            'business-socket-decision': [SUBJECT_TRACE],
+            'socket-decision': [CONTROL_TRACE],
+            'ack-count': [SUBJECT_TRACE],
+            'receipt-outbox': [SUBJECT_TRACE],
+            'receipt-work': [SUBJECT_TRACE],
+            'receipt-transport': [SUBJECT_TRACE]
+        });
+    });
+
+    it('names the aggregate trace on a count and the counted control trace when no aggregate is live', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
+            throw new Error('no receipt expected');
+        });
+        const counted = withTrace(createReceiverAcknowledgement(), CONTROL_TRACE);
+        const control = decodeALControlMessage(counted).right;
+        if (control?.type !== 'ack') {
+            throw new Error('test ACK malformed');
+        }
+
+        await aggregation.acceptControlMessage(counted);
+        await aggregation.acceptControlMessage(
+            newALAckControlMessage({ ...counted.id, msgId: 'ack-unknown' }, { ...control.payload, ackedMsgId: 'unknown-subject' })
+        );
+
+        expect(events.flatMap((event) => event.kind === 'ack-count' ? [{ outcome: event.outcome, traceId: event.traceId }] : []))
+            .toEqual([
+                { outcome: 'partial', traceId: 'trace-ws-queue-box-server-receipt-observation' },
+                { outcome: 'rejected', traceId: CONTROL_TRACE }
+            ]);
+    });
+
+    it('names the control trace on an aggregate refusal and records nothing for a refusal without a control identity', () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
+            throw new Error('no receipt expected');
+        });
+        const outside = { ...createReceiverAcknowledgementPayload(), fromPeerId: 'outside', logicalRecipientPeerId: 'outside' };
+
+        expect(aggregation.readRelayedAckRejection(outside)?.code).toBe('unauthorized');
+        expect(events).toEqual([]);
+        expect(
+            aggregation.readRelayedAckRejection(outside, {
+                stage: 'ingress-protocol',
+                controlIdentity: { v: 4, msgId: 'ack-outside', senderId: 'outside', ts: 900, traceId: CONTROL_TRACE }
+            })?.code
+        ).toBe('unauthorized');
+        expect(events).toEqual([expect.objectContaining({ kind: 'ack-rejection', controlMsgId: 'ack-outside', traceId: CONTROL_TRACE })]);
+    });
 });

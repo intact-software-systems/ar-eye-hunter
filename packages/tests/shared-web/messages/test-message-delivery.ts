@@ -29,7 +29,8 @@ export function createMessageDelivery(
             carrier,
             atMs: Date.now(),
             verdict,
-            trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+            trackedReceiptAlgo: handle.lifecycle().receiptAlgo,
+            traceId: 'trace-test-message-delivery'
         });
     }
     return { handle, registry };
