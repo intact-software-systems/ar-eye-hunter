@@ -200,6 +200,7 @@ export async function createRoom(
         reader: harness.reader,
         authority: owner,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             resourceId: `create-${groupId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,

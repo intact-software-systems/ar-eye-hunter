@@ -6,6 +6,7 @@ import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-sy
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type {
     ConnectGroupPresenceSessionRequest,
     DisconnectGroupPresenceSessionRequest,
@@ -306,6 +307,7 @@ async function runMeasuredProfileMutation(
     requireAppInboxSuccess(
         await runtime.client.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 resourceId: `${command.requestId}-profile`,
@@ -335,6 +337,7 @@ async function runMeasuredInstanceMutation(
     requireAppInboxSuccess(
         await runtime.client.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.CLIENT_INSTANCE_UPSERT,
                 topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                 resourceId: `${command.requestId}-instance`,
@@ -366,6 +369,7 @@ async function runMeasuredMembershipMutation(
     requireAppInboxSuccess(
         await runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.GROUP_MEMBER_UPSERT,
                 topicId: AppInboxType.GROUP_MEMBER_UPSERT,
                 resourceId: command.requestId,
@@ -463,6 +467,7 @@ async function runMeasuredConfigMutation(
     requireAppInboxSuccess(
         await runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.GROUP_UPDATE,
                 topicId: AppInboxType.GROUP_UPDATE,
                 resourceId: command.requestId,
@@ -509,6 +514,7 @@ async function runMeasuredTopologyMutation(
     requireAppInboxSuccess(
         await runtime.topology.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 resourceId: command.requestId,
@@ -564,7 +570,8 @@ function toGroupPresenceEnqueue(
         topicId: input.type,
         resourceId: command.requestId,
         contextId: input.contextId,
-        senderId: command.principalId
+        senderId: command.principalId,
+        traceId: newALTraceId()
     };
     const data = {
         scope: input.scope,

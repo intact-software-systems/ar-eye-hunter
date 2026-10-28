@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
@@ -128,7 +128,7 @@ function observeMutationWrites(
 
 function createReservedClientContext(): AppInboxMessageContext<ClientStateWritten> {
     const now = Date.now();
-    const enqueue: AppInboxEnqueueInput = {
+    const enqueue: AppInboxEnqueue = {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         topicId: 'app-inbox.client-state',
         resourceId: 'client-transaction-result',

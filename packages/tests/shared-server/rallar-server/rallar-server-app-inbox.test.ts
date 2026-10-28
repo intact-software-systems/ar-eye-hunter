@@ -592,13 +592,20 @@ async function seedCanonicalStock(status: 'pending' | 'completed', result: JsonW
         contextId: COMMAND.warehouse,
         resourceId: COMMAND.requestId,
         senderId: 'inventory-session',
+        traceId: 'trace-existing-inventory-row',
         data: { ...COMMAND },
         authority: { ...COMMAND, capturedAt: 501 }
     } as const;
     const entry = createAppInboxResourceEntry(envelope, 'existing-inventory-worker', {
         creationNow: Temporal.Now.instant,
-        createMessage: ({ key, enqueue }) =>
-            newALUntargetedMessage('existing-inventory-worker', newALRoute(key.topicId, key.contextId, key.resourceId), enqueue.type, enqueue)
+        createMessage: ({ key, enqueue: { traceId, ...command } }) =>
+            newALUntargetedMessage(
+                'existing-inventory-worker',
+                newALRoute(key.topicId, key.contextId, key.resourceId),
+                command.type,
+                command,
+                { traceId }
+            )
     });
     const repositories = createPSqlResourceInboxRepository(storage.sql, () => new Date());
     await repositories.entries.writeMaterializedIfAbsentOrReplaceExpired(entry, async () => entry);

@@ -29,6 +29,7 @@ describe('Relic public application AppInbox', () => {
                 contextId: fixture.ref.groupId,
                 resourceId: fixture.command.requestId,
                 senderId: fixture.owner.sessionId,
+                traceId: 'trace-relic-retained-row',
                 data: { ...fixture.command },
                 authority: {
                     command: { ...fixture.command },
@@ -39,8 +40,14 @@ describe('Relic public application AppInbox', () => {
             };
             const entry = createAppInboxResourceEntry(enqueue, 'retained-api', {
                 creationNow: () => Temporal.Instant.fromEpochMilliseconds(fixture.nowEpochMs),
-                createMessage: ({ key, enqueue: retained }) =>
-                    newALUntargetedMessage('retained-api', newALRoute(key.topicId, key.contextId, key.resourceId), retained.type, retained)
+                createMessage: ({ key, enqueue: { traceId, ...retained } }) =>
+                    newALUntargetedMessage(
+                        'retained-api',
+                        newALRoute(key.topicId, key.contextId, key.resourceId),
+                        retained.type,
+                        retained,
+                        { traceId }
+                    )
             });
             await fixture.resources.entries.writeMaterializedIfAbsentOrReplaceExpired(entry, async () => entry);
             const exact = {

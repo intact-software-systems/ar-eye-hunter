@@ -243,8 +243,7 @@ function internalTransportCommand(): GroupMutationCommand {
         input: {
             actorPrincipalId: null,
             actorSessionId: null,
-            reason: null,
-            traceId: null
+            reason: null
         }
     } as GroupMutationCommand;
 }
@@ -261,8 +260,7 @@ function transportCommand(
         input: {
             actorPrincipalId,
             actorSessionId: `${actorPrincipalId}-session`,
-            reason: null,
-            traceId: null
+            reason: null
         }
     } as GroupMutationCommand;
 }

@@ -159,7 +159,6 @@ export function transitionCommand(
         actorPrincipalId,
         actorSessionId: `${actorPrincipalId}-session`,
         reason: null,
-        traceId: null,
         expectedFormationEpoch: null
     };
     switch (operation) {

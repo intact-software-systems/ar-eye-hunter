@@ -90,7 +90,6 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                                 actorPrincipalId: 'owner',
                                 actorSessionId: 'owner-session',
                                 reason: null,
-                                traceId: null,
                                 principalId: 'owner',
                                 generationId: 'owner-generation',
                                 lastHeartbeatAtEpochMs: nowEpochMs,
@@ -217,6 +216,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             });
             const pending = service.processAuthenticatedGroupEntryUntilCompletion(
                 {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
                     resourceId: 'outer-retry-authority-change',
                     contextId: 'ar-eye-hunter:default:outer-retry-room',
@@ -267,6 +267,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         const harness = await createAuthorityHarness(['owner', 'member']);
         await createRoom(harness, 'causal-denial-room', 'Causal Denial Room');
         await processAs(harness, 'owner', {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_UPSERT,
             resourceId: 'activate-member',
             contextId: 'ar-eye-hunter:default:causal-denial-room',
@@ -288,6 +289,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'member-update-after-promotion',
             contextId: 'ar-eye-hunter:default:causal-denial-room',
             senderId: 'member',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'causal-denial-room',
@@ -307,6 +309,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         });
 
         await processAs(harness, 'owner', {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_ROLE_SET,
             resourceId: 'promote-member',
             contextId: 'ar-eye-hunter:default:causal-denial-room',
@@ -338,6 +341,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'restore-target-name',
             contextId: 'ar-eye-hunter:default:causal-noop-room',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'causal-noop-room',
@@ -379,6 +383,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'revoked-session-update',
             contextId: 'ar-eye-hunter:default:revoked-replay-room',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'revoked-replay-room',
@@ -419,6 +424,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'renewed-session-update',
             contextId: 'application=ar-eye-hunter:workspace=default:group=renewed-session-room:caller=owner',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'renewed-session-room',
@@ -474,6 +480,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'queued-revocation-update',
             contextId: 'ar-eye-hunter:default:queued-revocation-room',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'queued-revocation-room',
@@ -514,6 +521,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'coalesced-update',
             contextId: 'ar-eye-hunter:default:coalesced-room',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'coalesced-room',
@@ -557,6 +565,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         });
         await createRoom(harness, 'default-equivalence-room', 'Default Equivalence');
         await processAs(harness, 'owner', {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
             resourceId: 'default-equivalence-presence',
             contextId: 'default-equivalence-presence-context',
@@ -584,6 +593,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'director-default-equivalence',
             contextId: 'application=ar-eye-hunter:workspace=default:group=default-equivalence-room:caller=owner',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'default-equivalence-room',
@@ -639,6 +649,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             resourceId: 'different-contender-update',
             contextId: 'different-contender-context',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'different-contender-room',

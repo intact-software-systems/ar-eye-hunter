@@ -23,6 +23,7 @@ describe('authenticated group join redelivery', () => {
             throw new RuntimeStateWriteConflictError();
         };
         const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_JOIN,
             resourceId: 'join-member',
             contextId: 'join-redelivery',

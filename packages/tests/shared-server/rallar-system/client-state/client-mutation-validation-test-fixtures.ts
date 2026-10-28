@@ -93,8 +93,7 @@ export function validPrincipalCommand(): ClientMutationCommand {
             lastSeenAtEpochMs: 1_000,
             actorPrincipalId: null,
             actorSessionId: null,
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }

@@ -192,8 +192,7 @@ describe('client mutation computation determinism', () => {
                 lastSeenAtEpochMs: null,
                 actorPrincipalId: null,
                 actorSessionId: null,
-                reason: null,
-                traceId: null
+                reason: null
             }
         });
         const read: ClientMutationRead = deepFreeze({

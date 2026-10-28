@@ -84,6 +84,7 @@ async function verifyRemoteCompletion(
 
         const waited = waitForCommand(waiterServer.client, {
             type,
+            traceId: 'trace-app-inbox-fixture',
             resourceId: REQUEST_ID,
             contextId: 'remote-completion-client',
             data: { requestId: REQUEST_ID }

@@ -36,7 +36,6 @@ export type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
     actorSessionId: string | null;
     reason: string | null;
-    traceId: string | null;
 }>;
 
 export type ClientMutationOperation =

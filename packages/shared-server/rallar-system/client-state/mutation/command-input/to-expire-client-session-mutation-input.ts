@@ -31,8 +31,7 @@ export function toExpireClientSessionMutationInput(
             expiresAtEpochMs: session.observedExpiresAtEpochMs,
             actorPrincipalId: session.principalId,
             actorSessionId: session.sessionId,
-            reason: 'expired',
-            traceId: null
+            reason: 'expired'
         }
     };
 }

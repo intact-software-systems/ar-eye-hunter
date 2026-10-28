@@ -88,8 +88,7 @@ function policyCommand(): GroupMutationCommand {
         input: {
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
+            reason: null
         }
     } as GroupMutationCommand;
 }

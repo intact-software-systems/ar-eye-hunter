@@ -32,7 +32,7 @@ export function toClientAuditInput(
         atEpochMs: input.facts.nowEpochMs,
         actor: toClientMutationActor(input.input, input.ref, input.facts),
         reason: input.input.reason,
-        traceId: input.input.traceId,
+        traceId: input.facts.traceId,
         requestId: input.requestId ?? null
     };
 }

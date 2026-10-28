@@ -66,6 +66,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 
         const loginPending = appAuth.issueSession({
             requestId: 'pglite-auth-session',
+            traceId: 'trace-auth-fixture',
             clientId: 'client-pglite',
             username: 'alice',
             authority: {
@@ -103,6 +104,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 
         const ticketPending = appAuth.issueWebSocketTicket({
             requestId: 'pglite-ws-ticket',
+            traceId: 'trace-auth-fixture',
             session,
             ttlMs: 30_000
         });
@@ -124,6 +126,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 
         const logoutPending = appAuth.logoutSession({
             requestId: 'pglite-logout-request-identity-0123456789abcdef',
+            traceId: 'trace-auth-fixture',
             session
         });
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -216,6 +219,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         );
         const pending = appAuth.issueSession({
             requestId: 'pglite-disabled-after-enqueue',
+            traceId: 'trace-auth-fixture',
             clientId: user.clientId,
             username: user.username,
             authority: {
@@ -302,6 +306,7 @@ Deno.test(
             );
             const input = {
                 requestId: 'pglite-auth-delayed-session',
+                traceId: 'trace-auth-delayed-session',
                 clientId: 'pglite-delayed-client',
                 username: 'alice',
                 authority: {
@@ -328,6 +333,8 @@ Deno.test(
             assert.equal(queued.ri_resource.includes('capturedAtEpochMs'), false);
             assert.equal(queued.ri_resource.includes('sessionId'), false);
             assert.equal(queued.ri_resource.includes('accessTokenDigest'), false);
+            // The placeholder and the materialized intent carry the one request trace, never a minted one.
+            assert.equal(JSON.parse(queued.ri_resource).id.traceId, 'trace-auth-delayed-session');
 
             authFactNowEpochMs = databaseNowEpochMs + 9_000;
             await inboxReader.dequeueInbox(
@@ -351,7 +358,7 @@ Deno.test(
             assert.equal(JSON.stringify(committed).includes(firstResult.right.accessToken), false);
 
             authFactNowEpochMs = databaseNowEpochMs + 18_000;
-            const replay = await appAuth.issueSession(input);
+            const replay = await appAuth.issueSession({ ...input, traceId: 'trace-auth-replay' });
             assert.deepEqual(replay.right, firstResult.right);
             assert.deepEqual(await readAuthDurableRows(sql), committed);
         });

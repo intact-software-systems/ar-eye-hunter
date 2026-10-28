@@ -18,6 +18,7 @@ import {
     createLiveGroupStateRouteAuthSession,
     createOwnerGroupStateRouteSnapshot,
     createRejectingGroupStateRouteTestRuntime,
+    GROUP_ROUTE_TRACE_ID,
     TEST_GROUP_SCOPE
 } from './group-state-route-test-runtime.ts';
 
@@ -36,6 +37,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
         resourceId: 'group-route-connect-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -59,6 +61,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
         resourceId: 'group-route-heartbeat-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -80,6 +83,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
         resourceId: 'group-route-disconnect-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -103,6 +107,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
     const commandBase = {
         authSession,
         scope: TEST_GROUP_SCOPE,
+        traceId: GROUP_ROUTE_TRACE_ID,
         groupId: 'room-1',
         sessionId: 'alice-session'
     } as const;
@@ -489,7 +494,7 @@ async function requestPresenceMutation(
     const requestId = typeof candidate === 'string' ? candidate : 'group-route-presence-default';
     return await app.request(`${route.path}/requests/${encodeURIComponent(requestId)}`, {
         method: route.method,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-request-id': GROUP_ROUTE_TRACE_ID },
         body: JSON.stringify(requestBody)
     });
 }

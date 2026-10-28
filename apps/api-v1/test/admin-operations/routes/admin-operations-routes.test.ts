@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { AdminOperationReadRequest, AdminOperationWriteRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
@@ -18,6 +18,7 @@ import { RecomputeApiAdminTopology } from '../../../src/admin-operations/recompu
 import * as adminOperationsRoutes from '../../../src/admin-operations/register-admin-operations-routes.ts';
 import { UpdateApiAdminCrdtLifecycle } from '../../../src/admin-operations/update-api-admin-crdt-lifecycle.ts';
 import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../../src/crdt/create-crdt-admin-mutations.ts';
+import { createTracedApiTestApp } from '../../services/create-traced-api-test-app.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const ADMIN_SESSION = {
@@ -302,6 +303,7 @@ Deno.test(
         const first = await recording.topologyRecompute.execute({
             adminSession: ADMIN_SESSION,
             requestId: 'admin-topology-request-0001',
+            traceId: 'trace-admin-fixture',
             request
         });
         const renewed = {
@@ -313,6 +315,7 @@ Deno.test(
             recording.topologyRecompute.execute({
                 adminSession: renewed,
                 requestId: 'admin-topology-request-0001',
+                traceId: 'trace-admin-fixture',
                 request
             })
         );
@@ -325,6 +328,7 @@ Deno.test(
         const isolated = await recording.topologyRecompute.execute({
             adminSession: other,
             requestId: 'admin-topology-request-0001',
+            traceId: 'trace-admin-fixture',
             request
         });
 
@@ -358,6 +362,7 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
             headers: {
                 authorization: 'Bearer admin-token',
                 'x-client-id': 'platform-admin',
+                'x-request-id': `trace-${operation}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(request)
@@ -368,6 +373,7 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
             operation,
             adminSession: ADMIN_SESSION,
             requestId,
+            traceId: `trace-${operation}`,
             request
         });
     }
@@ -472,7 +478,7 @@ function toRecordedCrdtResult(mutation: CrdtAdminMutationInput): CrdtAdminPublic
 }
 
 function createApp(options: CreateAppOptions = {}): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     const { operations, ...routeOptions } = options;
     adminOperationsRoutes.registerAdminOperationsRoutes(app, {
         adminClientIds: ['platform-admin'],

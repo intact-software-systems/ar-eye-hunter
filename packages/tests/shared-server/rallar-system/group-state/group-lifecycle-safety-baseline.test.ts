@@ -205,8 +205,7 @@ function joinCommand(): GroupMutationCommand {
             joinCode: null,
             actorPrincipalId: 'carol',
             actorSessionId: 'carol-session',
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }
@@ -222,7 +221,6 @@ function connectPresenceCommand(): GroupMutationCommand {
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
             reason: null,
-            traceId: null,
             principalId: 'alice',
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',

@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
@@ -21,6 +21,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -621,7 +622,7 @@ function createRouteApp(options: {
     readonly onCurrentGroupRead?: () => void;
     readonly strictReadAuthorization?: boolean;
 }): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
         groupStateService: {
             readCurrentSnapshot: (ref: GroupRef) => {

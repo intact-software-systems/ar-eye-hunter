@@ -47,6 +47,7 @@ describe('Postgres Quick Join contention', () => {
             first.runtime.armBarrier();
             const winner = first.runtime.runUntilCompletion(() =>
                 first.runtime.group.processQuickJoinUntilCompletion({
+                    traceId: 'trace-test-fixture',
                     scope,
                     request: { requestId: `${scope.applicationId}:winner`, includeEmpty: true }
                 }, first.authority)
@@ -55,6 +56,7 @@ describe('Postgres Quick Join contention', () => {
             second.runtime.armBarrier();
             const loser = second.runtime.runUntilCompletion(() =>
                 second.runtime.group.processQuickJoinUntilCompletion({
+                    traceId: 'trace-test-fixture',
                     scope,
                     request: { requestId: `${scope.applicationId}:fresh-read`, includeEmpty: true }
                 }, second.authority)
@@ -96,6 +98,7 @@ describe('Postgres Quick Join contention', () => {
             first.runtime.armBarrier();
             const pending = first.runtime.runUntilCompletion(() =>
                 first.runtime.group.processQuickJoinUntilCompletion({
+                    traceId: 'trace-test-fixture',
                     scope,
                     request: { requestId, includeEmpty: true }
                 }, first.authority)
@@ -130,7 +133,7 @@ describe('Postgres Quick Join contention', () => {
     postgresIt('durably exhausts attempt 20 after a last-seat revision conflict without admitting', async () => {
         await withQuickJoinCluster(false, async ({ scope, repository, first }) => {
             const requestId = `${scope.applicationId}:exhausted`;
-            const input = { scope, request: { requestId, includeEmpty: true } };
+            const input = { scope, request: { requestId, includeEmpty: true }, traceId: 'trace-quick-join-test' };
             const pending = first.runtime.group.processQuickJoinUntilCompletion(input, first.authority);
             await expect.poll(async () =>
                 (await first.sql<{ count: number; }[]>`
@@ -169,13 +172,18 @@ describe('Postgres Quick Join contention', () => {
             first.runtime.armBarrier();
             const firstResult = first.runtime.runUntilCompletion(() =>
                 first.runtime.group.processQuickJoinUntilCompletion({
+                    traceId: 'trace-test-fixture',
                     scope,
                     request: { requestId: `${scope.applicationId}:first`, includeEmpty: true }
                 }, first.authority)
             );
             await first.hold.arrived;
             second.runtime.armBarrier();
-            const secondInput = { scope, request: { requestId: `${scope.applicationId}:second`, includeEmpty: true } };
+            const secondInput = {
+                scope,
+                request: { requestId: `${scope.applicationId}:second`, includeEmpty: true },
+                traceId: 'trace-quick-join-test'
+            };
             const secondResult = second.runtime.runUntilCompletion(() => second.runtime.group.processQuickJoinUntilCompletion(secondInput, second.authority));
             await second.hold.arrived;
 

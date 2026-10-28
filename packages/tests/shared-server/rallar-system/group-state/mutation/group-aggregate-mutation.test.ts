@@ -29,7 +29,6 @@ describe('group aggregate mutation computation', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 joinCode: 'EXPLICIT',
                 expiresAtEpochMs: null
             }
@@ -40,7 +39,6 @@ describe('group aggregate mutation computation', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 joinCode: null,
                 expiresAtEpochMs: null
             }

@@ -31,7 +31,7 @@ type EmptyObject = Record<never, never>;
 type OptionalKeysOfObject<T> = {
     [K in keyof T]-?: EmptyObject extends Pick<T, K> ? K : never;
 }[keyof T];
-type OptionalKeys<T> = T extends unknown ? OptionalKeysOfObject<T> : never;
+type OptionalKeys<T> = T extends T ? OptionalKeysOfObject<T> : never;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
 
@@ -81,7 +81,7 @@ describe('authoritative state contracts', () => {
     });
 
     it('keeps sparse inputs separate and omission-sensitive', () => {
-        expectTypeOf<OptionalKeys<MutationActorInput>>().toEqualTypeOf<'actorPrincipalId' | 'actorSessionId' | 'reason' | 'traceId' | 'requestId'>();
+        expectTypeOf<OptionalKeys<MutationActorInput>>().toEqualTypeOf<'actorPrincipalId' | 'actorSessionId' | 'reason' | 'requestId'>();
         expectTypeOf<OptionalKeys<GroupTopologyConfigPatch>>().toEqualTypeOf<'topologyKind' | 'degreeLimit' | 'treeMinSize' | 'meshMinSize' | 'meshParamK'>();
         expectTypeOf<OptionalKeys<PutGroupTopologyConfigRequest>>().toEqualTypeOf<never>();
 

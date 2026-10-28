@@ -104,16 +104,19 @@ function assertAuthenticatedGroupMutationEnqueueTypes(): void {
     const removeEnqueue = {
         type: AppInboxType.GROUP_MEMBER_REMOVE,
         contextId: 'test-context',
+        traceId: 'trace-test-fixture',
         data: removePayload
     } satisfies AuthenticatedGroupMutationEnqueue;
     const banEnqueue = {
         type: AppInboxType.GROUP_MEMBER_BAN,
         contextId: 'test-context',
+        traceId: 'trace-test-fixture',
         data: banPayload
     } satisfies AuthenticatedGroupMutationEnqueue;
     const unbanEnqueue = {
         type: AppInboxType.GROUP_MEMBER_UNBAN,
         contextId: 'test-context',
+        traceId: 'trace-test-fixture',
         data: unbanPayload
     } satisfies AuthenticatedGroupMutationEnqueue;
 

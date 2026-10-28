@@ -17,6 +17,7 @@ import {
     createLiveGroupStateRouteAuthSession,
     createOwnerGroupStateRouteSnapshot,
     createRejectingGroupStateRouteTestRuntime,
+    GROUP_ROUTE_TRACE_ID,
     postGroupStateMutation,
     postGroupStateMutationWithHeaders,
     TEST_GROUP_SCOPE,
@@ -33,6 +34,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-join-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -51,6 +53,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-accept-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -67,6 +70,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-rotate-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -85,6 +89,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-invite-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -103,6 +108,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-revoke-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -120,6 +126,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-grant-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -137,6 +144,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
         resourceId: 'group-route-decline-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -152,7 +160,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
 
 Deno.test('group admission commands retain every authenticated AppInbox envelope', () => {
     const authSession = createGroupStateRouteAuthSession('alice');
-    const commandBase = { authSession, scope: TEST_GROUP_SCOPE, groupId: 'room-1' } as const;
+    const commandBase = { authSession, scope: TEST_GROUP_SCOPE, traceId: GROUP_ROUTE_TRACE_ID, groupId: 'room-1' } as const;
     const forgedActor = { actorPrincipalId: 'forged-actor', actorSessionId: 'forged-session' };
     const commands = [
         toGroupStateCommand({
@@ -323,6 +331,7 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
             resourceId: 'group-route-join-request-1',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -375,6 +384,7 @@ Deno.test('group join-code route enqueues rotation workflow with authenticated a
                 resourceId: 'group-route-rotate-code-1',
                 contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
                 senderId: 'alice',
+                traceId: GROUP_ROUTE_TRACE_ID,
                 data: {
                     scope: TEST_GROUP_SCOPE,
                     groupId: 'room-1',
@@ -427,6 +437,7 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
             resourceId: 'group-route-invite-create-1',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -445,6 +456,7 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
             resourceId: 'group-route-invite-revoke-1',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -462,6 +474,7 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
             resourceId: 'group-route-invite-accept-1',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',

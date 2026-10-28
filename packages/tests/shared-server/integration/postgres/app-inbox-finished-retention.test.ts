@@ -316,6 +316,7 @@ async function upsertPrincipal(harness: RetentionHarness, upsert: PrincipalUpser
     const result = await harness.short.runUntilCompletion(() =>
         harness.short.client.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 resourceId: requestId,

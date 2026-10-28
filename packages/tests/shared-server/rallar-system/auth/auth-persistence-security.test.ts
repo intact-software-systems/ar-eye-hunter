@@ -91,12 +91,13 @@ async function expectCurrentSessionOutcomes(
     session: ReturnType<typeof createCurrentSession>
 ): Promise<void> {
     await expect(
-        runCurrentOperation((service) => service.logoutSession({ requestId: 'current-logout', session }))
+        runCurrentOperation((service) => service.logoutSession({ requestId: 'current-logout', traceId: 'trace-auth-test', session }))
     ).resolves.toMatchObject({ right: { loggedOut: true } });
     await expect(
         runCurrentOperation((service) =>
             service.issueWebSocketTicket({
                 requestId: 'current-ws-issue',
+                traceId: 'trace-auth-test',
                 session,
                 ttlMs: 30_000
             })
@@ -106,6 +107,7 @@ async function expectCurrentSessionOutcomes(
         runCurrentOperation((service) =>
             service.issueAgentSessionTickets({
                 requestId: 'current-agent-issue',
+                traceId: 'trace-auth-test',
                 session,
                 ticketTtlMs: 30_000,
                 agents: [{ agentId: 'agent-1' }]
@@ -119,6 +121,7 @@ async function expectCurrentConsumeOutcomes(): Promise<void> {
         runCurrentOperation((service) =>
             service.consumeAgentSessionTicket({
                 requestId: 'current-agent-missing',
+                traceId: 'trace-auth-test',
                 ticket: 'missing-agent-ticket'
             })
         )

@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -9,6 +9,7 @@ import { authenticationRequired } from '../../src/services/request-auth-service.
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { createAuthSession, createClientRouteDeps, createClientSnapshot, toClientStateWritten } from '../client-state/client-state-route-test-runtime.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { createConfigRouteTestDependencies } from './config-route-test-runtime.ts';
 
 const REQUEST_ID = 'Request_ID-012345678';
@@ -36,7 +37,7 @@ Deno.test('auth logout accepts only the case-sensitive path request ID', async (
 
     const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
         method: 'POST',
-        headers: { authorization: 'Bearer access-token', 'x-client-id': 'alice' },
+        headers: { authorization: 'Bearer access-token', 'x-client-id': 'alice', 'x-request-id': 'trace-logout' },
         body: JSON.stringify({})
     });
 
@@ -44,6 +45,7 @@ Deno.test('auth logout accepts only the case-sensitive path request ID', async (
     assert.deepEqual(await response.json(), { loggedOut: true });
     assert.deepEqual(calls, [{
         requestId: REQUEST_ID,
+        traceId: 'trace-logout',
         session: AUTH_SESSION
     }]);
     assert.equal((await app.request('/api/auth/logout', { method: 'POST' })).status, 404);
@@ -281,12 +283,12 @@ Deno.test('client mutation uses operation topic and target-plus-caller context',
             return Promise.resolve(toClientStateWritten(createClientSnapshot('alice')));
         }
     });
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     clientStateRoutes.registerClientStateRoutes(app, deps);
     const oldPath = '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal';
     const response = await app.request(`${oldPath}/requests/${REQUEST_ID}`, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-request-id': 'trace-client-upsert' },
         body: JSON.stringify({ username: 'alice' })
     });
 
@@ -304,6 +306,7 @@ Deno.test('client mutation uses operation topic and target-plus-caller context',
         resourceId: REQUEST_ID,
         contextId: 'application=app-1:workspace=workspace-1:principal=alice:caller=alice:session=alice-session',
         senderId: 'alice',
+        traceId: 'trace-client-upsert',
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             principalId: 'alice',
@@ -329,7 +332,7 @@ Deno.test(
                 return Promise.resolve(toClientStateWritten(createClientSnapshot('alice')));
             }
         });
-        const app = new Hono();
+        const app = createTracedApiTestApp();
         clientStateRoutes.registerClientStateRoutes(app, deps);
         const response = await app.request(
             '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/' +
@@ -364,7 +367,7 @@ Deno.test(
     'client callers reuse one request ID independently across application scope',
     async () => {
         const enqueues: { contextId?: string; resourceId?: string; topicId?: string; }[] = [];
-        const app = new Hono();
+        const app = createTracedApiTestApp();
         clientStateRoutes.registerClientStateRoutes(
             app,
             createClientRouteDeps({
@@ -438,7 +441,7 @@ Deno.test('every removed auth and client mutation URL is absent', async () => {
 function createConfigRouteApp(
     dependencies: Partial<configRoutes.ConfigRouteDependencies> = {}
 ): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     configRoutes.registerConfigRoutes(
         app,
         createConfigRouteTestDependencies({

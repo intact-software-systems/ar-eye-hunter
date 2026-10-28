@@ -8,21 +8,21 @@ import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-conf
 
 const ALLOWED_ORIGIN = 'http://localhost:5176';
 
-Deno.test('API HTTP middleware permits conditional directory reads from an allowed origin', async () => {
+Deno.test('API HTTP middleware permits conditional, traced directory reads from an allowed origin', async () => {
     const app = createTimedApp([]);
     const response = await app.request('/api/state/apps/app-1/workspaces/workspace-1/group-directory', {
         method: 'OPTIONS',
         headers: {
             origin: ALLOWED_ORIGIN,
             'access-control-request-method': 'GET',
-            'access-control-request-headers': 'content-type,authorization,x-client-id,if-none-match'
+            'access-control-request-headers': 'content-type,authorization,x-client-id,if-none-match,x-request-id'
         }
     });
 
     assert.equal(response.status, 204);
     assert.equal(response.headers.get('access-control-allow-origin'), ALLOWED_ORIGIN);
     const allowedHeaders = response.headers.get('access-control-allow-headers')?.toLowerCase().split(',');
-    for (const header of ['content-type', 'authorization', 'x-client-id', 'if-none-match']) {
+    for (const header of ['content-type', 'authorization', 'x-client-id', 'if-none-match', 'x-request-id']) {
         assert.ok(allowedHeaders?.includes(header), `preflight must allow ${header}`);
     }
 });

@@ -45,6 +45,15 @@ describe('persisted AppInbox command decoding', () => {
         });
     });
 
+    it('rejects a trace inside the persisted command as corruption, since the trace rides on the envelope', () => {
+        expect(validate(AppInboxType.GROUP_CREATE, {
+            type: AppInboxType.GROUP_CREATE,
+            contextId: 'group-context',
+            traceId: 'trace-in-command',
+            data: null
+        })).toMatchObject({ valid: false, identity: { operationSource: 'corrupt' } });
+    });
+
     it('classifies an unknown operation as unavailable', () => {
         expect(validate('GROUP_UNKNOWN', {
             type: 'GROUP_UNKNOWN',

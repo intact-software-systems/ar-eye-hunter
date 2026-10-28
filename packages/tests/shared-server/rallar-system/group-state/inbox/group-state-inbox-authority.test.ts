@@ -71,6 +71,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             reader: harness.reader,
             authority: harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_CREATE,
                 topicId: AppInboxType.GROUP_CREATE,
                 ...identity,
@@ -96,6 +97,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             reader: harness.reader,
             authority: harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_MEMBER_UPSERT,
                 topicId: AppInboxType.GROUP_MEMBER_UPSERT,
                 ...identity,
@@ -142,6 +144,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             reader: harness.reader,
             authority: harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_UPDATE,
                 resourceId: 'update-after-presence-revision',
                 contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -172,6 +175,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             resourceId: 'raw-extra-proof',
             contextId: 'ar-eye-hunter:default:raw-extra-proof',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 request: {
@@ -228,6 +232,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             resourceId: 'raw-extra-descriptor-request',
             contextId: 'ar-eye-hunter:default:raw-extra-descriptor-request',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 request: {
@@ -328,6 +333,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             reader,
             authority: owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_CREATE,
                 resourceId: 'create-authority-room',
                 contextId: 'ar-eye-hunter:default:authority-room',
@@ -355,6 +361,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader,
                 authority: attacker,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_UPDATE,
                     resourceId: 'forged-owner-update',
                     contextId: 'ar-eye-hunter:default:authority-room',
@@ -406,6 +413,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             reader: harness.reader,
             authority: harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_MEMBER_UPSERT,
                 resourceId: 'activate-victim',
                 contextId: 'ar-eye-hunter:default:presence-authority-room',
@@ -428,6 +436,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             reader: harness.reader,
             authority: harness.sessions.victim,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_PRESENCE_CONNECT,
                 resourceId: 'connect-victim',
                 contextId: 'ar-eye-hunter:default:presence-authority-room',
@@ -457,6 +466,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader: harness.reader,
                 authority: harness.sessions.attacker,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
                     resourceId: 'forged-victim-heartbeat',
                     contextId: 'ar-eye-hunter:default:presence-authority-room',
@@ -498,6 +508,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             resourceId: 'proof-wire-update',
             contextId: 'ar-eye-hunter:default:proof-wire-room',
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId: 'proof-wire-room',

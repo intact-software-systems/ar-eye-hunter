@@ -70,8 +70,7 @@ describe('group presence expiry retry', () => {
                 expiresAtEpochMs,
                 actorPrincipalId: null,
                 actorSessionId: null,
-                reason: 'expired',
-                traceId: null
+                reason: 'expired'
             }
         });
         expect(

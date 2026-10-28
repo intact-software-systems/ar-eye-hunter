@@ -28,6 +28,7 @@ describe('group directory listing through AppInbox', () => {
         expect(isGroupDirectoryVisible({ snapshot, actor: { principalId: 'guest' } })).toBe(false);
         expect(await quickJoin(harness)).toEqual({ status: 'unavailable' });
         const joined = await processAs(harness, 'guest', {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_JOIN,
             resourceId: 'join-by-link',
             contextId: ROOM_REF.groupId,
@@ -172,6 +173,7 @@ describe('group directory listing through AppInbox', () => {
 
 function createRoom(harness: AuthorityHarness, request: Partial<CreateGroupRequest> = {}) {
     return processAs(harness, 'owner', {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'create-link-room',
         contextId: ROOM_REF.groupId,
@@ -201,6 +203,7 @@ function processAs(harness: AuthorityHarness, principalId: string, input: Authen
 
 async function quickJoin(harness: AuthorityHarness) {
     const pending = harness.service.processQuickJoinUntilCompletion({
+        traceId: 'trace-test-fixture',
         scope: SCOPE,
         request: { requestId: 'quick-join', includeEmpty: true }
     }, harness.sessions.guest);
@@ -213,6 +216,7 @@ async function quickJoin(harness: AuthorityHarness) {
 
 function updateRoom(harness: AuthorityHarness, request: UpdateGroupRequest, principalId = 'owner') {
     return processAs(harness, principalId, {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_UPDATE,
         resourceId: request.requestId,
         contextId: ROOM_REF.groupId,

@@ -2,6 +2,57 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { Hono, type Context, type Next } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import { createHttpTimingMiddleware } from '../../src/services/http-timing-middleware.ts';
+import { readApiRequestTraceId } from '../../src/services/read-api-request-trace-id.ts';
+
+const MINTED_TRACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function createTracedApp(events: RallarTimingEvent[]): Hono {
+    const app = new Hono();
+    app.use('/api/*', createHttpTimingMiddleware({ timing: (event) => events.push(event) }));
+    app.post('/api/trace', (c) => c.json({ traceId: readApiRequestTraceId(c) }));
+    return app;
+}
+
+async function requestTrace(
+    headers: Record<string, string>
+): Promise<Readonly<{ echoed: string | null; read: string; recorded: string | undefined; }>> {
+    const events: RallarTimingEvent[] = [];
+    const response = await createTracedApp(events).request('/api/trace', { method: 'POST', headers });
+    const body = await response.json() as { traceId: string; };
+    return { echoed: response.headers.get('x-request-id'), read: body.traceId, recorded: events[0]?.requestId };
+}
+
+function createContextDouble(
+    request: Readonly<{ path: string; headers: Readonly<Record<string, string>>; }>,
+    responseHeaders: Headers,
+    isClosed: () => boolean = () => false
+): Context {
+    const variables = new Map<string, string>();
+    return {
+        req: {
+            method: 'GET',
+            path: request.path,
+            header(name: string): string | undefined {
+                if (isClosed()) {
+                    throw new TypeError('Request closed');
+                }
+                return request.headers[name.toLowerCase()];
+            }
+        },
+        res: {
+            status: 200
+        },
+        header(name: string, value: string): void {
+            responseHeaders.set(name, value);
+        },
+        set(key: string, value: string): void {
+            variables.set(key, value);
+        },
+        get(key: string): string | undefined {
+            return variables.get(key);
+        }
+    } as Context;
+}
 
 Deno.test('HTTP timing middleware records request duration and response headers', async () => {
     const events: RallarTimingEvent[] = [];
@@ -84,36 +135,19 @@ Deno.test('HTTP timing middleware snapshots request headers before next handlers
     const responseHeaders = new Headers();
     let closed = false;
 
-    const context = {
-        req: {
-            method: 'GET',
+    const context = createContextDouble(
+        {
             path: '/api/ws/session-1',
-            header(name: string): string | undefined {
-                if (closed) {
-                    throw new TypeError('Request closed');
-                }
-
-                switch (name.toLowerCase()) {
-                    case 'x-request-id':
-                        return 'request-ws';
-                    case 'x-client-id':
-                        return 'client-1';
-                    case 'origin':
-                        return 'https://app.example.test';
-                    case 'user-agent':
-                        return 'closing-client';
-                    default:
-                        return undefined;
-                }
+            headers: {
+                'x-request-id': 'request-ws',
+                'x-client-id': 'client-1',
+                origin: 'https://app.example.test',
+                'user-agent': 'closing-client'
             }
         },
-        res: {
-            status: 200
-        },
-        header(name: string, value: string): void {
-            responseHeaders.set(name, value);
-        }
-    } as unknown as Context;
+        responseHeaders,
+        () => closed
+    );
 
     const middleware = createHttpTimingMiddleware({
         timing: (event) => events.push(event)
@@ -139,28 +173,10 @@ Deno.test('HTTP timing middleware does not mutate websocket upgrade responses', 
     const events: RallarTimingEvent[] = [];
     const responseHeaders = new Headers();
 
-    const context = {
-        req: {
-            method: 'GET',
-            path: '/api/ws/session-1',
-            header(name: string): string | undefined {
-                switch (name.toLowerCase()) {
-                    case 'upgrade':
-                        return 'websocket';
-                    case 'x-request-id':
-                        return 'request-upgrade';
-                    default:
-                        return undefined;
-                }
-            }
-        },
-        res: {
-            status: 200
-        },
-        header(name: string, value: string): void {
-            responseHeaders.set(name, value);
-        }
-    } as unknown as Context;
+    const context = createContextDouble(
+        { path: '/api/ws/session-1', headers: { upgrade: 'websocket', 'x-request-id': 'request-upgrade' } },
+        responseHeaders
+    );
 
     const middleware = createHttpTimingMiddleware({
         timing: (event) => events.push(event)
@@ -178,4 +194,50 @@ Deno.test('HTTP timing middleware does not mutate websocket upgrade responses', 
     assert.equal(events[0].requestId, 'request-upgrade');
     assert.equal(events[0].httpStatus, 101);
     assert.equal(events[0].status, 'ok');
+    assert.equal(readApiRequestTraceId(context), 'request-upgrade');
+});
+
+Deno.test('HTTP timing middleware echoes, records and exposes a valid x-request-id as the trace', async () => {
+    const trace = await requestTrace({ 'x-request-id': 'trace_Valid-1' });
+
+    assert.deepEqual(trace, { echoed: 'trace_Valid-1', read: 'trace_Valid-1', recorded: 'trace_Valid-1' });
+});
+
+Deno.test('HTTP timing middleware keeps a 128-character x-request-id', async () => {
+    const longest = 'a'.repeat(128);
+
+    const trace = await requestTrace({ 'x-request-id': longest });
+
+    assert.deepEqual(trace, { echoed: longest, read: longest, recorded: longest });
+});
+
+for (
+    const [label, header] of [
+        ['a space', 'a b'],
+        ['129 characters', 'a'.repeat(129)],
+        ['the empty string', '']
+    ] as const
+) {
+    Deno.test(`HTTP timing middleware replaces an x-request-id with ${label} by a minted trace`, async () => {
+        const trace = await requestTrace({ 'x-request-id': header });
+
+        assert.match(trace.read, MINTED_TRACE_ID);
+        assert.deepEqual(trace, { echoed: trace.read, read: trace.read, recorded: trace.read });
+    });
+}
+
+Deno.test('HTTP timing middleware mints a trace when x-request-id is absent', async () => {
+    const first = await requestTrace({});
+    const second = await requestTrace({});
+
+    assert.match(first.read, MINTED_TRACE_ID);
+    assert.deepEqual(first, { echoed: first.read, read: first.read, recorded: first.read });
+    assert.notEqual(first.read, second.read);
+});
+
+Deno.test('readApiRequestTraceId refuses a context the timing middleware never traced', () => {
+    assert.throws(
+        () => readApiRequestTraceId(createContextDouble({ path: '/api/untraced', headers: {} }, new Headers())),
+        /request trace/u
+    );
 });

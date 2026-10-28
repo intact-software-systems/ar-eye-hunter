@@ -46,6 +46,7 @@ describe('auth reservation preparation', () => {
             });
         const input = {
             requestId: 'prepared-logout',
+            traceId: 'trace-auth-test',
             session: {
                 clientId: 'client-1',
                 username: 'alice',
@@ -77,6 +78,7 @@ describe('auth reservation preparation', () => {
                 ? await runAuthInboxCommand({
                     pending: auth.service.logoutSession({
                         requestId: 'reserved-once-logout',
+                        traceId: 'trace-auth-test',
                         session: {
                             clientId: 'client-1',
                             username: 'alice',
@@ -92,6 +94,7 @@ describe('auth reservation preparation', () => {
                 : await runAuthInboxCommand({
                     pending: auth.service.consumeAgentSessionTicket({
                         requestId: 'reserved-once-consume',
+                        traceId: 'trace-auth-test',
                         ticket: 'absent-agent-ticket'
                     }),
                     queue: auth.queue,
@@ -122,7 +125,7 @@ describe('auth reservation preparation', () => {
             issuedAtEpochMs: 500,
             expiresAtEpochMs: 2_000
         };
-        const original = auth.service.logoutSession({ requestId: 'replay-wake-logout', session });
+        const original = auth.service.logoutSession({ requestId: 'replay-wake-logout', traceId: 'trace-auth-test', session });
         await vi.waitFor(() => expect(wakes).toBe(1));
 
         const replay = auth.service.replayLogoutSessionWithCredentialProof({
@@ -148,6 +151,7 @@ describe('auth reservation preparation', () => {
         });
         const input = {
             requestId: 'owned-clock-logout',
+            traceId: 'trace-auth-test',
             session: {
                 clientId: 'client-1',
                 username: 'alice',

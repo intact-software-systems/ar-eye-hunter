@@ -314,7 +314,7 @@ function toClientEvent(input: AppliedClientMutationInput): ClientEvent {
         occurredAtEpochMs: command.facts.nowEpochMs,
         actor: toClientMutationActor(command.input, principal, command.facts),
         reason: command.input.reason,
-        traceId: command.input.traceId,
+        traceId: command.facts.traceId,
         requestId: command.requestId,
         payload: {}
     };

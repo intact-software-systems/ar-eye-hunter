@@ -61,6 +61,7 @@ export async function readPGliteAppInboxFailure(
     }).commandClient;
     const enqueue = {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        traceId: 'trace-app-inbox-fixture',
         resourceId,
         contextId: 'failure-context',
         data: { requestId: resourceId }

@@ -56,6 +56,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
                 expiresAtEpochMs: now + 60_000
             },
             requestId: 'revoked-prune',
+            traceId: 'trace-admin-fixture',
             request: {
                 categories: ['runtime-state'],
                 dryRun: false
@@ -127,6 +128,7 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
                 expiresAtEpochMs: now + 60_000
             },
             requestId: 'committed-prune',
+            traceId: 'trace-admin-fixture',
             request: {
                 categories: ['runtime-state'],
                 dryRun: false

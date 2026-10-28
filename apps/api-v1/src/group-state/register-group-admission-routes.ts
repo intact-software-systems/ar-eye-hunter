@@ -9,6 +9,7 @@ import type {
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest
 } from '@shared/api/state-types.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
@@ -56,12 +57,12 @@ function registerJoinGroupRoute(
                             operation: 'join-group',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             request: await readGroupStateRouteRequest<JoinGroupRequest>(context)
                         })
                     )
                 });
-
                 return context.json(toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId));
             }
             catch (error) {
@@ -95,12 +96,12 @@ function registerAcceptGroupInviteRoute(
                             operation: 'accept-group-invite',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             request: await readGroupStateRouteRequest<AcceptGroupInviteRequest>(context)
                         })
                     )
                 });
-
                 return context.json(toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId));
             }
             catch (error) {
@@ -129,6 +130,7 @@ function registerRotateGroupJoinCodeRoute(
                             operation: 'rotate-group-join-code',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             request: await readGroupStateRouteRequest<RotateGroupJoinCodeRequest>(context)
                         })
@@ -164,6 +166,7 @@ function registerCreateGroupInviteRoute(
                             operation: 'create-group-invite',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<CreateGroupInviteRequest>(context)
@@ -200,6 +203,7 @@ function registerGrantGroupAdmissionRoute(
                             operation: 'grant-group-admission',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<MutationActorInput>(context)
@@ -236,6 +240,7 @@ function registerDeclineGroupAdmissionRoute(
                             operation: 'decline-group-admission',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<MutationActorInput>(context)
@@ -272,6 +277,7 @@ function registerRevokeGroupInviteRoute(
                             operation: 'revoke-group-invite',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<RevokeGroupInviteRequest>(context)

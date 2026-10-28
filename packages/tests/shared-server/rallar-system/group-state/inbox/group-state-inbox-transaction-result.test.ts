@@ -47,10 +47,10 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"ownerPrincipalId":"owner","snapshotVersion":1,"metadataVersion":1,' +
     '"rosterVersion":1,"presenceVersion":0,"created":{"atEpochMs":1785628800000,' +
     '"actor":{"kind":"session","sessionId":"owner-session","principalId":"owner"},' +
-    '"reason":null,"traceId":null,"requestId":"create-transaction-boundary-room"},' +
+    '"reason":null,"traceId":"trace-group-state-transaction-boundary","requestId":"create-transaction-boundary-room"},' +
     '"updated":{"atEpochMs":1785628800000,"actor":{"kind":"session",' +
     '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
-    '"traceId":null,"requestId":"create-transaction-boundary-room"},' +
+    '"traceId":"trace-group-state-transaction-boundary","requestId":"create-transaction-boundary-room"},' +
     '"archived":null,"deleted":null,"expiresAtEpochMs":null,' +
     '"emptySinceEpochMs":null,"purgeAfterEpochMs":null,' +
     '"lifecycleState":"active","formationEpoch":0,"formationAttemptCount":0,"lastFormationOutcome":null,"establishmentStartedAtEpochMs":null,"formationElectorate":["owner"],"acceptedLayoutIdentity":null,"transportState":"flowing","memberPolicy":{"maxConcurrentEdgeSetups":64,"transports":"rtc-and-ws"},"activationStatus":null},"members":[' +
@@ -58,20 +58,20 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"groupId":"transaction-boundary-room","principalId":"owner","role":"owner",' +
     '"status":"active","joined":{"atEpochMs":1785628800000,' +
     '"actor":{"kind":"session","sessionId":"owner-session","principalId":"owner"},' +
-    '"reason":null,"traceId":null,"requestId":"create-transaction-boundary-room"},' +
+    '"reason":null,"traceId":"trace-group-state-transaction-boundary","requestId":"create-transaction-boundary-room"},' +
     '"updated":{"atEpochMs":1785628800000,"actor":{"kind":"session",' +
     '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
-    '"traceId":null,"requestId":"create-transaction-boundary-room"},"left":null,' +
+    '"traceId":"trace-group-state-transaction-boundary","requestId":"create-transaction-boundary-room"},"left":null,' +
     '"removed":null,"banned":null,"invitedByPrincipalId":null,' +
     '"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,' +
     '"onlineMemberCount":0},"event":{"applicationId":"ar-eye-hunter",' +
     '"workspaceId":"default","groupId":"transaction-boundary-room",' +
-    '"eventId":"group-event:fbdfdfc402306c873dc6c84ca13bf30269461fbce386b89a99b67d3838169c77",' +
+    '"eventId":"group-event:2f8b5680a6546f63b2317b276ac0848d905e18850c7cdb86f6279e384c31a74c",' +
     '"eventType":"group-created","snapshotVersion":1,' +
     '"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
     '"occurredAtEpochMs":1785628800000,"actor":{"kind":"session",' +
     '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
-    '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}';
+    '"traceId":"trace-group-state-transaction-boundary","requestId":"create-transaction-boundary-room","payload":{}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
     it('persists the exact durable result without a handler-owned cache effect', async () => {
@@ -273,8 +273,7 @@ describe('group-state AppInbox transaction result boundary', () => {
                     expiresAtEpochMs: 61_000,
                     actorPrincipalId: 'owner',
                     actorSessionId: 'inactive-session',
-                    reason: null,
-                    traceId: null
+                    reason: null
                 }
             },
             facts: {

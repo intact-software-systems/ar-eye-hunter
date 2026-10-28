@@ -7,7 +7,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type {
     AuthenticatedGroupMutationEnqueue
@@ -27,6 +27,9 @@ import type {
 } from '../../src/group-state/group-state-route-contracts.ts';
 import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
 import { createGroupAdmissionQuota, type GroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
+
+export const GROUP_ROUTE_TRACE_ID = 'trace-group-route-test';
 
 export const TEST_GROUP_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -71,7 +74,7 @@ export function createGroupStateRouteTestRuntime(
 ): GroupStateRouteTestRuntime {
     const session = input.session ?? createGroupStateRouteAuthSession('alice');
     const routeDependencies = createGroupStateRouteTestDependencies({ ...input, session });
-    const app = new Hono();
+    const app = createTracedApiTestApp();
 
     if (input.installStateAuthentication ?? true) {
         app.use('/api/state/*', async (context, next) => {
@@ -293,7 +296,7 @@ export async function postGroupStateMutation(
     const mutation = toGroupStateRouteMutationRequest(path, body);
     return await app.request(mutation.path, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-request-id': GROUP_ROUTE_TRACE_ID },
         body: JSON.stringify(mutation.body)
     });
 }
@@ -306,7 +309,7 @@ export async function putGroupStateMutation(
     const mutation = toGroupStateRouteMutationRequest(path, body);
     return await app.request(mutation.path, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-request-id': GROUP_ROUTE_TRACE_ID },
         body: JSON.stringify(mutation.body)
     });
 }
@@ -319,7 +322,7 @@ export async function postGroupStateMutationWithHeaders(
     const mutation = toGroupStateRouteMutationRequest(path, request.body);
     return await app.request(mutation.path, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...request.headers },
+        headers: { 'content-type': 'application/json', 'x-request-id': GROUP_ROUTE_TRACE_ID, ...request.headers },
         body: JSON.stringify(mutation.body)
     });
 }

@@ -279,8 +279,7 @@ function connectCommand(): GroupStateMutationCommand {
                 expiresAtEpochMs: 61_000,
                 actorPrincipalId: 'owner',
                 actorSessionId: 'session-1',
-                reason: null,
-                traceId: null
+                reason: null
             }
         },
         facts: {

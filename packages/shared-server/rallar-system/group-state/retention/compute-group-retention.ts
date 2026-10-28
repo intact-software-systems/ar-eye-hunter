@@ -117,7 +117,7 @@ function retentionAudit(read: GroupRetentionService.Read): AuditStamp {
         atEpochMs: read.attemptAtEpochMs,
         actor: { kind: 'service', serviceId: read.ingress.serviceId },
         reason: 'temporary-room-retention',
-        traceId: null,
+        traceId: read.traceId,
         requestId: read.ingress.command.requestId
     };
 }

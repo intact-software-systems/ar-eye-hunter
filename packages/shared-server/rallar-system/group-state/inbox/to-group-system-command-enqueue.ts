@@ -1,4 +1,4 @@
-import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueue } from '../../app-inbox/app-inbox-contracts.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIngress } from '../group-state-service-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
@@ -14,7 +14,7 @@ export type GroupSystemCommandType =
 export function toGroupSystemCommandEnqueue(
     type: GroupSystemCommandType,
     ingress: GroupMutationIngress
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     return {
         type,
         resourceId: ingress.queueResourceId,

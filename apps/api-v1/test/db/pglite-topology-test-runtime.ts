@@ -105,6 +105,7 @@ export function submitPGliteTopologyCommand(
     return appGroup.processAuthenticatedEntryUntilCompletionResult(
         {
             type,
+            traceId: 'trace-app-inbox-fixture',
             resourceId: command.requestId,
             contextId: [
                 command.groupRef.applicationId,

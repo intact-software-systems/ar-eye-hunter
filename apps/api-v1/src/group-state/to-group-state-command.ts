@@ -96,6 +96,7 @@ function toCreateGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, request.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             request
@@ -118,6 +119,7 @@ function toUpdateGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             groupId: input.groupId,
@@ -141,6 +143,7 @@ function toAppointGroupDirectorCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             groupId: input.groupId,
@@ -163,6 +166,7 @@ function toPlanGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -181,6 +185,7 @@ function toConnectGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -199,6 +204,7 @@ function toActivateGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -218,6 +224,7 @@ function toReconfigureGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -236,6 +243,7 @@ function toPauseGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -254,6 +262,7 @@ function toResumeGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -272,6 +281,7 @@ function toResetGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -290,6 +300,7 @@ function toStartGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -309,6 +320,7 @@ function toJoinGroupCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -328,6 +340,7 @@ function toAcceptGroupInviteCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -347,6 +360,7 @@ function toRotateGroupJoinCodeCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -366,6 +380,7 @@ function toCreateGroupInviteCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             groupId: input.groupId,
@@ -390,6 +405,7 @@ function toRevokeGroupInviteCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             groupId: input.groupId,
@@ -414,6 +430,7 @@ function toGrantGroupAdmissionCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             groupId: input.groupId,
@@ -438,6 +455,7 @@ function toDeclineGroupAdmissionCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: {
             scope: input.scope,
             groupId: input.groupId,
@@ -462,6 +480,7 @@ function toRemoveGroupMemberCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
     };
 }
@@ -481,6 +500,7 @@ function toBanGroupMemberCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
     };
 }
@@ -500,6 +520,7 @@ function toUnbanGroupMemberCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
     };
 }
@@ -519,6 +540,7 @@ function toSetGroupMemberRoleCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
     };
 }
@@ -538,6 +560,7 @@ function toTransferGroupOwnershipCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
@@ -558,6 +581,7 @@ function toUpsertGroupMemberCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
     };
 }
@@ -577,6 +601,7 @@ function toConnectGroupPresenceCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request }
     };
 }
@@ -596,6 +621,7 @@ function toHeartbeatGroupPresenceCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request }
     };
 }
@@ -615,6 +641,7 @@ function toDisconnectGroupPresenceCommand(
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
+        traceId: input.traceId,
         data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request }
     };
 }

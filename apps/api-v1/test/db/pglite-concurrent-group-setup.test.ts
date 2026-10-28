@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import {
@@ -26,6 +26,7 @@ import { registerGroupStateRoutes } from '../../src/group-state/register-group-s
 import { toApiMutationRouteFailure } from '../../src/routes/api-mutation-route-failure.ts';
 import { createGroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 interface GroupSetupRequestResult {
@@ -184,7 +185,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
 }
 
 function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupStateInboxService, requestKeys: Map<string, Key>): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         groupStateService: mutation.groupStateService,
         rtcRttRepository: new RtcRttRepository(mutation.runtimeStateRepository),

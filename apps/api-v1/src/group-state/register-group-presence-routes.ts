@@ -5,6 +5,7 @@ import type {
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest
 } from '@shared/api/state-types.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -80,6 +81,7 @@ async function handleConnectGroupPresenceRoute(
                 operation: 'connect-group-presence',
                 authSession,
                 scope,
+                traceId: readApiRequestTraceId(context),
                 groupId,
                 sessionId,
                 request: await readGroupStateRouteRequest<ConnectGroupPresenceSessionRequest>(context)
@@ -116,6 +118,7 @@ async function handleHeartbeatGroupPresenceRoute(
                 operation: 'heartbeat-group-presence',
                 authSession,
                 scope,
+                traceId: readApiRequestTraceId(context),
                 groupId,
                 sessionId,
                 request: await readGroupStateRouteRequest<HeartbeatGroupPresenceSessionRequest>(context)
@@ -152,6 +155,7 @@ async function handleDisconnectGroupPresenceRoute(
                 operation: 'disconnect-group-presence',
                 authSession,
                 scope,
+                traceId: readApiRequestTraceId(context),
                 groupId,
                 sessionId,
                 request: await readGroupStateRouteRequest<DisconnectGroupPresenceSessionRequest>(context)

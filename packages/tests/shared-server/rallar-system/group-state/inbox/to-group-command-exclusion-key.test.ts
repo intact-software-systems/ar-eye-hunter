@@ -2,11 +2,12 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import {
+    createAppInboxResourceEntry,
+    createDefaultAppInboxQueueMessage
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-state/inbox/to-group-command-exclusion-key.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { createAppInboxQueueMessageFixture } from '../../app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 
 const SCOPE = { applicationId: 'app 1', workspaceId: 'workspace:1' };
 const SCOPE_KEY = 'app=app%201:ws=workspace%3A1';
@@ -150,6 +151,7 @@ describe('toGroupCommandExclusionKey', () => {
 
     it('leaves commands that name no existing group unkeyed', () => {
         expect(toGroupCommandExclusionKey(toEntry({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             topicId: AppInboxType.GROUP_CREATE,
             resourceId: 'create-1',
@@ -157,6 +159,7 @@ describe('toGroupCommandExclusionKey', () => {
             data: { scope: SCOPE, request: {} }
         }))).toBeUndefined();
         expect(toGroupCommandExclusionKey(toEntry({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.AUTH_WS_TICKET_ISSUE,
             resourceId: 'ticket-1',
             contextId: 'session-alice',
@@ -178,6 +181,7 @@ function isOrderedBehind(earlier: ResourceEntry, later: ResourceEntry): boolean 
 
 function joinEntry(callerId: string, groupId: string): ResourceEntry {
     return toEntry({
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_JOIN,
         topicId: AppInboxType.GROUP_JOIN,
         resourceId: `join-${callerId}-${groupId}`,
@@ -194,6 +198,7 @@ function presenceEntry(
     sessionId: string
 ): ResourceEntry {
     return toEntry({
+        traceId: 'trace-test-fixture',
         type,
         topicId: type,
         resourceId: `${type}-${sessionId}`,
@@ -208,6 +213,7 @@ function connectEntry(sessionId: string): ResourceEntry {
 
 function publicationEntry(): ResourceEntry {
     return toEntry({
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
         topicId: 'app-inbox.group-state',
         resourceId: 'publication-1',
@@ -218,6 +224,7 @@ function publicationEntry(): ResourceEntry {
 
 function cleanupEntry(): ResourceEntry {
     return toEntry({
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
         topicId: 'app-inbox.group-state',
         resourceId: 'cleanup-1',
@@ -228,7 +235,7 @@ function cleanupEntry(): ResourceEntry {
 
 function toEntry(enqueue: AppInboxEnqueueInput): ResourceEntry {
     return createAppInboxResourceEntry(enqueue, 'server-1', {
-        createMessage: createAppInboxQueueMessageFixture,
+        createMessage: createDefaultAppInboxQueueMessage,
         creationNow: Temporal.Now.instant
     });
 }

@@ -16,7 +16,7 @@ import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxExecutionMetadata
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { toUnavailableAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
@@ -118,6 +118,7 @@ export interface AppAdminInboxServiceConfig {
 export interface AppAdminPruneExpiredInput {
     readonly adminSession: AuthSession;
     readonly requestId: string;
+    readonly traceId: string;
     readonly request: AdminPruneExpiredRequest;
 }
 
@@ -194,6 +195,7 @@ export class AppAdminInboxService {
                 resourceId: key.resourceId,
                 contextId: key.contextId,
                 senderId: identity.requestedBy,
+                traceId: input.traceId,
                 data: null
             },
             async () => await this.createMaterializedPruneEntry(identity, key)
@@ -214,7 +216,7 @@ export class AppAdminInboxService {
     private async createMaterializedPruneEntry(
         identity: AdminPruneIdempotencyIdentity,
         key: Key
-    ): Promise<AppInboxEnqueueInput> {
+    ): Promise<AppInboxEnqueue> {
         const capturedAtEpochMs = this.config.appInbox.nowEpochMs?.() ?? Date.now();
         const command = await createAdminPruneCommand({
             jobId: identity.jobId,

@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -8,6 +8,7 @@ import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentRef } from '@shar
 
 import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as crdtAdminRoutes from '../../../src/crdt/register-crdt-admin-routes.ts';
+import { createTracedApiTestApp } from '../../services/create-traced-api-test-app.ts';
 
 const NOW = 1_700_000_000_000;
 const SESSION: IssuedAuthSession = {
@@ -68,7 +69,7 @@ function createCrdtAdminRoutingFixture(): CrdtAdminRoutingFixture {
     const directCalls: string[] = [];
     const mutationCalls: CrdtAdminMutationCall[] = [];
     const directRepository = new InMemoryRallarCrdtLogRepository({ now: () => NOW });
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     crdtAdminRoutes.registerCrdtAdminRoutes(app, {
         repository: createRecordingCrdtReadRepository(directCalls, directRepository),
         crdtAdminMutations: {
@@ -176,7 +177,7 @@ function createRecordingCrdtReadRepository(
 
 Deno.test('CRDT admin routes never fall back to direct mutation methods', async () => {
     let directMutationCalls = 0;
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     crdtAdminRoutes.registerCrdtAdminRoutes(app, {
         repository: Object.assign(createCrdtReadRepository(), {
             writeSnapshot: () => {
@@ -222,7 +223,7 @@ Deno.test('CRDT admin routes never fall back to direct mutation methods', async 
 
 Deno.test('CRDT admin routes preserve retryable mutation failure status', async () => {
     for (const status of [429, 503] as const) {
-        const app = new Hono();
+        const app = createTracedApiTestApp();
         crdtAdminRoutes.registerCrdtAdminRoutes(app, {
             repository: createCrdtReadRepository(),
             crdtAdminMutations: {

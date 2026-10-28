@@ -45,6 +45,7 @@ describe('AppClientInbox authentication', () => {
     it('validates issued authority from an explicit observation time without reading the clock', () => {
         const authority = issuedSession('alice', 'alice-session');
         const ingress = readAuthenticatedClientMutationIngress({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'explicit-validation-time',
@@ -86,6 +87,7 @@ describe('AppClientInbox authentication', () => {
     it('returns every independent issued-authority ingress issue without throwing', () => {
         const authority = issuedSession('alice', 'alice-session');
         const ingress = readAuthenticatedClientMutationIngress({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.CLIENT_SESSION_DISCONNECT,
             topicId: AppInboxType.CLIENT_SESSION_DISCONNECT,
             resourceId: 'aggregate-ingress-issues',
@@ -168,6 +170,7 @@ describe('AppClientInbox authentication', () => {
         const authority = issuedSession('alice', 'alice-session');
         const pending = service.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 resourceId: 'malformed-client-result',
@@ -239,6 +242,7 @@ describe('AppClientInbox authentication', () => {
 
         const result = await service.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
                 topicId: AppInboxType.CLIENT_SESSION_HEARTBEAT,
                 resourceId: 'teardown-heartbeat',
@@ -312,6 +316,7 @@ describe('AppClientInbox authentication', () => {
             resourceId: 'forged-client-context-request',
             contextId: 'application=wrong:workspace=wrong:principal=alice:caller=alice:session=alice-session',
             senderId: 'alice',
+            traceId: 'trace-forged-client-context',
             data: {
                 scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',

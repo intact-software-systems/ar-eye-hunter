@@ -6,6 +6,7 @@ import type {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { MutationActorInput } from '@shared/api/state-types.ts';
 
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
@@ -37,6 +38,7 @@ function registerPlanGroupRoute(app: Hono, dependencies: GroupStateRouteDependen
                         operation: 'plan-group-layout',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<MutationActorInput>(context)
                     })
@@ -62,6 +64,7 @@ function registerConnectGroupRoute(app: Hono, dependencies: GroupStateRouteDepen
                         operation: 'connect-group',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<GroupConnectAppInboxPayload['request']>(context)
                     })
@@ -87,6 +90,7 @@ function registerActivateGroupRoute(app: Hono, dependencies: GroupStateRouteDepe
                         operation: 'activate-group',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<MutationActorInput>(context)
                     })
@@ -112,6 +116,7 @@ function registerReconfigureGroupRoute(app: Hono, dependencies: GroupStateRouteD
                         operation: 'reconfigure-group',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<GroupReconfigureAppInboxPayload['request']>(context)
                     })
@@ -137,6 +142,7 @@ function registerPauseGroupRoute(app: Hono, dependencies: GroupStateRouteDepende
                         operation: 'pause-group-transport',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<MutationActorInput>(context)
                     })
@@ -162,6 +168,7 @@ function registerResumeGroupRoute(app: Hono, dependencies: GroupStateRouteDepend
                         operation: 'resume-group-transport',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<MutationActorInput>(context)
                     })
@@ -187,6 +194,7 @@ function registerResetGroupRoute(app: Hono, dependencies: GroupStateRouteDepende
                         operation: 'reset-group-formation',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<MutationActorInput>(context)
                     })
@@ -212,6 +220,7 @@ function registerStartGroupRoute(app: Hono, dependencies: GroupStateRouteDepende
                         operation: 'start-group-formation',
                         authSession,
                         scope: toGroupStateRouteScope(context),
+                        traceId: readApiRequestTraceId(context),
                         groupId: context.req.param('groupId'),
                         request: await readGroupStateRouteRequest<MutationActorInput>(context)
                     })

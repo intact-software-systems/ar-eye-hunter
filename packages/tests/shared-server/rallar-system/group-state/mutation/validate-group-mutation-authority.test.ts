@@ -45,8 +45,7 @@ function updateCommand(): Extract<GroupMutationCommand, { operation: 'updateGrou
             purgeAfterEpochMs: null,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }

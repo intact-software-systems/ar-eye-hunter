@@ -1,4 +1,3 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -12,6 +11,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 import {
     createAuthSession,
@@ -23,6 +23,32 @@ import {
 } from './client-state-route-test-runtime.ts';
 
 const REQUEST_ID = 'ClientMutationRequest_012345';
+
+Deno.test('client mutation routes hand the request trace to the AppInbox enqueue and refuse a body trace', async () => {
+    const processCalls: AppInboxEnqueueInput[] = [];
+    const app = createClientRouteApp(createClientRouteDeps({
+        session: createAuthSession('alice'),
+        clientService: {},
+        processClientAppInbox: (input) => {
+            processCalls.push(input);
+            return Promise.resolve(toClientStateWritten(createClientSnapshot('alice')));
+        }
+    }));
+    const upsertPrincipal = (requestId: string, headers: Record<string, string>, body: object) =>
+        app.request(`/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/${requestId}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json', ...headers },
+            body: JSON.stringify({ username: 'alice', ...body })
+        });
+
+    const traced = await upsertPrincipal('client-route-traced-request', { 'x-request-id': 'trace-client-route' }, {});
+    const bodyTraced = await upsertPrincipal('client-route-body-trace-request', {}, { traceId: 'trace-in-body' });
+
+    assert.equal(traced.status, 200);
+    assert.equal(traced.headers.get('x-request-id'), 'trace-client-route');
+    assert.equal(bodyTraced.status, 400);
+    assert.deepEqual(processCalls.map((enqueue) => enqueue.traceId), ['trace-client-route']);
+});
 
 Deno.test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {
     const processCalls: AppInboxEnqueueInput[] = [];
@@ -299,7 +325,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
     };
     const hydrationInputs: StateSyncCacheHydrationInput[] = [];
     let cachedSnapshot = baseSnapshot;
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     clientStateRoutes.registerClientStateRoutes(app, {
         strictReadAuthorization: false,
         clientStateService: {

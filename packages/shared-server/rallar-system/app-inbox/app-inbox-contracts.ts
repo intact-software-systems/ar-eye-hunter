@@ -97,7 +97,8 @@ export function toAppInboxCompletionAwaitability(
     return FIRE_AND_FORGET_APP_INBOX_TYPES.has(type) ? 'fire-and-forget' : 'awaitable';
 }
 
-export interface AppInboxEnqueueInput {
+/** The command an AppInbox entry stores. Its trace rides on the entry's envelope, never inside the command. */
+export interface AppInboxEnqueue {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
@@ -108,8 +109,12 @@ export interface AppInboxEnqueueInput {
     readonly data: JsonWireValue;
 }
 
+export interface AppInboxEnqueueInput extends AppInboxEnqueue {
+    readonly traceId: string;
+}
+
 export interface AppInboxExecutionMetadata {
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
     readonly attemptTelemetry: ResourceInboxAttemptTelemetry;

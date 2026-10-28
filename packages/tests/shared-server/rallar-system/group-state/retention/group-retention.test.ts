@@ -75,6 +75,7 @@ describe('temporary room retention decisions', () => {
             reader: fixture.harness.reader,
             authority: fixture.harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
                 resourceId: 'old-disconnect',
                 contextId: REF.groupId,
@@ -193,6 +194,7 @@ async function createFixture(temporary = true): Promise<RetentionFixture> {
         reader: harness.reader,
         authority: harness.sessions.owner,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             resourceId: 'create-retained',
             contextId: REF.groupId,

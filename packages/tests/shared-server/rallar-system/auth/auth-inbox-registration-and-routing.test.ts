@@ -62,6 +62,7 @@ describe('AppAuthInboxService registration', () => {
 
         const pending = service.logoutSession({
             requestId: 'registration-later-invocation',
+            traceId: 'trace-auth-test',
             session: {
                 clientId: 'client-1',
                 username: 'alice',
@@ -96,6 +97,7 @@ it('does not persist session or success results for invalid session TTL intent',
     });
     const result = await auth.service.issueSession({
         requestId: 'invalid-session-ttl',
+        traceId: 'trace-auth-test',
         clientId: 'client-1',
         username: 'alice',
         authority: {

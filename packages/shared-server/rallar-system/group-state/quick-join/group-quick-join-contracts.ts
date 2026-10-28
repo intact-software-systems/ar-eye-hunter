@@ -14,6 +14,7 @@ import type {
 export interface GroupQuickJoinInput {
     readonly scope: StateScope;
     readonly request: QuickJoinGroupRequest;
+    readonly traceId: string;
 }
 
 export interface GroupQuickJoinCommand extends Pick<GroupDirectoryQuery, 'kind' | 'q' | 'includeEmpty'> {

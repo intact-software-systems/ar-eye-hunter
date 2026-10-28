@@ -54,6 +54,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'create',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             topicId: AppInboxType.GROUP_CREATE,
             resourceId: 'create-resource',
@@ -92,6 +93,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'update',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_UPDATE,
             topicId: AppInboxType.GROUP_UPDATE,
             resourceId: 'update-resource',
@@ -111,6 +113,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'appoint-director',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_DIRECTOR_APPOINT,
             topicId: AppInboxType.GROUP_DIRECTOR_APPOINT,
             resourceId: 'appoint-director-resource',
@@ -134,6 +137,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'plan',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_PLAN,
             topicId: AppInboxType.GROUP_PLAN,
             resourceId: 'plan-resource',
@@ -146,6 +150,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'connect',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CONNECT,
             topicId: AppInboxType.GROUP_CONNECT,
             resourceId: 'connect-resource',
@@ -179,6 +184,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'activate',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_ACTIVATE,
             topicId: AppInboxType.GROUP_ACTIVATE,
             resourceId: 'activate-resource',
@@ -198,6 +204,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'reconfigure',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_RECONFIGURE,
             topicId: AppInboxType.GROUP_RECONFIGURE,
             resourceId: 'reconfigure-resource',
@@ -217,6 +224,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'join',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_JOIN,
             topicId: AppInboxType.GROUP_JOIN,
             resourceId: 'join-resource',
@@ -239,6 +247,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'invite-create',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_INVITE_CREATE,
             topicId: AppInboxType.GROUP_INVITE_CREATE,
             resourceId: 'invite-create-resource',
@@ -263,6 +272,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'invite-revoke',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_INVITE_REVOKE,
             topicId: AppInboxType.GROUP_INVITE_REVOKE,
             resourceId: 'invite-revoke-resource',
@@ -287,6 +297,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'invite-accept',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_INVITE_ACCEPT,
             topicId: AppInboxType.GROUP_INVITE_ACCEPT,
             resourceId: 'invite-accept-resource',
@@ -310,6 +321,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'admission-grant',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_ADMISSION_GRANT,
             topicId: AppInboxType.GROUP_ADMISSION_GRANT,
             resourceId: 'admission-grant-resource',
@@ -334,6 +346,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'admission-decline',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_ADMISSION_DECLINE,
             topicId: AppInboxType.GROUP_ADMISSION_DECLINE,
             resourceId: 'admission-decline-resource',
@@ -358,6 +371,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'rotate-join-code',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
             topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
             resourceId: 'rotate-join-code-resource',
@@ -377,6 +391,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'member-remove',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_REMOVE,
             topicId: AppInboxType.GROUP_MEMBER_REMOVE,
             resourceId: 'member-remove-resource',
@@ -401,6 +416,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'member-ban',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_BAN,
             topicId: AppInboxType.GROUP_MEMBER_BAN,
             resourceId: 'member-ban-resource',
@@ -425,6 +441,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'member-unban',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_UNBAN,
             topicId: AppInboxType.GROUP_MEMBER_UNBAN,
             resourceId: 'member-unban-resource',
@@ -449,6 +466,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'member-role-set',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_ROLE_SET,
             topicId: AppInboxType.GROUP_MEMBER_ROLE_SET,
             resourceId: 'member-role-set-resource',
@@ -473,6 +491,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'ownership-transfer',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
             topicId: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
             resourceId: 'ownership-transfer-resource',
@@ -496,6 +515,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'member-upsert',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_UPSERT,
             topicId: AppInboxType.GROUP_MEMBER_UPSERT,
             resourceId: 'member-upsert-resource',
@@ -520,6 +540,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'presence-connect',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
             topicId: AppInboxType.GROUP_PRESENCE_CONNECT,
             resourceId: 'presence-connect-resource',
@@ -558,6 +579,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'presence-heartbeat',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
             topicId: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
             resourceId: 'presence-heartbeat-resource',
@@ -582,6 +604,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'presence-disconnect',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
             topicId: AppInboxType.GROUP_PRESENCE_DISCONNECT,
             resourceId: 'presence-disconnect-resource',
@@ -606,6 +629,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'formation-start',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_FORMATION_START,
             topicId: AppInboxType.GROUP_FORMATION_START,
             resourceId: 'formation-start-resource',
@@ -625,6 +649,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'formation-reset',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_FORMATION_RESET,
             topicId: AppInboxType.GROUP_FORMATION_RESET,
             resourceId: 'formation-reset-resource',
@@ -644,6 +669,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'transport-pause',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_TRANSPORT_PAUSE,
             topicId: AppInboxType.GROUP_TRANSPORT_PAUSE,
             resourceId: 'transport-pause-resource',
@@ -663,6 +689,7 @@ const descriptorCases: readonly DescriptorCase[] = [
     {
         name: 'transport-resume',
         enqueue: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_TRANSPORT_RESUME,
             topicId: AppInboxType.GROUP_TRANSPORT_RESUME,
             resourceId: 'transport-resume-resource',

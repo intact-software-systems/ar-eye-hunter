@@ -1,4 +1,4 @@
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { type AppInboxEnqueue } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
@@ -23,7 +23,7 @@ import {
 } from './topology-mutation-authority-proof.ts';
 
 export interface CreateAuthenticatedTopologyEnqueueInput {
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly claimedAuthority: IssuedAuthSession;
     readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
     readonly nowEpochMs: () => number;
@@ -44,7 +44,7 @@ export interface ValidateCurrentTopologySessionInput {
 
 export async function createAuthenticatedTopologyEnqueue(
     input: CreateAuthenticatedTopologyEnqueueInput
-): Promise<AppInboxEnqueueInput> {
+): Promise<AppInboxEnqueue> {
     const command = decodeAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
     const currentSession = await readAndValidateCurrentTopologySession({
         principalId: command.actor.principalId,
@@ -60,10 +60,10 @@ export async function createAuthenticatedTopologyEnqueue(
 
 export async function createAuthenticatedTopologyEnqueueFromValidatedSession(
     input: Readonly<{
-        enqueue: AppInboxEnqueueInput;
+        enqueue: AppInboxEnqueue;
         currentSession: PersistedAuthSession;
     }>
-): Promise<AppInboxEnqueueInput> {
+): Promise<AppInboxEnqueue> {
     const command = decodeTopologyCommandForValidatedSession(input.enqueue, {
         principalId: input.currentSession.clientId,
         sessionId: input.currentSession.sessionId

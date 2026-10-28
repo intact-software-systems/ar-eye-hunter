@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -14,6 +14,7 @@ import { createDefaultRallarServer } from '../../src/composition/create-default-
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import type { GroupStateRouteCommandInput } from '../../src/group-state/group-state-route-contracts.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import {
     createApiV1TestPGliteDatabaseLifecycle,
     type ApiV1TestPGliteDatabaseLifecycle
@@ -127,7 +128,7 @@ export async function createNativeSessionTestFixture(): Promise<NativeSessionTes
             }
         }
     });
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     rallar.installSystemTopics();
     rallar.installWebSocketLifecycle();
     rallar.mountWebSocket(app);
@@ -156,6 +157,7 @@ export async function writeNativeGroupCreate(flow: NativeGroupSessionFlow): Prom
             operation: 'create-group',
             authSession: session,
             scope,
+            traceId: 'trace-native-session-fixture',
             request: {
                 requestId: `native-room-create-${index}`,
                 groupId: groupRef.groupId,
@@ -180,6 +182,7 @@ export async function writeNativeGroupJoin(flow: NativeGroupSessionFlow): Promis
             operation: 'join-group',
             authSession: session,
             scope,
+            traceId: 'trace-native-session-fixture',
             groupId: groupRef.groupId,
             request: { requestId: `native-room-join-request-${index}` }
         }
@@ -198,6 +201,7 @@ export async function writeNativeGroupPresence(flow: NativeGroupSessionFlow): Pr
             operation: 'connect-group-presence',
             authSession: session,
             scope,
+            traceId: 'trace-native-session-fixture',
             groupId: groupRef.groupId,
             sessionId: session.sessionId,
             request: {
@@ -241,6 +245,7 @@ export async function issueSameUserSessions(
     for (let index = 0; index < 15; index += 1) {
         const issued = await runtime.appAuthInboxService.issueSession({
             requestId: `native-admission-session-${index}`,
+            traceId: 'trace-native-session-fixture',
             clientId: 'alice',
             username: 'alice',
             authority: { kind: 'static-client', clientId: 'alice', normalizedUsername: 'alice' },

@@ -67,6 +67,7 @@ Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', asyn
                 operation: testCase.operation,
                 adminSession: ADMIN_SESSION,
                 requestId: `request-${testCase.operation}-00000001`,
+                traceId: 'trace-admin-fixture',
                 request: testCase.request
             }),
             (error) => error === stopAfterCapture
@@ -116,6 +117,7 @@ Deno.test('CRDT admin lifecycle rejects its value before exact document validati
             operation: 'lifecycle',
             adminSession: ADMIN_SESSION,
             requestId: 'invalid-lifecycle-request',
+            traceId: 'trace-admin-fixture',
             request: {
                 document: {
                     applicationId: 'app-1',

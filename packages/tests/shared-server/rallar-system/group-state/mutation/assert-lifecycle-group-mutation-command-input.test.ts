@@ -5,8 +5,7 @@ import { assertLifecycleGroupMutationCommandInput } from '@shared-server/rallar-
 const ACTOR_INPUT = {
     actorPrincipalId: 'alice',
     actorSessionId: 'alice-session',
-    reason: null,
-    traceId: null
+    reason: null
 };
 
 const FAIL_FORMATION_KEYS = [...Object.keys(ACTOR_INPUT), 'observedRate', 'expectedFormationEpoch', 'expectedLayout'];

@@ -65,6 +65,7 @@ export namespace TopologyInboxService {
     export interface HttpCommandReservation {
         readonly operation: TopologyAppInboxCommand['operation'];
         readonly requestId: string;
+        readonly traceId: string;
         readonly callerId: string;
         readonly groupRef: TopologyAppInboxCommand['groupRef'];
         readonly semanticHash: string;
@@ -165,7 +166,7 @@ export class TopologyInboxService {
             throw new TypeError('Topology AppInbox type is required');
         }
         return await this.commandClient.enqueueAndWaitForResult(
-            await this.handler.createAuthenticatedEnqueue(enqueue, authority),
+            { ...await this.handler.createAuthenticatedEnqueue(enqueue, authority), traceId: enqueue.traceId },
             decodeTopologyAppInboxResult
         );
     }
@@ -189,6 +190,7 @@ export class TopologyInboxService {
                 type,
                 ...key,
                 senderId: reservation.callerId,
+                traceId: reservation.traceId,
                 data: null
             },
             async () =>

@@ -51,7 +51,6 @@ function createPhasedGroupCommand(policy: GroupLifecyclePolicy): Extract<GroupMu
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
             reason: null,
-            traceId: null,
             slug: null,
             displayName: 'Created',
             description: null,

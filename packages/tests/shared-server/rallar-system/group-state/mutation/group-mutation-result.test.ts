@@ -168,6 +168,17 @@ describe('group mutation receipt causal invariants', () => {
             }
         });
 
+        it('stamps the audit and the event with the trace of the queued command, never a body trace', () => {
+            const facts = createMutationFacts();
+            const computed = computeGroupMutation({ command: createMutationCommand(), read: createMutationRead(), facts });
+            if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
+                throw new Error('Expected group write computation');
+            }
+
+            expect(computed.event.traceId).toBe(facts.traceId);
+            expect(computed.guard.value.updated.traceId).toBe(facts.traceId);
+        });
+
         it('accepts a semantic no-op after physical authority fences advance storage', () => {
             const command = createMutationCommand();
             const read = createMutationRead();
@@ -346,8 +357,7 @@ function createMutationCommand(): GroupMutationCommand {
             purgeAfterEpochMs: null,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }

@@ -60,8 +60,7 @@ describe('client mutation command and request projection', () => {
                 lastSeenAtEpochMs: null,
                 actorPrincipalId: null,
                 actorSessionId: null,
-                reason: null,
-                traceId: null
+                reason: null
             }
         });
     });
@@ -201,8 +200,7 @@ const malformedCommandBase = {
 const malformedCommandActor = {
     actorPrincipalId: null,
     actorSessionId: null,
-    reason: null,
-    traceId: null
+    reason: null
 } as const;
 
 function malformedAuthoritativeCommands(): readonly object[] {

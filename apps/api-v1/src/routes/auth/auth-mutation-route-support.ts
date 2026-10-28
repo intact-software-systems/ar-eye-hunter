@@ -7,11 +7,13 @@ import type {
 } from '@shared/api/mutation/api-mutation-failure.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
+import { readApiRequestTraceId } from '../../services/read-api-request-trace-id.ts';
 import { toApiMutationRouteFailure } from '../api-mutation-route-failure.ts';
 import { readApiMutationRouteRequestId } from '../api-mutation-route-ingress.ts';
 
 export interface AuthMutationRequest {
     readonly requestId: string;
+    readonly traceId: string;
     readonly body: ApiMutationFailureJsonObject;
 }
 
@@ -30,6 +32,7 @@ export async function readAuthMutationRequest(
             idempotencyKey: context.req.header('idempotency-key'),
             mutationBody: body
         }),
+        traceId: readApiRequestTraceId(context),
         body
     };
 }

@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { AL_MESSAGE_ENVELOPE_VERSION, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type {
     AgentSessionTicketResponse,
     AuthSession,
@@ -25,7 +24,7 @@ import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-comma
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
-    type AppInboxEnqueueInput
+    type AppInboxEnqueue
 } from '../../app-inbox/app-inbox-contracts.ts';
 import {
     classifyAppInboxError,
@@ -119,6 +118,7 @@ export namespace AppAuthInboxService {
 
     export interface RequestIdentity {
         readonly requestId: string;
+        readonly traceId: string;
     }
 }
 
@@ -191,6 +191,7 @@ export class AppAuthInboxService {
             {
                 type: AppInboxType.AUTH_USER_REGISTER,
                 requestId: input.requestId,
+                traceId: input.traceId,
                 contextId: toAuthUsernameContextId('register-user', normalizedUsername),
                 senderId: normalizedUsername
             },
@@ -243,6 +244,7 @@ export class AppAuthInboxService {
             {
                 type: AppInboxType.AUTH_SESSION_ISSUE,
                 requestId: input.requestId,
+                traceId: input.traceId,
                 contextId: toAuthUsernameContextId('issue-session', input.authority.normalizedUsername),
                 senderId: input.clientId
             },
@@ -282,6 +284,7 @@ export class AppAuthInboxService {
             {
                 type: AppInboxType.AUTH_SESSION_LOGOUT,
                 requestId: input.requestId,
+                traceId: input.traceId,
                 contextId: toAuthSessionContextId(input.session.clientId, input.session.sessionId),
                 senderId: input.session.clientId
             },
@@ -369,6 +372,7 @@ export class AppAuthInboxService {
             {
                 type: AppInboxType.AUTH_WS_TICKET_ISSUE,
                 requestId: input.requestId,
+                traceId: input.traceId,
                 contextId: toAuthSessionContextId(input.session.clientId, input.session.sessionId),
                 senderId: input.session.clientId
             },
@@ -417,6 +421,7 @@ export class AppAuthInboxService {
             {
                 type: AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE,
                 requestId: input.requestId,
+                traceId: input.traceId,
                 contextId: toAuthSessionContextId(input.session.clientId, input.session.sessionId),
                 senderId: input.session.clientId
             },
@@ -484,6 +489,7 @@ export class AppAuthInboxService {
             {
                 type: AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
                 requestId: input.requestId,
+                traceId: input.traceId,
                 contextId: toAuthCredentialContextId(ticketDigest),
                 senderId: ticketDigest
             },
@@ -559,7 +565,7 @@ export class AppAuthInboxService {
                 contextId: reservation.contextId,
                 senderId: reservation.senderId,
                 data: null
-            }, { observedAtMs, messageId: this.newAuthMessageId(), traceId: newALTraceId() });
+            }, { observedAtMs, messageId: this.newAuthMessageId(), traceId: reservation.traceId });
             const observations = await this.authInboxRepository.findAllByTopicAndResourceId(
                 placeholder.key.topicId,
                 placeholder.key.resourceId
@@ -569,7 +575,11 @@ export class AppAuthInboxService {
             );
             const reserved = existing
                 ? { entry: existing, ownCandidate: false }
-                : await this.writeMaterializedAuthIntent(placeholder, observedAtMs, materialize);
+                : await this.writeMaterializedAuthIntent(
+                    placeholder,
+                    { observedAtMs, traceId: reservation.traceId },
+                    materialize
+                );
             const intent = readAuthReplayIntent(reserved.entry, reservation.type);
             if (!intent || (!reserved.ownCandidate && !(await matches(intent)))) {
                 throw new AppInboxIdempotencyConflictError(
@@ -592,15 +602,15 @@ export class AppAuthInboxService {
         }
     }
 
+    /** The candidate carries the placeholder's trace, so one reservation keeps one trace. */
     private async writeMaterializedAuthIntent(
         placeholder: ResourceEntry,
-        observedAtMs: number,
+        facts: Omit<AuthInboxEntryFacts, 'messageId'>,
         materialize: () => Promise<AuthMutationIntent>
     ): Promise<AuthIntentReservation> {
         const candidate = toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())), {
-            observedAtMs,
-            messageId: this.newAuthMessageId(),
-            traceId: newALTraceId()
+            ...facts,
+            messageId: this.newAuthMessageId()
         });
         const entry = await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
             placeholder,
@@ -621,6 +631,7 @@ function toAuthBoundaryFailure(
 interface AuthCommandReservation {
     readonly type: AppInboxType;
     readonly requestId: string;
+    readonly traceId: string;
     readonly contextId: string;
     readonly senderId: string;
 }
@@ -647,7 +658,7 @@ function toObservedAuthIntent<I extends AuthMutationIntent>(intent: I, entry: Re
     };
 }
 
-function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput {
+function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueue {
     return {
         type: toAuthAppInboxType(intent),
         topicId: toAuthAppInboxType(intent),
@@ -664,7 +675,7 @@ interface AuthInboxEntryFacts {
     readonly traceId: string;
 }
 
-function toAuthInboxEntry(enqueue: AppInboxEnqueueInput, facts: AuthInboxEntryFacts): ResourceEntry {
+function toAuthInboxEntry(enqueue: AppInboxEnqueue, facts: AuthInboxEntryFacts): ResourceEntry {
     if (!enqueue.topicId || !enqueue.contextId || !enqueue.resourceId) {
         throw new TypeError('Auth AppInbox queue identity is incomplete');
     }

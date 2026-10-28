@@ -6,7 +6,7 @@ import {
     type JsonWireObject,
     type JsonWireValue
 } from '../protocol/json-wire-identity.ts';
-import { isAppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import { isAppInboxType, type AppInboxEnqueue } from './app-inbox-contracts.ts';
 
 export class AppInboxTypeUnavailableError extends TypeError {
     constructor() {
@@ -17,7 +17,7 @@ export class AppInboxTypeUnavailableError extends TypeError {
 
 export function decodeAppInboxEnqueue(
     value: unknown
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     const wire = decodeJsonWireValue(value, 'AppInbox enqueue');
     const enqueue = requireAppInboxWireObject(wire, 'AppInbox enqueue');
     requireExactOptionalKeys({
@@ -62,7 +62,7 @@ function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[
 
 export function decodePersistedAppInboxEnqueue(
     entry: ResourceEntry
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     return decodePersistedAppInboxCommand(
         requireAppInboxWireObject(
             decodeJsonWireText(entry.resource, 'Persisted AppInbox message'),
@@ -71,7 +71,7 @@ export function decodePersistedAppInboxEnqueue(
     );
 }
 
-export function decodePersistedAppInboxCommand(message: JsonWireObject): AppInboxEnqueueInput {
+export function decodePersistedAppInboxCommand(message: JsonWireObject): AppInboxEnqueue {
     const payload = requireAppInboxWireObject(
         message.payload,
         'Persisted AppInbox message payload'

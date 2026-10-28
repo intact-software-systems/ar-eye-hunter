@@ -1,4 +1,8 @@
-import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueue,
+    type AppInboxEnqueueInput
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -26,6 +30,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { authorizationDenied } from '../services/request-auth-service.ts';
 import { toApiMutationFailureResponse, toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
 import { readApiMutationRouteRequestId } from './api-mutation-route-ingress.ts';
@@ -313,7 +318,7 @@ interface ClientSessionEnqueueInput<Type extends ClientSessionAppInboxType> {
 
 function toClientSessionEnqueue<Type extends ClientSessionAppInboxType>(
     input: ClientSessionEnqueueInput<Type>
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     const command = {
         ...input.route,
         request: input.request
@@ -346,7 +351,7 @@ function toClientSessionCommandLabel(type: ClientSessionAppInboxType): string {
 interface ProcessClientMutationInput {
     readonly dependencies: ClientStateMutationRouteDependencies;
     readonly authority: IssuedAuthSession;
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
 }
 
 async function processClientMutation(
@@ -354,7 +359,7 @@ async function processClientMutation(
     input: ProcessClientMutationInput
 ): Promise<Response> {
     const result = await input.dependencies.processClientAppInbox(
-        input.enqueue,
+        { ...input.enqueue, traceId: readApiRequestTraceId(context) },
         input.authority
     );
     if (result.left !== undefined) {

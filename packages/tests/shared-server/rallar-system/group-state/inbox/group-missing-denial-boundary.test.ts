@@ -38,6 +38,7 @@ describe('missing group denial boundary', () => {
             resourceId: 'missing-update',
             contextId: groupId,
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId,

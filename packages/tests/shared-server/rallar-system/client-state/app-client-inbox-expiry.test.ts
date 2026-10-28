@@ -256,6 +256,7 @@ async function seedClientExpirySession(
     );
     const seeded = service.processAuthenticatedEntryUntilCompletion(
         {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.CLIENT_SESSION_CONNECT,
             topicId: AppInboxType.CLIENT_SESSION_CONNECT,
             resourceId: 'seed-client-expiry-session',

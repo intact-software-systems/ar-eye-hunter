@@ -20,6 +20,7 @@ describe('authenticated group mutation queue key', () => {
             resourceId: requestId,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:long-room:${LONG_SUFFIX}`,
             senderId: owner.clientId,
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 request: {

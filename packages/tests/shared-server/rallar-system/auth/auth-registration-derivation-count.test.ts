@@ -22,6 +22,7 @@ describe('auth registration password derivation count', () => {
         });
         const input = {
             requestId: 'RegistrationDerivationRequest_01',
+            traceId: 'trace-auth-test',
             request: {
                 username: 'derivation-user',
                 password: 'derivation-password'

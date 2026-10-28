@@ -32,10 +32,12 @@ async function expectSingleRegistrationWinner(
     const registrations = [
         auth.service.registerUser({
             requestId: 'register-race-a',
+            traceId: 'trace-auth-test',
             request
         }),
         auth.service.registerUser({
             requestId: 'register-race-b',
+            traceId: 'trace-auth-test',
             request
         })
     ];

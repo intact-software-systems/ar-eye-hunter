@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
+import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { LoginRequest, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
 import type { ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
@@ -26,6 +27,7 @@ interface AuthUserRouteRuntime {
 interface RegisterUserThroughAppInboxInput {
     readonly context: Context;
     readonly requestId: string;
+    readonly traceId: string;
     readonly request: RegisterRequest;
     readonly dependencies: ConfigRouteDependencies;
 }
@@ -57,7 +59,7 @@ async function issueLoginResponse(
         return await RateLimiter.tryToExecuteOrDefault<Response>(
             readRateLimiter('auth-login-ip', clientKey, runtime.rateLimits.loginIp),
             async () => {
-                const { requestId, body } = await readAuthMutationRequest(context);
+                const { requestId, traceId, body } = await readAuthMutationRequest(context);
                 const loginRequest = readLoginRequest(body);
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
                     readRateLimiter(
@@ -65,7 +67,7 @@ async function issueLoginResponse(
                         `${clientKey}:${loginRequest.username ?? ''}`,
                         runtime.rateLimits.loginUsername
                     ),
-                    () => issueLoginSession(requestId, loginRequest, runtime.dependencies),
+                    () => issueLoginSession({ requestId, traceId }, loginRequest, runtime.dependencies),
                     toApiMutationRateLimitResponse(
                         context,
                         'Too many login attempts for this user',
@@ -89,7 +91,7 @@ async function issueLoginResponse(
 }
 
 async function issueLoginSession(
-    requestId: string,
+    identity: AppAuthInboxService.RequestIdentity,
     request: LoginRequest,
     dependencies: ConfigRouteDependencies
 ): Promise<Response> {
@@ -108,7 +110,7 @@ async function issueLoginSession(
 
     return toJsonResponse(requireAuthMutationResult(
         await dependencies.appAuthInbox.issueSession({
-            requestId,
+            ...identity,
             clientId: loginResponse.clientId,
             username: loginResponse.username,
             authority: loginResponse.authority,
@@ -126,7 +128,7 @@ async function registerUserResponse(
         return await RateLimiter.tryToExecuteOrDefault<Response>(
             readRateLimiter('auth-register-ip', clientKey, runtime.rateLimits.registrationIp),
             async () => {
-                const { requestId, body } = await readAuthMutationRequest(context);
+                const { requestId, traceId, body } = await readAuthMutationRequest(context);
                 const request = readRegisterRequest(body);
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
                     readRateLimiter(
@@ -138,6 +140,7 @@ async function registerUserResponse(
                         registerUserThroughAppInbox({
                             context,
                             requestId,
+                            traceId,
                             request,
                             dependencies: runtime.dependencies
                         }),
@@ -171,6 +174,7 @@ async function registerUserThroughAppInbox(
         requireAuthMutationResult(
             await input.dependencies.appAuthInbox.registerUser({
                 requestId: input.requestId,
+                traceId: input.traceId,
                 request: input.request,
                 staticClients: input.dependencies.authentication.staticClients
             })

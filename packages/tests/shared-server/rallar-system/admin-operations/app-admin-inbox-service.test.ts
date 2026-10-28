@@ -82,6 +82,7 @@ describe('AppAdminInboxService initial prune command', () => {
     it('normalizes defaults and captures volatile command facts once before enqueue', async () => {
         const harness = new AdminInboxHarness();
         const pending = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'admin-session'),
             requestId: 'default-prune-request',
             request: {}
@@ -150,6 +151,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
         await expect(
             harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin', 'admin-session'),
                 requestId: 'invalid-app-data-request',
                 request: { categories: ['app-data'] }
@@ -185,6 +187,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
         await expect(
             harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin', 'admin-session'),
                 ...toPruneInput(request)
             })
@@ -210,6 +213,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
         await expect(
             harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin', 'renewed-session'),
                 ...toPruneInput(request)
             })
@@ -226,10 +230,12 @@ describe('AppAdminInboxService initial prune command', () => {
             dryRun: true
         };
         const first = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'admin-session'),
             ...toPruneInput(request)
         });
         const contender = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'admin-session'),
             ...toPruneInput(request)
         });
@@ -270,6 +276,7 @@ describe('AppAdminInboxService initial prune command', () => {
         const beforeReplay = harness.readWorkCounts();
 
         const replay = await harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'admin-session'),
             requestId,
             request: {
@@ -329,10 +336,12 @@ describe('AppAdminInboxService initial prune command', () => {
                 dryRun: false
             };
             const first = harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin-a', 'admin-a-session'),
                 ...toPruneInput(request)
             });
             const second = harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin-b', 'admin-b-session'),
                 ...toPruneInput(request)
             });
@@ -361,6 +370,7 @@ describe('AppAdminInboxService initial prune command', () => {
         const adminSession = createAdminSession('admin', 'admin-session');
         const requestId = 'cross-target-page-isolation';
         const first = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession,
             requestId,
             request: {
@@ -370,6 +380,7 @@ describe('AppAdminInboxService initial prune command', () => {
             }
         });
         const second = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession,
             requestId,
             request: {
@@ -400,6 +411,7 @@ describe('AppAdminInboxService initial prune command', () => {
     it('puts app-data details only on the app-data page of a mixed-category command', async () => {
         const harness = new AdminInboxHarness({ waitForResult: false });
         const pending = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'admin-session'),
             requestId: 'mixed-category-page-details',
             request: {
@@ -429,6 +441,7 @@ describe('AppAdminInboxService initial prune command', () => {
         const harness = new AdminInboxHarness({ waitForResult: false });
         const requestId = 'r'.repeat(128);
         const pending = harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession(`admin-${'a'.repeat(96)}`, 'admin-session'),
             requestId,
             request: {
@@ -531,6 +544,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
         await expect(
             harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin', 'admin-session'),
                 requestId: 'initial-outbox-collision',
                 request: {
@@ -618,6 +632,7 @@ describe('AppAdminInboxService initial prune command', () => {
             const harness = new AdminInboxHarness(options);
 
             const pending = harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin', 'admin-session'),
                 ...toPruneInput(request)
             });
@@ -649,6 +664,7 @@ describe('AppAdminInboxService initial prune command', () => {
         const beforeReplay = harness.readWorkCounts();
 
         const replay = await harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'renewed-session'),
             ...toPruneInput(request)
         });
@@ -764,6 +780,7 @@ describe('AppAdminInboxService initial prune command', () => {
         const beforeReplay = harness.readWorkCounts();
 
         const replay = await harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'renewed-session'),
             ...toPruneInput(request)
         });
@@ -808,6 +825,7 @@ describe('AppAdminInboxService initial prune command', () => {
         });
 
         await expect(harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'renewed-session'),
             ...toPruneInput(request)
         })).rejects.toThrow('Admin prune aggregate differs from command');
@@ -844,6 +862,7 @@ describe('AppAdminInboxService initial prune command', () => {
         });
 
         await expect(harness.service.pruneExpired({
+            traceId: 'trace-test-fixture',
             adminSession: createAdminSession('admin', 'renewed-session'),
             ...toPruneInput(request)
         })).resolves.toMatchObject({
@@ -860,6 +879,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
         await expect(
             harness.service.pruneExpired({
+                traceId: 'trace-test-fixture',
                 adminSession: createAdminSession('admin', 'admin-session'),
                 requestId: 'wait-exhaustion',
                 request: { categories: ['runtime-state'], dryRun: true }
@@ -886,6 +906,7 @@ async function rejectsChangedAdminPruneRequest({
     });
     const beforeConflict = harness.readWorkCounts();
     const conflict = harness.service.pruneExpired({
+        traceId: 'trace-test-fixture',
         adminSession: session,
         ...toPruneInput(request)
     });
@@ -1228,7 +1249,7 @@ async function completePruneAttempts({
     request,
     dequeueAttempts
 }: CompletePruneAttemptsInput): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
-    const pending = harness.service.pruneExpired({ adminSession, ...toPruneInput(request) });
+    const pending = harness.service.pruneExpired({ traceId: 'trace-test-fixture', adminSession, ...toPruneInput(request) });
     for (let attempt = 0; attempt < dequeueAttempts; attempt += 1) {
         if (attempt === 0) {
             await waitForQueueEntry(harness.queue);

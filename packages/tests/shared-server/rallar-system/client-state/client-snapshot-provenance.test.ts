@@ -441,6 +441,12 @@ describe('client snapshot provenance computation', () => {
             : [];
         expect(outbox.length).toBeGreaterThan(0);
         expect(outbox.map(({ message }) => message.id.traceId)).toEqual(outbox.map(() => command.facts.traceId));
+        // The event and every audit stamp carry the same envelope trace; no request body supplies one.
+        const write = computed.outcome === 'completed' && computed.mutation.outcome === 'write'
+            ? computed.mutation
+            : undefined;
+        expect(write?.event.traceId).toBe(command.facts.traceId);
+        expect(write?.principal.value.updated.traceId).toBe(command.facts.traceId);
         const sidecarWrites = computed.outcome === 'completed' ? computed.sidecarWrites : [];
         expect(sidecarWrites.map((write) => ({
             resourceId: write.queueKey.resourceId,
@@ -448,23 +454,23 @@ describe('client snapshot provenance computation', () => {
             digest: JSON.parse(write.value).digest
         }))).toEqual([
             {
-                resourceId: '--snapshot-page--------3l3eod9ywabyf',
+                resourceId: '--snapshot-page----------13yvi54kepr',
                 targetKind: 'scoped-principal-broadcast',
-                digest: 'acc57116dc3a576c049045a917585fcdc3d2358f586ce3db1d6989ba889c883a'
+                digest: '3003c5f5836a1ee487193682082a234126ae4d13125cf623c61184f5e3a1c3a9'
             },
             {
-                resourceId: '--snapshot-page--------24zodg2oyjb9e',
+                resourceId: '--snapshot-page--------1snftlganx6hm',
                 targetKind: 'scoped-unicast',
-                digest: '82a00e2cfb510f8c8e4f2ca59d37bd3387d7b5886f67d391305d1c76c12b8ab5'
+                digest: '7133688f0651deb5f05ed7f824e7f57b0308dd174d7cd13e25e32d6bb31cdb42'
             },
             {
                 resourceId: 'connect-1-principal-st-2r959tktplfmi',
                 targetKind: 'scoped-principal-broadcast',
-                digest: 'a77d1586179af57de54506cd68ab2e4d720fde0686439727a5184f8405a82a63'
+                digest: '6fc46b50d830d38fa290e3982f7d8ffa678d84f8a57be54cb4d019939abe1d59'
             }
         ]);
         expect(createHash('sha256').update(JSON.stringify(sidecarWrites)).digest('hex'))
-            .toBe('955ef8ee1f93378c4d7744fe2cf45ea3e1d1b9592c13cdb2d784bd8ddb9708da');
+            .toBe('14caf38d69236f5ad33278e6d4e8aaa045c8b5042bbe44e714586f6d7f4711b6');
     });
 });
 

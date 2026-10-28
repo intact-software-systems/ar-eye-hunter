@@ -49,7 +49,6 @@ function internalJoinCommand(): GroupMutationCommand {
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             inviteToken: null,
             joinCode: null
         }

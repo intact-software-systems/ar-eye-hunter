@@ -86,6 +86,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
         const pause = pauseNextLifecycleRead(harness.groupState);
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            traceId: 'trace-ws-close-fixture',
             resourceId: `presence-${presenceGenerationId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
             senderId: harness.authority.clientId,
@@ -170,6 +171,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
         const connectedAtEpochMs = Date.now() - 100;
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            traceId: 'trace-ws-close-fixture',
             resourceId: `presence-${generationId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
             senderId: harness.authority.clientId,
@@ -263,6 +265,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
         const presenceConnectedAtEpochMs = wsStartedAtEpochMs - 50;
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            traceId: 'trace-ws-close-fixture',
             resourceId: `presence-${presenceGenerationId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
             senderId: harness.authority.clientId,
@@ -321,6 +324,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
         const presenceGenerationId = crypto.randomUUID();
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            traceId: 'trace-ws-close-fixture',
             resourceId: `presence-${presenceGenerationId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
             senderId: harness.authority.clientId,
@@ -394,6 +398,7 @@ Deno.test('PGlite cleanup of another socket generation leaves the presence its o
         const presenceGenerationId = crypto.randomUUID();
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            traceId: 'trace-ws-close-fixture',
             resourceId: `presence-${presenceGenerationId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
             senderId: harness.authority.clientId,
@@ -445,6 +450,7 @@ async function createRoom(
 ): Promise<void> {
     const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_CREATE,
+        traceId: 'trace-ws-close-fixture',
         resourceId: `create-${groupId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
         senderId: harness.authority.clientId,

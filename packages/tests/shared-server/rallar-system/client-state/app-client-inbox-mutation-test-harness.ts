@@ -142,6 +142,7 @@ function toAuthenticatedClientTestEnqueue<V>(
             callerClientId: authority.clientId,
             callerSessionId: authority.sessionId
         }),
+        traceId: 'trace-client-mutation-test',
         data: wireData
     };
 }

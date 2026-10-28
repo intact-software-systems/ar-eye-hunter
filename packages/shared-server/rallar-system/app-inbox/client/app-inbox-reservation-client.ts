@@ -2,7 +2,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
-import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import type { AppInboxEnqueue, AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxEntryRepository } from '../app-inbox-persistence-ports.ts';
 import {
     createAppInboxResourceEntry,
@@ -43,16 +43,21 @@ export class AppInboxReservationClient {
         this.serviceId = config.serviceId;
     }
 
+    /** The materialized command carries the placeholder's trace, so one reservation keeps one trace. */
     async reserveMaterializedEntry(
         placeholder: AppInboxEnqueueInput,
-        materialize: () => Promise<AppInboxEnqueueInput>
+        materialize: () => Promise<AppInboxEnqueue>
     ): Promise<AppInboxReservationClient.Reservation> {
         let winner = false;
         const entry = await this.repository.writeMaterializedIfAbsentOrReplaceExpired(
             createAppInboxResourceEntry(placeholder, `${this.serviceId}:fact-reservation`, this.entryCreation),
             async () => {
                 winner = true;
-                return createAppInboxResourceEntry(await materialize(), this.serviceId, this.entryCreation);
+                return createAppInboxResourceEntry(
+                    { ...await materialize(), traceId: placeholder.traceId },
+                    this.serviceId,
+                    this.entryCreation
+                );
             }
         );
         const validation = validateAppInboxCommandIdentity(entry);

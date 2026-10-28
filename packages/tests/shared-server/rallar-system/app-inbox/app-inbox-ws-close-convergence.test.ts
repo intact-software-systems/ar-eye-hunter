@@ -386,6 +386,7 @@ async function createRoom(
     groupId: string
 ): Promise<void> {
     const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_CREATE,
         resourceId: `create-${groupId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -424,6 +425,7 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
     const { harness, groupId, facts } = input;
     const presence = input.presence;
     return harness.group.processAuthenticatedGroupEntryUntilCompletion({
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: `presence-${groupId}-${presence.generationId}-${facts.generationId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,

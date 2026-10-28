@@ -88,6 +88,7 @@ export class RealEngineAdminPruneFixture {
                 expiresAtEpochMs: this.now + 60_000
             },
             requestId: 'queue-engine-handoff-prune',
+            traceId: 'trace-admin-fixture',
             request: {
                 categories: ['runtime-state'],
                 dryRun: false

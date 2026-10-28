@@ -2,7 +2,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../../observability/timing.ts';
 import { serializeCanonicalMutationCommand, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import type { AppInboxEnqueue, AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../app-inbox-failure.ts';
 import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { assertMatchingAppInboxEnqueue } from '../assert-matching-app-inbox-command.ts';
@@ -26,9 +26,9 @@ export namespace AppInboxCommandClient {
     /** A command whose volatile facts are materialized once, by the reservation that wins its queue key. */
     export interface MaterializedCommand {
         /** The command as received; whichever command the key keeps must be its logical twin. */
-        readonly received: AppInboxEnqueueInput;
+        readonly received: AppInboxEnqueue;
         readonly placeholder: AppInboxEnqueueInput;
-        readonly materialize: () => Promise<AppInboxEnqueueInput>;
+        readonly materialize: () => Promise<AppInboxEnqueue>;
     }
 
     export interface Dependencies {
@@ -114,7 +114,7 @@ export class AppInboxCommandClient {
     }
 
     private async timeCommand<Result>(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         action: () => Promise<Result>
     ): Promise<Result> {
         const details = toTimingDetails(enqueue);
@@ -132,7 +132,7 @@ export class AppInboxCommandClient {
     }
 
     private async timeEnqueue<Result>(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         action: () => Promise<Result>
     ): Promise<Result> {
         if (!this.options.phaseTiming) {
@@ -152,7 +152,7 @@ export class AppInboxCommandClient {
     }
 }
 
-function toTimingDetails(enqueue: AppInboxEnqueueInput): RallarTimingDetails {
+function toTimingDetails(enqueue: AppInboxEnqueue): RallarTimingDetails {
     return {
         type: enqueue.type,
         topicId: enqueue.topicId,

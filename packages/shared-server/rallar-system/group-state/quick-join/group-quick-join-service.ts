@@ -175,8 +175,7 @@ function toSelectedJoinCommand(
             joinCode: null,
             actorPrincipalId: command.actorPrincipalId,
             actorSessionId: command.actorSessionId,
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }

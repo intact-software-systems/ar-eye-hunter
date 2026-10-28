@@ -1,6 +1,6 @@
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxEnqueue, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import {
@@ -66,7 +66,7 @@ interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
 export function toGroupSessionCleanupEnqueue(
     input: GroupPresenceSessionCleanupAppInboxPayload,
     serviceId: string
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     const connection = input.connection;
     return {
         type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,

@@ -9,9 +9,11 @@ import {
     type RallarCrdtCatchUpResponseEnvelope,
     type RallarCrdtDocumentRef
 } from '@shared/crdt/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { toApiMutationFailureResponse } from '../routes/api-mutation-route-failure.ts';
 import { readApiMutationRouteRequestId } from '../routes/api-mutation-route-ingress.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toAuthErrorResponse, toAuthSession } from '../services/request-auth-service.ts';
 import {
     decodeCrdtAdminJsonObject,
@@ -58,6 +60,7 @@ interface ProcessCrdtAdminMutationInput {
     readonly dependencies: CrdtAdminRouteDependencies;
     readonly operation: CrdtAdminMutationOperation;
     readonly requestId: string;
+    readonly traceId: string;
     readonly request: JsonWireObject;
 }
 
@@ -181,6 +184,7 @@ function registerCrdtAdminMutationRoutes(
                     dependencies,
                     operation: route.operation,
                     requestId,
+                    traceId: readApiRequestTraceId(context),
                     request
                 });
                 return context.json({ ok: true, result });
@@ -213,6 +217,7 @@ async function processCrdtAdminMutation(
         operation: input.operation,
         adminSession: input.adminSession,
         requestId: input.requestId,
+        traceId: input.traceId,
         request: input.request
     });
 }
@@ -261,14 +266,9 @@ async function withAdminError<TResult>(
         const result = await execute();
         return context.json({ ok: true, result });
     }
-    catch (error) {
-        return context.json(
-            {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error)
-            },
-            readErrorStatus(error)
-        );
+    catch (caught) {
+        const error = toError(caught);
+        return context.json({ ok: false, error: error.message }, readErrorStatus(error));
     }
 }
 
@@ -298,8 +298,8 @@ async function isCrdtAdminSessionAuthorized(
     return true;
 }
 
-function readErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 429 | 503 {
-    if (!error || typeof error !== 'object' || !('status' in error)) {
+function readErrorStatus(error: Error): 400 | 401 | 403 | 404 | 409 | 429 | 503 {
+    if (!('status' in error)) {
         return 400;
     }
     const status = Number(Reflect.get(error, 'status'));
@@ -333,10 +333,6 @@ async function readMutationJson(context: Context): Promise<JsonWireObject> {
         decodeJsonWireValue(await context.req.json(), 'CRDT admin mutation request'),
         'CRDT admin mutation request'
     );
-}
-
-function toError(error: unknown): Error {
-    return error instanceof Error ? error : new Error(String(error));
 }
 
 async function readCrdtCatchUpResponse(

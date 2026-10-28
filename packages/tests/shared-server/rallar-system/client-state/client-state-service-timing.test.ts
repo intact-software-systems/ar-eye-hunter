@@ -84,8 +84,7 @@ const TIMED_COMMAND: ClientMutationCommand = {
         lastSeenAtEpochMs: null,
         actorPrincipalId: null,
         actorSessionId: null,
-        reason: null,
-        traceId: null
+        reason: null
     }
 };
 const TIMED_READ = emptyRead(TIMED_COMMAND);

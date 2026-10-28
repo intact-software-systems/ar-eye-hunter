@@ -46,8 +46,7 @@ const lifecycleBase = {
 const lifecycleActor = {
     actorPrincipalId: null,
     actorSessionId: null,
-    reason: null,
-    traceId: null
+    reason: null
 } as const;
 
 function expectInvalidLifecycleCommands(): void {

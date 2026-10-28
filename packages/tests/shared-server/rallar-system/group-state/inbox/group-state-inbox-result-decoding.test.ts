@@ -10,6 +10,7 @@ describe('group-state AppInbox durable result decoding', () => {
         const authority = harness.sessions.owner;
         const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_CREATE,
                 resourceId: 'malformed-group-result',
                 contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:malformed-result-room`,

@@ -2,7 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import {
+    createAppInboxResourceEntry,
+    createDefaultAppInboxQueueMessage
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import {
     authorizeGroupMutation,
     captureAppInboxGroupMutationIngress,
@@ -13,7 +16,6 @@ import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-
 import { readPersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
-import { createAppInboxQueueMessageFixture } from '../shared-server/rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 const NOW_EPOCH_MS = 1_800_000_000_000;
@@ -27,7 +29,7 @@ describe('state-write persisted command evidence', () => {
         const key = toAuthenticatedGroupMutationQueueKey(enqueue);
         const entry = createAppInboxResourceEntry(enqueue, 'evidence-service', {
             creationNow: () => Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS),
-            createMessage: createAppInboxQueueMessageFixture
+            createMessage: createDefaultAppInboxQueueMessage
         });
 
         expect(REQUEST_ID.length).toBeGreaterThan(36);
@@ -78,6 +80,7 @@ async function createQueuedJoin(): Promise<AppInboxEnqueueInput> {
         resourceId: REQUEST_ID,
         contextId: 'application=evidence-app:workspace=evidence-workspace:group=evidence-room:caller=alice',
         senderId: 'alice',
+        traceId: 'trace-state-write-receipt-evidence',
         authority: decodeJsonWireValue(ingress),
         data: { scope: SCOPE, groupId: 'evidence-room', request: { requestId: REQUEST_ID } }
     };

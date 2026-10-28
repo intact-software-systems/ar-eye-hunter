@@ -1,3 +1,4 @@
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RallarCrdtAuditSink, RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -85,6 +86,7 @@ export namespace AppCrdtInboxService {
     export interface HttpAdminCommandReservation {
         readonly operation: Exclude<CrdtMutationCommand['operation'], 'append'>;
         readonly requestId: string;
+        readonly traceId: string;
         readonly callerId: string;
         readonly documentKey: string;
         readonly semanticHash: string;
@@ -188,6 +190,7 @@ export class AppCrdtInboxService {
                 resourceId: decoded.deliveryId,
                 contextId: decoded.documentKey,
                 senderId: decoded.actor.sessionId,
+                traceId: newALTraceId(),
                 data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
             },
             decodeCrdtMutationResult
@@ -208,6 +211,7 @@ export class AppCrdtInboxService {
                 type,
                 ...key,
                 senderId: reservation.callerId,
+                traceId: reservation.traceId,
                 data: null
             },
             async () => ({
@@ -253,6 +257,7 @@ export class AppCrdtInboxService {
             resourceId: decoded.deliveryId,
             contextId: decoded.documentKey,
             senderId: decoded.actor.sessionId,
+            traceId: newALTraceId(),
             data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
         }).catch((caught) => {
             const error = caught instanceof Error ? caught : new Error(String(caught));
@@ -285,6 +290,7 @@ export class AppCrdtInboxService {
             resourceId: command.deliveryId,
             contextId: command.documentKey,
             senderId: command.actor.sessionId,
+            traceId: newALTraceId(),
             data: encodeAppInboxCommand(command, 'CRDT append AppInbox command')
         });
         return command;

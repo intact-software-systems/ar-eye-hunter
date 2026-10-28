@@ -128,8 +128,7 @@ describe('group presence-summary causal identity', () => {
                 invitationExpiresAtEpochMs: null,
                 actorPrincipalId: 'member',
                 actorSessionId: 'member-session',
-                reason: null,
-                traceId: null
+                reason: null
             }
         };
         const computed = computeGroupMutation({

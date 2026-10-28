@@ -177,7 +177,6 @@ describe('room request translation', () => {
             JSON.stringify(
                 toUpdateGroupStateRequest({
                     request: withLegacyRequestId({
-                        traceId: 'caller-trace',
                         actorPrincipalId: 'caller-owner',
                         maxMembers: 0,
                         maxSessionsPerMember: undefined,
@@ -191,7 +190,6 @@ describe('room request translation', () => {
             JSON.stringify({
                 maxMembers: 0,
                 metadata: { sawNull: null },
-                traceId: 'caller-trace',
                 ...actor
             })
         );
@@ -200,7 +198,6 @@ describe('room request translation', () => {
     it('omits undefined own properties in lifecycle, invite, and member-governance requests', () => {
         const lifecycle = toRoomLifecycleGroupStateRequest({
             request: withLegacyRequestId({
-                traceId: 'lifecycle-trace',
                 maxMembers: 0,
                 purgeAfterEpochMs: undefined,
                 actorPrincipalId: 'caller-owner',
@@ -213,7 +210,6 @@ describe('room request translation', () => {
             request: withLegacyRequestId({
                 invitationExpiresAtEpochMs: 0,
                 reason: undefined,
-                traceId: 'invite-trace',
                 actorPrincipalId: 'caller-owner',
                 actorSessionId: 'caller-session'
             }),
@@ -222,7 +218,6 @@ describe('room request translation', () => {
         const remove = toRemoveRoomMemberGroupStateRequest({
             request: withLegacyRequestId({
                 reason: undefined,
-                traceId: 'remove-trace',
                 actorPrincipalId: 'caller-owner',
                 actorSessionId: 'caller-session'
             }),
@@ -231,7 +226,6 @@ describe('room request translation', () => {
         const ban = toBanRoomMemberGroupStateRequest({
             request: withLegacyRequestId({
                 reason: '',
-                traceId: undefined,
                 actorPrincipalId: 'caller-owner',
                 actorSessionId: 'caller-session'
             }),
@@ -240,7 +234,6 @@ describe('room request translation', () => {
         const unban = toUnbanRoomMemberGroupStateRequest({
             request: withLegacyRequestId({
                 reason: undefined,
-                traceId: 'unban-trace',
                 actorPrincipalId: 'caller-owner',
                 actorSessionId: 'caller-session'
             }),
@@ -250,7 +243,6 @@ describe('room request translation', () => {
             request: withLegacyRequestId({
                 role: 'admin',
                 reason: undefined,
-                traceId: 'role-trace',
                 actorPrincipalId: 'caller-owner',
                 actorSessionId: 'caller-session'
             }),
@@ -260,7 +252,6 @@ describe('room request translation', () => {
             request: withLegacyRequestId({
                 newOwnerPrincipalId: 'member-1',
                 reason: undefined,
-                traceId: 'owner-trace',
                 actorPrincipalId: 'caller-owner',
                 actorSessionId: 'caller-session'
             }),
@@ -277,7 +268,6 @@ describe('room request translation', () => {
         expect(JSON.stringify(lifecycle)).toBe(
             JSON.stringify({
                 maxMembers: 0,
-                traceId: 'lifecycle-trace',
                 status: 'archived',
                 ...actor
             })
@@ -285,34 +275,29 @@ describe('room request translation', () => {
         expect(JSON.stringify(invite)).toBe(
             JSON.stringify({
                 invitationExpiresAtEpochMs: 0,
-                traceId: 'invite-trace',
                 ...actor
             })
         );
         expect(JSON.stringify(remove)).toBe(
             JSON.stringify({
-                traceId: 'remove-trace',
                 ...actor
             })
         );
         expect(JSON.stringify(ban)).toBe(JSON.stringify({ reason: '', ...actor }));
         expect(JSON.stringify(unban)).toBe(
             JSON.stringify({
-                traceId: 'unban-trace',
                 ...actor
             })
         );
         expect(JSON.stringify(role)).toBe(
             JSON.stringify({
                 role: 'admin',
-                traceId: 'role-trace',
                 ...actor
             })
         );
         expect(JSON.stringify(ownership)).toBe(
             JSON.stringify({
                 newOwnerPrincipalId: 'member-1',
-                traceId: 'owner-trace',
                 ...actor
             })
         );
@@ -321,26 +306,24 @@ describe('room request translation', () => {
     it('translates lifecycle and metadata operations literally', () => {
         expect(
             toRoomLifecycleGroupStateRequest({
-                request: { displayName: 'Archived Room', reason: 'quiet', traceId: 'archive-trace' },
+                request: { displayName: 'Archived Room', reason: 'quiet' },
                 status: 'archived',
                 ...actor
             })
         ).toEqual({
             displayName: 'Archived Room',
             reason: 'quiet',
-            traceId: 'archive-trace',
             status: 'archived',
             ...actor
         });
         expect(
             toRoomLifecycleGroupStateRequest({
-                request: { purgeAfterEpochMs: 3_000, traceId: 'delete-trace' },
+                request: { purgeAfterEpochMs: 3_000 },
                 status: 'deleted',
                 ...actor
             })
         ).toEqual({
             purgeAfterEpochMs: 3_000,
-            traceId: 'delete-trace',
             status: 'deleted',
             ...actor
         });
@@ -371,25 +354,23 @@ describe('room request translation', () => {
 
     it('translates every invite and member-governance request', () => {
         const requests = {
-            remove: { reason: 'remove', traceId: 'remove-trace' },
-            ban: { reason: 'ban', traceId: 'ban-trace' },
-            unban: { reason: 'unban', traceId: 'unban-trace' },
-            role: { role: 'admin', reason: 'promote', traceId: 'role-trace' },
-            owner: { newOwnerPrincipalId: 'member-1', reason: 'handoff', traceId: 'owner-trace' }
+            remove: { reason: 'remove' },
+            ban: { reason: 'ban' },
+            unban: { reason: 'unban' },
+            role: { role: 'admin', reason: 'promote' },
+            owner: { newOwnerPrincipalId: 'member-1', reason: 'handoff' }
         } as const;
         expect(
             toCreateRoomInviteGroupStateRequest({
                 request: {
                     invitationExpiresAtEpochMs: 2_000,
-                    reason: 'join us',
-                    traceId: 'invite-trace'
+                    reason: 'join us'
                 },
                 ...actor
             })
         ).toEqual({
             invitationExpiresAtEpochMs: 2_000,
             reason: 'join us',
-            traceId: 'invite-trace',
             ...actor
         });
         expect(toAcceptRoomInviteGroupStateRequest(actor)).toEqual(actor);
@@ -400,14 +381,13 @@ describe('room request translation', () => {
             toSetRoomMemberRoleGroupStateRequest({ request: requests.role, ...actor }),
             toTransferRoomOwnershipGroupStateRequest({ request: requests.owner, ...actor })
         ]).toEqual([
-            { reason: 'remove', traceId: 'remove-trace', ...actor },
-            { reason: 'ban', traceId: 'ban-trace', ...actor },
-            { reason: 'unban', traceId: 'unban-trace', ...actor },
-            { role: 'admin', reason: 'promote', traceId: 'role-trace', ...actor },
+            { reason: 'remove', ...actor },
+            { reason: 'ban', ...actor },
+            { reason: 'unban', ...actor },
+            { role: 'admin', reason: 'promote', ...actor },
             {
                 newOwnerPrincipalId: 'member-1',
                 reason: 'handoff',
-                traceId: 'owner-trace',
                 ...actor
             }
         ]);

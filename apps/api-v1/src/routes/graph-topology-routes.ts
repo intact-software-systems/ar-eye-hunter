@@ -31,6 +31,7 @@ import type {
 } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
 import { readApiMutationRouteRequestId } from './api-mutation-route-ingress.ts';
 import {
@@ -107,6 +108,7 @@ interface WriteTopologyAppInboxCommandInput {
     readonly authSession: IssuedAuthSession;
     readonly groupRef: GroupRef;
     readonly requestId: string;
+    readonly traceId: string;
     readonly payload: TopologyAppInboxRequestPayload;
 }
 
@@ -209,6 +211,7 @@ export function registerGraphTopologyRoutes(
                         authSession,
                         groupRef,
                         requestId: requireRequestId(c, body.raw),
+                        traceId: readApiRequestTraceId(c),
                         payload: { operation: 'putConfig', config: body.value.config }
                     })
                 );
@@ -235,6 +238,7 @@ export function registerGraphTopologyRoutes(
                         authSession,
                         groupRef,
                         requestId: requireRequestId(c, body.raw),
+                        traceId: readApiRequestTraceId(c),
                         payload: { operation: 'deleteConfig', target: 'config' }
                     })
                 );
@@ -281,6 +285,7 @@ export function registerGraphTopologyRoutes(
                         authSession,
                         groupRef,
                         requestId: requireRequestId(c, body.raw),
+                        traceId: readApiRequestTraceId(c),
                         payload: { operation: 'deleteOverride', target: 'override' }
                     })
                 );
@@ -307,6 +312,7 @@ export function registerGraphTopologyRoutes(
                         authSession,
                         groupRef,
                         requestId: requireRequestId(c, body.raw),
+                        traceId: readApiRequestTraceId(c),
                         payload: {
                             operation: 'reconfigureTopology',
                             requestOptions: body.value.options ?? {},
@@ -339,6 +345,7 @@ async function handlePutTopologyOverride(
                 authSession,
                 groupRef,
                 requestId: requireRequestId(context, body.raw),
+                traceId: readApiRequestTraceId(context),
                 payload: {
                     operation: 'putOverride',
                     config: body.value.config,
@@ -528,6 +535,7 @@ async function writeTopologyAppInboxCommand(
     return await input.dependencies.processTopologyAppInbox(input.authSession, {
         operation: input.payload.operation,
         requestId: input.requestId,
+        traceId: input.traceId,
         callerId: input.authSession.clientId,
         groupRef: input.groupRef,
         semanticHash,

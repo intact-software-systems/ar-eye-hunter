@@ -86,6 +86,7 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
 
         const pending = commandClient.enqueueAndWait({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            traceId: 'trace-app-inbox-fixture',
             resourceId: 'release-statements-request',
             contextId: 'release-statements-group',
             data: { requestId: 'release-statements-request' }

@@ -99,8 +99,7 @@ export function createMutationCommand(overrides?: GroupMutationFixtureCommand): 
             purgeAfterEpochMs: null,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
+            reason: null
         },
         operation: 'updateGroup'
     };

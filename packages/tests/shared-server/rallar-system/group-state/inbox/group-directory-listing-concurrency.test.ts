@@ -83,6 +83,7 @@ describe('listing changes under optimistic concurrency', () => {
         await createRoom(harness, ROOM_REF.groupId, 'Shared room');
         const service = harness.groupStateService.quickJoin;
         const command = service.authorize({
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'quick-join-race', includeEmpty: true }
         }, harness.sessions.guest);
@@ -115,6 +116,7 @@ async function updateRoom(harness: AuthorityHarness, request: UpdateGroupRequest
         reader: harness.reader,
         authority: harness.sessions.owner,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_UPDATE,
             resourceId: request.requestId,
             contextId: ROOM_REF.groupId,

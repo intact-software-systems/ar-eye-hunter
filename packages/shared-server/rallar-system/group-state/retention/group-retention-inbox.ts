@@ -3,7 +3,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
@@ -43,7 +43,7 @@ export function registerGroupRetentionInbox(
     });
 }
 
-export function toGroupRetentionEnqueue(ingress: GroupRetentionService.Ingress): AppInboxEnqueueInput {
+export function toGroupRetentionEnqueue(ingress: GroupRetentionService.Ingress): AppInboxEnqueue {
     return {
         type: AppInboxType.GROUP_RETENTION_RECONCILE,
         topicId: GROUP_STATE_APP_INBOX_TOPIC,

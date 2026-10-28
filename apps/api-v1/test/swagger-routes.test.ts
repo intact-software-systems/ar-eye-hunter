@@ -462,7 +462,8 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
             '#/components/parameters/ApplicationId',
             '#/components/parameters/WorkspaceId',
             '#/components/parameters/GraphIncludeMeasured',
-            '#/components/parameters/GraphRefresh'
+            '#/components/parameters/GraphRefresh',
+            '#/components/parameters/XRequestId'
         ]
     );
     assert.deepEqual(
@@ -476,7 +477,8 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
             '#/components/parameters/WorkspaceId',
             '#/components/parameters/GroupId',
             '#/components/parameters/GraphIncludeMeasured',
-            '#/components/parameters/GraphRefresh'
+            '#/components/parameters/GraphRefresh',
+            '#/components/parameters/XRequestId'
         ]
     );
     const mutationOperations = [
@@ -491,7 +493,8 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
             '#/components/parameters/ApplicationId',
             '#/components/parameters/WorkspaceId',
             '#/components/parameters/GroupId',
-            '#/components/parameters/ApiMutationRequestId'
+            '#/components/parameters/ApiMutationRequestId',
+            '#/components/parameters/XRequestId'
         ]);
         for (const code of ['403', '409', '422', '503']) {
             assert.equal(

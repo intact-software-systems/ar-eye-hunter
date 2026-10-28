@@ -46,7 +46,6 @@ interface NullableActorInput {
     readonly actorPrincipalId: string | null;
     readonly actorSessionId: string | null;
     readonly reason: string | null;
-    readonly traceId: string | null;
 }
 
 interface GroupMutationCommandBase {

@@ -1,4 +1,4 @@
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxEnqueue, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import { readRtcRttMutation } from '../mutation/read-rtc-rtt-mutation.ts';
@@ -35,7 +35,7 @@ export class RtcRttAppInboxHandler {
 
     async createEnqueue(
         input: CreateRtcRttAppInboxEnqueueInput
-    ): Promise<AppInboxEnqueueInput> {
+    ): Promise<AppInboxEnqueue> {
         return await createRtcRttDurableEnqueue({
             request: input,
             groupStateService: this.dependencies.groupStateService,

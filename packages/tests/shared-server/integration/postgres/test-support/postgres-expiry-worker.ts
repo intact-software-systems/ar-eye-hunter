@@ -277,6 +277,7 @@ async function runClientMutation(
     const result = await runtime.runUntilCompletion(() =>
         runtime.client.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type,
                 topicId: type,
                 resourceId: requestId,
@@ -549,6 +550,7 @@ async function runTopologyMutation(
     const result = await runtime.runUntilCompletion(() =>
         runtime.topology.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type: input.command === 'topology-config-put'
                     ? AppInboxType.TOPOLOGY_CONFIG_PUT
                     : AppInboxType.TOPOLOGY_CONFIG_DELETE,

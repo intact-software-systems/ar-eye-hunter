@@ -144,8 +144,7 @@ export function toExpiryCommand(
             expiresAtEpochMs: session.expiresAtEpochMs,
             actorPrincipalId: null,
             actorSessionId: null,
-            reason: 'expired',
-            traceId: null
+            reason: 'expired'
         }
     } as const;
     const commandId = groupStateMaintenanceRequestId('expiry', semanticCommand);
@@ -174,8 +173,7 @@ export function toSessionCleanupCommand(
             expiresAtEpochMs: null,
             actorPrincipalId: null,
             actorSessionId: null,
-            reason: null,
-            traceId: null
+            reason: null
         }
     } as const;
     const commandId = groupStateMaintenanceRequestId('session-cleanup', semanticCommand);

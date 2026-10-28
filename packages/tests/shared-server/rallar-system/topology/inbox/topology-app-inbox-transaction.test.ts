@@ -384,8 +384,9 @@ describe('topology AppInbox transaction and idempotency', () => {
             await createPSqlResourceInboxRepository(transaction, () => new Date(harness.nowEpochMs)).entries.writeIfAbsentOrMatch(collisionEntry);
         });
         expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
+        const { traceId: _traceId, ...storedEnqueue } = topologyEnqueue(command);
         const enqueue = await createAuthenticatedTopologyEnqueue({
-            enqueue: topologyEnqueue(command),
+            enqueue: storedEnqueue,
             claimedAuthority: harness.sessions.owner,
             groupStateService: harness.groupStateService,
             nowEpochMs: () => harness.nowEpochMs
@@ -569,6 +570,7 @@ function adminReconfigureReservation(
     return {
         operation: 'reconfigureTopology',
         requestId: 'shared-admin-request',
+        traceId: 'trace-test-fixture',
         callerId,
         groupRef: GROUP_REF,
         semanticHash: computeTopologyHttpMutationSemanticDigest({
@@ -595,6 +597,7 @@ function configReservation(
     return {
         operation: 'putConfig',
         requestId,
+        traceId: 'trace-test-fixture',
         callerId,
         groupRef: GROUP_REF,
         semanticHash: computeTopologyHttpMutationSemanticDigest({
@@ -615,6 +618,7 @@ function topologyEnqueue(command: TopologyAppInboxCommand): AppInboxEnqueueInput
         contextId: `application=${GROUP_REF.applicationId}:workspace=${GROUP_REF.workspaceId}:` +
             `group=${GROUP_REF.groupId}:caller=${command.actor.principalId}`,
         senderId: command.actor.principalId,
+        traceId: 'trace-test-fixture',
         data: command
     };
 }

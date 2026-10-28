@@ -28,8 +28,7 @@ describe('convergent group and presence state', () => {
                 expiresAtEpochMs: 9_000,
                 actorPrincipalId: null,
                 actorSessionId: null,
-                reason: 'expired',
-                traceId: null
+                reason: 'expired'
             }
         } as const;
         const variants = [

@@ -1,14 +1,15 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 
 import type { ConfigRouteDependencies } from '../../src/routes/config-route.ts';
 import { registerConfigRoutes } from '../../src/routes/config-route.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 export function createConfigRouteTestApp(
     dependencies: Partial<ConfigRouteDependencies> = {}
 ): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerConfigRoutes(app, createConfigRouteTestDependencies(dependencies));
     return app;
 }

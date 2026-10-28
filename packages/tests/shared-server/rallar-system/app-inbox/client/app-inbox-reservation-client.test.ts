@@ -6,11 +6,11 @@ import {
 } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { createDefaultAppInboxQueueMessage } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
-import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 const ENQUEUE: AppInboxEnqueueInput = {
     type: AppInboxType.GROUP_CREATE,
@@ -18,6 +18,7 @@ const ENQUEUE: AppInboxEnqueueInput = {
     resourceId: 'authority-command',
     contextId: 'application:workspace:group',
     senderId: 'owner',
+    traceId: 'trace-authority-command',
     data: { requestId: 'authority-command' }
 };
 
@@ -26,7 +27,7 @@ describe('AppInboxReservationClient materialized reservation', () => {
         const client = new AppInboxReservationClient({
             repository: { writeMaterializedIfAbsentOrReplaceExpired: async (entry) => toResourceEntryWithKey(entry.key, 'APP_INBOX', { corrupt: true }) },
             creationNow: Temporal.Now.instant,
-            createMessage: createAppInboxQueueMessageFixture
+            createMessage: createDefaultAppInboxQueueMessage
         }, { serviceId: 'server-1' });
         await expect(client.reserveMaterializedEntry(ENQUEUE, async () => {
             throw new Error('A retained row must not recapture facts');
@@ -39,11 +40,12 @@ describe('AppInboxReservationClient materialized reservation', () => {
         const client = new AppInboxReservationClient({
             repository: queue,
             creationNow: () => createdAt,
-            createMessage: createAppInboxQueueMessageFixture
+            createMessage: createDefaultAppInboxQueueMessage
         }, { serviceId: 'server-1' });
         const first = await client.reserveMaterializedEntry(ENQUEUE, async () => {
             createdAt = Temporal.Instant.from('2026-10-14T00:00:00.987654321Z');
-            return { ...ENQUEUE, data: { requestId: 'authority-command', materialized: true } };
+            const { traceId: _trace, ...command } = ENQUEUE;
+            return { ...command, data: { requestId: 'authority-command', materialized: true } };
         });
         const persisted = await queue.getItem(first.key);
         createdAt = Temporal.Instant.from('2026-10-15T00:00:00Z');
@@ -58,5 +60,25 @@ describe('AppInboxReservationClient materialized reservation', () => {
         expect(persisted?.audit.date.toString()).toBe('23:59:59.123');
         expect(persisted?.dequeueAudit).toEqual({ attempts: 0 });
         expect(await queue.getItem(first.key)).toEqual(persisted);
+    });
+
+    it('stamps the reservation trace on the materialized command and replays the winner trace', async () => {
+        const queue = new TestResourceInbox(new Map());
+        const client = new AppInboxReservationClient({
+            repository: queue,
+            creationNow: Temporal.Now.instant,
+            createMessage: createDefaultAppInboxQueueMessage
+        }, { serviceId: 'server-1' });
+        const { traceId: _trace, ...command } = ENQUEUE;
+
+        const first = await client.reserveMaterializedEntry(ENQUEUE, async () => command);
+        const replay = await client.reserveMaterializedEntry({ ...ENQUEUE, traceId: 'trace-replay' }, async () => {
+            throw new Error('Replay must not run the winning materializer');
+        });
+
+        expect(JSON.parse(first.entry.resource)).toMatchObject({ id: { traceId: 'trace-authority-command' } });
+        expect(first.enqueue).toEqual(command);
+        expect(replay.entry).toEqual(first.entry);
+        expect(JSON.parse(replay.entry.resource)).toMatchObject({ id: { traceId: 'trace-authority-command' } });
     });
 });

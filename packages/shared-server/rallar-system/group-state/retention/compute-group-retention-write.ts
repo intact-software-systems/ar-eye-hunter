@@ -138,7 +138,7 @@ function toRetentionEvent(read: GroupRetentionService.Read, group: Group): Group
         occurredAtEpochMs: read.ingress.capturedAtEpochMs,
         actor: { kind: 'service', serviceId: read.ingress.serviceId },
         reason: 'temporary-room-retention',
-        traceId: null,
+        traceId: read.traceId,
         requestId: read.ingress.command.requestId,
         payload: {}
     };

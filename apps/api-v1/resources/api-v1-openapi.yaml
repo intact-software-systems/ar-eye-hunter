@@ -38,11 +38,16 @@ tags:
 paths:
   /api/config:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Config]
       summary: Read runtime configuration
       responses:
         '200':
           description: Application runtime configuration consumed by the web client.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -51,6 +56,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Login client
       description: |
@@ -67,6 +73,9 @@ paths:
       responses:
         '200':
           description: Login accepted.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -79,6 +88,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Register client
       description: |
@@ -96,6 +106,9 @@ paths:
       responses:
         '201':
           description: Registration accepted.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -114,6 +127,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Logout current session
       description: Revokes the authenticated server-side auth session.
@@ -123,6 +137,9 @@ paths:
       responses:
         '200':
           description: Session revoked.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -133,6 +150,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Create websocket auth ticket
       description: |
@@ -144,6 +162,9 @@ paths:
       responses:
         '200':
           description: Websocket ticket issued.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -156,6 +177,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Create agent auth session tickets
       description: |
@@ -175,6 +197,9 @@ paths:
       responses:
         '200':
           description: Agent session tickets issued.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -187,6 +212,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Consume an agent auth session ticket
       description: |
@@ -202,6 +228,9 @@ paths:
       responses:
         '200':
           description: Agent auth session restored.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -212,6 +241,8 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
   /api/black-box/control-token:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Auth]
       summary: Create black-box control operator token
       description: |
@@ -228,6 +259,9 @@ paths:
       responses:
         '200':
           description: Black-box operator token issued.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -238,12 +272,17 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           description: Operator token broker is not configured.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/webrtc/ice:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [WebRTC]
       summary: Read ICE servers
       description: |
@@ -257,6 +296,9 @@ paths:
       responses:
         '200':
           description: ICE configuration and cache expiry.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -267,12 +309,18 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '502':
           description: Upstream ICE provider failure.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Server failure.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -293,13 +341,21 @@ paths:
         - wsTicket: []
       parameters:
         - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '101':
           description: Websocket upgrade accepted after the connect committed.
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: Missing or invalid authentication credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '426':
-          description: '`Upgrade: websocket` header missing.'
+          description: '`Upgrade: websocket` header missing; a request without it is plain HTTP and echoes its trace.'
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
         '400':
           description: Invalid websocket upgrade request.
           content:
@@ -339,9 +395,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Client snapshots for the requested scope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -362,10 +422,13 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/MinStateRevision'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Client snapshot.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               $ref: '#/components/headers/NoStore'
             Rallar-State-Source:
@@ -401,9 +464,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Client presence snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -423,9 +490,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Client event stream for the principal.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -450,9 +521,13 @@ paths:
         - $ref: '#/components/parameters/AfterSnapshotVersion'
         - $ref: '#/components/parameters/AfterOccurredAtEpochMs'
         - $ref: '#/components/parameters/AfterEventId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Cursor page of client events for the principal.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -474,6 +549,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -483,6 +559,9 @@ paths:
       responses:
         '200':
           description: Updated client snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -504,6 +583,7 @@ paths:
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -513,6 +593,9 @@ paths:
       responses:
         '200':
           description: Updated client snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -535,6 +618,7 @@ paths:
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -544,6 +628,9 @@ paths:
       responses:
         '200':
           description: Updated client snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -566,6 +653,7 @@ paths:
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -575,6 +663,9 @@ paths:
       responses:
         '200':
           description: Updated client snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -599,6 +690,7 @@ paths:
         - $ref: '#/components/parameters/ClientInstanceId'
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -608,6 +700,9 @@ paths:
       responses:
         '200':
           description: Updated client snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -628,9 +723,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Group snapshots for the requested scope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -730,10 +829,13 @@ paths:
           description: An `ETag` from a previous response.
           schema:
             type: string
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: A page of discoverable open groups, subject to admission rechecking.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             ETag:
               description: Validator for this page.
               schema:
@@ -754,6 +856,8 @@ paths:
         '304':
           description: The currently authorized page is unchanged; the response has no body.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             ETag:
               description: Validator for this page, exposed to allowed browser origins.
               schema:
@@ -772,6 +876,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           description: Latency evidence is unavailable or failed integrity validation; no directory page is returned.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -792,6 +899,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -801,6 +909,9 @@ paths:
       responses:
         '201':
           description: Created group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -822,10 +933,13 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/MinGroupRevision'
         - $ref: '#/components/parameters/MinPresenceRevision'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Group snapshot.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               $ref: '#/components/headers/NoStore'
             Rallar-State-Source:
@@ -867,6 +981,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -876,6 +991,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -905,6 +1023,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -914,6 +1033,9 @@ paths:
       responses:
         '200':
           description: Committed membership snapshot or no available group.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -947,6 +1069,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -956,6 +1079,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after the join.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -984,6 +1110,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -993,6 +1120,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after accepting the invite.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1022,6 +1152,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1031,6 +1162,9 @@ paths:
       responses:
         '200':
           description: New join code and updated group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1056,6 +1190,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1065,6 +1200,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the invite.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1088,6 +1226,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1097,6 +1236,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after revoking the invite.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1124,6 +1266,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1133,6 +1276,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the granted member active.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1160,6 +1306,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1169,6 +1316,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after declining the admission.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1193,6 +1343,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1202,6 +1353,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after removal.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1227,6 +1381,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1236,6 +1391,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after banning the member.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1261,6 +1419,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1270,6 +1429,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after unbanning the member.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1293,6 +1455,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1302,6 +1465,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after the role change.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1326,6 +1492,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1335,6 +1502,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot after ownership transfer.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1368,6 +1538,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1377,6 +1548,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the director appointment.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1408,9 +1582,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: The formation view for the group.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1438,6 +1616,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1447,6 +1626,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1480,6 +1662,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1489,6 +1672,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1520,6 +1706,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1529,6 +1716,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1560,6 +1750,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1569,6 +1760,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1600,6 +1794,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1609,6 +1804,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1640,6 +1838,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1649,6 +1848,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1680,6 +1882,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1689,6 +1892,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1720,6 +1926,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1729,6 +1936,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1754,9 +1964,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Group event stream.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1781,9 +1995,13 @@ paths:
         - $ref: '#/components/parameters/AfterSnapshotVersion'
         - $ref: '#/components/parameters/AfterOccurredAtEpochMs'
         - $ref: '#/components/parameters/AfterEventId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Cursor page of group events.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1807,6 +2025,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/PrincipalId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1816,6 +2035,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1844,6 +2066,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1853,6 +2076,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1878,6 +2104,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1887,6 +2114,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1910,6 +2140,7 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1919,6 +2150,9 @@ paths:
       responses:
         '200':
           description: Updated group snapshot.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -1946,10 +2180,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Workspace SPA statistics for the authenticated actor. Cache-Control no-store.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               description: Actor-specific response; always `no-store`.
               schema:
@@ -1979,10 +2216,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Group SPA statistics for the authenticated actor. Cache-Control no-store.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               description: Actor-specific response; always `no-store`.
               schema:
@@ -2013,10 +2253,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Self realtime readiness for the authenticated actor. Cache-Control no-store.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               description: Actor-specific response; always `no-store`.
               schema:
@@ -2042,9 +2285,13 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GraphIncludeMeasured'
         - $ref: '#/components/parameters/GraphRefresh'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Scoped graph diagnostic response.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2064,9 +2311,13 @@ paths:
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/GraphIncludeMeasured'
         - $ref: '#/components/parameters/GraphRefresh'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Scoped group graph diagnostic response.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2088,9 +2339,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Group topology management view.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2112,9 +2367,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Effective topology config.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2137,6 +2396,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -2146,6 +2406,9 @@ paths:
       responses:
         '200':
           description: Stored config write result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2173,9 +2436,13 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Delete result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2203,9 +2470,13 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Temporary override config.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2224,6 +2495,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -2233,6 +2505,9 @@ paths:
       responses:
         '200':
           description: Stored override write result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2260,9 +2535,13 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Delete result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2291,6 +2570,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: false
         content:
@@ -2300,6 +2580,9 @@ paths:
       responses:
         '200':
           description: Reconfigure result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2318,6 +2601,8 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
   /api/crdt/catch-up:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Catch up a CRDT document from the server log
       description: |
@@ -2340,12 +2625,18 @@ paths:
       responses:
         '200':
           description: Catch-up result wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RallarCrdtCatchUpApiResponse'
         '400':
           description: Invalid CRDT request or repository failure.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2354,12 +2645,17 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: The caller is not authorized to read the requested document.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CrdtRouteErrorResponse'
   /api/crdt/admin/documents/list:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: List CRDT documents
       description: Requires a CRDT admin auth session.
@@ -2375,6 +2671,9 @@ paths:
       responses:
         '200':
           description: Document admin page wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2385,6 +2684,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /api/crdt/admin/documents/integrity:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Verify CRDT document integrity
       description: Requires a CRDT admin auth session.
@@ -2400,6 +2701,9 @@ paths:
       responses:
         '200':
           description: Integrity report wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2410,6 +2714,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /api/crdt/admin/documents/debug-export:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Export a redacted CRDT debug bundle
       description: Requires a CRDT admin auth session.
@@ -2425,6 +2731,9 @@ paths:
       responses:
         '200':
           description: Debug bundle wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2435,6 +2744,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /api/crdt/admin/documents/backup-export:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Export a CRDT backup bundle
       description: Requires a CRDT admin auth session.
@@ -2450,6 +2761,9 @@ paths:
       responses:
         '200':
           description: Backup bundle, or null when no document exists, wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2462,6 +2776,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Rebuild a CRDT projection
       description: Requires a CRDT admin auth session.
@@ -2477,6 +2792,9 @@ paths:
       responses:
         '200':
           description: Rebuild integrity report wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2489,6 +2807,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Compact a CRDT document snapshot
       description: |
@@ -2506,6 +2825,9 @@ paths:
       responses:
         '200':
           description: Compaction result wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2518,6 +2840,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Update CRDT document lifecycle
       description: Requires a CRDT admin auth session.
@@ -2533,6 +2856,9 @@ paths:
       responses:
         '200':
           description: Updated document metadata wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2545,6 +2871,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [CRDT]
       summary: Erase or redact a CRDT document
       description: Requires a CRDT admin auth session.
@@ -2560,6 +2887,9 @@ paths:
       responses:
         '200':
           description: Erasure workflow result wrapped by the CRDT route envelope.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2570,6 +2900,8 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
   /api/admin/operations/overview:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Read admin operations overview
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2579,6 +2911,9 @@ paths:
       responses:
         '200':
           description: Compact operational overview.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2589,6 +2924,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/queues:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Read QueueBox and app-inbox statistics
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2598,6 +2935,9 @@ paths:
       responses:
         '200':
           description: Queue pressure and expiry summary.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2608,6 +2948,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/realtime:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Read realtime and topology statistics
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2617,6 +2959,9 @@ paths:
       responses:
         '200':
           description: Process-local realtime and topology metrics.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2627,6 +2972,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/state:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Read global state statistics
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2636,6 +2983,9 @@ paths:
       responses:
         '200':
           description: Global state aggregate summary.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2655,9 +3005,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Application/workspace scoped state aggregate summary.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2668,6 +3022,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/crdt:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Read global CRDT metadata statistics
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2677,6 +3033,9 @@ paths:
       responses:
         '200':
           description: Global CRDT metadata summary without document payloads.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2696,9 +3055,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Application/workspace scoped CRDT metadata summary without document payloads.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2709,6 +3072,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/system:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Read server storage and configuration statistics
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2718,6 +3083,9 @@ paths:
       responses:
         '200':
           description: Runtime storage pressure and safe configuration summary.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2728,6 +3096,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/metrics/reset:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Reset admin-visible in-memory metrics
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2743,6 +3113,9 @@ paths:
       responses:
         '200':
           description: Metrics reset result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2755,6 +3128,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Recompute topology for one group
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2770,6 +3144,9 @@ paths:
       responses:
         '200':
           description: Topology recompute result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2782,6 +3159,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Prune expired runtime rows
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2797,6 +3175,9 @@ paths:
       responses:
         '200':
           description: Expiry pruning result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2807,6 +3188,8 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
   /api/admin/operations/crdt/integrity:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Verify one CRDT document through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2822,6 +3205,9 @@ paths:
       responses:
         '200':
           description: CRDT integrity result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2833,6 +3219,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/operations/crdt/debug-export:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Export a redacted CRDT debug bundle through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2848,6 +3236,9 @@ paths:
       responses:
         '200':
           description: CRDT debug export result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2861,6 +3252,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Compact a CRDT document through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2876,6 +3268,9 @@ paths:
       responses:
         '200':
           description: CRDT compaction result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2889,6 +3284,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Update CRDT lifecycle through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2904,6 +3300,9 @@ paths:
       responses:
         '200':
           description: CRDT lifecycle update result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2917,6 +3316,7 @@ paths:
     post:
       parameters:
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Operations]
       summary: Erase or redact a CRDT document through the admin operations namespace
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
@@ -2932,6 +3332,9 @@ paths:
       responses:
         '200':
           description: CRDT erase workflow result.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2943,6 +3346,8 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
   /api/admin/support/explain/client:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Support]
       summary: Explain one client principal or session
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Response facts are bounded and redact secrets.
@@ -2958,6 +3363,9 @@ paths:
       responses:
         '200':
           description: Client diagnostic narrative.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2970,6 +3378,8 @@ paths:
           $ref: '#/components/responses/NotFound'
   /api/admin/support/explain/group:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Support]
       summary: Explain one group room
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Prefer scoped `GroupRef` input over bare group ids.
@@ -2985,6 +3395,9 @@ paths:
       responses:
         '200':
           description: Group diagnostic narrative.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -2997,6 +3410,8 @@ paths:
           $ref: '#/components/responses/NotFound'
   /api/admin/support/explain/request:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Support]
       summary: Explain one request or idempotency key
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Phase 1 avoids unindexed global request-id searches.
@@ -3012,6 +3427,9 @@ paths:
       responses:
         '200':
           description: Request diagnostic narrative.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -3022,6 +3440,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/admin/support/explain/crdt-document:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Support]
       summary: Explain one CRDT document
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Debug bundles are redacted by default.
@@ -3037,6 +3457,9 @@ paths:
       responses:
         '200':
           description: CRDT document diagnostic narrative.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -3049,6 +3472,8 @@ paths:
           $ref: '#/components/responses/NotFound'
   /api/admin/support/explain/queue-item:
     post:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Admin Support]
       summary: Explain one QueueBox item
       description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Looks up an explicit QueueBox key across inbox and result rows and redacts payload bodies.
@@ -3064,6 +3489,9 @@ paths:
       responses:
         '200':
           description: Queue item diagnostic narrative.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -3074,11 +3502,16 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/openapi.json:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Docs]
       summary: Read the OpenAPI specification JSON
       responses:
         '200':
           description: OpenAPI document rendered as JSON.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -3098,11 +3531,16 @@ paths:
                 additionalProperties: true
   /api/docs:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Docs]
       summary: Read Swagger UI
       responses:
         '200':
           description: Swagger UI HTML shell.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             text/html:
               schema:
@@ -3137,6 +3575,18 @@ components:
       description: Short-lived one-time ticket returned from `/api/auth/ws-ticket`.
 
   parameters:
+    XRequestId:
+      name: x-request-id
+      in: header
+      required: false
+      description: >-
+        Request trace identity. A missing or malformed value is replaced by a minted trace; every API response except a
+        WebSocket upgrade echoes the trace it ran under.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^[A-Za-z0-9_-]+$
     ApiMutationRequestId:
       name: requestId
       in: path
@@ -3277,6 +3727,13 @@ components:
         type: string
 
   headers:
+    XRequestId:
+      description: 'The trace the request ran under: the valid x-request-id it sent, or the minted replacement.'
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^[A-Za-z0-9_-]+$
     NoStore:
       description: Prevents intermediary or browser HTTP response caching.
       schema:
@@ -3306,6 +3763,9 @@ components:
   responses:
     ApiMutationFailure:
       description: Canonical terminal or retryable mutation failure.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
@@ -3313,6 +3773,8 @@ components:
     RateLimitedApiMutationFailure:
       description: Canonical rate-limited mutation failure.
       headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
         Retry-After:
           description: Seconds to wait before retrying the rate-limited request.
           schema:
@@ -3323,36 +3785,54 @@ components:
             $ref: '#/components/schemas/ApiMutationFailure'
     BadRequest:
       description: Request is invalid.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Missing or invalid authentication credentials.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Forbidden:
       description: Authenticated, but not allowed to perform the requested operation.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     NotFound:
       description: Requested resource was not found.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Conflict:
       description: Request conflicts with existing state.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     StateRevisionFloorNotSatisfied:
       description: Durable state does not satisfy the requested revision floor.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
@@ -3360,6 +3840,8 @@ components:
     TooManyRequests:
       description: Rate limit exceeded.
       headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
         Retry-After:
           description: Seconds to wait before retrying the rate-limited request.
           schema:
@@ -3370,12 +3852,18 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     ServiceUnavailable:
       description: The optimistic mutation could not converge within its bounded retry budget.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     CrdtRouteError:
       description: CRDT route returned an application-level error.
+      headers:
+        x-request-id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/json:
           schema:
@@ -6169,8 +6657,6 @@ components:
           format: int64
         reason:
           type: string
-        traceId:
-          type: string
     UpsertClientInstanceRequest:
       type: object
       properties:
@@ -6191,8 +6677,6 @@ components:
           items:
             type: string
         reason:
-          type: string
-        traceId:
           type: string
     ConnectClientSessionRequest:
       type: object
@@ -6219,8 +6703,6 @@ components:
           format: int64
         reason:
           type: string
-        traceId:
-          type: string
     HeartbeatClientSessionRequest:
       type: object
       properties:
@@ -6235,8 +6717,6 @@ components:
           format: int64
         reason:
           type: string
-        traceId:
-          type: string
     DisconnectClientSessionRequest:
       type: object
       properties:
@@ -6250,8 +6730,6 @@ components:
           type: integer
           format: int64
         reason:
-          type: string
-        traceId:
           type: string
     GroupLifecyclePolicyInput:
       type: object
@@ -6465,8 +6943,6 @@ components:
           $ref: '#/components/schemas/GroupLifecyclePolicyInput'
         reason:
           type: string
-        traceId:
-          type: string
     UpdateGroupRequest:
       type: object
       properties:
@@ -6513,8 +6989,6 @@ components:
           description: Rejected for temporary rooms.
         reason:
           type: string
-        traceId:
-          type: string
     AppointGroupDirectorRequest:
       type: object
       properties:
@@ -6525,15 +6999,11 @@ components:
           description: Optional heartbeat freshness TTL to store on the director appointment.
         reason:
           type: string
-        traceId:
-          type: string
     GroupLifecycleTransitionRequest:
       type: object
       additionalProperties: false
       properties:
         reason:
-          type: string
-        traceId:
           type: string
     GroupConnectRequest:
       type: object
@@ -6548,8 +7018,6 @@ components:
           $ref: '#/components/schemas/GroupLayoutIdentity'
         reason:
           type: string
-        traceId:
-          type: string
     GroupReconfigureRequest:
       type: object
       additionalProperties: false
@@ -6561,8 +7029,6 @@ components:
           description: Omission uses the configured reconfiguration landing.
         reason:
           type: string
-        traceId:
-          type: string
     JoinGroupRequest:
       type: object
       properties:
@@ -6573,8 +7039,6 @@ components:
           type: string
         reason:
           type: string
-        traceId:
-          type: string
     CreateGroupInviteRequest:
       type: object
       properties:
@@ -6583,14 +7047,10 @@ components:
           format: int64
         reason:
           type: string
-        traceId:
-          type: string
     RevokeGroupInviteRequest:
       type: object
       properties:
         reason:
-          type: string
-        traceId:
           type: string
 
     GrantGroupAdmissionRequest:
@@ -6598,22 +7058,16 @@ components:
       properties:
         reason:
           type: string
-        traceId:
-          type: string
 
     DeclineGroupAdmissionRequest:
       type: object
       properties:
         reason:
           type: string
-        traceId:
-          type: string
     AcceptGroupInviteRequest:
       type: object
       properties:
         reason:
-          type: string
-        traceId:
           type: string
     RotateGroupJoinCodeRequest:
       type: object
@@ -6624,8 +7078,6 @@ components:
           type: integer
           format: int64
         reason:
-          type: string
-        traceId:
           type: string
     GroupJoinCodeResponse:
       type: object
@@ -6644,21 +7096,15 @@ components:
       properties:
         reason:
           type: string
-        traceId:
-          type: string
     BanGroupMemberRequest:
       type: object
       properties:
         reason:
           type: string
-        traceId:
-          type: string
     UnbanGroupMemberRequest:
       type: object
       properties:
         reason:
-          type: string
-        traceId:
           type: string
     SetGroupMemberRoleRequest:
       type: object
@@ -6669,8 +7115,6 @@ components:
           enum: [owner, admin, member]
         reason:
           type: string
-        traceId:
-          type: string
     TransferGroupOwnershipRequest:
       type: object
       required: [newOwnerPrincipalId]
@@ -6678,8 +7122,6 @@ components:
         newOwnerPrincipalId:
           type: string
         reason:
-          type: string
-        traceId:
           type: string
     SelfUpsertGroupMemberRequest:
       type: object
@@ -6689,8 +7131,6 @@ components:
           type: string
           enum: [active, left]
         reason:
-          type: string
-        traceId:
           type: string
     ConnectGroupPresenceSessionRequest:
       type: object
@@ -6715,8 +7155,6 @@ components:
           format: int64
         reason:
           type: string
-        traceId:
-          type: string
     HeartbeatGroupPresenceSessionRequest:
       type: object
       required: [generationId]
@@ -6730,8 +7168,6 @@ components:
           type: integer
           format: int64
         reason:
-          type: string
-        traceId:
           type: string
     DisconnectGroupPresenceSessionRequest:
       type: object
@@ -6749,8 +7185,6 @@ components:
           type: integer
           format: int64
         reason:
-          type: string
-        traceId:
           type: string
     GraphObject:
       type: object

@@ -53,8 +53,7 @@ export function validateGroupMutationRequest(
             { key: 'requestId', kind: 'string', required: true },
             { key: 'actorPrincipalId', kind: 'string', required: true },
             { key: 'actorSessionId', kind: 'string', required: true },
-            { key: 'reason', kind: 'string' },
-            { key: 'traceId', kind: 'string' }
+            { key: 'reason', kind: 'string' }
         ], `Group ${operation}`)
     ];
     if (operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence') {
@@ -81,7 +80,7 @@ export function validateGroupPresenceMutationRequest(
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'
     ];
-    const identityFields = ['requestId', 'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'principalId'];
+    const identityFields = ['requestId', 'actorPrincipalId', 'actorSessionId', 'reason', 'principalId'];
     const generationFields = operation === 'connectPresence'
         ? ['generationId', 'connectionGenerationId']
         : ['generationId'];
@@ -152,8 +151,7 @@ function readPresenceTimestamp(request: object, key: PresenceTimestampKey): numb
 export const ACTOR_INPUT_KEYS = [
     'actorPrincipalId',
     'actorSessionId',
-    'reason',
-    'traceId'
+    'reason'
 ] as const;
 
 const MUTATION_REQUEST_KEYS = [...ACTOR_INPUT_KEYS, 'requestId'] as const;

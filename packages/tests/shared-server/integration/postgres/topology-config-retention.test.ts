@@ -210,6 +210,7 @@ async function runTopologyCommand(
     const result = await runtime.runUntilCompletion(() =>
         runtime.topology.processAuthenticatedEntryUntilCompletionResult(
             {
+                traceId: 'trace-test-fixture',
                 type,
                 resourceId: command.requestId,
                 contextId: [harness.groupRef.applicationId, harness.groupRef.workspaceId, harness.groupRef.groupId]

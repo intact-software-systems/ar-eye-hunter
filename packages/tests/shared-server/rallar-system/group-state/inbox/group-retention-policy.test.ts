@@ -137,6 +137,7 @@ describe('temporary room discovery', () => {
             reader: harness.reader,
             authority: harness.sessions.guest,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_JOIN,
                 resourceId: 'join-link',
                 contextId: ROOM_REF.groupId,
@@ -243,6 +244,7 @@ function validateCreate(fields: object) {
 
 function createRoom(harness: AuthorityHarness, request: Partial<CreateGroupRequest> = {}) {
     return processAsOwner(harness, {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'create-temporary',
         contextId: ROOM_REF.groupId,
@@ -263,6 +265,7 @@ function createRoom(harness: AuthorityHarness, request: Partial<CreateGroupReque
 
 function updateRoom(harness: AuthorityHarness, request: UpdateGroupRequest) {
     return processAsOwner(harness, {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_UPDATE,
         resourceId: request.requestId,
         contextId: ROOM_REF.groupId,
@@ -276,6 +279,7 @@ function processAsOwner(harness: AuthorityHarness, input: AuthenticatedGroupMuta
 
 async function quickJoin(harness: AuthorityHarness) {
     const pending = harness.service.processQuickJoinUntilCompletion({
+        traceId: 'trace-test-fixture',
         scope: SCOPE,
         request: { requestId: 'quick-join', includeEmpty: true }
     }, harness.sessions.guest);

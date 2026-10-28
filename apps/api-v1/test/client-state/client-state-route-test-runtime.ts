@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
@@ -15,6 +15,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 import type { ProcessClientAppInbox } from '../../src/routes/client-state-mutation-routes.ts';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 export const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -42,7 +43,7 @@ interface ClientRouteDeps extends Required<clientStateRoutes.ClientStateRouteDep
 export function createClientRouteApp(
     deps: ClientRouteDeps
 ): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     installClientStateRouteAuthMiddleware(app, deps.requireApiAuthSession);
     clientStateRoutes.registerClientStateRoutes(app, deps);
     return app;

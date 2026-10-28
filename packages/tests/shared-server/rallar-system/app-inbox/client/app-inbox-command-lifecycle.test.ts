@@ -9,6 +9,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodePersistedAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import {
     AppInboxType,
+    type AppInboxEnqueue,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -74,6 +75,7 @@ describe('AppInbox command lifecycle', () => {
         );
 
         const entry = await service.enqueue({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'domain-default-topic',
             contextId: 'client-1',
@@ -130,6 +132,7 @@ describe('AppInbox command lifecycle', () => {
             resourceId: requestId,
             contextId,
             senderId: 'admin',
+            traceId: 'trace-strict-reservation',
             data: null
         } as const;
 
@@ -197,6 +200,7 @@ describe('AppInbox command lifecycle', () => {
         };
         const pending = service.enqueueAndWaitForResult(
             {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 topicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 resourceId: 'decoded-result',
@@ -329,6 +333,7 @@ describe('AppInbox command lifecycle', () => {
             resourceId: 'sparse-member-upsert',
             contextId: 'ar-eye-hunter:default:group-1',
             senderId: 'alice',
+            traceId: 'trace-sparse-member-upsert',
             data: encodeAppInboxCommand(
                 currentCommand,
                 'Group member upsert test command'
@@ -446,6 +451,7 @@ describe('AppInbox command lifecycle', () => {
             resourceId: 'proto-command',
             contextId: 'app:workspace:alice',
             senderId: 'alice',
+            traceId: 'trace-proto-command',
             data: encodeAppInboxCommand(firstData, 'Prototype-key AppInbox command')
         } as const;
 
@@ -574,6 +580,7 @@ describe('AppInbox command lifecycle', () => {
             resourceId: 'same-public-request',
             contextId: 'app:workspace:alice',
             senderId: 'alice',
+            traceId: 'trace-same-public-request',
             data: {
                 principalId: 'alice',
                 request: {
@@ -587,6 +594,7 @@ describe('AppInbox command lifecycle', () => {
 
         const first = await firstPromise;
         const reordered = await service.enqueueAndWait({
+            traceId: 'trace-test-fixture',
             senderId: 'alice',
             contextId: 'app:workspace:alice',
             resourceId: 'same-public-request',
@@ -652,6 +660,7 @@ describe('AppInbox command lifecycle', () => {
             );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
         const pending = service.enqueueAndWait({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'same-request',
             contextId: 'app:workspace:alice',
@@ -715,6 +724,7 @@ describe('AppInbox command lifecycle', () => {
         const handler = () => Promise.reject(error);
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
         const pending = service.enqueueAndWait({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: `terminal-${code}`,
             contextId: 'app:workspace:alice',
@@ -732,7 +742,7 @@ describe('AppInbox command lifecycle', () => {
 
 interface BeginMaterializedReservationInput {
     readonly placeholder: AppInboxEnqueueInput;
-    readonly materialize: () => Promise<AppInboxEnqueueInput>;
+    readonly materialize: () => Promise<AppInboxEnqueue>;
 }
 
 interface MaterializedTestReservation {

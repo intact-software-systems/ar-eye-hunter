@@ -26,6 +26,7 @@ Deno.test('admin prune exposes typed AppInbox failure facts', async () => {
                     expiresAtEpochMs: NOW_EPOCH_MS + 60_000
                 },
                 requestId: 'admin-prune-request-0001',
+                traceId: 'trace-admin-fixture',
                 request: { dryRun: false }
             }),
         (error) =>

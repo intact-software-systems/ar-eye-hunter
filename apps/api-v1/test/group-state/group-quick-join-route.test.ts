@@ -1,4 +1,3 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -7,9 +6,11 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
 import { createGroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import {
     createGroupStateRouteSnapshot,
-    createGroupStateRouteTestDependencies
+    createGroupStateRouteTestDependencies,
+    GROUP_ROUTE_TRACE_ID
 } from './group-state-route-test-runtime.ts';
 
 const PATH = '/api/state/apps/app-1/workspaces/workspace-1/groups/quick-join/requests/quick-request-123456789';
@@ -17,7 +18,7 @@ const PATH = '/api/state/apps/app-1/workspaces/workspace-1/groups/quick-join/req
 Deno.test('Quick Join authenticates and forwards normalized scope selection with its path request ID', async () => {
     const calls: Parameters<GroupStateInboxService['processQuickJoinUntilCompletion']>[] = [];
     const snapshot = createGroupStateRouteSnapshot('selected');
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),
         processQuickJoin: async (...arguments_: Parameters<GroupStateInboxService['processQuickJoinUntilCompletion']>) => {
@@ -33,13 +34,14 @@ Deno.test('Quick Join authenticates and forwards normalized scope selection with
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0][0], {
         scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
-        request: { requestId: 'quick-request-123456789', kind: 'room', q: 'eye hunter', includeEmpty: true }
+        request: { requestId: 'quick-request-123456789', kind: 'room', q: 'eye hunter', includeEmpty: true },
+        traceId: GROUP_ROUTE_TRACE_ID
     });
     assert.equal(calls[0][1].clientId, 'alice');
 });
 
 Deno.test('Quick Join returns unavailable as a successful durable result', async () => {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),
         processQuickJoin: async () => Either.ofRight({ status: 'unavailable' as const })
@@ -52,7 +54,7 @@ Deno.test('Quick Join returns unavailable as a successful durable result', async
 });
 
 Deno.test('Quick Join rejects unknown fields and body/header request IDs before enqueue', async () => {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     let calls = 0;
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),
@@ -74,7 +76,7 @@ Deno.test('Quick Join rejects unknown fields and body/header request IDs before 
 });
 
 Deno.test('Quick Join requires authentication even without outer state middleware', async () => {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies({
             requireApiAuthSession: async () => {
@@ -92,7 +94,7 @@ Deno.test('Quick Join requires authentication even without outer state middlewar
 });
 
 Deno.test('Quick Join rate limits each principal within its scope before enqueue', async () => {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     let calls = 0;
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),
@@ -118,5 +120,9 @@ Deno.test('Quick Join rate limits each principal within its scope before enqueue
 });
 
 function request(body: object | null): RequestInit {
-    return { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
+    return {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-request-id': GROUP_ROUTE_TRACE_ID },
+        body: JSON.stringify(body)
+    };
 }

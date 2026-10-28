@@ -34,6 +34,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         await runAuthInboxCommand({
             pending: runtime.auth.service.logoutSession({
                 requestId: SHARED_REQUEST_ID,
+                traceId: 'trace-auth-test',
                 session
             }),
             queue: runtime.auth.queue,
@@ -77,6 +78,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const runtime = createRuntime();
         const first = runtime.auth.service.issueSession({
             requestId: 'ConcurrentLoginRequest_0123',
+            traceId: 'trace-auth-test',
             clientId: 'static-client',
             username: 'Alice',
             authority: {
@@ -88,6 +90,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         });
         const second = runtime.auth.service.issueSession({
             requestId: 'ConcurrentLoginRequest_0123',
+            traceId: 'trace-auth-test',
             clientId: 'static-client',
             username: 'Alice',
             authority: {
@@ -135,6 +138,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         });
         const input = {
             requestId: 'WinnerOwnedLoginRequest_01',
+            traceId: 'trace-auth-test',
             clientId: 'static-client',
             username: 'Alice',
             authority: {
@@ -202,6 +206,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         });
         const pending = auth.service.issueSession({
             requestId: 'WinnerTtlLoginRequest_0123',
+            traceId: 'trace-auth-test',
             clientId: 'static-client',
             username: 'Alice',
             authority: {
@@ -244,6 +249,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         });
         const input = {
             requestId: 'WinnerRegistrationRequest_01',
+            traceId: 'trace-auth-test',
             request: {
                 username: 'DelayedAlice',
                 password: 'registration-password-must-not-persist'
@@ -290,6 +296,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const issued = await runAuthInboxCommand({
             pending: runtime.auth.service.issueAgentSessionTickets({
                 requestId: 'AgentTicketIssueRequest_0123',
+                traceId: 'trace-auth-test',
                 session: authority,
                 ticketTtlMs: 30_000,
                 agents: [{ agentId: 'agent-one' }]
@@ -303,6 +310,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         }
         const consumeInput = {
             requestId: 'AgentTicketConsumeRequest_0123456789abcdefghijklmnop',
+            traceId: 'trace-auth-test',
             ticket
         };
         const consumed = await runAuthInboxCommand({
@@ -356,6 +364,7 @@ async function logout(
     const result = await runAuthInboxCommand({
         pending: auth.service.logoutSession({
             requestId: SHARED_REQUEST_ID,
+            traceId: 'trace-auth-test',
             session
         }),
         queue: auth.queue,

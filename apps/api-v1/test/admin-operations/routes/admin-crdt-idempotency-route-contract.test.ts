@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
@@ -10,6 +10,7 @@ import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentMetadata, RallarC
 
 import { registerAdminOperationsRoutes } from '../../../src/admin-operations/register-admin-operations-routes.ts';
 import { registerCrdtAdminRoutes } from '../../../src/crdt/register-crdt-admin-routes.ts';
+import { createTracedApiTestApp } from '../../services/create-traced-api-test-app.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const REQUEST_ID = 'request-000000000001';
@@ -257,7 +258,7 @@ interface CreateRouteFixtureInput {
 function createRouteFixture(input: CreateRouteFixtureInput = {}): RouteFixture {
     const calls: RouteCall[] = [];
     let authCallCount = 0;
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     const requireAdminSession = (): Promise<IssuedAuthSession> => {
         authCallCount += 1;
         return input.authenticated === false

@@ -44,8 +44,7 @@ describe('group mutation command validation', () => {
                 displayName: 'After',
                 actorPrincipalId: 'alice',
                 actorSessionId: null,
-                reason: null,
-                traceId: null
+                reason: null
             },
             commandHash: `sha256:${'0'.repeat(64)}`
         };
@@ -68,7 +67,6 @@ describe('group mutation command validation', () => {
                         actorPrincipalId: 'alice',
                         actorSessionId: 'alice-session',
                         reason: null,
-                        traceId: null,
                         joinCode: null,
                         expiresAtEpochMs: null
                     }
@@ -82,7 +80,6 @@ describe('group mutation command validation', () => {
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
             reason: null,
-            traceId: null,
             expectedFormationEpoch: null
         };
 
@@ -116,7 +113,6 @@ describe('group mutation command validation', () => {
                         actorPrincipalId: 'alice',
                         actorSessionId: 'alice-session',
                         reason: null,
-                        traceId: null,
                         principalId: 'alice',
                         generationId: 'presence-generation',
                         connectionGenerationId: 'presence-ws-generation',

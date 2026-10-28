@@ -2,10 +2,10 @@ import type { ResourceInboxAttemptTelemetry } from '@shared/queuebox/resource-in
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RallarTimingDetails } from '../../observability/timing.ts';
-import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import type { AppInboxEnqueue } from '../app-inbox-contracts.ts';
 
 export function toAppInboxTimingDetails(
-    enqueue: AppInboxEnqueueInput,
+    enqueue: AppInboxEnqueue,
     key: Key
 ): RallarTimingDetails {
     return {
@@ -18,7 +18,7 @@ export function toAppInboxTimingDetails(
 }
 
 export function toAppInboxAttemptTimingDetails(
-    enqueue: AppInboxEnqueueInput,
+    enqueue: AppInboxEnqueue,
     entry: ResourceEntry,
     attemptTelemetry: ResourceInboxAttemptTelemetry
 ): RallarTimingDetails {

@@ -254,6 +254,7 @@ describe('group HTTP mutation route source shapes', () => {
           operation: 'upsert-group-member',
           authSession,
           scope,
+          traceId: readApiRequestTraceId(context),
           groupId,
           principalId,
           request,

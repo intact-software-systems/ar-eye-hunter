@@ -4,7 +4,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import {
     type AppInboxCommandAttempt,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import {
@@ -180,9 +180,9 @@ export class TopologyAppInboxHandler {
     }
 
     async createAuthenticatedEnqueue(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         authority: IssuedAuthSession
-    ): Promise<AppInboxEnqueueInput> {
+    ): Promise<AppInboxEnqueue> {
         return await createAuthenticatedTopologyEnqueue({
             enqueue,
             claimedAuthority: authority,
@@ -204,9 +204,9 @@ export class TopologyAppInboxHandler {
     }
 
     async createAuthenticatedEnqueueFromValidatedSession(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         currentSession: PersistedAuthSession
-    ): Promise<AppInboxEnqueueInput> {
+    ): Promise<AppInboxEnqueue> {
         return await createAuthenticatedTopologyEnqueueFromValidatedSession({
             enqueue,
             currentSession

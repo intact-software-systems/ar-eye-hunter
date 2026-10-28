@@ -1,10 +1,11 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AgentSessionTicketResponse, AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { createConfigRouteTestDependencies } from './config-route-test-runtime.ts';
 
 const NOW_EPOCH_MS = Date.now();
@@ -162,7 +163,7 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
 function createApp(
     dependencies: Partial<configRoutes.ConfigRouteDependencies>
 ): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     configRoutes.registerConfigRoutes(
         app,
         createConfigRouteTestDependencies({

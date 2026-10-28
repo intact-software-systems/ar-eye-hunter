@@ -21,6 +21,7 @@ export async function activateMember(
         reader: harness.reader,
         authority: harness.sessions.owner,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_MEMBER_UPSERT,
             resourceId: `activate-${principalId}`,
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -51,6 +52,7 @@ export function presenceConnectEnqueue(
         resourceId: `connect-${principalId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
         senderId: principalId,
+        traceId: 'trace-test-fixture',
         data: {
             scope: SCOPE,
             groupId,

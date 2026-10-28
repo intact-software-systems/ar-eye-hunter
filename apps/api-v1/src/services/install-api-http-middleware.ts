@@ -24,7 +24,7 @@ export function installApiHttpMiddleware(app: Hono, input: InstallApiHttpMiddlew
     const apiCors = cors({
         origin: (origin) => resolveCorsOrigin(origin, input.http.corsOrigins),
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id', 'If-None-Match'],
+        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id', 'If-None-Match', 'x-request-id'],
         exposeHeaders: [
             'Content-Length',
             'Server-Timing',

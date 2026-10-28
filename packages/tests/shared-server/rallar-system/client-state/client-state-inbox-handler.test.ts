@@ -8,7 +8,7 @@ import {
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
@@ -934,7 +934,7 @@ function expiryCandidate(sessionId: string): ClientSessionExpiryCandidate {
 }
 
 function createContext<Result>(
-    enqueue: AppInboxEnqueueInput
+    enqueue: AppInboxEnqueue
 ): AppInboxMessageContext<Result> {
     const resourceId = enqueue.resourceId ?? 'client-handler-test';
     const entry: ResourceEntry = {

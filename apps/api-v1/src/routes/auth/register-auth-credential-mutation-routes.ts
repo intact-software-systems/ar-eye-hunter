@@ -45,7 +45,7 @@ async function logoutResponse(
     dependencies: ConfigRouteDependencies
 ): Promise<Response> {
     try {
-        const { requestId } = await readAuthMutationRequest(context);
+        const { requestId, traceId } = await readAuthMutationRequest(context);
         let authSession: IssuedAuthSession;
         try {
             authSession = await dependencies.requireApiAuthSession(context.req);
@@ -69,6 +69,7 @@ async function logoutResponse(
             requireAuthMutationResult(
                 await dependencies.appAuthInbox.logoutSession({
                     requestId,
+                    traceId,
                     session: authSession
                 })
             ) satisfies LogoutResponse
@@ -100,7 +101,7 @@ async function webSocketTicketResponse(
 ): Promise<Response> {
     try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
-        const { requestId } = await readAuthMutationRequest(context);
+        const { requestId, traceId } = await readAuthMutationRequest(context);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
             readRateLimiter('auth-ws-ticket', authSession.sessionId, rateLimit),
             async () => {
@@ -108,6 +109,7 @@ async function webSocketTicketResponse(
                     requireAuthMutationResult(
                         await dependencies.appAuthInbox.issueWebSocketTicket({
                             requestId,
+                            traceId,
                             session: authSession,
                             ttlMs: dependencies.authentication.webSocketTicketTtlMs
                         })
@@ -145,12 +147,13 @@ async function agentTicketIssueResponse(
 ): Promise<Response> {
     try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
-        const { requestId, body } = await readAuthMutationRequest(context);
+        const { requestId, traceId, body } = await readAuthMutationRequest(context);
         const agentIds = readAgentSessionTicketAgentIds(body);
         return toJsonResponse<AgentSessionTicketResponse>(
             requireAuthMutationResult(
                 await dependencies.appAuthInbox.issueAgentSessionTickets({
                     requestId,
+                    traceId,
                     session: authSession,
                     ticketTtlMs: dependencies.authentication.agentSessionTicketTtlMs,
                     agents: agentIds.map((agentId) => ({ agentId }))
@@ -181,12 +184,13 @@ async function agentTicketConsumeResponse(
     dependencies: ConfigRouteDependencies
 ): Promise<Response> {
     try {
-        const { requestId, body } = await readAuthMutationRequest(context);
+        const { requestId, traceId, body } = await readAuthMutationRequest(context);
         const ticket = readAgentSessionTicket(body);
         return toJsonResponse(
             requireAuthMutationResult(
                 await dependencies.appAuthInbox.consumeAgentSessionTicket({
                     requestId,
+                    traceId,
                     ticket
                 })
             ) satisfies AuthSession

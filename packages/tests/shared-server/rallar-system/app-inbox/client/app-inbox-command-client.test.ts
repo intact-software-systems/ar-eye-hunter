@@ -11,7 +11,10 @@ import {
     type AppInboxEnqueueInput
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { normalizeAppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
-import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import {
+    createAppInboxResourceEntry,
+    createDefaultAppInboxQueueMessage
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
@@ -24,13 +27,13 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
-import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 const COMMAND: AppInboxEnqueueInput = {
     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
     resourceId: 'command-1',
     contextId: 'app:workspace:principal',
     senderId: 'principal',
+    traceId: 'trace-app-inbox-command-client',
     data: { requestId: 'command-1', principalId: 'principal' }
 };
 
@@ -44,7 +47,7 @@ describe('AppInboxCommandClient', () => {
                         entry: createAppInboxResourceEntry(
                             enqueue,
                             'server-12345678',
-                            { creationNow: Temporal.Now.instant, createMessage: createAppInboxQueueMessageFixture }
+                            { creationNow: Temporal.Now.instant, createMessage: createDefaultAppInboxQueueMessage }
                         ),
                         winner: true
                     })
@@ -107,7 +110,7 @@ describe('AppInboxCommandClient', () => {
         const client = new AppInboxCommandClient({
             queueEntryWriter: new AppInboxQueueEntryWriter({
                 newResourceId: crypto.randomUUID.bind(crypto),
-                createMessage: createAppInboxQueueMessageFixture,
+                createMessage: createDefaultAppInboxQueueMessage,
                 inboxQueueReader: new InboxQueueReader(new TestResourceInbox(new Map()), {
                     newLaneConcurrency: 1
                 })
@@ -147,7 +150,7 @@ describe('AppInboxCommandClient', () => {
         const reservationClient = new AppInboxReservationClient({
             repository: queue,
             creationNow: Temporal.Now.instant,
-            createMessage: createAppInboxQueueMessageFixture
+            createMessage: createDefaultAppInboxQueueMessage
         }, { serviceId: 'server-12345678' });
         const reserved: AppInboxResultWaiter.Wait[] = [];
         const client = new AppInboxCommandClient(

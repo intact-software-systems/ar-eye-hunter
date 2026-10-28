@@ -334,6 +334,7 @@ async function assertNativeGroupSessionAuthority(observation: NativeGroupSession
             operation: 'connect-group-presence',
             authSession: caller,
             scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
+            traceId: 'trace-native-session-fixture',
             groupId: groupRef.groupId,
             sessionId: target.sessionId,
             request: {
