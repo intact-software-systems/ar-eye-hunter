@@ -270,7 +270,10 @@ export function computeUpsertMember(
     assertUpsertRoleChange(command, read, isSelf);
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
     const existing = findTargetMember(read);
-    const role = command.input.role ?? (existing?.status === 'active' ? existing.role : 'member');
+    const role = command.input.role ??
+        (command.input.status === 'active' && existing?.status !== 'active' && existing?.role === 'spectator'
+            ? 'member'
+            : existing?.role ?? 'member');
     assertUpsertActivationAllowed({
         command,
         snapshot,

@@ -163,6 +163,70 @@
       }
     },
     {
+      "name": "registerObserver",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-register-observer-001-{runId}-spectating",
+        "body": {
+          "username": "spectating-observer-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "observer client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginObserver",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-observer-002-{runId}-spectating",
+        "body": {
+          "username": "spectating-observer-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "observerClientId": "body.clientId",
+          "observerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "observerSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveObserverAuthHeader",
+      "type": "set",
+      "output": "observerAuthHeader",
+      "secret": true,
+      "redactAs": "observerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.observerAccessToken"
+          }
+        ]
+      }
+    },
+    {
       "name": "createRoom",
       "type": "http",
       "connection": "api",
@@ -363,8 +427,8 @@
         "method": "GET",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
         "headers": {
-          "Authorization": "{probeAuthHeader}",
-          "x-client-id": "{probeClientId}"
+          "Authorization": "{observerAuthHeader}",
+          "x-client-id": "{observerClientId}"
         }
       },
       "expect": {
@@ -464,5 +528,5 @@
       }
     }
   ],
-  "description": "Independent player/spectator capacity, role recovery, failed promotion, governed bypass denial, promotion and directory counts through authenticated HTTP."
+  "description": "Independent player/spectator capacity, role recovery, failed promotion, governed bypass denial, promotion and directory counts viewed by a nonmember through authenticated HTTP."
 }

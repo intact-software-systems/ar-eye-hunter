@@ -208,6 +208,28 @@ describe('spectator admission and promotion', () => {
             .toMatchObject({ role: 'spectator', status: 'left' });
     });
 
+    it.each(['bob', 'alice'])('preserves active spectators but reapplies player admission to omitted-role reactivation by %s', async (actorPrincipalId) => {
+        const runtime = new GroupBarrierRepository();
+        await seedWatchRoom(runtime, 1, 1);
+        const service = createService(runtime, 1_100);
+        await service.joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch-bob' });
+        await service.upsertMember(SCOPE, 'watch', 'bob', { actorPrincipalId, status: 'active', requestId: 'recover-bob' });
+        expect((await requireSnapshot(runtime, 'watch')).members.find((member) => member.principalId === 'bob'))
+            .toMatchObject({ role: 'spectator', status: 'active' });
+        await service.upsertMember(SCOPE, 'watch', 'bob', { actorPrincipalId: 'bob', status: 'left', requestId: 'leave-bob' });
+        await expect(service.upsertMember(SCOPE, 'watch', 'bob', {
+            actorPrincipalId,
+            status: 'active',
+            requestId: 'full-reactivate-bob'
+        })).rejects.toThrow();
+        expect((await requireSnapshot(runtime, 'watch')).members.find((member) => member.principalId === 'bob'))
+            .toMatchObject({ role: 'spectator', status: 'left' });
+        await service.updateGroup(SCOPE, 'watch', { actorPrincipalId: 'alice', maxMembers: 2, requestId: 'expand' });
+        await service.upsertMember(SCOPE, 'watch', 'bob', { actorPrincipalId, status: 'active', requestId: 'reactivate-bob' });
+        expect((await requireSnapshot(runtime, 'watch')).members.find((member) => member.principalId === 'bob'))
+            .toMatchObject({ role: 'member', status: 'active' });
+    });
+
     it.each([
         { players: 2, occupied: true },
         { players: 1, occupied: false }
