@@ -102,6 +102,7 @@ function validateStrictStep(step: ApiJsonObject, path: string): readonly BlackBo
         ...(type.startsWith('set') || type.startsWith('derive') ? validateStrictSet(step, path) : []),
         ...(type.startsWith('assert') ? validateStrictAssertExpected(step, path) : []),
         ...validateStrictExpectIsHonoured(step, type, path),
+        ...validateStrictCountDistinctByIsHonoured(step, type, path),
         ...validateStrictExpectIsNotVacuous(step, path)
     ];
 }
@@ -154,6 +155,24 @@ function validateStrictExpectIsHonoured(
                 'Use a ws.wait step for it.',
             path: `${path}.expect.${key}`
         }));
+}
+
+/** Only a WebSocket count wait reads `expect.countDistinctBy`; elsewhere the recipe would believe it counted publications. */
+function validateStrictCountDistinctByIsHonoured(
+    step: ApiJsonObject,
+    type: string,
+    path: string
+): readonly BlackBoxRunnerPreflightIssue[] {
+    const expected = toPreflightJsonObject(step.expect || step.response);
+    if (expected.countDistinctBy === undefined || (type.startsWith('ws') && expected.count !== undefined)) {
+        return [];
+    }
+    return [{
+        severity: 'error',
+        code: 'STRICT_EXPECT_IGNORED',
+        message: 'expect.countDistinctBy is read only by a ws.wait or ws.send step that also declares expect.count.',
+        path: `${path}.expect.countDistinctBy`
+    }];
 }
 
 function validateStrictExpectIsNotVacuous(step: ApiJsonObject, path: string): readonly BlackBoxRunnerPreflightIssue[] {

@@ -1,6 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    AL_MESSAGE_ENVELOPE_VERSION,
+    type ALAckMode,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
@@ -109,7 +113,9 @@ export function computeClientStateSyncEntries(
                 effect.payloadKind === 'snapshot'
                     ? 'clientStateSnapshot'
                     : 'clientStateEvent'
-            ]
+            ],
+            // A principal audience names no room for its receivers to confirm against.
+            ack: 'none'
         })
     );
 }
@@ -131,12 +137,9 @@ export function computeGroupStateSyncEntries(
                 ? AppTopics.groupDirectorySnapshot
                 : AppTopics.groupStateSnapshot
             : AppTopics.groupStateEvent;
-        return toStateSyncEntries({
-            computed,
-            effect,
-            senderId,
-            topicId
-        }).map(({ entry }) => entry);
+        // A delta is a room broadcast its receivers confirm; a snapshot page is superseded by the next one instead.
+        const ack = effect.payloadKind === 'delta-envelope' ? 'receiver' : 'none';
+        return toStateSyncEntries({ computed, effect, senderId, topicId, ack }).map(({ entry }) => entry);
     });
 }
 
@@ -157,10 +160,11 @@ interface ToStateSyncEntryInput {
     readonly effect: ComputedStateSyncEffect;
     readonly senderId: string;
     readonly topicId: string;
+    readonly ack: ALAckMode;
 }
 
 function toStateSyncEntries(input: ToStateSyncEntryInput): readonly StateSyncEntry[] {
-    const { computed, effect, senderId, topicId } = input;
+    const { computed, effect, senderId, topicId, ack } = input;
     const causalIdentity = toStateSyncCausalIdentity(computed.acceptedCausalRevision);
     const messageId = [computed.commandId, effect.effectKind, effect.payloadKind, causalIdentity].join(':');
     const key = toAppQueueKey({
@@ -173,7 +177,7 @@ function toStateSyncEntries(input: ToStateSyncEntryInput): readonly StateSyncEnt
             computed.audience.resourceId
         ])
     });
-    const envelope = toStateSyncEnvelope({ key, computed, effect, senderId, messageId });
+    const envelope = toStateSyncEnvelope({ key, computed, senderId, messageId, ack });
     const messages = effect.payloadKind === 'snapshot'
         ? computeStateSyncSnapshotPages({ envelope, computed, effect, causalIdentity })
         : [decodePersistedALMessageValue({
@@ -201,6 +205,7 @@ interface StateSyncSnapshotPagesInput {
     readonly causalIdentity: string;
 }
 
+/** The pages of an effect already validated against accepted authority; a refused page set is a broken invariant. */
 function computeStateSyncSnapshotPages(input: StateSyncSnapshotPagesInput): readonly ALMessage[] {
     const { envelope, computed, effect } = input;
     return computeStateSnapshotPages({
@@ -226,13 +231,13 @@ function computeStateSyncSnapshotPages(input: StateSyncSnapshotPagesInput): read
 interface StateSyncEnvelopeFacts {
     readonly key: ALMessage['route'];
     readonly computed: ComputedStateSync;
-    readonly effect: ComputedStateSyncEffect;
     readonly senderId: string;
     readonly messageId: string;
+    readonly ack: ALAckMode;
 }
 
 function toStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnapshotEnvelope {
-    const { key, computed, effect, senderId, messageId } = facts;
+    const { key, computed, senderId, messageId, ack } = facts;
     return {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
@@ -247,9 +252,7 @@ function toStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnapshotEnvelo
         delivery: {
             ownership: 'shared',
             reliability: 'at-least-once',
-            // Only a group delta is a room broadcast its receivers confirm: a principal audience has no room to
-            // confirm against, and a snapshot page is superseded by the next one rather than receipted.
-            ack: effect.payloadKind === 'delta-envelope' ? 'receiver' : 'none'
+            ack
         },
         audit: {
             createdBy: senderId,

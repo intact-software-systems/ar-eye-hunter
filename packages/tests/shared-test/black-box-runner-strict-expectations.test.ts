@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
 import { computeBlackBoxRunnerPlanPreflight } from '../../shared-test/black-box-runner/preflight/plan-preflight.ts';
 import { computeBlackBoxRunnerEnvRequirements } from '../../shared-test/black-box-runner/preflight/preflight-env-variables.ts';
 
@@ -56,6 +57,33 @@ describe('strict preflight expectation checks', () => {
             request: { action: 'send', connection: 'wsAlice', message: {} },
             expect: { absent: { id: { msgId: 'never' } } }
         })).toContain('STRICT_EXPECT_IGNORED');
+    });
+
+    // Only a WebSocket count wait reads countDistinctBy; anywhere else the recipe would believe it counted publications.
+    it.each(
+        [
+            ['a websocket wait without a count', {
+                type: 'ws.wait',
+                request: { action: 'wait', connection: 'wsAlice' },
+                expect: { message: {}, countDistinctBy: 'id.msgId' }
+            }],
+            ['an rtc wait with a count', {
+                type: 'rtc.wait',
+                request: { action: 'wait', connection: 'rtcAlice' },
+                expect: { message: {}, count: 1, countDistinctBy: 'id.msgId' }
+            }]
+        ] as const
+    )('reports countDistinctBy on %s', (_label, step) => {
+        expect(computeStrictIssueCodes({ name: 'countPublications', ...step })).toContain('STRICT_EXPECT_IGNORED');
+    });
+
+    it('accepts countDistinctBy on a websocket count wait', () => {
+        expect(computeStrictIssueCodes({
+            name: 'countPublications',
+            type: 'ws.wait',
+            request: { action: 'wait', connection: 'wsAlice' },
+            expect: { message: {}, count: 2, countDistinctBy: 'id.msgId' }
+        })).not.toContain('STRICT_EXPECT_IGNORED');
     });
 
     it('still reports an empty expected array under a compatible comparison', () => {

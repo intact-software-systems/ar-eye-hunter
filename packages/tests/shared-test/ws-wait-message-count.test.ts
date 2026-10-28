@@ -9,9 +9,9 @@ import {
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
+import { waitForWsMessageCount } from '../../shared-test/black-box-runner/ws/wait-for-ws-message-count.ts';
 import {
     waitForWsMessage,
-    waitForWsMessageCount,
     type WsInteraction,
     type WsInteractionResponse,
     type WsWaitContext

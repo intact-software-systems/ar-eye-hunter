@@ -934,8 +934,11 @@ identifies one publication, and the count counts distinct values among the
 matching frames instead of the frames. A receiver-receipted server publication,
 such as a group-state delta, is retransmitted to a socket that never
 acknowledges it, and a recipe socket never does, so count such publications with
-`"countDistinctBy": "id.msgId"`. A matching frame without a value at that path
-fails the count.
+`"countDistinctBy": "id.msgId"`. The path is read from the received frame as it
+arrived, before `expect.decodeJsonPaths` decodes anything, and a matching frame
+without a value at that path fails the count. Only a count reads it: strict
+preflight reports `STRICT_EXPECT_IGNORED` for `countDistinctBy` on a step without
+`expect.count` or on an `rtc.*` step.
 
 ## Array Comparison Is Unordered In Every Mode
 

@@ -5,8 +5,10 @@ import {
     it,
     vi
 } from 'vitest';
+
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import { evaluateScenarioTransform } from '../../shared-test/black-box-runner/execution/black-box-output-transform.ts';
+import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import { withPollUntil } from '../../shared-test/black-box-runner/execution/with-poll-until.ts';
 import {
     createRallarRtcClientEventDispatcher,
@@ -19,13 +21,8 @@ import {
     waitForRtcMessageAbsence,
     waitForRtcMessageCount
 } from '../../shared-test/black-box-runner/rtc/rtc-wait-expectations.ts';
-import {
-    waitForWsMessage,
-    waitForWsMessageAbsence,
-    waitForWsMessageCount
-} from '../../shared-test/black-box-runner/ws/ws-wait-expectations.ts';
-
-import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
+import { waitForWsMessageCount } from '../../shared-test/black-box-runner/ws/wait-for-ws-message-count.ts';
+import { waitForWsMessage, waitForWsMessageAbsence } from '../../shared-test/black-box-runner/ws/ws-wait-expectations.ts';
 
 afterEach(() => {
     vi.useRealTimers();
