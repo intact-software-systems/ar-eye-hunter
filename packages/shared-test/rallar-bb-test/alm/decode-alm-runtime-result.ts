@@ -13,6 +13,7 @@ import {
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type {
     RallarBlackBoxTestMessagesCarrier,
@@ -120,15 +121,31 @@ export function decodeAlmMessagesSendResultValue(
     };
 }
 
-export function decodeAlmReceivedMessageIdentity(value: unknown): AlmReceivedMessageIdentity {
+/**
+ * One matched copy's identity, decoded alike from the page's event `data` and from a recorded `received` entry; the
+ * left side names the first unusable field.
+ */
+export function decodeAlmReceivedMessageIdentity(
+    value: unknown
+): Either<keyof AlmReceivedMessageIdentity, AlmReceivedMessageIdentity> {
     const record = decodeAlmRuntimeRecord(value);
-    const path = 'messages.received event.data';
-    return {
-        msgId: requireAlmStringField(record, path, 'msgId'),
-        traceId: requireAlmTraceIdField(record, path),
-        corrId: requireAlmStringField(record, path, 'corrId'),
-        transport: requireAlmCarrierLegField(record, path, 'transport')
-    };
+    const { msgId, corrId } = record;
+    const traceId = decodeALTraceId(record.traceId).foldRight((id) => id);
+    const transport = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.find((candidate) =>
+        candidate === record.transport
+    );
+    if (typeof msgId !== 'string') {
+        return Either.ofLeft('msgId');
+    }
+    if (traceId === undefined) {
+        return Either.ofLeft('traceId');
+    }
+    if (typeof corrId !== 'string') {
+        return Either.ofLeft('corrId');
+    }
+    return transport === undefined
+        ? Either.ofLeft('transport')
+        : Either.ofRight({ msgId, traceId, corrId, transport });
 }
 
 export function decodeAlmMessagesReplayResultValue(value: unknown): RallarBlackBoxTestMessagesReplayResultValue {
@@ -322,16 +339,12 @@ function requireAlmCarrierField(
     return carrier;
 }
 
-function requireAlmCarrierLegField(
-    record: RallarBlackBoxTestRecord,
-    path: string,
-    field = 'carrier'
-): ALDeliveryCarrier {
+function requireAlmCarrierLegField(record: RallarBlackBoxTestRecord, path: string): ALDeliveryCarrier {
     const carrier = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.find((candidate) =>
-        candidate === record[field]
+        candidate === record.carrier
     );
     if (carrier === undefined) {
-        throw toAlmInvalidRuntimeResultError(`${path}.${field}`);
+        throw toAlmInvalidRuntimeResultError(`${path}.carrier`);
     }
     return carrier;
 }
@@ -538,7 +551,7 @@ function requireAlmRecordField(
     return value as RallarBlackBoxTestRecord;
 }
 
-function toAlmInvalidRuntimeResultError(field: string): Error {
+export function toAlmInvalidRuntimeResultError(field: string): Error {
     const error = new Error(`The page runtime returned no usable ${field}.`);
     error.name = ALM_INVALID_RUNTIME_RESULT_CODE;
     return error;

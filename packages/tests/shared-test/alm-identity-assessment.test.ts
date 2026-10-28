@@ -8,12 +8,12 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
     assessAlmConformanceIdentity,
     type AlmConformanceIdentityInput,
     type AlmConformanceIdentityParticipant
-} from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
-import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+} from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
@@ -533,21 +533,29 @@ describe('ALM recipe identity assessment', () => {
         expect(withCopies([])).toEqual([`${send.commandId}: no received copy joins the fallback send.`]);
     });
 
-    it('raises nothing for an expiring send that never arrived', () => {
-        const transcript = new IdentityTranscript('combined');
-        const send = transcript.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((command) =>
-            isJsonRecordValue(command.payload) && command.payload.marker === 'not-yet-in-sync' && command.carrier === 'rtc-with-ws-fallback'
-        )!;
-        const receiver = transcript.receiver;
-        const count = receiver.command(
-            'messages.received',
-            receiver.commands.filter((command) => command.kind === 'messages.received').findIndex((command) =>
-                command.kind === 'messages.received' && command.typeId === send.typeId
-            )
-        );
-        receiver.replaceCommand({ ...count, absent: false });
-        receiver.replaceResult({ ...receiver.result(count), value: { ...recordAt(receiver.result(count).value), absent: false, received: [] } });
-        expect(assessAlmConformanceIdentity(transcript.input())).toEqual([]);
+    it('raises nothing for a non-fallback identity send whose receiver count lists no copy', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, []))).toEqual([]);
+    });
+
+    it('rejects a received copy on a transport its send cannot arrive on', () => {
+        const transcript = new IdentityTranscript('lifecycle', 'ws');
+        const send = transcript.sender.command('messages.send');
+        const copy = { msgId: `original:${send.commandId}`, traceId: `trace-${send.commandId}`, corrId: `original:${send.commandId}`, transport: 'rtc' };
+        expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, [copy])))
+            .toEqual([`${send.commandId}: a received copy arrived on another transport.`]);
+    });
+
+    it.each(
+        [
+            ['without a received list', undefined],
+            ['listing a copy without its trace', [{ msgId: 'original:any', corrId: 'original:any', transport: 'ws' }]]
+        ] as const
+    )('rejects a receiver count %s', (_label, received) => {
+        const transcript = new IdentityTranscript('lifecycle', 'ws');
+        const send = transcript.sender.command('messages.send');
+        expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, received)))
+            .toContain(`${send.commandId}: a receiver count lists malformed received copies.`);
     });
 
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('rejects a recovered %s reload original that carries another trace', (carrier) => {
@@ -579,6 +587,27 @@ describe('ALM recipe identity assessment', () => {
         ).not.toEqual([]);
     });
 });
+
+/** The lifecycle receiver authors no count; this appends one presence count for the first send's typeId. */
+function withLifecycleCount(
+    transcript: IdentityTranscript,
+    received: readonly Readonly<Record<string, string>>[] | undefined
+): AlmConformanceIdentityInput {
+    const [send] = transcript.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand);
+    const count: RallarBlackBoxTestCommand = {
+        kind: 'messages.received',
+        commandId: 'lifecycle-received-count',
+        typeId: send.typeId,
+        count: 1,
+        windowMs: 1_000
+    };
+    transcript.receiver.append(count);
+    transcript.receiver.replaceResult({
+        ...transcript.receiver.result(count),
+        value: { typeId: send.typeId, count: 1, observed: received?.length ?? 0, absent: false, ...(received === undefined ? {} : { received }) }
+    });
+    return transcript.input();
+}
 
 namespace IdentityTranscript {
     export type Kind = 'lifecycle' | 'reload' | 'combined' | 'fallback-within-deadline';

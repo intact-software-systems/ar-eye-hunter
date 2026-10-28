@@ -1,17 +1,21 @@
-import type { AlmReceivedMessageIdentity } from '../../alm/rallar-black-box-alm-result-values.ts';
+import { decodeAlmReceivedMessageIdentity } from '../../../alm/decode-alm-runtime-result.ts';
+import type { AlmReceivedMessageIdentity } from '../../../alm/rallar-black-box-alm-result-values.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestMessagesSendCommand
-} from '../../rallar-black-box-test-contracts.ts';
-import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
+} from '../../../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
+import type { AlmConformanceScenarioId } from '../alm-conformance-scenario-definition.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
+import { toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
 
+/** A send's marker is its scenario id, so a renamed fallback scenario fails to compile here. */
 const ALM_FALLBACK_MARKERS = [
     'fallback-within-deadline',
     'receipt-exhausted-fallback',
     'unicast-fallback'
-] as const;
+] as const satisfies readonly AlmConformanceScenarioId[];
 
 export type AlmFallbackMarker = (typeof ALM_FALLBACK_MARKERS)[number];
 
@@ -29,7 +33,7 @@ export interface AlmReceivedTraceIdentityInput {
 export function assessAlmReceivedTraceIdentity(input: AlmReceivedTraceIdentityInput): readonly string[] {
     const { send, msgId, traceId, receiver } = input;
     const counts = receiver.participant.recipe.commands.filter((command) => isJoinedCount(command, input));
-    const listed = counts.map((count) => readReceivedCopies(receiver, count));
+    const listed = counts.map((count) => toReceivedCopies(receiver, count));
     if (listed.some((copies) => copies === undefined)) {
         return [`${send.commandId}: a receiver count lists malformed received copies.`];
     }
@@ -42,7 +46,7 @@ export function assessAlmReceivedTraceIdentity(input: AlmReceivedTraceIdentityIn
         ...(copies.some((copy) => !arrivals.includes(copy.transport))
             ? [`${send.commandId}: a received copy arrived on another transport.`]
             : []),
-        ...(copies.length === 0 && isAlmFallbackMarker(markerOf(send))
+        ...(copies.length === 0 && isAlmFallbackMarker(toSendMarker(send))
             ? [`${send.commandId}: no received copy joins the fallback send.`]
             : [])
     ];
@@ -56,7 +60,7 @@ export function toArrivalTransports(send: RallarBlackBoxTestMessagesSendCommand)
     if (send.carrier === 'ws') {
         return ['ws'];
     }
-    const marker = markerOf(send);
+    const marker = toSendMarker(send);
     const handedOver = marker === 'delivery-reload' || isAlmFallbackMarker(marker);
     return send.carrier === 'rtc-with-ws-fallback' && handedOver ? ['rtc', 'ws'] : ['rtc'];
 }
@@ -73,21 +77,18 @@ function isJoinedCount(
         (command.msgId === undefined || command.msgId === msgId);
 }
 
-function readReceivedCopies(
+/** The lane's own decoder reads the recorded copies, so a copy outside its contract makes the count malformed. */
+function toReceivedCopies(
     receiver: RecordedAlmConformanceParticipant,
     count: RallarBlackBoxTestMessagesReceivedCommand
 ): readonly AlmReceivedMessageIdentity[] | undefined {
-    const value = count.commandId ? receiver.results.get(count.commandId)?.value : undefined;
-    const received = isJsonRecordValue(value) ? value.received : undefined;
-    return Array.isArray(received) && received.every(isAlmReceivedMessageIdentity) ? received : undefined;
+    const value = toRecordedAlmResultValue(receiver, count);
+    const received = isJsonRecordValue(value) && Array.isArray(value.received) ? value.received : undefined;
+    const copies = received?.map((entry) => decodeAlmReceivedMessageIdentity(entry).foldRight((copy) => copy));
+    return copies?.every((copy) => copy !== undefined) ? copies : undefined;
 }
 
-function isAlmReceivedMessageIdentity(value: unknown): value is AlmReceivedMessageIdentity {
-    return isJsonRecordValue(value) && typeof value.msgId === 'string' && typeof value.traceId === 'string' &&
-        typeof value.corrId === 'string' && (value.transport === 'ws' || value.transport === 'rtc');
-}
-
-function markerOf(send: RallarBlackBoxTestMessagesSendCommand): string | undefined {
+function toSendMarker(send: RallarBlackBoxTestMessagesSendCommand): string | undefined {
     const marker = isJsonRecordValue(send.payload) ? send.payload.marker : undefined;
     return typeof marker === 'string' ? marker : undefined;
 }

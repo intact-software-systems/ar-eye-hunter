@@ -1,18 +1,18 @@
 import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 
-import { isRallarBlackBoxTestMessagesSendCommand } from '../../alm/is-rallar-black-box-test-messages-send-command.ts';
-import { isRallarBlackBoxTestResult } from '../../composite-results.ts';
-import type { ControlResultEnvelope } from '../../control-protocol.ts';
+import { isRallarBlackBoxTestMessagesSendCommand } from '../../../alm/is-rallar-black-box-test-messages-send-command.ts';
+import { isRallarBlackBoxTestResult } from '../../../composite-results.ts';
+import type { ControlResultEnvelope } from '../../../control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
-} from '../../rallar-black-box-test-contracts.ts';
-import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
-import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
-import { decodePayloadPathValue, isSameJsonValue } from '../../wait/wait-event-match.ts';
-import type { AlmConformanceRole } from './alm-conformance-roles.ts';
+} from '../../../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../../../runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
+import { isSameJsonValue } from '../../../wait/wait-event-match.ts';
+import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 import { assessAlmAcknowledgedIdentity } from './assess-alm-acknowledged-identity.ts';
 import { assessAlmReceiptRoleIdentity, readAlmReceiptRolesEntries } from './assess-alm-receipt-role-identity.ts';
 import {
@@ -23,6 +23,7 @@ import {
     type AlmReceivedTraceIdentityInput
 } from './assess-alm-received-trace-identity.ts';
 import { assessAlmReloadIdentity } from './assess-alm-reload-identity.ts';
+import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
 
 export interface AlmConformanceIdentityParticipant {
     readonly role: string;
@@ -191,9 +192,8 @@ function assessReceivedIdentity({ send, msgId, traceId, receiver }: SendIdentity
     if (waits.length !== 1) {
         return [`${send.commandId}: exactly one authored receiver wait is required.`];
     }
-    const value = receiver.results.get(waits[0].commandId!)?.value;
-    const lookup = decodePayloadPathValue(value, 'event.payload.data');
-    const data = lookup.exists ? lookup.value : undefined;
+    const value = toRecordedAlmResultValue(receiver, waits[0]);
+    const data = toAlmJsonPathValue(value, 'event.payload.data');
     const matches = isJsonRecordValue(value) && value.matched === true && isJsonRecordValue(data) &&
         data.msgId === msgId && data.traceId === traceId && data.typeId === send.typeId &&
         toArrivalTransports(send).some((carrier) => carrier === data.transport) &&

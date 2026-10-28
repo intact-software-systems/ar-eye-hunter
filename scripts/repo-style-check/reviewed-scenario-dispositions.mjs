@@ -113,38 +113,6 @@ export const reviewedScenarioDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 64
     }),
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 54
-    }),
-    // Reload command results retain opaque external evidence. These readers keep
-    // malformed leaves intact until the adjacent validators reject them; JSON
-    // normalization would erase NaN/Infinity and missing-value negative evidence.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
-        rule: 'boundary.unknown',
-        symbol: 'resultValue'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readPath'
-    }),
-    // Raw count maps and leaves are narrowed to finite nonnegative numbers before
-    // acceptance. Missing write means zero only alongside the complete valid-map
-    // check in assessReloadStorage; these boundaries return booleans, not raw state.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validStorageCounts'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
-        rule: 'boundary.unknown',
-        symbol: 'positiveCounterDelta'
-    }),
     // Arbitrary authored/bound command metadata is narrowed to nonempty checkpoint
     // arrays with every required string before binder or checkpoint policy reads it.
     Object.freeze({

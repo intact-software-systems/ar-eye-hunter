@@ -755,8 +755,10 @@ a distinct `typeId` to say which occurrence it means. A presence claim settles
 as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
 passes only when fewer than `max(count, 1)` messages arrived. Its result
 lists each matched copy's `msgId`, `traceId`, `corrId` and `transport` as
-`received`, in arrival order; a matched copy whose `traceId` is missing or
-outside the trace grammar fails the command as an invalid runtime result.
+`received`, in arrival order and uncapped; its `rallar.bb.messages.received`
+diagnostic carries only `typeId`, `msgId`, `count`, `observed` and `absent`,
+never the copies. A matched copy whose `traceId` is missing or outside the trace
+grammar fails the command as an invalid runtime result.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only

@@ -1136,6 +1136,11 @@ describe('ALM browser adapter execution', () => {
                 { msgId: 'msg-2', traceId: 'trace-second', corrId: 'msg-2', transport: 'ws' }
             ]
         });
+        // The result carries the unbounded copy list; its diagnostic stays a fixed-size summary.
+        const diagnostic = runtime.state().events.find((event) => event.topic === 'rallar.bb.messages.received' && event.commandId === 'alm-received-listed');
+        expect(isJsonRecordValue(diagnostic?.payload) ? diagnostic.payload.data : undefined)
+            .toEqual({ typeId: 'alm.conformance', count: 2, observed: 2, absent: false });
+        expect(JSON.stringify(diagnostic)).not.toContain('trace-first');
     });
 
     it('fails a matched copy whose trace is outside the grammar as an invalid runtime result', async () => {

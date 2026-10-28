@@ -355,8 +355,9 @@ function resultEnvelope(
                         ? command.match.equals
                         : undefined;
                     const identity = isJsonRecordValue(payload) ? JSON.stringify(payload) : undefined;
-                    // The fabricated identity is the payload's text, so its trace keeps that text to the trace grammar.
-                    const traceId = identity?.replaceAll(/[^A-Za-z0-9_-]/gu, '_');
+                    // The fabricated identity is the payload's text, so its trace keeps that text to the trace grammar:
+                    // its characters and its 128-character bound.
+                    const traceId = identity?.replaceAll(/[^A-Za-z0-9_-]/gu, '_').slice(0, 128);
                     return {
                         commandId: command.commandId,
                         kind: command.kind,
