@@ -194,6 +194,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                     operation: 'transaction',
                     serviceId: this.config.serviceId,
                     requestId: context.enqueue.resourceId,
+                    traceId: context.message.id.traceId,
                     details
                 }
             },

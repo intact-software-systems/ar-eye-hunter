@@ -79,7 +79,10 @@ export class AppInboxCommandClient {
                 enqueue,
                 async () => await this.queueEntryWriter.writeIfAbsent(enqueue)
             );
-            return await this.resultWaiter.waitForResult({ enqueue, key: entry.key, winner }, decodeResult);
+            return await this.resultWaiter.waitForResult(
+                { enqueue, key: entry.key, traceId: enqueue.traceId, winner },
+                decodeResult
+            );
         });
     }
 
@@ -87,9 +90,10 @@ export class AppInboxCommandClient {
         command: AppInboxCommandClient.MaterializedCommand,
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
-        return await this.timeCommand(command.received, async () => {
+        const traced: AppInboxEnqueueInput = { ...command.received, traceId: command.placeholder.traceId };
+        return await this.timeCommand(traced, async () => {
             const reservation = await this.timeEnqueue(
-                command.received,
+                traced,
                 async () => await this.reserveMatchingEntry(command)
             );
             return await this.resultWaiter.waitForResult(reservation, decodeResult);
@@ -114,7 +118,7 @@ export class AppInboxCommandClient {
     }
 
     private async timeCommand<Result>(
-        enqueue: AppInboxEnqueue,
+        enqueue: AppInboxEnqueueInput,
         action: () => Promise<Result>
     ): Promise<Result> {
         const details = toTimingDetails(enqueue);
@@ -125,6 +129,7 @@ export class AppInboxCommandClient {
                 operation: 'enqueueAndWaitForResult',
                 serviceId: this.serviceId,
                 requestId: enqueue.resourceId,
+                traceId: enqueue.traceId,
                 details
             },
             action
@@ -132,7 +137,7 @@ export class AppInboxCommandClient {
     }
 
     private async timeEnqueue<Result>(
-        enqueue: AppInboxEnqueue,
+        enqueue: AppInboxEnqueueInput,
         action: () => Promise<Result>
     ): Promise<Result> {
         if (!this.options.phaseTiming) {
@@ -145,6 +150,7 @@ export class AppInboxCommandClient {
                 operation: 'enqueue',
                 serviceId: this.serviceId,
                 requestId: enqueue.resourceId,
+                traceId: enqueue.traceId,
                 details: toTimingDetails(enqueue)
             },
             action

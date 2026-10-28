@@ -62,6 +62,7 @@ type AppInboxTerminalObservation<Result> =
 interface AppInboxSubscribedWait<Result> {
     readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
+    readonly traceId: string;
     readonly decodeResult: AppInboxResultWaiter.ResultDecoder<Result>;
     /** This wait's reservation or write created the entry, so the entry was not terminal when the wait subscribed. */
     readonly winner: boolean;
@@ -70,6 +71,7 @@ interface AppInboxSubscribedWait<Result> {
 interface AppInboxCompletedResultRead<Result> {
     readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
+    readonly traceId: string;
     readonly decodeResult: AppInboxResultWaiter.ResultDecoder<Result>;
     readonly subscription: ResourceInboxCompletionNotifications.Subscription | undefined;
     readonly firstObservation: AppInboxFirstObservation;
@@ -90,6 +92,7 @@ class AppInboxEntryPendingError extends Error {
 interface AppInboxPoll {
     readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
+    readonly traceId: string;
     readonly trigger: AppInboxReadTrigger;
     readonly readRow: 'result' | 'status';
 }
@@ -98,6 +101,7 @@ interface AppInboxWaitPhase<Result> {
     readonly operation: 'read-result' | 'wait-completion';
     readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
+    readonly traceId: string;
     readonly action: () => Promise<Result>;
     readonly details: RallarTimingDetails;
 }
@@ -109,6 +113,8 @@ export namespace AppInboxResultWaiter {
     export interface Wait {
         readonly enqueue: AppInboxEnqueue;
         readonly key: Key;
+        /** Named on every line of the wait: the waiting request's trace, or a replay read's retained message's. */
+        readonly traceId: string;
         readonly winner: boolean;
     }
 
@@ -161,8 +167,8 @@ export class AppInboxResultWaiter {
         wait: AppInboxResultWaiter.Wait,
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
-        const { enqueue, key, winner } = wait;
-        return await this.waitSubscribed({ enqueue, key, decodeResult, winner });
+        const { enqueue, key, traceId, winner } = wait;
+        return await this.waitSubscribed({ enqueue, key, traceId, decodeResult, winner });
     }
 
     /**
@@ -188,7 +194,7 @@ export class AppInboxResultWaiter {
     private async readCompletedResult<Result>(
         read: AppInboxCompletedResultRead<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
-        const { enqueue, key, decodeResult } = read;
+        const { enqueue, key, traceId, decodeResult } = read;
         const terminal = await this.waitForCompletion(read);
         if (terminal === undefined) {
             return Either.ofLeft(toUnavailableAppInboxFailure());
@@ -200,6 +206,7 @@ export class AppInboxResultWaiter {
             operation: 'read-result',
             enqueue,
             key,
+            traceId,
             action: async () => await this.readResult(key, decodeResult),
             details: {}
         });
@@ -224,13 +231,14 @@ export class AppInboxResultWaiter {
     private async waitForCompletion<Result>(
         read: AppInboxCompletedResultRead<Result>
     ): Promise<AppInboxTerminalObservation<Result> | undefined> {
-        const { enqueue, key } = read;
+        const { enqueue, key, traceId } = read;
         const progress: AppInboxWaitProgress = { nextTrigger: 'first' };
         try {
             return await this.timePhase({
                 operation: 'wait-completion',
                 enqueue,
                 key,
+                traceId,
                 action: async () =>
                     await tryWithPolicy(
                         this.createCompletionAttempt(read, progress),
@@ -243,7 +251,7 @@ export class AppInboxResultWaiter {
             if (!(error instanceof TryWithExhaustedError)) {
                 throw error;
             }
-            this.recordWaitFallback(enqueue, key, error);
+            this.recordWaitFallback(read, error);
             return undefined;
         }
     }
@@ -253,7 +261,7 @@ export class AppInboxResultWaiter {
         read: AppInboxCompletedResultRead<Result>,
         progress: AppInboxWaitProgress
     ): () => Promise<AppInboxTerminalObservation<Result>> {
-        const { enqueue, key, subscription } = read;
+        const { subscription } = read;
         let unread = read.firstObservation === 'wait';
         return async () => {
             const trigger = progress.nextTrigger;
@@ -266,7 +274,7 @@ export class AppInboxResultWaiter {
             if (trigger === 'completion') {
                 return await this.readWokenResult(read, trigger);
             }
-            return await this.readCompletionPoll(enqueue, key, trigger);
+            return await this.readCompletionPoll(read, trigger);
         };
     }
 
@@ -275,8 +283,8 @@ export class AppInboxResultWaiter {
         read: AppInboxCompletedResultRead<Result>,
         trigger: AppInboxReadTrigger
     ): Promise<AppInboxTerminalObservation<Result>> {
-        const { enqueue, key } = read;
-        const poll = { enqueue, key, trigger, readRow: 'result' } as const;
+        const { enqueue, key, traceId } = read;
+        const poll = { enqueue, key, traceId, trigger, readRow: 'result' } as const;
         let result: ResourceEntry | undefined;
         try {
             result = await this.resultRepository.findByKey(key);
@@ -287,7 +295,7 @@ export class AppInboxResultWaiter {
         }
         if (result === undefined) {
             this.recordPoll(poll, { queueObservation: 'missing' });
-            return await this.readCompletionPoll(enqueue, key, trigger);
+            return await this.readCompletionPoll(read, trigger);
         }
         const observed = { status: result.status, attempts: result.dequeueAudit.attempts };
         const queueObservation = toAppInboxQueueObservation(observed);
@@ -298,16 +306,17 @@ export class AppInboxResultWaiter {
         return { readRow: 'result', result: toAppInboxResult(result, read.decodeResult) };
     }
 
-    private recordWaitFallback(enqueue: AppInboxEnqueue, key: Key, error: TryWithExhaustedError): void {
+    private recordWaitFallback<Result>(read: AppInboxCompletedResultRead<Result>, error: TryWithExhaustedError): void {
         recordRallarTiming({
             sink: this.timing,
             event: {
                 component: 'app-inbox-phase',
                 operation: 'wait-fallback',
                 serviceId: this.serviceId,
-                requestId: enqueue.resourceId,
+                requestId: read.enqueue.resourceId,
+                traceId: read.traceId,
                 details: {
-                    ...toAppInboxTimingDetails(enqueue, key),
+                    ...toAppInboxTimingDetails(read.enqueue, read.key),
                     attempt: error.context.attempt,
                     elapsedMsecs: error.context.elapsedMsecs,
                     waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
@@ -321,11 +330,11 @@ export class AppInboxResultWaiter {
     }
 
     private async readCompletionPoll<Result>(
-        enqueue: AppInboxEnqueue,
-        key: Key,
+        read: AppInboxCompletedResultRead<Result>,
         trigger: AppInboxReadTrigger
     ): Promise<AppInboxTerminalObservation<Result>> {
-        const poll = { enqueue, key, trigger, readRow: 'status' } as const;
+        const { enqueue, key, traceId } = read;
+        const poll = { enqueue, key, traceId, trigger, readRow: 'status' } as const;
         let observed: ResourceInboxStatusAndAttempts | undefined;
         try {
             observed = await this.statusRepository.readStatusAndAttempts(key);
@@ -357,6 +366,7 @@ export class AppInboxResultWaiter {
                 operation: 'wait-poll',
                 serviceId: this.serviceId,
                 requestId: poll.enqueue.resourceId,
+                traceId: poll.traceId,
                 details: {
                     ...toAppInboxTimingDetails(poll.enqueue, poll.key),
                     ...observation,
@@ -373,7 +383,7 @@ export class AppInboxResultWaiter {
         read: AppInboxCompletedResultRead<Result>,
         progress: AppInboxWaitProgress
     ): TryWithPolicy {
-        const { enqueue, key, subscription } = read;
+        const { enqueue, key, traceId, subscription } = read;
         const labelled = TryWithPolicy.defaults()
             .label(`app-inbox:${key.topicId}:${key.resourceId}`)
             .maxElapsedMsecs(this.options.waitMaxElapsedMsecs);
@@ -387,6 +397,7 @@ export class AppInboxResultWaiter {
                         operation: 'wait-retry',
                         serviceId: this.serviceId,
                         requestId: enqueue.resourceId,
+                        traceId,
                         details: {
                             ...toAppInboxTimingDetails(enqueue, key),
                             attempt: context.attempt,
@@ -442,6 +453,7 @@ export class AppInboxResultWaiter {
                 operation: phase.operation,
                 serviceId: this.serviceId,
                 requestId: phase.enqueue.resourceId,
+                traceId: phase.traceId,
                 details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
             },
             phase.action

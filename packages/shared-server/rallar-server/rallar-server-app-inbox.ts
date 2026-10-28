@@ -12,6 +12,7 @@ import {
     AppInboxIdempotencyConflictError,
     isAppInboxType,
     type AppInboxEnqueue,
+    type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '../rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toTerminalAppInboxFailure, type AppInboxFailure } from '../rallar-system/app-inbox/app-inbox-failure.ts';
@@ -264,7 +265,7 @@ export class RallarServerAppInbox {
             const retained = await this.readRetained(registration, received);
             if (retained) {
                 this.wakeOwningQueue();
-                return Either.ofRight(this.createAdmission(registration, retained));
+                return Either.ofRight(this.createAdmission(registration, { ...retained, traceId: input.traceId }));
             }
             const stopped = this.getAdmissionFailure();
             if (stopped) {
@@ -315,13 +316,14 @@ export class RallarServerAppInbox {
     ): RallarServerAppInbox.Admission<Result> {
         const command = registration.decodeEnvelope(retained.enqueue);
         // Enqueue owns queue wakes. Subscribe then read: retained work may have completed before this wait begins.
-        const observed = { enqueue: retained.enqueue, key: retained.key, winner: false };
+        const observed = { enqueue: retained.enqueue, key: retained.key, traceId: retained.traceId, winner: false };
         return Object.freeze({
             wait: () =>
                 this.client.resultWaiter.waitForResult(observed, (value) => registration.decodeResult(value, command))
         });
     }
 
+    /** The wait names the retained message's trace, since a replay read brings none; an enqueue names its own. */
     private async readRetained<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
         received: AppInboxEnqueue
@@ -331,8 +333,8 @@ export class RallarServerAppInbox {
         if (!entry) {
             return undefined;
         }
-        const enqueue = assertRegisteredEntry(registration, entry, received);
-        return { enqueue, key, winner: false };
+        const { traceId, ...enqueue } = assertRegisteredEntry(registration, entry, received);
+        return { enqueue, key, traceId, winner: false };
     }
 
     private getAdmissionFailure(): AppInboxFailure | undefined {
@@ -384,7 +386,7 @@ function assertRegisteredEntry<Command, Result>(
     registration: RallarServerAppInbox.Registration<Command, Result>,
     entry: ResourceEntry,
     received: AppInboxEnqueue
-): AppInboxEnqueue {
+): AppInboxEnqueueInput {
     const identity = validateAppInboxCommandIdentity(entry);
     const message = decodePersistedALMessage(entry.resource);
     if (!identity.valid || entry.typeId !== 'APP_INBOX') {
@@ -412,7 +414,7 @@ function assertRegisteredEntry<Command, Result>(
         throw new AppInboxCommandIdentityError('corrupt');
     }
     assertMatchingRegisteredCommand(registration, received, projected);
-    return stored;
+    return { ...stored, traceId: message.id.traceId };
 }
 
 function assertMatchingRegisteredCommand<Command, Result>(

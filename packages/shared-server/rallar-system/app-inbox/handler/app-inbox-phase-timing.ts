@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 import type { PSqlExecutorCounters, PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     nowMs,
@@ -43,7 +45,7 @@ export async function timeAppInboxPhase<T>(
             event: toPhaseEvent(input, countersBefore),
             status: 'error',
             durationMs: nowMs() - startedAt,
-            error
+            error: toError(error)
         });
         throw error;
     }

@@ -4,6 +4,7 @@ import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/aut
 import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -39,6 +40,8 @@ interface CreateAuthInboxTestRuntimeInput {
     readonly nowEpochMs?: () => number;
     readonly newAuthMessageId?: () => string;
     readonly wakeOwningQueue?: () => void;
+    /** Present, the service records its phase lines into it. */
+    readonly timing?: RallarTimingSink;
 }
 
 interface RunAuthInboxCommandInput<Result> {
@@ -68,7 +71,8 @@ export function createAuthInboxTestRuntime({
     passwordDerivationAdmission,
     nowEpochMs,
     newAuthMessageId,
-    wakeOwningQueue
+    wakeOwningQueue,
+    timing
 }: CreateAuthInboxTestRuntimeInput): AuthInboxTestRuntime {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
@@ -95,7 +99,9 @@ export function createAuthInboxTestRuntime({
             serviceId: serviceId,
             authFactNowEpochMs: nowEpochMs,
             newAuthMessageId,
-            wakeOwningQueue
+            wakeOwningQueue,
+            timing,
+            options: { phaseTiming: timing !== undefined }
         }
     );
     return { queue, results, reader, service, credentialIssuer, database };

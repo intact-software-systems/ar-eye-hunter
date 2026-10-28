@@ -78,7 +78,9 @@ function writeHttpRequestTiming(c: Context, timing: RallarTimingSink, outcome: H
         event: {
             component: 'http',
             operation: 'request',
+            // An HTTP request has no request id but its trace, so both name the same value.
             requestId: request.traceId,
+            traceId: request.traceId,
             method: request.method,
             path: request.path,
             httpStatus,

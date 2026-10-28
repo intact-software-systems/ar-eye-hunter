@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     nowMs,
     recordRallarTiming,
@@ -123,7 +125,7 @@ export function timeClientStateMutationPhase<T>(
             event: toMutationTiming(input.operation, input.command, input.timing.serviceId),
             status: 'error',
             durationMs: nowMs() - startedAtEpochMs,
-            error
+            error: toError(error)
         });
         throw error;
     }
@@ -151,7 +153,7 @@ export async function timeClientStateMutationCommit<T>(
             ...input,
             status: 'error',
             durationMs: nowMs() - startedAtEpochMs,
-            error
+            error: toError(error)
         });
         throw error;
     }

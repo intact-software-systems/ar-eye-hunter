@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     nowMs,
     recordRallarTiming,
@@ -41,7 +43,7 @@ export async function runTimedAdminOperation<TResult>(
             event: input.event,
             status: 'error',
             durationMs: nowMs() - startedAt,
-            error
+            error: toError(error)
         });
         throw error;
     }

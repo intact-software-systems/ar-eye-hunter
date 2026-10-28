@@ -54,6 +54,7 @@ describe('RTC topology recompute timing line', () => {
             })
         })]);
         expect(events[0]?.details).not.toHaveProperty('layoutAgeMs', expect.anything());
+        expect(events.map((event) => event.traceId)).toEqual(['trace-rtc-topology-work-timing']);
     });
 
     it('records no line for a refresh the refinement gate skips, even while timing is on', async () => {

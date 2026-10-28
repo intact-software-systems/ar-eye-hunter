@@ -55,7 +55,7 @@ async function logoutResponse(
                 const proof = readApiAuthCredentialProof(context.req);
                 if (proof) {
                     const replay = await dependencies.appAuthInbox
-                        .replayLogoutSessionWithCredentialProof({ requestId, ...proof });
+                        .replayLogoutSessionWithCredentialProof({ requestId, traceId, ...proof });
                     if (replay !== null) {
                         return toJsonResponse(
                             requireAuthMutationResult(replay) satisfies LogoutResponse

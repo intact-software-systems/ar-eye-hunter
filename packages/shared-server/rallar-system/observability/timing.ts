@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 export type RallarTimingStatus = 'ok' | 'error';
 
 export type RallarTimingDetails = Readonly<Record<string, string | number | boolean | undefined>>;
@@ -11,6 +13,11 @@ export type RallarTimingEvent = Readonly<{
     atEpochMs: number;
     serviceId?: string;
     requestId?: string;
+    /**
+     * The trace of the request or message the line describes. Absent where the producer holds no decoded message or
+     * request: the AppInbox dequeue pass, the dequeue-pass boundary and the computed queue failure among them.
+     */
+    traceId?: string;
     applicationId?: string;
     workspaceId?: string;
     groupId?: string;
@@ -35,7 +42,7 @@ export interface RecordRallarTimingInput {
     readonly event: RallarTimingEventInput;
     readonly status: RallarTimingStatus;
     readonly durationMs: number;
-    readonly error?: unknown;
+    readonly error?: Error;
 }
 
 export function recordRallarTiming(input: RecordRallarTimingInput): void {
@@ -85,7 +92,7 @@ export async function timeRallarAsync<T>(
             event: input,
             status: 'error',
             durationMs: nowMs() - startedAt,
-            error
+            error: toError(error)
         });
         throw error;
     }
@@ -117,9 +124,6 @@ function toRoundedDurationMs(durationMs: number): number {
     return Math.round(durationMs * 100) / 100;
 }
 
-function toTimingError(error: unknown): RallarTimingEvent['error'] {
-    return {
-        name: error instanceof Error ? error.name : undefined,
-        message: error instanceof Error ? error.message : String(error)
-    };
+function toTimingError(error: Error): RallarTimingEvent['error'] {
+    return { name: error.name, message: error.message };
 }

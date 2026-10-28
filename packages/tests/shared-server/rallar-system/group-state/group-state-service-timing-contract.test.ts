@@ -176,6 +176,7 @@ describe('group mutation lane phase timing', () => {
             operation: 'enqueue',
             serviceId: 'server-12345678',
             requestId: 'connect-alice',
+            traceId: 'trace-test-fixture',
             status: 'ok',
             durationMs: expect.any(Number),
             atEpochMs: expect.any(Number),

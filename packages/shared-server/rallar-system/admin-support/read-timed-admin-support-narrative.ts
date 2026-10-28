@@ -1,6 +1,7 @@
 import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { nowMs, recordRallarTiming, type RallarTimingEventInput } from '../observability/timing.ts';
 import type { AdminSupportExecutionDependencies } from './admin-support-contracts.ts';
@@ -53,7 +54,7 @@ export async function readTimedAdminSupportNarrative(
             event: timingEvent,
             status: 'error',
             durationMs: nowMs() - startedAt,
-            error
+            error: toError(error)
         });
         throw error;
     }

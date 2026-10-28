@@ -15,6 +15,7 @@ const poll = {
     atEpochMs: 1234,
     serviceId: 'server-1',
     requestId: 'request-1',
+    traceId: 'trace-poll-1',
     details: { type: 'GROUP_CREATE', topicId: 'AppInbox', resourceId: 'request-1', contextId: 'context-1', senderId: 'sender-1' }
 };
 

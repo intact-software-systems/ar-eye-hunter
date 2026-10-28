@@ -470,6 +470,58 @@ describe('AppInboxHandlerExecutor claim invariants', () => {
     );
 });
 
+describe('AppInboxHandlerExecutor trace on its timing lines', () => {
+    it('names the message trace on the handler line and on each phase it times', async () => {
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000, phaseTiming: true });
+
+        await claim.executor.execute({
+            ...claim.input,
+            registration: { ...claim.input.registration, handle: async () => ({ status: 'accepted' }) }
+        });
+
+        expect(claim.timing.map(({ component, operation, traceId }) => ({ component, operation, traceId }))).toEqual([
+            { component: 'app-inbox-phase', operation: 'handler-action', traceId: DIRECT_CLAIM_TRACE_ID },
+            { component: 'app-inbox-phase', operation: 'write-result', traceId: DIRECT_CLAIM_TRACE_ID },
+            { component: 'app-inbox-handler', operation: AppInboxType.GROUP_CREATE, traceId: DIRECT_CLAIM_TRACE_ID }
+        ]);
+    });
+
+    it('names the message trace on the queue retry of a retryable failure', async () => {
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000 });
+
+        await claim.executor.execute({
+            ...claim.input,
+            registration: {
+                ...claim.input.registration,
+                handle: async () => await Promise.reject(new Error('retryable test failure'))
+            }
+        }).catch(() => undefined);
+
+        expect(claim.timing.filter((event) => event.operation === 'queue-retry').map((event) => event.traceId)).toEqual([
+            DIRECT_CLAIM_TRACE_ID
+        ]);
+    });
+
+    it('names the message trace on the line of a handler that outran its lease', async () => {
+        let nowEpochMs = 1_000;
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => nowEpochMs });
+
+        await claim.executor.execute({
+            ...claim.input,
+            registration: {
+                ...claim.input.registration,
+                handle: async () => {
+                    nowEpochMs += 60_001;
+                    return { status: 'accepted' };
+                }
+            }
+        });
+
+        expect(claim.timing.filter((event) => event.operation === 'handler-outran-lease').map((event) => event.traceId))
+            .toEqual([DIRECT_CLAIM_TRACE_ID]);
+    });
+});
+
 describe('AppInboxHandlerExecutor attempt deadline', () => {
     const LEASE_MS = 60_000;
     const DEADLINE_MS = LEASE_MS - DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS;
@@ -499,6 +551,8 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
         expect(claim.timing).toEqual(expect.arrayContaining([
             expect.objectContaining({ operation: 'handler-deadline-expired', details: expect.objectContaining({ deadlineMs: DEADLINE_MS }) })
         ]));
+        expect(claim.timing.filter((event) => event.operation === 'handler-deadline-expired').map((event) => event.traceId))
+            .toEqual([DIRECT_CLAIM_TRACE_ID]);
     });
 
     it('counts the deadline from the claim selection, so an entry that waited in its batch gets what remains of its lease', async () => {
@@ -654,10 +708,13 @@ interface DirectExecutorClaimInput {
     readonly timers?: Timers;
     /** The dequeue clock the claim was selected on, at 0; by default the attempt starts the moment it is selected. */
     readonly dequeueNowEpochMs?: () => number;
+    readonly phaseTiming?: boolean;
 }
 
+const DIRECT_CLAIM_TRACE_ID = 'trace-direct-executor-claim';
+
 function createDirectExecutorClaim(
-    { nowEpochMs, timers = createManualTimers(0), dequeueNowEpochMs = () => 0 }: DirectExecutorClaimInput
+    { nowEpochMs, timers = createManualTimers(0), dequeueNowEpochMs = () => 0, phaseTiming = false }: DirectExecutorClaimInput
 ): DirectExecutorClaim {
     const harness = createAtomicHarness();
     const timing: RallarTimingEvent[] = [];
@@ -677,7 +734,7 @@ function createDirectExecutorClaim(
         {
             serviceId: 'server-1',
             timing: (event) => timing.push(event),
-            options: { attemptDeadlineMarginMs: DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS }
+            options: { attemptDeadlineMarginMs: DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS, phaseTiming }
         }
     );
     const registration: AppInboxHandlerRegistration<JsonWireValue, JsonWireValue> = {
@@ -693,7 +750,7 @@ function createDirectExecutorClaim(
         timing,
         input: {
             registration,
-            message: harness.context.message,
+            message: { ...harness.context.message, id: { ...harness.context.message.id, traceId: DIRECT_CLAIM_TRACE_ID } },
             entry: harness.entry,
             attemptTelemetry: { ...harness.context.attemptTelemetry, reservationLeaseMs: 60_000, selectedAtEpochMs: 0 }
         }

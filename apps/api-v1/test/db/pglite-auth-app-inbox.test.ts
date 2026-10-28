@@ -141,6 +141,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         );
         const logoutReplay = await appAuth.replayLogoutSessionWithCredentialProof({
             requestId: 'pglite-logout-request-identity-0123456789abcdef',
+            traceId: 'trace-pglite-logout-replay',
             clientId: session.clientId,
             accessToken: session.accessToken
         });

@@ -4,6 +4,7 @@ import {
     type RallarTimingEvent,
     type RallarTimingSink
 } from '@shared-server/rallar-system/observability/timing.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export interface StateWriteSqlMetrics {
     statements: number;
@@ -87,7 +88,7 @@ export function createInstrumentedStateWriteSql({
                     },
                     status: 'error',
                     durationMs,
-                    error
+                    error: toError(error)
                 });
                 throw error;
             }

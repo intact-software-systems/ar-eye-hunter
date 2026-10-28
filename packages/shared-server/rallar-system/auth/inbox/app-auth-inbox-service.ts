@@ -321,6 +321,7 @@ export class AppAuthInboxService {
     async replayLogoutSessionWithCredentialProof(
         input: Readonly<{
             requestId: string;
+            traceId: string;
             clientId: string;
             accessToken: string;
         }>
@@ -351,7 +352,7 @@ export class AppAuthInboxService {
                 intent?.kind === 'logout-session' &&
                 intent.expected.clientId === input.clientId
             ) {
-                matchingIntents.push(toObservedAuthIntent(intent, entry));
+                matchingIntents.push(toObservedAuthIntent(intent, entry, input.traceId));
             }
         }
         if (matchingIntents.length !== 1) {
@@ -479,7 +480,7 @@ export class AppAuthInboxService {
                 constantTimeAuthDigestEqual(ticketDigest, expectedDigest) &&
                 intent?.kind === 'consume-agent-ticket'
             ) {
-                matchingIntents.push(toObservedAuthIntent(intent, entry));
+                matchingIntents.push(toObservedAuthIntent(intent, entry, input.traceId));
             }
         }
         if (matchingIntents.length === 1) {
@@ -593,6 +594,7 @@ export class AppAuthInboxService {
                 reservation: {
                     enqueue: toAuthIntentEnqueue(intent),
                     key: reserved.entry.key,
+                    traceId: reservation.traceId,
                     winner: reserved.ownCandidate
                 }
             });
@@ -647,12 +649,17 @@ interface ReservedAuthIntent<I extends AuthMutationIntent> {
 }
 
 /** A replay that finds its intent still NEW wakes the queue as its reserver did, in case that waiter is gone. */
-function toObservedAuthIntent<I extends AuthMutationIntent>(intent: I, entry: ResourceEntry): ReservedAuthIntent<I> {
+function toObservedAuthIntent<I extends AuthMutationIntent>(
+    intent: I,
+    entry: ResourceEntry,
+    traceId: string
+): ReservedAuthIntent<I> {
     return {
         intent,
         reservation: {
             enqueue: toAuthIntentEnqueue(intent),
             key: entry.key,
+            traceId,
             winner: entry.status === EntityStatus.NEW
         }
     };

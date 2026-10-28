@@ -381,7 +381,8 @@ async function writeAcceptedRtcTopologyWork(
         timing: input.options.timing,
         serviceId: input.options.serviceId,
         accepted: input.accepted,
-        computeDurationMs: input.computeDurationMs
+        computeDurationMs: input.computeDurationMs,
+        traceId: input.traceId
     });
 }
 

@@ -42,6 +42,7 @@ const event = {
     durationMs: 4.25,
     atEpochMs: 1234,
     requestId: 'request-1',
+    traceId: 'trace-transaction-capture',
     serviceId: 'api-1',
     details: {
         type: 'create-group',
@@ -122,6 +123,7 @@ describe('full-stack API timing stdio capture', () => {
                 durationMs: 50,
                 atEpochMs: 1235,
                 requestId: 'http-request',
+                traceId: 'http-request',
                 method: 'POST',
                 path: '/api/groups/group-1',
                 httpStatus: 500,
@@ -152,6 +154,7 @@ describe('full-stack API timing stdio capture', () => {
                     atEpochMs: 1234,
                     serviceId: 'api-1',
                     requestId: 'request-1',
+                    traceId: 'trace-transaction-capture',
                     details: {
                         type: 'create-group',
                         topicId: 'AppInbox',
@@ -173,6 +176,7 @@ describe('full-stack API timing stdio capture', () => {
                     durationMs: 50,
                     atEpochMs: 1235,
                     requestId: 'http-request',
+                    traceId: 'http-request',
                     method: 'POST',
                     path: '/api/groups/group-1',
                     httpStatus: 500,
@@ -221,6 +225,7 @@ describe('full-stack API timing stdio capture', () => {
                         expectedLayout: { groupRevision: 8, presenceRevision: 5, version: 1, state: 'active' }
                     })
                 }`,
+                traceId: 'trace-topology-promotion',
                 applicationId,
                 workspaceId: 'workspace-1',
                 groupId: 'group-1',
@@ -272,6 +277,7 @@ describe('full-stack API timing stdio capture', () => {
                     durationMs: 3.25,
                     atEpochMs: 1792338493460,
                     serviceId: 'api-1',
+                    traceId: 'trace-topology-promotion',
                     applicationId,
                     workspaceId: 'workspace-1',
                     groupId: 'group-1',
@@ -285,6 +291,7 @@ describe('full-stack API timing stdio capture', () => {
                     durationMs: 3.25,
                     atEpochMs: 1792338493460,
                     serviceId: 'api-1',
+                    traceId: 'trace-topology-promotion',
                     applicationId,
                     workspaceId: 'workspace-1',
                     groupId: 'group-1',
@@ -298,6 +305,7 @@ describe('full-stack API timing stdio capture', () => {
                     durationMs: 3.25,
                     atEpochMs: 1792338493460,
                     serviceId: 'api-1',
+                    traceId: 'trace-topology-promotion',
                     applicationId,
                     workspaceId: 'workspace-1',
                     groupId: 'group-1',
@@ -597,6 +605,7 @@ const transactionLine = {
     atEpochMs: 1234,
     serviceId: 'server-1',
     requestId: 'request-1',
+    traceId: 'trace-transaction-line',
     details: { type: 'GROUP_CREATE', resourceId: 'request-1', selectedLane: 'NEW', beginWaitMs: 7.25 }
 };
 
@@ -672,4 +681,16 @@ describe('safe dequeue-pass claimed-entry projection', () => {
             details: { type: 'GROUP_CREATE', resourceId: 'request-1', selectedLane: 'NEW', queueAgeMs: 5 }
         });
     });
+});
+
+describe('safe trace projection', () => {
+    it.each([['a space', 'trace with space'], ['a quote', 'trace"1'], ['513 characters', 'a'.repeat(513)], ['a number', 1]])(
+        'drops a trace with %s, as any identity outside the identity grammar',
+        (_label, traceId) => {
+            expect(toSafeApiTimingRecord(JSON.stringify({ ...transactionLine, traceId }))).toEqual(
+                toSafeApiTimingRecord(JSON.stringify({ ...transactionLine, traceId: undefined }))
+            );
+            expect(toSafeApiTimingRecord(JSON.stringify({ ...transactionLine, traceId }))).not.toHaveProperty('traceId');
+        }
+    );
 });
