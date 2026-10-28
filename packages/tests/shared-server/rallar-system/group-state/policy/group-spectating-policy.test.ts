@@ -1,3 +1,10 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { toPolicySnapshot } from '@shared-server/rallar-system/group-state/mutation/aggregate/group-aggregate-mutation-policy.ts';
 import { canActivateGroupMember, canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import {
     createRallarGroupDirectorAppointment,
@@ -5,7 +12,8 @@ import {
     resolveRallarGroupDirectorAppointmentEligibility
 } from '@shared/api/group-director.ts';
 import { readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
-import { describe, expect, it } from 'vitest';
+
+import { createGroupAuthorityRead } from '../mutation/group-mutation-test-runtime.ts';
 import { createGroupSnapshot } from '../snapshot/group-state-snapshot-test-fixtures.ts';
 
 const base = createGroupSnapshot(1, ['watcher']);
@@ -62,5 +70,71 @@ describe('pure spectator role and capacity policies', () => {
             principalId: 'principal-watcher',
             sessionId: 'watcher'
         })).toMatchObject({ allowed: false, status: 'not-authorized' });
+    });
+});
+
+describe('policy snapshot membership precedence', () => {
+    it('keeps roster roles and order before filling missing point-read members', () => {
+        const read = createGroupAuthorityRead({ groupId: 'group-1', activeMemberCount: 4 });
+        const [owner, watcher] = watched.members;
+        if (!owner || !watcher) {
+            throw new Error('The watched fixture requires its owner and spectator');
+        }
+        const snapshot = toPolicySnapshot(
+            {
+                ...read,
+                activeMembers: [watcher, owner],
+                actorMember: { ...watcher, role: 'owner' },
+                targetMember: { ...owner, role: 'spectator' },
+                authorityMember: { ...owner, principalId: 'new-player', role: 'member' },
+                directorMember: { ...owner, principalId: 'director', role: 'admin' }
+            },
+            watched.group,
+            1_000
+        );
+
+        expect(snapshot.members.map(({ principalId, role }) => ({ principalId, role }))).toEqual([
+            { principalId: 'principal-watcher', role: 'spectator' },
+            { principalId: 'alice', role: 'owner' },
+            { principalId: 'new-player', role: 'member' },
+            { principalId: 'director', role: 'admin' }
+        ]);
+        expect(snapshot.memberCount).toBe(4);
+        expect(snapshot.onlineMemberCount).toBe(0);
+    });
+
+    it.each([{ activeMembers: null }, { activeMembers: [] }])('uses first point-read membership when the roster is $activeMembers', ({ activeMembers }) => {
+        const read = createGroupAuthorityRead({ groupId: 'group-1', activeMemberCount: 2 });
+        const [owner, watcher] = watched.members;
+        if (!owner || !watcher) {
+            throw new Error('The watched fixture requires its owner and spectator');
+        }
+        const snapshot = toPolicySnapshot(
+            {
+                ...read,
+                activeMembers,
+                actorMember: null,
+                targetMember: watcher,
+                authorityMember: { ...watcher, role: 'admin' },
+                directorMember: owner
+            },
+            watched.group,
+            1_000
+        );
+
+        expect(snapshot.members.map(({ principalId, role }) => ({ principalId, role }))).toEqual([
+            { principalId: 'principal-watcher', role: 'spectator' },
+            { principalId: 'alice', role: 'owner' }
+        ]);
+        expect(snapshot.memberCount).toBe(2);
+    });
+
+    it('keeps an empty roster empty when no point-read members exist', () => {
+        const read = createGroupAuthorityRead({ activeMemberCount: 0 }, { actorIsMember: false });
+        const snapshot = toPolicySnapshot(read, { ...base.group, groupId: 'pure-room' }, 1_000);
+
+        expect(snapshot.members).toEqual([]);
+        expect(snapshot.memberCount).toBe(0);
+        expect(snapshot.onlineMemberCount).toBe(0);
     });
 });

@@ -14,7 +14,11 @@ import type {
 import { canGovernGroupMember, type GroupGovernanceAction } from '../../policy/group-governance-policy.ts';
 import { canMutateActiveGroup, type CanCommandGroupAuthorityInput } from '../../policy/group-lifecycle-policy.ts';
 import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
-import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
+import type {
+    GroupMutationCommand,
+    GroupMutationFacts,
+    GroupMutationRead
+} from '../group-mutation-contracts.ts';
 import { currentCausalRevision, requireGroup } from '../group-mutation-result.ts';
 
 interface AssertGroupMutationGovernanceInput {
@@ -46,18 +50,7 @@ export function toPolicySnapshot(
     nowEpochMs: number
 ): GroupSnapshot {
     const stored = requireGroup(read, ref);
-    const members = [
-        ...(read.activeMembers ?? []),
-        read.actorMember,
-        read.targetMember,
-        read.authorityMember,
-        read.directorMember
-    ]
-        .filter((member): member is GroupMember => member !== null)
-        .filter(
-            (member, index, values) =>
-                values.findIndex((candidate) => candidate.principalId === member.principalId) === index
-        );
+    const members = computePolicyMembers(read);
     const targetSessions = read.targetPresence &&
             read.targetPresence.value.disconnectedAtEpochMs === null &&
             read.targetPresence.value.expiresAtEpochMs > nowEpochMs &&
@@ -95,6 +88,26 @@ export function toPolicySnapshot(
             (member) => member.status === 'active' && activePrincipals.has(member.principalId)
         ).length
     };
+}
+
+function computePolicyMembers(read: GroupMutationRead): GroupMember[] {
+    const candidates = [
+        ...(read.activeMembers ?? []),
+        read.actorMember,
+        read.targetMember,
+        read.authorityMember,
+        read.directorMember
+    ];
+    const principalIds = new Set<string>();
+    const members: GroupMember[] = [];
+    for (const member of candidates) {
+        if (member === null || principalIds.has(member.principalId)) {
+            continue;
+        }
+        principalIds.add(member.principalId);
+        members.push(member);
+    }
+    return members;
 }
 
 /**
