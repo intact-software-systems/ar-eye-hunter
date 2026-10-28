@@ -1,10 +1,9 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import { decodeActivationStatusClockWork } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
+
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import {
     petitionGroupActivationStatus,
@@ -32,7 +31,7 @@ export function createActivationStatusClockWorkHandler(
     options: ActivationStatusClockWorkHandlerOptions
 ): OnMessageCallback {
     return {
-        onMessage: async (_message: ALMessage, entry: ResourceEntry) => {
+        onMessage: async (message, entry) => {
             const work = decodeActivationStatusClockWork(entry.resource);
             const snapshot = await options.findGroupSnapshotByRef(work.groupRef);
             if (snapshot === null) {
@@ -55,7 +54,8 @@ export function createActivationStatusClockWorkHandler(
                 // its dwell instead of publishing an unconfirmed band.
                 dwell: work.kind === 'dwell'
                     ? { satisfied: true, dueAtEpochMs: work.dueAtEpochMs }
-                    : null
+                    : null,
+                traceId: message.id.traceId
             });
         }
     };

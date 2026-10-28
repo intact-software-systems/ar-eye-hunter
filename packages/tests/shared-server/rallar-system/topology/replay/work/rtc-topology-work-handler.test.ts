@@ -10,7 +10,7 @@ import {
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { COALESCED_APP_OUTBOX_WORK_FIELD, type ComputedCoalescedAppOutboxWork } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import type { GroupPresenceSummaryComputed } from '@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
@@ -70,11 +70,6 @@ import {
     readSummaryWork,
     toSummaryExpansion
 } from '../../../group-state/presence/group-presence-test-runtime.ts';
-
-interface CriterionSubmission {
-    readonly command: GroupMutationCommand;
-    readonly atEpochMs: number;
-}
 
 interface EnqueueAndReserveRttInput {
     readonly queue: InMemoryQueueBox;
@@ -774,12 +769,12 @@ describe('RTC topology APP_OUTBOX work', () => {
             groupRef: group.group,
             knownGroup: group
         });
-        const submittedCommands: CriterionSubmission[] = [];
+        const submittedCommands: GroupSystemCommandSubmission[] = [];
         const reservationStatusesAtSubmission: Array<EntityStatus | undefined> = [];
-        const submitCommand = async (command: GroupMutationCommand, atEpochMs: number) => {
+        const submitCommand = async (submission: GroupSystemCommandSubmission) => {
             effects.push('criterion-submission');
             reservationStatusesAtSubmission.push((await entriesIn(queue))[0]?.status);
-            submittedCommands.push({ command, atEpochMs });
+            submittedCommands.push(submission);
         };
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 1_000,
@@ -868,7 +863,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             'criterion-submission'
         ]);
         expect(submittedCommands).toEqual([
-            expect.objectContaining({ atEpochMs: 1_000 })
+            expect.objectContaining({ atEpochMs: 1_000, traceId: 'trace-rtc-topology-work-handler' })
         ]);
         expect(reservationStatusesAtSubmission).toEqual([EntityStatus.COMPLETED]);
     });

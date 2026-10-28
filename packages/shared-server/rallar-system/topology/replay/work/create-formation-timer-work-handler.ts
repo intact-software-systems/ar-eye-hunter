@@ -1,7 +1,6 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import {
     decodeFormationTimerWork,
@@ -12,8 +11,6 @@ import {
     toFormationRetryPlanCommand,
     toFormationTriggerPlanCommand
 } from '../../../group-state/group-formation-mutation-command.ts';
-import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
-import type { GroupLifecyclePolicyRead } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
@@ -21,18 +18,14 @@ import {
     petitionAwaitingGroupConnectTriggers,
     type GroupFormationAutomationPort
 } from './create-group-connect-trigger-work-handler.ts';
-
-interface OnMessageCallback {
-    onMessage(message: ALMessage, entry: ResourceEntry): Promise<void>;
-}
+import type { FormationCriterionPort } from './formation-criterion-observer.ts';
 
 export interface FormationTimerWorkHandlerOptions {
     readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
     readonly readPlannedTopology: (ref: GroupRef) => Promise<RallarOverlayTopologySnapshot | null>;
     readonly topologyPlanning: Pick<GroupTopologyPlanningService, 'readTopologyPlanningAuthority'>;
-    readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-    /** The criterion's submit: activation and formation failure. */
-    readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+    /** The deadline's policy read and its submit: activation and formation failure. */
+    readonly formationCriterion: Pick<FormationCriterionPort, 'readLifecyclePolicy' | 'submitCommand'>;
     readonly formationAutomation: GroupFormationAutomationPort;
     readonly nowEpochMs: () => number;
 }
@@ -51,15 +44,16 @@ export function createFormationTimerWorkHandler(
     options: FormationTimerWorkHandlerOptions
 ): OnMessageCallback {
     return {
-        onMessage: async (_message, entry) => {
-            await consumeFormationTimer(options, decodeFormationTimerWork(entry.resource));
+        onMessage: async (message, entry) => {
+            await consumeFormationTimer(options, decodeFormationTimerWork(entry.resource), message.id.traceId);
         }
     };
 }
 
 async function consumeFormationTimer(
     options: FormationTimerWorkHandlerOptions,
-    work: GroupFormationTimerWork
+    work: GroupFormationTimerWork,
+    traceId: string
 ): Promise<void> {
     if (options.nowEpochMs() < work.notBeforeEpochMs) {
         throw new Error('Formation timer is not due yet; retry release will walk it forward');
@@ -76,24 +70,38 @@ async function consumeFormationTimer(
     if (snapshot.group.formationEpoch > work.formationEpoch) {
         return;
     }
-    const nowEpochMs = options.nowEpochMs();
+    const atEpochMs = options.nowEpochMs();
     switch (work.kind) {
         case 'retry':
-            await options.formationAutomation.submitCommand(toFormationRetryPlanCommand(work), nowEpochMs);
+            await options.formationAutomation.submitCommand({
+                command: toFormationRetryPlanCommand(work),
+                atEpochMs,
+                traceId
+            });
             return;
         case 'plan':
-            await options.formationAutomation.submitCommand(toFormationTriggerPlanCommand(work), nowEpochMs);
+            await options.formationAutomation.submitCommand({
+                command: toFormationTriggerPlanCommand(work),
+                atEpochMs,
+                traceId
+            });
             return;
         case 'connect':
             await petitionAwaitingGroupConnectTriggers(options.formationAutomation, work.groupRef, {
-                kind: 'clock',
-                atEpochMs: work.notBeforeEpochMs
+                settle: { kind: 'clock', atEpochMs: work.notBeforeEpochMs },
+                traceId
             });
             return;
         case 'deadline':
-            await evaluateFormationDeadline(options, work, snapshot);
+            await evaluateFormationDeadline(options, { work, snapshot, traceId });
             return;
     }
+}
+
+interface EvaluateFormationDeadlineInput {
+    readonly work: GroupFormationTimerWork;
+    readonly snapshot: GroupSnapshot;
+    readonly traceId: string;
 }
 
 /**
@@ -106,20 +114,20 @@ async function consumeFormationTimer(
  */
 async function evaluateFormationDeadline(
     options: FormationTimerWorkHandlerOptions,
-    work: GroupFormationTimerWork,
-    snapshot: GroupSnapshot
+    { work, snapshot, traceId }: EvaluateFormationDeadlineInput
 ): Promise<void> {
     const planned = await options.readPlannedTopology(work.groupRef);
     if (planned === null || planned.state !== 'active') {
-        await options.submitCommand(
-            toFailFormationCommand({
+        await options.formationCriterion.submitCommand({
+            command: toFailFormationCommand({
                 groupRef: work.groupRef,
                 formationEpoch: work.formationEpoch,
                 observedRate: 0,
                 expectedLayout: null
             }),
-            options.nowEpochMs()
-        );
+            atEpochMs: options.nowEpochMs(),
+            traceId
+        });
         return;
     }
     const [authority, lifecyclePolicy] = await Promise.all([
@@ -127,7 +135,7 @@ async function evaluateFormationDeadline(
             groupRef: work.groupRef,
             knownGroup: snapshot
         }),
-        options.readLifecyclePolicy(work.groupRef)
+        options.formationCriterion.readLifecyclePolicy(work.groupRef)
     ]);
     const command = computeFormationCriterionCommand({
         group: authority.group,
@@ -139,5 +147,5 @@ async function evaluateFormationDeadline(
     if (command === null) {
         return;
     }
-    await options.submitCommand(command, authority.nowEpochMs);
+    await options.formationCriterion.submitCommand({ command, atEpochMs: authority.nowEpochMs, traceId });
 }

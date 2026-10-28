@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupActivationStatusClockWork } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import {
+    computeActivationStatusClockEntry,
+    type GroupActivationStatusClockWork
+} from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import { computeUpdateGroupActivationStatus } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-update-group-activation-status.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { toUpdateGroupActivationStatusCommand } from '@shared-server/rallar-system/group-state/to-update-group-activation-status-command.ts';
@@ -13,6 +18,7 @@ import {
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+import { createActivationStatusClockWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-activation-status-clock-work-handler.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
     petitionGroupActivationStatus,
@@ -29,6 +35,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -67,7 +74,7 @@ describe('activation status series settlement', () => {
             read: { ...fixture.read, group: { ...fixture.read.group!, value: computed.guard.value } },
             authority: { ...fixture.authority, group: { ...fixture.authority.group, group: computed.guard.value } }
         };
-        expect(await observe(settled)).toEqual({ commands: [], clocks: [] });
+        expect(await observe(settled)).toEqual({ commands: [], clocks: [], traces: [] });
         expect(computeUpdateGroupActivationStatus(command, settled.read, createMutationFacts()).outcome).toBe('no-op');
     });
 
@@ -100,6 +107,7 @@ describe('activation status series settlement', () => {
         const fingerprint = computeRtcTopologyInputFingerprintWrite(current.group, computeAuthorityTopologyInputFingerprint(authority));
         await runtime.upsert(RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE, fingerprint.key, fingerprint.value, Date.parse(fingerprint.expireAtIsoTimestamp));
         const publications: string[] = [];
+        const publicationTraces: string[] = [];
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 2_000,
             finishedRetentionMs: 3_600_000,
@@ -112,10 +120,11 @@ describe('activation status series settlement', () => {
                 armStatusClock: async () => {
                     throw new Error('Zero-evidence status must not arm a clock');
                 },
-                submitCommand: async (command) => {
+                submitCommand: async ({ command, traceId }) => {
                     if (command.operation !== 'updateGroupActivationStatus') {
                         throw new Error('Expected activation command');
                     }
+                    publicationTraces.push(traceId);
                     const computed = computeUpdateGroupActivationStatus(
                         command,
                         { ...fixture.read, group: { ...fixture.read.group!, value: current.group } },
@@ -159,6 +168,7 @@ describe('activation status series settlement', () => {
             expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
         }
         expect(publications).toEqual(['group-activation-status-changed']);
+        expect(publicationTraces).toEqual(['trace-group-activation-series-settlement']);
         expect(current.group.snapshotVersion).toBe(11);
         expect(current.group.activationStatus).toMatchObject({ condition: 'active', formationEpoch: 2, coverageBasisLayoutIdentity: basis });
         expect(current.group.acceptedLayoutIdentity).toEqual(basis);
@@ -186,7 +196,64 @@ describe('activation status series settlement', () => {
     });
 
     it('suppresses a same-series zero-evidence petition', async () => {
-        expect(await observe(createFixture('same', false))).toEqual({ commands: [], clocks: [] });
+        expect(await observe(createFixture('same', false))).toEqual({ commands: [], clocks: [], traces: [] });
+    });
+
+    it('publishes and arms evidence expiry under the petitioning message trace', async () => {
+        const result = await observe(withPartialStarCoverage(createFixture('basis', false)));
+        expect(result.traces).toEqual(['submit:trace-activation-petition-1', 'arm:trace-activation-petition-1']);
+    });
+
+    it('arms the dwell clock under the petitioning message trace', async () => {
+        const result = await observe(withPartialStarCoverage(createFixture('basis', true)));
+        expect(result.traces).toEqual(['arm:trace-activation-petition-1']);
+    });
+
+    it('the activation status clock submits under the clock message trace', async () => {
+        const fixture = createFixture('basis', false);
+        const submissions: GroupSystemCommandSubmission[] = [];
+        const handler = createActivationStatusClockWorkHandler({
+            activationStatus: {
+                readLifecyclePolicy: async () => fixture.read.lifecyclePolicy!,
+                submitCommand: async (submission) => {
+                    submissions.push(submission);
+                },
+                armStatusClock: async () => {
+                    throw new Error('Zero-evidence status must not arm a clock');
+                }
+            },
+            topologyPlanning: { readTopologyPlanningAuthority: async () => fixture.authority },
+            findGroupSnapshotByRef: async () => fixture.authority.group,
+            readPlannedTopology: async () => fixture.planned
+        });
+        const groupRef = toCanonicalGroupRef(fixture.authority.group.group);
+        const entry = computeActivationStatusClockEntry({
+            work: {
+                kind: 'evidence-expiry',
+                groupRef,
+                formationEpoch: 2,
+                coverageBasisLayoutIdentity: fixture.basis,
+                candidateCondition: null,
+                dueAtEpochMs: 2_000
+            },
+            senderId: 'activation-clock-test',
+            createdAtEpochMs: 1_000,
+            expireAtEpochMs: 600_000,
+            traceId: 'trace-activation-clock-entry'
+        });
+        const message = newALUntargetedMessage(
+            'activation-clock-test',
+            newALRoute('activation-clock-test', 'activation-clock-test', 'activation-clock-test'),
+            AppOutboxType.ACTIVATION_STATUS_CLOCK,
+            {},
+            { traceId: 'trace-activation-clock-1' }
+        );
+
+        await handler.onMessage(message, entry);
+
+        expect(submissions.map(({ command, traceId }) => ({ operation: command.operation, traceId }))).toEqual([
+            { operation: 'updateGroupActivationStatus', traceId: 'trace-activation-clock-1' }
+        ]);
     });
 
     it.each(['basis', 'epoch', 'same'] as const)('isolates authoritative hysteresis for %s', (change) => {
@@ -285,23 +352,27 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean) {
 async function observe(fixture: ReturnType<typeof createFixture>, dwell: PetitionGroupActivationStatusInput['dwell'] = null) {
     const commands: GroupMutationCommand[] = [];
     const clocks: GroupActivationStatusClockWork[] = [];
+    const traces: string[] = [];
     await petitionGroupActivationStatus({
         dependencies: {
             activationStatus: {
                 readLifecyclePolicy: async () => fixture.read.lifecyclePolicy!,
-                submitCommand: async (command) => {
+                submitCommand: async ({ command, traceId }) => {
                     commands.push(command);
+                    traces.push(`submit:${traceId}`);
                 },
-                armStatusClock: async (work) => {
+                armStatusClock: async (work, traceId) => {
                     clocks.push(work);
+                    traces.push(`arm:${traceId}`);
                 }
             }
         },
         authority: fixture.authority,
         planned: fixture.planned,
-        dwell
+        dwell,
+        traceId: 'trace-activation-petition-1'
     });
-    return { commands, clocks };
+    return { commands, clocks, traces };
 }
 
 function withPartialStarCoverage(fixture: ReturnType<typeof createFixture>) {

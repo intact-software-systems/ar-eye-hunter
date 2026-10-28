@@ -21,7 +21,6 @@ import {
     scheduleWsLifecycleRetry
 } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { EnqueueResourceEntryController } from '@shared/queuebox/queue-box-types.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -124,8 +123,7 @@ function createTopologyAppOutboxOptions(
             latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),
             readGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,
             readPlanned: async (ref) => await topology.topologySnapshotRepository.findSnapshot(ref) ?? null,
-            submitCommand: (command, atEpochMs) =>
-                runtime.groupStateInboxService.enqueueFormationAutomationCommand(command, atEpochMs),
+            submitCommand: (submission) => runtime.groupStateInboxService.enqueueFormationAutomationCommand(submission),
             nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now
         },
         formationCriterion: {
@@ -139,15 +137,13 @@ function createTopologyAppOutboxOptions(
                 }
             },
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
-            submitCommand: (command, atEpochMs) =>
-                runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs)
+            submitCommand: (submission) => runtime.groupStateInboxService.enqueueFormationCriterionCommand(submission)
         },
         activationStatus: {
             // Route-less and internal: the topology work cycle is the only
             // producer, and the write is derived, non-authoritative state no
             // policy or gate reads (product decision 3).
-            submitCommand: (command, atEpochMs) =>
-                runtime.groupStateInboxService.enqueueActivationStatusCommand(command, atEpochMs),
+            submitCommand: (submission) => runtime.groupStateInboxService.enqueueActivationStatusCommand(submission),
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
             armStatusClock: createActivationStatusClockArm({
                 outbox: runtime.outboxQueueReader.outbox,
@@ -161,8 +157,7 @@ function createTopologyAppOutboxOptions(
             // accepted-identity facts must not lag a cross-server write. They
             // live on the group row, so only that row is read (D289).
             findCurrentGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,
-            submitCommand: (command, atEpochMs) =>
-                runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs)
+            submitCommand: (submission) => runtime.groupStateInboxService.enqueueTopologyPublicationCommand(submission)
         }
     };
 }
@@ -170,19 +165,19 @@ function createTopologyAppOutboxOptions(
 /**
  * enqueueIfAbsent is the arm: the entry's key is the series and the band, so N nodes observing one dip write one row,
  * and a re-arm inside the dwell leaves the original due instant standing -- which is the dwell's meaning, continuous
- * time rather than a restart. Each arm is its own autonomous publication and mints its trace.
+ * time rather than a restart. The row carries the trace of the petition that armed it.
  */
 export function createActivationStatusClockArm(
     input: ActivationStatusClockArmInput
-): (work: GroupActivationStatusClockWork) => Promise<void> {
-    return async (work) => {
+): (work: GroupActivationStatusClockWork, traceId: string) => Promise<void> {
+    return async (work, traceId) => {
         await input.outbox.enqueueIfAbsent(
             computeActivationStatusClockEntry({
                 work,
                 senderId: input.serviceId,
                 createdAtEpochMs: input.nowEpochMs(),
                 expireAtEpochMs: work.dueAtEpochMs + ACTIVATION_STATUS_CLOCK_EXPIRY_MS,
-                traceId: newALTraceId()
+                traceId
             })
         );
     };

@@ -5,7 +5,13 @@ import {
     vi
 } from 'vitest';
 
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
+import {
+    GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+    GroupConnectTriggerLatchRepository,
+    toGroupConnectTriggerStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -20,8 +26,10 @@ import { computeExpectedLayoutFence } from '@shared/api/group-lifecycle/compute-
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -29,23 +37,28 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-topology-config-mutation-test-fixtures.ts';
+import { createRtcTopologyGroupSnapshot } from '../../rtc-topology-test-fixtures.ts';
 
 const NOW = 1_000;
+const WORK_TRACE_ID = 'trace-formation-criterion-fingerprint';
 
-interface CriterionSubmission {
-    readonly command: GroupMutationCommand;
-    readonly atEpochMs: number;
+interface CriterionFingerprintFixtureOptions {
+    readonly durationNowMs?: () => number;
+    /** Installs formation automation, so a presence plan trigger of this policy petitions through the cycle. */
+    readonly phasedPolicy?: GroupLifecyclePolicy;
 }
 
 interface CriterionFingerprintFixture {
     current: GroupSnapshot;
     failCommit: boolean;
     readonly effects: string[];
-    readonly submitted: CriterionSubmission[];
+    readonly submitted: GroupSystemCommandSubmission[];
+    readonly automated: GroupSystemCommandSubmission[];
     readonly queue: InMemoryQueueBox;
     readonly snapshots: RtcTopologySnapshotRepository;
     readonly topologyService: RallarRtcTopologyService;
     readonly handler: OnMessageCallback;
+    readonly runtime: FakeRuntimeStateRepository;
     process(input: ProcessGroupRevisionInput): Promise<ResourceEntry>;
 }
 
@@ -83,10 +96,60 @@ describe('formation criterion after unchanged topology inputs', () => {
                         degraded: false
                     })
                 }),
-                atEpochMs: NOW
+                atEpochMs: NOW,
+                traceId: WORK_TRACE_ID
             }]);
         }
     );
+
+    it('petitions a met presence trigger under the work row trace after a committed publication', async () => {
+        const fixture = createCriterionFingerprintFixture({ phasedPolicy: presencePlanPolicy() });
+
+        await fixture.process({ group: presentFormingSnapshot(1), origin: 'commanded' });
+
+        expect(fixture.automated.map(({ command, traceId }) => ({ operation: command.operation, traceId })))
+            .toEqual([{ operation: 'planGroupLayout', traceId: WORK_TRACE_ID }]);
+    });
+
+    it('petitions a met presence trigger under the work row trace when the stored plan stays unchanged', async () => {
+        const fixture = createCriterionFingerprintFixture({ phasedPolicy: presencePlanPolicy() });
+        await fixture.process({ group: presentFormingSnapshot(1), origin: 'commanded' });
+        fixture.automated.length = 0;
+
+        await fixture.process({ group: presentFormingSnapshot(2), origin: 'automatic' });
+
+        expect(fixture.topologyService.readMetrics().topologyPublishSkippedUnchangedCount).toBe(1);
+        expect(fixture.automated.map((submission) => submission.traceId)).toEqual([WORK_TRACE_ID]);
+    });
+
+    it('petitions a met presence trigger under the work row trace when a newer plan supersedes the work', async () => {
+        const fixture = createCriterionFingerprintFixture({ phasedPolicy: presenceConnectPolicy() });
+        const newer = presentSnapshot('planned', 2);
+        await fixture.runtime.upsert(
+            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            toGroupConnectTriggerStorageKey({ groupRef: toCanonicalGroupRef(newer.group), formationEpoch: 0, triggerGeneration: 'plan-1' }),
+            JSON.stringify({
+                groupRef: toCanonicalGroupRef(newer.group),
+                formationEpoch: 0,
+                triggerGeneration: 'plan-1',
+                notBeforeEpochMs: 0,
+                supersedesLayoutIdentity: null,
+                state: 'awaiting-publication'
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+        await fixture.process({ group: newer, origin: 'commanded' });
+        fixture.automated.length = 0;
+        fixture.current = presentSnapshot('planned', 1);
+        const unpublished = await reserveUnpublishedRevision(fixture.queue, fixture.current);
+
+        await fixture.handler.onMessage(decodePersistedALMessage(unpublished.resource), unpublished);
+
+        expect(await fixture.snapshots.findSnapshot(fixture.current.group))
+            .toMatchObject({ state: 'active', sourceGroupStateCausalRevision: { groupRevision: 2 } });
+        expect(fixture.automated.map(({ command, traceId }) => ({ operation: command.operation, traceId })))
+            .toEqual([{ operation: 'connectGroup', traceId: WORK_TRACE_ID }]);
+    });
 
     it('persists the supplied wall-clock instant when topology work completes', async () => {
         const fixture = createCriterionFingerprintFixture();
@@ -100,7 +163,7 @@ describe('formation criterion after unchanged topology inputs', () => {
 
     it('applies computed planning metrics only after the topology transaction commits', async () => {
         const times = [10, 17, 20, 28];
-        const fixture = createCriterionFingerprintFixture(() => times.shift() ?? 28);
+        const fixture = createCriterionFingerprintFixture({ durationNowMs: () => times.shift() ?? 28 });
         fixture.failCommit = true;
 
         await expect(fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' }))
@@ -181,7 +244,7 @@ describe('formation criterion after unchanged topology inputs', () => {
                 state: 'active',
                 sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 }
             });
-            expect(fixture.submitted).toHaveLength(1);
+            expect(fixture.submitted.map((submission) => submission.traceId)).toEqual([WORK_TRACE_ID]);
         }
     );
 
@@ -224,8 +287,10 @@ function lifecycleSnapshot(stage: GroupLifecycleState, revision: number): GroupS
 }
 
 function createCriterionFingerprintFixture(
-    durationNowMs: () => number = () => 0
+    options: CriterionFingerprintFixtureOptions = {}
 ): CriterionFingerprintFixture {
+    const durationNowMs = options.durationNowMs ?? (() => 0);
+    const policy = options.phasedPolicy ?? thresholdPolicy();
     const queue = new InMemoryQueueBox();
     const repository = new FakeRuntimeStateRepository();
     const snapshots = new RtcTopologySnapshotRepository(repository);
@@ -233,7 +298,8 @@ function createCriterionFingerprintFixture(
         current: lifecycleSnapshot('reconfiguring', 1),
         failCommit: false,
         effects: [] as string[],
-        submitted: [] as CriterionSubmission[]
+        submitted: [] as GroupSystemCommandSubmission[],
+        automated: [] as GroupSystemCommandSubmission[]
     };
     const topologyService = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => NOW, durationNowMs });
     const planning = createGroupTopologyRuntimeOwners({
@@ -262,11 +328,20 @@ function createCriterionFingerprintFixture(
         executionRepository: new RtcTopologyExecutionRepository(repository),
         formationCriterion: {
             deferred: { minIntervalMs: 0, nowEpochMs: () => NOW, schedule: vi.fn() },
-            readLifecyclePolicy: async () => ({ status: 'present', policy: thresholdPolicy() }),
-            submitCommand: async (command, atEpochMs) => {
+            readLifecyclePolicy: async () => ({ status: 'present', policy }),
+            submitCommand: async (submission) => {
                 state.effects.push('petition');
-                state.submitted.push({ command, atEpochMs });
+                state.submitted.push(submission);
             }
+        },
+        formationAutomation: options.phasedPolicy === undefined ? undefined : {
+            latches: new GroupConnectTriggerLatchRepository(repository),
+            readGroup: async () => state.current.group,
+            readPlanned: async (ref) => await snapshots.findSnapshot(ref) ?? null,
+            submitCommand: async (submission) => {
+                state.automated.push(submission);
+            },
+            nowEpochMs: () => NOW
         }
     });
     const process = async (input: ProcessGroupRevisionInput): Promise<ResourceEntry> => {
@@ -276,6 +351,7 @@ function createCriterionFingerprintFixture(
         return entry;
     };
     return Object.assign(state, {
+        runtime: repository,
         queue,
         snapshots,
         topologyService,
@@ -291,7 +367,7 @@ interface ProcessGroupRevisionInput {
 
 async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroupRevisionInput): Promise<ResourceEntry> {
     const work = computeCoalescedRtcTopologyGroupRevisionWork({
-        traceId: 'trace-formation-criterion-fingerprint',
+        traceId: WORK_TRACE_ID,
         aggregateRef: input.group.group,
         groupSnapshot: input.group,
         origin: input.origin,
@@ -302,6 +378,77 @@ async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroup
         previousEntry: await queue.getItem(toCoalescedGroupRevisionKey(input.group.group)) ?? null
     });
     const entry = { ...work.entryWrite.entry, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+    await queue.enqueue(entry);
+    return entry;
+}
+
+function presencePlanPolicy(): GroupLifecyclePolicy {
+    const threshold = thresholdPolicy();
+    return {
+        ...threshold,
+        formation: 'phased',
+        establishment: {
+            ...threshold.establishment,
+            planTrigger: { kind: 'presence', memberCount: 2, fallbackMs: 60_000 },
+            connectTrigger: { kind: 'manual' }
+        }
+    };
+}
+
+function presenceConnectPolicy(): GroupLifecyclePolicy {
+    const threshold = thresholdPolicy();
+    return {
+        ...threshold,
+        formation: 'phased',
+        establishment: {
+            ...threshold.establishment,
+            planTrigger: { kind: 'manual' },
+            connectTrigger: { kind: 'presence', memberCount: 2, fallbackMs: 60_000 }
+        }
+    };
+}
+
+function presentFormingSnapshot(revision: number): GroupSnapshot {
+    return presentSnapshot('forming', revision);
+}
+
+/** Two members with live presence: a presence trigger's threshold is met. */
+function presentSnapshot(stage: GroupLifecycleState, revision: number): GroupSnapshot {
+    const present = createRtcTopologyGroupSnapshot('presence-room', ['session-a', 'session-b']);
+    return {
+        ...present,
+        causalRevision: { groupRevision: revision, presenceRevision: 0 },
+        group: {
+            ...present.group,
+            snapshotVersion: revision,
+            metadataVersion: revision,
+            lifecycleState: stage,
+            formationEpoch: 0,
+            formationAttemptCount: 0
+        }
+    };
+}
+
+/** A commanded recompute that publishes nothing: a stale candidate for it is superseded rather than republished. */
+async function reserveUnpublishedRevision(queue: InMemoryQueueBox, group: GroupSnapshot): Promise<ResourceEntry> {
+    const resourceId = `unpublished:${group.causalRevision.groupRevision}`;
+    const work = computeRtcTopologyOutboxInsert({
+        traceId: WORK_TRACE_ID,
+        commandId: resourceId,
+        resourceId,
+        aggregateRef: toCanonicalGroupRef(group.group),
+        acceptedCausalRevision: group.causalRevision,
+        groupSnapshot: group,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        origin: 'commanded',
+        createdAtEpochMs: NOW,
+        expireAtEpochMs: 4_000_000_000_000,
+        senderId: 'criterion-server',
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: false
+    });
+    const entry = { ...work.entry, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
     await queue.enqueue(entry);
     return entry;
 }

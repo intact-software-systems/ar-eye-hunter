@@ -1,11 +1,10 @@
-import type { Group, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
-import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
-import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupSystemCommandPort } from '../../group-state/inbox/group-system-command-submission.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
@@ -22,6 +21,7 @@ import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 import type { FormationCriterionPort } from '../replay/work/formation-criterion-observer.ts';
 import type { GroupActivationStatusPort } from '../replay/work/group-activation-status-observer.ts';
+import type { TopologyPromotionPublicationPort } from '../replay/work/topology-promotion-request.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;
@@ -46,12 +46,7 @@ export interface InstallTopologyAppOutboxOptions {
     readonly formationCriterion?: FormationCriterionPort;
     readonly activationStatus?: GroupActivationStatusPort;
     /** The route-less promotion consumer (decision 27); absent means no automation. */
-    readonly topologyPublication?: Readonly<{
-        readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-        /** The current group facts, never a work payload's enqueue-time copy. */
-        findCurrentGroup: (ref: GroupRef) => Promise<Group | null>;
-        submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
-    }>;
+    readonly topologyPublication?: TopologyPromotionPublicationPort & GroupSystemCommandPort;
 }
 
 export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOptions): void {
@@ -67,8 +62,7 @@ export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOption
                     await options.findGroupSnapshotByRef(ref, readOptions),
                 readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null,
                 topologyPlanning: options.topologyPlanning,
-                readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
-                submitCommand: options.formationCriterion.submitCommand,
+                formationCriterion: options.formationCriterion,
                 formationAutomation: options.formationAutomation,
                 nowEpochMs: options.nowEpochMs
             })
@@ -89,7 +83,7 @@ export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOption
         options.outboxQueueReader.onOutboxMessageDo(
             AppOutboxType.TOPOLOGY_PROMOTION,
             createTopologyPromotionWorkHandler({
-                submitCommand: options.topologyPublication.submitCommand,
+                topologyPublication: options.topologyPublication,
                 nowEpochMs: options.nowEpochMs
             })
         );

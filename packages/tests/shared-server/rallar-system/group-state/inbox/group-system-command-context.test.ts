@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { GroupMutationIngress } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -20,9 +22,9 @@ describe('group system commands', () => {
         const harness = await createAuthorityHarness(['owner']);
         stubSystemIngresses(harness);
         for (let index = 0; index < BACKLOG; index += 1) {
-            await harness.service.enqueueFormationCriterionCommand(toCommand(BUSY_GROUP, `busy-${index}`), 1);
+            await harness.service.enqueueFormationCriterionCommand(toSubmission(BUSY_GROUP, `busy-${index}`));
         }
-        await harness.service.enqueueFormationCriterionCommand(toCommand(IDLE_GROUP, 'idle-0'), 1);
+        await harness.service.enqueueFormationCriterionCommand(toSubmission(IDLE_GROUP, 'idle-0'));
         const reader = new InboxQueueReader(harness.queue, { newLaneConcurrency: 1 });
         const served: string[] = [];
         reader.onInboxMessageDo(AppInboxType.GROUP_FORMATION_CRITERION, {
@@ -47,10 +49,10 @@ describe('group system commands', () => {
         vi.spyOn(harness.groupStateService, 'captureExpiredPresenceMutationIngresses')
             .mockResolvedValue([toIngress(toCommand(IDLE_GROUP, 'expire-0'))]);
 
-        await harness.service.enqueueFormationCriterionCommand(toCommand(BUSY_GROUP, 'criterion-0'), 1);
-        await harness.service.enqueueFormationAutomationCommand(toCommand(BUSY_GROUP, 'automation-0'), 1);
-        await harness.service.enqueueTopologyPublicationCommand(toCommand(BUSY_GROUP, 'publication-0'), 1);
-        await harness.service.enqueueActivationStatusCommand(toCommand(BUSY_GROUP, 'activation-0'), 1);
+        await harness.service.enqueueFormationCriterionCommand(toSubmission(BUSY_GROUP, 'criterion-0'));
+        await harness.service.enqueueFormationAutomationCommand(toSubmission(BUSY_GROUP, 'automation-0'));
+        await harness.service.enqueueTopologyPublicationCommand(toSubmission(BUSY_GROUP, 'publication-0'));
+        await harness.service.enqueueActivationStatusCommand(toSubmission(BUSY_GROUP, 'activation-0'));
         await harness.service.enqueueExpiredPresenceSessions(1);
 
         const contexts = Object.fromEntries((await harness.queueEntries()).map((entry) => [entry.key.resourceId, entry.key.contextId]));
@@ -63,7 +65,34 @@ describe('group system commands', () => {
         });
         expect(toQueueContextId(BUSY_GROUP)).not.toBe(toQueueContextId(IDLE_GROUP));
     });
+
+    it('enqueue every submitted group command under the submission trace', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        stubSystemIngresses(harness);
+
+        await harness.service.enqueueFormationCriterionCommand(toSubmission(BUSY_GROUP, 'criterion-0'));
+        await harness.service.enqueueFormationAutomationCommand(toSubmission(BUSY_GROUP, 'automation-0'));
+        await harness.service.enqueueTopologyPublicationCommand(toSubmission(BUSY_GROUP, 'publication-0'));
+        await harness.service.enqueueActivationStatusCommand(toSubmission(BUSY_GROUP, 'activation-0'));
+
+        const traces = Object.fromEntries(
+            (await harness.queueEntries()).map((entry) => [
+                entry.key.resourceId,
+                decodePersistedALMessage(entry.resource).id.traceId
+            ])
+        );
+        expect(traces).toEqual({
+            'criterion-0': 'trace-criterion-0',
+            'automation-0': 'trace-automation-0',
+            'publication-0': 'trace-publication-0',
+            'activation-0': 'trace-activation-0'
+        });
+    });
 });
+
+function toSubmission(aggregateRef: GroupRef, commandId: string): GroupSystemCommandSubmission {
+    return { command: toCommand(aggregateRef, commandId), atEpochMs: 1, traceId: `trace-${commandId}` };
+}
 
 function toQueueContextId(ref: GroupRef): string {
     return toAppQueueKey({ topicId: '', resourceId: '', contextId: groupStateGroupStorageKey(ref) }).contextId;
