@@ -124,8 +124,8 @@ remaining owned attempts. The admission-snapshot send result is deleted (D14).
 
 Every message has:
 
-- a version, globally unique message ID, sender timestamp, stable sender ID, and
-  optional session/trace identity;
+- a version, globally unique message ID, sender timestamp, stable sender ID, a
+  required trace ID, and an optional session ID;
 - a mandatory topic/context/resource route;
 - an optional logical target and optional forwarding hints;
 - hop/time/freshness constraints;
@@ -140,19 +140,43 @@ extensions are introduced only through a versioned compatibility rule. All
 identifiers, arrays, payloads, gap windows, and total envelopes have documented
 byte/count bounds.
 
-**CURRENT — bounded envelope:** The v3 envelope, one decoder, the resource
+**CURRENT — bounded envelope:** The versioned envelope, one decoder, the resource
 ceilings in
 [`al-message-resource-limits.ts`](../../packages/shared/al-contracts/al-message-resource-limits.ts)
 with UTF-8 byte accounting, and validated control payloads exist since the first
 release. Authenticated RTC relay provenance remains PARTIAL (S2). R2 renamed the
 membership-epoch field to the group-state roster version it fences on
 (`targets.rosterVersion`) and bumped the envelope to v3
-(`AL_MESSAGE_ENVELOPE_VERSION`); an envelope of any other version is refused
-`unsupported`.
+(`AL_MESSAGE_ENVELOPE_VERSION`). I1b-i made the trace required and bumped the
+envelope to v4; an envelope of any other version is refused `unsupported`.
 
-**PLANNED — I1b, session and trace identity:** Builders do not populate AL
-`sessionId`/`traceId`, and no end-to-end trace propagation behavior exists. I1a
-delivered the correlation half (see Correlation and actions).
+**CURRENT — I1b-i, trace identity:** Every envelope carries `id.traceId`, one
+string of 1 to 128 characters from `[A-Za-z0-9_-]`, so a UUID fits.
+[`al-trace-id.ts`](../../packages/shared/al-contracts/trace/al-trace-id.ts) owns
+it: `newALTraceId()` mints a UUID, and `decodeALTraceId` refuses an absent trace
+`missing` and a bad one `malformed`. The persisted validator and the inbound
+decoder require it, so a foreign trace that is too long or malformed is refused.
+`buildALMessage` mints one only when the caller passes none. The outbound identity
+hashes the trace, so it is fixed before first admission, and retries, fallback,
+repair and checkpoint restore carry it unchanged. One trace has three carriers:
+
+- the HTTP request header `x-request-id`, which the browser mints per request and
+  the api-v1 timing middleware validates, mints when absent or invalid, records as
+  the timing `requestId` and echoes on the response;
+- the AppInbox command envelope's `id.traceId`, while the stored command and its
+  idempotency identity never carry it;
+- `id.traceId` on every publication, reply and control the server mints for that
+  command; a reply carries its request's trace and a control its subject's.
+
+A WS-origin command carries its inbound envelope's trace. Only a server action
+with no request behind it mints a trace, at its enqueue or publication boundary:
+the sweeps, the timers, the topology work cycle's derived commands, the topology
+planner's local publication, replay repair, reconnect hydration and a socket close. The audit stamp is the trace: a group or
+client event names the trace of the HTTP request that caused it. The request
+bodies carry no trace, and `AuditStamp.traceId` stays `string | null` only for
+rows written before I1b-i. A persisted topology publication or envelope from
+before version 4 is refused, with no backfill. `id.sessionId` is unchanged: the
+topology hydration unicast stamps it and the browser compares it.
 
 ## Validation, trust, and authorization
 
@@ -329,8 +353,8 @@ ALM supports RTC and WS as first-class carriers.
   deduplication domain, acknowledgement obligation, and terminal outcome across
   transport attempts.
 - A transport switch preserves expiry and correlation identity (I1a: the envelope's
-  `actions` ride every re-shaping of the first envelope) and, once I1b lands, trace
-  identity; ordering and supersedence tracks are per carrier runtime, so a message handed to another carrier leaves its
+  `actions` ride every re-shaping of the first envelope) and trace identity (I1b-i:
+  the envelope's `id.traceId` rides with it); ordering and supersedence tracks are per carrier runtime, so a message handed to another carrier leaves its
   track on the first.
 
 **CURRENT:** Both RTC and WS use the AL envelope and core admission runtimes.
@@ -820,7 +844,7 @@ audience request. The caller validates the reply payload and sets the reply
 timeout. A reply that is late, a second reply, and a reply from a sender other
 than the addressee are dropped with a payload-free diagnostic, and a copy of one
 reply is dropped by the receiver's message-id deduplication. Correlation
-identity survives fallback and repair; trace identity does so once I1b lands.
+identity survives fallback and repair, and so does trace identity (I1b-i).
 
 **CURRENT — reply correlation (I1a):**
 
@@ -876,10 +900,10 @@ room's id, not in a request's custom `contextId`. There is one reply per request
 no registered response schema (the caller validates), and no reply wait that
 survives a reload.
 
-**PLANNED — I1b, trace propagation:** a trace id stamped on the envelope at
-creation and carried from the HTTP request through AppInbox into the envelope,
-and payload-free harness diagnostics. Replies over RTC, several replies per
-request and a registered response schema are not scheduled.
+**CURRENT — I1b-i, trace on replies:** a reply carries its request's trace, as
+it carries its correlation (see Envelope and compatibility).
+Replies over RTC, several replies per request and a registered response schema are
+not scheduled.
 
 ## Repair and resynchronization
 
@@ -969,11 +993,16 @@ most recently updated receipted messages, who confirmed each receipt and whether
 reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
 (S3c-ii, D75).
 
-**PLANNED — F1, S1, and I1b, end-to-end observability:** There is no shared
-lifecycle event stream, IndexedDB cost telemetry, trace propagation, or
-payload-safe logging contract. F1 adds the AL-owned IndexedDB counter and ALM
-metrics in the lanes, S1 the lifecycle events, I1b trace propagation and the
-payload-free diagnostics contract.
+**PLANNED — F1, S1, and I1b-ii, end-to-end observability:** There is no shared
+lifecycle event stream, IndexedDB cost telemetry, or payload-safe logging
+contract. F1 adds the AL-owned IndexedDB counter and ALM metrics in the lanes,
+S1 the lifecycle events. The trace itself is carried end to end since I1b-i, and
+the HTTP timing line records it as its `requestId`. I1b-ii puts the trace on the
+message-scoped runtime diagnostics, the AppInbox timing lines and the harness
+identity, and adds the payload-free diagnostics contract: no diagnostic the
+conformance lane records may carry a message payload, which a sentinel-payload
+guard proves. Message evidence events keep their payloads as the recipes'
+assertion surface.
 
 **PLANNED — I2a, storage health:** In production the storage-reset sink does
 nothing, and no storage-health or recovery event exists. I2a puts the following
@@ -1126,7 +1155,7 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — I1b, I2a, and I2b, complete safe surface:** The delivery handle
+**PLANNED — I2a and I2b, complete safe surface:** The delivery handle
 (S1) and the channel purpose (S3a) exist. They are exported by
 `browser/rallar-messages.ts`, the narrow entry point F1 added. A1 added the
 principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
@@ -1134,9 +1163,11 @@ principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
 and `recipientPeerIds` send inputs. I1a added the correlation surface: the
 `actions` option on the envelope builders, `newALReplyMessage`, and in the
 browser the `corrId` send input, the handle's `corrId`, `replyToMsgId` and
-`awaitReply`, and `RallarMessage.reply()`. Three parts are absent:
+`awaitReply`, and `RallarMessage.reply()`. I1b-i added the trace surface: the
+builders' `traceId` option, `newALTraceId` and `decodeALTraceId`, and in the
+browser the `traceId` send input, the handle's `traceId`, `RallarMessage.traceId`
+and an `x-request-id` on every api request. Two parts are absent:
 
-- trace builders (I1b);
 - the channel's storage-unavailable policy (I2a);
 - `local-checkpoint` with its per-store settings (I2b).
 

@@ -1,6 +1,6 @@
 # Runtime Data Flow
 
-Last reviewed: 2026-10-27.
+Last reviewed: 2026-10-28.
 
 ## Modules
 
@@ -11,8 +11,9 @@ Last reviewed: 2026-10-27.
   phases, diagnostics, room summaries, the current room id, and the accepted
   relic snapshot.
 - `src/game/api.ts` performs authenticated REST calls to the relic server.
-- `apps/relic-hunter-server-v1/src/relic-game-service.ts` adapts REST and WS requests to
-  `packages/relic-hunters/server` and reads the fresh authorized snapshot after completion.
+- `apps/relic-hunter-server-v1/src/relic-game-routes.ts` (`initRelicGameRoutes`) installs the
+  authenticated REST routes. `apps/relic-hunter-server-v1/src/relic-game-service.ts` adapts REST and
+  WS requests to `packages/relic-hunters/server` and reads the fresh authorized snapshot after completion.
 - `RelicGameInboxService` owns durable request identity, fresh-attempt processing and atomic
   AppInbox completion. `RelicGameMutationService` reads session/room/save facts, computes and
   validates the result, then writes the group revision guard, save CAS, publication provenance
@@ -85,6 +86,13 @@ server's peer id, never after a WS attempt. The UI shows the command's receipt s
 arrival. Reset uses `POST /api/relic/games/:gameId/reset/requests/:requestId`. Each browser operation
 captures one request ID and retains it through retries. A snapshot GET gives its initialization attempt a fresh
 identity, then reads current authorized state; an older denied read cannot poison later admission.
+
+Each command carries one trace. The browser sends a fresh `x-request-id` on every REST call, and the
+REST routes pass that request's trace; the WS command path passes the command envelope's
+`id.traceId`. The trace reaches AppInbox beside the command, never inside it:
+`captureRelicGameCommand` keeps it out of the stored command, so the `relic:<sha(command)>` message
+id and the request identity do not depend on it. Every publication the command writes, the room
+snapshot and the hunter event included, carries that trace.
 
 The server also tells the acting hunter what became of a command, on `room.relic.hunter` / `relic.hunter.v1`: a
 principal broadcast in the room, receipted, that only the acting hunter's own live sessions in the room receive.
@@ -282,8 +290,9 @@ topic with a deterministic provider: it decodes the context, answers
 replying. It admits a request only in a Relic room (the request's room ref is the
 Relic scope's `GroupRef` for its room id), only for the planning schema id and
 version, and sends one reply, `relic.ai.planning-reply.v1`, to the asking session
-alone (not to the hunter's other sessions), through the outbox. A request
-that is refused, or whose context cannot be decoded, gets no reply.
+alone (not to the hunter's other sessions), through the outbox. The reply carries
+the request's trace. A request that is refused, or whose context cannot be decoded,
+gets no reply.
 
 The browser accepts a reply only when its result decodes, its `requestId`, schema
 id and version are the request's, its `baseStateRevision` is still the current

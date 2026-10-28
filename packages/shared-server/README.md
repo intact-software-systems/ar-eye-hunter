@@ -116,6 +116,21 @@ writes persist semantic outbox intent; target resolution and delivery use
 committed authority. Queue notifications are wake-ups, not mutation or result
 authority.
 
+**The request trace.** Every enqueue is an `AppInboxEnqueueInput`: the stored
+command `AppInboxEnqueue` plus the trace of the request it serves (an HTTP
+request's `x-request-id`, or a WS command's envelope trace).
+`createDefaultAppInboxQueueMessage` stamps the trace on the command envelope's
+`id.traceId`; the stored command, its idempotency identity and its hash never
+carry it. The reservation winner's envelope is retained, so a replay under another
+trace observes the first request's trace. A handler reads
+`context.message.id.traceId` once and passes it in its compute input; several
+families carry it in `AppInboxCommandAttempt { attemptCount, traceId }`. No trace
+is minted inside a pure compute, because `validate` and the stored-row validators
+recompute it. Work-derived rows take the retained work row's envelope trace, and
+controls take their subject message's. Only an autonomous enqueue or publication,
+such as a sweep, a timer or a socket close, mints a trace at its boundary. The
+audit stamp and the group and client events take the trace from the handler facts.
+
 Authoritative persisted, replicated, queued, event, snapshot, receipt, and
 successful response fields are mandatory fields by default. Current writers
 define the accepted stored shape. A malformed value or schema mismatch fails at

@@ -338,6 +338,10 @@ claim answers for its row) and writes new facts through the admission transactio
 Each message has one raw envelope. Sent metadata, recipient actions, and repair work
 refer to it; [`al-outbound-transport-message.ts`](./al-outbound-transport-message.ts)
 captures and reconstructs the permitted transport differences.
+The identity fact covers the envelope version, sender, `msgId`, timestamp, session and the required
+`id.traceId`, so the trace is fixed before first admission. Retries, the carrier fallback, repair
+retransmission and checkpoint restore re-send the stored envelope, so each attempt carries the
+same trace with no code of its own.
 
 Every stored key is `topicId/resourceId/contextId`. Outbound work is
 `AL_OUTBOUND/<namespace>/<effectId>`; the canonical envelope is
