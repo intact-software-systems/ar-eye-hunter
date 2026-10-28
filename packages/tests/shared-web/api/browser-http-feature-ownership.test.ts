@@ -208,6 +208,45 @@ describe('browser HTTP feature ownership characterization', () => {
         expect(observations[0]?.headers.get('x-request-id')).not.toBe(observations[1]?.headers.get('x-request-id'));
     });
 
+    it('continues a caller trace as x-request-id on a mutation and a point read', async () => {
+        stubFetch((call) => call.method === 'GET' ? new Response('not found', { status: 404 }) : mutationResponse(call.url));
+
+        await roomGroupStateHttpApi.createGroup({
+            request: createGroupBody(),
+            options: { requestId: 'create-request-000001', traceId: 'trace-continued-create' },
+            scope
+        });
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession, traceId: 'trace-continued-read' }))
+            .rejects.toMatchObject({ status: 404 });
+
+        expect(observations.map((call) => call.headers.get('x-request-id'))).toEqual([
+            'trace-continued-create',
+            'trace-continued-read'
+        ]);
+    });
+
+    it('refuses a malformed caller trace as a typed validation issue before sending', async () => {
+        stubFetch((call) => mutationResponse(call.url));
+
+        await expect(roomGroupStateHttpApi.createGroup({
+            request: createGroupBody(),
+            options: { requestId: 'create-request-000001', traceId: 'not a trace' },
+            scope
+        })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [{
+                path: '$.traceId',
+                code: 'malformed',
+                message: 'Trace id must contain only letters, digits, underscores or hyphens'
+            }]
+        });
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession, traceId: '' })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [{ path: '$.traceId', code: 'malformed', message: 'Trace id must be 1 to 128 characters' }]
+        });
+        expect(observations).toEqual([]);
+    });
+
     it('preserves snapshot refresh and heartbeat retry identity', async () => {
         const client = clientSnapshot();
         const group = groupSnapshot();

@@ -499,7 +499,8 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
         },
         authorityGuard: groupAuthorityGuard(),
         actorIsPlatformAdmin: false,
-        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        traceId: 'trace-topology-app-inbox-handler'
     };
 }
 

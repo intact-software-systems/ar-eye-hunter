@@ -5,6 +5,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { decodeRuntimeStateRevision } from '../../../runtime-state/postgres/runtime-state-row-codec.ts';
+import type { AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { GROUPS_NAMESPACE } from '../../group-state/persistence/group-state-runtime-namespaces.ts';
@@ -44,7 +45,10 @@ export class GroupTopologyReconfigureMutation {
         this.dependencies = dependencies;
     }
 
-    async read(command: GroupTopologyReconfigureCommand): Promise<GroupTopologyReconfigureRead> {
+    async read(
+        command: GroupTopologyReconfigureCommand,
+        attempt: AppInboxCommandAttempt
+    ): Promise<GroupTopologyReconfigureRead> {
         const guarded = await this.dependencies.groupStateRepository.readSnapshotWithAuthorityGuard(
             command.groupRef
         );
@@ -68,7 +72,8 @@ export class GroupTopologyReconfigureMutation {
             authority,
             authorityGuard: guarded.authorityGuard,
             actorIsPlatformAdmin: this.dependencies.isPlatformAdmin(command.actorPrincipalId),
-            finishedRetentionMs: this.dependencies.finishedRetentionMs
+            finishedRetentionMs: this.dependencies.finishedRetentionMs,
+            traceId: attempt.traceId
         };
     }
 
@@ -93,7 +98,7 @@ export class GroupTopologyReconfigureMutation {
             senderId: command.actorPrincipalId,
             requestOptions: toCanonicalGroupTopologyConfigPatch(command.requestOptions),
             publish: command.publish,
-            traceId: command.traceId
+            traceId: read.traceId
         };
         return {
             ...outbox,

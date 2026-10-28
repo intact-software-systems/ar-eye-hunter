@@ -13,8 +13,8 @@ import { computeTopologyMutation } from '@shared-server/rallar-system/topology/m
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { decodeRtcTopologySnapshot } from '@shared-server/rallar-system/topology/persistence/decode-rtc-topology-snapshot.ts';
 import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { decodeRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/decode-rtc-topology-publication.ts';
 import { createRtcTopologyExecutionReceipt } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
-import { validateRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts';
 import {
     computeRtcTopologyReplayWrite,
     computeRtcTopologyWorkWrite,
@@ -161,11 +161,12 @@ describe('RTC topology complete write computation', () => {
         if (transaction.mutation.persistence.publication === null || transaction.delivery === null || transaction.promotionWrite === null) {
             throw new Error('Latest presence coverage requires publication, delivery and promotion');
         }
-        const publication = decodeJsonWireValue(
+        const publication = decodeRtcTopologyPublication(
             JSON.parse(transaction.mutation.persistence.publication.value),
-            'Prepared topology publication'
-        );
-        validateRtcTopologyPublication(publication, returned.group);
+            returned.group
+        ).fold((refusal) => {
+            throw new Error(refusal.message);
+        }, (decoded) => decoded);
         expect(publication.sourceGroupStateCausalRevision).toEqual({ groupRevision: 43, presenceRevision: 37 });
         expect(publication.snapshot).toEqual(stored);
         const pages = transaction.delivery.outboxWrites.map((write) =>

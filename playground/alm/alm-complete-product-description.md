@@ -160,9 +160,10 @@ decoder require it, so a foreign trace that is too long or malformed is refused.
 hashes the trace, so it is fixed before first admission, and retries, fallback,
 repair and checkpoint restore carry it unchanged. One trace has three carriers:
 
-- the HTTP request header `x-request-id`, which the browser mints per request and
-  the api-v1 timing middleware validates, mints when absent or invalid, records as
-  the timing `requestId` and echoes on the response;
+- the HTTP request header `x-request-id`, which the browser mints per request,
+  or takes from the caller's `traceId` request option, and the api-v1 timing
+  middleware validates, mints when absent or invalid, records as the timing
+  `requestId` and echoes on the response;
 - the AppInbox command envelope's `id.traceId`, while the stored command and its
   idempotency identity never carry it;
 - `id.traceId` on every publication, reply and control the server mints for that
@@ -175,9 +176,13 @@ planner's local publication, replay repair, reconnect hydration and a socket
 close. The audit stamp is the trace: a group or client event names the trace of
 the request (HTTP `x-request-id` or WS envelope) whose command ran. The request
 bodies carry no trace, and `AuditStamp.traceId` stays `string | null` only for
-rows written before I1b-i. A persisted topology publication or envelope from
-before version 4 is refused, with no backfill. `id.sessionId` is unchanged: the
-topology hydration unicast stamps it and the browser compares it.
+rows written before I1b-i. A persisted envelope from before version 4 is
+refused, with no backfill; a topology publication from before version 4 is
+refused `unsupported` without stalling replay, which takes it as a gap and
+re-hydrates from current topology. An open tab on a pre-v4 bundle must reload:
+the server refuses its version-3 frames and the tab refuses the server's
+version-4 frames. `id.sessionId` is unchanged: the topology hydration unicast
+stamps it and the browser compares it.
 
 ## Validation, trust, and authorization
 

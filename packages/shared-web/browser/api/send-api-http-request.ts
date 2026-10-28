@@ -1,12 +1,15 @@
-import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 import { ApiHttpError, type ApiHttpMethod } from './http-error.ts';
 
 export interface ApiRequestOptions {
     readonly signal?: AbortSignal;
     readonly authSession?: AuthSession | null;
+    /** An earlier operation's trace sent as `x-request-id`, as `RallarMessageSendBase.traceId`; absent, a new trace. */
+    readonly traceId?: string;
 }
 
 export interface ApiMutationRequestOptions extends ApiRequestOptions {
@@ -31,8 +34,12 @@ export function readApiRequestSession(options: ApiRequestOptions): AuthSession |
     return options.authSession ?? undefined;
 }
 
+/** A malformed caller `traceId` is refused with the send path's `RallarValidationError` before any request. */
 export function newApiRequestHeaders(options: ApiRequestOptions): Headers {
-    const headers = new Headers({ 'content-type': 'application/json', 'x-request-id': newALTraceId() });
+    const traceId = options.traceId === undefined
+        ? newALTraceId()
+        : decodeALTraceId(options.traceId).fold((issue) => throwRallarValidation([issue]), (value) => value);
+    const headers = new Headers({ 'content-type': 'application/json', 'x-request-id': traceId });
     const session = readApiRequestSession(options);
     if (session) {
         headers.set('authorization', `Bearer ${session.accessToken}`);

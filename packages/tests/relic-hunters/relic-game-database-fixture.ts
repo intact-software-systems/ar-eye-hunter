@@ -74,7 +74,7 @@ export async function prepareGameWrite(
 ) {
     const ingress = fixture.service.capture(captureRelicGameCommand(command), initial, 'default-qbox-server');
     const read = await fixture.service.read(ingress);
-    const attempt = { ...read, traceId: RELIC_FIXTURE_TRACE_ID };
+    const attempt = { ...read, attemptCount: 1, traceId: RELIC_FIXTURE_TRACE_ID };
     const computed = fixture.service.compute(attempt);
     expect(fixture.service.validate(attempt, computed)).toEqual([]);
     return { ingress, read, computed };

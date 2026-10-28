@@ -44,7 +44,10 @@ describe('GroupTopologyReconfigureMutation', () => {
             },
             publish: true
         });
-        expect(decodePersistedALMessage(computed.outboxWrite.entry.resource).id.traceId).toBe(command.traceId);
+        expect(command).not.toHaveProperty('traceId');
+        expect(decodePersistedALMessage(computed.outboxWrite.entry.resource).id.traceId).toBe(
+            'trace-group-topology-reconfigure-mutation'
+        );
         expect(mutation.validate(command, read, computed)).toEqual([]);
     });
 
@@ -214,8 +217,7 @@ function createCommand() {
         actorPrincipalId: 'owner',
         capturedAtEpochMs: 1_000,
         requestOptions: { degreeLimit: 7 },
-        publish: true,
-        traceId: 'trace-group-topology-reconfigure-mutation'
+        publish: true
     } as const;
 }
 
@@ -233,6 +235,7 @@ function createRead(actorIsPlatformAdmin = false) {
         },
         authorityGuard: createTopologyTestAuthorityGuard(),
         actorIsPlatformAdmin,
-        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        traceId: 'trace-group-topology-reconfigure-mutation'
     };
 }

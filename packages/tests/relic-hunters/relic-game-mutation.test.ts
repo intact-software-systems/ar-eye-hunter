@@ -32,7 +32,7 @@ describe('Relic authoritative save mutations', () => {
             const conflictIndex = outcomes.findIndex((outcome) => outcome.status === 'rejected');
             expect(outcomes[conflictIndex]).toMatchObject({ status: 'rejected', reason: expect.any(RuntimeStateWriteConflictError) });
             const retryRead = await fixture.service.read(attempts[conflictIndex].ingress);
-            const retry = fixture.service.compute({ ...retryRead, traceId: 'trace-relic-game-mutation' });
+            const retry = fixture.service.compute({ ...retryRead, attemptCount: 1, traceId: 'trace-relic-game-mutation' });
             expect(retry.result).toEqual({ status: 'initialized', gameId: fixture.ref.groupId });
             expect(retry.save).toBeNull();
             expect((await fixture.data.read(fixture.ref))[0].entry?.revision).toBe(0);
@@ -67,8 +67,8 @@ describe('Relic authoritative save mutations', () => {
             const conflictIndex = outcomes.findIndex((outcome) => outcome.status === 'rejected');
             expect(outcomes[conflictIndex]).toMatchObject({ status: 'rejected', reason: expect.any(RuntimeStateWriteConflictError) });
             const freshRead = await fixture.service.read(attempts[conflictIndex].ingress);
-            const rebased = fixture.service.compute({ ...freshRead, traceId: 'trace-relic-game-mutation' });
-            expect(fixture.service.validate({ ...freshRead, traceId: 'trace-relic-game-mutation' }, rebased)).toEqual([]);
+            const rebased = fixture.service.compute({ ...freshRead, attemptCount: 1, traceId: 'trace-relic-game-mutation' });
+            expect(fixture.service.validate({ ...freshRead, attemptCount: 1, traceId: 'trace-relic-game-mutation' }, rebased)).toEqual([]);
             await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, rebased));
             const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
             expect(current?.players.map((player) => player.playerId).sort()).toEqual([fixture.owner.sessionId, guest.sessionId].sort());
@@ -101,8 +101,8 @@ describe('Relic authoritative save mutations', () => {
             const latest = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
             fixture.nowEpochMs -= 500;
             const resetRead = await fixture.service.read(resetIngress);
-            const reset = fixture.service.compute({ ...resetRead, traceId: 'trace-relic-game-mutation' });
-            expect(fixture.service.validate({ ...resetRead, traceId: 'trace-relic-game-mutation' }, reset)).toEqual([]);
+            const reset = fixture.service.compute({ ...resetRead, attemptCount: 1, traceId: 'trace-relic-game-mutation' });
+            expect(fixture.service.validate({ ...resetRead, attemptCount: 1, traceId: 'trace-relic-game-mutation' }, reset)).toEqual([]);
             await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, reset));
             const afterReset = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
             if (latest === null || afterReset === null) {
@@ -141,11 +141,14 @@ describe('Relic authoritative save mutations', () => {
             await fixture.repository.updateGroup({ ...stored.value, status: 'archived', archived: stored.value.updated, deleted: null }, stored.entry.revision);
             await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const retry = fixture.service.compute({ ...await fixture.service.read(prepared.ingress), traceId: 'trace-relic-game-mutation' });
+            const retry = fixture.service.compute({ ...await fixture.service.read(prepared.ingress), attemptCount: 1, traceId: 'trace-relic-game-mutation' });
             expect(retry.result).toMatchObject({ status: 'refused', code: 'room-unavailable' });
             expect(retry.save).toBeNull();
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(fixture.service.validate({ ...prepared.read, traceId: 'trace-relic-game-mutation' }, { ...prepared.computed, save: null }).length)
+            expect(
+                fixture.service.validate({ ...prepared.read, attemptCount: 1, traceId: 'trace-relic-game-mutation' }, { ...prepared.computed, save: null })
+                    .length
+            )
                 .toBeGreaterThan(0);
         }
         finally {

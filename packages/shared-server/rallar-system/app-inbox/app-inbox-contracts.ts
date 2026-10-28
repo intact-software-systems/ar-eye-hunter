@@ -129,6 +129,10 @@ export interface AppInboxCommandAttempt {
     readonly traceId: string;
 }
 
+export function toAppInboxCommandAttempt(context: AppInboxExecutionMetadata): AppInboxCommandAttempt {
+    return { attemptCount: context.entry.dequeueAudit.attempts, traceId: context.message.id.traceId };
+}
+
 export type AppInboxMessageContext<Result> =
     & AppInboxExecutionMetadata
     & Readonly<{

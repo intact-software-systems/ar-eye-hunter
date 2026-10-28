@@ -3,6 +3,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import {
     AppInboxType,
+    toAppInboxCommandAttempt,
     type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
@@ -78,7 +79,7 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
         sessionId: undefined,
         attempt: context.entry.dequeueAudit.attempts
     };
-    const attempt = { attemptCount: timing.attempt, traceId: context.message.id.traceId };
+    const attempt = toAppInboxCommandAttempt(context);
     const read = await timeGroupStatePhase(timing, 'read', () => dependencies.service.read(ingress, attempt));
     const computed = await timeGroupStatePhase(timing, 'compute', () => dependencies.service.compute(read));
     await timeGroupStatePhase(timing, 'validate', () => {

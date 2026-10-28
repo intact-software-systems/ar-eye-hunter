@@ -9,6 +9,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     AppInboxType,
+    toAppInboxCommandAttempt,
     type AppInboxEnqueue,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
@@ -319,11 +320,7 @@ export class GroupStateInboxService {
         const read = await timeGroupStatePhase(
             timing,
             'read',
-            () =>
-                service.read(context.enqueue.authority, {
-                    attemptCount: timing.attempt,
-                    traceId: context.message.id.traceId
-                })
+            () => service.read(context.enqueue.authority, toAppInboxCommandAttempt(context))
         );
         if (!jsonEquals(command, read.command)) {
             throw new GroupMutationAuthorizationError('Quick Join ingress and command differ');

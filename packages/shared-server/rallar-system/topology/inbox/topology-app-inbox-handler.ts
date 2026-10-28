@@ -3,6 +3,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import {
+    toAppInboxCommandAttempt,
     type AppInboxCommandAttempt,
     type AppInboxEnqueue,
     type AppInboxMessageContext
@@ -234,10 +235,7 @@ export class TopologyAppInboxHandler {
         }
         const command = toTopologyConfigMutationCommand(authority.command);
         const read = await owners.configMutationService.read(command);
-        const attempt: AppInboxCommandAttempt = {
-            attemptCount: context.entry.dequeueAudit.attempts,
-            traceId: context.message.id.traceId
-        };
+        const attempt = toAppInboxCommandAttempt(context);
         const computed = this.computeTopologyConfigOperation(
             command,
             read,
@@ -298,10 +296,9 @@ export class TopologyAppInboxHandler {
             requestOptions: fromCanonicalGroupTopologyConfigPatch(
                 authority.command.payload.requestOptions
             ),
-            publish: authority.command.payload.publish,
-            traceId: context.message.id.traceId
+            publish: authority.command.payload.publish
         };
-        const read = await mutation.read(command);
+        const read = await mutation.read(command, toAppInboxCommandAttempt(context));
         const computed = this.computeTopologyReconfigureOperation(
             command,
             read,

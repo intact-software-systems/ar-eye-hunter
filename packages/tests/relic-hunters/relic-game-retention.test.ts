@@ -47,7 +47,7 @@ describe('Relic room retirement and save authority', () => {
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, game.computed)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const current = fixture.service.compute({ ...await fixture.service.read(game.ingress), traceId: 'trace-relic-game-retention' });
+            const current = fixture.service.compute({ ...await fixture.service.read(game.ingress), attemptCount: 1, traceId: 'trace-relic-game-retention' });
             expect(current.result).toMatchObject({ status: 'refused', code: 'room-unavailable' });
             expect(current.save).toBeNull();
         }

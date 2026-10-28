@@ -1,8 +1,8 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { assertRtcTopologyPublication } from '../../publication/decode-rtc-topology-publication.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import { assertRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
-import { validateRtcTopologyPublication } from '../../publication/validate-rtc-topology-publication.ts';
 import type {
     RtcTopologyDeliveryAppend,
     RtcTopologyDeliveryAppendInput,
@@ -65,7 +65,7 @@ export function computeRtcTopologyDeliveryAppend(
     outbox: readonly ResourceEntry[]
 ): RtcTopologyDeliveryAppend {
     assertRtcTopologyDeliveryStreamId(publisherStreamId);
-    validateRtcTopologyPublication(publication, publication.groupRef);
+    assertRtcTopologyPublication(publication, publication.groupRef);
     assertDeliveryGroupRef(publication);
 
     assertRtcTopologyPublicationOutbox(publication, outbox);

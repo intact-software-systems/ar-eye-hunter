@@ -444,9 +444,11 @@ the auth logout provenance re-derivation, the formation timer recompute) accept 
 **As applied (I1b-i).** The persisted validator decodes `id.traceId` with `decodeALTraceId`, and the inbound decoder
 is the same function, so a missing or bad trace is refused `malformed` and any version but 4 `unsupported`.
 `RtcTopologyPublication.traceId` is a required persisted field with the same grammar, and it enters the execution
-command digest. A topology publication persisted before version 4 is refused as corrupt, as its version-3 envelope
-is refused `unsupported`: there is no backfill and no migration code. The 18 JSON recipes moved to version 4,
-each with a trace.
+command digest. A topology publication persisted before version 4 is refused `unsupported`, as its version-3
+envelope is, with no backfill and no migration code, and the refusal never blocks: topology replay takes it as a gap
+and the consumer re-hydrates from current topology, and a publication listing skips it; a malformed version-4
+publication stays corruption. In-flight APP_INBOX, APP_OUTBOX and WS_OUTBOX rows written before version 4 finalise
+non-retryable at roll-out, so deploy with drained queues. The 18 JSON recipes moved to version 4, each with a trace.
 
 ### 6.c The browser: a trace per send, inherited by the reply (D448)
 
@@ -467,6 +469,9 @@ call, so a retried request carries a new trace. The two direct `fetch` callers b
 `newApiRequestHeaders` and keep their own `fetch`, because each needs the raw `Response`. Both read a failed body with
 the one `readApiErrorBody`. A stated trace outside the grammar is refused with the issue `$.traceId` on WS and RTC
 before anything is queued. The handle's `traceId` is the envelope's, read when the registry opens the observation.
+`ApiRequestOptions.traceId` carries a caller's trace into an HTTP request as its `x-request-id`, which is how a send
+continues an HTTP mutation's trace: `newApiRequestHeaders` decodes it with `decodeALTraceId`, refuses a malformed one
+with the issue `$.traceId` in a `RallarValidationError` before any request, and mints when it is absent.
 
 ### 6.d AppInbox: the command envelope carries the request's trace (D450)
 

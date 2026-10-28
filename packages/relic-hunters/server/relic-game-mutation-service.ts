@@ -4,6 +4,7 @@ import {
     type RoomOwnedAppData
 } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AppInboxCommandAttempt } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
     writeAppOutboxInserts,
     type AppOutboxInsert
@@ -94,9 +95,7 @@ export namespace RelicGameMutationService {
         readonly save: RoomOwnedAppData.Read;
     }
 
-    export interface Attempt extends Read {
-        readonly traceId: string;
-    }
+    export interface Attempt extends Read, AppInboxCommandAttempt {}
 
     export interface RefusalReason {
         readonly code: string;

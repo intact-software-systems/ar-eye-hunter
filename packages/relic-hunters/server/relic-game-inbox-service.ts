@@ -3,6 +3,7 @@ import type {
     AppInboxMessageContext,
     RallarServerAppInbox
 } from '@shared-server/mod.ts';
+import { toAppInboxCommandAttempt } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { timeRallarAsync, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     requireExactKeys,
@@ -122,7 +123,7 @@ export class RelicGameInboxService {
             { ...timing, operation: 'read' },
             () => service.read(ingress)
         );
-        const attempt = { ...read, traceId: context.message.id.traceId };
+        const attempt: RelicGameMutationService.Attempt = { ...read, ...toAppInboxCommandAttempt(context) };
         const computed = await timeRallarAsync(
             this.config.timing,
             { ...timing, operation: 'compute' },

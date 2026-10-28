@@ -120,7 +120,7 @@ describe('Relic current authority', () => {
             const replaced = { ...fixture.command, actor: { ...fixture.command.actor, issuedAtEpochMs: fixture.owner.issuedAtEpochMs + 1 } };
             const read = await fixture.service.read(fixture.service.capture(captureRelicGameCommand(replaced), null, 'default-qbox-server'));
             expect(fixture.service.needsInitialState(read)).toBe(false);
-            expect(fixture.service.compute({ ...read, traceId: 'trace-relic-game-authorization' }).result).toMatchObject({
+            expect(fixture.service.compute({ ...read, attemptCount: 1, traceId: 'trace-relic-game-authorization' }).result).toMatchObject({
                 status: 'refused',
                 code: 'invalid-session',
                 httpStatus: 401

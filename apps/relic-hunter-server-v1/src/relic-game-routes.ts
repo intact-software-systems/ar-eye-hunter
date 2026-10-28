@@ -17,17 +17,22 @@ export interface RelicGameRoutesDependencies {
 
 /** The API timing middleware runs outermost on `/api/*`, so every route reads the request's `x-request-id` trace. */
 export function initRelicGameRoutes(app: Hono, dependencies: RelicGameRoutesDependencies): Hono {
-    const { relicGame, sessions } = dependencies;
     app.use('/api/relic/*', async (c, next) => {
         try {
-            await requireApiAuthSession(c.req, sessions);
+            await requireApiAuthSession(c.req, dependencies.sessions);
             await next();
         }
         catch (error) {
             return toAuthErrorResponse(c, error);
         }
     });
+    registerRelicSnapshotRoute(app, dependencies);
+    registerRelicCommandRoute(app, dependencies);
+    registerRelicResetRoute(app, dependencies);
+    return app;
+}
 
+function registerRelicSnapshotRoute(app: Hono, { relicGame, sessions }: RelicGameRoutesDependencies): void {
     app.get('/api/relic/games/:gameId', async (c) => {
         try {
             const request = await readRelicRestRequest(c, sessions, crypto.randomUUID());
@@ -37,7 +42,9 @@ export function initRelicGameRoutes(app: Hono, dependencies: RelicGameRoutesDepe
             return toRelicRestErrorResponse(c, toError(error));
         }
     });
+}
 
+function registerRelicCommandRoute(app: Hono, { relicGame, sessions }: RelicGameRoutesDependencies): void {
     app.post('/api/relic/games/:gameId/commands/requests/:requestId', async (c) => {
         try {
             const request = await readRelicRestRequest(c, sessions, c.req.param('requestId'));
@@ -56,7 +63,9 @@ export function initRelicGameRoutes(app: Hono, dependencies: RelicGameRoutesDepe
             return toRelicRestErrorResponse(c, toError(error));
         }
     });
+}
 
+function registerRelicResetRoute(app: Hono, { relicGame, sessions }: RelicGameRoutesDependencies): void {
     app.post('/api/relic/games/:gameId/reset/requests/:requestId', async (c) => {
         try {
             const request = await readRelicRestRequest(c, sessions, c.req.param('requestId'));
@@ -66,7 +75,6 @@ export function initRelicGameRoutes(app: Hono, dependencies: RelicGameRoutesDepe
             return toRelicRestErrorResponse(c, toError(error));
         }
     });
-    return app;
 }
 
 async function readRelicRestRequest(

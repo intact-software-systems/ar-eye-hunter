@@ -9,11 +9,11 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { materializeRtcOverlayTopologyMessages } from '../planning/materialize-rtc-overlay-topology-messages.ts';
+import { assertRtcTopologyPublication } from './decode-rtc-topology-publication.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
-import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
 
 export function computeRtcTopologyPublicationOutbox(publication: RtcTopologyPublication): readonly ResourceEntry[] {
-    validateRtcTopologyPublication(publication, publication.groupRef);
+    assertRtcTopologyPublication(publication, publication.groupRef);
     return materializeRtcOverlayTopologyMessages(publication).map((message) =>
         toPublicationPageOutbox(publication, message)
     );

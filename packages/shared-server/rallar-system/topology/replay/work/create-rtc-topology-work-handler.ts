@@ -144,16 +144,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         await processLoadedRtcTopologyWork(options, replayRead, reservationFinish);
         return;
     }
-    const facts: RtcTopologyWorkFacts = {
-        workEnvelope,
-        workId,
-        attemptCount: entry.dequeueAudit.attempts,
-        derivedExpireAtEpochMs: Math.max(
-            entry.audit.expiryTs.epochMilliseconds,
-            nowEpochMs + options.finishedRetentionMs
-        ),
-        traceId: message.id.traceId
-    };
+    const facts = toRtcTopologyWorkFacts({ options, message, entry, workEnvelope, workId, nowEpochMs });
     const attempt = { options, facts, mutationRead };
     const accepted = claimRttRefinementSkip(attempt);
     if (accepted !== null) {
@@ -187,6 +178,29 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         computedWrite: computed.write,
         computeDurationMs: options.topologyPlanning.readDurationNowMs() - computeStartedAtMs
     });
+}
+
+interface ToRtcTopologyWorkFactsInput {
+    readonly options: Pick<RtcTopologyWorkHandlerOptions, 'finishedRetentionMs'>;
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly workEnvelope: RtcTopologyWorkFacts['workEnvelope'];
+    readonly workId: string;
+    readonly nowEpochMs: number;
+}
+
+function toRtcTopologyWorkFacts(input: ToRtcTopologyWorkFactsInput): RtcTopologyWorkFacts {
+    const { options, message, entry } = input;
+    return {
+        workEnvelope: input.workEnvelope,
+        workId: input.workId,
+        attemptCount: entry.dequeueAudit.attempts,
+        derivedExpireAtEpochMs: Math.max(
+            entry.audit.expiryTs.epochMilliseconds,
+            input.nowEpochMs + options.finishedRetentionMs
+        ),
+        traceId: message.id.traceId
+    };
 }
 
 interface ReadRtcTopologyWorkComputationInput extends RtcTopologyWorkAttemptInput {
