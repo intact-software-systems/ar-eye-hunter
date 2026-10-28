@@ -41,6 +41,21 @@ describe('Relic command evaluation', () => {
         expect(result.right).toBeUndefined();
     });
 
+    it('resolves and finishes a solo expedition without counting an unjoined watcher', () => {
+        const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
+        let state = requireRelicCommandApplied(applyRelicCommand(undefined, { ...command, kind: 'join-expedition' }, { senderId: 'alice', now: 1 })).state;
+        state = { ...state, maxRounds: 1 };
+        expect(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { senderId: 'watcher', now: 2 }).left?.code).toBe('participant-required');
+        state = requireRelicCommandApplied(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { senderId: 'alice', now: 3 })).state;
+        state = requireRelicCommandApplied(
+            applyRelicCommand(state, { ...command, kind: 'submit-action', action: { kind: 'search' } }, { senderId: 'alice', now: 4 })
+        ).state;
+        expect(state.phase).toBe('review');
+        expect(state.players.map((player) => player.playerId)).toEqual(['alice']);
+        state = requireRelicCommandApplied(applyRelicCommand(state, { ...command, kind: 'continue-review' }, { senderId: 'alice', now: 5 })).state;
+        expect(state.phase).toBe('finished');
+    });
+
     it('returns invalid expedition geometry as a typed construction refusal', () => {
         const blueprint = { ...createProceduralRelicExpeditionBlueprint({ seed: 'broken-map' }), rooms: [] };
         const result = createRelicGameFromBlueprint({ gameId: 'room-1', roomId: 'room-1', blueprint, now: 55 });

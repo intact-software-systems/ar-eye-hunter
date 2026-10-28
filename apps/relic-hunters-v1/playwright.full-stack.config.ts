@@ -8,6 +8,9 @@ import { randomUUID } from 'node:crypto';
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
     process.env.RELIC_HUNTERS_FULL_STACK === 'true';
 
+// Release spectating journeys use the deployable build; DEV-only diagnostics suites retain Vite iteration.
+const builtPreviewEnabled = process.env.RELIC_HUNTERS_BUILT_PREVIEW === '1';
+
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
@@ -34,10 +37,13 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         ]
         : []),
     {
-        command: 'cd ../.. && API_BASE_URL= npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
+        command: builtPreviewEnabled
+            ? 'npm run build && npm run preview -- --host 127.0.0.1 --port 5175 --strictPort'
+            : 'cd ../.. && API_BASE_URL= npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
+        env: { API_BASE_URL: '' },
         url: 'http://127.0.0.1:5175',
         reuseExistingServer: false,
-        timeout: 60_000
+        timeout: builtPreviewEnabled ? 120_000 : 60_000
     }
 ];
 

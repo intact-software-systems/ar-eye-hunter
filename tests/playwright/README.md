@@ -72,7 +72,9 @@ matching the existing Relic pattern. This does not change gameplay behavior.
 
 Record OS, runtime/browser versions, server profile, renderer and source revision
 with any comparison. AR Eye uses a built SPA and local memory API; Relic uses a
-Vite development SPA and local server. Both use Chromium software rendering.
+Vite development SPA by default and a local server. The release room lane sets
+`RELIC_HUNTERS_BUILT_PREVIEW=1` to exercise its production bundle; include this
+build mode in comparisons. Both use Chromium software rendering.
 These timings include automated interactions and assertion waits: they measure
 the defined synthetic journeys, not production latency or user adoption. The
 reload checks do not establish operating-system suspension recovery. No numeric
@@ -87,6 +89,29 @@ browser regressions in `relic-hunters/turn-reset.spec.ts` also cover ordinary
 snapshot updates, refused Reset, automatic submission across expedition resets,
 and recovery that first observes an already-expired new round.
 
+## Spectator click journeys
+
+Release CI runs both games' spectator journeys with the production SPA build.
+For Relic, select the same mode locally:
+
+```sh
+RELIC_HUNTERS_FULL_STACK=1 RELIC_HUNTERS_BUILT_PREVIEW=1 \
+  npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+  tests/playwright/relic-hunters/full-stack-spectating.spec.ts
+```
+
+The full-stack config retains development mode by default because the manual
+propagation suite reads development-only runtime diagnostics. Do not silently
+compare its timings with production-preview runs. Spectator journeys use visible
+controls, real admission and public game snapshots. Scene activation checks a
+rendered frame from the expedition renderer before the following control assertions; the
+existing scene-readiness and overall test deadlines still apply.
+
+A local CPU capture found native WebGL context, extension and shader work blocking
+the browser main thread during scene activation. This can delay painting even
+after React commits the new room state. Treat API success, React commit and a
+rendered playable/watchable scene as separate evidence; do not report the local
+software-renderer delay as production latency.
 
 ## Chromium room timing diagnostics
 

@@ -7,14 +7,18 @@ import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { newApiRequestHeaders, readApiErrorBody } from '@shared-web/browser/api/send-api-http-request.ts';
 import { readSession } from '@shared/api/auth.ts';
 
-export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined> {
+export async function fetchRelicSnapshot(
+    gameId: string,
+    signal?: AbortSignal
+): Promise<RelicPublicSnapshot | undefined> {
     const session = readSession();
     if (!session) {
         return undefined;
     }
 
     const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}`, {
-        headers: newApiRequestHeaders({ authSession: session })
+        headers: newApiRequestHeaders({ authSession: session }),
+        signal
     });
     if (response.status === 404 || response.status === 204) {
         return undefined;

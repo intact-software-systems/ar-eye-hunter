@@ -84,7 +84,7 @@ export function useRelicTurn(
             primedAction: selection.primedAction
         }),
         planning: game.snapshot?.phase === 'planning' && !!player && !player.escaped && !player.defeated,
-        reviewing: game.snapshot?.phase === 'review' && !!player
+        reviewing: game.snapshot?.phase === 'review'
     };
 }
 

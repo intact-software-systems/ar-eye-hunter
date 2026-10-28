@@ -10,6 +10,7 @@ test('watches through visible controls, recovers watching, and promotes only bef
         await registerSpectatingHunter(host, 'host');
         await host.getByRole('button', { name: 'New Room', exact: true }).click();
         await expect(host.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
+        await waitForExpeditionScene(host);
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();
         const roomId = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
         if (!roomId) {
@@ -19,14 +20,28 @@ test('watches through visible controls, recovers watching, and promotes only bef
         await watcher.getByLabel('Room reference', { exact: true }).fill(roomId);
         await watcher.getByLabel('Participation', { exact: true }).selectOption('spectator');
         await watcher.getByRole('button', { name: 'Watch room', exact: true }).click();
+        await waitForExpeditionScene(watcher);
         await expect(watcher.getByText('Watching', { exact: true })).toBeVisible();
         await expect(watcher.getByRole('button', { name: 'Reset', exact: true })).toBeDisabled();
         await expect(watcher.locator('.lobby-ready-btn')).toHaveCount(0);
         await watcher.reload();
+        await expect(watcher.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled({ timeout: 30_000 });
+        await waitForExpeditionScene(watcher);
         await expect(watcher.getByText('Watching', { exact: true })).toBeVisible();
         await host.locator('.lobby-ready-btn').click();
         await expect(host.locator('.lobby-party-row')).toHaveCount(1);
         await expect(host.locator('.lobby-begin-btn')).toBeEnabled();
+        await host.locator('.lobby-begin-btn').click();
+        await expect(watcher.getByRole('button', { name: 'Join as player', exact: true })).toBeDisabled();
+        await expect(watcher.getByRole('button', { name: 'Submit Plan', exact: true })).toHaveCount(0);
+        await expect(watcher.getByRole('button', { name: 'Join Expedition', exact: true })).toHaveCount(0);
+        await host.getByRole('button', { name: 'Submit Plan', exact: true }).click();
+        await expect(host.getByRole('region', { name: 'Round review', exact: true })).toBeVisible();
+        await expect(watcher.getByRole('region', { name: 'Round review', exact: true })).toBeVisible();
+        await host.getByRole('button', { name: 'Reset', exact: true }).click();
+        await expect(host.locator('.lobby-party-row')).toHaveCount(0);
+        await host.locator('.lobby-ready-btn').click();
+        await expect(host.locator('.lobby-party-row')).toHaveCount(1);
         await watcher.getByRole('button', { name: 'Join as player', exact: true }).click();
         await expect(watcher.getByText('Watching', { exact: true })).toHaveCount(0);
         await expect(watcher.locator('.lobby-ready-btn')).toBeEnabled();
@@ -34,21 +49,11 @@ test('watches through visible controls, recovers watching, and promotes only bef
         await watcher.locator('.lobby-ready-btn').click();
         await expect(host.locator('.lobby-party-row')).toHaveCount(2);
         await expect(watcher.getByLabel('Participation', { exact: true }).locator('option[value="spectator"]'))
-            .toBeDisabled();
+            .toHaveJSProperty('disabled', true);
         await watcher.getByRole('button', { name: 'Leave room', exact: true }).click();
+        await expect(watcher.getByLabel('Relic Hunters opening scene', { exact: true }))
+            .toHaveAttribute('data-scene-ready', 'true', { timeout: 30_000 });
         await expect(watcher.getByRole('button', { name: 'Leave room', exact: true })).toHaveCount(0);
-        await watcher.getByLabel('Room reference', { exact: true }).fill(roomId);
-        await watcher.getByLabel('Participation', { exact: true }).selectOption('spectator');
-        await watcher.getByRole('button', { name: 'Watch room', exact: true }).click();
-        await expect(watcher.getByText('Watching', { exact: true })).toBeVisible();
-        await host.getByRole('button', { name: 'Reset', exact: true }).click();
-        await expect(host.locator('.lobby-party-row')).toHaveCount(0);
-        await host.locator('.lobby-ready-btn').click();
-        await expect(host.locator('.lobby-begin-btn')).toBeEnabled();
-        await host.locator('.lobby-begin-btn').click();
-        await expect(watcher.getByRole('button', { name: 'Join as player', exact: true })).toBeDisabled();
-        await expect(watcher.getByRole('button', { name: 'Submit Plan', exact: true })).toHaveCount(0);
-        await expect(watcher.getByRole('button', { name: 'Join Expedition', exact: true })).toHaveCount(0);
     }
     finally {
         await hostContext.close();
@@ -73,12 +78,14 @@ test('offers Watch for a full player roster without allowing promotion', async (
         );
         await host.getByRole('button', { name: 'New Room', exact: true }).click();
         const room = await (await created).json();
+        await waitForExpeditionScene(host);
         await registerSpectatingHunter(watcher, 'full-watcher');
         await watcher.getByRole('button', { name: 'Refresh', exact: true }).click();
         await expect(
             watcher.getByRole('button', { name: `${room.group.displayName} 1 player · 0 watching · Full`, exact: true })
         ).toBeDisabled();
         await watcher.getByRole('button', { name: `Watch ${room.group.displayName}`, exact: true }).click();
+        await waitForExpeditionScene(watcher);
         await expect(watcher.getByText('Watching', { exact: true })).toBeVisible();
         await expect(watcher.getByRole('button', { name: 'Join as player', exact: true })).toBeDisabled();
         await host.locator('.lobby-ready-btn').click();
@@ -100,4 +107,11 @@ async function registerSpectatingHunter(page: Page, role: string): Promise<void>
     await page.getByLabel('Password', { exact: true }).fill(`spectating-${suffix}`);
     await page.getByRole('button', { name: 'Create Hunter', exact: true }).click();
     await expect(page.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled();
+}
+
+async function waitForExpeditionScene(page: Page): Promise<void> {
+    // A new Babylon context can block browser tasks while portable SwiftShader initializes.
+    // Require the actual expedition frame before testing the room's visible participation state.
+    await expect(page.locator('canvas.relic-scene[data-scene-runtime="next"]'))
+        .toHaveAttribute('data-scene-ready', 'true', { timeout: 30_000 });
 }

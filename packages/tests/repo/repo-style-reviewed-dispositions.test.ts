@@ -64,7 +64,31 @@ const reviewedTransformResolutionBoundaries = [
     { file: transformResolutionFile, symbol: 'readPathSegments', cap: 2 },
     { file: transformResolutionFile, symbol: 'readProperty', cap: 2 }
 ] as const;
+const reviewedSpectatingCognitiveOwners = [
+    { relativeFile: 'apps/ar-eye-hunter-v1/src/game/arena-runtime/actions/use-arena-session-actions.ts', cap: 62 },
+    { relativeFile: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts', cap: 233 },
+    { relativeFile: 'apps/relic-hunters-v1/src/game/use-relic-turn.ts', cap: 50 },
+    { relativeFile: 'packages/shared-server/rallar-system/group-state/group-mutation-command.ts', cap: 53 },
+    { relativeFile: 'packages/shared-server/rallar-system/group-state/mutation/membership/compute-group-membership-mutation.ts', cap: 61 },
+    { relativeFile: 'packages/shared-server/rallar-system/group-state/mutation/membership/group-membership-mutation-policy.ts', cap: 51 },
+    { relativeFile: 'packages/shared-web/game/authority/rallar-game-authority-client.ts', cap: 59 }
+] as const;
+const reviewedSpectatingUnknownBoundaries = [
+    { file: 'packages/shared/rallar-game/snapshot-request.ts', symbol: 'isRallarGameSnapshotRequest', cap: 1 },
+    { file: 'packages/shared/rallar-game/snapshot-request.ts', symbol: 'isDiagnosticPayload', cap: 1 },
+    { file: 'packages/shared/rallar-game/snapshot-request.ts', symbol: 'isObject', cap: 1 },
+    { file: 'packages/shared/rallar-game/snapshot-request.ts', symbol: 'hasOnlyKeys', cap: 1 },
+    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: undefined, cap: 1 },
+    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'isRelicMotionPhase', cap: 1 },
+    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'optionalFinite', cap: 1 },
+    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'isRecord', cap: 1 }
+] as const;
+const reviewedSpectatingLayouts = [
+    { directory: 'apps/relic-hunters-v1/src/game', prefix: 'relic', count: 12, density: 23 },
+    { directory: 'packages/shared/api', prefix: 'group', count: 8, density: 25 }
+] as const;
 const reviewedCappedUnknownBoundaries = [
+    ...reviewedSpectatingUnknownBoundaries,
     ...reviewedSchemaJsonBoundaries,
     ...reviewedTransformResolutionBoundaries,
     {
@@ -81,6 +105,53 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it.each(reviewedSpectatingCognitiveOwners)('keeps hard length rules independent for $relativeFile', ({ relativeFile, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        for (const ruleId of ['file.length', 'function.length']) {
+            expect(isReviewedDisposition(repoRoot, { file, ruleId, symbol: undefined, message: '', affectedCount: cap })).toBe(false);
+        }
+    });
+
+    it.each(reviewedSpectatingUnknownBoundaries)('records exactly one bounded spectating boundary for $file / $symbol', ({ file, symbol, cap }) => {
+        expect(reviewedDispositions.filter((entry) => entry.path === file && entry.rule === 'boundary.unknown' && entry.symbol === symbol)).toEqual([{
+            path: file,
+            rule: 'boundary.unknown',
+            symbol,
+            maximumMagnitude: cap
+        }]);
+    });
+
+    it.each(reviewedSpectatingLayouts)('bounds the exact spectating layout owners in $directory', ({ directory, prefix, count, density }) => {
+        const sources = [
+            ...Array.from({ length: count }, (_, index) => `${prefix}-owner-${index}.ts`),
+            ...Array.from({ length: density - count }, (_, index) => `standalone${index}.ts`)
+        ].map((file) => ({ file: path.join(repoRoot, directory, file), raw: '' }));
+        const findings = scanProductionSources({ repoRoot, sources, options: { layoutOnly: true } }).findings;
+        expect(findings.map(({ ruleId, symbol }) => ({ ruleId, symbol }))).toEqual(expect.arrayContaining([
+            { ruleId: 'layout.directory-density', symbol: path.basename(directory) },
+            { ruleId: 'layout.feature-prefix-cluster', symbol: `prefix:${prefix}` }
+        ]));
+        expect(findings).toHaveLength(2);
+        for (const finding of findings) {
+            const entries = reviewedDispositions.filter((entry) =>
+                entry.path === directory && entry.rule === finding.ruleId && entry.symbol === finding.symbol
+            );
+            expect(entries).toHaveLength(1);
+            expect(entries[0].maximumMagnitude).toBe(findingMagnitude(finding));
+            expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+            expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}-neighbor` })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'prefix:unreviewed' })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
+        }
+        const grown = scanProductionSources({
+            repoRoot,
+            sources: [...sources, { file: path.join(repoRoot, directory, `${prefix}-added.ts`), raw: '' }],
+            options: { layoutOnly: true }
+        }).findings;
+        expect(grown).toHaveLength(2);
+        expect(grown.every((finding) => !isReviewedDisposition(repoRoot, finding))).toBe(true);
+    });
+
     it('counts each real unknown detail as one occurrence', () => {
         const file = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts');
         const findings = scanProductionSources({
@@ -460,10 +531,11 @@ describe('reviewed repository style dispositions', () => {
     });
 
     it.each([
+        ...reviewedSpectatingCognitiveOwners,
         { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
         { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
         { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
-    ])('exposes one canonical terminal receipt policy record at $cap for $relativeFile', ({ relativeFile, cap }) => {
+    ])('exposes one canonical bounded cognitive policy record at $cap for $relativeFile', ({ relativeFile, cap }) => {
         const entries = reviewedDispositions.filter((entry) =>
             entry.path === relativeFile && entry.rule === 'file.cognitive-load' && entry.symbol === undefined
         );
@@ -476,10 +548,11 @@ describe('reviewed repository style dispositions', () => {
     });
 
     it.each([
+        ...reviewedSpectatingCognitiveOwners,
         { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
         { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
         { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
-    ])('bounds the reviewed terminal receipt owner at $cap without matching another path or function in $relativeFile', ({ relativeFile, cap }) => {
+    ])('bounds the reviewed cognitive owner at $cap without matching another path or function in $relativeFile', ({ relativeFile, cap }) => {
         const file = path.join(repoRoot, relativeFile);
         const raw = Array.from({ length: cap }, (_, index) => `function receiptGuard${index}(value: boolean): number { if (value) { return 1; } return 0; }`)
             .join('\n');
