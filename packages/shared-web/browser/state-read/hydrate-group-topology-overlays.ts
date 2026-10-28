@@ -12,7 +12,7 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
-import type { ApiRequestOptions } from '../api/http-request.ts';
+import type { ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { readStateGroupTopology } from '../rtc/rtc-topology-http-api.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 
@@ -54,36 +54,7 @@ async function readThroughGroupTopology(
     const startedAtMs = Date.now();
     let outcome: GroupTopologyReadThroughOutcome;
     try {
-        const observedGroup = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(groupSnapshot.group);
-        const observations = readCurrentTopologyRoleObservations(
-            toScopedOverlayId(groupSnapshot.group)
-        );
-        const view = decodeGroupTopologyManagementView(
-            await readStateGroupTopology(groupId, input.scope, input.apiRequest),
-            groupId,
-            input.scope
-        );
-        const latestGroup = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(
-            groupSnapshot.group
-        );
-        const rejection = resolveGroupHydrationRejection(latestGroup, observedGroup, input.sessionId);
-        if (rejection) {
-            return emitReadThroughOutcome(groupId, rejection, startedAtMs);
-        }
-
-        const hydration = hydrateCurrentTopologyRoles(view, input.sessionId, observations);
-        await Promise.all([
-            overlaysRepository.waitForPlannedOverlayChangesIdle(),
-            overlaysRepository.waitForAcceptedOverlayChangesIdle()
-        ]);
-        if (hydration.changed) {
-            await input.webRtcGroupManager.notifyOverlayTopologyChanged();
-        }
-        outcome = hydration.conflicted
-            ? 'revision-conflict'
-            : view.snapshot === null && view.acceptedSnapshot === null
-            ? 'no-overlay'
-            : 'adopted';
+        outcome = await adoptGroupTopology(groupSnapshot, input);
     }
     catch (error) {
         // Read-through is best-effort anti-entropy: WS relay stays the correctness
@@ -95,6 +66,39 @@ async function readThroughGroupTopology(
         );
     }
     return emitReadThroughOutcome(groupId, outcome, startedAtMs);
+}
+
+async function adoptGroupTopology(
+    groupSnapshot: GroupSnapshot,
+    input: HydrateGroupTopologyOverlaysInput
+): Promise<GroupTopologyReadThroughOutcome> {
+    const groupId = groupSnapshot.group.groupId;
+    const observedGroup = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(groupSnapshot.group);
+    const observations = readCurrentTopologyRoleObservations(toScopedOverlayId(groupSnapshot.group));
+    const view = decodeGroupTopologyManagementView(
+        await readStateGroupTopology(groupId, input.scope, input.apiRequest),
+        groupId,
+        input.scope
+    );
+    const latestGroup = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(groupSnapshot.group);
+    const rejection = resolveGroupHydrationRejection(latestGroup, observedGroup, input.sessionId);
+    if (rejection) {
+        return rejection;
+    }
+
+    const hydration = hydrateCurrentTopologyRoles(view, input.sessionId, observations);
+    await Promise.all([
+        overlaysRepository.waitForPlannedOverlayChangesIdle(),
+        overlaysRepository.waitForAcceptedOverlayChangesIdle()
+    ]);
+    if (hydration.changed) {
+        await input.webRtcGroupManager.notifyOverlayTopologyChanged();
+    }
+    return hydration.conflicted
+        ? 'revision-conflict'
+        : view.snapshot === null && view.acceptedSnapshot === null
+        ? 'no-overlay'
+        : 'adopted';
 }
 
 function resolveGroupHydrationRejection(
@@ -169,27 +173,29 @@ function hydrateCurrentTopologyRoles(
             view.overlayId,
             toOverlayInfoForSession(view.acceptedSnapshot, sessionId)
         );
-    const removedPlanned = view.snapshot === null
-        ? overlaysRepository.removePlannedOverlayByIdIfUnchanged(
-            observations.overlayId,
-            observations.planned
-        )
-        : false;
-    const removedAccepted = view.acceptedSnapshot === null
-        ? overlaysRepository.removeAcceptedOverlayByIdIfUnchanged(
-            observations.overlayId,
-            observations.accepted
-        )
-        : false;
+    const removed = removeAbsentTopologyRoles(view, observations);
 
     return {
         changed: (plannedOutcome !== undefined && overlaysRepository.didOverlayAdoptionChange(plannedOutcome)) ||
             (acceptedOutcome !== undefined && overlaysRepository.didOverlayAdoptionChange(acceptedOutcome)) ||
-            removedPlanned ||
-            removedAccepted,
+            removed,
         conflicted: plannedOutcome === 'incomparable-conflict' ||
             acceptedOutcome === 'incomparable-conflict'
     };
+}
+
+/** Removes each role the view no longer names, unless it changed since it was observed; both roles are tried. */
+function removeAbsentTopologyRoles(
+    view: DecodedGroupTopologyView,
+    observations: CurrentTopologyRoleObservations
+): boolean {
+    const removedPlanned = view.snapshot === null
+        ? overlaysRepository.removePlannedOverlayByIdIfUnchanged(observations.overlayId, observations.planned)
+        : false;
+    const removedAccepted = view.acceptedSnapshot === null
+        ? overlaysRepository.removeAcceptedOverlayByIdIfUnchanged(observations.overlayId, observations.accepted)
+        : false;
+    return removedPlanned || removedAccepted;
 }
 
 function readCurrentTopologyRoleObservations(
@@ -231,8 +237,15 @@ function decodeGroupTopologyManagementView(
         throw new TypeError('Group topology view overlayId is not canonical for the requested group');
     }
 
+    return { overlayId, ...decodeTopologyRoleSnapshots(value, groupRef, overlayId) };
+}
+
+function decodeTopologyRoleSnapshots(
+    value: GroupTopologyManagementView,
+    groupRef: GroupRef,
+    overlayId: string
+): Pick<DecodedGroupTopologyView, 'snapshot' | 'acceptedSnapshot'> {
     return {
-        overlayId,
         snapshot: decodeTopologyRoleSnapshot({
             value: value.snapshot,
             groupRef,

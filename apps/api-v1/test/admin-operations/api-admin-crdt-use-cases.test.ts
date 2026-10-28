@@ -111,6 +111,7 @@ function createRequest() {
             expiresAtEpochMs: NOW_EPOCH_MS + 60_000
         },
         requestId: 'admin-crdt-request-0001',
+        traceId: 'trace-admin-fixture',
         request: { document: DOCUMENT }
     };
 }

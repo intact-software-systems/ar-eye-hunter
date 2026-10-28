@@ -20,6 +20,9 @@ import {
     requireMutationWrite
 } from '../shared-server/rallar-system/group-state/retention/group-retention-database-fixture.ts';
 
+/** The trace every prepared Relic attempt carries, as its queued command's envelope would. */
+export const RELIC_FIXTURE_TRACE_ID = 'trace-relic-game-database-fixture';
+
 export async function createGameFixture(gameId = 'expedition-1') {
     const fixture = await createRetentionDatabaseFixture();
     const ref = toRelicRoomGroupRef(gameId);
@@ -52,6 +55,7 @@ export async function createGameFixture(gameId = 'expedition-1') {
         operation: 'ensure',
         gameId: ref.groupId,
         requestId: 'initialize-owner',
+        traceId: RELIC_FIXTURE_TRACE_ID,
         actor: {
             clientId: fixture.owner.clientId,
             sessionId: fixture.owner.sessionId,
@@ -59,7 +63,7 @@ export async function createGameFixture(gameId = 'expedition-1') {
         },
         authorization: 'group-policy',
         move: null
-    } satisfies RelicGameMutationService.Command;
+    } satisfies RelicGameMutationService.CommandInput;
     return Object.assign(fixture, { ref, data, service, command });
 }
 
@@ -70,8 +74,9 @@ export async function prepareGameWrite(
 ) {
     const ingress = fixture.service.capture(captureRelicGameCommand(command), initial, 'default-qbox-server');
     const read = await fixture.service.read(ingress);
-    const computed = fixture.service.compute(read);
-    expect(fixture.service.validate(read, computed)).toEqual([]);
+    const attempt = { ...read, attemptCount: 1, traceId: RELIC_FIXTURE_TRACE_ID };
+    const computed = fixture.service.compute(attempt);
+    expect(fixture.service.validate(attempt, computed)).toEqual([]);
     return { ingress, read, computed };
 }
 
@@ -133,7 +138,15 @@ export async function connectGameSession(
         }),
         session
     );
-    const command = { ...ingress, facts: toGroupMutationAttemptFacts(ingress.facts, 1, fixture.nowEpochMs) };
+    const command = {
+        ...ingress,
+        facts: toGroupMutationAttemptFacts({
+            ingressFacts: ingress.facts,
+            attemptCount: 1,
+            laneNowEpochMs: fixture.nowEpochMs,
+            traceId: RELIC_FIXTURE_TRACE_ID
+        })
+    };
     const read = await fixture.mutations.read(command);
     const computed = fixture.mutations.compute(command, read);
     expect(fixture.mutations.validate(command, read, computed)).toEqual([]);

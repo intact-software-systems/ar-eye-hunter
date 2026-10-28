@@ -75,6 +75,7 @@ describe('RTC topology queue conflict boundary', () => {
             }
         });
         const queued = computeRtcTopologyOutboxInsert({
+            traceId: 'trace-rtc-topology-work-conflict',
             commandId: 'conflict-command',
             aggregateRef: group.group,
             acceptedCausalRevision: group.causalRevision,

@@ -148,6 +148,7 @@ export interface CrdtMutationAuthorityDecision {
 export interface CrdtMutationAttemptFacts {
     readonly command: CrdtMutationCommand;
     readonly read: CrdtMutationRead;
+    readonly traceId: string;
 }
 
 interface CrdtDocumentWriteValues {

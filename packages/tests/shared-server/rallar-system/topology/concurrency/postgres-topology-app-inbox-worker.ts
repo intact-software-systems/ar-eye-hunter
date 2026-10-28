@@ -166,6 +166,7 @@ async function writeTopologyAppInboxCommand(
     const result = await runtime.runUntilCompletion(() =>
         runtime.topology.processAuthenticatedEntryUntilCompletionResult(
             {
+                traceId: 'trace-test-fixture',
                 type: input.command === 'put-config'
                     ? AppInboxType.TOPOLOGY_CONFIG_PUT
                     : AppInboxType.TOPOLOGY_OVERRIDE_PUT,

@@ -131,6 +131,7 @@ export function createPublication(
 ): RtcTopologyPublication {
     const sourceRevision = snapshot.sourceGroupStateCausalRevision;
     return {
+        traceId: 'trace-rtc-topology-repository-test-fixtures',
         publicationId: `${workId}:${sourceRevision.groupRevision}:${sourceRevision.presenceRevision}:${snapshot.version}`,
         workId,
         groupRef: snapshot.groupRef,

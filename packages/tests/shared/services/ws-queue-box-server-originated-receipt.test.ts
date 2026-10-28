@@ -365,7 +365,7 @@ function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' =
 
 function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-originated-receipt' },
         {
             ackedMsgId,
             fromPeerId: recipient,

@@ -16,7 +16,6 @@ import {
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
 import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
@@ -52,6 +51,7 @@ export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 export interface CreateAndEnqueueCrdtAppendInput {
     readonly update: RallarCrdtUpdateEnvelope;
     readonly deliveryId: string;
+    readonly traceId: string;
     readonly actor: CrdtMutationActor;
     readonly responseAudience: CrdtMutationResponseAudience;
     readonly capturedAtEpochMs: number;
@@ -85,6 +85,7 @@ export namespace AppCrdtInboxService {
     export interface HttpAdminCommandReservation {
         readonly operation: Exclude<CrdtMutationCommand['operation'], 'append'>;
         readonly requestId: string;
+        readonly traceId: string;
         readonly callerId: string;
         readonly documentKey: string;
         readonly semanticHash: string;
@@ -94,7 +95,6 @@ export namespace AppCrdtInboxService {
 }
 
 export class AppCrdtInboxService {
-    private readonly commandClient: AppInboxCommandClient;
     private readonly queueEntryWriter: AppInboxQueueEntryWriter;
     private readonly reservationClient: AppInboxReservationClient;
     private readonly resultWaiter: AppInboxResultWaiter;
@@ -117,7 +117,6 @@ export class AppCrdtInboxService {
             options: config.appInbox,
             wakeOwningQueue: dependencies.wakeQueueEngine
         });
-        this.commandClient = clientRuntime.commandClient;
         this.queueEntryWriter = clientRuntime.queueEntryWriter;
         this.reservationClient = clientRuntime.reservationClient;
         this.resultWaiter = clientRuntime.resultWaiter;
@@ -177,23 +176,6 @@ export class AppCrdtInboxService {
         this.handlers.assertRegistrationComplete(CRDT_MUTATION_INBOX_TYPES);
     }
 
-    async writeCrdtCommandUntilCompletion(
-        command: CrdtMutationCommand
-    ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
-        const decoded = decodeCrdtMutationCommand(command);
-        return await this.commandClient.enqueueAndWaitForResult(
-            {
-                type: toCrdtAppInboxType(decoded),
-                topicId: CRDT_APP_INBOX_TOPIC,
-                resourceId: decoded.deliveryId,
-                contextId: decoded.documentKey,
-                senderId: decoded.actor.sessionId,
-                data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
-            },
-            decodeCrdtMutationResult
-        );
-    }
-
     async writeHttpAdminCommandUntilCompletion(
         reservation: AppCrdtInboxService.HttpAdminCommandReservation
     ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
@@ -208,6 +190,7 @@ export class AppCrdtInboxService {
                 type,
                 ...key,
                 senderId: reservation.callerId,
+                traceId: reservation.traceId,
                 data: null
             },
             async () => ({
@@ -245,21 +228,6 @@ export class AppCrdtInboxService {
         );
     }
 
-    writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
-        const decoded = decodeCrdtMutationCommand(command);
-        void this.queueEntryWriter.enqueue({
-            type: toCrdtAppInboxType(decoded),
-            topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: decoded.deliveryId,
-            contextId: decoded.documentKey,
-            senderId: decoded.actor.sessionId,
-            data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
-        }).catch((caught) => {
-            const error = caught instanceof Error ? caught : new Error(String(caught));
-            console.error('Error enqueueing CRDT AppInbox command without waiting', error);
-        });
-    }
-
     async createAndEnqueueAppend(input: CreateAndEnqueueCrdtAppendInput): Promise<CrdtAppendCommand> {
         const command = await createCrdtMutationCommand({
             operation: 'append',
@@ -285,6 +253,7 @@ export class AppCrdtInboxService {
             resourceId: command.deliveryId,
             contextId: command.documentKey,
             senderId: command.actor.sessionId,
+            traceId: input.traceId,
             data: encodeAppInboxCommand(command, 'CRDT append AppInbox command')
         });
         return command;
@@ -310,6 +279,7 @@ export class AppCrdtInboxService {
             command,
             read: await this.mutationReader.read(command),
             serviceId: this.serviceId,
+            traceId: appInboxContext.message.id.traceId,
             completionFacts: this.transactionWriter.readCompletionFacts(appInboxContext)
         };
         const computed = computeCrdtInboxMutation(read);

@@ -194,6 +194,7 @@ function toForeignScope(snapshot: GroupSnapshot): GroupSnapshot {
 function toProducedClientMessage(revision: number): ALMessage {
     const nowMs = Date.now();
     const entries = computeClientStateSyncEntries({
+        traceId: 'trace-group-state-delta-delivery',
         commandId: `client-${revision}`,
         aggregateRef: { ...SCOPE, principalId: 'alice' },
         acceptedCausalRevision: revision,
@@ -339,6 +340,7 @@ function toProducedMessage(predecessor: GroupSnapshot, resulting: GroupSnapshot)
     };
     const nowMs = Date.now();
     const entries = computeGroupStateSyncEntries({
+        traceId: 'trace-group-state-delta-delivery',
         commandId: envelope.event.eventId,
         aggregateRef: resulting.group,
         acceptedCausalRevision: resulting.causalRevision,

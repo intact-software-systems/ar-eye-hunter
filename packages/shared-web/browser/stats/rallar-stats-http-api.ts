@@ -6,20 +6,20 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { defaultStateScope, toStateGroupHttpPath, toStateScopeHttpPath } from '../api/state-http-path.ts';
 
 export async function readStateWorkspaceStatsSummary(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<WorkspaceSpaStatisticsResponse> {
-    return await executeHttpRequest<void, WorkspaceSpaStatisticsResponse>(
-        readApiBaseUrl(),
-        `${toStateScopeHttpPath(scope)}/stats/summary`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, WorkspaceSpaStatisticsResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateScopeHttpPath(scope)}/stats/summary`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function readStateGroupStats(
@@ -27,24 +27,24 @@ export async function readStateGroupStats(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<GroupSpaStatisticsResponse> {
-    return await executeHttpRequest<void, GroupSpaStatisticsResponse>(
-        readApiBaseUrl(),
-        `${toStateGroupHttpPath(scope, groupId)}/stats`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GroupSpaStatisticsResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateGroupHttpPath(scope, groupId)}/stats`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function readStateMyRealtimeStatus(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<MyRealtimeSpaStatisticsResponse> {
-    return await executeHttpRequest<void, MyRealtimeSpaStatisticsResponse>(
-        readApiBaseUrl(),
-        `${toStateScopeHttpPath(scope)}/stats/me/realtime`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, MyRealtimeSpaStatisticsResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateScopeHttpPath(scope)}/stats/me/realtime`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }

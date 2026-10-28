@@ -75,6 +75,7 @@ describe('private-room entry through AppInbox', () => {
         expect((await joinRoom(harness, 'member', { requestId: 'first-entry', joinCode: 'ORIGINAL' })).left)
             .toBeUndefined();
         const blocked = await processAs(harness, 'owner', {
+            traceId: 'trace-test-fixture',
             type,
             resourceId: 'block-member',
             contextId: ROOM_REF.groupId,
@@ -103,6 +104,7 @@ describe('private-room entry through AppInbox', () => {
             const harness = await createAuthorityHarness(['owner']);
             await createPrivateRoom(harness);
             const updated = await processAs(harness, 'owner', {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_UPDATE,
                 resourceId: 'close-room',
                 contextId: ROOM_REF.groupId,
@@ -123,6 +125,7 @@ describe('private-room entry through AppInbox', () => {
 
 async function createPrivateRoom(harness: AuthorityHarness) {
     const result = await processAs(harness, 'owner', {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'create-private-room',
         contextId: ROOM_REF.groupId,
@@ -143,6 +146,7 @@ async function createPrivateRoom(harness: AuthorityHarness) {
 
 async function rotateCode(harness: AuthorityHarness, request: RotateGroupJoinCodeRequest) {
     const result = await processAs(harness, 'owner', {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
         resourceId: request.requestId,
         contextId: ROOM_REF.groupId,
@@ -153,6 +157,7 @@ async function rotateCode(harness: AuthorityHarness, request: RotateGroupJoinCod
 
 function joinRoom(harness: AuthorityHarness, principalId: string, request: JoinGroupRequest) {
     return processAs(harness, principalId, {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_JOIN,
         resourceId: request.requestId,
         contextId: ROOM_REF.groupId,

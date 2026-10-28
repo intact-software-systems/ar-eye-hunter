@@ -452,16 +452,18 @@ function connectedTypedInboundMessage(): RallarMessage<ChatMessagePayload> {
 }
 
 function inboundMessage(): RallarMessage<ChatMessagePayload> {
+    const raw = outboundMessage();
     return {
         transport: 'ws',
         roomId: 'bb-group',
         senderId: 'bob-session',
+        traceId: raw.id.traceId,
         typeId: 'room.manual.message',
         topicId: 'room.manual.message',
         contextId: 'bb-group',
         resourceId: 'message-1',
         payload: { text: 'received over ws' },
-        raw: outboundMessage(),
+        raw,
         receivedAtEpochMs: 1_000,
         reply: vi.fn()
     };
@@ -470,10 +472,11 @@ function inboundMessage(): RallarMessage<ChatMessagePayload> {
 function outboundMessage(): ALMessage {
     return {
         id: {
-            v: 3,
+            v: 4,
             msgId: 'ws-message-1',
             ts: 999,
-            senderId: 'bob-session'
+            senderId: 'bob-session',
+            traceId: 'trace-messaging'
         },
         route: {
             topicId: 'room.manual.message',

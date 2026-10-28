@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import {
@@ -26,6 +26,7 @@ import { registerGroupStateRoutes } from '../../src/group-state/register-group-s
 import { toApiMutationRouteFailure } from '../../src/routes/api-mutation-route-failure.ts';
 import { createGroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 interface GroupSetupRequestResult {
@@ -49,6 +50,7 @@ interface GroupSetupQueue {
 
 interface GroupSetupRequest {
     readonly requestId: string;
+    readonly traceId: string;
     readonly path: string;
     readonly method: 'POST' | 'PUT';
     readonly body: Readonly<Record<string, string>>;
@@ -94,6 +96,38 @@ Deno.test('PGlite ordinary group setup completes for one director and fourteen c
                     memberStatuses: 15
                 })
             );
+        }
+        finally {
+            await setup.engine.stop();
+        }
+    });
+});
+
+Deno.test('PGlite group creation writes its command and every outbox row under the request x-request-id', async () => {
+    await withPGliteSql(async (sql) => {
+        const setup = createGroupSetupRuntime(sql);
+        const [director] = await createGroupSetupSessions(setup.mutation);
+        assert.ok(director);
+        setup.engine.start();
+        try {
+            const requestId = 'traced-ensure-group-request';
+            const traceId = 'trace-group-create-request';
+            const created = await writeGroupSetupRequest(setup.app, director, {
+                requestId,
+                traceId,
+                path: `${GROUP_PATH}/requests/${requestId}`,
+                method: 'POST',
+                body: { groupId: GROUP_REF.groupId, displayName: GROUP_REF.groupId, kind: 'room', joinMode: 'open' }
+            });
+            assert.equal(created.status, 201);
+
+            const rows = await sql<{ type: string; traceId: string; }[]>`
+                select ri_type_id as type, ri_resource::jsonb #>> '{id,traceId}' as "traceId" from resource_inbox
+                where ri_type_id in ('APP_INBOX', 'APP_OUTBOX', 'WS_OUTBOX')
+            `;
+            assert.ok(rows.some((row) => row.type !== 'APP_INBOX'), 'the mutation wrote outbox rows');
+            assert.notEqual(traceId, requestId);
+            assert.deepEqual(new Set(rows.map((row) => row.traceId)), new Set([traceId]));
         }
         finally {
             await setup.engine.stop();
@@ -184,7 +218,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
 }
 
 function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupStateInboxService, requestKeys: Map<string, Key>): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         groupStateService: mutation.groupStateService,
         rtcRttRepository: new RtcRttRepository(mutation.runtimeStateRepository),
@@ -234,12 +268,14 @@ async function writeGroupSetupRequests(app: Hono, session: IssuedAuthSession, ro
     const memberRequestId = `alm-scale-${role}-ensure-member-${session.clientId}`;
     const group = await writeGroupSetupRequest(app, session, {
         requestId: groupRequestId,
+        traceId: `trace-${groupRequestId}`,
         path: `${GROUP_PATH}/requests/${groupRequestId}`,
         method: 'POST',
         body: { groupId: GROUP_REF.groupId, displayName: GROUP_REF.groupId, kind: 'room', joinMode: 'open' }
     });
     const member = await writeGroupSetupRequest(app, session, {
         requestId: memberRequestId,
+        traceId: `trace-${memberRequestId}`,
         path: `${GROUP_PATH}/${GROUP_REF.groupId}/members/${session.clientId}/requests/${memberRequestId}`,
         method: 'PUT',
         body: { status: 'active' }
@@ -251,7 +287,12 @@ async function writeGroupSetupRequest(app: Hono, session: IssuedAuthSession, req
     const startedAt = performance.now();
     const pending = Promise.resolve(app.request(request.path, {
         method: request.method,
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId },
+        headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${session.accessToken}`,
+            'x-client-id': session.clientId,
+            'x-request-id': request.traceId
+        },
         body: JSON.stringify(request.body)
     })).then(async (response) => ({
         requestId: request.requestId,

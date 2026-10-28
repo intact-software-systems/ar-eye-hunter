@@ -93,14 +93,14 @@ export function validPrincipalCommand(): ClientMutationCommand {
             lastSeenAtEpochMs: 1_000,
             actorPrincipalId: null,
             actorSessionId: null,
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }
 
 export function validFacts(): ClientMutationFacts {
     return {
+        traceId: 'trace-client-mutation-validation-test-fixtures',
         nowEpochMs: 1_000,
         serviceId: 'client-service',
         eventId: 'event-1',

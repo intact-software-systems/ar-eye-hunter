@@ -184,7 +184,7 @@ function toBackpressureFault(carrier: ScriptedTransportFault['carrier'], remaini
 /** The WS hop's ACK: a WS origin's one hop is the server. */
 function toServerAck(msgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${msgId}`, senderId: 'server', ts: Date.now() },
+        { v: 4, msgId: `ack-${msgId}`, senderId: 'server', ts: Date.now(), traceId: 'trace-browser-message-congestion' },
         {
             ackedMsgId: msgId,
             originPeerId: 'a',

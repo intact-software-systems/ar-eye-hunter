@@ -40,6 +40,7 @@ export interface CrdtAdminMutationInput {
     readonly operation: CrdtAdminMutationOperation;
     readonly adminSession: AuthSession;
     readonly requestId: string;
+    readonly traceId: string;
     readonly request: JsonWireValue;
 }
 
@@ -62,6 +63,7 @@ export interface CrdtAdminMutationInbox {
 export interface CrdtAdminCommandReservation {
     readonly operation: CrdtAdminMutationOperation;
     readonly requestId: string;
+    readonly traceId: string;
     readonly callerId: string;
     readonly documentKey: string;
     readonly semanticHash: string;
@@ -157,6 +159,7 @@ function createCrdtAdminCommandReservation(
     return {
         operation: input.mutation.operation,
         requestId: input.mutation.requestId,
+        traceId: input.mutation.traceId,
         callerId: input.mutation.adminSession.clientId,
         documentKey: toRallarCrdtDocumentKey(input.normalized.document),
         semanticHash: input.semanticHash,

@@ -148,7 +148,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
 
 function createMessage(expiresAtMs: number): ALMessage {
     return {
-        id: { v: 3, msgId: 'clock-message', senderId: 'server', ts: 1000 },
+        id: { v: 4, msgId: 'clock-message', senderId: 'server', ts: 1000, traceId: 'trace-ws-live-delivery-clock' },
         route: { topicId: 'app.message', contextId: 'direct', resourceId: 'clock' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' },
         targets: { mode: 'unicast', toPeerId: 'first' },

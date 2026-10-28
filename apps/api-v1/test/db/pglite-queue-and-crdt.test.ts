@@ -70,6 +70,7 @@ function createInitialCoalescedTopologyWork(groupId: string): ComputedCoalescedA
         500
     );
     return computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-pglite-queue-and-crdt',
         aggregateRef: groupRef,
         groupSnapshot,
         requestedAtEpochMs: 500,
@@ -606,6 +607,7 @@ Deno.test(
             });
             const toCoalescedComputed = (snapshot: GroupSnapshot, previousEntry: ResourceEntry | null) =>
                 computeCoalescedRtcTopologyGroupRevisionWork({
+                    traceId: 'trace-pglite-queue-and-crdt',
                     aggregateRef: groupRef,
                     groupSnapshot: snapshot,
                     requestedAtEpochMs: nowEpochMs,

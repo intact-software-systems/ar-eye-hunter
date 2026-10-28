@@ -336,11 +336,12 @@
           "request": {
             "send": {
               "id": {
-                "v": 3,
+                "v": 4,
                 "msgId": "crdt-history-{historySize}-seed-delivery-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
-                "sessionId": "{crdtWriterSessionId}"
+                "sessionId": "{crdtWriterSessionId}",
+                "traceId": "trace-api-v1-crdt-append-history"
               },
               "route": {
                 "topicId": "app.crdt",
@@ -397,11 +398,12 @@
           "request": {
             "send": {
               "id": {
-                "v": 3,
+                "v": 4,
                 "msgId": "crdt-history-{historySize}-warm-replay-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
-                "sessionId": "{crdtWriterSessionId}"
+                "sessionId": "{crdtWriterSessionId}",
+                "traceId": "trace-api-v1-crdt-append-history"
               },
               "route": {
                 "topicId": "app.crdt",
@@ -592,11 +594,12 @@
           "request": {
             "send": {
               "id": {
-                "v": 3,
+                "v": 4,
                 "msgId": "crdt-history-{historySize}-new-delivery-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
-                "sessionId": "{crdtWriterSessionId}"
+                "sessionId": "{crdtWriterSessionId}",
+                "traceId": "trace-api-v1-crdt-append-history"
               },
               "route": {
                 "topicId": "app.crdt",
@@ -653,11 +656,12 @@
           "request": {
             "send": {
               "id": {
-                "v": 3,
+                "v": 4,
                 "msgId": "crdt-history-{historySize}-replay-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
-                "sessionId": "{crdtWriterSessionId}"
+                "sessionId": "{crdtWriterSessionId}",
+                "traceId": "trace-api-v1-crdt-append-history"
               },
               "route": {
                 "topicId": "app.crdt",

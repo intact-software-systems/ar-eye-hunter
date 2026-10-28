@@ -12,7 +12,11 @@ import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-requ
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiMutationRequestOptions, type ApiRequestOptions } from '../api/http-request.ts';
+import {
+    sendApiHttpRequest,
+    type ApiMutationRequestOptions,
+    type ApiRequestOptions
+} from '../api/send-api-http-request.ts';
 import { defaultStateScope, toStateGroupHttpPath, toStateScopeHttpPath } from '../api/state-http-path.ts';
 import type {
     PutStateGroupTopologyConfigBody,
@@ -81,13 +85,13 @@ export async function readStateScopedGlobalGraph(
     scope: StateScope = defaultStateScope(),
     options?: StateGraphDiagnosticReadOptions
 ): Promise<GraphDiagnosticReadResponse> {
-    return await executeHttpRequest<void, GraphDiagnosticReadResponse>(
-        readApiBaseUrl(),
-        graphDiagnosticPath(`${toStateScopeHttpPath(scope)}/graphs/global`, options),
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GraphDiagnosticReadResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: graphDiagnosticPath(`${toStateScopeHttpPath(scope)}/graphs/global`, options),
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function readStateGroupGraph(
@@ -95,13 +99,13 @@ export async function readStateGroupGraph(
     scope: StateScope = defaultStateScope(),
     options?: StateGraphDiagnosticReadOptions
 ): Promise<GraphDiagnosticReadResponse> {
-    return await executeHttpRequest<void, GraphDiagnosticReadResponse>(
-        readApiBaseUrl(),
-        graphDiagnosticPath(`${toStateGroupHttpPath(scope, groupId)}/graphs/latest`, options),
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GraphDiagnosticReadResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: graphDiagnosticPath(`${toStateGroupHttpPath(scope, groupId)}/graphs/latest`, options),
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function readStateGroupTopology(
@@ -109,13 +113,13 @@ export async function readStateGroupTopology(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<GroupTopologyManagementView> {
-    return await executeHttpRequest<void, GroupTopologyManagementView>(
-        readApiBaseUrl(),
-        `${toStateGroupHttpPath(scope, groupId)}/topology`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GroupTopologyManagementView>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateGroupHttpPath(scope, groupId)}/topology`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function readStateGroupTopologyConfig(
@@ -123,20 +127,20 @@ export async function readStateGroupTopologyConfig(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<GroupTopologyConfigView> {
-    return await executeHttpRequest<void, GroupTopologyConfigView>(
-        readApiBaseUrl(),
-        `${toStateGroupHttpPath(scope, groupId)}/topology/config`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GroupTopologyConfigView>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateGroupHttpPath(scope, groupId)}/topology/config`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function putStateGroupTopologyConfig(
     input: PutStateGroupTopologyConfigInput
 ): Promise<PutStateGroupTopologyConfigResponse> {
     const scope = input.scope ?? defaultStateScope();
-    return await executeTopologyMutation({
+    return await sendTopologyMutation({
         path: `${toStateGroupHttpPath(scope, input.groupId)}/topology/config`,
         method: 'PUT',
         request: input.request,
@@ -148,7 +152,7 @@ export async function deleteStateGroupTopologyConfig(
     input: DeleteStateGroupTopologyConfigInput
 ): Promise<DeleteStateGroupTopologyConfigResponse> {
     const scope = input.scope ?? defaultStateScope();
-    return await executeTopologyMutation({
+    return await sendTopologyMutation({
         path: `${toStateGroupHttpPath(scope, input.groupId)}/topology/config`,
         method: 'DELETE',
         request: {},
@@ -161,20 +165,20 @@ export async function readStateGroupTopologyOverride(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<StoredGroupTopologyOverride | Record<string, never>> {
-    return await executeHttpRequest<void, StoredGroupTopologyOverride | Record<string, never>>(
-        readApiBaseUrl(),
-        `${toStateGroupHttpPath(scope, groupId)}/topology/override`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, StoredGroupTopologyOverride | Record<string, never>>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateGroupHttpPath(scope, groupId)}/topology/override`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function putStateGroupTopologyOverride(
     input: PutStateGroupTopologyOverrideInput
 ): Promise<PutStateGroupTopologyOverrideResponse> {
     const scope = input.scope ?? defaultStateScope();
-    return await executeTopologyMutation({
+    return await sendTopologyMutation({
         path: `${toStateGroupHttpPath(scope, input.groupId)}/topology/override`,
         method: 'PUT',
         request: input.request,
@@ -186,7 +190,7 @@ export async function deleteStateGroupTopologyOverride(
     input: DeleteStateGroupTopologyOverrideInput
 ): Promise<DeleteStateGroupTopologyConfigResponse> {
     const scope = input.scope ?? defaultStateScope();
-    return await executeTopologyMutation({
+    return await sendTopologyMutation({
         path: `${toStateGroupHttpPath(scope, input.groupId)}/topology/override`,
         method: 'DELETE',
         request: {},
@@ -198,7 +202,7 @@ export async function reconfigureStateGroupTopology(
     input: ReconfigureStateGroupTopologyInput
 ): Promise<QueuedGroupTopologyReconfigureResponse> {
     const scope = input.scope ?? defaultStateScope();
-    return await executeTopologyMutation({
+    return await sendTopologyMutation({
         path: `${toStateGroupHttpPath(scope, input.groupId)}/topology/reconfigure`,
         method: 'POST',
         request: input.request,
@@ -206,16 +210,16 @@ export async function reconfigureStateGroupTopology(
     });
 }
 
-async function executeTopologyMutation<TRequest, TResponse>(
+async function sendTopologyMutation<TRequest, TResponse>(
     input: TopologyMutationInput<TRequest>
 ): Promise<TResponse> {
-    return await executeHttpRequest<TRequest, TResponse>(
-        readApiBaseUrl(),
-        toApiMutationRequestPath(input.path, input.options.requestId),
-        input.method,
-        input.request,
-        input.options
-    );
+    return await sendApiHttpRequest<TRequest, TResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: toApiMutationRequestPath(input.path, input.options.requestId),
+        method: input.method,
+        body: input.request,
+        options: input.options
+    });
 }
 
 function graphDiagnosticPath(path: string, options?: StateGraphDiagnosticReadOptions): string {

@@ -26,7 +26,7 @@ describe('auth mutation service phases', () => {
         } as const;
 
         const read = await service.read(command);
-        const facts = { kind: command.kind, serviceId: service.serviceId } as const;
+        const facts = { kind: command.kind, serviceId: service.serviceId, traceId: 'trace-auth-mutation-service' } as const;
         const computed = service.compute(command, read, facts);
 
         expect(read).toEqual({

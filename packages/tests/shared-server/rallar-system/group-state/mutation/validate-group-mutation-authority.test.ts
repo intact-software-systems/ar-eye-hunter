@@ -45,14 +45,14 @@ function updateCommand(): Extract<GroupMutationCommand, { operation: 'updateGrou
             purgeAfterEpochMs: null,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }
 
 function authenticatedFacts(): GroupMutationFacts {
     return {
+        traceId: 'trace-validate-group-mutation-authority',
         nowEpochMs: 1_000,
         attemptAtEpochMs: 1_000,
         expireAtEpochMs: 2_000,

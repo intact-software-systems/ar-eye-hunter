@@ -23,19 +23,23 @@ describe('admin prune application outbox dispatch', () => {
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
         const delivered: AdminPrunePageWork[] = [];
-        const entry = toAdminPruneOutbox({
-            kind: 'page',
-            jobId: 'queue-prune-job',
-            category: 'runtime-state',
-            requestedBy: 'admin-1',
-            requestedSessionId: 'admin-session-1',
-            capturedAtEpochMs: now,
-            expireAtEpochMs: now + 60_000,
-            pageSize: 2,
-            afterCursor: null,
-            pageIndex: 0,
-            appData: null
-        }, 'server-1');
+        const entry = toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId: 'queue-prune-job',
+                category: 'runtime-state',
+                requestedBy: 'admin-1',
+                requestedSessionId: 'admin-session-1',
+                capturedAtEpochMs: now,
+                expireAtEpochMs: now + 60_000,
+                pageSize: 2,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: null
+            },
+            'server-1',
+            'trace-admin-prune-outbox-dispatch'
+        );
         reader.onOutboxMessageDo('ADMIN_PRUNE_EXPIRED', {
             onMessage: async (_message, reserved) => {
                 delivered.push(decodeAdminPruneWork(reserved));
@@ -64,19 +68,23 @@ describe('admin prune application outbox dispatch', () => {
         { mode: 'broadcast', scope: 'world' },
         { mode: 'unicast', toPeerId: 'server-1' }
     ])('rejects a page addressed outside canonical application-worker scope: %j', (targets) => {
-        const entry = toAdminPruneOutbox({
-            kind: 'page',
-            jobId: 'wrong-scope-job',
-            category: 'runtime-state',
-            requestedBy: 'admin-1',
-            requestedSessionId: 'admin-session-1',
-            capturedAtEpochMs: 1_700_000_000_000,
-            expireAtEpochMs: 1_700_000_060_000,
-            pageSize: 2,
-            afterCursor: null,
-            pageIndex: 0,
-            appData: null
-        }, 'server-1');
+        const entry = toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId: 'wrong-scope-job',
+                category: 'runtime-state',
+                requestedBy: 'admin-1',
+                requestedSessionId: 'admin-session-1',
+                capturedAtEpochMs: 1_700_000_000_000,
+                expireAtEpochMs: 1_700_000_060_000,
+                pageSize: 2,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: null
+            },
+            'server-1',
+            'trace-admin-prune-outbox-dispatch'
+        );
         const message = decodePersistedALMessage(entry.resource);
 
         expect(() =>

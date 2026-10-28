@@ -286,7 +286,7 @@ describe('what never reads backpressure (D184)', () => {
         holdAtHighWatermark(fixture.channels.c!);
         const receipt: ALMessage = {
             ...newALReceiptControlMessage(
-                { v: 3, msgId: 'receipt-to-the-room', senderId: 'a', ts: Date.now() },
+                { v: 4, msgId: 'receipt-to-the-room', senderId: 'a', ts: Date.now(), traceId: 'trace-web-rtc-overlay-backpressure' },
                 {
                     msgId: 'origin-send',
                     originPeerId: 'a',
@@ -317,7 +317,7 @@ describe('what never reads backpressure (D184)', () => {
         holdAtHighWatermark(fixture.channels.c!);
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
-            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-backpressure' },
             { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);

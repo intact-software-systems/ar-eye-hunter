@@ -108,7 +108,7 @@ directory does not own product workflows.
   [connectStateGroupPresenceSession](./rooms/room-group-state-http-api.ts).
   Both operations return an authoritative `GroupSnapshot`; rejected HTTP
   responses surface as `ApiHttpError` from
-  [executeHttpRequest](./api/http-request.ts).
+  [sendApiHttpRequest](./api/send-api-http-request.ts).
 - [createRoomFormation](./rooms/formation/create-room-formation.ts) owns the room-bound formation
   handle over the public types in
   [rallar-room-formation-contracts.ts](./rooms/formation/rallar-room-formation-contracts.ts):
@@ -144,6 +144,14 @@ directory does not own product workflows.
 
 These paths keep request construction, the HTTP side effect, validation, and
 the typed result or failure visible without crossing a feature-blind module.
+
+Every browser HTTP request to api-v1 or the Relic server builds its headers with
+`newApiRequestHeaders` in [send-api-http-request.ts](./api/send-api-http-request.ts),
+which mints a fresh `x-request-id` trace per request, so a retry carries a new
+trace; a caller that continues an earlier operation's trace names it in
+`ApiRequestOptions.traceId`, which is validated before any fetch. [`point-read.ts`](./state-read/point-read.ts) and the Relic client use it
+with their own `fetch`, because they need the raw `Response`, and read a failed
+body with the same `readApiErrorBody`.
 
 ## Runtime invocation and cleanup timeline
 
@@ -335,6 +343,13 @@ Message ownership is concentrated under [`messages/`](./messages/):
   event listeners take `RallarStateEventMessage<T>`, the message without `reply`, because those events replay
   locally. `messages.readUsage()` returns `RallarMessagesUsage`, the volatile ledger report with `repliesHeld`
   (retained entries holding a matched reply) and `replyWaitsOpen` (reply waits in flight).
+- Trace identity rides the envelope's `id.traceId`. A send takes an optional `traceId`, checked by
+  [`browser-message-input-validator.ts`](./messages/browser-message-input-validator.ts) against the trace grammar
+  (1 to 128 characters of `[A-Za-z0-9_-]`, refused as `$.traceId` before anything is queued); absent, the envelope
+  builder mints one per send. The fallback, the post-admission hand-over, repair and checkpoint restore re-send that
+  envelope, so they keep its trace. `RallarMessageHandle.traceId` is read from the envelope when the delivery
+  registry opens the observation, and `RallarMessage.traceId` from the received envelope. `sendReply` copies the
+  request's trace into the reply ([`to-browser-reply-send-input.ts`](./messages/reply/to-browser-reply-send-input.ts)).
 - [`rallar-message-contracts.ts`](./messages/rallar-message-contracts.ts),
   [`rallar-message-selectors.ts`](./messages/rallar-message-selectors.ts), and
   [`to-rallar-message.ts`](./messages/to-rallar-message.ts) keep the public

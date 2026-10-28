@@ -315,7 +315,7 @@ export function auditStamp(
         atEpochMs: facts.nowEpochMs,
         actor: toGroupMutationActor(command, facts, defaultPrincipalId),
         reason: command.input.reason,
-        traceId: command.input.traceId,
+        traceId: facts.traceId,
         requestId: command.requestId
     };
 }
@@ -355,7 +355,7 @@ function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
         occurredAtEpochMs: facts.nowEpochMs,
         actor: toGroupMutationActor(command, facts, undefined),
         reason: command.input.reason,
-        traceId: command.input.traceId,
+        traceId: facts.traceId,
         requestId: command.requestId,
         payload: toGroupEventPayload(eventType, input.members, command)
     };
@@ -405,7 +405,8 @@ function computeMutationFollowupEntries(
                     acceptedCausalRevision: causalRevision,
                     event
                 },
-                facts.serviceId
+                facts.serviceId,
+                facts.traceId
             )
         ];
     return [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];

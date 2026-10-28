@@ -51,6 +51,7 @@ describe('RTC topology group-revision work', () => {
         }
         const appointed = toAppointedRevision(leaderless, 'peer-12');
         const queued = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-compute-rtc-topology-work',
             aggregateRef: appointed.group,
             expireAtEpochMs: 10_000,
             timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
@@ -68,6 +69,7 @@ describe('RTC topology group-revision work', () => {
 
         const computed = computeRtcTopologyWork({
             facts: {
+                traceId: 'trace-compute-rtc-topology-work',
                 workEnvelope,
                 workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
                 attemptCount: 1,
@@ -231,6 +233,7 @@ describe('RTC topology RTT-refresh work', () => {
         expect(computed.write.transaction.promotionWrite).not.toBeNull();
         const held = computed.accepted;
         expect(computed.write).toEqual(computeRtcTopologyWorkWrite({
+            traceId: 'trace-compute-rtc-topology-work',
             accepted: {
                 decision: 'skipped-frozen',
                 work: held.work,
@@ -328,6 +331,7 @@ function toRttRefreshWorkInput(input: ComputeRttRefreshDecisionInput): ComputeRt
     );
     return {
         facts: {
+            traceId: 'trace-compute-rtc-topology-work',
             workEnvelope,
             workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
             attemptCount: 1,
@@ -364,6 +368,7 @@ function toReservedRttRefreshEntry(group: GroupSnapshot): ResourceEntry {
     const receiptId = toRtcRttMutationReceiptId(rtt);
     const resourceId = toRtcRttTopologyOutboxId(receiptId, group.group, `sha256:${'a'.repeat(64)}`);
     const queued = computeRtcTopologyOutboxInsert({
+        traceId: 'trace-compute-rtc-topology-work',
         commandId: resourceId,
         aggregateRef: group.group,
         acceptedCausalRevision: group.causalRevision,

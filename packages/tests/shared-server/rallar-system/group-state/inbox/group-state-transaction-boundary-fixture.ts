@@ -33,6 +33,8 @@ import {
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 
+export const GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID = 'trace-group-state-transaction-boundary';
+
 const NOW_EPOCH_MS = Date.parse('2026-08-02T00:00:00.000Z');
 const GROUP_ID = 'transaction-boundary-room';
 const REQUEST_ID = 'create-transaction-boundary-room';
@@ -332,7 +334,8 @@ async function createReservedContext(
             'owner',
             newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
             enqueue.type,
-            enqueue
+            enqueue,
+            { traceId: GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID }
         ),
         attemptTelemetry: computeResourceInboxAttempt({
             entry: entry,
@@ -382,7 +385,8 @@ async function createReconfigureReservedContext(
             'owner',
             newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
             enqueue.type,
-            enqueue
+            enqueue,
+            { traceId: GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID }
         ),
         attemptTelemetry: computeResourceInboxAttempt({
             entry: entry,

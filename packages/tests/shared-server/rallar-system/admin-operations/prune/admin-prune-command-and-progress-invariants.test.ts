@@ -141,7 +141,7 @@ function page(overrides: Partial<AdminPrunePageWork> = {}): AdminPrunePageWork {
 }
 
 function reserved(work: AdminPrunePageWork): ResourceEntry {
-    const entry = toAdminPruneOutbox(work, 'server-1');
+    const entry = toAdminPruneOutbox(work, 'server-1', 'trace-admin-prune-command-and-progress-invariants');
     const message = JSON.parse(entry.resource);
     message.payload.resource = JSON.stringify(work);
     return {

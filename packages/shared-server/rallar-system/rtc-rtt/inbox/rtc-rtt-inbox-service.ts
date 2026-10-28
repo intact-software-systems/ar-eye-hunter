@@ -84,9 +84,11 @@ export class RtcRttInboxService {
         input: Readonly<{
             rtt: RttMeasurementInfo;
             alSenderId: string;
+            traceId: string;
             capturedAtEpochMs: number;
         }>
     ): Promise<ResourceEntry> {
-        return await this.queueEntryWriter.enqueue(await this.handler.createEnqueue(input));
+        const { traceId, ...request } = input;
+        return await this.queueEntryWriter.enqueue({ ...await this.handler.createEnqueue(request), traceId });
     }
 }

@@ -1,4 +1,5 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -11,7 +12,7 @@ import type {
 
 import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
 import { toCanonicalRtcTopologyGroupIdentity } from '../../persistence/rtc-topology-identifiers.ts';
-import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
+import type { RtcTopologyPublicationRead } from '../../publication/rtc-topology-publication-repository-contracts.ts';
 import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
@@ -22,10 +23,10 @@ import type {
 import { decideRtcTopologyReplayEntry } from './rtc-topology-replay-decision.ts';
 
 interface RtcTopologyReplayPublicationReader {
-    findPublication(
+    readPublication(
         groupRef: GroupRef,
         publicationId: string
-    ): Promise<RtcTopologyPublication | undefined>;
+    ): Promise<RtcTopologyPublicationRead>;
 }
 
 interface RtcTopologyReplayOutboxReader {
@@ -78,12 +79,14 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         // asynchronously promoted accepted row may trail the log and is read
         // only when the rare repair branch needs delivery content.
         const [publication, plannedSnapshot] = await Promise.all([
-            this.#publications.findPublication(entry.groupRef, entry.publicationId),
+            this.#publications.readPublication(entry.groupRef, entry.publicationId),
             this.#snapshots.findSnapshot(entry.groupRef)
         ]);
-        const outbox = publication
+        const outbox = publication.status === 'found'
             ? await Promise.all(
-                computeRtcTopologyPublicationOutbox(publication).map((page) => this.#outbox.getItem(page.key))
+                computeRtcTopologyPublicationOutbox(publication.publication).map((page) =>
+                    this.#outbox.getItem(page.key)
+                )
             )
             : undefined;
         throwIfAborted(signal);
@@ -107,7 +110,8 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
                     planned: decision.currentSnapshot,
                     accepted: await this.#acceptedSnapshots.findSnapshot(entry.groupRef)
                 }) ?? decision.currentSnapshot,
-                databaseNowEpochMs
+                databaseNowEpochMs,
+                traceId: newALTraceId()
             })
             : decision.messages;
         throwIfAborted(signal);
@@ -145,6 +149,7 @@ interface CurrentRepairMessageInput {
     readonly entry: RtcTopologyDeliveryLogEntry;
     readonly currentSnapshot: RallarOverlayTopologySnapshot;
     readonly databaseNowEpochMs: number;
+    readonly traceId: string;
 }
 
 export function materializeRtcTopologyCurrentRepairMessages(
@@ -163,7 +168,8 @@ export function materializeRtcTopologyCurrentRepairMessages(
                 currentSnapshot.version
             ]),
             ts: databaseNowEpochMs,
-            senderId: 'rallar-server'
+            senderId: 'rallar-server',
+            traceId: input.traceId
         },
         route: toAppQueueKey({
             topicId: AppTopics.overlayTopology,

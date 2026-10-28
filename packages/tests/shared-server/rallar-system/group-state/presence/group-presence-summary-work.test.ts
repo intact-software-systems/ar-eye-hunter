@@ -8,6 +8,7 @@ import {
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { toGroupPresenceSummaryWorkItem } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     decodeJsonWireValue,
@@ -140,6 +141,15 @@ const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
 ];
 
 describe('GroupPresenceSummaryWork canonical persisted command', () => {
+    it('takes the reserved row\'s envelope trace onto its work item', () => {
+        const { message, entry } = createCanonicalReservation();
+
+        expect(toGroupPresenceSummaryWorkItem(message, entry)).toMatchObject({
+            work: CANONICAL_SUMMARY_WORK,
+            traceId: CANONICAL_RESERVATION_TRACE_ID
+        });
+    });
+
     it('does not read an outbox winner after a strict insert collision', async () => {
         const worker = new GroupPresenceSummaryWork({
             now: Date.now,
@@ -237,8 +247,10 @@ const CANONICAL_SUMMARY_WORK: GroupPresenceSummaryWorkData = {
     }
 };
 
+const CANONICAL_RESERVATION_TRACE_ID = 'trace-group-presence-summary-work';
+
 function createCanonicalReservation(): ReservedSummary {
-    const queued = computeGroupPresenceSummaryEntry(CANONICAL_SUMMARY_WORK, 'summary-handler');
+    const queued = computeGroupPresenceSummaryEntry(CANONICAL_SUMMARY_WORK, 'summary-handler', CANONICAL_RESERVATION_TRACE_ID);
     const entry: ResourceEntry = {
         ...queued,
         status: EntityStatus.RESERVED,

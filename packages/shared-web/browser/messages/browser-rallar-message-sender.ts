@@ -477,7 +477,8 @@ export class BrowserRallarMessageSender {
             qos: defaults.qos,
             ordering: input.orderingKey !== undefined && input.seq !== undefined
                 ? { orderingKey: input.orderingKey, seq: input.seq }
-                : undefined
+                : undefined,
+            traceId: input.traceId
         };
     }
 
@@ -513,7 +514,8 @@ export class BrowserRallarMessageSender {
                 nextHopPeerIds: input.nextHopPeerIds,
                 overlayId: input.overlayId ?? toScopedOverlayId(target.roomRef),
                 fanoutLimit: input.fanoutLimit,
-                actions: toSendActions(input)
+                actions: toSendActions(input),
+                traceId: input.traceId
             }
         );
     }

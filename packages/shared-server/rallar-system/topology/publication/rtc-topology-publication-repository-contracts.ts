@@ -2,9 +2,9 @@ import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { assertRtcTopologyPublication } from './decode-rtc-topology-publication.ts';
 import { validateWorkClaim, type PersistedBoundaryValue } from './rtc-topology-publication-repository-state.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
-import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
 
 export const RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE = 'rtc-topology:publications';
 export const RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE = 'rtc-topology:publication-work-index';
@@ -37,10 +37,16 @@ export type RtcTopologyClaimedPublication = Readonly<{
     publication: RtcTopologyPublication;
 }>;
 
+/** One stored publication as a direct read sees it: a pre-v4 row is `unsupported`, refused without being corruption. */
+export type RtcTopologyPublicationRead =
+    | Readonly<{ status: 'found'; publication: RtcTopologyPublication; }>
+    | Readonly<{ status: 'absent'; }>
+    | Readonly<{ status: 'unsupported'; message: string; }>;
+
 export function computeRtcTopologyExecutionCommandDigest(
     publication: RtcTopologyPublication
 ): string {
-    validateRtcTopologyPublication(publication, publication.groupRef);
+    assertRtcTopologyPublication(publication, publication.groupRef);
     const command: PersistedBoundaryValue = {
         kind: 'rtc-topology-execution',
         schemaVersion: 1,

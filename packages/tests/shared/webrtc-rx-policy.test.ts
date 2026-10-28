@@ -351,7 +351,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
         await fixture.receive(
-            shared.newALAckControlMessage({ v: 3, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2' }, {
+            shared.newALAckControlMessage({ v: 4, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-webrtc-rx-policy' }, {
                 fromPeerId: 'peer-2',
                 toPeerId: 'self',
                 ackedMsgId: message.id.msgId,
@@ -370,7 +370,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         ]);
 
         await fixture.receive(
-            shared.newALAckControlMessage({ v: 3, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3' }, {
+            shared.newALAckControlMessage({ v: 4, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3', traceId: 'trace-webrtc-rx-policy' }, {
                 fromPeerId: 'peer-3',
                 toPeerId: 'self',
                 ackedMsgId: message.id.msgId,
@@ -546,7 +546,7 @@ function toCopyForSelf(message: shared.ALMessage, visitedPeerIds: readonly strin
 }
 
 function createChildAck(message: shared.ALMessage, childPeerId: string): shared.ALMessage {
-    return shared.newALAckControlMessage({ v: 3, msgId: `ack-${childPeerId}`, ts: Date.now(), senderId: childPeerId }, {
+    return shared.newALAckControlMessage({ v: 4, msgId: `ack-${childPeerId}`, ts: Date.now(), senderId: childPeerId, traceId: 'trace-webrtc-rx-policy' }, {
         fromPeerId: childPeerId,
         toPeerId: 'self',
         ackedMsgId: message.id.msgId,

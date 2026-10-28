@@ -27,7 +27,6 @@ export type MiddlewareTestOverrides =
 
 export interface ApiMiddlewareTestOverrides {
     readonly session?: Partial<AuthSession>;
-    readonly authFetch?: ApiMiddleware['authFetch'];
     readonly middleware?: MiddlewareTestOverrides;
 }
 
@@ -39,7 +38,6 @@ export function createDefaultApiMiddlewareTestDouble(
 
     return {
         session,
-        authFetch: overrides.authFetch ?? vi.fn(),
         middleware: {
             qboxEngine: createQboxEngineDouble(middlewareOverrides.qboxEngine),
             webSocketQueueBox: createWebSocketQueueBoxDouble(

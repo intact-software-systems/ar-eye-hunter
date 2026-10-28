@@ -6,9 +6,9 @@ import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { assertRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/decode-rtc-topology-publication.ts';
 import { RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
-import { validateRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
@@ -367,10 +367,10 @@ describe('RTC topology snapshot repository', () => {
     it('rejects invalid freshness and expiry facts before persistence', () => {
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
         const publication = createPublication(snapshot, 'work-facts');
-        expect(() => validateRtcTopologyPublication(publication, snapshot.groupRef)).not.toThrow();
-        expect(() => validateRtcTopologyPublication({ ...publication, targetGroupSnapshotVersion: -1 }, snapshot.groupRef))
+        expect(() => assertRtcTopologyPublication(publication, snapshot.groupRef)).not.toThrow();
+        expect(() => assertRtcTopologyPublication({ ...publication, targetGroupSnapshotVersion: -1 }, snapshot.groupRef))
             .toThrow('targetGroupSnapshotVersion');
-        expect(() => validateRtcTopologyPublication({ ...publication, expiresAtEpochMs: publication.createdAtEpochMs }, snapshot.groupRef))
+        expect(() => assertRtcTopologyPublication({ ...publication, expiresAtEpochMs: publication.createdAtEpochMs }, snapshot.groupRef))
             .toThrow('expiresAtEpochMs');
     });
 

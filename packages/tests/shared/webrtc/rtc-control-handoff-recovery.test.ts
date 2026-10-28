@@ -232,7 +232,13 @@ function createControlRecoveryRuntime(
 
 async function seedControlRecoveryWork(run: ControlRecoveryRuntime, sequence: number, expireAtTimestamp: number): Promise<ResourceEntry> {
     const nowMs = run.resources.clock.nowMs();
-    const msg = newALAckControlMessage({ v: 3, msgId: `recovery-control-${sequence}`, senderId: 'receiver', ts: nowMs }, {
+    const msg = newALAckControlMessage({
+        v: 4,
+        msgId: `recovery-control-${sequence}`,
+        senderId: 'receiver',
+        ts: nowMs,
+        traceId: 'trace-rtc-control-handoff-recovery'
+    }, {
         ackedMsgId: `recovery-subject-${sequence}`,
         fromPeerId: 'receiver',
         toPeerId: 'sender',

@@ -9,6 +9,7 @@ import { validateRtcRttMeasurement } from '../persistence/rtc-rtt-persistence-va
 export interface RtcRttTopicMutationInput {
     readonly rtt: RttMeasurementInfo;
     readonly alSenderId: string;
+    readonly traceId: string;
     readonly capturedAtEpochMs: number;
 }
 
@@ -38,6 +39,7 @@ export function installRtcRttSystemTopic(
             await options.enqueueMutation({
                 rtt,
                 alSenderId: message.id.senderId,
+                traceId: message.id.traceId,
                 capturedAtEpochMs: Date.now()
             });
         }

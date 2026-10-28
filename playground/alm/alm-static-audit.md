@@ -67,7 +67,7 @@ roadmap's [release map](alm-improvement-plan.md#release-map).
 | F13     | Resolved for ceilings and the per-session count, byte, age and track budgets (V1a); the scale evidence remains (V1c, V1d).                                                                                                                                                  | S3, V1             |
 | F14     | Mechanism present in both directions; cross-backend proof remains.                                                                                                                                                                                                          | R1                 |
 | F15     | Resolved for the first release's scope; roadmap decision D8 governs the series.                                                                                                                                                                                             | every PR           |
-| F16     | Resolved: fencing (R2), audiences (A1), the leader ACK (A2a), exclusive ownership (A2b) and correlation (I1a) delivered.                                                                                                                                                    | R2, A1, A2, I1a    |
+| F16     | Resolved: fencing (R2), audiences (A1), the leader ACK (A2a), exclusive ownership (A2b) and correlation (I1a) delivered; the trace is required and carried end to end (I1b-i).                                                                                              | R2, A1, A2, I1a    |
 | F17     | Partial. Settlement truthful; handle and disposal outcomes remain.                                                                                                                                                                                                          | S1, I2             |
 
 ## Scope and evidence
@@ -409,9 +409,13 @@ public surfaces and consumers; do not plan already-completed construction remova
 **Status:** Open with snapshot-floor progress. **Severity:** Medium product completeness.
 **Confidence:** Proven from code.
 
-[Envelope/builders](../../packages/shared/al-contracts/al-contract.ts) retain correlation and
-trace fields without a general request/reply or trace lifecycle. Builders do not populate AL
-session/trace identity. `membershipEpoch` is copied into ordering epoch but not checked against
+[Envelope/builders](../../packages/shared/al-contracts/al-contract.ts) retained correlation and
+trace fields without a general request/reply or trace lifecycle, and builders did not populate AL
+session/trace identity. Since I1b-i the envelope is version 4 and `id.traceId` is required, owned
+by [`al-trace-id.ts`](../../packages/shared/al-contracts/trace/al-trace-id.ts): the builders mint
+it when absent, `x-request-id` carries it through AppInbox, and every server publication, reply
+and control carries its command's or subject's trace (D447–D453). The trace on diagnostics and
+harness identity is I1b-ii. `membershipEpoch` is copied into ordering epoch but not checked against
 authoritative membership. RTC snapshot floors are enforced as described in F3.
 
 [Shared policy](../../packages/shared/al-contracts/al-policy.ts) mapped a leader ACK request to

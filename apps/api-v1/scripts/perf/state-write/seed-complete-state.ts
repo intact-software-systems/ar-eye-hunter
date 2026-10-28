@@ -5,6 +5,7 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { toApiV1PostgresClient } from '../../../src/db/api-v1-database-lifecycle.ts';
@@ -81,6 +82,7 @@ async function seedBenchmarkGroup(context: BenchmarkSeedContext, groupIndex: num
         runtime,
         runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.GROUP_CREATE,
                 topicId: AppInboxType.GROUP_CREATE,
                 resourceId: `seed-group-${groupIndex}`,
@@ -133,6 +135,7 @@ async function seedClientPrincipal(input: BenchmarkSeedClient): Promise<void> {
         runtime,
         runtime.client.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 resourceId: `seed-principal-${clientIndex}`,
@@ -161,6 +164,7 @@ async function seedClientInstance(input: BenchmarkSeedClient): Promise<void> {
         runtime,
         runtime.client.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: newALTraceId(),
                 type: AppInboxType.CLIENT_INSTANCE_UPSERT,
                 topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                 resourceId: `seed-instance-${clientIndex}`,

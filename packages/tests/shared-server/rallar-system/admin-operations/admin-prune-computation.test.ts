@@ -9,6 +9,7 @@ import {
 } from '@shared-server/rallar-system/admin-operations/inbox/compute-admin-prune-mutation.ts';
 import { writeAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import { computeAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
@@ -39,6 +40,8 @@ describe('admin prune computation', () => {
         }));
         expect(computed.completion.durableResult).toBe(computed.result);
         expect(computed.completion.reservationFinish.completedAt).toEqual(new Date(1_010));
+        expect(computed.outboxWrites.map((write) => decodePersistedALMessage(write.entry.resource).id.traceId))
+            .toEqual([read.traceId]);
         expect(validateAdminPruneMutation(read, computed)).toEqual([]);
     });
 
@@ -227,6 +230,7 @@ async function createRead() {
         authority: { allowed: true, code: 'allowed' },
         nowEpochMs: 1_005,
         serviceId: 'admin-server',
+        traceId: 'trace-admin-prune-computation',
         completionFacts: { entry, completedAtEpochMs: 1_010, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
     };
 }

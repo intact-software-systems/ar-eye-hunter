@@ -587,11 +587,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "commanded-arena-rtt-{runId}",
             "ts": 0,
             "senderId": "{arenaRttReporter.sessionIdFrom}",
-            "sessionId": "{arenaRttReporter.sessionIdFrom}"
+            "sessionId": "{arenaRttReporter.sessionIdFrom}",
+            "traceId": "trace-api-v1-commanded-replanning"
           },
           "route": {
             "topicId": "rtt",

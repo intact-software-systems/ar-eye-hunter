@@ -9,7 +9,7 @@ import { decodeALOutboundEffectPayload } from '@shared/alm/outbound/al-outbound-
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 
 const MESSAGE: ALMessage = {
-    id: { v: 3, msgId: 'message', senderId: 'sender', ts: 0 },
+    id: { v: 4, msgId: 'message', senderId: 'sender', ts: 0, traceId: 'trace-to-al-outbound-prepared-fingerprint' },
     route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
     payload: { typeId: 'chat.text.v1', resource: '"hello"' },
     constraints: { expiresAtMs: 60_000 }

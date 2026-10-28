@@ -395,7 +395,13 @@ export function createGroupSnapshot(
 
 function toServerAckFrame(command: ALMessage): string {
     return JSON.stringify(newALAckControlMessage(
-        { v: 3, msgId: `ack-${command.id.msgId}`, ts: Date.now(), senderId: 'default-qbox-server' },
+        {
+            v: 4,
+            msgId: `ack-${command.id.msgId}`,
+            ts: Date.now(),
+            senderId: 'default-qbox-server',
+            traceId: 'trace-relic-browser-backend'
+        },
         {
             ackedMsgId: command.id.msgId,
             fromPeerId: 'default-qbox-server',

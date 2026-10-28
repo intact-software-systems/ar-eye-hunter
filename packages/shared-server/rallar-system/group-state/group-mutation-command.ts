@@ -24,7 +24,6 @@ export interface GroupMutationActorInput {
     readonly actorPrincipalId: string | null;
     readonly actorSessionId: string | null;
     readonly reason: string | null;
-    readonly traceId: string | null;
 }
 
 export function toAggregateMutationCommand(
@@ -305,13 +304,12 @@ export function toGroupMutationIdentity(
 }
 
 export function toGroupMutationActorInput(
-    request: Pick<MutationActorInput, 'actorPrincipalId' | 'actorSessionId' | 'reason' | 'traceId'>
+    request: Pick<MutationActorInput, 'actorPrincipalId' | 'actorSessionId' | 'reason'>
 ): GroupMutationActorInput {
     return {
         actorPrincipalId: request.actorPrincipalId ?? null,
         actorSessionId: request.actorSessionId ?? null,
-        reason: request.reason ?? null,
-        traceId: request.traceId ?? null
+        reason: request.reason ?? null
     };
 }
 

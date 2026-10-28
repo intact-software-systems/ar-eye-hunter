@@ -50,7 +50,7 @@ function clock(overrides: Partial<GroupActivationStatusClockWork>): GroupActivat
 }
 
 function input(work: GroupActivationStatusClockWork) {
-    return { work, senderId: 'server-1', createdAtEpochMs: 1_000, expireAtEpochMs: 600_000 };
+    return { work, senderId: 'server-1', createdAtEpochMs: 1_000, expireAtEpochMs: 600_000, traceId: 'trace-activation-status-clock' };
 }
 
 function keyOf(work: GroupActivationStatusClockWork) {

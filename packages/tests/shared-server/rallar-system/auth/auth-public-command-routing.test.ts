@@ -129,6 +129,7 @@ async function registerRoutedUser(auth: AuthInboxTestRuntime): Promise<string> {
     const registered = await runAuthInboxCommand({
         pending: auth.service.registerUser({
             requestId: 'register-request',
+            traceId: 'trace-auth-test',
             request: {
                 username: 'registered-user',
                 password: 'password-1'
@@ -150,6 +151,7 @@ async function issueRoutedSession(
     const login = await runAuthInboxCommand({
         pending: auth.service.issueSession({
             requestId: 'session-request',
+            traceId: 'trace-auth-test',
             clientId,
             username: 'registered-user',
             authority: {
@@ -178,6 +180,7 @@ async function issueRoutedWebSocketTicket(
     const wsTicket = await runAuthInboxCommand({
         pending: auth.service.issueWebSocketTicket({
             requestId: 'ws-issue-request',
+            traceId: 'trace-auth-test',
             session,
             ttlMs: 30_000
         }),
@@ -190,6 +193,7 @@ async function issueRoutedWebSocketTicket(
         (
             await auth.service.issueWebSocketTicket({
                 requestId: 'ws-issue-request',
+                traceId: 'trace-auth-test',
                 session,
                 ttlMs: 30_000
             })
@@ -199,6 +203,7 @@ async function issueRoutedWebSocketTicket(
         (
             await auth.service.issueWebSocketTicket({
                 requestId: 'ws-issue-request',
+                traceId: 'trace-auth-test',
                 session,
                 ttlMs: 30_001
             })
@@ -214,6 +219,7 @@ async function issueRoutedAgentTickets(
     const agentTickets = await runAuthInboxCommand({
         pending: auth.service.issueAgentSessionTickets({
             requestId: 'agent-issue-request',
+            traceId: 'trace-auth-test',
             session,
             ticketTtlMs: 30_000,
             agents: [
@@ -228,6 +234,7 @@ async function issueRoutedAgentTickets(
     expect(agentTickets.right?.tickets).toHaveLength(2);
     const agentIssueInput = {
         requestId: 'agent-issue-request',
+        traceId: 'trace-auth-test',
         session,
         ticketTtlMs: 30_000,
         agents: [
@@ -256,6 +263,7 @@ async function consumeExpiredRoutedTickets({
     const expiredAgent = await runAuthInboxCommand({
         pending: auth.service.consumeAgentSessionTicket({
             requestId: 'agent-expired-consume',
+            traceId: 'trace-auth-test',
             ticket: agentTickets[0]
         }),
         queue: auth.queue,
@@ -273,6 +281,7 @@ async function logoutRoutedSession({
     const logout = await runAuthInboxCommand({
         pending: auth.service.logoutSession({
             requestId: 'logout-request',
+            traceId: 'trace-auth-test',
             session
         }),
         queue: auth.queue,
@@ -334,6 +343,7 @@ it('rechecks the parent session before issuing agent credentials', async () => {
     const issued = await runAuthInboxCommand({
         pending: service.issueAgentSessionTickets({
             requestId: 'agent-without-authority',
+            traceId: 'trace-auth-test',
             session: {
                 clientId: 'absent-client',
                 username: 'absent-user',
@@ -392,7 +402,7 @@ it('rejects websocket ticket issuance when the presented session token differs',
         serviceId: 'auth-test-service'
     });
     const read = await service.read(command);
-    const facts = { kind: command.kind, serviceId: service.serviceId } as const;
+    const facts = { kind: command.kind, serviceId: service.serviceId, traceId: 'trace-auth-public-command-routing' } as const;
     const computed = service.compute(command, read, facts);
 
     const issues = service.validate({ command, read, facts, computed });

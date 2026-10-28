@@ -116,6 +116,7 @@ function automaticRead(): GroupMutationRead {
 describe('publication connect requests', () => {
     it('stamps the wake with the expiry its attempt decided, not its source row\'s', () => {
         const source = computeGroupConnectTriggerEntry({
+            traceId: 'trace-group-connect-trigger-latch',
             work: { kind: 'intent', ...IDENTITY, wakeIdentity: 'source' },
             senderId: 'origin',
             createdAtEpochMs: 1000,
@@ -123,6 +124,7 @@ describe('publication connect requests', () => {
         });
 
         const [wake] = computePublicationConnectTriggerRequests({
+            traceId: 'trace-group-connect-trigger-latch',
             automationEnabled: true,
             target: PLANNED,
             sourceWorkId: 'source-work:1',
@@ -358,12 +360,14 @@ describe('retry handoff commit races and replay', () => {
         };
         await harness.runtimeRepository.deleteByKey(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, toGroupConnectTriggerStorageKey(IDENTITY));
         const source = computeGroupConnectTriggerEntry({
+            traceId: 'trace-group-connect-trigger-latch',
             work: { kind: 'intent', ...IDENTITY, wakeIdentity: 'source' },
             senderId: 'origin',
             createdAtEpochMs: 1000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const requests = computePublicationConnectTriggerRequests({
+            traceId: 'trace-group-connect-trigger-latch',
             automationEnabled: true,
             target: PLANNED,
             sourceWorkId: 'source-work:1',
@@ -399,12 +403,14 @@ describe('retry handoff commit races and replay', () => {
     it('rolls back publication transaction work and gives a later publication its own immutable identity', async () => {
         const { harness, latches } = await connectWriteHarness();
         const source = computeGroupConnectTriggerEntry({
+            traceId: 'trace-group-connect-trigger-latch',
             work: { kind: 'intent', ...IDENTITY, wakeIdentity: 'source' },
             senderId: 'origin',
             createdAtEpochMs: 1000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const first = computePublicationConnectTriggerRequests({
+            traceId: 'trace-group-connect-trigger-latch',
             automationEnabled: true,
             target: PLANNED,
             sourceWorkId: 'source-work:1',
@@ -412,6 +418,7 @@ describe('retry handoff commit races and replay', () => {
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const next = computePublicationConnectTriggerRequests({
+            traceId: 'trace-group-connect-trigger-latch',
             automationEnabled: true,
             target: { ...PLANNED, version: 2 },
             sourceWorkId: 'source-work:1',

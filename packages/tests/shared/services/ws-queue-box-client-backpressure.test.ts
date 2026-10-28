@@ -90,7 +90,7 @@ const REJECT_UNDER_CONGESTION: ALQosPolicyRequest = { congestion: { algo: 'rejec
 
 function acknowledgementOf(ackedMsgId: string, qos: ALQosPolicyRequest): ALMessage {
     const acknowledgement = newALAckControlMessage(
-        { v: 3, msgId: `ack-${ackedMsgId}`, senderId: 'self', ts: Date.now() },
+        { v: 4, msgId: `ack-${ackedMsgId}`, senderId: 'self', ts: Date.now(), traceId: 'trace-ws-queue-box-client-backpressure' },
         {
             ackedMsgId,
             fromPeerId: 'self',

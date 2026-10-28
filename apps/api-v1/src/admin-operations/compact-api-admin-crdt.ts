@@ -18,6 +18,7 @@ export class CompactApiAdminCrdt {
             operation: 'compact',
             adminSession: request.adminSession,
             requestId: request.requestId,
+            traceId: request.traceId,
             request: request.request
         });
         return requireCrdtCompactResult(result);

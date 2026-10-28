@@ -2,6 +2,7 @@ import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/muta
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -60,7 +61,8 @@ describe('RTC RTT mutation phases', () => {
                 purgeAfterEpochMs: 10_000,
                 requestedAtEpochMs: 2,
                 commandHash: RTT_COMMAND_HASH,
-                attemptCount: 1
+                attemptCount: 1,
+                traceId: 'trace-rtc-rtt-mutation'
             }
         });
 
@@ -92,7 +94,8 @@ describe('RTC RTT mutation phases', () => {
                 requestedAtEpochMs: 1,
                 purgeAfterEpochMs: 60_001,
                 commandHash: RTT_COMMAND_HASH,
-                attemptCount: 1
+                attemptCount: 1,
+                traceId: 'trace-rtc-rtt-mutation'
             }
         };
         const emptyRead = {
@@ -185,6 +188,9 @@ describe('RTC RTT mutation phases', () => {
         expect(accepted.outboxWrites[0]?.entry.audit.expiryTs.epochMilliseconds).toBe(
             accepted.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
         );
+        // The topology recompute row the RTT write enqueues carries the trace of the queued command.
+        expect(accepted.outboxWrites.map((write) => decodePersistedALMessage(write.entry.resource).id.traceId))
+            .toEqual(accepted.outboxWrites.map(() => acceptedInput.facts.traceId));
         const tampered = {
             ...accepted,
             endpointGuards: [...accepted.endpointGuards].reverse()
@@ -244,7 +250,8 @@ describe('RTC RTT mutation phases', () => {
                     requestedAtEpochMs: 1,
                     purgeAfterEpochMs: 60_001,
                     commandHash: RTT_COMMAND_HASH,
-                    attemptCount: 1
+                    attemptCount: 1,
+                    traceId: 'trace-rtc-rtt-mutation'
                 },
                 read: {
                     receipt: null,
@@ -312,7 +319,8 @@ describe('RTC RTT mutation phases', () => {
                 requestedAtEpochMs: 1,
                 purgeAfterEpochMs: 60_001,
                 commandHash: RTT_COMMAND_HASH,
-                attemptCount: 1
+                attemptCount: 1,
+                traceId: 'trace-rtc-rtt-mutation'
             }
         } as const;
         const computed = computeRtcRttMutation(input);
@@ -362,6 +370,7 @@ describe('RTC RTT mutation phases', () => {
                     incidentMeasurements: []
                 },
                 facts: {
+                    traceId: 'trace-rtc-rtt-mutation',
                     requestedAtEpochMs,
                     purgeAfterEpochMs: requestedAtEpochMs + 60_000,
                     commandHash: RTT_COMMAND_HASH,
@@ -469,7 +478,8 @@ describe('RTC RTT mutation phases', () => {
                     requestedAtEpochMs: 1,
                     purgeAfterEpochMs: 60_001,
                     commandHash: RTT_COMMAND_HASH,
-                    attemptCount: 1
+                    attemptCount: 1,
+                    traceId: 'trace-rtc-rtt-mutation'
                 }
             });
             expect(computeAndValidateRttTwice(input)).toMatchObject({
@@ -515,7 +525,8 @@ describe('RTC RTT mutation phases', () => {
             purgeAfterEpochMs: 10_000,
             requestedAtEpochMs: 2,
             commandHash: RTT_COMMAND_HASH,
-            attemptCount: 1
+            attemptCount: 1,
+            traceId: 'trace-rtc-rtt-mutation'
         };
         expect(
             computeAndValidateRttTwice(
@@ -593,7 +604,8 @@ describe('RTC RTT mutation phases', () => {
                 requestedAtEpochMs: null,
                 purgeAfterEpochMs: null,
                 commandHash: RTT_COMMAND_HASH,
-                attemptCount: 1
+                attemptCount: 1,
+                traceId: 'trace-rtc-rtt-mutation'
             }
         });
 
@@ -658,7 +670,8 @@ describe('RTC RTT mutation phases', () => {
                 requestedAtEpochMs: null,
                 purgeAfterEpochMs: null,
                 commandHash: RTT_COMMAND_HASH,
-                attemptCount: 1
+                attemptCount: 1,
+                traceId: 'trace-rtc-rtt-mutation'
             }
         });
 
@@ -711,6 +724,7 @@ describe('RTC RTT mutation phases', () => {
                 incidentMeasurements: []
             },
             facts: {
+                traceId: 'trace-rtc-rtt-mutation',
                 requestedAtEpochMs: 2,
                 purgeAfterEpochMs: 60_002,
                 commandHash: RTT_COMMAND_HASH,

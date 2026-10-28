@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -25,9 +25,11 @@ import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { releaseAuthorisedWsCloseFacts } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { createPGliteAppInboxWsCloseHarness } from './pglite-app-inbox-ws-close-test-harness.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
+const UPGRADE_TRACE_ID = 'trace-ws-ticket-connect-upgrade';
 const OPTIONS = { waitMaxElapsedMsecs: 5_000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 4, waitJitterRatio: 0 } as const;
 const SESSION: IssuedAuthSession = {
     clientId: 'player',
@@ -85,7 +87,7 @@ async function createWsConnectFixture(
     });
     const socketServer = new JsonWebSocketServer();
     const upgradedSockets: TestWebSocket[] = [];
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     registerWsRoutes(app, {
         socketServer,
         appClientInboxService: client,
@@ -115,7 +117,7 @@ function upgradeToTestSocket(sockets: TestWebSocket[]): Deno.WebSocketUpgrade {
 async function requestUpgrade(fixture: WsConnectFixture, ticket: string): Promise<Response> {
     let settled = false;
     const response = Promise.resolve(fixture.app.request(`http://localhost/api/ws/${SESSION.sessionId}?ticket=${ticket}`, {
-        headers: { upgrade: 'websocket' }
+        headers: { upgrade: 'websocket', 'x-request-id': UPGRADE_TRACE_ID }
     })).finally(() => {
         settled = true;
     });
@@ -182,6 +184,21 @@ Deno.test('a WebSocket connect consumes its ticket in its own transaction: one l
         // The separate ticket-consume lane item cost 46 statements together with the connect (D269 baseline).
         assert.ok(statements < 46, `the connect issued ${statements} statements`);
         console.info(`WebSocket connect statements per player: ${statements}`);
+        releaseRegisteredFacts(fixture);
+    });
+});
+
+Deno.test('a WebSocket connect is admitted under the trace of its upgrade request', async () => {
+    await withPGliteSql(async (sql) => {
+        const fixture = await createWsConnectFixture(sql);
+        await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
+
+        await requestUpgrade(fixture, 'player-ticket');
+
+        const rows = await sql<{ traceId: string; }[]>`
+            select ri_resource::jsonb #>> '{id,traceId}' as "traceId" from resource_inbox where ri_type_id = 'APP_INBOX'
+        `;
+        assert.deepEqual(rows, [{ traceId: UPGRADE_TRACE_ID }]);
         releaseRegisteredFacts(fixture);
     });
 });
@@ -267,6 +284,7 @@ Deno.test('a connect whose ticket was spent after its read conflicts on the guar
                 authSession: harness.authority,
                 generationId,
                 ticketDigest,
+                traceId: 'trace-pglite-ws-ticket-connect',
                 input: { applicationId, workspaceId: 'default', connectedAtEpochMs: Date.now() }
             });
         // Different scopes are different lanes: the stale connect holds its ticket read while the other spends it.

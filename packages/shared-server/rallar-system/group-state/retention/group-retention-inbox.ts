@@ -3,7 +3,8 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    toAppInboxCommandAttempt,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
@@ -43,7 +44,7 @@ export function registerGroupRetentionInbox(
     });
 }
 
-export function toGroupRetentionEnqueue(ingress: GroupRetentionService.Ingress): AppInboxEnqueueInput {
+export function toGroupRetentionEnqueue(ingress: GroupRetentionService.Ingress): AppInboxEnqueue {
     return {
         type: AppInboxType.GROUP_RETENTION_RECONCILE,
         topicId: GROUP_STATE_APP_INBOX_TOPIC,
@@ -78,7 +79,8 @@ async function processGroupRetention(input: ProcessGroupRetentionInput): Promise
         sessionId: undefined,
         attempt: context.entry.dequeueAudit.attempts
     };
-    const read = await timeGroupStatePhase(timing, 'read', () => dependencies.service.read(ingress, timing.attempt));
+    const attempt = toAppInboxCommandAttempt(context);
+    const read = await timeGroupStatePhase(timing, 'read', () => dependencies.service.read(ingress, attempt));
     const computed = await timeGroupStatePhase(timing, 'compute', () => dependencies.service.compute(read));
     await timeGroupStatePhase(timing, 'validate', () => {
         const issue = dependencies.service.validate(read, computed)[0];

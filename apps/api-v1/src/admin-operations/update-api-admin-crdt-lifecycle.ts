@@ -18,6 +18,7 @@ export class UpdateApiAdminCrdtLifecycle {
             operation: 'lifecycle',
             adminSession: request.adminSession,
             requestId: request.requestId,
+            traceId: request.traceId,
             request: request.request
         });
         return requireCrdtLifecycleResult(result);

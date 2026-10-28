@@ -27,7 +27,10 @@ import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topo
 import { RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
-import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
+import {
+    readRtcTopologyWorkEnvelope,
+    toRtcTopologyExecutionId
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -194,6 +197,14 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(await queue.replaceIfObserved(next.work.expectedEntry, next.work.entryWrite.entry)).not.toBeNull();
         const nextEntry = await reserveOnlyTopologyWork(queue);
         await handler.onMessage(decodePersistedALMessage(nextEntry.resource), nextEntry);
+        // The publication the work writes carries the trace of the reserved work row's envelope.
+        const nextMessage = decodePersistedALMessage(nextEntry.resource);
+        const nextWorkId = toRtcTopologyExecutionId(
+            readRtcTopologyWorkEnvelope(nextMessage, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE),
+            nextMessage.id.ts
+        );
+        const claimed = await new RtcTopologyExecutionRepository(runtime).readTopologyMutation(ref, nextWorkId);
+        expect(claimed.publicationClaim?.publication.traceId).toBe(nextMessage.id.traceId);
 
         const persisted = await snapshots.findSnapshot(ref);
         vi.stubGlobal('WebSocket', TestWebSocket);
@@ -1054,6 +1065,7 @@ interface TopologyWorkBase extends Omit<ComputedRtcTopologyOutbox, 'payloadKind'
 
 function topologyWorkBase(group: GroupSnapshot, resourceId: string): TopologyWorkBase {
     return {
+        traceId: 'trace-rtc-topology-work-handler',
         commandId: resourceId,
         aggregateRef: group.group,
         acceptedCausalRevision: group.causalRevision,

@@ -133,6 +133,9 @@ describe('inbound admission preparation boundary', () => {
             'send-control'
         ]);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
+        // The ACK names the admitted message, so it carries that message's trace.
+        expect(first.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg.id.traceId] : []))
+            .toEqual([prepared.read.msg.id.traceId]);
         expect(first.observations).toEqual(prepared.read.observations);
         expect(first.mutations.find((mutation) => mutation.kind === 'set-msg-owner')?.value).toEqual({
             msgId: prepared.read.msg.id.msgId,
@@ -549,10 +552,10 @@ function withFreshnessPolicy(plan: ALMessageHandlingPlan): ALMessageHandlingPlan
 }
 
 function toMessageWithEnvelopeSize(message: ALMessage, bytes: number): ALMessage {
-    const empty = { ...message, id: { ...message.id, traceId: '' } };
+    const empty = { ...message, id: { ...message.id, sessionId: '' } };
     return {
         ...empty,
-        id: { ...empty.id, traceId: 'x'.repeat(bytes - new TextEncoder().encode(JSON.stringify(empty)).length) }
+        id: { ...empty.id, sessionId: 'x'.repeat(bytes - new TextEncoder().encode(JSON.stringify(empty)).length) }
     };
 }
 

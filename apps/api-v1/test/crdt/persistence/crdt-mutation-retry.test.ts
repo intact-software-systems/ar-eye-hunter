@@ -107,6 +107,7 @@ async function enqueueOwnerUpdate(
     await service.createAndEnqueueAppend({
         update: update('owner-update', now - 1_000),
         deliveryId: 'owner-delivery',
+        traceId: 'trace-crdt-mutation-retry',
         actor: {
             actorId: 'client-1',
             principalId: 'principal-1',

@@ -6,7 +6,7 @@ import {
     AppInboxType,
     isAppInboxType,
     toAppInboxCompletionAwaitability,
-    type AppInboxEnqueueInput
+    type AppInboxEnqueue
 } from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
@@ -15,7 +15,7 @@ interface ValidAppInboxCommandIdentity {
         operation: AppInboxType;
         operationSource: 'command';
     }>;
-    readonly command: AppInboxEnqueueInput;
+    readonly command: AppInboxEnqueue;
 }
 
 interface InvalidAppInboxCommandIdentity {
@@ -119,7 +119,7 @@ export function validatePersistedAppInboxCommandIdentity(
     }
     const dispatchedOperation = outer.payload.typeId;
 
-    let command: AppInboxEnqueueInput;
+    let command: AppInboxEnqueue;
     try {
         command = decodePersistedAppInboxCommand(outer);
     }

@@ -212,6 +212,7 @@ function computeRevisionWork(
 ): ComputedCoalescedAppOutboxWork {
     const requestedAtEpochMs = Date.now();
     return computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-coalesced-app-outbox-work-conflicts',
         aggregateRef: ref,
         groupSnapshot: topologyGroupSnapshot(ref),
         requestedAtEpochMs,

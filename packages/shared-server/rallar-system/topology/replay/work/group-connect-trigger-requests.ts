@@ -12,6 +12,7 @@ export interface PublicationConnectTriggerRequestsInput {
     readonly entry: ResourceEntry;
     /** The expiry the attempt decided for the rows it derives. */
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 export function computePublicationConnectTriggerRequests(
@@ -32,6 +33,7 @@ export function computePublicationConnectTriggerRequests(
         },
         senderId: entry.audit.createdBy,
         createdAtEpochMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-        expireAtEpochMs: input.expireAtEpochMs
+        expireAtEpochMs: input.expireAtEpochMs,
+        traceId: input.traceId
     })];
 }

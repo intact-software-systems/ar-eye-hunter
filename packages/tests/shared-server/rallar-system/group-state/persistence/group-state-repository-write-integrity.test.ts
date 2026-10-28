@@ -37,7 +37,6 @@ describe('convergent group and presence state', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 role: 'admin'
             }
         });
@@ -106,7 +105,6 @@ describe('convergent group and presence state', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 principalId: null,
                 generationId: 'generation-1',
                 lastHeartbeatAtEpochMs: 2_000,
@@ -120,7 +118,6 @@ describe('convergent group and presence state', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 principalId: null,
                 generationId: 'generation-1',
                 generationVersion: null,
@@ -292,7 +289,6 @@ describe('convergent group and presence state', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 heartbeatTtlMs: 5_000
             }
         });

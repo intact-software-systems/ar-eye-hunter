@@ -1,7 +1,7 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { type AppInboxEnqueue } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RegisterAuthorisedWsClientInput } from '../client-state-service-contracts.ts';
@@ -20,6 +20,8 @@ export interface ToAuthorisedWsClientConnectionInput {
 
 export interface ToAuthorisedWsClientConnectEnqueueInput extends ToAuthorisedWsClientConnectionInput {
     readonly ticketDigest: string;
+    /** The upgrade request's trace: it rides the admitted envelope, never the stored connect command. */
+    readonly traceId: string;
 }
 
 export interface ToAuthorisedWsClientDisconnectEnqueueInput {
@@ -30,7 +32,7 @@ export interface ToAuthorisedWsClientDisconnectEnqueueInput {
 
 export function toAuthorisedWsClientConnectEnqueue(
     input: ToAuthorisedWsClientConnectEnqueueInput
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     const connection = toAuthorisedWsClientConnection(input);
     return {
         type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
@@ -51,7 +53,7 @@ export function toAuthorisedWsClientConnectEnqueue(
 
 export function toAuthorisedWsClientDisconnectEnqueue(
     input: ToAuthorisedWsClientDisconnectEnqueueInput
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     const connection = input.connection;
     return {
         type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,

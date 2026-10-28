@@ -205,7 +205,7 @@ function createCanonicalReservation(): CanonicalSummaryReservation {
             payload: {}
         }
     };
-    const queued = computeGroupPresenceSummaryEntry(work, 'summary-handler');
+    const queued = computeGroupPresenceSummaryEntry(work, 'summary-handler', 'trace-group-presence-summary-formation-metrics');
     const entry: ResourceEntry = {
         ...queued,
         status: EntityStatus.RESERVED,

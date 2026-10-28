@@ -29,6 +29,7 @@ export interface ComputeGroupConnectTriggerEntryInput {
     readonly senderId: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 export function computeGroupConnectTriggerEntry(
@@ -54,7 +55,8 @@ export function computeGroupConnectTriggerEntry(
             route: key,
             createdBy,
             createdAtEpochMs: input.createdAtEpochMs,
-            expireAtEpochMs: input.expireAtEpochMs
+            expireAtEpochMs: input.expireAtEpochMs,
+            traceId: input.traceId
         })),
         status: EntityStatus.NEW,
         audit: {
@@ -75,6 +77,7 @@ interface GroupConnectTriggerMessageInput {
     readonly createdBy: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
+    readonly traceId: string;
 }
 
 function toGroupConnectTriggerMessage(input: GroupConnectTriggerMessageInput): ALMessage {
@@ -83,7 +86,8 @@ function toGroupConnectTriggerMessage(input: GroupConnectTriggerMessageInput): A
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: input.route.resourceId,
             ts: input.createdAtEpochMs,
-            senderId: input.createdBy
+            senderId: input.createdBy,
+            traceId: input.traceId
         },
         route: input.route,
         constraints: { expiresAtMs: input.expireAtEpochMs },

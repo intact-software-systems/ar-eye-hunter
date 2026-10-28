@@ -36,7 +36,6 @@ export type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
     actorSessionId: string | null;
     reason: string | null;
-    traceId: string | null;
 }>;
 
 export type ClientMutationOperation =
@@ -261,6 +260,7 @@ export type ClientMutationFacts = Readonly<{
     expireAtEpochMs: number;
     /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
     disconnectedSessionRetentionMs: number;
+    traceId: string;
 }>;
 
 export type ClientMutationCommandInput = ClientMutationCommand extends infer Command ?

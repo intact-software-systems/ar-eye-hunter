@@ -2,7 +2,7 @@ import type { ApiConfigResponse, IceConfig } from '@shared/api/api-config.ts';
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { decodeApiConfigResponse } from './decode-api-config-response.ts';
 
 export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiConfigResponse> {
@@ -15,13 +15,13 @@ export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiCon
         throw new Error('The configured Rallar API base URL is invalid.');
     }
     const decoded = decodeApiConfigResponse(
-        await executeHttpRequest<void, ApiJsonValue>(
-            apiBaseUrl,
-            '/api/config',
-            'GET',
-            undefined,
+        await sendApiHttpRequest<void, ApiJsonValue>({
+            baseUrl: apiBaseUrl,
+            path: '/api/config',
+            method: 'GET',
+            body: undefined,
             options
-        ),
+        }),
         apiUrl
     );
     if (decoded.left !== undefined) {
@@ -34,13 +34,13 @@ export async function readIceCandidates(
     options?: ApiRequestOptions,
     apiBaseUrl = readApiBaseUrl()
 ): Promise<IceConfig> {
-    const response = await executeHttpRequest<void, ApiJsonValue>(
-        apiBaseUrl,
-        '/api/webrtc/ice',
-        'GET',
-        undefined,
+    const response = await sendApiHttpRequest<void, ApiJsonValue>({
+        baseUrl: apiBaseUrl,
+        path: '/api/webrtc/ice',
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
     const issues = validateIceConfigResponse(response, Date.now());
     if (issues.length > 0) {
         throw new Error(issues.join('; '));

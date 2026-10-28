@@ -738,6 +738,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader: harness.reader,
                 authority: harness.sessions.owner,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_CONNECT,
                     resourceId: 'matrix-connect',
                     contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${phasedGroupId}`,
@@ -807,6 +808,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader: harness.reader,
                 authority: harness.sessions.owner,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_CREATE,
                     resourceId: 'connect-create',
                     contextId,
@@ -833,6 +835,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader: harness.reader,
                 authority: harness.sessions.owner,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_PLAN,
                     resourceId: 'connect-plan',
                     contextId,
@@ -854,6 +857,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader: harness.reader,
                 authority: harness.sessions.owner,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_CONNECT,
                     resourceId: 'connect-success',
                     contextId,
@@ -899,6 +903,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 reader: harness.reader,
                 authority: harness.sessions.owner,
                 input: {
+                    traceId: 'trace-test-fixture',
                     type: AppInboxType.GROUP_ACTIVATE,
                     resourceId: 'connect-activate',
                     contextId,

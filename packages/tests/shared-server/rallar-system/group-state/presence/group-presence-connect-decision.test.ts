@@ -279,11 +279,11 @@ function connectCommand(): GroupStateMutationCommand {
                 expiresAtEpochMs: 61_000,
                 actorPrincipalId: 'owner',
                 actorSessionId: 'session-1',
-                reason: null,
-                traceId: null
+                reason: null
             }
         },
         facts: {
+            traceId: 'trace-group-presence-connect-decision',
             nowEpochMs: 2_000,
             attemptAtEpochMs: 2_000,
             expireAtEpochMs: 604_802_000,

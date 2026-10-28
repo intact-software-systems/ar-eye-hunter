@@ -153,6 +153,7 @@ describe('topology AppInbox durable command contract', () => {
         expect(replay.commandHash).toBe(first.commandHash);
 
         const firstIdentity = logicalIdentity({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
             contextId: 'test-context',
             resourceId: first.requestId,
@@ -164,6 +165,7 @@ describe('topology AppInbox durable command contract', () => {
             }
         });
         const replayIdentity = logicalIdentity({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
             contextId: 'test-context',
             resourceId: replay.requestId,
@@ -193,6 +195,7 @@ describe('topology AppInbox durable command contract', () => {
         expect(divergent.commandHash).not.toBe(first.commandHash);
         expect(
             logicalIdentity({
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 contextId: 'test-context',
                 resourceId: first.requestId,
@@ -200,6 +203,7 @@ describe('topology AppInbox durable command contract', () => {
             })
         ).not.toBe(
             logicalIdentity({
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 contextId: 'test-context',
                 resourceId: divergent.requestId,

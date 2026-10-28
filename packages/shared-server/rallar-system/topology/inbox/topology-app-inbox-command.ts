@@ -5,7 +5,7 @@ import {
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
 
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { type AppInboxEnqueue } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
@@ -117,7 +117,7 @@ function computeCanonicalTopologyHttpMutationDigest(
 }
 
 export function decodeAuthenticatedTopologyCommand(
-    enqueue: AppInboxEnqueueInput,
+    enqueue: AppInboxEnqueue,
     authority: IssuedAuthSession
 ): TopologyAppInboxCommand {
     return decodeTopologyCommandForValidatedSession(enqueue, {
@@ -127,7 +127,7 @@ export function decodeAuthenticatedTopologyCommand(
 }
 
 export function decodeTopologyCommandForValidatedSession(
-    enqueue: AppInboxEnqueueInput,
+    enqueue: AppInboxEnqueue,
     expectedActor: Readonly<{ principalId: string; sessionId: string; }>
 ): TopologyAppInboxCommand {
     const command = decodeDurableTopologyAppInboxCommand(enqueue.data);

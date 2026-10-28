@@ -100,10 +100,11 @@ describe('WS server inbound identity', () => {
         try {
             await socket.receive(JSON.stringify({
                 id: {
-                    v: 3,
+                    v: 4,
                     msgId: 'malformed-message',
                     ts: 1,
-                    senderId: 'session-1'
+                    senderId: 'session-1',
+                    traceId: 'trace-ws-server-inbound-identity'
                 },
                 payload: {
                     typeId: 'test.identity.v1',

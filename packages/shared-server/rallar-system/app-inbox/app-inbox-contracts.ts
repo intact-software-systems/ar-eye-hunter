@@ -97,7 +97,8 @@ export function toAppInboxCompletionAwaitability(
     return FIRE_AND_FORGET_APP_INBOX_TYPES.has(type) ? 'fire-and-forget' : 'awaitable';
 }
 
-export interface AppInboxEnqueueInput {
+/** The command an AppInbox entry stores. Its trace rides on the entry's envelope, never inside the command. */
+export interface AppInboxEnqueue {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
@@ -108,11 +109,28 @@ export interface AppInboxEnqueueInput {
     readonly data: JsonWireValue;
 }
 
+export interface AppInboxEnqueueInput extends AppInboxEnqueue {
+    readonly traceId: string;
+}
+
 export interface AppInboxExecutionMetadata {
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
     readonly attemptTelemetry: ResourceInboxAttemptTelemetry;
+}
+
+/**
+ * One attempt of a queued command, read once by its handler from the entry and the stored envelope. The trace enters
+ * the compute facts, never the logical command, so it stays out of every idempotency identity.
+ */
+export interface AppInboxCommandAttempt {
+    readonly attemptCount: number;
+    readonly traceId: string;
+}
+
+export function toAppInboxCommandAttempt(context: AppInboxExecutionMetadata): AppInboxCommandAttempt {
+    return { attemptCount: context.entry.dequeueAudit.attempts, traceId: context.message.id.traceId };
 }
 
 export type AppInboxMessageContext<Result> =

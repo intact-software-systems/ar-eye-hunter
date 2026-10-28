@@ -31,7 +31,6 @@ const MUTATION_ACTOR_FIELDS = [
     'actorPrincipalId',
     'actorSessionId',
     'reason',
-    'traceId',
     'requestId'
 ] as const;
 const CLIENT_PRINCIPAL_STATUSES = ['active', 'disabled', 'deleted'] as const;
@@ -381,7 +380,6 @@ function decodeMutationActor(value: JsonWireObject): MutationActorInput {
         ...optionalStringField(value, 'actorPrincipalId'),
         ...optionalStringField(value, 'actorSessionId'),
         ...optionalStringField(value, 'reason'),
-        ...optionalStringField(value, 'traceId'),
         ...optionalStringField(value, 'requestId')
     };
 }

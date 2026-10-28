@@ -30,7 +30,6 @@ export interface MutationActorInput {
     readonly actorPrincipalId?: string;
     readonly actorSessionId?: string;
     readonly reason?: string;
-    readonly traceId?: string;
     readonly requestId?: string;
 }
 

@@ -209,6 +209,7 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
         enqueue: (resourceId) =>
             queueEntryWriter.enqueue({
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                traceId: 'trace-app-inbox-fixture',
                 resourceId,
                 contextId: 'dequeue-pass-client',
                 data: { requestId: resourceId }

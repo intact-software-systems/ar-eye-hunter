@@ -10,7 +10,7 @@ describe('auth mutation compute router evaluation order', () => {
             const command = trackKind(fixture.command, counts, 'command');
             const read = trackKind(fixture.read, counts, 'read');
             const facts = trackKind(
-                { kind: fixture.command.kind, serviceId: 'auth-service' },
+                { kind: fixture.command.kind, serviceId: 'auth-service', traceId: 'trace-auth-mutation-router-evaluation-order' },
                 counts,
                 'facts'
             );

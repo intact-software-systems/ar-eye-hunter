@@ -233,5 +233,5 @@ export function toALSequenceMintComparableMessage(original: ALMessage, candidate
 
 function outboundMessageIdentity(message: ALMessage): string {
     const id = message.id;
-    return JSON.stringify([id.v, id.senderId, id.msgId, id.ts, id.sessionId ?? null, id.traceId ?? null]);
+    return JSON.stringify([id.v, id.senderId, id.msgId, id.ts, id.sessionId ?? null, id.traceId]);
 }

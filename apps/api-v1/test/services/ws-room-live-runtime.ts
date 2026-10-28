@@ -96,7 +96,13 @@ export async function waitForRoomSends(isSettled: () => boolean): Promise<void> 
 }
 
 export function receiverAck(message: ALMessage, recipient: string): ALMessage {
-    return newALAckControlMessage({ v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+    return newALAckControlMessage({
+        v: 4,
+        msgId: `ack-${recipient}`,
+        senderId: recipient,
+        ts: Date.now(),
+        traceId: 'trace-ws-room-live-runtime'
+    }, {
         ackedMsgId: message.id.msgId,
         fromPeerId: recipient,
         toPeerId: message.id.senderId,

@@ -253,6 +253,11 @@ admitted message per 60 s; a session whose ACKs fail that proof 60 times in 60 s
 unread. A notice that cannot be published is admitted where it arrived, where it counts nothing; the origin's
 ACK-timeout retry recovers it (D106; outbound README, "Server receipts on WS").
 
+Every control carries its subject's trace. The commit bundle stamps the ACK, NACK and repair controls
+it writes with the admitted message's `id.traceId`. The WS server's inbound-authority NACK takes the
+refused message's trace. The relay ACK takes the admitted ACK's own trace, which is the acknowledged
+message's, because every ACK is built from the message it acknowledges; the owner row stores no trace.
+
 The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
 content, not a key segment, because message ids are origin-unique and no
@@ -385,6 +390,10 @@ The roster-fence bump (D147) followed because every room send's targets carry th
 `rosterVersion` (a multicast's in place of `membershipEpoch`, a room broadcast's beside
 `minSnapshotVersion`) and the envelope version moved to `AL_MESSAGE_ENVELOPE_VERSION = 3`; a row an
 older build wrote carries `id.v: 2`, which the one envelope decoder refuses `unsupported`.
+The trace bump (D447) followed because every envelope now carries a required `id.traceId`
+(1 to 128 characters of `[A-Za-z0-9_-]`, decoded by `decodeALTraceId`) and the envelope version moved
+to `AL_MESSAGE_ENVELOPE_VERSION = 4`. The one envelope decoder refuses a missing or malformed trace
+`malformed` and a `v: 3` row an older build wrote `unsupported`. No row is migrated.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -434,12 +443,15 @@ page still running the old build sends is refused `unsupported` (`al.control.nac
 `al.control.repair.v1`) until that page reloads, symmetrically with the acknowledgement cutover
 above.
 
-**The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
-makes older browser schemas incompatible, which current opening refuses without resetting them.
-On the server, a row an older build wrote holds a `v: 2` envelope and fails
-decoding `unsupported` at its next read; no row is migrated. A page still running the old build
-sends `v: 2` envelopes and controls, refused `unsupported` until it reloads; it refuses this build's
-`v: 3` symmetrically.
+**The envelope-version window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
+(D147) made older browser schemas incompatible, which current opening refuses without resetting them.
+The trace bump (D447) moved the envelope from `v: 3` to `v: 4` with a required `id.traceId`. On the
+server, a row an older build wrote holds an older envelope and fails decoding `unsupported` at its
+next read; no row is migrated. A persisted topology publication from before `v: 4` has no `traceId`
+and is refused as unsupported: replay treats it as a gap and re-hydrates from current topology, and
+listings skip it, with no backfill. A page still running an older build sends older
+envelopes and controls, refused `unsupported` until it reloads; it refuses this build's `v: 4`
+symmetrically.
 
 Web and API deploy together.
 

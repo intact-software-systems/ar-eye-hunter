@@ -149,6 +149,7 @@ function createFacadeDouble(serverPeerId: string | undefined, outcome: RallarMes
         msgId: LIFECYCLE.msgId,
         typeId: LIFECYCLE.typeId,
         corrId: LIFECYCLE.msgId,
+        traceId: 'trace-send-relic-planning-request',
         replyToMsgId: undefined,
         rtcCapture: unusedByARequest,
         lifecycle: () => LIFECYCLE,

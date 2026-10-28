@@ -79,6 +79,7 @@ async function createMemberHarness(groupId: string): Promise<AuthorityHarness> {
             reader: harness.reader,
             authority: harness.sessions.alice,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_JOIN,
                 resourceId: `${groupId}-join`,
                 contextId: groupId,
@@ -124,6 +125,7 @@ async function setAliceRole(
             reader: harness.reader,
             authority: harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_MEMBER_ROLE_SET,
                 resourceId: `${groupId}-${role}`,
                 contextId: groupId,
@@ -145,6 +147,7 @@ async function updateAsAlice(harness: AuthorityHarness, groupId: string, display
         reader: harness.reader,
         authority: harness.sessions.alice,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_UPDATE,
             resourceId: `${groupId}-update`,
             contextId: groupId,

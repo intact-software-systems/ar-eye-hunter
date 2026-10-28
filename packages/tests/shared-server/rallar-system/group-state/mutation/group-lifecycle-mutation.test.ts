@@ -545,7 +545,6 @@ describe('group lifecycle transition computation', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 observedRate: 0.2,
                 expectedFormationEpoch: null,
                 expectedLayout: null
@@ -660,7 +659,6 @@ function connectCommand(
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
             reason: null,
-            traceId: null,
             expectedFormationEpoch: extras.expectedFormationEpoch,
             expectedLayout: extras.expectedLayout,
             connectTriggerGeneration: null
@@ -717,7 +715,6 @@ function criterionCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             observedRate: extras.observedRate,
             expectedFormationEpoch: extras.expectedFormationEpoch ?? null,
             expectedLayout: extras.expectedLayout ?? null,

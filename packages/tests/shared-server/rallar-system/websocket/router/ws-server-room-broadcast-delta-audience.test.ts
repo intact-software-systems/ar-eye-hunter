@@ -76,6 +76,7 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
         });
         const snapshot = createDeltaEnvelopeFixtureGroupSnapshot([ALICE, JOINING]);
         const entries = computeGroupStateSyncEntries({
+            traceId: 'trace-ws-server-room-broadcast-delta-audience',
             commandId: 'snapshot-command',
             aggregateRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF,
             acceptedCausalRevision: snapshot.causalRevision,

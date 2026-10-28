@@ -1,6 +1,7 @@
 import { assertGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/assert-topology-config-records.ts';
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { describe, expect, it } from 'vitest';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import {
@@ -37,6 +38,7 @@ describe('group topology config mutation compute', () => {
         if (first.outcome !== 'write') {
             throw new Error('Expected an applied topology config mutation');
         }
+        expect(decodePersistedALMessage(first.outboxWrite.entry.resource).id.traceId).toBe(input.facts.traceId);
         expect(() =>
             assertMutationRecord(input, {
                 ...first.receipt,
@@ -114,6 +116,7 @@ function deterministicMutationInput() {
         facts: {
             policyNowEpochMs: 1_000,
             attemptCount: 1,
+            traceId: 'trace-group-topology-config-mutation-compute',
             isPlatformAdmin: false,
             resolvedOverrideExpiresAtEpochMs: null,
             deleteTarget: null,

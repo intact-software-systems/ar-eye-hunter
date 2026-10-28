@@ -16,6 +16,9 @@ import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.
 import { createTestGroupStateRuntime, createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 
+/** The trace every test expansion carries, as the reserved row's envelope would. */
+export const SUMMARY_EXPANSION_TRACE_ID = 'trace-group-presence-test-runtime';
+
 export function createService(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number | (() => number),
@@ -121,7 +124,12 @@ export function toSummaryExpansion(
     command: GroupPresenceSummaryWorkData,
     read: GroupPresenceSummaryWorkRead
 ): GroupPresenceSummaryExpansionInput {
-    return { work: command, read, state: computeGroupPresenceSummaryState(command, read) };
+    return {
+        work: command,
+        read,
+        state: computeGroupPresenceSummaryState(command, read),
+        traceId: SUMMARY_EXPANSION_TRACE_ID
+    };
 }
 
 /** The single-item read: one work row expanded alone under its own reservation, as the delta and replan cases exercise it. */
@@ -131,7 +139,7 @@ export async function readSummaryWork(
     nowEpochMs: number
 ): Promise<GroupPresenceSummaryWorkRead> {
     const reads = await work.read(
-        [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+        [{ work: command, reservation: summaryReservationRead(command.commandId), traceId: SUMMARY_EXPANSION_TRACE_ID }],
         nowEpochMs
     );
     const [read] = reads.right ?? [];

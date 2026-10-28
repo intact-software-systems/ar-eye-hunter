@@ -39,6 +39,7 @@ describe('retired room creation through AppInbox', () => {
             resourceId: 'recreate-retired-room',
             contextId: ref.groupId,
             senderId: 'owner',
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 request: {

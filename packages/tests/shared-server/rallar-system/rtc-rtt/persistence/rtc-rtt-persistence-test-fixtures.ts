@@ -58,12 +58,14 @@ export async function executeRtcRttMutation(
             commandHash,
             attemptCount: input.attemptCount,
             requestedAtEpochMs: null,
-            purgeAfterEpochMs: null
+            purgeAfterEpochMs: null,
+            traceId: 'trace-rtc-rtt-persistence-test-fixtures'
         } as const)
         : {
             ...lifecycle!,
             commandHash,
-            attemptCount: input.attemptCount
+            attemptCount: input.attemptCount,
+            traceId: 'trace-rtc-rtt-persistence-test-fixtures'
         };
     const computed = computeRtcRttMutation({ command, read, facts });
     validateRtcRttMutation({ command, read, facts, computed });
@@ -213,6 +215,7 @@ export function createValidRttWriteCandidate(): Extract<RtcRttMutationComputed, 
             incidentMeasurements: []
         },
         facts: {
+            traceId: 'trace-rtc-rtt-persistence-test-fixtures',
             commandHash: `sha256:${'a'.repeat(64)}`,
             attemptCount: 1,
             requestedAtEpochMs: 2,

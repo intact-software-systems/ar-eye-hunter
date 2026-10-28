@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -32,6 +32,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
@@ -133,7 +134,7 @@ Deno.test(
             };
             const appGroup = createAppGroup(inboxReader, 5_000);
             const createRouteApp = (service: TopologyInboxService) => {
-                const app = new Hono();
+                const app = createTracedApiTestApp();
                 graphTopologyRoutes.registerGraphTopologyRoutes(app, {
                     strictReadAuthorization: false,
                     groupStateService: {
@@ -541,13 +542,13 @@ Deno.test(
             const firstComputed = mutation.compute(
                 command,
                 firstRead,
-                1
+                { attemptCount: 1, traceId: 'trace-pglite-topology-retry' }
             );
             assert.deepEqual(
                 mutation.validate({
                     command,
                     read: firstRead,
-                    attemptCount: 1,
+                    attempt: { attemptCount: 1, traceId: 'trace-pglite-topology-retry' },
                     computed: firstComputed
                 }),
                 []
@@ -561,11 +562,14 @@ Deno.test(
                 /conditional write conflict/
             );
             const retryRead = await mutation.read(command);
-            const retryComputed = mutation.compute(command, retryRead, 2);
+            const retryComputed = mutation.compute(command, retryRead, {
+                attemptCount: 2,
+                traceId: 'trace-pglite-topology-retry'
+            });
             const retryIssues = mutation.validate({
                 command,
                 read: retryRead,
-                attemptCount: 2,
+                attempt: { attemptCount: 2, traceId: 'trace-pglite-topology-retry' },
                 computed: retryComputed
             });
             assert.equal(retryIssues.length, 1);

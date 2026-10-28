@@ -547,11 +547,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "match-lobby-blocked-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
-            "sessionId": "{bobSessionId}"
+            "sessionId": "{bobSessionId}",
+            "traceId": "trace-api-v1-match-preset"
           },
           "route": {
             "topicId": "room.match",
@@ -1218,11 +1219,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "match-arena-rtt-{runId}",
             "ts": 0,
             "senderId": "{arenaRttReporter.sessionIdFrom}",
-            "sessionId": "{arenaRttReporter.sessionIdFrom}"
+            "sessionId": "{arenaRttReporter.sessionIdFrom}",
+            "traceId": "trace-api-v1-match-preset"
           },
           "route": {
             "topicId": "rtt",
@@ -1277,11 +1279,12 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "match-arena-live-{runId}",
             "ts": 0,
             "senderId": "{danSessionId}",
-            "sessionId": "{danSessionId}"
+            "sessionId": "{danSessionId}",
+            "traceId": "trace-api-v1-match-preset"
           },
           "route": {
             "topicId": "room.match",

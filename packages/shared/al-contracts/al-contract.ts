@@ -2,13 +2,14 @@ import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
 import { toALPrincipalBroadcastTargets } from './read-al-principal-broadcast-target.ts';
+import { newALTraceId } from './trace/al-trace-id.ts';
 
 // -------------------------------------------------------
 // 1) Message identity
 // -------------------------------------------------------
 
 /** The one envelope version this build stamps and accepts; a decoder refuses any other as `unsupported`. */
-export const AL_MESSAGE_ENVELOPE_VERSION = 3 as const;
+export const AL_MESSAGE_ENVELOPE_VERSION = 4 as const;
 
 export type ALMessageId = Readonly<{
     v: typeof AL_MESSAGE_ENVELOPE_VERSION;
@@ -16,7 +17,7 @@ export type ALMessageId = Readonly<{
     ts: number; // sender timestamp (epoch ms)
     senderId: string; // stable sender identity (clientId / principalId / nodeId)
     sessionId?: string; // reconnect/session tracing
-    traceId?: string; // end-to-end tracing
+    traceId: string;
 }>;
 
 // -------------------------------------------------------
@@ -178,6 +179,7 @@ type ALMessageBuilderOptions = Readonly<{
     qos?: ALQosPolicyRequest;
     ttlMs?: number;
     actions?: ALActions;
+    traceId?: string;
 }>;
 
 export type ALBroadcastMessageBuilderOptions = Readonly<{
@@ -191,6 +193,7 @@ export type ALBroadcastMessageBuilderOptions = Readonly<{
     ownership?: 'shared' | 'exclusive';
     qos?: ALQosPolicyRequest;
     actions?: ALActions;
+    traceId?: string;
     /** A sequence left out is minted by the WS server's outbound for its own publication. */
     ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
 }>;
@@ -242,7 +245,8 @@ function buildALMessage<T>(
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId,
             ts: now,
-            senderId: senderId
+            senderId: senderId,
+            traceId: options?.traceId ?? newALTraceId()
         },
         route,
         constraints: expiresAtMs !== undefined
@@ -318,12 +322,14 @@ export function newALMulticastMessage<T>(
         fanoutLimit?: number;
         qos?: ALQosPolicyRequest;
         actions?: ALActions;
+        traceId?: string;
     }>
 ): ALMessage {
     const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
         qos: options?.qos,
         ttlMs: options?.ttlMs,
-        actions: options?.actions
+        actions: options?.actions,
+        traceId: options?.traceId
     });
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
     const targetGroupRef = toALGroupRef(groupRef);
@@ -440,7 +446,8 @@ export function newALBroadcastMessage<T>(
     const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
         qos: options?.qos,
         ttlMs: options?.ttlMs,
-        actions: options?.actions
+        actions: options?.actions,
+        traceId: options?.traceId
     });
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
 

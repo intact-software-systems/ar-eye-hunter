@@ -291,6 +291,7 @@ interface ProcessGroupRevisionInput {
 
 async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroupRevisionInput): Promise<ResourceEntry> {
     const work = computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-formation-criterion-fingerprint',
         aggregateRef: input.group.group,
         groupSnapshot: input.group,
         origin: input.origin,

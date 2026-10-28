@@ -121,6 +121,7 @@ export interface ComputeGroupPresenceSummaryOutboxInput {
     readonly snapshot: GroupSnapshot;
     readonly audience: StateSyncAudience;
     readonly serviceId: string;
+    readonly traceId: string;
 }
 
 export interface ComputeGroupStateDeltaEnvelopeInput {
@@ -136,6 +137,7 @@ export interface GroupPresenceSummaryExpansionInput {
     readonly work: GroupPresenceSummaryWorkData;
     readonly read: GroupPresenceSummaryWorkRead;
     readonly state: GroupPresenceSummaryState;
+    readonly traceId: string;
 }
 
 export interface ValidateGroupPresenceSummaryComputedWorkInput {
@@ -150,6 +152,7 @@ interface ToGroupPresenceSummaryOutboxInputInput {
     readonly summary: GroupPresenceSummaryComputed;
     readonly snapshot: GroupSnapshot;
     readonly options: ComputeGroupPresenceSummaryWorkOptions;
+    readonly traceId: string;
 }
 
 /**
@@ -165,13 +168,14 @@ export function computeGroupPresenceSummaryWork(
     expansion: GroupPresenceSummaryExpansionInput,
     options: ComputeGroupPresenceSummaryWorkOptions
 ): GroupPresenceSummaryComputedWork {
-    const { work, read, state: { summary, snapshot } } = expansion;
+    const { work, read, state: { summary, snapshot }, traceId } = expansion;
     const outboxInput = toGroupPresenceSummaryOutboxInput({
         work,
         read,
         summary,
         snapshot,
-        options
+        options,
+        traceId
     });
     const downstreamOutboxEntries = computeGroupPresenceSummaryOutboxEntries(outboxInput);
     return {
@@ -180,7 +184,7 @@ export function computeGroupPresenceSummaryWork(
         summaryWrite: computeGroupPresenceSummaryWrite(summary, read.presence.group.entry.revision),
         snapshot,
         downstreamOutboxWrites: downstreamOutboxEntries.map(computeAppOutboxInsert),
-        topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options }),
+        topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options, traceId }),
         reservationFinish: {
             key: { ...read.reservation.key },
             expectedAttempts: read.reservation.expectedAttempts,
@@ -293,7 +297,8 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
             timing: toTopologyReplanTiming({ read, snapshot, options }),
             senderId: options.serviceId,
             origin: toTopologyReplanOrigin(work),
-            previousEntry: read.coalescedTopologyEntry
+            previousEntry: read.coalescedTopologyEntry,
+            traceId: input.traceId
         })
     };
 }
@@ -365,7 +370,7 @@ export function validateGroupPresenceSummaryComputedWork(
 function toGroupPresenceSummaryOutboxInput(
     input: ToGroupPresenceSummaryOutboxInputInput
 ): ComputeGroupPresenceSummaryOutboxInput {
-    const { work, read, summary, snapshot, options } = input;
+    const { work, read, summary, snapshot, options, traceId } = input;
     return {
         work,
         coalescedEvents: read.coalescedEvents,
@@ -378,14 +383,15 @@ function toGroupPresenceSummaryOutboxInput(
             workspaceId: work.aggregateRef.workspaceId,
             resourceId: work.aggregateRef.groupId
         },
-        serviceId: options.serviceId
+        serviceId: options.serviceId,
+        traceId
     };
 }
 
 function computeGroupPresenceSummaryOutboxEntries(
     input: ComputeGroupPresenceSummaryOutboxInput
 ): readonly ResourceEntry[] {
-    const { work, audience, serviceId } = input;
+    const { work, audience, serviceId, traceId } = input;
     return computeGroupStateSyncEntries(
         {
             commandId: work.commandId,
@@ -394,7 +400,8 @@ function computeGroupPresenceSummaryOutboxEntries(
             audience,
             createdAtEpochMs: work.createdAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
-            effects: [computeGroupStateEventEffect(input)]
+            effects: [computeGroupStateEventEffect(input)],
+            traceId
         },
         serviceId
     );

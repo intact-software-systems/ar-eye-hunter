@@ -16,6 +16,7 @@ interface MutablePersistedALMessageFixture {
         msgId: string;
         ts: number;
         senderId: string;
+        traceId: string;
     };
     route: {
         topicId: string;
@@ -59,10 +60,11 @@ describe('persisted AL message decoding', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 3,
+                    v: 4,
                     msgId: 'message-1',
                     ts: 1,
-                    senderId: 'server-1'
+                    senderId: 'server-1',
+                    traceId: 'trace-al-message-persistence-decoding'
                 },
                 route: {
                     topicId: 'topic-1',
@@ -82,10 +84,11 @@ describe('persisted AL message decoding', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 3,
+                    v: 4,
                     msgId: 'message-1',
                     ts: 1,
-                    senderId: 'server-1'
+                    senderId: 'server-1',
+                    traceId: 'trace-al-message-persistence-decoding'
                 },
                 route: {
                     topicId: 'topic-1',
@@ -108,10 +111,11 @@ describe('persisted AL message decoding', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 3,
+                    v: 4,
                     msgId: 'message-1',
                     ts: 1,
-                    senderId: 'server-1'
+                    senderId: 'server-1',
+                    traceId: 'trace-al-message-persistence-decoding'
                 },
                 route: {
                     topicId: 'overlay.topology',
@@ -147,7 +151,7 @@ describe('persisted AL message decoding', () => {
         { label: 'a repeated recipient', audience: { recipientPeerIds: ['session-a', 'session-a'], snapshotVersion: 4 }, accepted: false }
     ])('decodes $label only when the frozen audience pair is whole', ({ audience, accepted }) => {
         const decoded = decodeALMessageValue({
-            id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'session-origin' },
+            id: { v: 4, msgId: 'message-1', ts: 1, senderId: 'session-origin', traceId: 'trace-al-message-persistence-decoding' },
             route: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'room-1' },
             targets: {
                 mode: 'multicast',
@@ -176,7 +180,7 @@ describe('persisted AL message decoding', () => {
         }
     ])('decodes $label only when the roster field is a version', ({ targets, accepted }) => {
         const decoded = decodeALMessageValue({
-            id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'session-origin' },
+            id: { v: 4, msgId: 'message-1', ts: 1, senderId: 'session-origin', traceId: 'trace-al-message-persistence-decoding' },
             route: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'room-1' },
             targets: {
                 groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
@@ -191,9 +195,9 @@ describe('persisted AL message decoding', () => {
     it('stamps the current envelope version and refuses any other as unsupported', () => {
         const current = currentPersistedALMessage();
 
-        expect(AL_MESSAGE_ENVELOPE_VERSION).toBe(3);
+        expect(AL_MESSAGE_ENVELOPE_VERSION).toBe(4);
         expect(decodeALMessageValue(current).left).toBeUndefined();
-        for (const v of [2, 4]) {
+        for (const v of [3, 5]) {
             expect(decodeALMessageValue({ ...current, id: { ...current.id, v } }).left).toEqual({
                 code: 'unsupported',
                 message: 'AL envelope version is unsupported'
@@ -201,14 +205,33 @@ describe('persisted AL message decoding', () => {
         }
     });
 
+    it('keeps the trace of a persisted envelope through a round trip', () => {
+        const current = currentPersistedALMessage();
+
+        expect(decodePersistedALMessage(JSON.stringify(current)).id.traceId).toBe('trace-persistence-decoding');
+    });
+
+    it('refuses an envelope without a trace as malformed', () => {
+        const { traceId: _traceId, ...untraced } = currentPersistedALMessage().id;
+
+        expect(decodeALMessageValue({ ...currentPersistedALMessage(), id: untraced }).left?.code).toBe('malformed');
+    });
+
+    it.each(['', 'a'.repeat(129), 'trace 01', 'trace:01', 7])('refuses the malformed trace %j as malformed', (traceId) => {
+        const current = currentPersistedALMessage();
+
+        expect(decodeALMessageValue({ ...current, id: { ...current.id, traceId } }).left?.code).toBe('malformed');
+    });
+
     it('accepts the current principal broadcast target shape', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 3,
+                    v: 4,
                     msgId: 'message-1',
                     ts: 1,
-                    senderId: 'server-1'
+                    senderId: 'server-1',
+                    traceId: 'trace-al-message-persistence-decoding'
                 },
                 route: {
                     topicId: 'state-sync',
@@ -235,10 +258,11 @@ describe('persisted AL message decoding', () => {
     it('decodes a serialized current envelope and rejects malformed stored shapes', () => {
         const serialized = JSON.stringify({
             id: {
-                v: 3,
+                v: 4,
                 msgId: 'message-1',
                 ts: 1,
-                senderId: 'server-1'
+                senderId: 'server-1',
+                traceId: 'trace-al-message-persistence-decoding'
             },
             route: {
                 topicId: 'topic-1',
@@ -291,10 +315,11 @@ describe('persisted AL message decoding', () => {
 function currentPersistedALMessage(): MutablePersistedALMessageFixture {
     return {
         id: {
-            v: 3,
+            v: 4,
             msgId: 'message-1',
             ts: 1,
-            senderId: 'server-1'
+            senderId: 'server-1',
+            traceId: 'trace-persistence-decoding'
         },
         route: {
             topicId: 'topic-1',

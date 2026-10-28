@@ -11,6 +11,7 @@ export namespace RecomputeApiAdminTopology {
     export interface Input {
         readonly adminSession: IssuedAuthSession;
         readonly requestId: string;
+        readonly traceId: string;
         readonly request: AdminTopologyRecomputeRequest;
     }
 
@@ -46,6 +47,7 @@ export class RecomputeApiAdminTopology {
                 {
                     operation: requestPayload.operation,
                     requestId: input.requestId,
+                    traceId: input.traceId,
                     callerId: input.adminSession.clientId,
                     groupRef: input.request.groupRef,
                     semanticHash,

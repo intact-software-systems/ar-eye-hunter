@@ -17,6 +17,7 @@ import {
     createLiveGroupStateRouteAuthSession,
     createOwnerGroupStateRouteSnapshot,
     createRejectingGroupStateRouteTestRuntime,
+    GROUP_ROUTE_TRACE_ID,
     postGroupStateMutation,
     putGroupStateMutation,
     TEST_GROUP_SCOPE,
@@ -59,6 +60,7 @@ const EXPECTED_CREATE_COMMAND = {
     resourceId: 'group-route-create-body',
     contextId: 'application=app-1:workspace=workspace-1:group=room%2F1:caller=alice',
     senderId: 'alice',
+    traceId: GROUP_ROUTE_TRACE_ID,
     data: {
         scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
         request: {
@@ -79,6 +81,7 @@ const EXPECTED_AGGREGATE_COMMANDS = [
         resourceId: 'group-route-update-body',
         contextId: 'application=app-1:workspace=workspace-1:group=room-2:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-2',
@@ -96,6 +99,7 @@ const EXPECTED_AGGREGATE_COMMANDS = [
         resourceId: 'group-route-appoint-body',
         contextId: 'application=app-1:workspace=workspace-1:group=room-3:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-3',
@@ -150,6 +154,7 @@ Deno.test('group create command retains its authenticated AppInbox envelope', ()
         operation: 'create-group',
         authSession: createGroupStateRouteAuthSession('alice'),
         scope: TEST_GROUP_SCOPE,
+        traceId: GROUP_ROUTE_TRACE_ID,
         request: {
             groupId: 'room/1',
             displayName: 'Room',
@@ -167,6 +172,7 @@ Deno.test('group command output keeps create payloads isolated from updates', ()
         operation: 'create-group',
         authSession: createGroupStateRouteAuthSession('alice'),
         scope: TEST_GROUP_SCOPE,
+        traceId: GROUP_ROUTE_TRACE_ID,
         request: {
             groupId: 'room-1',
             displayName: 'Room',
@@ -191,6 +197,7 @@ Deno.test('group aggregate commands retain update and director envelopes', () =>
             operation: 'update-group',
             authSession,
             scope: TEST_GROUP_SCOPE,
+            traceId: GROUP_ROUTE_TRACE_ID,
             groupId: 'room-2',
             request: {
                 displayName: 'Renamed',
@@ -203,6 +210,7 @@ Deno.test('group aggregate commands retain update and director envelopes', () =>
             operation: 'appoint-group-director',
             authSession,
             scope: TEST_GROUP_SCOPE,
+            traceId: GROUP_ROUTE_TRACE_ID,
             groupId: 'room-3',
             request: {
                 heartbeatTtlMs: 20,
@@ -226,6 +234,7 @@ Deno.test('group AppInbox keys isolate operation, caller, and complete GroupRef'
         operation: 'update-group',
         authSession,
         scope,
+        traceId: GROUP_ROUTE_TRACE_ID,
         groupId,
         request: { displayName: 'Same intent', requestId }
     });
@@ -241,6 +250,7 @@ Deno.test('group AppInbox keys isolate operation, caller, and complete GroupRef'
             operation: 'appoint-group-director',
             authSession: alice,
             scope: TEST_GROUP_SCOPE,
+            traceId: GROUP_ROUTE_TRACE_ID,
             groupId: 'room-1',
             request: { requestId }
         })
@@ -261,6 +271,26 @@ Deno.test('group mutation response retains snapshot identity', () => {
         written: toGroupStateWritten(snapshot)
     });
     assert.strictEqual(response.snapshot, snapshot);
+});
+Deno.test('group mutation routes hand the request trace to the AppInbox enqueue and refuse a body trace', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({
+        processGroupAppInbox: captureGroupStateRouteWrite(enqueued, createGroupStateRouteSnapshot('room-1'))
+    });
+    const requestCreate = (requestId: string, headers: Record<string, string>, body: object) =>
+        runtime.app.request(`${API_BASE}/requests/${requestId}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...headers },
+            body: JSON.stringify({ groupId: 'room-1', displayName: 'Room', kind: 'room', ...body })
+        });
+
+    const traced = await requestCreate('group-route-traced-request', { 'x-request-id': 'trace-group-route' }, {});
+    const bodyTraced = await requestCreate('group-route-body-trace-request', {}, { traceId: 'trace-in-body' });
+
+    assert.equal(traced.status, 201);
+    assert.equal(traced.headers.get('x-request-id'), 'trace-group-route');
+    assert.equal(bodyTraced.status, 400);
+    assert.deepEqual(enqueued.map((enqueue) => enqueue.traceId), ['trace-group-route']);
 });
 Deno.test('group aggregate routes retain their AppInbox envelopes', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];

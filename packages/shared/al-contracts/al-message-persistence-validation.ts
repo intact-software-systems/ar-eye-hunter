@@ -21,6 +21,7 @@ import {
     validateSerializedALMessageSize,
     type ALMessageByteLimits
 } from './al-message-resource-limits.ts';
+import { decodeALTraceId } from './trace/al-trace-id.ts';
 
 export interface ALMessageRejection {
     readonly code: 'malformed' | 'oversized' | 'unauthorized' | 'unsupported';
@@ -227,7 +228,8 @@ function assertId(value: PersistedALValue): void {
         'v',
         'msgId',
         'ts',
-        'senderId'
+        'senderId',
+        'traceId'
     ]);
     if (id.v !== AL_MESSAGE_ENVELOPE_VERSION) {
         throw new TypeError('Persisted AL id version is invalid');
@@ -236,7 +238,10 @@ function assertId(value: PersistedALValue): void {
     requirePersistedALSafeInteger(id.ts, 0, 'id timestamp');
     requirePersistedALNonEmptyString(id.senderId, 'id sender');
     requireOptionalPersistedALNonEmptyString(id.sessionId, 'id session');
-    requireOptionalPersistedALNonEmptyString(id.traceId, 'id trace');
+    const traceIssue = decodeALTraceId(id.traceId).left;
+    if (traceIssue !== undefined) {
+        throw new TypeError(`Persisted AL id trace is invalid: ${traceIssue.message}`);
+    }
 }
 
 function assertRoute(value: PersistedALValue): void {

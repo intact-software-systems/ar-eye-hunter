@@ -2,7 +2,12 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { type AppInboxEnqueueInput, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    toAppInboxCommandAttempt,
+    type AppInboxCommandAttempt,
+    type AppInboxEnqueue,
+    type AppInboxMessageContext
+} from '../../app-inbox/app-inbox-contracts.ts';
 import {
     computeAppInboxCompletion,
     validateAppInboxCompletion,
@@ -176,9 +181,9 @@ export class TopologyAppInboxHandler {
     }
 
     async createAuthenticatedEnqueue(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         authority: IssuedAuthSession
-    ): Promise<AppInboxEnqueueInput> {
+    ): Promise<AppInboxEnqueue> {
         return await createAuthenticatedTopologyEnqueue({
             enqueue,
             claimedAuthority: authority,
@@ -200,9 +205,9 @@ export class TopologyAppInboxHandler {
     }
 
     async createAuthenticatedEnqueueFromValidatedSession(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         currentSession: PersistedAuthSession
-    ): Promise<AppInboxEnqueueInput> {
+    ): Promise<AppInboxEnqueue> {
         return await createAuthenticatedTopologyEnqueueFromValidatedSession({
             enqueue,
             currentSession
@@ -230,18 +235,18 @@ export class TopologyAppInboxHandler {
         }
         const command = toTopologyConfigMutationCommand(authority.command);
         const read = await owners.configMutationService.read(command);
-        const attemptCount = context.entry.dequeueAudit.attempts;
+        const attempt = toAppInboxCommandAttempt(context);
         const computed = this.computeTopologyConfigOperation(
             command,
             read,
-            attemptCount,
+            attempt,
             completionFacts,
             owners.configMutationService
         );
         const validationIssues = this.validateTopologyConfigOperation(
             command,
             read,
-            attemptCount,
+            attempt,
             completionFacts,
             owners.configMutationService,
             computed
@@ -293,7 +298,7 @@ export class TopologyAppInboxHandler {
             ),
             publish: authority.command.payload.publish
         };
-        const read = await mutation.read(command);
+        const read = await mutation.read(command, toAppInboxCommandAttempt(context));
         const computed = this.computeTopologyReconfigureOperation(
             command,
             read,
@@ -325,11 +330,11 @@ export class TopologyAppInboxHandler {
     private computeTopologyConfigOperation(
         command: GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number,
+        attempt: AppInboxCommandAttempt,
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService']
     ): TopologyConfigOperationComputed {
-        const mutationComputed = mutation.compute(command, read, attemptCount);
+        const mutationComputed = mutation.compute(command, read, attempt);
         if (mutationComputed.outcome === 'idempotency-conflict') {
             return { outcome: 'idempotency-conflict', mutation: mutationComputed };
         }
@@ -350,7 +355,7 @@ export class TopologyAppInboxHandler {
     private validateTopologyConfigOperation(
         command: GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number,
+        attempt: AppInboxCommandAttempt,
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService'],
         computed: TopologyConfigOperationComputed
@@ -358,7 +363,7 @@ export class TopologyAppInboxHandler {
         const validation = {
             command,
             read,
-            attemptCount,
+            attempt,
             computed: computed.mutation
         };
         const mutationIssues = mutation.validate(validation);

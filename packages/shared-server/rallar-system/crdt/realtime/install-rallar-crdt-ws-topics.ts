@@ -209,7 +209,8 @@ async function respondToDurableCatchUpRequest(
                 input.accepted.envelope.requestId
             ),
             RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
-            response
+            response,
+            { traceId: input.accepted.raw.id.traceId }
         ),
         fanout: 'live-only'
     });

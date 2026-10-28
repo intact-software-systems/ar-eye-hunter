@@ -85,14 +85,14 @@ function toGapReport(revealing: ALMessage, trackKey: string, missingRanges: read
 
 function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason'>): ALMessage {
     return newALNackControlMessage(
-        { v: 3, msgId: controlMsgId, ts: 1, senderId: 'peer-1' },
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-exhaustion' },
         { ...report, reason: 'gap' }
     );
 }
 
 function toMissingSeqRepair(controlMsgId: string, report: Omit<ALRepairPayload, 'reason'>): ALMessage {
     return newALRepairControlMessage(
-        { v: 3, msgId: controlMsgId, ts: 1, senderId: 'peer-1' },
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-exhaustion' },
         { ...report, reason: 'missing-seq' }
     );
 }
@@ -105,10 +105,13 @@ function toSkippedRepairs(settlements: readonly (ALDeliverySettlement | ALOutbou
     );
 }
 
+type RepairPlanners = Pick<ALOutboundRepairRetransmission.Dependencies<OutboundTestPayload>, 'planOutgoingMessage' | 'planRepairMessage'>;
+
 /** The repair-by-hint owner over the runtime's stores, as the lane builds it, executing hints on demand. */
 function createRepairRetransmission(
     stores: OutboundTestStores,
-    settlements: ALOutboundSettlementFact[]
+    settlements: ALOutboundSettlementFact[],
+    planners: RepairPlanners
 ): ALOutboundRepairRetransmission<OutboundTestPayload> {
     const record = (fact: ALOutboundSettlementFact): void => {
         settlements.push(fact);
@@ -125,8 +128,8 @@ function createRepairRetransmission(
             diagnostics: undefined,
             settlements: record
         }),
-        planOutgoingMessage,
-        planRepairMessage,
+        planOutgoingMessage: planners.planOutgoingMessage,
+        planRepairMessage: planners.planRepairMessage,
         hopPeerIds: undefined,
         settlements: record
     });
@@ -258,7 +261,7 @@ describe('the repair budget runs out', () => {
         }
         await waitForOutboundWorkDrained(stores);
         const settlements: ALOutboundSettlementFact[] = [];
-        const retransmission = createRepairRetransmission(stores, settlements);
+        const retransmission = createRepairRetransmission(stores, settlements, { planOutgoingMessage, planRepairMessage });
         const gap: ALOutboundRepairHint = {
             trigger: 'nack',
             requestedByPeerId: 'peer-1',
@@ -310,7 +313,7 @@ describe('a ranged hint whose sequences have left the sent cache', () => {
         }
         await waitForOutboundWorkDrained(stores);
         const settlements: ALOutboundSettlementFact[] = [];
-        const retransmission = createRepairRetransmission(stores, settlements);
+        const retransmission = createRepairRetransmission(stores, settlements, { planOutgoingMessage, planRepairMessage });
         const revealing = track[2]!;
         const gapBeforeTheCache: ALOutboundRepairHint = {
             trigger: 'nack',
@@ -326,5 +329,47 @@ describe('a ranged hint whose sequences have left the sent cache', () => {
         expect(repairs).toEqual([]);
         expect(await readRepairAttempts(stores, track)).toEqual([0, 0, 0]);
         expect(toSkippedRepairs(settlements)).toEqual([]);
+    });
+});
+
+describe('a retransmission re-admits the message it sent', () => {
+    it('keeps the sent envelope\'s trace on a gap repair and on a retransmit by message id', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            planOutgoingMessage,
+            planRepairMessage,
+            sendPreparedMessage: async () => await Promise.resolve({ status: 'sent', submissionAttempted: true })
+        });
+        const [first, second, third] = [1, 2, 3].map((seq) => {
+            const message = createOrderedMessage(seq);
+            return { ...message, id: { ...message.id, traceId: `trace-seq-${seq}` } };
+        }) as [ALMessage, ALMessage, ALMessage];
+        for (const message of [first, second, third]) {
+            await enqueueOutboundOrThrow(runtime, message);
+        }
+        await waitForOutboundWorkDrained(stores);
+        const readmitted: string[] = [];
+        const retransmission = createRepairRetransmission(stores, [], {
+            planOutgoingMessage: (msg, authority) => {
+                readmitted.push(`${msg.id.msgId} ${msg.id.traceId}`);
+                return planOutgoingMessage(msg, authority);
+            },
+            planRepairMessage: async (msg) => {
+                readmitted.push(`${msg.id.msgId} ${msg.id.traceId}`);
+                return await planRepairMessage(msg);
+            }
+        });
+
+        await retransmission.retransmitFromRepairHint(third.id.msgId, {
+            trigger: 'nack',
+            requestedByPeerId: 'peer-1',
+            orderingTrackKey: toALOrderingTrackKey(first)!,
+            missingRanges: [{ from: 1, to: 1 }],
+            failedPeerIds: []
+        }, 'repair-hint-trace');
+        await retransmission.retransmitByMsgId(second.id.msgId, { attemptIdentity: 'retransmit-trace' });
+
+        expect(new Set(readmitted)).toEqual(new Set([`${first.id.msgId} trace-seq-1`, `${second.id.msgId} trace-seq-2`]));
     });
 });

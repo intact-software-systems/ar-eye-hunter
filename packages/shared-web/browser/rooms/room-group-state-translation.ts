@@ -158,7 +158,6 @@ export interface ToRoomMetadataGroupStateRequestInput extends RoomGroupStateMuta
 }
 interface RoomGroupStateMutationAuditFields {
     readonly reason?: string;
-    readonly traceId?: string;
 }
 export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
     readonly principalId: string;
@@ -518,10 +517,7 @@ function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody
 function toMutationAuditFields(
     request: RoomGroupStateMutationAuditFields
 ): RoomGroupStateMutationAuditFields {
-    return {
-        ...(request.reason === undefined ? {} : { reason: request.reason }),
-        ...(request.traceId === undefined ? {} : { traceId: request.traceId })
-    };
+    return request.reason === undefined ? {} : { reason: request.reason };
 }
 
 function toRoomGroupStateSlug(displayName: string): string {

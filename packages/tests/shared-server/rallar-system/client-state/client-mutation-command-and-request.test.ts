@@ -60,8 +60,7 @@ describe('client mutation command and request projection', () => {
                 lastSeenAtEpochMs: null,
                 actorPrincipalId: null,
                 actorSessionId: null,
-                reason: null,
-                traceId: null
+                reason: null
             }
         });
     });
@@ -101,6 +100,7 @@ describe('client mutation command and request projection', () => {
             'connectSession'
         );
         const facts: ClientMutationPersistedFacts = {
+            traceId: 'trace-client-mutation-command-and-request',
             nowEpochMs: 2_000,
             serviceId: 'client-state',
             eventId: 'event-1',
@@ -200,8 +200,7 @@ const malformedCommandBase = {
 const malformedCommandActor = {
     actorPrincipalId: null,
     actorSessionId: null,
-    reason: null,
-    traceId: null
+    reason: null
 } as const;
 
 function malformedAuthoritativeCommands(): readonly object[] {

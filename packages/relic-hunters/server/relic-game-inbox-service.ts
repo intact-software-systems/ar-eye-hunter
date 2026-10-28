@@ -3,6 +3,7 @@ import type {
     AppInboxMessageContext,
     RallarServerAppInbox
 } from '@shared-server/mod.ts';
+import { toAppInboxCommandAttempt } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { timeRallarAsync, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     requireExactKeys,
@@ -84,7 +85,7 @@ export class RelicGameInboxService {
         const service = this.dependencies.service;
         const observed = await service.read(ingress);
         const initial = service.needsInitialState(observed) ? await createInitialState() : null;
-        const admitted = await this.operation.enqueue({ ...ingress, initial });
+        const admitted = await this.operation.enqueue({ command: { ...ingress, initial }, traceId: value.traceId });
         return admitted.fold(throwRelicInboxFailure, (admission) => admission);
     }
 
@@ -122,13 +123,14 @@ export class RelicGameInboxService {
             { ...timing, operation: 'read' },
             () => service.read(ingress)
         );
+        const attempt: RelicGameMutationService.Attempt = { ...read, ...toAppInboxCommandAttempt(context) };
         const computed = await timeRallarAsync(
             this.config.timing,
             { ...timing, operation: 'compute' },
-            async () => service.compute(read)
+            async () => service.compute(attempt)
         );
         await timeRallarAsync(this.config.timing, { ...timing, operation: 'validate' }, async () => {
-            const issue = service.validate(read, computed)[0];
+            const issue = service.validate(attempt, computed)[0];
             if (issue !== undefined) {
                 throw issue.cause;
             }

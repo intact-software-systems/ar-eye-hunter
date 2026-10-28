@@ -60,6 +60,7 @@ async function seedCandidate(harness: AuthorityHarness, request: Partial<CreateG
         reader: harness.reader,
         authority: harness.sessions.owner,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             resourceId: `create-${request.groupId}`,
             contextId: `create-${request.groupId}`,
@@ -123,6 +124,7 @@ async function joinCandidate(harness: AuthorityHarness, groupId: string, princip
         reader: harness.reader,
         authority: harness.sessions[principalId],
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_JOIN,
             resourceId: requestId,
             contextId: requestId,
@@ -140,6 +142,7 @@ describe('Quick Join through AppInbox', () => {
         await createRoom(harness, 'arena', 'AR Eye Hunter');
 
         const result = await quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'quick-bob', kind: 'room', q: ' EYE HUNTER ', includeEmpty: true }
         });
@@ -186,6 +189,7 @@ describe('Quick Join through AppInbox', () => {
             reader: harness.reader,
             authority: harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_CREATE,
                 resourceId: 'create-approval',
                 contextId: 'create-approval',
@@ -209,6 +213,7 @@ describe('Quick Join through AppInbox', () => {
         expect(created.left).toBeUndefined();
 
         const result = await quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'quick-approval', includeEmpty: true }
         });
@@ -224,6 +229,7 @@ describe('Quick Join through AppInbox', () => {
         await createRoom(harness, 'capacity', 'AR Eye Hunter');
         const service = createQuickJoinService(harness, { defaultMaxMembers: 1 }, () => harness.nowEpochMs);
         const authorized = await service.authorize({
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'capacity-proof', includeEmpty: true }
         }, harness.sessions.bob);
@@ -234,7 +240,7 @@ describe('Quick Join through AppInbox', () => {
                 ...ingress,
                 facts: { ...ingress.facts, capacity: { defaultMaxMembers: null } }
             }, 'Tampered Quick Join ingress'),
-            1
+            { attemptCount: 1, traceId: 'trace-group-quick-join' }
         )).rejects.toMatchObject({ status: 403 });
 
         const room = await harness.repository.readSnapshot({ ...SCOPE, groupId: 'capacity' });
@@ -246,6 +252,7 @@ describe('Quick Join through AppInbox', () => {
         let nowEpochMs = harness.nowEpochMs;
         const service = createQuickJoinService(harness, { defaultMaxMembers: null }, () => nowEpochMs);
         const authorized = await service.authorize({
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'window-capture', includeEmpty: true }
         }, harness.sessions.bob);
@@ -276,6 +283,7 @@ describe('Quick Join through AppInbox', () => {
             reader: harness.reader,
             authority: harness.sessions.bob,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_JOIN,
                 resourceId: 'manual-pending',
                 contextId: 'manual-pending',
@@ -285,6 +293,7 @@ describe('Quick Join through AppInbox', () => {
         expect(manual.left).toBeUndefined();
 
         const result = await quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'already-pending', includeEmpty: true }
         });
@@ -304,6 +313,7 @@ describe('Quick Join through AppInbox', () => {
             .toBe('forming');
 
         const result = await quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'forming-join', includeEmpty: true }
         });
@@ -322,6 +332,7 @@ describe('Quick Join through AppInbox', () => {
         await seedCandidate(harness, candidate);
 
         const result = await quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: `skip-${candidate.groupId}`, includeEmpty: true }
         });
@@ -340,6 +351,7 @@ describe('Quick Join through AppInbox', () => {
         await seedOnlineSessions(harness, 'z-more-members', ['owner', 'carol']);
 
         const result = await quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'rank-members' }
         });
@@ -357,7 +369,7 @@ describe('Quick Join through AppInbox', () => {
         await seedOnlineSessions(harness, 'z-room', ['owner']);
         await seedOnlineSessions(harness, 'a-room', ['owner']);
 
-        const result = await quickJoin(harness, { scope: SCOPE, request: { requestId: 'rank-tie' } });
+        const result = await quickJoin(harness, { traceId: 'trace-test-fixture', scope: SCOPE, request: { requestId: 'rank-tie' } });
 
         expect(result).toMatchObject({ status: 'joined', snapshot: { group: { groupId: 'a-room' } } });
     });
@@ -365,7 +377,7 @@ describe('Quick Join through AppInbox', () => {
     it('excludes empty rooms by default and preserves durable unavailable on replay', async () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         await createRoom(harness, 'empty', 'AR Eye Hunter');
-        const input = { scope: SCOPE, request: { requestId: 'empty-default' } };
+        const input = { scope: SCOPE, request: { requestId: 'empty-default' }, traceId: 'trace-quick-join-test' };
         const first = await quickJoin(harness, input);
         expect(first).toEqual({ status: 'unavailable' });
         await seedOnlineSessions(harness, 'empty', ['owner']);
@@ -379,7 +391,7 @@ describe('Quick Join through AppInbox', () => {
     it('replays the committed room after a new session and a better candidate appear', async () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         await createRoom(harness, 'z-original', 'AR Eye Hunter');
-        const input = { scope: SCOPE, request: { requestId: 'stable-winner', includeEmpty: true } };
+        const input = { scope: SCOPE, request: { requestId: 'stable-winner', includeEmpty: true }, traceId: 'trace-quick-join-test' };
         const first = await quickJoin(harness, input);
         await createRoom(harness, 'a-new', 'AR Eye Hunter');
         const renewed = { ...harness.sessions.bob, sessionId: 'bob-renewed', accessToken: 'bob-renewed-token' };
@@ -401,6 +413,7 @@ describe('Quick Join through AppInbox', () => {
         const harness = await createAuthorityHarness(['owner', 'bob'], { timing: (event) => timings.push(event) });
         await createRoom(harness, 'revoked', 'AR Eye Hunter');
         const pending = harness.service.processQuickJoinUntilCompletion({
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'revoked-join', includeEmpty: true }
         }, harness.sessions.bob);
@@ -420,7 +433,11 @@ describe('Quick Join through AppInbox', () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         await createRoom(harness, 'result-room', 'AR Eye Hunter');
         const before = await harness.repository.readSnapshot({ ...SCOPE, groupId: 'result-room' });
-        const input = { scope: SCOPE, request: { requestId: `substituted-${substitution}`, includeEmpty: true } };
+        const input = {
+            scope: SCOPE,
+            request: { requestId: `substituted-${substitution}`, includeEmpty: true },
+            traceId: 'trace-quick-join-test'
+        };
         const first = await quickJoin(harness, input);
         const entry = (await harness.queueEntries()).find((candidate) => candidate.key.resourceId === input.request.requestId);
         if (first.status !== 'joined' || !before || !entry) {
@@ -457,6 +474,7 @@ describe('Quick Join through AppInbox', () => {
         );
 
         await expect(quickJoin(harness, {
+            traceId: 'trace-test-fixture',
             scope: SCOPE,
             request: { requestId: 'corrupt-policy', includeEmpty: true }
         })).rejects.toThrow(/policy/i);

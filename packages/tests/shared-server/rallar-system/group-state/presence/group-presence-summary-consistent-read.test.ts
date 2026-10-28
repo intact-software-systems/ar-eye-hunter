@@ -86,7 +86,7 @@ describe('the presence summary read (D295)', () => {
         });
 
         const read = await createWork(runtime).read(
-            [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+            [{ traceId: 'trace-group-presence-summary-consistent-read', work: command, reservation: summaryReservationRead(command.commandId) }],
             BASE_EPOCH_MS + 1_000
         );
 
@@ -108,7 +108,7 @@ describe('the presence summary read (D295)', () => {
         await repository.putGroup({ ...group, activeMemberCount: group.activeMemberCount + 1 });
 
         const read = await createWork(runtime).read(
-            [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+            [{ traceId: 'trace-group-presence-summary-consistent-read', work: command, reservation: summaryReservationRead(command.commandId) }],
             BASE_EPOCH_MS + 1_000
         );
 
@@ -128,7 +128,7 @@ describe('the presence summary read (D295)', () => {
         const expired = await runtime.findEntry(GROUPS_NAMESPACE, key);
 
         const read = await createWork(runtime).read(
-            [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+            [{ traceId: 'trace-group-presence-summary-consistent-read', work: command, reservation: summaryReservationRead(command.commandId) }],
             BASE_EPOCH_MS + 1_000
         );
 

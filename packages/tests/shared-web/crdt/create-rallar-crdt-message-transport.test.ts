@@ -59,12 +59,13 @@ describe('built-in CRDT message admission', () => {
             typeId: 'update',
             topicId: 'crdt',
             senderId: 'peer',
+            traceId: 'trace-create-rallar-crdt-message-transport',
             receivedAtEpochMs: 1,
             contextId: 'room',
             resourceId: 'update',
             payload,
             raw: {
-                id: { v: 3, msgId: 'update', senderId: 'peer', ts: 1 },
+                id: { v: 4, msgId: 'update', senderId: 'peer', ts: 1, traceId: 'trace-create-rallar-crdt-message-transport' },
                 route: { topicId: 'crdt', contextId: 'room', resourceId: 'update' },
                 payload: { typeId: 'update', contentType: 'application/json', resource: JSON.stringify(payload) }
             },

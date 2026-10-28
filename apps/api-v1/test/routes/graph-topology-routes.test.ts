@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
@@ -21,6 +21,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -314,7 +315,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
             toTopologyMutationRequestPath(mutation.path, mutation.requestId),
             {
                 method: mutation.method,
-                headers: { authorization: 'Bearer token' },
+                headers: { authorization: 'Bearer token', 'x-request-id': `trace-${mutation.requestId}` },
                 ...(mutation.body === undefined ? {} : { body: JSON.stringify(mutation.body) })
             }
         );
@@ -335,6 +336,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
         const command = await value.enqueue.materialize();
         assert.equal(value.authority.accessToken, 'owner-token');
         assert.equal(value.enqueue.requestId, command.requestId);
+        assert.equal(value.enqueue.traceId, `trace-${value.enqueue.requestId}`);
         assert.equal(value.enqueue.callerId, 'owner');
         assert.deepEqual(command.actor, {
             principalId: 'owner',
@@ -621,7 +623,7 @@ function createRouteApp(options: {
     readonly onCurrentGroupRead?: () => void;
     readonly strictReadAuthorization?: boolean;
 }): Hono {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
         groupStateService: {
             readCurrentSnapshot: (ref: GroupRef) => {

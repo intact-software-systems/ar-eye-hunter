@@ -22,7 +22,7 @@ import {
     type RallarTimingSink
 } from '../../observability/timing.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import type { AppInboxEnqueue } from '../app-inbox-contracts.ts';
 import { decodePersistedAppInboxFailure } from '../app-inbox-failure-decoding.ts';
 import {
     toTerminalAppInboxFailure,
@@ -60,7 +60,7 @@ type AppInboxTerminalObservation<Result> =
     | { readonly readRow: 'status'; };
 
 interface AppInboxSubscribedWait<Result> {
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
     readonly decodeResult: AppInboxResultWaiter.ResultDecoder<Result>;
     /** This wait's reservation or write created the entry, so the entry was not terminal when the wait subscribed. */
@@ -68,7 +68,7 @@ interface AppInboxSubscribedWait<Result> {
 }
 
 interface AppInboxCompletedResultRead<Result> {
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
     readonly decodeResult: AppInboxResultWaiter.ResultDecoder<Result>;
     readonly subscription: ResourceInboxCompletionNotifications.Subscription | undefined;
@@ -88,7 +88,7 @@ class AppInboxEntryPendingError extends Error {
 
 /** One read of the wait: what caused it and which row it reads. */
 interface AppInboxPoll {
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
     readonly trigger: AppInboxReadTrigger;
     readonly readRow: 'result' | 'status';
@@ -96,7 +96,7 @@ interface AppInboxPoll {
 
 interface AppInboxWaitPhase<Result> {
     readonly operation: 'read-result' | 'wait-completion';
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
     readonly action: () => Promise<Result>;
     readonly details: RallarTimingDetails;
@@ -107,7 +107,7 @@ export namespace AppInboxResultWaiter {
 
     /** The entry a wait reads, and whether its caller's reservation or write created it. */
     export interface Wait {
-        readonly enqueue: AppInboxEnqueueInput;
+        readonly enqueue: AppInboxEnqueue;
         readonly key: Key;
         readonly winner: boolean;
     }
@@ -298,7 +298,7 @@ export class AppInboxResultWaiter {
         return { readRow: 'result', result: toAppInboxResult(result, read.decodeResult) };
     }
 
-    private recordWaitFallback(enqueue: AppInboxEnqueueInput, key: Key, error: TryWithExhaustedError): void {
+    private recordWaitFallback(enqueue: AppInboxEnqueue, key: Key, error: TryWithExhaustedError): void {
         recordRallarTiming({
             sink: this.timing,
             event: {
@@ -321,7 +321,7 @@ export class AppInboxResultWaiter {
     }
 
     private async readCompletionPoll<Result>(
-        enqueue: AppInboxEnqueueInput,
+        enqueue: AppInboxEnqueue,
         key: Key,
         trigger: AppInboxReadTrigger
     ): Promise<AppInboxTerminalObservation<Result>> {

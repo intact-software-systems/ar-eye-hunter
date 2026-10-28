@@ -171,7 +171,6 @@ function assertActorInput(input: ValidationRecord): void {
     requireNullableNonEmptyString(input.actorPrincipalId, 'Client mutation actorPrincipalId');
     requireNullableNonEmptyString(input.actorSessionId, 'Client mutation actorSessionId');
     requireNullableString(input.reason, 'Client mutation reason');
-    requireNullableString(input.traceId, 'Client mutation traceId');
 }
 
 function assertGenerationId(value: ValidationValue): void {
@@ -228,7 +227,7 @@ function timestampValue(value: ValidationValue): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 
-const actorInputKeys = ['actorPrincipalId', 'actorSessionId', 'reason', 'traceId'] as const;
+const actorInputKeys = ['actorPrincipalId', 'actorSessionId', 'reason'] as const;
 const commandBaseKeys = [
     'operation',
     'aggregateRef',

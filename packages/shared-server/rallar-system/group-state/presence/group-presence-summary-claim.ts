@@ -1,9 +1,7 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import {
-    isCanonicalGroupPresenceSummaryEntry,
-    type GroupPresenceSummaryWorkData
-} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { isCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -71,18 +69,26 @@ export async function releaseUnexpandedGroupPresenceSummaryWork(
     }
 }
 
+export function toGroupPresenceSummaryWorkItem(message: ALMessage, entry: ResourceEntry): GroupPresenceSummaryWorkItem {
+    return {
+        work: decodeCanonicalGroupPresenceSummaryWork(message, entry),
+        reservation: toReservationRead(entry),
+        traceId: message.id.traceId
+    };
+}
+
 /** The reserved row first, then its claimed siblings in causal order. */
 export function toGroupPresenceSummaryCandidates(
-    primary: GroupPresenceSummaryWorkData,
-    entry: ResourceEntry,
+    primary: GroupPresenceSummaryWorkItem,
     claimed: readonly ResourceEntry[]
 ): readonly GroupPresenceSummaryWorkItem[] {
     return [
-        { work: primary, reservation: toReservationRead(entry) },
-        ...sortGroupPresenceSummaryWorkByCausalOrder(claimed.map((sibling) => ({
-            work: decodeCanonicalGroupPresenceSummaryWork(decodePersistedALMessage(sibling.resource), sibling),
-            reservation: toReservationRead(sibling)
-        })))
+        primary,
+        ...sortGroupPresenceSummaryWorkByCausalOrder(
+            claimed.map((sibling) =>
+                toGroupPresenceSummaryWorkItem(decodePersistedALMessage(sibling.resource), sibling)
+            )
+        )
     ];
 }
 

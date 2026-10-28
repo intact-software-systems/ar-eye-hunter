@@ -161,6 +161,7 @@ describe('AppInbox expired row replacement', () => {
         };
         const pending = service.issueSession({
             requestId,
+            traceId: 'trace-auth-test',
             clientId: 'client-1',
             username: 'alice',
             ttlMs: 60_000,
@@ -258,6 +259,7 @@ describe('AppInbox expired row replacement', () => {
                 const minimumEntries = (await queue.getAllKeys()).length + 1;
                 const pending = service.processAuthenticatedGroupEntryUntilCompletion(
                     {
+                        traceId: 'trace-test-fixture',
                         type: AppInboxType.GROUP_CREATE,
                         resourceId: requestId,
                         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:room-1`,

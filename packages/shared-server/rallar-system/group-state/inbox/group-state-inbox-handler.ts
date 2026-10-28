@@ -117,11 +117,12 @@ export class GroupStateInboxHandler {
             authorityProof: ingress.authorityProof,
             descriptor: ingress.descriptor,
             command: ingress.command,
-            facts: toGroupMutationAttemptFacts(
-                ingress.facts,
-                context.entry.dequeueAudit.attempts,
-                this.dependencies.nowEpochMs()
-            )
+            facts: toGroupMutationAttemptFacts({
+                ingressFacts: ingress.facts,
+                attemptCount: context.entry.dequeueAudit.attempts,
+                laneNowEpochMs: this.dependencies.nowEpochMs(),
+                traceId: context.message.id.traceId
+            })
         };
         if (command.command.operation === 'connectPresence') {
             return await this.processPresenceConnect(context, command);

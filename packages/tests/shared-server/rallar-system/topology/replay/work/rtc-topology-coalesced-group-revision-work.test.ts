@@ -63,6 +63,7 @@ function createServerTopologyReplanTiming(debounceMs: number): TopologyReplanTim
 describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     it('keeps a commanded reconfigure outside the automatic change gate', () => {
         const computed = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -85,6 +86,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         ] as const
     )('keeps commanded origin when %s work is followed by %s work', (firstOrigin, secondOrigin) => {
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -95,6 +97,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const second = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 4),
             requestedAtEpochMs: BASE_EPOCH_MS + 1,
@@ -110,6 +113,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
     it('creates a per-group coalesced entry with debounce scheduling on first intent', () => {
         const computed = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -147,6 +151,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     it('names each work id after its head\'s creation instant and generation', () => {
         const writeHead = (requestedAtEpochMs: number, previousEntry: ResourceEntry | null) =>
             computeCoalescedRtcTopologyGroupRevisionWork({
+                traceId: 'trace-rtc-topology-coalesced-group-revision-work',
                 aggregateRef: GROUP_REF,
                 groupSnapshot: createGroupSnapshot(4, 3),
                 requestedAtEpochMs,
@@ -172,6 +177,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
     it('is due immediately with a zero debounce', () => {
         const computed = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -188,6 +194,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
     it('merges onto a pending predecessor: max revision, sliding due, one generation up', () => {
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -198,6 +205,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const second = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: BASE_EPOCH_MS + 200,
@@ -223,9 +231,13 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     });
 
     it('keeps merged generations canonical so handler-finalized releases stay idempotent', () => {
+        // Each generation carries the trace of the change that wrote it, not the first generation's.
+        const firstChangeTraceId = 'trace-first-change';
+        const secondChangeTraceId = 'trace-second-change';
         const unexpiredBaseEpochMs = 1_800_000_000_000;
         const unexpiredExpireAtEpochMs = unexpiredBaseEpochMs + 3_600_000;
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: firstChangeTraceId,
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: unexpiredBaseEpochMs,
@@ -236,6 +248,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const second = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: secondChangeTraceId,
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: unexpiredBaseEpochMs + 200,
@@ -250,6 +263,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         if (merged.audit === undefined || merged.constraints === undefined) {
             throw new TypeError('Merged topology message requires audit and constraints');
         }
+        expect(decodePersistedALMessage(first.entryWrite.entry.resource).id.traceId).toBe(firstChangeTraceId);
+        expect(merged.id.traceId).toBe(secondChangeTraceId);
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
         expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
         expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs + 200);
@@ -279,6 +294,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         const unexpiredBaseEpochMs = 1_800_000_000_000;
         const unexpiredExpireAtEpochMs = unexpiredBaseEpochMs + 3_600_000;
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: unexpiredBaseEpochMs,
@@ -294,6 +310,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             dequeueAudit: { attempts: 1 }
         };
         const revived = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: unexpiredBaseEpochMs + 5_000,
@@ -325,6 +342,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     // to the queue for the change's own retention window, and an earlier deadline never shortens it.
     it('extends a pending head\'s expiry to the merged change\'s, never shortening it', () => {
         const head = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -336,6 +354,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         }).entryWrite.entry;
         const mergeAt = (requestedAtEpochMs: number, expireAtEpochMs: number, previousEntry: ResourceEntry) =>
             computeCoalescedRtcTopologyGroupRevisionWork({
+                traceId: 'trace-rtc-topology-coalesced-group-revision-work',
                 aggregateRef: GROUP_REF,
                 groupSnapshot: createGroupSnapshot(4, 4),
                 requestedAtEpochMs,
@@ -379,6 +398,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
     it('replaces without merging over a completed predecessor and resets lifecycle', () => {
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -395,6 +415,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         };
 
         const revived = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(5, 5),
             requestedAtEpochMs: BASE_EPOCH_MS + 60_000,
@@ -420,6 +441,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
     it('always carries a deterministic per-revision successor identity', () => {
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -432,6 +454,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         const reserved: ResourceEntry = { ...first.entryWrite.entry, status: EntityStatus.RESERVED };
 
         const blocked = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: BASE_EPOCH_MS + 1_000,
@@ -457,6 +480,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
     it('fails closed when the predecessor is not coalesced topology work', () => {
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -470,6 +494,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
         expect(() =>
             computeCoalescedRtcTopologyGroupRevisionWork({
+                traceId: 'trace-rtc-topology-coalesced-group-revision-work',
                 aggregateRef: GROUP_REF,
                 groupSnapshot: createGroupSnapshot(4, 5),
                 requestedAtEpochMs: BASE_EPOCH_MS + 1_000,
@@ -701,6 +726,7 @@ function withSessions(snapshot: GroupSnapshot, sessionIds: readonly string[]): G
 describe('readPendingTopologyReplan', () => {
     function computedEntry(): ResourceEntry {
         return computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -816,6 +842,7 @@ describe('the auto replan window under continuous change (D274)', () => {
     it('keeps a failed recompute\'s retry backoff when an auto merge reaches the maximum wait', () => {
         const timing: TopologyReplanTiming = { window: autoWindow, replanNotBeforeEpochMs: null, expectedMembersArrived: false };
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -835,6 +862,7 @@ describe('the auto replan window under continuous change (D274)', () => {
         };
 
         const merged = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 4),
             requestedAtEpochMs: BASE_EPOCH_MS + 2_500,
@@ -913,6 +941,7 @@ describe('the replan at the expected member count (D288)', () => {
     it('carries the arrival through merges of the coalesced row', () => {
         const timing: TopologyReplanTiming = { window, replanNotBeforeEpochMs: null, expectedMembersArrived: false };
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
@@ -923,6 +952,7 @@ describe('the replan at the expected member count (D288)', () => {
             previousEntry: null
         });
         const merged = computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 4),
             requestedAtEpochMs: BASE_EPOCH_MS + 100,
@@ -952,6 +982,7 @@ describe('the series anchor on coalesced rows', () => {
 
     function createReplan(requestedAtEpochMs: number, previousEntry: ResourceEntry | null) {
         return computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, previousEntry === null ? 3 : 4),
             requestedAtEpochMs,

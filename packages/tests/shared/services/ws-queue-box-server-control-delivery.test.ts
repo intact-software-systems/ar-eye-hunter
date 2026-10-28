@@ -186,7 +186,7 @@ function createHandOffFixture(): HandOffFixture {
 
 function serverAck(msgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId, senderId: SERVER_ID, ts: HAND_OFF_NOW_MS },
+        { v: 4, msgId, senderId: SERVER_ID, ts: HAND_OFF_NOW_MS, traceId: 'trace-ws-queue-box-server-control-delivery' },
         {
             ackedMsgId: 'to-server',
             fromPeerId: SERVER_ID,
@@ -325,7 +325,7 @@ async function installTestClusterBus(instances: readonly ControlInstance[]): Pro
 async function admitServerAddressedMessage(fixture: ControlClusterFixture): Promise<void> {
     const nowMs = Date.now();
     const message: ALMessage = {
-        id: { v: 3, msgId: 'to-server', ts: nowMs, senderId: 'a' },
+        id: { v: 4, msgId: 'to-server', ts: nowMs, senderId: 'a', traceId: 'trace-ws-queue-box-server-control-delivery' },
         route: { topicId: 'room.command', resourceId: 'to-server', contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId: SERVER_ID, groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + 30_000 },

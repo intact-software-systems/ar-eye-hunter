@@ -176,19 +176,23 @@ describe('admin page handler completion release', () => {
 });
 
 function createReservationPair(now: number): AdminPruneReservationPair {
-    const entry = toAdminPruneOutbox({
-        kind: 'page',
-        jobId: 'release-policy',
-        category: 'runtime-state',
-        requestedBy: 'admin',
-        requestedSessionId: 'admin-session',
-        capturedAtEpochMs: now,
-        expireAtEpochMs: now + 60_000,
-        pageSize: 2,
-        afterCursor: null,
-        pageIndex: 0,
-        appData: null
-    }, 'server-1');
+    const entry = toAdminPruneOutbox(
+        {
+            kind: 'page',
+            jobId: 'release-policy',
+            category: 'runtime-state',
+            requestedBy: 'admin',
+            requestedSessionId: 'admin-session',
+            capturedAtEpochMs: now,
+            expireAtEpochMs: now + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        },
+        'server-1',
+        'trace-is-admin-prune-handler-finalized-release'
+    );
     const startTs = Temporal.Instant.fromEpochMilliseconds(now);
     const reserved: ResourceEntry = {
         ...entry,

@@ -103,13 +103,13 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         const fromServer: ALMessage = {
             ...roomMessage(fixture.clock.nowMs),
-            id: { v: 3, msgId: 'server-room-1', ts: fixture.clock.nowMs, senderId: 'server' },
+            id: { v: 4, msgId: 'server-room-1', ts: fixture.clock.nowMs, senderId: 'server', traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
             delivery: undefined,
             qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } }
         };
         await fixture.service.enqueueOutboxIfAbsent(fromServer);
         const forged = newALAckControlMessage(
-            { v: 3, msgId: 'ack-c-for-b', senderId: 'c', ts: fixture.clock.nowMs },
+            { v: 4, msgId: 'ack-c-for-b', senderId: 'c', ts: fixture.clock.nowMs, traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
             {
                 ackedMsgId: 'server-room-1',
                 fromPeerId: 'c',
@@ -255,7 +255,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         const toServer: ALMessage = {
             ...roomMessage(fixture.clock.nowMs),
-            id: { v: 3, msgId: 'to-server-1', ts: fixture.clock.nowMs, senderId: 'a' },
+            id: { v: 4, msgId: 'to-server-1', ts: fixture.clock.nowMs, senderId: 'a', traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
             route: { topicId: 'server.command', resourceId: 'resource', contextId: 'server' },
             targets: { mode: 'unicast', toPeerId: 'server' }
         };
@@ -359,7 +359,7 @@ describe('WS server receipt aggregate', () => {
 
         expect(aggregation.recordAck(aggregateAck(ack)).left).toEqual({ code: 'unauthorized', message: reason });
         expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })).right)
-            .toEqual({ receipt: undefined, deadlineAtMs: 30_000 });
+            .toEqual({ receipt: undefined, deadlineAtMs: 30_000, traceId: 'trace-room-message-1' });
     });
 
     it('refuses a repeat ACK for a counted recipient and answers complete exactly once', () => {
@@ -433,13 +433,14 @@ describe('WS server receipt aggregates at their cap', () => {
                 phase: 'timed-out',
                 observedAtEpochMs: 1_000
             },
-            deadlineAtMs: 30_000
+            deadlineAtMs: 30_000,
+            traceId: 'trace-room-message-1'
         });
         expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })).left?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         const swept = aggregation.sweep(Number.MAX_SAFE_INTEGER);
         expect(swept).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
-        expect(swept.map((receipt) => receipt.msgId)).not.toContain('room-message-1');
+        expect(swept.map((issued) => issued.receipt.msgId)).not.toContain('room-message-1');
     });
 
     it('writes the evicted aggregate\'s timed-out receipt beside the new admission\'s', async () => {
@@ -472,7 +473,9 @@ describe('WS server receipt aggregates past their deadline', () => {
 
         aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }));
 
-        expect(aggregation.sweep(clock.nowMs)).toMatchObject([{ msgId: 'room-message-1', phase: 'timed-out' }]);
+        expect(aggregation.sweep(clock.nowMs)).toMatchObject([
+            { receipt: { msgId: 'room-message-1', phase: 'timed-out' }, traceId: 'trace-room-message-1' }
+        ]);
     });
 });
 
@@ -481,10 +484,14 @@ function admitAggregates(
     aggregation: WsQueueBoxServerReceiptAggregation,
     count: number,
     first = 0
-): readonly WsQueueBoxServerReceiptAggregation.EndedAggregate[] {
-    const evicted: WsQueueBoxServerReceiptAggregation.EndedAggregate[] = [];
+): readonly WsQueueBoxServerReceiptAggregation.IssuedReceipt[] {
+    const evicted: WsQueueBoxServerReceiptAggregation.IssuedReceipt[] = [];
     for (let index = first + 1; index <= first + count; index += 1) {
-        const recorded = aggregation.recordAdmission({ ...admission(), msgId: `room-message-${index}` });
+        const recorded = aggregation.recordAdmission({
+            ...admission(),
+            msgId: `room-message-${index}`,
+            traceId: `trace-room-message-${index}`
+        });
         if (recorded.evicted !== undefined) {
             evicted.push(recorded.evicted);
         }
@@ -517,6 +524,7 @@ function admission(): WsQueueBoxServerReceiptAggregation.Admission {
     return {
         msgId: 'room-message-1',
         originPeerId: 'a',
+        traceId: 'trace-room-message-1',
         expectedRecipientPeerIds: ['b', 'c'],
         snapshotVersion: SNAPSHOT_VERSION,
         deadlineAtMs: 30_000
@@ -675,7 +683,7 @@ async function admitRoomMessage(fixture: ReceiptFixture): Promise<void> {
 
 function roomMessage(nowMs: number): ALMessage {
     return {
-        id: { v: 3, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
+        id: { v: 4, msgId: 'room-message-1', ts: nowMs, senderId: 'a', traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + ROOM_MESSAGE_LIFETIME_MS },
@@ -686,7 +694,7 @@ function roomMessage(nowMs: number): ALMessage {
 
 function receiverAck(fixture: ReceiptFixture, recipient: 'b' | 'c'): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: fixture.clock.nowMs },
+        { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: fixture.clock.nowMs, traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,

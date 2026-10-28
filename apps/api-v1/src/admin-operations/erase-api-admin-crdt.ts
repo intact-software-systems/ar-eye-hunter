@@ -18,6 +18,7 @@ export class EraseApiAdminCrdt {
             operation: 'erase',
             adminSession: request.adminSession,
             requestId: request.requestId,
+            traceId: request.traceId,
             request: request.request
         });
         return requireCrdtEraseResult(result);

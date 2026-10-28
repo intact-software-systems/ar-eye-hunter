@@ -14,6 +14,7 @@ import {
     createLiveGroupStateRouteAuthSession,
     createOwnerGroupStateRouteSnapshot,
     createRejectingGroupStateRouteTestRuntime,
+    GROUP_ROUTE_TRACE_ID,
     postGroupStateMutation,
     postGroupStateMutationWithHeaders,
     putGroupStateMutation,
@@ -30,6 +31,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         resourceId: 'group-route-remove-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -47,6 +49,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         resourceId: 'group-route-ban-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -64,6 +67,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         resourceId: 'group-route-unban-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -81,6 +85,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         resourceId: 'group-route-role-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -99,6 +104,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         resourceId: 'group-route-transfer-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -116,6 +122,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
         resourceId: 'group-route-upsert-request',
         contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
         senderId: 'alice',
+        traceId: GROUP_ROUTE_TRACE_ID,
         data: {
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             groupId: 'room-1',
@@ -132,7 +139,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
 
 Deno.test('group membership commands retain governance and self-service envelopes', () => {
     const authSession = createGroupStateRouteAuthSession('alice');
-    const commandBase = { authSession, scope: TEST_GROUP_SCOPE, groupId: 'room-1' } as const;
+    const commandBase = { authSession, scope: TEST_GROUP_SCOPE, traceId: GROUP_ROUTE_TRACE_ID, groupId: 'room-1' } as const;
     const forgedActor = { actorPrincipalId: 'forged-actor', actorSessionId: 'forged-session' };
     const commands = [
         ...createMemberRestrictionCommands(authSession),
@@ -285,6 +292,7 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
             resourceId: 'group-route-remove-bob',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -302,6 +310,7 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
             resourceId: 'group-route-ban-bob-1',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -319,6 +328,7 @@ function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEn
             resourceId: 'group-route-unban-bob',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -341,6 +351,7 @@ function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnq
             resourceId: 'group-route-role-bob',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -359,6 +370,7 @@ function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnq
             resourceId: 'group-route-transfer-owner',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
+            traceId: GROUP_ROUTE_TRACE_ID,
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
@@ -376,7 +388,7 @@ function assertRoleAndOwnershipEnvelopes(enqueued: AuthenticatedGroupMutationEnq
 function createMemberRestrictionCommands(
     authSession: GroupStateRouteAuthSession
 ): readonly ReturnType<typeof toGroupStateCommand>[] {
-    const commandBase = { authSession, scope: TEST_GROUP_SCOPE, groupId: 'room-1' } as const;
+    const commandBase = { authSession, scope: TEST_GROUP_SCOPE, traceId: GROUP_ROUTE_TRACE_ID, groupId: 'room-1' } as const;
     const forgedActor = { actorPrincipalId: 'forged-actor', actorSessionId: 'forged-session' };
     return [
         toGroupStateCommand({

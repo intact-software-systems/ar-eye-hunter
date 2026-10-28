@@ -1,6 +1,7 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import type { AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AuthSessionPersistence } from '../../auth/persistence/auth-session-persistence.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
@@ -109,9 +110,14 @@ export class GroupQuickJoinService {
         return { ...payload, authorityProof: await createGroupMutationAuthorityProof(session, payload) };
     }
 
-    async read(value: JsonWireValue | undefined, attemptCount: number): Promise<GroupQuickJoinRead> {
+    async read(value: JsonWireValue | undefined, attempt: AppInboxCommandAttempt): Promise<GroupQuickJoinRead> {
         const ingress = decodeGroupQuickJoinIngress(value);
-        const facts = toGroupMutationAttemptFacts(ingress.facts, attemptCount, this.config.now());
+        const facts = toGroupMutationAttemptFacts({
+            ingressFacts: ingress.facts,
+            attemptCount: attempt.attemptCount,
+            laneNowEpochMs: this.config.now(),
+            traceId: attempt.traceId
+        });
         await this.verifyAuthority(ingress, facts.attemptAtEpochMs);
         const snapshots = await this.dependencies.repository.listSnapshots(ingress.command.scope);
         const candidates: GroupQuickJoinCandidate[] = [];
@@ -169,8 +175,7 @@ function toSelectedJoinCommand(
             joinCode: null,
             actorPrincipalId: command.actorPrincipalId,
             actorSessionId: command.actorSessionId,
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }

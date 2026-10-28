@@ -55,6 +55,8 @@ import {
     type AuthorityHarness
 } from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
+const FIRST_ATTEMPT = { attemptCount: 1, traceId: 'trace-topology-app-inbox-transaction' };
+
 const GROUP_REF: GroupRef = {
     ...SCOPE,
     groupId: 'topology-room'
@@ -364,8 +366,8 @@ describe('topology AppInbox transaction and idempotency', () => {
         const mutationCommand = toTopologyConfigMutationCommand(command);
         const mutation = management.mutationOwners.configMutationService;
         const read = await mutation.read(mutationCommand);
-        const computed = mutation.compute(mutationCommand, read, 1);
-        const validation = { command: mutationCommand, read, attemptCount: 1, computed };
+        const computed = mutation.compute(mutationCommand, read, FIRST_ATTEMPT);
+        const validation = { command: mutationCommand, read, attempt: FIRST_ATTEMPT, computed };
         expect(mutation.validate(validation)).toEqual([]);
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {
@@ -382,8 +384,9 @@ describe('topology AppInbox transaction and idempotency', () => {
             await createPSqlResourceInboxRepository(transaction, () => new Date(harness.nowEpochMs)).entries.writeIfAbsentOrMatch(collisionEntry);
         });
         expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
+        const { traceId: _traceId, ...storedEnqueue } = topologyEnqueue(command);
         const enqueue = await createAuthenticatedTopologyEnqueue({
-            enqueue: topologyEnqueue(command),
+            enqueue: storedEnqueue,
             claimedAuthority: harness.sessions.owner,
             groupStateService: harness.groupStateService,
             nowEpochMs: () => harness.nowEpochMs
@@ -567,6 +570,7 @@ function adminReconfigureReservation(
     return {
         operation: 'reconfigureTopology',
         requestId: 'shared-admin-request',
+        traceId: 'trace-test-fixture',
         callerId,
         groupRef: GROUP_REF,
         semanticHash: computeTopologyHttpMutationSemanticDigest({
@@ -593,6 +597,7 @@ function configReservation(
     return {
         operation: 'putConfig',
         requestId,
+        traceId: 'trace-test-fixture',
         callerId,
         groupRef: GROUP_REF,
         semanticHash: computeTopologyHttpMutationSemanticDigest({
@@ -613,6 +618,7 @@ function topologyEnqueue(command: TopologyAppInboxCommand): AppInboxEnqueueInput
         contextId: `application=${GROUP_REF.applicationId}:workspace=${GROUP_REF.workspaceId}:` +
             `group=${GROUP_REF.groupId}:caller=${command.actor.principalId}`,
         senderId: command.actor.principalId,
+        traceId: 'trace-test-fixture',
         data: command
     };
 }

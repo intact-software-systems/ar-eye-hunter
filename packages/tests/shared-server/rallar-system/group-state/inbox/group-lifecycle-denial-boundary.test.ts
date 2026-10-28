@@ -58,6 +58,7 @@ describe('lifecycle policy denial boundary', () => {
             resourceId: requestId,
             contextId: groupId,
             senderId: scenario.actor,
+            traceId: 'trace-test-fixture',
             data: {
                 scope: SCOPE,
                 groupId,

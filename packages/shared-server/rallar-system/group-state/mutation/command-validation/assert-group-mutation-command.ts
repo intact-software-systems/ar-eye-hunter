@@ -53,7 +53,7 @@ export function assertGroupMutationCommand(
     // The command already passed requireJsonSafe, so its input record holds JSON values only.
     const input = requireRecord(value.input, 'Group mutation input') as JsonWireObject;
     assertExactKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
-    for (const key of ['actorPrincipalId', 'actorSessionId', 'reason', 'traceId']) {
+    for (const key of ['actorPrincipalId', 'actorSessionId', 'reason']) {
         if (input[key] !== null) {
             requireNonEmptyString(input[key], `Group mutation ${key}`);
         }

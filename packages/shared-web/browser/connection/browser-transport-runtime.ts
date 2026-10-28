@@ -410,19 +410,13 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         options: BrowserConnectOptions
     ): Promise<BrowserTransportRuntime.Construction> {
         const diagnosticsPorts = Object.freeze({ ...options.diagnosticsPorts });
-        const authFetch: ApiMiddleware['authFetch'] = (input, init) => {
-            const headers = new Headers(init?.headers);
-            headers.set('authorization', `Bearer ${session.accessToken}`);
-            headers.set('x-client-id', session.clientId);
-            return fetch(input, { ...init, headers });
-        };
         const { middleware, checkpoints, rtcCaptureReceipt } = await initialiseMiddleware(
             session,
             AppTopics.rtcSignaling,
             { ...options, diagnosticsPorts }
         );
 
-        return { middleware: { session, authFetch, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt };
+        return { middleware: { session, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt };
     }
 
     private shutdownMiddleware(middleware: RallarBrowserMiddleware, reason = 'rallar-disconnect'): void {

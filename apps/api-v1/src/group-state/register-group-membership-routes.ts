@@ -10,6 +10,7 @@ import type {
     UnbanGroupMemberRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -53,6 +54,7 @@ function registerRemoveGroupMemberRoute(
                             operation: 'remove-group-member',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<RemoveGroupMemberRequest>(context)
@@ -89,6 +91,7 @@ function registerBanGroupMemberRoute(
                             operation: 'ban-group-member',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<BanGroupMemberRequest>(context)
@@ -125,6 +128,7 @@ function registerUnbanGroupMemberRoute(
                             operation: 'unban-group-member',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<UnbanGroupMemberRequest>(context)
@@ -161,6 +165,7 @@ function registerSetGroupMemberRoleRoute(
                             operation: 'set-group-member-role',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             principalId,
                             request: await readGroupStateRouteRequest<SetGroupMemberRoleRequest>(context)
@@ -196,6 +201,7 @@ function registerTransferGroupOwnershipRoute(
                             operation: 'transfer-group-ownership',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             request: await readGroupStateRouteRequest<TransferGroupOwnershipRequest>(context)
                         })
@@ -230,6 +236,7 @@ function registerUpsertSelfGroupMemberRoute(
                     operation: 'upsert-group-member',
                     authSession,
                     scope,
+                    traceId: readApiRequestTraceId(context),
                     groupId,
                     principalId,
                     request

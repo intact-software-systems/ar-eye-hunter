@@ -258,6 +258,7 @@ export type AuthMutationRead =
 export interface AuthMutationFacts {
     readonly kind: AuthMutationCommand['kind'];
     readonly serviceId: string;
+    readonly traceId: string;
 }
 
 export interface AuthComputedSession {

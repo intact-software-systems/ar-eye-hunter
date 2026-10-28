@@ -1,3 +1,4 @@
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type {
     EffectiveGroupTopologyConfig,
@@ -350,7 +351,8 @@ export class GroupTopologyPlanningService {
             targetGroupSnapshotVersion: group.group.snapshotVersion,
             workId: crypto.randomUUID(),
             createdAtEpochMs,
-            expiresAtEpochMs: createdAtEpochMs + RTC_TOPOLOGY_REPLAY_RETENTION_MS
+            expiresAtEpochMs: createdAtEpochMs + RTC_TOPOLOGY_REPLAY_RETENTION_MS,
+            traceId: newALTraceId()
         });
         let published = false;
         for (const page of pages) {

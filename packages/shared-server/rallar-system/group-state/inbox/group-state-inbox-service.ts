@@ -1,3 +1,4 @@
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -8,6 +9,8 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     AppInboxType,
+    toAppInboxCommandAttempt,
+    type AppInboxEnqueue,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
@@ -151,17 +154,19 @@ export class GroupStateInboxService {
     }
 
     async enqueueGroupRetention(command: GroupRetentionService.Command): Promise<ResourceEntry> {
-        return await this.queueEntryWriter.enqueue(
-            toGroupRetentionEnqueue(this.groupStateService.retention.capture(command))
-        );
+        return await this.queueEntryWriter.enqueue({
+            ...toGroupRetentionEnqueue(this.groupStateService.retention.capture(command)),
+            traceId: newALTraceId()
+        });
     }
 
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
         const ingresses = await this.groupStateService.captureExpiredPresenceMutationIngresses(atEpochMs);
         for (const ingress of ingresses) {
-            await this.queueEntryWriter.enqueue(
-                toGroupSystemCommandEnqueue(AppInboxType.GROUP_PRESENCE_EXPIRE, ingress)
-            );
+            await this.queueEntryWriter.enqueue({
+                ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_PRESENCE_EXPIRE, ingress),
+                traceId: newALTraceId()
+            });
         }
         return ingresses.length;
     }
@@ -174,16 +179,18 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueEntryWriter.enqueue(
-            toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_CRITERION, ingress)
-        );
+        await this.queueEntryWriter.enqueue({
+            ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_CRITERION, ingress),
+            traceId: newALTraceId()
+        });
     }
 
     async enqueueFormationAutomationCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void> {
         const ingress = await this.groupStateService.captureFormationAutomationMutationIngress(command, atEpochMs);
-        await this.queueEntryWriter.enqueue(
-            toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_AUTOMATION, ingress)
-        );
+        await this.queueEntryWriter.enqueue({
+            ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_AUTOMATION, ingress),
+            traceId: newALTraceId()
+        });
     }
 
     async enqueueTopologyPublicationCommand(
@@ -194,9 +201,10 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueEntryWriter.enqueue(
-            toGroupSystemCommandEnqueue(AppInboxType.GROUP_TOPOLOGY_PUBLICATION, ingress)
-        );
+        await this.queueEntryWriter.enqueue({
+            ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_TOPOLOGY_PUBLICATION, ingress),
+            traceId: newALTraceId()
+        });
     }
 
     async enqueueActivationStatusCommand(
@@ -207,13 +215,19 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueEntryWriter.enqueue(toGroupSystemCommandEnqueue(AppInboxType.GROUP_ACTIVATION_STATUS, ingress));
+        await this.queueEntryWriter.enqueue({
+            ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_ACTIVATION_STATUS, ingress),
+            traceId: newALTraceId()
+        });
     }
 
     async enqueueGroupSessionCleanup(
         input: GroupPresenceSessionCleanupAppInboxPayload
     ): Promise<number> {
-        await this.queueEntryWriter.enqueue(toGroupSessionCleanupEnqueue(input, this.serviceId));
+        await this.queueEntryWriter.enqueue({
+            ...toGroupSessionCleanupEnqueue(input, this.serviceId),
+            traceId: newALTraceId()
+        });
         return 1;
     }
 
@@ -226,12 +240,13 @@ export class GroupStateInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
         const authorized = await this.authorizeAuthenticatedGroupMutation(enqueue, authority);
-        const received: AppInboxEnqueueInput = {
-            ...enqueue,
+        const { traceId, ...command } = enqueue;
+        const received: AppInboxEnqueue = {
+            ...command,
             authority: encodeAppInboxCommand(authorized, 'Group mutation AppInbox authority'),
             data: encodeAppInboxCommand(enqueue.data, 'Group mutation AppInbox command')
         };
-        const placeholder: AppInboxEnqueueInput = {
+        const storedPlaceholder: AppInboxEnqueue = {
             type: received.type,
             topicId: toAuthenticatedGroupMutationQueueKey(received).topicId,
             resourceId: received.resourceId,
@@ -239,9 +254,10 @@ export class GroupStateInboxService {
             senderId: received.senderId,
             data: null
         };
+        const placeholder: AppInboxEnqueueInput = { ...storedPlaceholder, traceId };
         // Captured before the reservation's transaction opens; only the winner's facts are stored and reused.
-        const materialized: AppInboxEnqueueInput = {
-            ...placeholder,
+        const materialized: AppInboxEnqueue = {
+            ...storedPlaceholder,
             authority: encodeAppInboxCommand(
                 await this.groupStateService.captureAppInboxMutationIngress(
                     authorized.descriptor,
@@ -262,7 +278,7 @@ export class GroupStateInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, QuickJoinGroupResult>> {
         const command = this.groupStateService.quickJoin.authorize(input, authority);
-        const received: AppInboxEnqueueInput = {
+        const received: AppInboxEnqueue = {
             type: AppInboxType.GROUP_QUICK_JOIN,
             topicId: GROUP_STATE_APP_INBOX_TOPIC,
             resourceId: command.requestId,
@@ -274,7 +290,7 @@ export class GroupStateInboxService {
         };
         return await this.commandClient.reserveMaterializedAndWaitForResult({
             received,
-            placeholder: { ...received, data: null },
+            placeholder: { ...received, traceId: input.traceId, data: null },
             materialize: async () => ({
                 ...received,
                 authority: encodeAppInboxCommand(
@@ -304,7 +320,7 @@ export class GroupStateInboxService {
         const read = await timeGroupStatePhase(
             timing,
             'read',
-            () => service.read(context.enqueue.authority, timing.attempt)
+            () => service.read(context.enqueue.authority, toAppInboxCommandAttempt(context))
         );
         if (!jsonEquals(command, read.command)) {
             throw new GroupMutationAuthorizationError('Quick Join ingress and command differ');

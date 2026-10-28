@@ -36,7 +36,7 @@ describe('auth mutation write purity', () => {
             expiredByTokenEntry: null,
             expiredBySessionEntry: null
         };
-        const facts = { kind: 'issue-session', serviceId: 'auth-test' } as const;
+        const facts = { kind: 'issue-session', serviceId: 'auth-test', traceId: 'trace-auth-write-purity' } as const;
         const computed = computeAuthMutation({
             command,
             read,

@@ -132,7 +132,7 @@ export async function createAppInboxWsCloseHarness(
         startAuthorisedWsConnect: async (input) => {
             const ticketDigest = await putAuthorisedWsTestTicket(authSessions, input.authSession, `${input.generationId}-ticket`);
             const queuedKeys = new Set((await queue.readEntries()).map((entry) => JSON.stringify(entry.key)));
-            void client.writeAuthorisedWsClientConnect({ ...input, ticketDigest });
+            void client.writeAuthorisedWsClientConnect({ ...input, ticketDigest, traceId: 'trace-app-inbox-ws-close-harness' });
             return await waitForNewQueuedEntry(queue, queuedKeys);
         }
     };

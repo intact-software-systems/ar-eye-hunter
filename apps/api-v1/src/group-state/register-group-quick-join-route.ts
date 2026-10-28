@@ -4,6 +4,7 @@ import { decodeQuickJoinGroupRequest } from '@shared-server/rallar-system/group-
 import type { QuickJoinGroupRequest } from '@shared/api/mutation/group-quick-join.ts';
 
 import { toApiMutationRouteFailure } from '../routes/api-mutation-route-failure.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
@@ -23,7 +24,10 @@ export function registerGroupQuickJoinRoute(app: Hono, dependencies: GroupStateR
                     scope,
                     principalId: authority.clientId
                 });
-                const result = await dependencies.processQuickJoin({ scope, request }, authority);
+                const result = await dependencies.processQuickJoin(
+                    { scope, request, traceId: readApiRequestTraceId(context) },
+                    authority
+                );
                 return context.json(result.fold(
                     (failure) => {
                         throw toApiMutationRouteFailure(failure);

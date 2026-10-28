@@ -33,11 +33,13 @@ interface CrdtAdminExpiryCase {
 
 Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', async () => {
     const commands: CrdtMutationCommand[] = [];
+    const reservationTraceIds: string[] = [];
     const stopAfterCapture = new Error('command captured');
     let nextId = 0;
     const mutations = createCrdtAdminMutations({
         appCrdtInboxService: {
             writeHttpAdminCommandUntilCompletion: async (reservation) => {
+                reservationTraceIds.push(reservation.traceId);
                 commands.push(await reservation.materialize());
                 throw stopAfterCapture;
             }
@@ -67,6 +69,7 @@ Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', asyn
                 operation: testCase.operation,
                 adminSession: ADMIN_SESSION,
                 requestId: `request-${testCase.operation}-00000001`,
+                traceId: 'trace-admin-fixture',
                 request: testCase.request
             }),
             (error) => error === stopAfterCapture
@@ -78,6 +81,8 @@ Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', asyn
         'lifecycle',
         'erase'
     ]);
+    // Each reservation carries the request trace into the AppInbox placeholder it becomes.
+    assert.deepEqual(reservationTraceIds, ['trace-admin-fixture', 'trace-admin-fixture', 'trace-admin-fixture']);
     for (const command of commands) {
         assert.equal(command.capturedAtEpochMs, CAPTURED_AT_EPOCH_MS);
         assert.equal(
@@ -116,6 +121,7 @@ Deno.test('CRDT admin lifecycle rejects its value before exact document validati
             operation: 'lifecycle',
             adminSession: ADMIN_SESSION,
             requestId: 'invalid-lifecycle-request',
+            traceId: 'trace-admin-fixture',
             request: {
                 document: {
                     applicationId: 'app-1',

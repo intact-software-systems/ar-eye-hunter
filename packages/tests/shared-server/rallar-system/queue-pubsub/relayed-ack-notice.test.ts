@@ -17,7 +17,7 @@ import {
 
 function receiverAck(ackedMsgId = 'room-message-1'): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: 'ack-c', senderId: 'c', ts: 1 },
+        { v: 4, msgId: 'ack-c', senderId: 'c', ts: 1, traceId: 'trace-relayed-ack-notice' },
         {
             ackedMsgId,
             fromPeerId: 'c',
@@ -99,7 +99,7 @@ describe('relayed ACK notice codec', () => {
 
     it('relays only a receiver acknowledgement', () => {
         const nack = newALNackControlMessage(
-            { v: 3, msgId: 'nack-c', senderId: 'c', ts: 1 },
+            { v: 4, msgId: 'nack-c', senderId: 'c', ts: 1, traceId: 'trace-relayed-ack-notice' },
             {
                 msgId: 'room-message-1',
                 fromPeerId: 'c',
@@ -147,7 +147,7 @@ describe('relayed ACK notice codec', () => {
             delivery: 'inline',
             audience: { mode: 'broad', targetMode: 'all' },
             message: {
-                id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'sender' },
+                id: { v: 4, msgId: 'message-1', ts: 1, senderId: 'sender', traceId: 'trace-relayed-ack-notice' },
                 route: { topicId: 'app.live', resourceId: 'message', contextId: 'all' },
                 targets: { mode: 'broadcast', scope: 'all' },
                 constraints: { expiresAtMs: 1_800_000_000_000 },

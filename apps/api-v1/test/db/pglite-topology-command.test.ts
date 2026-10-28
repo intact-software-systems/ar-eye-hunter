@@ -390,6 +390,7 @@ Deno.test(
                 })
             );
             const topologyWork = computeCoalescedRtcTopologyGroupRevisionWork({
+                traceId: 'trace-pglite-topology-command',
                 aggregateRef: durableTerminal.group,
                 groupSnapshot: durableTerminal,
                 requestedAtEpochMs: nowEpochMs,

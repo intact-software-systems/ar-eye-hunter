@@ -55,11 +55,13 @@ describe('retirement fences queued presence summaries', () => {
             requestId: 'delete-read-race',
             observedAtEpochMs: fixture.nowEpochMs
         });
-        const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1));
+        const computed = fixture.retention.compute(
+            await fixture.retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention-summary-deletion' })
+        );
         expect(await repository.findPresenceSummaryEntry(producer.ref)).toBeDefined();
 
         await expect(commitRetention(fixture, computed)).rejects.toMatchObject({ code: 'runtime-state-write-conflict' });
-        const retry = fixture.retention.compute(await fixture.retention.read(ingress, 2));
+        const retry = fixture.retention.compute(await fixture.retention.read(ingress, { attemptCount: 2, traceId: 'trace-group-retention-summary-deletion' }));
         await commitRetention(fixture, retry);
         expect(await repository.findGroup(producer.ref)).toBeUndefined();
         expect(await repository.findPresenceSummaryEntry(producer.ref)).toBeUndefined();
@@ -71,7 +73,9 @@ describe('retirement fences queued presence summaries', () => {
         const producer = await createGroupDeltaProducer(fixture.storage.sql);
         await archiveProducer(fixture, producer);
         const ingress = fixture.retention.capture({ groupRef: producer.ref, requestId: 'delete-summary-race', observedAtEpochMs: fixture.nowEpochMs });
-        const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1));
+        const computed = fixture.retention.compute(
+            await fixture.retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention-summary-deletion' })
+        );
         const current = fixture;
         if (order === 'summary-first') {
             await producer.worker.processReservedEntry(producer.message, producer.entry);
@@ -94,7 +98,7 @@ describe('retirement fences queued presence summaries', () => {
                 expect(outcomes[0].status === 'rejected' || outcomes[0].value instanceof ResourceInboxHandlerRetryableConflict).toBe(true);
             }
         }
-        const retry = fixture.retention.compute(await fixture.retention.read(ingress, 2));
+        const retry = fixture.retention.compute(await fixture.retention.read(ingress, { attemptCount: 2, traceId: 'trace-group-retention-summary-deletion' }));
         await commitRetention(fixture, retry);
         expect(await fixture.repository.findGroup(producer.ref)).toBeUndefined();
         expect(await fixture.repository.findPresenceSummaryEntry(producer.ref)).toBeUndefined();
@@ -109,7 +113,9 @@ describe('retirement fences queued presence summaries', () => {
             await fixture.runtime.deleteByKey(PRESENCE_SUMMARIES_NAMESPACE, groupStateGroupStorageKey(producer.ref));
         }
         const ingress = fixture.retention.capture({ groupRef: producer.ref, requestId: 'delete-summary-race', observedAtEpochMs: fixture.nowEpochMs });
-        const computed = fixture.retention.compute(await fixture.retention.read(ingress, 1));
+        const computed = fixture.retention.compute(
+            await fixture.retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention-summary-deletion' })
+        );
         expect(computed.outcome).toBe('write');
         const read = producer.worker.read.bind(producer.worker);
         const current = fixture;

@@ -13,6 +13,7 @@ import {
 export interface GroupPresenceSummaryWorkItem {
     readonly work: GroupPresenceSummaryWorkData;
     readonly reservation: GroupPresenceSummaryReservationRead;
+    readonly traceId: string;
 }
 
 /** The claimed items one expansion writes, in causal order, and the claimed items it leaves to the next claim. */

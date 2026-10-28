@@ -42,13 +42,16 @@ function installCounters(
 // At composition, before rallar.start():
 const counters = installCounters(rallar, database);
 
-// An authenticated HTTP boundary supplies a stable caller request ID:
+// An authenticated HTTP boundary supplies a stable caller request ID and its request trace:
 const outcome = await counters.increment.submit({
-    counterId: 'visits',
-    requestId: requestId,
-    capturedAtEpochMs: null
+    command: { counterId: 'visits', requestId: requestId, capturedAtEpochMs: null },
+    traceId: requestTraceId
 });
 ```
+
+The trace (an HTTP request's `x-request-id`, or a WS command's envelope trace) rides
+the admitted envelope only: the retained command and its idempotency identity never
+carry it, so a replay under another trace matches the retained winner.
 
 `submit` waits for the exact durable result. Matching requests replay that result;
 a different logical command under the same scoped request key returns an

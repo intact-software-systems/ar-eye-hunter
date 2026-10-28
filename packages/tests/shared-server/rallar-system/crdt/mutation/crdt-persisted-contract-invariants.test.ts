@@ -81,6 +81,7 @@ describe('CRDT persisted mutation contract invariants', () => {
     it('binds accepted nested results to the outer document, revision, and sequence', async () => {
         const command = await appendCommand();
         const computed = computeCrdtMutation({
+            traceId: 'trace-crdt-persisted-contract-invariants',
             command,
             read: emptyRead(),
             serviceId: 'server-1'
@@ -111,15 +112,15 @@ describe('CRDT persisted mutation contract invariants', () => {
         });
         const read = existingRead();
 
-        expect(computeCrdtMutation({ command, read, serviceId: 'server-1' })).toEqual(
-            computeCrdtMutation({ command, read, serviceId: 'server-1' })
+        expect(computeCrdtMutation({ traceId: 'trace-crdt-persisted-contract-invariants', command, read, serviceId: 'server-1' })).toEqual(
+            computeCrdtMutation({ traceId: 'trace-crdt-persisted-contract-invariants', command, read, serviceId: 'server-1' })
         );
     });
 
     it('keeps audit work live through the complete 20-attempt retry horizon', () => {
         const capturedAtEpochMs = 1_000;
-        const entry = toCrdtAuditOutbox(
-            {
+        const entry = toCrdtAuditOutbox({
+            event: {
                 kind: 'erase',
                 atEpochMs: capturedAtEpochMs,
                 documentKey: toRallarCrdtDocumentKey(DOCUMENT),
@@ -127,14 +128,15 @@ describe('CRDT persisted mutation contract invariants', () => {
                 reason: 'privacy',
                 metadata: { mode: 'destroy-document' }
             },
-            {
+            command: {
                 commandId: 'audit-1',
                 capturedAtEpochMs,
                 expireAtEpochMs: capturedAtEpochMs + 60_000,
                 documentKey: toRallarCrdtDocumentKey(DOCUMENT)
             },
-            'server-1'
-        );
+            serviceId: 'server-1',
+            traceId: 'trace-crdt-persisted-contract-invariants'
+        });
         let finalRetryAtEpochMs = capturedAtEpochMs;
         for (let attempt = 1; attempt < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; attempt += 1) {
             const decision = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, attempt, 1);

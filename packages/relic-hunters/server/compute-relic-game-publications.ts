@@ -48,7 +48,7 @@ export interface RelicGamePublicationProvenance {
 }
 
 interface RelicGamePublicationInput {
-    readonly read: RelicGameMutationService.Read;
+    readonly read: RelicGameMutationService.Attempt;
     readonly previous: RelicGameState | null;
     readonly next: RelicGameState | null;
     readonly refusal: string | null;
@@ -105,7 +105,7 @@ function toRelicGameAudience(
 
 /** Translates a domain notification into the existing room or principal wire contract. */
 function toRelicGameMessage(
-    read: RelicGameMutationService.Read,
+    read: RelicGameMutationService.Attempt,
     notification: RelicGameNotification,
     audience: readonly string[]
 ): ALMessage {
@@ -113,7 +113,13 @@ function toRelicGameMessage(
     const created = read.attemptAtEpochMs;
     const identity = `relic:${computeSha256CanonicalJson(read.ingress.command).slice(0, 40)}:${notification.effect}`;
     return {
-        id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: identity, ts: created, senderId: read.ingress.serverPeerId },
+        id: {
+            v: AL_MESSAGE_ENVELOPE_VERSION,
+            msgId: identity,
+            ts: created,
+            senderId: read.ingress.serverPeerId,
+            traceId: read.traceId
+        },
         route: { topicId: notification.topicId, contextId: ref.groupId, resourceId: identity },
         targets: {
             mode: 'broadcast',
@@ -141,7 +147,7 @@ function toRelicGameMessage(
 
 /** Encodes the final outbox row and its independently checked producer provenance before transaction entry. */
 function toRelicGamePublication(
-    read: RelicGameMutationService.Read,
+    read: RelicGameMutationService.Attempt,
     notification: RelicGameNotification
 ): RelicGamePublication {
     const ref = toRelicRoomGroupRef(read.ingress.command.gameId);

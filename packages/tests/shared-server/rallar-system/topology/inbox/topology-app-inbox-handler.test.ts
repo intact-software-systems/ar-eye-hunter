@@ -9,7 +9,7 @@ import {
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
@@ -372,7 +372,7 @@ function sessionReader(
 }
 
 function createMessageContext(
-    enqueue: AppInboxEnqueueInput
+    enqueue: AppInboxEnqueue
 ): AppInboxMessageContext<TopologyAppInboxResult> {
     const message = newALUntargetedMessage(
         'topology-handler-test',
@@ -499,7 +499,8 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
         },
         authorityGuard: groupAuthorityGuard(),
         actorIsPlatformAdmin: false,
-        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
+        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+        traceId: 'trace-topology-app-inbox-handler'
     };
 }
 
@@ -553,6 +554,7 @@ function unusedReconfigureMutation(): TopologyAppInboxMutationOwners['reconfigur
 
 function topologyOutbox(resourceId: string): ComputedRtcTopologyOutbox {
     return {
+        traceId: 'trace-topology-app-inbox-handler',
         commandId: 'handler-request',
         aggregateRef: GROUP_REF,
         acceptedCausalRevision: { groupRevision: 1, presenceRevision: 0 },

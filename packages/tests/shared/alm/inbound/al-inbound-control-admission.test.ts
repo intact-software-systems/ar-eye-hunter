@@ -46,7 +46,7 @@ import {
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
 const message: ALMessage = {
-    id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000 },
+    id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000, traceId: 'trace-al-inbound-control-admission' },
     route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
     ordering: { orderingKey: 'chat', seq: 2 },
     payload: { typeId: 'chat', resource: '{"text":"hello"}' }
@@ -148,7 +148,7 @@ async function seedPendingAcknowledgement(
 
 function createAcknowledgement(fromPeerId: string, originPeerId: string = message.id.senderId): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+        { v: 4, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-al-inbound-control-admission' },
         {
             ackedMsgId: message.id.msgId,
             originPeerId,
@@ -275,6 +275,19 @@ describe('inbound control admission', () => {
             .toEqual(['send-control', 'send-control']);
     });
 
+    it('relays upstream under the trace of the acknowledgement it admits, never a fresh one', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedPendingAcknowledgement(admissionStore);
+        const acknowledgement = createAcknowledgement('receiver');
+
+        expect((await control.admit(acknowledgement, WS_ARRIVAL)).kind).toBe('committed');
+
+        const relayed = (await readRetainedWork(admissionStore, workQueue)).map((work) =>
+            work.payload.kind === 'send-control' ? work.payload.msg.id.traceId : undefined
+        );
+        expect(relayed).toEqual([acknowledgement.id.traceId, acknowledgement.id.traceId]);
+    });
+
     it('retains admit-control work for a conflicting commit and replays it to completion', async () => {
         const { backend, write, admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
@@ -282,7 +295,9 @@ describe('inbound control admission', () => {
             throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
         });
 
-        const conflicted = await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL);
+        const acknowledgement = createAcknowledgement('receiver');
+        const traced = { ...acknowledgement, id: { ...acknowledgement.id, traceId: 'trace-replayed-acknowledgement' } };
+        const conflicted = await control.admit(traced, WS_ARRIVAL);
 
         expect(conflicted).toEqual({ kind: 'pending-control' });
         expect((await readAcknowledgements(backend, admissionStore)).acks).toEqual([]);
@@ -308,8 +323,10 @@ describe('inbound control admission', () => {
         expect(commits).toHaveLength(1);
         expect(commits[0]!.workKinds).toEqual(['send-control', 'send-control']);
         expect(commits[0]!.storeKeys).toContainEqual(expect.stringContaining(':control:acks:'));
-        expect((await readRetainedWork(admissionStore, workQueue)).map((work) => work.payload.kind).toSorted())
-            .toEqual(['admit-control', 'send-control', 'send-control']);
+        const work = await readRetainedWork(admissionStore, workQueue);
+        expect(work.map((entry) => entry.payload.kind).toSorted()).toEqual(['admit-control', 'send-control', 'send-control']);
+        expect(work.flatMap((entry) => entry.payload.kind === 'send-control' ? [entry.payload.msg.id.traceId] : []))
+            .toEqual([traced.id.traceId, traced.id.traceId]);
     });
 
     it('retains a conflicting acknowledgement under the carrier it arrived on and records it under that carrier', async () => {
@@ -353,6 +370,7 @@ describe('inbound control admission', () => {
         });
         // The lower relay already completed its hop; the direct leaf completes the subtree.
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: toAck('leaf', 'leaf'),
             controlOwners: TRACKED_CONTROL_OWNERS,
@@ -428,6 +446,7 @@ describe('inbound control admission', () => {
         });
         const readWith = (ack: ALAckPayload) =>
             computeALInboundControlAdmission({
+                traceId: 'trace-al-inbound-control-admission',
                 namespace: 'inbound',
                 ack,
                 controlOwners: TRACKED_CONTROL_OWNERS,
@@ -458,6 +477,7 @@ describe('inbound control admission', () => {
     it('names itself in its terminal ACK, after the recipients it relays', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
@@ -501,6 +521,7 @@ describe('inbound control admission', () => {
     it('re-originates the origin from its own message-owner row, never from what a child claimed', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
@@ -545,6 +566,7 @@ describe('inbound control admission', () => {
     it('reports every reason one acknowledgement candidate is inadmissible', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
@@ -629,6 +651,7 @@ function admitRelayAcknowledgements(
     const completedAfter: boolean[] = [];
     for (const [index, ack] of arrivals.entries()) {
         const candidate = computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
             ack: { ...ack, toPeerId: row.selfPeerId },
             controlOwners: TRACKED_CONTROL_OWNERS,

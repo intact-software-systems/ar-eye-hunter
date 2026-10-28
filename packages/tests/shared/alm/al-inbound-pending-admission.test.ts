@@ -237,7 +237,13 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     });
     onTestFinished(() => runtime.dispose());
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
-    const untrackedAck = newALAckControlMessage({ v: 3, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
+    const untrackedAck = newALAckControlMessage({
+        v: 4,
+        senderId: 'sender',
+        msgId: 'unknown-control',
+        ts: Date.now(),
+        traceId: 'trace-al-inbound-pending-admission'
+    }, {
         ackedMsgId: 'unknown',
         originPeerId: 'receiver',
         logicalRecipientPeerId: 'sender',

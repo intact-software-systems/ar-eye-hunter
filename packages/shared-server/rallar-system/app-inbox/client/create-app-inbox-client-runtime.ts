@@ -1,20 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import {
-    newALRoute,
-    newALUntargetedMessage,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
-import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import { normalizeAppInboxOptions, type AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
-import type {
-    AppInboxQueueMessageCreationDto,
-    AppInboxQueueMessageFactory
+import {
+    createDefaultAppInboxQueueMessage,
+    type AppInboxQueueMessageFactory
 } from '../app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from './app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from './app-inbox-queue-entry-writer.ts';
@@ -93,13 +87,4 @@ export function createAppInboxClientRuntime(
         reservationClient,
         resultWaiter
     };
-}
-
-function createDefaultAppInboxQueueMessage(creation: AppInboxQueueMessageCreationDto): ALMessage {
-    return newALUntargetedMessage(
-        toAppQueueCreatedBy(creation.serviceId),
-        newALRoute(creation.key.topicId, creation.key.contextId, creation.key.resourceId),
-        creation.enqueue.type,
-        creation.enqueue
-    );
 }

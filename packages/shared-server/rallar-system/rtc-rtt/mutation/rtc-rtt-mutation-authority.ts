@@ -1,3 +1,4 @@
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
@@ -14,6 +15,9 @@ export function assertRtcRttMutationFacts(facts: RtcRttMutationFacts): void {
     }
     if (!Number.isSafeInteger(facts.attemptCount) || facts.attemptCount < 1) {
         throw new TypeError('RTC RTT attempt count fact is invalid');
+    }
+    if (decodeALTraceId(facts.traceId).left !== undefined) {
+        throw new TypeError('RTC RTT trace fact is invalid');
     }
     if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
         if (facts.requestedAtEpochMs !== null || facts.purgeAfterEpochMs !== null) {

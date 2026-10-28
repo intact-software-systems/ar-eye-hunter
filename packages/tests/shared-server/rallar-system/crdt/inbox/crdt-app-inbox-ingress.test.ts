@@ -9,8 +9,10 @@ import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.t
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppCrdtInboxService, CRDT_APP_INBOX_TOPIC } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import type { ReadCurrentCrdtMutationSession } from '@shared-server/rallar-system/crdt/inbox/create-authenticated-crdt-append.ts';
+import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
@@ -107,6 +109,42 @@ describe('CRDT production AppInbox ingress', () => {
     );
 });
 
+describe('CRDT WS mutation ingress', () => {
+    it('enqueues a WS update under the trace of the message that carried it', async () => {
+        const reader = new CapturingInboxReader(false);
+        const ingress = createCrdtWsMutationIngress(appCrdt(reader, async ({ sessionId }) => ({
+            clientId: 'client-1',
+            username: 'client-1',
+            sessionId
+        })));
+        const envelope = update('ws-update');
+        const raw = newALBroadcastMessage(
+            'session-1',
+            newALRoute('room.crdt', 'group-1', envelope.updateId),
+            'room',
+            'rallar.crdt.update.v1',
+            envelope,
+            { groupRef: DOCUMENT.roomRef, traceId: 'trace-crdt-ws-update' }
+        );
+
+        await ingress.enqueueUpdate({
+            kind: 'update',
+            envelope,
+            raw,
+            trusted: {
+                senderId: 'session-1',
+                sessionId: 'session-1',
+                receivedAtEpochMs: 1_000,
+                topicId: 'room.crdt',
+                typeId: 'rallar.crdt.update.v1'
+            }
+        });
+
+        await vi.waitFor(() => expect(reader.messages).toHaveLength(1));
+        expect(reader.messages[0]!.id.traceId).toBe('trace-crdt-ws-update');
+    });
+});
+
 class CapturingInboxReader extends InboxQueueReader {
     readonly messages: ALMessage[] = [];
 
@@ -126,7 +164,10 @@ class CapturingInboxReader extends InboxQueueReader {
     }
 }
 
-function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
+function appCrdt(
+    inbox: InboxQueueReader,
+    readCurrentSession: ReadCurrentCrdtMutationSession = () => Promise.reject(new Error('not read'))
+): AppCrdtInboxService {
     const database = createUnusedDatabase();
     const repository = {
         readMutation: () => Promise.reject(new Error('not processed'))
@@ -141,7 +182,7 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
                 repository,
                 serviceId: 'server-1'
             }),
-            readCurrentSession: () => Promise.reject(new Error('not read')),
+            readCurrentSession,
             wakeQueueEngine: () => undefined
         },
         { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: undefined, appInbox: {} }
@@ -176,6 +217,7 @@ function input(input: CrdtInboxInput) {
     return {
         update: updateEnvelope,
         deliveryId,
+        traceId: 'trace-crdt-app-inbox-ingress',
         actor: { actorId: 'client-1', principalId: 'client-1', sessionId, serverId: 'server-1' },
         responseAudience: {
             kind: 'room' as const,

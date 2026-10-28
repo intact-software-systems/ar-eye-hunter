@@ -111,7 +111,7 @@ it.each(
             }
         });
         const ack = newALAckControlMessage(
-            { v: 3, msgId: 'ack', senderId: 'receiver', ts: nowMs },
+            { v: 4, msgId: 'ack', senderId: 'receiver', ts: nowMs, traceId: 'trace-outbound-ack-conflict-replay' },
             {
                 ackedMsgId: message.id.msgId,
                 originPeerId: 'sender',
@@ -202,7 +202,7 @@ async function readRepairBundle(
 
 function createTrackedMessage(): ALMessage {
     return {
-        id: { v: 3, msgId: 'data', senderId: 'sender', ts: 10_000 },
+        id: { v: 4, msgId: 'data', senderId: 'sender', ts: 10_000, traceId: 'trace-outbound-ack-conflict-replay' },
         route: { topicId: 'chat', resourceId: 'data', contextId: 'conversation' },
         payload: { typeId: 'chat.text', resource: '{}' },
         targets: { mode: 'unicast', toPeerId: 'receiver' },

@@ -68,7 +68,7 @@ class AcknowledgementFixture {
     });
     readonly engine = new InboxOutboxEngine();
     readonly message: ALMessage = {
-        id: { v: 3, msgId: 'subject', senderId: 'origin', ts: 1 },
+        id: { v: 4, msgId: 'subject', senderId: 'origin', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' },
         route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
         payload: { typeId: 'chat', resource: '{"private":"payload"}' }
     };
@@ -131,7 +131,7 @@ class AcknowledgementFixture {
     }
 
     acknowledgement(originPeerId = 'origin', logicalRecipientPeerId = 'leaf'): ALMessage {
-        return newALAckControlMessage({ v: 3, msgId: 'incoming-control', senderId: 'child', ts: 1 }, {
+        return newALAckControlMessage({ v: 4, msgId: 'incoming-control', senderId: 'child', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' }, {
             ackedMsgId: 'subject',
             originPeerId,
             logicalRecipientPeerId,

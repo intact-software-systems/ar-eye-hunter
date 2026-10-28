@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../al-contracts/al-contract.ts';
+import { decodeALTraceId } from '../al-contracts/trace/al-trace-id.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { validateAuthoritativeGroupEvent } from '../api/authoritative-state-validation.ts';
 import type { GroupEvent, GroupRef, GroupStateCausalRevision } from '../api/group-types.ts';
@@ -45,7 +46,8 @@ const RESOURCE_ENTRY_STATUSES = new Set<string>(Object.values(EntityStatus));
 
 export function computeGroupPresenceSummaryEntry(
     work: GroupPresenceSummaryWorkData,
-    senderId: string
+    senderId: string,
+    traceId: string
 ): ResourceEntry {
     requireCanonicalGroupPresenceSummaryWork(work);
     requireNonEmptyString(senderId);
@@ -79,7 +81,8 @@ export function computeGroupPresenceSummaryEntry(
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: resourceId,
             ts: work.createdAtEpochMs,
-            senderId: createdBy
+            senderId: createdBy,
+            traceId
         },
         route: key,
         constraints: { expiresAtMs: work.expireAtEpochMs },
@@ -141,7 +144,11 @@ export function decodeCanonicalGroupPresenceSummaryEntry(
     requireExactKeys(workRecord, WORK_KEYS);
     const work = toGroupPresenceSummaryWork(workRecord);
 
-    const expected = computeGroupPresenceSummaryEntry(work, envelope.senderId);
+    const traceId = decodeALTraceId(requireRecord(messageRecord.id).traceId).right;
+    if (traceId === undefined) {
+        throw new TypeError('Group presence-summary trace is invalid');
+    }
+    const expected = computeGroupPresenceSummaryEntry(work, envelope.senderId, traceId);
     if (!hasSameGroupPresenceSummaryImmutableEntry(entry, expected)) {
         throw new TypeError('Group presence-summary entry is not canonical');
     }

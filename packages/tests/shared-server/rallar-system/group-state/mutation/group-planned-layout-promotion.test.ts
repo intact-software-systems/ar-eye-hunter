@@ -312,7 +312,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 authorityProof: null,
                 descriptor: null,
                 command: ingress.command,
-                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs }
+                facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId: 'trace-group-planned-layout-promotion' }
             };
         };
         return { service, captureIngress };
@@ -517,6 +517,7 @@ describe('applyPlannedLayout through the inbox lane', () => {
 describe('topology promotion outbox entry', () => {
     it('round-trips the work through the durable entry', () => {
         const entry = computeTopologyPromotionEntry({
+            traceId: 'trace-group-planned-layout-promotion',
             work: { groupRef: GROUP_REF, formationEpoch: 2, expectedLayout: IDENTITY },
             sourceWorkId: 'rtc-topology:promotion-group:work-1',
             senderId: 'promotion-service',

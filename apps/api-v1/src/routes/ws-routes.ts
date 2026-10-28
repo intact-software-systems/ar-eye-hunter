@@ -22,6 +22,7 @@ import {
     readAuthorisedWsConnection,
     rememberAuthorisedWsConnection
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { RequestAuthFailure, toAuthErrorResponse } from '../services/request-auth-service.ts';
 
 /** Longer than the connect's completion wait plus a handshake: a socket that neither opens nor closes stops holding rows. */
@@ -71,6 +72,7 @@ async function upgradeAuthorisedWebSocket(
     const connect = createAuthorisedWsConnect(input, {
         session,
         ticketDigest,
+        traceId: readApiRequestTraceId(context),
         requestUrl,
         userAgent: context.req.header('user-agent')
     });
@@ -110,6 +112,7 @@ async function readTicketedWsSession(
 interface CreateAuthorisedWsConnectInput {
     readonly session: PersistedAuthSession;
     readonly ticketDigest: string;
+    readonly traceId: string;
     readonly requestUrl: URL;
     readonly userAgent: string | undefined;
 }
@@ -124,6 +127,7 @@ function createAuthorisedWsConnect(
             authSession: request.session,
             generationId: generation.generationId,
             ticketDigest: request.ticketDigest,
+            traceId: request.traceId,
             input: toAuthorisedWsClientInput(
                 request.requestUrl,
                 request.userAgent,

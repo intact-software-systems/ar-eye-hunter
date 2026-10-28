@@ -262,6 +262,7 @@ async function writeHead(
     expireAtEpochMs: number
 ): Promise<CoalescedAppOutboxWorkWrite> {
     const computed = computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-rtc-topology-coalesced-head-retention',
         aggregateRef: h.state.group.group,
         groupSnapshot: h.state.group,
         requestedAtEpochMs: Date.now(),

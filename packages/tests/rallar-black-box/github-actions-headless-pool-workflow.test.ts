@@ -209,13 +209,13 @@ async function existingUsernameRegistrationResponse(): Promise<string> {
     const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
     const request = { username: 'controller-05', password: 'test-password' };
     const registered = await runAuthInboxCommand({
-        pending: auth.service.registerUser({ requestId: 'RegistrationFirst_01', request }),
+        pending: auth.service.registerUser({ traceId: 'trace-test-fixture', requestId: 'RegistrationFirst_01', request }),
         queue: auth.queue,
         reader: auth.reader
     });
     expect(registered.right?.username).toBe(request.username);
     const repeated = await runAuthInboxCommand({
-        pending: auth.service.registerUser({ requestId: 'RegistrationSecond_02', request }),
+        pending: auth.service.registerUser({ traceId: 'trace-test-fixture', requestId: 'RegistrationSecond_02', request }),
         queue: auth.queue,
         reader: auth.reader,
         minimumEntries: 2

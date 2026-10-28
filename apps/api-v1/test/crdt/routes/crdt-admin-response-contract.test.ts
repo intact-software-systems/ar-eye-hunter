@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import {
@@ -43,6 +43,7 @@ import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { createTracedApiTestApp } from '../../services/create-traced-api-test-app.ts';
 import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -247,8 +248,8 @@ async function seedCrdtAdminDocument(
         }
     });
     const read = await mutationService.read(initial);
-    const computed = mutationService.compute({ command: initial, read });
-    assert.deepEqual(mutationService.validate({ command: initial, read, computed }), []);
+    const computed = mutationService.compute({ traceId: 'trace-crdt-admin-response-contract', command: initial, read });
+    assert.deepEqual(mutationService.validate({ traceId: 'trace-crdt-admin-response-contract', command: initial, read, computed }), []);
     await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
     await sql`
     update crdt_documents set
@@ -314,7 +315,7 @@ function createCrdtAdminApp(input: CreateCrdtAdminAppInput): Hono {
         issuedAtEpochMs: input.now,
         expiresAtEpochMs: input.now + 60_000
     };
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     routes.registerCrdtAdminRoutes(app, {
         repository: new PSqlCrdtLogRepository(input.sql),
         crdtAdminMutations: createCrdtAdminMutations({
@@ -657,7 +658,7 @@ async function readAuditCount(
 }
 
 Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
-    const unauthorized = new Hono();
+    const unauthorized = createTracedApiTestApp();
     routes.registerCrdtAdminRoutes(unauthorized, {
         repository: createUnusedCrdtReadRepository(),
         crdtAdminMutations: {
@@ -685,7 +686,7 @@ Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async ()
         'api-mutation-failure'
     );
 
-    const forbidden = new Hono();
+    const forbidden = createTracedApiTestApp();
     routes.registerCrdtAdminRoutes(forbidden, {
         repository: createUnusedCrdtReadRepository(),
         crdtAdminMutations: {

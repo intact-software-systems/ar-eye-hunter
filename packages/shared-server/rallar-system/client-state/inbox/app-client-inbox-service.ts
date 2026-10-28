@@ -1,8 +1,13 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueue,
+    type AppInboxEnqueueInput
+} from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
@@ -169,7 +174,7 @@ export class AppClientInboxService {
         input: ToAuthorisedWsClientConnectEnqueueInput
     ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
         return await this.commandClient.enqueueAndWaitForResult(
-            toAuthorisedWsClientConnectEnqueue(input),
+            { ...toAuthorisedWsClientConnectEnqueue(input), traceId: input.traceId },
             decodeAuthorisedWsClientMutationResult
         );
     }
@@ -177,16 +182,20 @@ export class AppClientInboxService {
     public async enqueueAuthorisedWsClientDisconnect(
         input: ToAuthorisedWsClientDisconnectEnqueueInput
     ) {
-        return await this.queueEntryWriter.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
+        return await this.queueEntryWriter.enqueue({
+            ...toAuthorisedWsClientDisconnectEnqueue(input),
+            traceId: newALTraceId()
+        });
     }
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
-        return await this.queueEntryWriter.enqueue(
-            this.toExpiredSessionsEnqueue(
+        return await this.queueEntryWriter.enqueue({
+            ...this.toExpiredSessionsEnqueue(
                 { atEpochMs, afterKey: null },
                 `expire-client-sessions-${atEpochMs}`
-            )
-        );
+            ),
+            traceId: newALTraceId()
+        });
     }
 
     private registerClientStateMessages(): void {
@@ -330,7 +339,7 @@ export class AppClientInboxService {
     private toExpiredSessionsEnqueue(
         input: ClientExpiredSessionPageInput,
         resourceId: string
-    ): AppInboxEnqueueInput {
+    ): AppInboxEnqueue {
         return {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
             topicId: AppInboxType.CLIENT_EXPIRED_SESSIONS,

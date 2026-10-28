@@ -75,6 +75,7 @@ describe('temporary room retention decisions', () => {
             reader: fixture.harness.reader,
             authority: fixture.harness.sessions.owner,
             input: {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
                 resourceId: 'old-disconnect',
                 contextId: REF.groupId,
@@ -105,18 +106,18 @@ describe('temporary room retention decisions', () => {
         const fixture = await createFixture();
         const ingress = fixture.service.capture({ groupRef: REF, requestId: 'delayed', observedAtEpochMs: fixture.nowEpochMs });
         fixture.nowEpochMs += 10_000;
-        const read = await fixture.service.read(ingress, 2);
+        const read = await fixture.service.read(ingress, { attemptCount: 2, traceId: 'trace-group-retention' });
         const computed = fixture.service.compute(read);
         expect(fixture.service.validate(read, computed)).toEqual([]);
         await fixture.harness.database.begin((transaction) => fixture.service.write(transaction, computed));
         expect((await group(fixture)).emptySinceEpochMs).toBe(fixture.nowEpochMs);
         const count = (await fixture.harness.repository.listEvents(REF)).length;
         fixture.nowEpochMs += 10_000;
-        const replay = fixture.service.compute(await fixture.service.read(ingress, 3));
+        const replay = fixture.service.compute(await fixture.service.read(ingress, { attemptCount: 3, traceId: 'trace-group-retention' }));
         expect(replay).toEqual({ outcome: 'replay', receipt: computed.receipt });
         expect((await fixture.harness.repository.listEvents(REF)).length).toBe(count);
         const changed = fixture.service.capture({ ...ingress.command, observedAtEpochMs: fixture.nowEpochMs });
-        await expect(fixture.service.read(changed, 1)).rejects.toMatchObject({ status: 409 });
+        await expect(fixture.service.read(changed, { attemptCount: 1, traceId: 'trace-group-retention' })).rejects.toMatchObject({ status: 409 });
     });
 
     it.each(['persistent', 'archived', 'missing'] as const)('leaves %s rooms unchanged', async (mode) => {
@@ -152,13 +153,15 @@ describe('temporary room retention decisions', () => {
         );
         const ingress = fixture.service.capture({ groupRef: REF, requestId: 'corrupt', observedAtEpochMs: fixture.nowEpochMs });
 
-        await expect(fixture.service.read(ingress, 1)).rejects.toMatchObject({ code: 'group-state-repository-invariant-corruption' });
+        await expect(fixture.service.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention' })).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption'
+        });
     });
 
     it('validates the complete prepared write and is independent of authority row ordering', async () => {
         const fixture = await createFixture();
         const ingress = fixture.service.capture({ groupRef: REF, requestId: 'validate', observedAtEpochMs: fixture.nowEpochMs });
-        const read = await fixture.service.read(ingress, 1);
+        const read = await fixture.service.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention' });
         const computed = fixture.service.compute(read);
         expect(fixture.service.validate(read, computed)).toEqual([]);
         if (computed.outcome === 'absent') {
@@ -191,6 +194,7 @@ async function createFixture(temporary = true): Promise<RetentionFixture> {
         reader: harness.reader,
         authority: harness.sessions.owner,
         input: {
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             resourceId: 'create-retained',
             contextId: REF.groupId,
@@ -214,7 +218,7 @@ async function createFixture(temporary = true): Promise<RetentionFixture> {
 
 async function reconcile(fixture: RetentionFixture, requestId: string): Promise<GroupRetentionService.Computed> {
     const ingress = fixture.service.capture({ groupRef: REF, requestId, observedAtEpochMs: fixture.nowEpochMs });
-    const read = await fixture.service.read(ingress, 1);
+    const read = await fixture.service.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention' });
     const computed = fixture.service.compute(read);
     expect(fixture.service.validate(read, computed)).toEqual([]);
     await fixture.harness.database.begin((transaction) => fixture.service.write(transaction, computed));

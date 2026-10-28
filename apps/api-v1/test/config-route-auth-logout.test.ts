@@ -1,8 +1,9 @@
 import { Either } from '@shared/resilience/Either.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../src/routes/config-route.ts';
 import { createConfigRouteTestDependencies } from './routes/config-route-test-runtime.ts';
+import { createTracedApiTestApp } from './services/create-traced-api-test-app.ts';
 
 const SESSION = {
     clientId: 'client-a',
@@ -14,9 +15,11 @@ const SESSION = {
 } as const;
 const REQUEST_ID = 'LogoutMutationRequest_012345';
 
+type LogoutSessionInput = Parameters<configRoutes.ConfigRouteDependencies['appAuthInbox']['logoutSession']>[0];
+
 Deno.test('logout routes the session mutation through AppAuthInbox', async () => {
-    const calls: unknown[] = [];
-    const app = new Hono();
+    const calls: LogoutSessionInput[] = [];
+    const app = createTracedApiTestApp();
     configRoutes.registerConfigRoutes(
         app,
         createConfigRouteTestDependencies({
@@ -24,7 +27,7 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
             now: () => 2_000,
             createTokenId: () => 'logout-request-1',
             appAuthInbox: ({
-                logoutSession: (input: unknown) => {
+                logoutSession: (input: LogoutSessionInput) => {
                     calls.push(input);
                     return Promise.resolve(Either.ofRight({ loggedOut: true }));
                 }
@@ -35,18 +38,20 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
 
     const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
         method: 'POST',
+        headers: { 'x-request-id': 'trace-logout' },
         body: JSON.stringify({})
     });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { loggedOut: true });
     assert.deepEqual(calls, [{
         requestId: REQUEST_ID,
+        traceId: 'trace-logout',
         session: SESSION
     }]);
 });
 
 Deno.test('logout returns the durable AppInbox failure status', async () => {
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     configRoutes.registerConfigRoutes(
         app,
         createConfigRouteTestDependencies({

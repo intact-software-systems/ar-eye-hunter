@@ -9,7 +9,10 @@ import {
     type AppInboxExecutionMetadata
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
-import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import {
+    createAppInboxResourceEntry,
+    createDefaultAppInboxQueueMessage
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { computeAppInboxCompletion, validateAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
@@ -18,7 +21,6 @@ import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createAppInboxQueueMessageFixture } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createResourceEntry, withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -28,6 +30,7 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
             const repository = createPSqlResourceInboxRepository(sql, () => new Date());
             const enqueue = {
                 type: AppInboxType.GROUP_CREATE,
+                traceId: 'trace-app-inbox-fixture',
                 topicId: 'app-inbox.group-state',
                 resourceId: `conflict-${owner}`,
                 contextId: 'conflict-group',
@@ -37,7 +40,7 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
             const entry: ResourceEntry = {
                 ...createAppInboxResourceEntry(enqueue, 'conflict-test', {
                     creationNow: () => reservationStartedAt,
-                    createMessage: createAppInboxQueueMessageFixture
+                    createMessage: createDefaultAppInboxQueueMessage
                 }),
                 status: EntityStatus.RESERVED,
                 dequeueAudit: { attempts: 2, startTs: reservationStartedAt }

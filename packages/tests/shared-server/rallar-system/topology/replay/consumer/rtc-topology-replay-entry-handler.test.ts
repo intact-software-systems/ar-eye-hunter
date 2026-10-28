@@ -2,6 +2,7 @@ import type { RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import { RtcTopologyReplayEntryHandlerService } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
@@ -93,6 +94,23 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
             recipientPeerIds: ['session-2']
         });
         expect(message.constraints?.expiresAtMs).toBe(fixture.entry.retainUntilEpochMs);
+    });
+
+    it('sends each current-state repair under a fresh valid trace', async () => {
+        const fixture = createRtcTopologyReplayFixture();
+        const currentSnapshot = {
+            ...fixture.currentSnapshot,
+            version: fixture.currentSnapshot.version + 1,
+            updatedAtEpochMs: fixture.currentSnapshot.updatedAtEpochMs + 1
+        };
+        const { handler, send } = createHandler({ ...fixture, currentSnapshot });
+
+        await handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal);
+        await handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal);
+
+        const traces = [...new Set(send.mock.calls.map(([page]) => page.id.traceId))];
+        expect(traces).toHaveLength(2);
+        expect(traces.flatMap(validateALTraceId)).toEqual([]);
     });
 
     it('repairs onto the accepted layout whenever the accepted slot exists (4c)', async () => {
@@ -215,7 +233,9 @@ function createHandler(
     return {
         handler: new RtcTopologyReplayEntryHandlerService({
             publications: {
-                findPublication: vi.fn(async () => fixture.publication)
+                readPublication: vi.fn(async () =>
+                    fixture.publication ? { status: 'found' as const, publication: fixture.publication } : { status: 'absent' as const }
+                )
             },
             outbox: {
                 getItem: vi.fn(async (key) => fixture.outbox?.find((page) => isKeysEqual(page.key, key)))

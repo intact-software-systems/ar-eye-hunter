@@ -52,6 +52,7 @@ export type RtcRttMutationFacts =
     & Readonly<{
         commandHash: string;
         attemptCount: number;
+        traceId: string;
     }>;
 
 export type RtcRttMutationLifecycleFacts = Readonly<{

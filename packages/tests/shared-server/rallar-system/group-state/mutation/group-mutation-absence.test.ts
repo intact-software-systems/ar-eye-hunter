@@ -10,8 +10,7 @@ import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, storedEn
 const ACTOR = {
     actorPrincipalId: 'alice',
     actorSessionId: 'alice-session',
-    reason: null,
-    traceId: null
+    reason: null
 };
 
 describe('group mutation absence', () => {

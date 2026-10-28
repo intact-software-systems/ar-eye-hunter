@@ -33,6 +33,17 @@ overdue. Queue locks are coordination-only, not domain row/advisory/CRDT lock
 precedent. Authoritative persisted and shared contracts use mandatory fields by
 default.
 
+**Request trace.** Every `/api/*` request may send `x-request-id`, a trace of 1 to
+128 characters of `[A-Za-z0-9_-]`. The server validates it, mints a UUID when it is
+absent or invalid, and echoes the trace in the `x-request-id` response header; a
+WebSocket upgrade gets no echo. The browser mints one per request. The mutation
+`requestId` in the path stays the idempotency key, while the trace names one
+attempt, so a replay under another trace returns the original result. The AppInbox
+command envelope carries the request's trace, and every row and publication the
+command writes carries it too. The group and client mutation request bodies take no
+`traceId`: a body trace is refused with `400` as an unknown field. The audit stamp
+and the state event name the trace of the request whose command ran.
+
 ## Browser Rallar
 
 Import one shared facade instance, or create a separate facade with its own connection state, defaults, and current room. Facades in one page still share the API base URL set by `configure(...)` and the stored auth session:
@@ -875,8 +886,8 @@ own.
 `messages.room<T>(definition)` creates a room channel directly;
 `roomSession.message(...)` delegates to it. A typed channel exposes `send`,
 `sendRtc`, `sendWs`, `onRtc` and `onWs`. A `RallarMessageHandle` exposes
-`msgId`, `typeId`, `corrId`, `replyToMsgId`, `lifecycle()`, `onEvent(listener)`,
-`wait(options?)`, `awaitReply(options)` and `cancel()`.
+`msgId`, `typeId`, `traceId`, `corrId`, `replyToMsgId`, `lifecycle()`,
+`onEvent(listener)`, `wait(options?)`, `awaitReply(options)` and `cancel()`.
 
 Selectors can be a `typeId` string or `{ topicId, typeId }`.
 
@@ -1175,6 +1186,23 @@ rallar.messages.ws.onMessage('assist.ask.v1', async (message) => {
 
 The server answers with `newALReplyMessage(request, { senderId, typeId, payload })`;
 the RallarAI WebSocket topic does so for each request (see `docs/rallar-ai-recipes.md`).
+
+### Trace
+
+Every message carries a trace, `id.traceId`: 1 to 128 characters of `[A-Za-z0-9_-]`.
+
+- **The send input.** A send takes an optional `traceId` to link it to an earlier
+  operation's trace. A trace outside the grammar is refused with the issue
+  `$.traceId` before anything is queued. A send without one gets a fresh trace.
+- **The handle and the message.** `handle.traceId` and `RallarMessage.traceId` read
+  the envelope's trace. Retries, the RTC-to-WS fallback, repair and checkpoint
+  restore keep it.
+- **Replies.** `message.reply(...)` and `newALReplyMessage` copy the request's
+  trace, as they copy its correlation.
+- **Server messages.** A message the server sends for a command carries that
+  command's trace, which is the HTTP request's `x-request-id` or the WS command's
+  envelope trace. A control (ACK, NACK, receipt) carries its subject message's
+  trace.
 
 ### Message Audiences
 
@@ -1658,8 +1686,8 @@ A receiver judges a room send against the room snapshot it holds:
 
 The WS server judges WS room sends at admission and again at dispatch; the
 receiving WS client trusts it, and a room publication the server originates
-carries no fence. The envelope version is `AL_MESSAGE_ENVELOPE_VERSION` (3); an
-envelope of any other version is refused `unsupported`.
+carries no fence. The envelope version is `AL_MESSAGE_ENVELOPE_VERSION` (4), which
+requires `id.traceId`; an envelope of any other version is refused `unsupported`.
 
 ### RTC Status And Readiness
 

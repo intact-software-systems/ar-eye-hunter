@@ -99,8 +99,7 @@ export function createMutationCommand(overrides?: GroupMutationFixtureCommand): 
             purgeAfterEpochMs: null,
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
+            reason: null
         },
         operation: 'updateGroup'
     };
@@ -203,6 +202,7 @@ function createMutationActor(audit: AuditStamp): MutationActorFixture {
 
 export function createMutationFacts(): GroupMutationFacts {
     return {
+        traceId: 'trace-group-state-concurrency-test-fixtures',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

@@ -233,14 +233,15 @@ describe('RallarServerWsRouter', () => {
         ).toBe(true);
     });
 
-    it('reserves rallar topics for system middleware and sends a NACK', async () => {
+    it('reserves rallar topics for system middleware and sends a NACK under the rejected message\'s trace', async () => {
         const { router, socket } = createRouter();
         const message = newALBroadcastMessage(
             'peer-1',
             newALRoute('rallar.internal', 'all', 'secret-1'),
             'all',
             'internal.message.v1',
-            { ok: false }
+            { ok: false },
+            { traceId: 'trace-reserved-topic-message' }
         );
 
         await router.route(message);
@@ -248,6 +249,7 @@ describe('RallarServerWsRouter', () => {
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-1');
         expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
+        expect(socket.sent[0].data.id.traceId).toBe('trace-reserved-topic-message');
     });
 
     it('uses lightweight validators for registered topics', async () => {
@@ -906,7 +908,7 @@ describe('RallarServerWsRouter', () => {
         const fixture = createLargeOutboxRoom(sessionIds);
         const message: ALMessage = {
             ...createReceiverRoomBroadcast('large-room'),
-            id: { v: 3, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
+            id: { v: 4, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]!, traceId: 'trace-rallar-server-ws-router' },
             delivery,
             qos
         };

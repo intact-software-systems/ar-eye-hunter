@@ -160,6 +160,7 @@ async function connect(
             authSession,
             generationId: connection.generationId,
             ticketDigest,
+            traceId: 'trace-client-session-retention',
             input: { ...harness.scope, clientInstanceId: connection.clientInstanceId, connectedAtEpochMs }
         })
     );

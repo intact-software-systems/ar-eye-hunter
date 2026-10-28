@@ -1491,7 +1491,7 @@ function toInboundReply(requestMsgId: string): RallarMessage<RallarMessagePayloa
         ...toInboundRequest('reply-1', vi.fn()),
         payload: { secret: 'reply payload' },
         raw: {
-            id: { v: 3, msgId: 'reply-1', ts: Date.now(), senderId: 'bob-session' },
+            id: { v: 4, msgId: 'reply-1', ts: Date.now(), senderId: 'bob-session', traceId: 'trace-delivery' },
             route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
             payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
             actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
@@ -1507,13 +1507,14 @@ function toInboundRequest(
         transport: 'ws',
         roomId: 'room-1',
         senderId: 'bob-session',
+        traceId: 'trace-delivery',
         typeId: 'alm.conformance',
         topicId: 'alm.conformance',
         contextId: 'room-1',
         resourceId: 'room-1',
         payload: { n: 1 },
         raw: {
-            id: { v: 3, msgId, ts: Date.now(), senderId: 'bob-session' },
+            id: { v: 4, msgId, ts: Date.now(), senderId: 'bob-session', traceId: 'trace-delivery' },
             route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
             payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' }
         },
@@ -1525,7 +1526,7 @@ function toInboundRequest(
 /** The reply handle the product's `reply()` opens: a unicast back to the requester under its correlation. */
 function openReplyDelivery(requestMsgId: string): RallarMessageHandle {
     return facade.deliveries.open({
-        id: { v: 3, msgId: `reply-to-${requestMsgId}`, ts: Date.now(), senderId: 'client-1' },
+        id: { v: 4, msgId: `reply-to-${requestMsgId}`, ts: Date.now(), senderId: 'client-1', traceId: 'trace-delivery' },
         route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
         payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
         delivery: { ack: 'receiver', reliability: 'at-least-once' },

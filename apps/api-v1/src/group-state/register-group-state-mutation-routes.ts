@@ -1,6 +1,7 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { AppointGroupDirectorRequest, CreateGroupRequest, UpdateGroupRequest } from '@shared/api/state-types.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -38,6 +39,7 @@ function registerCreateGroupRoute(
                             operation: 'create-group',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             request: await readGroupStateRouteRequest<CreateGroupRequest>(context)
                         })
                     )
@@ -73,6 +75,7 @@ function registerUpdateGroupRoute(
                             operation: 'update-group',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             request: await readGroupStateRouteRequest<UpdateGroupRequest>(context)
                         })
@@ -106,6 +109,7 @@ function registerAppointGroupDirectorRoute(
                             operation: 'appoint-group-director',
                             authSession,
                             scope,
+                            traceId: readApiRequestTraceId(context),
                             groupId,
                             request: await readGroupStateRouteRequest<AppointGroupDirectorRequest>(context)
                         })

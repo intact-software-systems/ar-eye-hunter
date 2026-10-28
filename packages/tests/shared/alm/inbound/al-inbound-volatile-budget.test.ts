@@ -173,7 +173,7 @@ describe('the session volatile bound at the inbound admission (D74, C6)', () => 
 /** An ACK the sender states for a message this session sent: a control, whatever its deadline. */
 function toReceivedAck(): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: 'received-ack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
+        { v: 4, msgId: 'received-ack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-volatile-budget' },
         {
             ackedMsgId: 'sent-message',
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
@@ -189,7 +189,7 @@ function toReceivedAck(): ALMessage {
 
 function toReceivedNack(): ALMessage {
     return newALNackControlMessage(
-        { v: 3, msgId: 'received-nack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
+        { v: 4, msgId: 'received-nack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-volatile-budget' },
         {
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,

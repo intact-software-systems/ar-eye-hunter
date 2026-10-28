@@ -38,6 +38,7 @@ interface DeliveryObservation {
     readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly msgId: string;
     readonly corrId: string;
+    readonly traceId: string;
     readonly replyToMsgId: string | undefined;
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
@@ -217,6 +218,7 @@ export class BrowserRallarDeliveryRegistry {
             rtcCapture,
             msgId: message.id.msgId,
             corrId: toALCorrId(message),
+            traceId: message.id.traceId,
             replyToMsgId: message.actions?.replyToMsgId,
             listeners: new Set(),
             waits: new Map(),
@@ -242,6 +244,7 @@ export class BrowserRallarDeliveryRegistry {
             msgId: observation.lifecycle.msgId,
             typeId: observation.lifecycle.typeId,
             corrId: observation.corrId,
+            traceId: observation.traceId,
             replyToMsgId: observation.replyToMsgId,
             rtcCapture: () => observation.rtcCapture,
             lifecycle: () => this.readLifecycle(observation),

@@ -57,7 +57,7 @@ describe('transactional deletion of room-owned rows', () => {
             }])
         }, { serviceId: 'test', now: () => fixture!.nowEpochMs });
         const ingress = retention.capture({ groupRef: RETENTION_REF, requestId: 'delete-owned', observedAtEpochMs: fixture.nowEpochMs });
-        const read = await retention.read(ingress, 1);
+        const read = await retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retirement-owned-data' });
         const computed = retention.compute(read);
         expect(retention.validate(read, computed)).toEqual([]);
         await fixture.storage.sql.begin((transaction) => retention.write(transaction, computed));
@@ -85,7 +85,7 @@ describe('transactional deletion of room-owned rows', () => {
             now: () => fixture!.nowEpochMs
         });
         const ingress = retention.capture({ groupRef: RETENTION_REF, requestId: 'delete-save-race', observedAtEpochMs: fixture.nowEpochMs });
-        const computed = retention.compute(await retention.read(ingress, 1));
+        const computed = retention.compute(await retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retirement-owned-data' }));
         const before = await fixture.repository.readRetirementEntries(RETENTION_REF);
         expect(
             (await appData.upsertIfRevision({
@@ -100,7 +100,7 @@ describe('transactional deletion of room-owned rows', () => {
         expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('archived');
         expect(await fixture.repository.readRetirementEntries(RETENTION_REF)).toEqual(before);
         expect(await fixture.repository.findIdempotentGroupMutationReceipt(RETENTION_REF, ingress.commandId)).toBeUndefined();
-        const fresh = retention.compute(await retention.read(ingress, 2));
+        const fresh = retention.compute(await retention.read(ingress, { attemptCount: 2, traceId: 'trace-group-retirement-owned-data' }));
         await fixture.storage.sql.begin((transaction) => retention.write(transaction, fresh));
         expect(await appData.findEntry(key)).toBeUndefined();
         expect(await fixture.repository.findGroup(RETENTION_REF)).toBeUndefined();

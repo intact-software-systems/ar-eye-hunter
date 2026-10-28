@@ -563,7 +563,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{gammaClientId}/remove/requests/delta-remove-gamma-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
-          "x-client-id": "{alphaClientId}"
+          "x-client-id": "{alphaClientId}",
+          "x-request-id": "delta-remove-gamma-trace-{runId}"
         },
         "body": {}
       },
@@ -593,13 +594,17 @@
           "payload.resource"
         ],
         "message": {
+          "id": {
+            "traceId": "delta-remove-gamma-trace-{runId}"
+          },
           "route": {
             "topicId": "group-state.event"
           },
           "payload": {
             "resource": {
               "event": {
-                "requestId": "delta-remove-gamma-{runId}"
+                "requestId": "delta-remove-gamma-{runId}",
+                "traceId": "delta-remove-gamma-trace-{runId}"
               }
             }
           }

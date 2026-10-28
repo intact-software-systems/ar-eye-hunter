@@ -138,7 +138,7 @@ function createReservedRtcTopologyEntry(): ResourceEntry {
         }
     };
     const message = {
-        id: { v: 3, msgId: key.resourceId, ts: createdAtEpochMs, senderId },
+        id: { v: 4, msgId: key.resourceId, ts: createdAtEpochMs, senderId, traceId: 'trace-handler-finalized-rtc-topology' },
         route: key,
         constraints: { expiresAtMs: expireAtEpochMs },
         payload: {

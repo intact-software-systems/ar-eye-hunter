@@ -986,7 +986,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
 }
 
 function receiverAck(message: ALMessage, recipient: string): ALMessage {
-    return newALAckControlMessage({ v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+    return newALAckControlMessage({ v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-room-authority-delivery' }, {
         ackedMsgId: message.id.msgId,
         fromPeerId: recipient,
         toPeerId: message.id.senderId,

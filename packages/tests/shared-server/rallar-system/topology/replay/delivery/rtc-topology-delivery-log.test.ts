@@ -503,6 +503,7 @@ function topologyPublication(
     };
 
     return {
+        traceId: 'trace-rtc-topology-delivery-log',
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision: causalRevision,

@@ -6,10 +6,11 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 
 const testMessage: ALMessage = {
     id: {
-        v: 3,
+        v: 4,
         msgId: 'message-1',
         ts: 1,
-        senderId: 'sender-1'
+        senderId: 'sender-1',
+        traceId: 'trace-browser-websocket-inbox'
     },
     route: {
         topicId: 'test.message',

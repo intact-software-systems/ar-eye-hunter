@@ -624,7 +624,7 @@ describe('multicast QoS integration', () => {
         }
         await manager.acceptControlMessage(
             shared.newALRepairControlMessage(
-                { v: 3, msgId: 'repair-control', senderId: 'peer-2', ts: Date.now() },
+                { v: 4, msgId: 'repair-control', senderId: 'peer-2', ts: Date.now(), traceId: 'trace-multicast-policy-integration' },
                 { fromPeerId: 'peer-2', toPeerId: 'self', msgId: msg.id.msgId, reason: 'retransmit', observedAtEpochMs: Date.now() }
             )
         );

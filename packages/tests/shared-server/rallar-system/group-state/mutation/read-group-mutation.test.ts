@@ -353,8 +353,7 @@ function joinCommand(
             joinCode: null,
             actorPrincipalId: principalId,
             actorSessionId: null,
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }
@@ -383,8 +382,7 @@ function updateCommand(
             purgeAfterEpochMs: null,
             actorPrincipalId: 'owner',
             actorSessionId: null,
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }

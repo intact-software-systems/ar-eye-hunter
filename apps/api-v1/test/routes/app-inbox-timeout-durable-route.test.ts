@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
@@ -15,6 +15,7 @@ import {
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
     const queue = new DurableTimeoutQueue();
@@ -35,7 +36,7 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
         }
     }).commandClient;
     let directMutationFallbacks = 0;
-    const app = new Hono();
+    const app = createTracedApiTestApp();
     clientStateRoutes.registerClientStateRoutes(app, {
         strictReadAuthorization: false,
         requireApiAuthSession: () =>

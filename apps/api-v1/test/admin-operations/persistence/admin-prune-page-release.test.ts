@@ -31,19 +31,23 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
         const now = await readPGliteDatabaseEpochMs(sql);
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const entry = toAdminPruneOutbox({
-            kind: 'page',
-            jobId: 'atomic-prune-release',
-            category: 'runtime-state',
-            requestedBy: 'admin',
-            requestedSessionId: 'admin-session',
-            capturedAtEpochMs: now,
-            expireAtEpochMs: now + 60_000,
-            pageSize: 2,
-            afterCursor: null,
-            pageIndex: 0,
-            appData: null
-        }, 'server-1');
+        const entry = toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId: 'atomic-prune-release',
+                category: 'runtime-state',
+                requestedBy: 'admin',
+                requestedSessionId: 'admin-session',
+                capturedAtEpochMs: now,
+                expireAtEpochMs: now + 60_000,
+                pageSize: 2,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: null
+            },
+            'server-1',
+            'trace-admin-prune-page-release'
+        );
         await repository.entries.write(entry);
         const aggregate = toAdminPruneAggregateEntry(createAdminPruneAggregate({
             jobId: 'atomic-prune-release',
@@ -120,19 +124,23 @@ Deno.test('admin prune conflicts and preserves runtime state replaced after the 
         const now = await readPGliteDatabaseEpochMs(sql);
         const queueRepository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(queueRepository, Temporal.Now.instant);
-        const entry = toAdminPruneOutbox({
-            kind: 'page',
-            jobId: 'stale-runtime-page',
-            category: 'runtime-state',
-            requestedBy: 'admin',
-            requestedSessionId: 'admin-session',
-            capturedAtEpochMs: now,
-            expireAtEpochMs: now + 60_000,
-            pageSize: 1,
-            afterCursor: null,
-            pageIndex: 0,
-            appData: null
-        }, 'server-1');
+        const entry = toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId: 'stale-runtime-page',
+                category: 'runtime-state',
+                requestedBy: 'admin',
+                requestedSessionId: 'admin-session',
+                capturedAtEpochMs: now,
+                expireAtEpochMs: now + 60_000,
+                pageSize: 1,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: null
+            },
+            'server-1',
+            'trace-admin-prune-page-release'
+        );
         await queueRepository.entries.write(entry);
         const aggregateEntry = toAdminPruneAggregateEntry(createAdminPruneAggregate({
             jobId: 'stale-runtime-page',

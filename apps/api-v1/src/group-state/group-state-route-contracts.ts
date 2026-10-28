@@ -65,6 +65,7 @@ export type GroupStateRouteAuthSession = Pick<
 interface GroupStateRouteCommandInputBase {
     readonly authSession: GroupStateRouteAuthSession;
     readonly scope: StateScope;
+    readonly traceId: string;
 }
 
 type GroupStateRouteRequestWithId<T> = T & Readonly<{ requestId: string; }>;

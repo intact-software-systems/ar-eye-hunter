@@ -8,6 +8,7 @@ import {
     hashRallarCrdtUpdateEnvelope,
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
+    type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
@@ -75,6 +76,7 @@ describe('CRDT mutation safety and audience invariants', () => {
             }
         });
         const computed = computeCrdtMutation({
+            traceId: 'trace-crdt-mutation-safety-invariants',
             command,
             read: {
                 document: null,
@@ -118,6 +120,7 @@ describe('CRDT mutation safety and audience invariants', () => {
             reason: 'quota-test'
         });
         const computed = computeCrdtMutation({
+            traceId: 'trace-crdt-mutation-safety-invariants',
             command,
             read: read({ quota: { maxDocumentBytes: 1 } }),
             serviceId: 'server-1'
@@ -138,6 +141,7 @@ describe('CRDT mutation safety and audience invariants', () => {
             projectionId: 'projection-1'
         });
         const computed = computeCrdtMutation({
+            traceId: 'trace-crdt-mutation-safety-invariants',
             command,
             read: {
                 ...read(),
@@ -165,8 +169,8 @@ describe('CRDT mutation safety and audience invariants', () => {
     });
 
     it('normalizes durable audit queue keys for long external identities', () => {
-        const entry = toCrdtAuditOutbox(
-            {
+        const entry = toCrdtAuditOutbox({
+            event: {
                 kind: 'erase',
                 atEpochMs: 1_000,
                 documentKey: 'document-key',
@@ -174,14 +178,15 @@ describe('CRDT mutation safety and audience invariants', () => {
                 reason: 'privacy',
                 metadata: { mode: 'destroy-document' }
             },
-            {
+            command: {
                 commandId: `request-${'x'.repeat(100)}`,
                 capturedAtEpochMs: 1_000,
                 expireAtEpochMs: 61_000,
                 documentKey: `document-${'y'.repeat(100)}`
             },
-            'server-1'
-        );
+            serviceId: 'server-1',
+            traceId: 'trace-crdt-mutation-safety-invariants'
+        });
 
         expect(entry.key.resourceId.length).toBeLessThanOrEqual(36);
         expect(entry.key.contextId.length).toBeLessThanOrEqual(35);
@@ -206,7 +211,7 @@ describe('CRDT mutation safety and audience invariants', () => {
         };
     }
 
-    function read(overrides: Record<string, unknown> = {}) {
+    function read(overrides: Partial<RallarCrdtDocumentMetadata> = {}) {
         return {
             document: {
                 document: DOCUMENT,

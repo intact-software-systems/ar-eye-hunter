@@ -1,11 +1,19 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    newALRoute,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import {
+    toAppQueueCreatedBy,
+    toAppQueueKey,
+    toStrictAppInboxQueueKey
+} from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import type { AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import type { AppInboxEnqueue, AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
-export interface ToPhysicalAppInboxQueueKeyInput extends Pick<AppInboxEnqueueInput, 'topicId' | 'contextId'> {
+export interface ToPhysicalAppInboxQueueKeyInput extends Pick<AppInboxEnqueue, 'topicId' | 'contextId'> {
     readonly resourceId: string;
 }
 
@@ -41,6 +49,17 @@ export function createAppInboxResourceEntry(
         dependencies.createMessage({ key, enqueue, serviceId }),
         'APP_INBOX',
         dependencies.creationNow()
+    );
+}
+
+export function createDefaultAppInboxQueueMessage(creation: AppInboxQueueMessageCreationDto): ALMessage {
+    const { traceId, ...command } = creation.enqueue;
+    return newALUntargetedMessage(
+        toAppQueueCreatedBy(creation.serviceId),
+        newALRoute(creation.key.topicId, creation.key.contextId, creation.key.resourceId),
+        command.type,
+        command,
+        { traceId }
     );
 }
 

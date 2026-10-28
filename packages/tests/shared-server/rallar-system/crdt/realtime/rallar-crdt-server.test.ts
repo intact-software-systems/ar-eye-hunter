@@ -394,7 +394,7 @@ describe('installRallarCrdtWsTopics', () => {
         expect((await logRepository.readDocumentMetadata(roomDocumentRef))?.updateCount).toBeUndefined();
     });
 
-    it('responds to durable WS catch-up requests from the append log', async () => {
+    it('responds to durable WS catch-up requests from the append log under the request\'s trace', async () => {
         const { router, socket } = createRouter({
             authorizeRoomMessage: () => true
         });
@@ -448,7 +448,8 @@ describe('installRallarCrdtWsTopics', () => {
             RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
             request,
             {
-                groupRef: roomRef
+                groupRef: roomRef,
+                traceId: 'trace-crdt-catch-up-request'
             }
         );
 
@@ -460,6 +461,7 @@ describe('installRallarCrdtWsTopics', () => {
 
         const responseMessage = socket.sent.find((entry) => entry.data.payload.typeId === RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID);
         expect(responseMessage?.connectionId).toBe('conn-1');
+        expect(responseMessage?.data.id.traceId).toBe('trace-crdt-catch-up-request');
         const response = JSON.parse(responseMessage?.data.payload.resource ?? '{}') as RallarCrdtCatchUpResponseEnvelope;
         expect(response.requestId).toBe('catch-up-1');
         expect(response.page.records.map((record) => record.update.updateId)).toEqual(['update-2']);

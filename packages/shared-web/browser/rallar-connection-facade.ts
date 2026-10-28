@@ -69,10 +69,6 @@ export interface RallarBrowserMiddleware {
 /** Authenticated browser connection returned by setup and connect operations. */
 export interface ApiMiddleware {
     readonly session: AuthSession;
-    readonly authFetch: (
-        input: RequestInfo | URL,
-        init?: RequestInit
-    ) => Promise<Response>;
     readonly middleware: RallarBrowserMiddleware;
 }
 

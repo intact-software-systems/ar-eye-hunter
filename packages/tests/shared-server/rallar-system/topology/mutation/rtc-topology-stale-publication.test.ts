@@ -97,6 +97,7 @@ function toPublication(snapshot: RallarOverlayTopologySnapshot, workId: string) 
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot: snapshot,
         expiresAtEpochMs: 10000,
-        createdAtEpochMs
+        createdAtEpochMs,
+        traceId: 'trace-rtc-topology-stale-publication'
     };
 }

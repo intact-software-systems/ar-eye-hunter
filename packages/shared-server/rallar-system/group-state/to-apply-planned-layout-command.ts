@@ -33,7 +33,6 @@ export function toApplyPlannedLayoutCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             expectedFormationEpoch: input.formationEpoch,
             expectedLayout: input.expectedLayout
         }

@@ -159,6 +159,79 @@ Deno.test('OpenAPI publishes the reusable strict API mutation request path param
     assert.equal(parameters.IdempotencyKey, undefined);
 });
 
+const API_REQUEST_TRACE_SCHEMA = {
+    type: 'string',
+    minLength: 1,
+    maxLength: 128,
+    pattern: '^[A-Za-z0-9_-]+$'
+};
+const OPENAPI_METHODS = ['get', 'post', 'put', 'delete', 'patch'] as const;
+const WEBSOCKET_UPGRADE_PATH = '/api/ws/{sessionId}';
+
+Deno.test('OpenAPI publishes the reusable x-request-id trace parameter and its echoed response header', async () => {
+    const components = requireObject((await readOpenApiDocument()).components);
+
+    assert.deepEqual(requireObject(components.parameters).XRequestId, {
+        name: 'x-request-id',
+        in: 'header',
+        required: false,
+        description: 'Request trace identity. A missing or malformed value is replaced by a minted trace; ' +
+            'every API response except a WebSocket upgrade echoes the trace it ran under.',
+        schema: API_REQUEST_TRACE_SCHEMA
+    });
+    assert.deepEqual(requireObject(components.headers).XRequestId, {
+        description: 'The trace the request ran under: the valid x-request-id it sent, or the minted replacement.',
+        schema: API_REQUEST_TRACE_SCHEMA
+    });
+});
+
+Deno.test('OpenAPI gives every API operation the x-request-id parameter and every non-upgrade response its echo', async () => {
+    const document = await readOpenApiDocument();
+    const components = requireObject(document.components);
+    const componentResponses = requireObject(components.responses);
+
+    for (const [path, pathItem] of Object.entries(requireObject(document.paths))) {
+        for (const method of OPENAPI_METHODS) {
+            const operation = optionalObject(requireObject(pathItem)[method]);
+            if (!operation || !path.startsWith('/api/')) {
+                continue;
+            }
+            const parameters = operation.parameters === undefined ? [] : requireArray(operation.parameters);
+            const traceParameters = parameters.filter((parameter) => isReference(parameter, '#/components/parameters/XRequestId'));
+            assert.equal(traceParameters.length, 1, `${method} ${path} x-request-id parameter`);
+            for (const [status, responseValue] of Object.entries(requireObject(operation.responses))) {
+                const response = resolveResponse(requireObject(responseValue), componentResponses);
+                const echo = optionalObject(response.headers)?.['x-request-id'];
+                // Only a request without `Upgrade: websocket` reaches the 426; the middleware echoes on it alone.
+                if (path === WEBSOCKET_UPGRADE_PATH && status !== '426') {
+                    assert.equal(echo, undefined, `${method} ${path} ${status} must not echo on an upgrade`);
+                    continue;
+                }
+                assert.deepEqual(echo, { $ref: '#/components/headers/XRequestId' }, `${method} ${path} ${status}`);
+            }
+        }
+    }
+});
+
+Deno.test('OpenAPI request bodies carry no trace: the trace travels only as x-request-id', async () => {
+    const document = await readOpenApiDocument();
+    const schemas = requireObject(requireObject(document.components).schemas);
+    const paths = requireObject(document.paths);
+
+    for (const mutation of COVERED_API_MUTATIONS) {
+        const operation = requireObject(requireObject(paths[mutation.path])[mutation.method]);
+        const schemaName = readRequestBodySchemaName(operation);
+        if (schemaName === undefined) {
+            continue;
+        }
+        assert.equal(
+            collectSchemaPropertyNames(schemaName, schemas).has('traceId'),
+            false,
+            `${mutation.method} ${mutation.path} ${schemaName}`
+        );
+    }
+});
+
 Deno.test('OpenAPI gives all AppInbox REST mutations path-only request identity', async () => {
     const document = await readOpenApiDocument();
     const paths = requireObject(document.paths);
@@ -289,6 +362,35 @@ function assertSemanticBodyOmitsRequestId(
         false,
         `${mutation.method} ${mutation.path}`
     );
+}
+
+function resolveResponse(response: JsonWireObject, componentResponses: JsonWireObject): JsonWireObject {
+    const reference = response.$ref;
+    return typeof reference === 'string'
+        ? requireObject(componentResponses[reference.replace('#/components/responses/', '')])
+        : response;
+}
+
+function readRequestBodySchemaName(operation: JsonWireObject): string | undefined {
+    const requestBody = optionalObject(operation.requestBody);
+    if (!requestBody) {
+        return undefined;
+    }
+    const mediaType = requireObject(requireObject(requestBody.content)['application/json']);
+    return requireString(requireObject(mediaType.schema).$ref).replace('#/components/schemas/', '');
+}
+
+function collectSchemaPropertyNames(schemaName: string, schemas: JsonWireObject): ReadonlySet<string> {
+    const schema = requireObject(schemas[schemaName]);
+    const names = new Set(Object.keys(optionalObject(schema.properties) ?? {}));
+    for (const part of schema.allOf === undefined ? [] : requireArray(schema.allOf)) {
+        const reference = optionalObject(part)?.$ref;
+        const partNames = typeof reference === 'string'
+            ? collectSchemaPropertyNames(reference.replace('#/components/schemas/', ''), schemas)
+            : new Set(Object.keys(optionalObject(requireObject(part).properties) ?? {}));
+        partNames.forEach((name) => names.add(name));
+    }
+    return names;
 }
 
 function isReference(value: JsonWireValue, reference: string): boolean {

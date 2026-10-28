@@ -43,6 +43,7 @@ describe('topology inbox result decoding', () => {
         );
         const pending = service.processAuthenticatedEntryUntilCompletion(
             {
+                traceId: 'trace-test-fixture',
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 contextId: 'test-context',
                 resourceId: command.requestId,

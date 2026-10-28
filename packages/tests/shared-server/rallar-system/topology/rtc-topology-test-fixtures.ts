@@ -162,6 +162,7 @@ export function computeRtcTopologyHopRadius(
 export function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
     const groupSnapshot = createRtcTopologyGroupSnapshot('group-1', ['session-1']);
     return {
+        traceId: 'trace-rtc-topology-test-fixtures',
         commandId: 'command-1',
         aggregateRef: groupSnapshot.group,
         acceptedCausalRevision: groupSnapshot.causalRevision,

@@ -68,15 +68,19 @@ export async function createGroupDeltaProducer(sql?: PSqlSql, timing?: RallarTim
         timing
     });
     const event = runtime.groupStateEventStore.events.find((candidate) => candidate.eventType === 'session-connected')!;
-    const queued = computeGroupPresenceSummaryEntry({
-        effectKind: 'group-presence-summary',
-        aggregateRef: groupRef(groupId),
-        commandId: event.requestId!,
-        createdAtEpochMs: event.occurredAtEpochMs,
-        expireAtEpochMs: now + 60_000,
-        acceptedCausalRevision: event.causalRevision,
-        event
-    }, 'producer-api');
+    const queued = computeGroupPresenceSummaryEntry(
+        {
+            effectKind: 'group-presence-summary',
+            aggregateRef: groupRef(groupId),
+            commandId: event.requestId!,
+            createdAtEpochMs: event.occurredAtEpochMs,
+            expireAtEpochMs: now + 60_000,
+            acceptedCausalRevision: event.causalRevision,
+            event
+        },
+        'producer-api',
+        'trace-group-delta-producer-fixture'
+    );
     const entry: ResourceEntry = {
         ...queued,
         status: EntityStatus.RESERVED,

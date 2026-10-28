@@ -559,19 +559,23 @@ describe('durable AppInbox result evidence', () => {
             adminPruneCommand: adminCommand(jobId, capturedAtEpochMs)
         });
         const page = (jobId: string, capturedAtEpochMs: number): OutboxRow => {
-            const entry = toAdminPruneOutbox({
-                kind: 'page',
-                jobId,
-                category: 'runtime-state',
-                requestedBy: 'admin',
-                requestedSessionId: 'session',
-                capturedAtEpochMs,
-                expireAtEpochMs: capturedAtEpochMs + 60_000,
-                pageSize: 100,
-                afterCursor: null,
-                pageIndex: 0,
-                appData: null
-            }, 'server');
+            const entry = toAdminPruneOutbox(
+                {
+                    kind: 'page',
+                    jobId,
+                    category: 'runtime-state',
+                    requestedBy: 'admin',
+                    requestedSessionId: 'session',
+                    capturedAtEpochMs,
+                    expireAtEpochMs: capturedAtEpochMs + 60_000,
+                    pageSize: 100,
+                    afterCursor: null,
+                    pageIndex: 0,
+                    appData: null
+                },
+                'server',
+                'trace-state-write-durable-result-evidence'
+            );
             return {
                 ri_resource_id: entry.key.resourceId,
                 ri_topic_id: entry.key.topicId,

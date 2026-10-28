@@ -6,15 +6,15 @@ import {
     type JsonWireValue
 } from '../protocol/json-wire-identity.ts';
 import { decodePersistedAppInboxEnqueue } from './app-inbox-command-decoding.ts';
-import { AppInboxIdempotencyConflictError, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import { AppInboxIdempotencyConflictError, type AppInboxEnqueue } from './app-inbox-contracts.ts';
 import { toLogicalAppInboxCommand } from './logical-app-inbox-command.ts';
 
 export function assertMatchingAppInboxCommand(
     entry: ResourceEntry,
-    incoming: AppInboxEnqueueInput,
+    incoming: AppInboxEnqueue,
     receivedCommandIdentity: string
 ): void {
-    let existing: AppInboxEnqueueInput;
+    let existing: AppInboxEnqueue;
     try {
         existing = decodePersistedAppInboxEnqueue(entry);
     }
@@ -32,8 +32,8 @@ export function assertMatchingAppInboxCommand(
 /** The command a queue key keeps and the one received under it. */
 export interface MatchingAppInboxEnqueue {
     readonly resourceId: string;
-    readonly existing: AppInboxEnqueueInput;
-    readonly incoming: AppInboxEnqueueInput;
+    readonly existing: AppInboxEnqueue;
+    readonly incoming: AppInboxEnqueue;
     /** The incoming command's canonical logical identity. */
     readonly receivedCommandIdentity: string;
 }

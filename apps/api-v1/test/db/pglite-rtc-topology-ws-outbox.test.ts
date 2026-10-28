@@ -315,6 +315,7 @@ function publication(workId: string, sessionCount = 1): RtcTopologyPublication {
         updatedAtEpochMs: createdAtEpochMs
     };
     return {
+        traceId: 'trace-pglite-rtc-topology-ws-outbox',
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision,

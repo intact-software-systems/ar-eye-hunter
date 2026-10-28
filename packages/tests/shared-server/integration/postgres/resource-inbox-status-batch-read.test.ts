@@ -7,6 +7,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { ResourceInboxRowCorruptionError } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { createDefaultAppInboxQueueMessage } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -17,7 +18,6 @@ import {
     seedResourceInboxRow,
     type ResourceInboxTestStorage
 } from '../../queuebox/resource-inbox-test-storage.ts';
-import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -119,7 +119,7 @@ describe('Postgres AppInbox written entry', () => {
             const repository = createPSqlResourceInboxRepository(storage.sql, () => new Date());
             const writer = new AppInboxQueueEntryWriter({
                 newResourceId: crypto.randomUUID.bind(crypto),
-                createMessage: createAppInboxQueueMessageFixture,
+                createMessage: createDefaultAppInboxQueueMessage,
                 inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(repository, Temporal.Now.instant), {
                     newLaneConcurrency: 1
                 })
@@ -128,6 +128,7 @@ describe('Postgres AppInbox written entry', () => {
                 type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
                 resourceId: 'written-command-0001',
                 contextId: 'written-client',
+                traceId: 'trace-written-command',
                 data: { requestId: 'written-command-0001' }
             };
 

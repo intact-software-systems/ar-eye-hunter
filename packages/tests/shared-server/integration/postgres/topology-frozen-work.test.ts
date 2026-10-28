@@ -148,6 +148,7 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
 async function runTopologyWork(input: RunTopologyWorkInput): Promise<void> {
     const { harness, groupSnapshot, name, atEpochMs } = input;
     const entry = computeRtcTopologyOutboxInsert({
+        traceId: 'trace-topology-frozen-work',
         commandId: `${groupSnapshot.group.applicationId}-${name}`,
         aggregateRef: groupSnapshot.group,
         acceptedCausalRevision: groupSnapshot.causalRevision,

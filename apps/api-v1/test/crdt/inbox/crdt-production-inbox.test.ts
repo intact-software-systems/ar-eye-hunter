@@ -13,7 +13,6 @@ import {
     type ResourceInboxRow
 } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import {
     CrdtMutationConflictError,
     type CrdtMutationResult
@@ -88,8 +87,15 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
             const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database: sql, now });
-            const command = await appendCommand(now, 'policy-delivery', 'policy-update');
-            service.writeCrdtCommandNoWaiting(command);
+            await service.createAndEnqueueAppend({
+                update: update('policy-update', now - 10_000),
+                deliveryId: 'policy-delivery',
+                traceId: 'trace-crdt-production-inbox-policy',
+                actor: { actorId: 'client-1', principalId: 'client-1', sessionId: 'session-1', serverId: 'server-1' },
+                responseAudience: { kind: 'room', senderSessionId: 'session-1', topicId: 'room.crdt', contextId: 'group-1' },
+                capturedAtEpochMs: now,
+                expireAtEpochMs: now + 60_000
+            });
             await drainCrdtInbox(sql, inboxQueueReader);
 
             const result = await readCrdtResult(sql, 'policy-delivery');
@@ -144,6 +150,7 @@ Deno.test(
             await service.createAndEnqueueAppend({
                 update: update('factory-enqueue', now - 10_000),
                 deliveryId: 'factory-delivery',
+                traceId: 'trace-crdt-production-inbox',
                 actor: {
                     actorId: 'client-1',
                     principalId: 'client-1',
@@ -187,6 +194,7 @@ for (const stage of FAILURE_STAGES) {
             await service.createAndEnqueueAppend({
                 update: update(`${stage}-update`, now - 10_000),
                 deliveryId: `${stage}-delivery`,
+                traceId: 'trace-crdt-production-inbox',
                 actor: {
                     actorId: 'client-1',
                     principalId: 'client-1',
@@ -394,30 +402,6 @@ function createProductionCrdtInboxHarness(input: ProductionServiceInput): Produc
     return { service, inboxQueueReader };
 }
 
-async function appendCommand(now: number, commandId: string, updateId: string) {
-    return await createCrdtMutationCommand({
-        operation: 'append',
-        commandId,
-        actor: {
-            actorId: 'client-1',
-            principalId: 'client-1',
-            sessionId: 'session-1',
-            serverId: 'server-1'
-        },
-        capturedAtEpochMs: now,
-        expireAtEpochMs: now + 60_000,
-        document: DOCUMENT,
-        responseAudience: {
-            kind: 'room',
-            senderSessionId: 'session-1',
-            topicId: 'room.crdt',
-            contextId: 'group-1'
-        },
-        authorizationScope: 'room',
-        update: update(updateId, now - 10_000)
-    });
-}
-
 function update(
     updateId: string,
     createdAtEpochMs: number,
@@ -459,6 +443,7 @@ async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
     await service.createAndEnqueueAppend({
         update: envelope,
         deliveryId,
+        traceId: 'trace-crdt-production-inbox',
         actor: {
             actorId: 'client-1',
             principalId: 'client-1',

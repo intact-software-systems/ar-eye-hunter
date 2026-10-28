@@ -38,7 +38,7 @@ function createRecordingNotificationPort(): RecordingNotificationPort {
 
 function relayedNotice(ackedMsgId = 'room-message-1'): RelayedAckNotice {
     const message = newALAckControlMessage(
-        { v: 3, msgId: 'ack-c', senderId: 'c', ts: 1 },
+        { v: 4, msgId: 'ack-c', senderId: 'c', ts: 1, traceId: 'trace-create-postgres-relayed-ack-notice-transport' },
         {
             ackedMsgId,
             fromPeerId: 'c',

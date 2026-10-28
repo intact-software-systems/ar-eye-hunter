@@ -33,6 +33,7 @@ import {
     requireApiAdminSession as defaultRequireApiAdminSession,
     type ApiAdminAuthDependencies
 } from '../services/admin-auth-service.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 
 type AdminOperationMutationRouteUseCases = Pick<
     AdminOperationUseCases,
@@ -121,7 +122,9 @@ async function withAdminMutationJson<TResult>(
             idempotencyKey: context.req.header('idempotency-key'),
             mutationBody: request
         });
-        return context.json(await execute({ adminSession, requestId, request }));
+        return context.json(
+            await execute({ adminSession, requestId, traceId: readApiRequestTraceId(context), request })
+        );
     }
     catch (error) {
         return toApiMutationFailureResponse(

@@ -7,8 +7,8 @@ import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-sn
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../persistence/rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import { compareTopologyTuple, decideTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
+import { assertRtcTopologyPublication } from '../publication/decode-rtc-topology-publication.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
-import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
 import {
     computeRtcTopologyPersistence,
     type RtcTopologyPersistenceComputed
@@ -197,7 +197,7 @@ function validatePublicationSelfConsistent(
     publication: RtcTopologyPublication
 ): Readonly<{ snapshot: RallarOverlayTopologySnapshot; }> | Readonly<{ issue: RtcTopologyMutationValidationIssue; }> {
     try {
-        validateRtcTopologyPublication(publication, publication.groupRef);
+        assertRtcTopologyPublication(publication, publication.groupRef);
         const snapshot = decodeRtcTopologySnapshot(
             decodeJsonWireValue(
                 publication.snapshot,

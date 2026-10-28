@@ -173,7 +173,7 @@ function readDeadlineMs(message: ALMessage): number {
 /** The leaf `b`'s terminal ACK to its relay `r` for the origin's message. */
 function toChildAck(copy: ALMessage): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: 'ack-b', senderId: 'b', ts: Date.now() },
+        { v: 4, msgId: 'ack-b', senderId: 'b', ts: Date.now(), traceId: 'trace-rtc-relay-row-retention' },
         {
             ackedMsgId: copy.id.msgId,
             fromPeerId: 'b',

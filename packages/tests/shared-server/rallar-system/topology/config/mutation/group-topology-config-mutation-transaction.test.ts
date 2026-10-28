@@ -16,6 +16,8 @@ import {
     deepFreezeTopologyTestValue
 } from './group-topology-config-mutation-test-fixtures.ts';
 
+const FIRST_ATTEMPT = { attemptCount: 1, traceId: 'trace-group-topology-config-mutation-transaction' };
+
 describe('group topology config mutation phases', () => {
     it('computes override expiry from explicit command and read facts without a prepare phase', () => {
         const service = createService();
@@ -33,7 +35,7 @@ describe('group topology config mutation phases', () => {
             serverDefaults: {},
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         });
-        const computed = service.compute(command, read, 1);
+        const computed = service.compute(command, read, FIRST_ATTEMPT);
 
         expect(computed).toMatchObject({
             outcome: 'write',
@@ -44,7 +46,7 @@ describe('group topology config mutation phases', () => {
                 acceptedExpiresAtEpochMs: 15_000
             }
         });
-        const validation = { command, read, attemptCount: 1, computed };
+        const validation = { command, read, attempt: FIRST_ATTEMPT, computed };
         expect(service.validate(validation)).toEqual([]);
     });
 
@@ -62,12 +64,12 @@ describe('group topology config mutation phases', () => {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         });
 
-        const first = service.compute(mutation.command, read, 1);
-        const second = service.compute(mutation.command, read, 1);
+        const first = service.compute(mutation.command, read, FIRST_ATTEMPT);
+        const second = service.compute(mutation.command, read, FIRST_ATTEMPT);
 
         expect(second).toEqual(first);
-        const firstValidation = { command: mutation.command, read, attemptCount: 1, computed: first };
-        const secondValidation = { command: mutation.command, read, attemptCount: 1, computed: second };
+        const firstValidation = { command: mutation.command, read, attempt: FIRST_ATTEMPT, computed: first };
+        const secondValidation = { command: mutation.command, read, attempt: FIRST_ATTEMPT, computed: second };
         expect(service.validate(firstValidation)).toEqual([]);
         expect(service.validate(secondValidation)).toEqual([]);
     });
@@ -82,8 +84,8 @@ describe('group topology config mutation phases', () => {
             serverDefaults: {},
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         };
-        const computed = service.compute(mutation.command, read, 1);
-        const validation = { command: mutation.command, read, attemptCount: 1, computed };
+        const computed = service.compute(mutation.command, read, FIRST_ATTEMPT);
+        const validation = { command: mutation.command, read, attempt: FIRST_ATTEMPT, computed };
         expect(service.validate(validation)).toEqual([]);
         if (computed.outcome !== 'write') {
             throw new Error('Expected topology config write');
@@ -112,8 +114,8 @@ describe('group topology config mutation phases', () => {
             serverDefaults: {},
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS
         };
-        const computed = service.compute(mutation.command, read, 1);
-        const validation = { command: mutation.command, read, attemptCount: 1, computed };
+        const computed = service.compute(mutation.command, read, FIRST_ATTEMPT);
+        const validation = { command: mutation.command, read, attempt: FIRST_ATTEMPT, computed };
         expect(service.validate(validation)).toEqual([]);
         if (computed.outcome !== 'write') {
             throw new Error('Expected topology config write');

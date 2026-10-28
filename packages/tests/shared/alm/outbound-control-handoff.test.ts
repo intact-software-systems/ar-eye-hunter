@@ -267,7 +267,7 @@ it('settles every control handoff before rejecting a batch and wakes its late re
 function createControlMessage(msgId: string): ALMessage {
     return {
         ...newALAckControlMessage(
-            { v: 3, senderId: 'self', msgId, ts: TEST_NOW_MS },
+            { v: 4, senderId: 'self', msgId, ts: TEST_NOW_MS, traceId: 'trace-outbound-control-handoff' },
             {
                 ackedMsgId: 'inbound-message',
                 fromPeerId: 'self',

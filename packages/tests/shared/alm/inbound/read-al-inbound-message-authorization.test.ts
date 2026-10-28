@@ -55,7 +55,7 @@ describe('inbound control addressing', () => {
             code: 'unauthorized',
             message: 'closed relay refusal'
         });
-        expect(identities).toEqual([{ v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 1 }]);
+        expect(identities).toEqual([{ v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' }]);
         expect(receiver.readRelayedAckRejection({
             ackedMsgId: 'message-1',
             fromPeerId: 'recipient',
@@ -83,7 +83,7 @@ describe('inbound control addressing', () => {
 
     it.each(['server', 'origin'])('refuses a WS session ACK to %s that speaks for another recipient', (toPeerId) => {
         const forged = newALAckControlMessage(
-            { v: 3, msgId: 'ack-forged', senderId: 'recipient', ts: 1 },
+            { v: 4, msgId: 'ack-forged', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
             {
                 ackedMsgId: 'message-1',
                 fromPeerId: 'recipient',
@@ -111,7 +111,7 @@ describe('inbound control addressing', () => {
 
     it('refuses a nonlocal NACK and an ACK without relay authority', () => {
         const nack = newALNackControlMessage(
-            { v: 3, msgId: 'nack-1', senderId: 'recipient', ts: 1 },
+            { v: 4, msgId: 'nack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
             { msgId: 'message-1', fromPeerId: 'recipient', toPeerId: 'origin', reason: 'gap', observedAtEpochMs: 1 }
         );
 
@@ -144,7 +144,7 @@ describe('inbound control addressing', () => {
 describe('inbound frozen room audience', () => {
     const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
     const multicast: ALMessage = {
-        id: { v: 3, msgId: 'room-message', senderId: 'origin', ts: 1 },
+        id: { v: 4, msgId: 'room-message', senderId: 'origin', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
         route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
         targets: { mode: 'multicast', groupRef: room },
         payload: { typeId: 'chat', resource: '{}' }
@@ -174,7 +174,7 @@ function toWsClientSource(peerId: string): ALInboundMessageRuntime.Source {
 
 function createReceiverAcknowledgement(originPeerId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 1 },
+        { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
         {
             ackedMsgId: 'message-1',
             fromPeerId: 'recipient',
@@ -190,7 +190,7 @@ function createReceiverAcknowledgement(originPeerId: string): ALMessage {
 
 function createServerReceipt(): ALMessage {
     return newALReceiptControlMessage(
-        { v: 3, msgId: 'receipt-1', senderId: 'server', ts: 1 },
+        { v: 4, msgId: 'receipt-1', senderId: 'server', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
         {
             msgId: 'message-1',
             originPeerId: 'origin',

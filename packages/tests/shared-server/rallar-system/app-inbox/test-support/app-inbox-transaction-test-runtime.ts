@@ -6,8 +6,12 @@ import type {
     PSqlSql
 } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueue,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
@@ -62,7 +66,7 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-app-inbox-finished-
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
 interface RegisteredHandlerHarness {
-    readonly enqueue: AppInboxMessageContext<JsonWireValue>['enqueue'];
+    readonly enqueue: AppInboxEnqueueInput;
     readonly queue: RegisteredHandlerInbox;
     readonly readEntry: () => Promise<ResourceEntry | undefined>;
     readonly reader: InboxQueueReader;
@@ -215,7 +219,7 @@ class AtomicAppInboxService {
         return this.commandClient.enqueueAndWait(input);
     }
 
-    enqueueWithoutWaiting(input: AppInboxMessageContext<JsonWireValue>['enqueue']): void {
+    enqueueWithoutWaiting(input: AppInboxEnqueueInput): void {
         void this.queueEntryWriter.enqueue(input).catch((caught) => {
             const error = toError(caught);
             console.error('Error enqueueing test AppInbox command without waiting', error);
@@ -323,6 +327,7 @@ function createRegisteredHandlerCommand(topicId?: string): AppInboxEnqueueInput 
         topicId: topicId ?? 'app-inbox.group-state',
         resourceId: 'registered-handler-request',
         contextId: 'group-1',
+        traceId: 'trace-registered-handler',
         authority: {
             authorityProof: {
                 version: 1,
@@ -637,7 +642,7 @@ export function createAtomicHarness(
 }
 
 function createAtomicMessageContext(entry: ResourceEntry): AppInboxMessageContext<JsonWireValue> {
-    const enqueue: AppInboxEnqueueInput = {
+    const enqueue: AppInboxEnqueue = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: entry.key.resourceId,
         contextId: entry.key.contextId,
@@ -721,7 +726,7 @@ function toAtomicResultRow(entry: ResourceEntry): AtomicResultRow {
 }
 
 function createReservedEntry(attempts: number): ResourceEntry {
-    const enqueue: AppInboxEnqueueInput = {
+    const enqueue: AppInboxEnqueue = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'request-1',
         contextId: 'group-1',

@@ -7,18 +7,19 @@ import {
 } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { createDefaultAppInboxQueueMessage } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { QueueBoxWrittenIfAbsent } from '@shared/queuebox/queue-box-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
-import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 const COMMAND = {
     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
     resourceId: 'durable-command-1',
     contextId: 'app:workspace:principal',
     senderId: 'principal',
+    traceId: 'trace-durable-command-1',
     data: { requestId: 'durable-command-1', principalId: 'principal' }
 } as const;
 
@@ -33,7 +34,7 @@ describe('AppInbox durable enqueue', () => {
         const writer = new AppInboxQueueEntryWriter({
             inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 }, creationNow),
             newResourceId,
-            createMessage: createAppInboxQueueMessageFixture
+            createMessage: createDefaultAppInboxQueueMessage
         }, { serviceId: 'server', defaultTopicId: 'app-inbox.client-state' });
 
         const generated = await writer.enqueue({ ...COMMAND, resourceId: undefined });
@@ -108,7 +109,7 @@ describe('AppInbox durable enqueue', () => {
 
     it('takes whether its write created the entry from the queue, not from the message it serialized', async () => {
         const queue = new TestResourceInbox(new Map());
-        const message = createAppInboxQueueMessageFixture({
+        const message = createDefaultAppInboxQueueMessage({
             key: { topicId: 'app-inbox.client-state', resourceId: COMMAND.resourceId, contextId: COMMAND.contextId },
             enqueue: COMMAND,
             serviceId: 'server-12345678'
@@ -130,13 +131,37 @@ describe('AppInbox durable enqueue', () => {
     });
 });
 
+describe('AppInbox command envelope trace', () => {
+    it('stamps the enqueue trace on the envelope and stores the command without it', async () => {
+        const queue = new TestResourceInbox(new Map());
+
+        const entry = await createService(queue).enqueue(COMMAND);
+
+        const { traceId: _trace, ...storedCommand } = COMMAND;
+        const message = JSON.parse(entry.resource) as { id: { traceId: string; }; payload: { resource: string; }; };
+        expect(message.id.traceId).toBe('trace-durable-command-1');
+        expect(JSON.parse(message.payload.resource)).toEqual(storedCommand);
+    });
+
+    it('replays a command enqueued under another trace without conflict and keeps the winner trace', async () => {
+        const queue = new TestResourceInbox(new Map());
+        const service = createService(queue);
+
+        const created = await service.writeIfAbsent({ ...COMMAND, traceId: 'trace-winner' });
+        const replayed = await service.writeIfAbsent({ ...COMMAND, traceId: 'trace-replay' });
+
+        expect(replayed).toEqual({ entry: created.entry, winner: false });
+        expect(JSON.parse(replayed.entry.resource)).toMatchObject({ id: { traceId: 'trace-winner' } });
+    });
+});
+
 function createService(
     queue: TestResourceInbox,
     wakeQueue?: () => void
 ): AppInboxQueueEntryWriter {
     return new AppInboxQueueEntryWriter(
         {
-            createMessage: createAppInboxQueueMessageFixture,
+            createMessage: createDefaultAppInboxQueueMessage,
             newResourceId: crypto.randomUUID.bind(crypto),
             inboxQueueReader: new InboxQueueReader(queue, { newLaneConcurrency: 1 })
         },

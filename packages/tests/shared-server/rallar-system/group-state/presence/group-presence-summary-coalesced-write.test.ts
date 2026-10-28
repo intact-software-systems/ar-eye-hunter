@@ -36,7 +36,11 @@ describe('group presence summary coalesced write', () => {
             serviceId: 'summary-worker'
         });
         const reads = (await worker.read(
-            [commandedWork, second!].map((work) => ({ work, reservation: summaryReservationRead(work.commandId) })),
+            [commandedWork, second!].map((work) => ({
+                work,
+                reservation: summaryReservationRead(work.commandId),
+                traceId: 'trace-group-presence-summary-coalesced-write'
+            })),
             BASE_EPOCH_MS + 10_000
         )).right ?? [];
         const commanded = worker.compute(toSummaryExpansion(commandedWork, reads[0]!));

@@ -119,6 +119,7 @@ async function createDeferredAdminCommitFixture(sql: PGliteSql): Promise<Deferre
             expiresAtEpochMs: now + 60_000
         },
         requestId: 'deferred-commit-prune',
+        traceId: 'trace-admin-fixture',
         request: { categories: ['runtime-state'], dryRun: false }
     });
     pending.then(() => {
@@ -247,6 +248,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
                 expiresAtEpochMs: now + 60_000
             },
             requestId: 'dry-run-prune',
+            traceId: 'trace-admin-fixture',
             request: { categories: ['runtime-state'], dryRun: true }
         });
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -317,6 +319,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
                 expiresAtEpochMs: now + 60_000
             },
             requestId: 'rollback-prune',
+            traceId: 'trace-admin-fixture',
             request: { categories: ['runtime-state'], dryRun: false }
         });
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -389,6 +392,7 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
                 expiresAtEpochMs: now + 60_000
             },
             requestId: 'write-rejected-prune',
+            traceId: 'trace-admin-fixture',
             request: { categories: ['runtime-state'], dryRun: false }
         });
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');

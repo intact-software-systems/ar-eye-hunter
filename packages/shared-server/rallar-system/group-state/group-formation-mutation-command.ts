@@ -28,7 +28,6 @@ export function toFormationActivateCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             observedRate: input.observedRate,
             degraded: input.degraded,
             expectedFormationEpoch: input.formationEpoch,
@@ -60,7 +59,6 @@ export function toFailFormationCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             observedRate: input.observedRate,
             expectedFormationEpoch: input.formationEpoch,
             expectedLayout: input.expectedLayout
@@ -150,7 +148,6 @@ function toAutomationPlanCommand(input: FormationAutomationPlanInput, commandId:
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             expectedFormationEpoch: input.formationEpoch
         }
     };

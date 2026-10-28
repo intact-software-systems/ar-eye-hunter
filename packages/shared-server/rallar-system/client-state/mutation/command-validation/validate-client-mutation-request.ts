@@ -153,7 +153,6 @@ function validateOptionalActorInput(input: ValidationRecord): void {
     requireOptionalNonEmptyString(input.actorPrincipalId, 'Client request actorPrincipalId');
     requireOptionalNonEmptyString(input.actorSessionId, 'Client request actorSessionId');
     requireOptionalString(input.reason, 'Client request reason');
-    requireOptionalString(input.traceId, 'Client request traceId');
     requireOptionalNonEmptyString(input.requestId, 'Client request requestId');
 }
 
@@ -211,7 +210,7 @@ function timestampValue(value: ValidationValue): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 
-const actorKeys = ['actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'requestId'] as const;
+const actorKeys = ['actorPrincipalId', 'actorSessionId', 'reason', 'requestId'] as const;
 const principalRequestKeys = [
     'username',
     'displayName',

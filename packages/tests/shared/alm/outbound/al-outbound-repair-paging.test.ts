@@ -93,7 +93,7 @@ describe('a repair hint is served in pages', () => {
 
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-paging' },
                 {
                     msgId: track[REVEALING_SEQ - 1]!.id.msgId,
                     fromPeerId: 'peer-1',

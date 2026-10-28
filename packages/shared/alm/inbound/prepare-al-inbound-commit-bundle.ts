@@ -47,6 +47,7 @@ interface ALInboundControlOrdering {
 interface PrepareALInboundDurableEffectInput {
     readonly payload: ALInboundEffectIntent['payload'];
     readonly facts: ALInboundEffectFacts;
+    readonly traceId: string;
     readonly index: number;
     readonly carrier: ALDeliveryCarrier;
 }
@@ -67,7 +68,7 @@ export function prepareALInboundCommitBundle(
     input: PrepareALInboundCommitBundleInput
 ): ALInboundCommitBundle {
     const { read } = input;
-    const msg = read.kind === 'incoming' ? read.msg : read.snapshot.msg;
+    const msg = toPreparedALInboundMessage(read);
     const durableEffects = computeDurableEffects(input);
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
     const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
@@ -89,13 +90,19 @@ export function prepareALInboundCommitBundle(
     };
 }
 
+function toPreparedALInboundMessage(read: PrepareALInboundCommitBundleInput['read']): ALMessage {
+    return read.kind === 'incoming' ? read.msg : read.snapshot.msg;
+}
+
 function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readonly ALInboundDurableEffectWrite[] {
     const { read, facts } = input;
+    const traceId = toPreparedALInboundMessage(read).id.traceId;
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
             payload: effect.payload,
             facts,
+            traceId,
             index,
             carrier: effect.carrier
         });
@@ -177,7 +184,8 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
         v: AL_MESSAGE_ENVELOPE_VERSION,
         msgId: `${facts.controlIdPrefix}:${index}`,
         senderId: facts.selfPeerId,
-        ts: facts.observedAtEpochMs
+        ts: facts.observedAtEpochMs,
+        traceId: input.traceId
     };
     switch (payload.kind) {
         case 'send-ack':

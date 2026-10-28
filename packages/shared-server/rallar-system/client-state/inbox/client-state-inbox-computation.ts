@@ -518,7 +518,8 @@ function computeExpiredSessionSuccessorEntry(
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: key.resourceId,
             ts: createdAtEpochMs,
-            senderId: context.message.id.senderId
+            senderId: context.message.id.senderId,
+            traceId: context.message.id.traceId
         },
         route: key,
         payload: {

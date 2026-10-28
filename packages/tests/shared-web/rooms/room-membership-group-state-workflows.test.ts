@@ -7,6 +7,12 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+// Each request mints its trace from the UUID source these tests stub for the request ids, so the trace is fixed.
+vi.mock('@shared/al-contracts/trace/al-trace-id.ts', async (importOriginal) => ({
+    ...await importOriginal<typeof import('@shared/al-contracts/trace/al-trace-id.ts')>(),
+    newALTraceId: () => 'trace-room-workflow-request'
+}));
+
 interface FetchCall {
     readonly url: string;
     readonly requestId?: string;
@@ -44,8 +50,7 @@ describe('room membership group-state workflows', () => {
             targetPrincipalId: 'member-1',
             request: {
                 invitationExpiresAtEpochMs: 2_000,
-                reason: 'join us',
-                traceId: 'invite-trace'
+                reason: 'join us'
             },
             actorPrincipalId: 'owner-1',
             sessionId: 'owner-session'
@@ -64,12 +69,11 @@ describe('room membership group-state workflows', () => {
                 requestId: 'invite-request-0000001',
                 method: 'POST',
                 rawBody: '{"invitationExpiresAtEpochMs":2000,"reason":"join us",' +
-                    '"traceId":"invite-trace","actorPrincipalId":"owner-1",' +
+                    '"actorPrincipalId":"owner-1",' +
                     '"actorSessionId":"owner-session"}',
                 body: {
                     invitationExpiresAtEpochMs: 2_000,
                     reason: 'join us',
-                    traceId: 'invite-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -145,11 +149,10 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/remove',
                 requestId: 'remove-request-0000001',
                 method: 'POST',
-                rawBody: '{"reason":"remove","traceId":"remove-trace",' +
+                rawBody: '{"reason":"remove",' +
                     '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     reason: 'remove',
-                    traceId: 'remove-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -158,11 +161,10 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/ban',
                 requestId: 'ban-request-0000000001',
                 method: 'POST',
-                rawBody: '{"reason":"ban","traceId":"ban-trace",' +
+                rawBody: '{"reason":"ban",' +
                     '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     reason: 'ban',
-                    traceId: 'ban-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -171,11 +173,10 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/unban',
                 requestId: 'unban-request-00000001',
                 method: 'POST',
-                rawBody: '{"reason":"unban","traceId":"unban-trace",' +
+                rawBody: '{"reason":"unban",' +
                     '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     reason: 'unban',
-                    traceId: 'unban-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -184,12 +185,11 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/role',
                 requestId: 'role-request-000000001',
                 method: 'PUT',
-                rawBody: '{"role":"admin","reason":"promote","traceId":"role-trace",' +
+                rawBody: '{"role":"admin","reason":"promote",' +
                     '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     role: 'admin',
                     reason: 'promote',
-                    traceId: 'role-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -199,12 +199,11 @@ describe('room membership group-state workflows', () => {
                 requestId: 'owner-request-00000001',
                 method: 'POST',
                 rawBody: '{"newOwnerPrincipalId":"member-1","reason":"handoff",' +
-                    '"traceId":"owner-trace","actorPrincipalId":"owner-1",' +
+                    '"actorPrincipalId":"owner-1",' +
                     '"actorSessionId":"owner-session"}',
                 body: {
                     newOwnerPrincipalId: 'member-1',
                     reason: 'handoff',
-                    traceId: 'owner-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -216,23 +215,23 @@ describe('room membership group-state workflows', () => {
 async function runMembershipGovernanceWorkflows(): Promise<void> {
     await membershipWorkflows.removeStateGroupMember({
         ...governanceActorInput(),
-        request: { reason: 'remove', traceId: 'remove-trace' }
+        request: { reason: 'remove' }
     });
     await membershipWorkflows.banStateGroupMember({
         ...governanceActorInput(),
-        request: { reason: 'ban', traceId: 'ban-trace' }
+        request: { reason: 'ban' }
     });
     await membershipWorkflows.unbanStateGroupMember({
         ...governanceActorInput(),
-        request: { reason: 'unban', traceId: 'unban-trace' }
+        request: { reason: 'unban' }
     });
     await membershipWorkflows.setStateGroupMemberRole({
         ...governanceActorInput(),
-        request: { role: 'admin', reason: 'promote', traceId: 'role-trace' }
+        request: { role: 'admin', reason: 'promote' }
     });
     await membershipWorkflows.transferStateGroupOwnership({
         groupId: 'group-1',
-        request: { newOwnerPrincipalId: 'member-1', reason: 'handoff', traceId: 'owner-trace' },
+        request: { newOwnerPrincipalId: 'member-1', reason: 'handoff' },
         actorPrincipalId: 'owner-1',
         sessionId: 'owner-session'
     });

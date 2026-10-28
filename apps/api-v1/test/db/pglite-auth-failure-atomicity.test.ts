@@ -89,6 +89,7 @@ Deno.test(
 
             const pending = appAuth.logoutSession({
                 requestId: 'logout-outbox-collision',
+                traceId: 'trace-auth-fixture',
                 session
             });
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -185,6 +186,7 @@ Deno.test(
 
             const pending = appAuth.registerUser({
                 requestId: 'auth-finalization-fence',
+                traceId: 'trace-auth-fixture',
                 request: {
                     username: 'fence-user',
                     password: 'password-1'

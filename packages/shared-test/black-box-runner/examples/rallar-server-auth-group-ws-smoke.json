@@ -309,7 +309,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 3,
+            "v": 4,
             "msgId": "bb-ws-smoke-{sessionId}",
             "ts": 0,
             "senderId": "{sessionId}",

@@ -83,7 +83,7 @@ function toCommand(aggregateRef: GroupRef, commandId: string): GroupMutationComm
         commandId,
         requestId: null,
         operation: 'appointDirector',
-        input: { actorPrincipalId: null, actorSessionId: null, reason: null, traceId: null, heartbeatTtlMs: 1 }
+        input: { actorPrincipalId: null, actorSessionId: null, reason: null, heartbeatTtlMs: 1 }
     };
 }
 

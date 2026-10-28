@@ -48,6 +48,7 @@ export async function executeRtcRttMutation(
             degreeLimit: null
         };
         facts = {
+            traceId: 'trace-execute-rtc-rtt-mutation',
             commandHash,
             attemptCount: input.attemptCount,
             requestedAtEpochMs: null,
@@ -59,7 +60,8 @@ export async function executeRtcRttMutation(
         facts = {
             ...(await input.readFacts()),
             commandHash,
-            attemptCount: input.attemptCount
+            attemptCount: input.attemptCount,
+            traceId: 'trace-execute-rtc-rtt-mutation'
         };
     }
     const computed = computeRtcRttMutation({ command, read, facts });

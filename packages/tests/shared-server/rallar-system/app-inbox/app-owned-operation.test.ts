@@ -26,6 +26,7 @@ const COMMAND = {
     contextId: 'warehouse-1',
     resourceId: 'reservation-1',
     authority: { principalId: 'clerk-1' },
+    traceId: 'trace-app-owned-operation',
     data: { quantity: 3 }
 } satisfies AppInboxEnqueueInput;
 
@@ -103,11 +104,12 @@ describe('app-owned AppInbox operation', () => {
             defaultTopicId: COMMAND.type
         });
         const { entry } = await client.queueEntryWriter.writeIfAbsent(COMMAND);
+        const { traceId: _traceId, ...storedCommand } = COMMAND;
         expect(validateAppInboxCommandIdentity({
             ...entry,
             key: { ...entry.key, topicId },
             resource: JSON.stringify({
-                payload: { typeId: dispatched, resource: JSON.stringify({ ...COMMAND, type, topicId: commandTopic ?? COMMAND.topicId }) }
+                payload: { typeId: dispatched, resource: JSON.stringify({ ...storedCommand, type, topicId: commandTopic ?? COMMAND.topicId }) }
             })
         })).toMatchObject({ valid: false, identity: { operationSource } });
     });

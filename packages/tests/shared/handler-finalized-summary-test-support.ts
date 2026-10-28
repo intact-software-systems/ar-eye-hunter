@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -290,7 +291,7 @@ function createReservedSummaryEntry(): ResourceEntry {
             payload: {}
         }
     };
-    const entry = computeGroupPresenceSummaryEntry(work, 'handler-test');
+    const entry = computeGroupPresenceSummaryEntry(work, 'handler-test', 'trace-handler-finalized-summary');
     return {
         ...entry,
         typeId: EnqueuedType.APP_OUTBOX,
@@ -312,10 +313,10 @@ function updateMessage(
 
 function updateEnvelope(
     entry: ResourceEntry,
-    update: (envelope: Record<string, unknown>) => Record<string, unknown>
+    update: (envelope: ApiJsonObject) => ApiJsonObject
 ): ResourceEntry {
     return updateMessage(entry, (message) => {
-        const envelope = JSON.parse(message.payload.resource) as Record<string, unknown>;
+        const envelope = JSON.parse(message.payload.resource) as ApiJsonObject;
         return {
             ...message,
             payload: {
@@ -328,21 +329,21 @@ function updateEnvelope(
 
 function updateWork(
     entry: ResourceEntry,
-    update: (work: Record<string, unknown>) => Record<string, unknown>
+    update: (work: ApiJsonObject) => ApiJsonObject
 ): ResourceEntry {
     return updateEnvelope(entry, (envelope) => ({
         ...envelope,
-        data: update(envelope.data as Record<string, unknown>)
+        data: update(envelope.data as ApiJsonObject)
     }));
 }
 
 function updateEvent(
     entry: ResourceEntry,
-    update: (event: Record<string, unknown>) => Record<string, unknown>
+    update: (event: ApiJsonObject) => ApiJsonObject
 ): ResourceEntry {
     return updateWork(entry, (work) => ({
         ...work,
-        event: update(work.event as Record<string, unknown>)
+        event: update(work.event as ApiJsonObject)
     }));
 }
 
@@ -370,6 +371,6 @@ function updateCanonicalIdentity(
     };
 }
 
-function removeKey(value: Record<string, unknown>, key: string): Record<string, unknown> {
+function removeKey(value: ApiJsonObject, key: string): ApiJsonObject {
     return Object.fromEntries(Object.entries(value).filter(([candidate]) => candidate !== key));
 }

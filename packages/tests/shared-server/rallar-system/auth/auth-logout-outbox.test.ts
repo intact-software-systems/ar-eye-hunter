@@ -29,7 +29,7 @@ describe('auth logout outbox', () => {
                 expiredByTokenEntry: null,
                 expiredBySessionEntry: null
             },
-            facts: { kind: command.kind, serviceId: 'auth-service' }
+            facts: { kind: command.kind, serviceId: 'auth-service', traceId: 'trace-auth-logout-outbox' }
         });
         const outbox = computed.logoutOutbox;
         if (!outbox) {
@@ -50,7 +50,7 @@ describe('auth logout outbox', () => {
             contextId: 'session-1'
         });
         expect(outbox.resource).toBe(
-            '{"id":{"v":3,"msgId":"auth-logout:logout-request","ts":1001,"senderId":"auth-service"},"route":{"topicId":"auth.session.logout","resourceId":"logout-request","contextId":"session-1"},"targets":{"mode":"unicast","toPeerId":"session-1"},"constraints":{"expiresAtMs":2000},"payload":{"typeId":"auth.session.logout.v1","contentType":"application/json","resource":"{\\"sessionId\\":\\"session-1\\",\\"closeCode\\":1000,\\"reason\\":\\"auth-logout\\"}"},"audit":{"createdBy":"auth-service","createdTs":1001}}'
+            '{"id":{"v":4,"msgId":"auth-logout:logout-request","ts":1001,"senderId":"auth-service","traceId":"trace-auth-logout-outbox"},"route":{"topicId":"auth.session.logout","resourceId":"logout-request","contextId":"session-1"},"targets":{"mode":"unicast","toPeerId":"session-1"},"constraints":{"expiresAtMs":2000},"payload":{"typeId":"auth.session.logout.v1","contentType":"application/json","resource":"{\\"sessionId\\":\\"session-1\\",\\"closeCode\\":1000,\\"reason\\":\\"auth-logout\\"}"},"audit":{"createdBy":"auth-service","createdTs":1001}}'
         );
         expect(outbox.typeId).toBe('WS_OUTBOX');
         expect(outbox.status).toBe('NEW');
@@ -69,7 +69,7 @@ describe('auth logout outbox', () => {
                 expiredByTokenEntry: null,
                 expiredBySessionEntry: null
             },
-            facts: { kind: command.kind, serviceId: 'auth-service' }
+            facts: { kind: command.kind, serviceId: 'auth-service', traceId: 'trace-auth-logout-outbox' }
         });
 
         expect(noOp.outcome).toBe('no-op');

@@ -36,7 +36,7 @@ describe('auth mutation validation aggregation', () => {
             byUsername: entry({ ...command.user, clientId: 'other-client' }, 'username=alice'),
             byClientId: entry({ ...command.user, username: 'other-user' }, 'client=client-1')
         };
-        const facts = { kind: command.kind, serviceId: 'auth-service' } as const;
+        const facts = { kind: command.kind, serviceId: 'auth-service', traceId: 'trace-auth-mutation-validation-aggregation' } as const;
         const computed = computeAuthMutation({ command, read, facts });
 
         expect(() => validateAuthMutation({ command, read, facts, computed })).not.toThrow();

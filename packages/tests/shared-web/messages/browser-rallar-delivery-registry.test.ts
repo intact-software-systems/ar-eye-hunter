@@ -885,7 +885,7 @@ class DeliveryRegistryHarness {
 
 function toTestMessage(msgId: string): ALMessage {
     return {
-        id: { v: 3, msgId, ts: START_MS, senderId: 'sender-1' },
+        id: { v: 4, msgId, ts: START_MS, senderId: 'sender-1', traceId: 'trace-browser-rallar-delivery-registry' },
         route: { topicId: 'room.chat', contextId: 'room-1', resourceId: 'chat' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         payload: { typeId: 'chat.message.v1', resource: '{}' }
@@ -899,7 +899,7 @@ function toUnicastTestMessage(msgId: string, toPeerId: string): ALMessage {
 function toReply(msgId: string, senderId: string, replyToMsgId: string): RallarMessage<RallarMessagePayload> {
     const raw: ALMessage = {
         ...toTestMessage(msgId),
-        id: { v: 3, msgId, ts: START_MS, senderId },
+        id: { v: 4, msgId, ts: START_MS, senderId, traceId: 'trace-browser-rallar-delivery-registry' },
         actions: { corrId: replyToMsgId, replyToMsgId }
     };
     return {
@@ -909,6 +909,7 @@ function toReply(msgId: string, senderId: string, replyToMsgId: string): RallarM
         contextId: raw.route.contextId,
         resourceId: raw.route.resourceId,
         senderId,
+        traceId: raw.id.traceId,
         payload: {},
         raw,
         receivedAtEpochMs: START_MS,
@@ -922,7 +923,7 @@ function toExpiringTestMessage(msgId: string, expiresAtMs: number): ALMessage {
 
 function toBestEffortTestMessage(msgId: string): ALMessage {
     return {
-        id: { v: 3, msgId, ts: START_MS, senderId: 'sender-1' },
+        id: { v: 4, msgId, ts: START_MS, senderId: 'sender-1', traceId: 'trace-browser-rallar-delivery-registry' },
         route: { topicId: 'room.chat', contextId: 'room-1', resourceId: 'chat' },
         payload: { typeId: 'chat.message.v1', resource: '{}' }
     };

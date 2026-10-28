@@ -9,6 +9,12 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+// Each request mints its trace from the UUID source these tests stub for the request ids, so the trace is fixed.
+vi.mock('@shared/al-contracts/trace/al-trace-id.ts', async (importOriginal) => ({
+    ...await importOriginal<typeof import('@shared/al-contracts/trace/al-trace-id.ts')>(),
+    newALTraceId: () => 'trace-room-workflow-request'
+}));
+
 interface FetchCall {
     readonly url: string;
     readonly method: string;
@@ -89,8 +95,7 @@ describe('room group-state mutation workflows', () => {
                 joinMode: 'open',
                 maxMembers: 8,
                 maxSessionsPerMember: 2,
-                metadata: { map: 'fjord', enabled: false, note: null },
-                traceId: 'details-trace'
+                metadata: { map: 'fjord', enabled: false, note: null }
             },
             principalId: 'owner-1',
             sessionId: 'owner-session'
@@ -102,8 +107,7 @@ describe('room group-state mutation workflows', () => {
                 description: '',
                 maxMembers: 0,
                 metadata: { enabled: false, note: null },
-                reason: 'quiet',
-                traceId: 'archive-trace'
+                reason: 'quiet'
             },
             principalId: 'owner-1',
             sessionId: 'owner-session'
@@ -113,8 +117,7 @@ describe('room group-state mutation workflows', () => {
             request: {
                 slug: 'deleted-room',
                 purgeAfterEpochMs: 3_000,
-                reason: 'cleanup',
-                traceId: 'delete-trace'
+                reason: 'cleanup'
             },
             principalId: 'owner-1',
             sessionId: 'owner-session'
@@ -128,7 +131,7 @@ describe('room group-state mutation workflows', () => {
                 rawBody: '{"displayName":"Renamed","description":"Mission room","joinMode":"open",' +
                     '"maxMembers":8,"maxSessionsPerMember":2,' +
                     '"metadata":{"map":"fjord","enabled":false,"note":null},' +
-                    '"traceId":"details-trace","actorPrincipalId":"owner-1",' +
+                    '"actorPrincipalId":"owner-1",' +
                     '"actorSessionId":"owner-session"}',
                 body: {
                     displayName: 'Renamed',
@@ -137,7 +140,6 @@ describe('room group-state mutation workflows', () => {
                     maxMembers: 8,
                     maxSessionsPerMember: 2,
                     metadata: { map: 'fjord', enabled: false, note: null },
-                    traceId: 'details-trace',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
                 }
@@ -148,7 +150,7 @@ describe('room group-state mutation workflows', () => {
                 method: 'PUT',
                 rawBody: '{"displayName":"Archived Room","description":"","maxMembers":0,' +
                     '"metadata":{"enabled":false,"note":null},"reason":"quiet",' +
-                    '"traceId":"archive-trace","status":"archived",' +
+                    '"status":"archived",' +
                     '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     displayName: 'Archived Room',
@@ -156,7 +158,6 @@ describe('room group-state mutation workflows', () => {
                     maxMembers: 0,
                     metadata: { enabled: false, note: null },
                     reason: 'quiet',
-                    traceId: 'archive-trace',
                     status: 'archived',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
@@ -167,13 +168,12 @@ describe('room group-state mutation workflows', () => {
                     'requests/delete-request-00000001',
                 method: 'PUT',
                 rawBody: '{"slug":"deleted-room","purgeAfterEpochMs":3000,"reason":"cleanup",' +
-                    '"traceId":"delete-trace","status":"deleted",' +
+                    '"status":"deleted",' +
                     '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     slug: 'deleted-room',
                     purgeAfterEpochMs: 3_000,
                     reason: 'cleanup',
-                    traceId: 'delete-trace',
                     status: 'deleted',
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'

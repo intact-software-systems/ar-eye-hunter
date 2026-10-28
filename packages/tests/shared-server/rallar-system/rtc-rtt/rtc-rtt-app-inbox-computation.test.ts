@@ -55,7 +55,8 @@ describe('RTC RTT AppInbox computation', () => {
                 purgeAfterEpochMs: 10_000,
                 requestedAtEpochMs: 2,
                 commandHash: COMMAND_HASH,
-                attemptCount: 1
+                attemptCount: 1,
+                traceId: 'trace-rtc-rtt-app-inbox-computation'
             },
             requestId: 'request-1',
             completionFacts: new AppInboxTransactionWriter(

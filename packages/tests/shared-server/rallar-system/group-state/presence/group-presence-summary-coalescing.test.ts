@@ -587,15 +587,19 @@ async function seedConnectedGroup(input: SeedConnectedGroupInput): Promise<Seede
     const entries = runtime.groupStateEventStore.events
         .filter((event) => event.groupId === groupId && event.eventType === 'session-connected')
         .map((event) =>
-            computeGroupPresenceSummaryEntry({
-                effectKind: 'group-presence-summary',
-                aggregateRef: ref,
-                commandId: event.requestId!,
-                createdAtEpochMs: event.occurredAtEpochMs,
-                expireAtEpochMs: now + 60_000,
-                acceptedCausalRevision: event.causalRevision,
-                event
-            }, 'coalescing-api')
+            computeGroupPresenceSummaryEntry(
+                {
+                    effectKind: 'group-presence-summary',
+                    aggregateRef: ref,
+                    commandId: event.requestId!,
+                    createdAtEpochMs: event.occurredAtEpochMs,
+                    expireAtEpochMs: now + 60_000,
+                    acceptedCausalRevision: event.causalRevision,
+                    event
+                },
+                'coalescing-api',
+                'trace-group-presence-summary-coalescing'
+            )
         );
     return { ref, principalIds, entries };
 }

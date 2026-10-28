@@ -51,7 +51,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
         }
         const receipt = {
             ...newALReceiptControlMessage(
-                { v: 3, msgId: 'complete-receipt', senderId: 'server', ts: Date.now() },
+                { v: 4, msgId: 'complete-receipt', senderId: 'server', ts: Date.now(), traceId: 'trace-al-outbound-receipt-observation' },
                 {
                     msgId: 'subject',
                     originPeerId: 'origin',

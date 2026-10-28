@@ -11,7 +11,7 @@ import {
 import {
     AppInboxIdempotencyConflictError,
     isAppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '../rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toTerminalAppInboxFailure, type AppInboxFailure } from '../rallar-system/app-inbox/app-inbox-failure.ts';
@@ -96,6 +96,12 @@ export namespace RallarServerAppInbox {
         readonly handle: (command: Command, context: AppInboxMessageContext<Result>) => Promise<Result>;
     }
 
+    /** The trace travels on the admitted envelope only; the retained command and its identity never carry it. */
+    export interface EnqueueInput<Command> {
+        readonly command: Command;
+        readonly traceId: string;
+    }
+
     /** Wait is bound to the actual validated retained winner; callers cannot supply or replace its command. */
     export interface Admission<Result> {
         wait(): Promise<Either<AppInboxFailure, Result>>;
@@ -104,10 +110,10 @@ export namespace RallarServerAppInbox {
     /** Admission/idempotency policy failures are Left values; corrupt invariants and unexpected exceptions remain distinct. */
     export interface Operation<Command, Result> {
         /** Returns validated durable admission after waking its owning queue; execution is not awaited. */
-        enqueue(command: Command): Promise<Either<AppInboxFailure, Admission<Result>>>;
+        enqueue(input: EnqueueInput<Command>): Promise<Either<AppInboxFailure, Admission<Result>>>;
         /** Returns retained pending/completed admission immediately; only a validated miss permits proposal work. */
         readAdmission(command: Command): Promise<Either<AppInboxFailure, Admission<Result>> | undefined>;
-        submit(command: Command): Promise<Either<AppInboxFailure, Result>>;
+        submit(input: EnqueueInput<Command>): Promise<Either<AppInboxFailure, Result>>;
         /** A validated miss permits external proposal work; concurrent misses may each compute a proposal. */
         readReplay(command: Command): Promise<Either<AppInboxFailure, Result> | undefined>;
     }
@@ -161,9 +167,9 @@ export class RallarServerAppInbox {
             handle: (_data, context) => this.runRegisteredAttempt(registered, context)
         });
         return Object.freeze({
-            enqueue: (command: Command) => this.enqueue(registered, command),
+            enqueue: (input: RallarServerAppInbox.EnqueueInput<Command>) => this.enqueue(registered, input),
             readAdmission: (command: Command) => this.readAdmission(registered, command),
-            submit: (command: Command) => this.submit(registered, command),
+            submit: (input: RallarServerAppInbox.EnqueueInput<Command>) => this.submit(registered, input),
             readReplay: (command: Command) => this.readReplay(registered, command)
         });
     }
@@ -228,9 +234,9 @@ export class RallarServerAppInbox {
 
     private async submit<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
-        command: Command
+        input: RallarServerAppInbox.EnqueueInput<Command>
     ): Promise<Either<AppInboxFailure, Result>> {
-        const admission = await this.enqueue(registration, command);
+        const admission = await this.enqueue(registration, input);
         return admission.left ? Either.ofLeft(admission.left) : await admission.right!.wait();
     }
 
@@ -247,14 +253,14 @@ export class RallarServerAppInbox {
 
     private async enqueue<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
-        command: Command
+        input: RallarServerAppInbox.EnqueueInput<Command>
     ): Promise<Either<AppInboxFailure, RallarServerAppInbox.Admission<Result>>> {
         const admission = this.getAdmissionFailure();
         if (admission) {
             return Either.ofLeft(admission);
         }
         try {
-            const received = toRegisteredEnqueue(registration, command);
+            const received = toRegisteredEnqueue(registration, input.command);
             const retained = await this.readRetained(registration, received);
             if (retained) {
                 this.wakeOwningQueue();
@@ -264,7 +270,8 @@ export class RallarServerAppInbox {
             if (stopped) {
                 return Either.ofLeft(stopped);
             }
-            const reservation = await this.client.reservationClient.reserveMaterializedEntry(received, async () => {
+            const placeholder = { ...received, traceId: input.traceId };
+            const reservation = await this.client.reservationClient.reserveMaterializedEntry(placeholder, async () => {
                 const decoded = registration.decodeEnvelope(received);
                 const materialized = toRegisteredEnqueue(registration, registration.materialize(decoded));
                 assertMatchingRegisteredCommand(registration, received, materialized);
@@ -317,7 +324,7 @@ export class RallarServerAppInbox {
 
     private async readRetained<Command, Result>(
         registration: RallarServerAppInbox.Registration<Command, Result>,
-        received: AppInboxEnqueueInput
+        received: AppInboxEnqueue
     ): Promise<AppInboxResultWaiter.Wait | undefined> {
         const key = toRegisteredKey(received);
         const entry = await this.entries.findByKey(key);
@@ -340,7 +347,7 @@ export class RallarServerAppInbox {
 function toRegisteredEnqueue<Command, Result>(
     registration: RallarServerAppInbox.Registration<Command, Result>,
     command: Command
-): AppInboxEnqueueInput {
+): AppInboxEnqueue {
     const encoded = registration.encodeEnvelope(command);
     const envelope: RallarServerAppInbox.Envelope = {
         data: detachWireValue(encoded.data),
@@ -366,7 +373,7 @@ function toRegisteredEnqueue<Command, Result>(
     };
 }
 
-function toRegisteredKey(enqueue: AppInboxEnqueueInput): Key {
+function toRegisteredKey(enqueue: AppInboxEnqueue): Key {
     if (!enqueue.resourceId || !enqueue.topicId) {
         throw new AppInboxCommandIdentityError('corrupt');
     }
@@ -376,15 +383,15 @@ function toRegisteredKey(enqueue: AppInboxEnqueueInput): Key {
 function assertRegisteredEntry<Command, Result>(
     registration: RallarServerAppInbox.Registration<Command, Result>,
     entry: ResourceEntry,
-    received: AppInboxEnqueueInput
-): AppInboxEnqueueInput {
+    received: AppInboxEnqueue
+): AppInboxEnqueue {
     const identity = validateAppInboxCommandIdentity(entry);
     const message = decodePersistedALMessage(entry.resource);
     if (!identity.valid || entry.typeId !== 'APP_INBOX') {
         throw new AppInboxCommandIdentityError('corrupt');
     }
     const stored = identity.command;
-    let projected: AppInboxEnqueueInput;
+    let projected: AppInboxEnqueue;
     try {
         projected = toRegisteredEnqueue(registration, registration.decodeEnvelope(stored));
     }
@@ -410,8 +417,8 @@ function assertRegisteredEntry<Command, Result>(
 
 function assertMatchingRegisteredCommand<Command, Result>(
     registration: RallarServerAppInbox.Registration<Command, Result>,
-    received: AppInboxEnqueueInput,
-    existing: AppInboxEnqueueInput
+    received: AppInboxEnqueue,
+    existing: AppInboxEnqueue
 ): void {
     const receivedIdentity = {
         type: received.type,

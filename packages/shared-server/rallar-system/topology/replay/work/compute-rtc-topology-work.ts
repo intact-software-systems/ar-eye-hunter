@@ -50,6 +50,8 @@ export interface RtcTopologyWorkFacts {
      * window from the attempt, so a row derived from a long-lived row near its expiry still lives its window.
      */
     readonly derivedExpireAtEpochMs: number;
+    /** From the retained work row's envelope, never re-minted, so retries and recomputes reproduce the same rows. */
+    readonly traceId: string;
 }
 
 export interface RtcTopologyWorkRead {
@@ -192,7 +194,8 @@ function toRtcTopologyWorkWriteInput(
         reservationFinish: input.reservationFinish,
         formationAutomationEnabled: input.formationAutomationEnabled,
         serviceId: input.serviceId,
-        publisherStreamId: input.publisherStreamId
+        publisherStreamId: input.publisherStreamId,
+        traceId: input.facts.traceId
     };
 }
 
@@ -354,7 +357,7 @@ function computeAcceptedTopologyMutation(
     input: ComputeAcceptedTopologyMutationInput
 ): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
     const { authority, planned, inputFingerprint, promotionRead, publicationExpireAtTimestamp } = input;
-    const { workEnvelope, workId, attemptCount } = input.facts;
+    const { workEnvelope, workId, attemptCount, traceId } = input.facts;
     const work = workEnvelope.data;
     const publication = publicationExpireAtTimestamp === null
         ? null
@@ -364,7 +367,8 @@ function computeAcceptedTopologyMutation(
             facts: {
                 workId,
                 createdAtEpochMs: work.requestedAtEpochMs,
-                expiresAtEpochMs: publicationExpireAtTimestamp
+                expiresAtEpochMs: publicationExpireAtTimestamp,
+                traceId
             }
         });
     const facts = publication && publicationExpireAtTimestamp !== null
@@ -419,6 +423,7 @@ function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPu
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot,
         expiresAtEpochMs: facts.expiresAtEpochMs,
-        createdAtEpochMs: facts.createdAtEpochMs
+        createdAtEpochMs: facts.createdAtEpochMs,
+        traceId: facts.traceId
     };
 }

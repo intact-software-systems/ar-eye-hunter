@@ -4,18 +4,20 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { LogoutAuthSessionCommand } from '../auth-mutation-contracts.ts';
+import type { AuthMutationFacts, LogoutAuthSessionCommand } from '../auth-mutation-contracts.ts';
 
 export function toAuthLogoutOutbox(
     command: LogoutAuthSessionCommand,
-    serviceId: string
+    facts: Pick<AuthMutationFacts, 'serviceId' | 'traceId'>
 ): ResourceEntry {
+    const { serviceId, traceId } = facts;
     const message = {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `auth-logout:${command.requestId}`,
             ts: command.capturedAtEpochMs,
-            senderId: serviceId
+            senderId: serviceId,
+            traceId
         },
         route: {
             topicId: 'auth.session.logout',

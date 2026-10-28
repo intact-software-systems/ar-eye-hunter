@@ -168,8 +168,8 @@ Deno.test('mutation write persists one canonical snapshot reason in row and enve
             reason: 'app-inbox-compaction'
         });
         const read = await service.read(compact);
-        const computed = service.compute({ command: compact, read });
-        assert.deepEqual(service.validate({ command: compact, read, computed }), []);
+        const computed = service.compute({ traceId: 'trace-crdt-public-read-integrity', command: compact, read });
+        assert.deepEqual(service.validate({ traceId: 'trace-crdt-public-read-integrity', command: compact, read, computed }), []);
         await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
         const [stored] = await sql<PersistedSnapshotReasonRow[]>`
       select snapshot_envelope, reason from crdt_snapshots
@@ -234,8 +234,8 @@ async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
         update: update()
     });
     const read = await service.read(command);
-    const computed = service.compute({ command, read });
-    assert.deepEqual(service.validate({ command, read, computed }), []);
+    const computed = service.compute({ traceId: 'trace-crdt-public-read-integrity', command, read });
+    assert.deepEqual(service.validate({ traceId: 'trace-crdt-public-read-integrity', command, read, computed }), []);
     await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
     return { command, service };
 }

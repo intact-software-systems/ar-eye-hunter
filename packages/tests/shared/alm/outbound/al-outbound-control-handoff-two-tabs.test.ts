@@ -270,7 +270,7 @@ async function drainTabs(session: TwoTabSession, tabs: readonly TwoTabRuntime[])
 function createControlMessage(msgId: string, nowMs: number): ALMessage {
     return {
         ...newALAckControlMessage(
-            { v: 3, senderId: SENDER_PEER_ID, msgId, ts: nowMs },
+            { v: 4, senderId: SENDER_PEER_ID, msgId, ts: nowMs, traceId: 'trace-al-outbound-control-handoff-two-tabs' },
             {
                 ackedMsgId: 'inbound-admission',
                 fromPeerId: SENDER_PEER_ID,

@@ -37,11 +37,13 @@ export interface ComputeCrdtAcceptedAppendOutcomeInput {
     readonly document: RallarCrdtDocumentMetadata;
     readonly append: RallarCrdtTrustedAppendMetadata;
     readonly serviceId: string;
+    readonly traceId: string;
 }
 export interface ComputeCrdtReplayOutcomeInput {
     readonly command: CrdtAppendCommand;
     readonly read: CrdtMutationRead;
     readonly serviceId: string;
+    readonly traceId: string;
 }
 
 export interface ComputeCrdtRejectedOutcomeInput {
@@ -49,6 +51,7 @@ export interface ComputeCrdtRejectedOutcomeInput {
     readonly read: CrdtMutationRead;
     readonly code: string;
     readonly serviceId: string;
+    readonly traceId: string;
 }
 
 export interface ComputeCrdtAcceptedAdministrationOutcomeInput {
@@ -57,6 +60,7 @@ export interface ComputeCrdtAcceptedAdministrationOutcomeInput {
     readonly document: RallarCrdtDocumentMetadata;
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
     readonly serviceId: string;
+    readonly traceId: string;
 }
 
 interface CreateCrdtMutationComputedBaseInput<TDocument extends RallarCrdtDocumentMetadata | null> {
@@ -91,7 +95,7 @@ interface CrdtMutationComputedBaseValues<TDocument extends RallarCrdtDocumentMet
 export function computeCrdtAcceptedAppendOutcome(
     input: ComputeCrdtAcceptedAppendOutcomeInput
 ): CrdtMutationComputedWrite {
-    const { command, read, document, append, serviceId } = input;
+    const { command, read, document, append, serviceId, traceId } = input;
     const appendResult: RallarCrdtAppendResult = {
         status: 'accepted',
         update: command.update,
@@ -112,7 +116,7 @@ export function computeCrdtAcceptedAppendOutcome(
             update: command.update,
             append,
             snapshot: null,
-            outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, fanout: true }),
+            outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, traceId, fanout: true }),
             result
         }),
         outcome: 'write',
@@ -129,7 +133,7 @@ export function computeCrdtAcceptedAppendOutcome(
 export function computeCrdtReplayOutcome(
     input: ComputeCrdtReplayOutcomeInput
 ): CrdtMutationComputedReplay {
-    const { command, read, serviceId } = input;
+    const { command, read, serviceId, traceId } = input;
     if (!read.document || !read.existingAppend) {
         throw new TypeError('Persisted CRDT replay requires document and append metadata');
     }
@@ -154,7 +158,7 @@ export function computeCrdtReplayOutcome(
             update: command.update,
             append,
             snapshot: null,
-            outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, fanout: false }),
+            outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, traceId, fanout: false }),
             result
         }),
         outcome: 'replay'
@@ -164,7 +168,7 @@ export function computeCrdtReplayOutcome(
 export function computeCrdtRejectedOutcome(
     input: ComputeCrdtRejectedOutcomeInput
 ): CrdtMutationComputedRejected {
-    const { command, read, code, serviceId } = input;
+    const { command, read, code, serviceId, traceId } = input;
     const result = command.operation === 'append'
         ? createRejectedCrdtAppendMutationResult({
             command,
@@ -182,7 +186,7 @@ export function computeCrdtRejectedOutcome(
             read.authorized &&
             !code.startsWith('authorization-') &&
             !code.startsWith('authentication-')
-        ? toAppendOutbox({ command, response: result.appendResult, serviceId, fanout: false })
+        ? toAppendOutbox({ command, response: result.appendResult, serviceId, traceId, fanout: false })
         : [];
     return {
         ...createCrdtMutationComputedBase({
@@ -203,7 +207,7 @@ export function computeCrdtRejectedOutcome(
 export function computeCrdtAcceptedAdministrationOutcome(
     input: ComputeCrdtAcceptedAdministrationOutcomeInput
 ): CrdtMutationComputedWrite {
-    const { command, read, document, snapshot, serviceId } = input;
+    const { command, read, document, snapshot, serviceId, traceId } = input;
     const result = createAcceptedCrdtAdministrationMutationResult({
         command,
         read,
@@ -219,7 +223,7 @@ export function computeCrdtAcceptedAdministrationOutcome(
             update: null,
             append: null,
             snapshot,
-            outboxEntries: auditEvent ? [toCrdtAuditOutbox(auditEvent, command, serviceId)] : [],
+            outboxEntries: auditEvent ? [toCrdtAuditOutbox({ event: auditEvent, command, serviceId, traceId })] : [],
             result
         }),
         outcome: 'write',

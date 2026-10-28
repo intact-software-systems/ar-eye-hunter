@@ -66,6 +66,7 @@ function topologyPublication(sessionCount: number): RtcTopologyPublication {
         updatedAtEpochMs: createdAtEpochMs
     };
     return {
+        traceId: 'trace-rtc-topology-replay-fixture',
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision: causalRevision,

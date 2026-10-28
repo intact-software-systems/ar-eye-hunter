@@ -44,6 +44,7 @@ describe('auth password derivation admission', () => {
         const registrations = [1, 2, 3].map((index) =>
             auth.service.registerUser({
                 requestId: `BoundedRegistrationRequest_0${index}`,
+                traceId: 'trace-auth-test',
                 request: { username: `bounded-user-${index}`, password: `bounded-password-${index}` }
             })
         );

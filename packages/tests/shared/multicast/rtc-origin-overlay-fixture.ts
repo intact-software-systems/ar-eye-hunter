@@ -176,10 +176,11 @@ export async function acknowledgeAtOrigin(
 ): Promise<void> {
     await manager.acceptControlMessage(newALAckControlMessage(
         {
-            v: 3,
+            v: 4,
             msgId: `ack-${input.fromPeerId}-${input.logicalRecipientPeerId}-${input.status}`,
             senderId: input.fromPeerId,
-            ts: Date.now()
+            ts: Date.now(),
+            traceId: 'trace-rtc-origin-overlay-fixture'
         },
         {
             ackedMsgId: input.msgId,

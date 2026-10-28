@@ -12,4 +12,5 @@ export interface RtcTopologyPublication {
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly expiresAtEpochMs: number;
     readonly createdAtEpochMs: number;
+    readonly traceId: string;
 }

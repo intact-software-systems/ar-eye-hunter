@@ -63,7 +63,6 @@ export function toUpdateGroupActivationStatusCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             expectedFormationEpoch: input.formationEpoch,
             expectedLayout: input.coverageBasisLayoutIdentity,
             coverageRate: input.coverageRate,

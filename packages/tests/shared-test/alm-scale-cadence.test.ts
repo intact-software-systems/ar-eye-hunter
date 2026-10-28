@@ -92,7 +92,7 @@ function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessage
     const msgId = `shot-${starts.length + 1}`;
     const registry = facade.deliveries;
     const handle = registry.open({
-        id: { v: 3, msgId, ts: Date.now(), senderId: facade.session.sessionId },
+        id: { v: 4, msgId, ts: Date.now(), senderId: facade.session.sessionId, traceId: 'trace-alm-scale-cadence' },
         route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
         payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload.payload) },
         delivery: { ack: 'group-leader', reliability: 'at-least-once' }
@@ -672,7 +672,7 @@ class ScaleCohort {
     send(actor: ScaleActor, payload: ScaleWirePayload): RallarMessageHandle {
         const msgId = `${actor.agentId}-message-${actor.starts.length + 1}`;
         const handle = actor.registry.open({
-            id: { v: 3, msgId, ts: Date.now(), senderId: actor.session.sessionId },
+            id: { v: 4, msgId, ts: Date.now(), senderId: actor.session.sessionId, traceId: 'trace-alm-scale-cadence' },
             route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
             payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
             delivery: { ack: actor.role === 'player' ? 'group-leader' : 'all-logical-recipients', reliability: 'at-least-once' },

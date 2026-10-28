@@ -10,7 +10,7 @@ import {
     toAdminPruneJobId
 } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
 import * as AppInboxCommandIdentity from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
 import { isAuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -198,7 +198,7 @@ export async function readPersistedCommandEvidence(
 interface ReadMutationReceiptEvidenceInput {
     readonly runtime: RuntimeStateRepositoryLike;
     readonly row: InboxCommandRow;
-    readonly command: AppInboxEnqueueInput;
+    readonly command: AppInboxEnqueue;
 }
 
 async function readMutationReceiptEvidence({
@@ -235,7 +235,7 @@ async function readMutationReceiptEvidence({
 
 function readStandaloneCommandEvidence(
     row: InboxCommandRow,
-    command: AppInboxEnqueueInput
+    command: AppInboxEnqueue
 ): PersistedCommandEvidence {
     const commandType = command.type;
     if (commandType === AppInboxType.TOPOLOGY_RECONFIGURE) {

@@ -155,12 +155,12 @@ function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]):
         });
         try {
             owner.recordAdmission({
-                msgId: 'subject', originPeerId: 'origin',
+                msgId: 'subject', originPeerId: 'origin', traceId: 'trace-full-stack-api-receipt-capture',
                 expectedRecipientPeerIds: ${JSON.stringify(expectedRecipientPeerIds)},
                 snapshotVersion: 7, deadlineAtMs: 30000
             });
             await owner.acceptControlMessage(newALAckControlMessage(
-                { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 900 },
+                { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 900, traceId: 'trace-full-stack-api-receipt-capture' },
                 {
                     ackedMsgId: 'subject', fromPeerId: 'recipient', toPeerId: 'origin', originPeerId: 'origin',
                     logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901

@@ -3,14 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlExecutorCounters } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { createDefaultAppInboxQueueMessage } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxDequeuePassTiming } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 interface SimulatedExecutor {
     readonly counters: { statements: number; executorWaitMs: number; };
@@ -378,11 +377,17 @@ function createOutboxAttempt(resourceId: string, messageTypeId: string): Resourc
 
 function createAttempt(resourceId: string, selectedLane: Reservator): ResourceInboxAttempt {
     const key = { topicId: 'app-inbox.group-state', resourceId, contextId: 'group-1' };
-    const enqueue = { type: AppInboxType.GROUP_CREATE, resourceId, contextId: 'group-1', data: null } as const;
+    const enqueue = {
+        type: AppInboxType.GROUP_CREATE,
+        resourceId,
+        contextId: 'group-1',
+        traceId: 'trace-dequeue-pass-timing',
+        data: null
+    } as const;
     const createdTs = Temporal.PlainDateTime.from('2026-07-22T12:00:00');
     const entry: ResourceEntry = {
         key,
-        resource: JSON.stringify(createAppInboxQueueMessageFixture({ key, enqueue, serviceId: 'server-1' })),
+        resource: JSON.stringify(createDefaultAppInboxQueueMessage({ key, enqueue, serviceId: 'server-1' })),
         typeId: 'APP_INBOX',
         status: EntityStatus.RESERVED,
         audit: {

@@ -8,9 +8,14 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionStoredValue
 } from '@shared/alm/al-admission-backend.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import {
+    createALOutboundAdmissionStore,
+    type ALOutboundAdmissionStore
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
@@ -24,6 +29,12 @@ import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import {
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage,
+    enqueueOutboundOrThrow
+} from '../outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 import {
     createTakeableDurableWorkOwnership,
     GLOBAL_CHECKPOINT_TIMERS,
@@ -222,6 +233,34 @@ describe('ALCheckpoint', () => {
         await expect(runtimeStorage.close()).rejects.toMatchObject({ errors: [failure] });
         await expect(first.storage.saved.ready()).rejects.toThrow('closed');
         await expect(second.storage.saved.ready()).rejects.toThrow('closed');
+    });
+
+    it('restores an admitted outbound message with the trace it was sent under', async () => {
+        const dbName = newDbName();
+        const clock = { nowMs: Date.now() };
+        const saving = openCheckpoint({ dbName, clock, owned: true });
+        await saving.checkpoint.restore();
+        const message = createOutboundMessage('restored');
+        const sent = { ...message, id: { ...message.id, traceId: 'trace-restored' } };
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore: createAdmissionStore(saving.memory), workQueue: saving.memory.workQueue },
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+            }),
+            sendPreparedMessage: async () => await Promise.resolve({ status: 'sent', submissionAttempted: true })
+        });
+        await enqueueOutboundOrThrow(runtime, sent);
+        saving.checkpoint.flush();
+        await vi.waitFor(() => expect(saving.observer.getCounts().byKind.write).toBeGreaterThan(0));
+
+        const restoring = openCheckpoint({ dbName, clock, owned: true });
+        await restoring.checkpoint.restore();
+
+        const restored = await createAdmissionStore(restoring.memory).readSentMessage(sent.id.msgId);
+        expect(restored?.msg.id).toEqual(sent.id);
     });
 
     it('loads only live rows, and counts the work rows past their expiry on its first batch', async () => {
@@ -438,6 +477,18 @@ function abortReadwriteAtAdmissionPut(): AdmissionPutAbort {
         },
         restore: () => spy.mockRestore()
     };
+}
+
+function createAdmissionStore(backend: InMemoryAdmissionBackend): ALOutboundAdmissionStore<OutboundTestPayload> {
+    return createALOutboundAdmissionStore({
+        decodePrepared: decodeOutboundTestPayload,
+        nowMs: Date.now,
+        namespace: ADMISSION_NAMESPACE,
+        canonicalScope: NAMESPACE,
+        supersedenceTrackTtlMs: 5 * 60_000,
+        backend,
+        retention: normalizeALRuntimeStoreRetention()
+    });
 }
 
 function workEntry(effectId: string, expiresAtMs: number): ResourceEntry {

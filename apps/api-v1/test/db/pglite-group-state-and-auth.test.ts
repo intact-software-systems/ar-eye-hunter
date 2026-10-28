@@ -296,6 +296,7 @@ Deno.test(
 
             const pending = appGroup.processAuthenticatedGroupEntryUntilCompletion({
                 type: AppInboxType.GROUP_CREATE,
+                traceId: 'trace-group-auth-fixture',
                 resourceId: 'pglite-app-group-create',
                 contextId: 'vertical-app:main:vertical-group',
                 senderId: authority.clientId,
@@ -330,6 +331,7 @@ Deno.test(
                 const resourceId = `pglite-app-group-${joiningAuthority.clientId}-join`;
                 const join = appGroup.processAuthenticatedGroupEntryUntilCompletion({
                     type: AppInboxType.GROUP_JOIN,
+                    traceId: 'trace-group-auth-fixture',
                     resourceId,
                     contextId: 'vertical-app:main:vertical-group',
                     senderId: joiningAuthority.clientId,
@@ -353,6 +355,7 @@ Deno.test(
 
             const duplicateJoin = appGroup.processAuthenticatedGroupEntryUntilCompletion({
                 type: AppInboxType.GROUP_JOIN,
+                traceId: 'trace-group-auth-fixture',
                 resourceId: 'pglite-app-group-owner-rejoin',
                 contextId: 'vertical-app:main:vertical-group',
                 senderId: authority.clientId,
@@ -503,6 +506,7 @@ Deno.test(
             );
             const pending = appGroup.processAuthenticatedGroupEntryUntilCompletion({
                 type: AppInboxType.GROUP_CREATE,
+                traceId: 'trace-group-auth-fixture',
                 resourceId: 'pglite-summary-fence-create',
                 contextId: 'fence-app:main:fence-group',
                 senderId: authority.clientId,
@@ -733,6 +737,7 @@ Deno.test(
                 const command = toClientMutationCommand(
                     input,
                     {
+                        traceId: 'trace-pglite-group-state-and-auth',
                         nowEpochMs: 2_000,
                         serviceId: 'pglite-client-service',
                         eventId: `${commandId}-event`,

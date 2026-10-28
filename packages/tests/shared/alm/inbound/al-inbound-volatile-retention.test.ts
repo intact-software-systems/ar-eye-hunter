@@ -499,10 +499,11 @@ async function seedRelayRow(
 function toSenderAck(tracked: ALMessage): ALMessage {
     return newALAckControlMessage(
         {
-            v: 3,
+            v: 4,
             msgId: `ack-${tracked.id.msgId}`,
             senderId: INBOUND_TEST_SENDER_PEER_ID,
-            ts: Date.now()
+            ts: Date.now(),
+            traceId: 'trace-al-inbound-volatile-retention'
         },
         {
             ackedMsgId: tracked.id.msgId,

@@ -46,7 +46,6 @@ interface NullableActorInput {
     readonly actorPrincipalId: string | null;
     readonly actorSessionId: string | null;
     readonly reason: string | null;
-    readonly traceId: string | null;
 }
 
 interface GroupMutationCommandBase {
@@ -524,6 +523,7 @@ export interface GroupMutationFacts extends GroupMutationIngressFacts {
      * window.
      */
     readonly attemptAtEpochMs: number;
+    readonly traceId: string;
 }
 
 export type GroupGuardCandidate =

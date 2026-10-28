@@ -130,6 +130,7 @@ describe('activation status series settlement', () => {
         });
         for (let delivery = 0; delivery < 2; delivery++) {
             const work = computeCoalescedRtcTopologyGroupRevisionWork({
+                traceId: 'trace-group-activation-series-settlement',
                 aggregateRef: toCanonicalGroupRef(current.group),
                 groupSnapshot: current,
                 requestedAtEpochMs: 2_000 + delivery,

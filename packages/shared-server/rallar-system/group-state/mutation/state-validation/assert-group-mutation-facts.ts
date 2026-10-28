@@ -1,3 +1,5 @@
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+
 import {
     assertExactKeys,
     requireJsonSafe,
@@ -13,9 +15,12 @@ import {
 
 export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
     requireRecord(facts, 'Group mutation facts');
-    const { attemptCount, attemptAtEpochMs, ...ingressFacts } = facts;
+    const { attemptCount, attemptAtEpochMs, traceId, ...ingressFacts } = facts;
     assertGroupMutationIngressFacts(ingressFacts);
     requirePositiveSafeInteger(attemptCount, 'Group mutation attemptCount');
+    if (decodeALTraceId(traceId).left !== undefined) {
+        throw new TypeError('Group mutation trace is invalid');
+    }
     if (!Number.isSafeInteger(attemptAtEpochMs) || attemptAtEpochMs < facts.nowEpochMs) {
         throw new TypeError('Group mutation attempt timestamp is invalid');
     }

@@ -1,6 +1,6 @@
 import { isRtcRttCanonicalReporter } from '@shared/rtc/rtt-reporting-policy.ts';
 
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { type AppInboxEnqueue } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
@@ -39,7 +39,7 @@ export interface VerifyRtcRttAppInboxAuthorityInput {
 
 export async function createRtcRttDurableEnqueue(
     input: CreateRtcRttDurableEnqueueInput
-): Promise<AppInboxEnqueueInput> {
+): Promise<AppInboxEnqueue> {
     requireCanonicalRtcRttSender(input.request);
     const session = await input.groupStateService.readIssuedAuthSession(input.request.alSenderId);
     if (!session || session.expiresAtEpochMs <= input.nowEpochMs()) {

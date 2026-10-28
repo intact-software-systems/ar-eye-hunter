@@ -160,6 +160,7 @@ function expectRejected(action: () => void, message: string): void {
 
 function validFacts(): ClientMutationFacts {
     return {
+        traceId: 'trace-client-mutation-validation',
         nowEpochMs: 1_000,
         serviceId: 'client-state',
         eventId: 'event-1',
@@ -191,8 +192,7 @@ describe('client mutation computation determinism', () => {
                 lastSeenAtEpochMs: null,
                 actorPrincipalId: null,
                 actorSessionId: null,
-                reason: null,
-                traceId: null
+                reason: null
             }
         });
         const read: ClientMutationRead = deepFreeze({

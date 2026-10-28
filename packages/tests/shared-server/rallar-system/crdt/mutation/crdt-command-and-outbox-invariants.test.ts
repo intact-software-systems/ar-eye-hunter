@@ -177,8 +177,8 @@ function compute(command: CrdtMutationCommand, state: CrdtMutationRead): CrdtMut
         repository,
         serviceId: 'server-1'
     });
-    const computed = service.compute({ command, read: state });
-    expect(service.validate({ command, read: state, computed })).toEqual([]);
+    const computed = service.compute({ traceId: 'trace-crdt-command-and-outbox-invariants', command, read: state });
+    expect(service.validate({ traceId: 'trace-crdt-command-and-outbox-invariants', command, read: state, computed })).toEqual([]);
     return computed;
 }
 

@@ -97,6 +97,24 @@ describe('WS server receipts for addressed sends', () => {
         }).toEqual([['admitted', []], ['complete', ['b']]]);
     });
 
+    it('answers the admitted and the complete receipt under the trace of the message they answer', async () => {
+        const fixture = await createAddressedFixture();
+        await fixture.service.acceptIncomingMessage(roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' }), 'a');
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readFrames(fixture.sockets.b).length;
+        }).toBe(1);
+
+        await fixture.service.acceptIncomingMessage(addresseeAck('to-b', 'b'), 'b');
+
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readMessages(fixture.sockets.a)
+                .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+                .map((message) => message.id.traceId);
+        }).toEqual(['trace-to-b', 'trace-to-b']);
+    });
+
     it('refuses a room unicast to a session outside the admitted audience before admission, with a NACK', async () => {
         const fixture = await createAddressedFixture();
 
@@ -113,6 +131,11 @@ describe('WS server receipts for addressed sends', () => {
             'to-c',
             'unauthorized'
         ]]);
+        expect(
+            readMessages(fixture.sockets.a)
+                .filter((message) => message.payload.typeId === AL_CONTROL_NACK_TYPE_ID)
+                .map((message) => message.id.traceId)
+        ).toEqual(['trace-to-c']);
         await fixture.engine.executeOnce();
         expect(fixture.routed).toEqual([]);
         expect(readReceipts(fixture.sockets.a)).toEqual([]);
@@ -272,7 +295,7 @@ function roomUnicast(input: RoomUnicastInput): ALMessage {
     const { msgId, toPeerId, ack, qos } = input;
     const nowMs = Date.now();
     return {
-        id: { v: 3, msgId, ts: nowMs, senderId: 'a' },
+        id: { v: 4, msgId, ts: nowMs, senderId: 'a', traceId: `trace-${msgId}` },
         route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + 30_000 },
@@ -284,7 +307,7 @@ function roomUnicast(input: RoomUnicastInput): ALMessage {
 
 function addresseeAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-addressed-receipts' },
         {
             ackedMsgId,
             fromPeerId: recipient,

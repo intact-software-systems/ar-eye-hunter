@@ -13,8 +13,8 @@ import { computeTopologyMutation } from '@shared-server/rallar-system/topology/m
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { decodeRtcTopologySnapshot } from '@shared-server/rallar-system/topology/persistence/decode-rtc-topology-snapshot.ts';
 import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { decodeRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/decode-rtc-topology-publication.ts';
 import { createRtcTopologyExecutionReceipt } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
-import { validateRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts';
 import {
     computeRtcTopologyReplayWrite,
     computeRtcTopologyWorkWrite,
@@ -101,6 +101,7 @@ describe('RTC topology complete write computation', () => {
         const input: ComputeRtcTopologyWorkInput = {
             ...fixture,
             facts: {
+                traceId: 'trace-compute-rtc-topology-work-write',
                 workEnvelope,
                 workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
                 attemptCount: entry.dequeueAudit.attempts,
@@ -160,11 +161,12 @@ describe('RTC topology complete write computation', () => {
         if (transaction.mutation.persistence.publication === null || transaction.delivery === null || transaction.promotionWrite === null) {
             throw new Error('Latest presence coverage requires publication, delivery and promotion');
         }
-        const publication = decodeJsonWireValue(
+        const publication = decodeRtcTopologyPublication(
             JSON.parse(transaction.mutation.persistence.publication.value),
-            'Prepared topology publication'
-        );
-        validateRtcTopologyPublication(publication, returned.group);
+            returned.group
+        ).fold((refusal) => {
+            throw new Error(refusal.message);
+        }, (decoded) => decoded);
         expect(publication.sourceGroupStateCausalRevision).toEqual({ groupRevision: 43, presenceRevision: 37 });
         expect(publication.snapshot).toEqual(stored);
         const pages = transaction.delivery.outboxWrites.map((write) =>
@@ -531,6 +533,7 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
     const work = createGroupRevisionWork(group);
     return {
         facts: {
+            traceId: 'trace-compute-rtc-topology-work-write',
             workEnvelope: {
                 type: 'RTC_TOPOLOGY_RECOMPUTE',
                 topicId: entry.key.topicId,
@@ -604,6 +607,7 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         rttReplanPromotion: null
     };
     return {
+        traceId: 'trace-compute-rtc-topology-work-write',
         accepted,
         entry,
         sourceWorkId: 'rtc-topology:group-1:work-1:0',
@@ -668,7 +672,8 @@ function createCoalescedReturnEntry(
         expireAtEpochMs: 10_000,
         timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
         senderId: 'topology-service',
-        origin: 'automatic'
+        origin: 'automatic',
+        traceId: 'trace-compute-rtc-topology-work-write'
     } as const;
     const departure = computeCoalescedRtcTopologyGroupRevisionWork({
         ...common,

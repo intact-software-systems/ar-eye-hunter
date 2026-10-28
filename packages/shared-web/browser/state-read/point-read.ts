@@ -1,4 +1,3 @@
-import { readSession } from '@shared/api/auth.ts';
 import {
     parseAuthoritativeClientSnapshot,
     parseAuthoritativeGroupSnapshot
@@ -15,7 +14,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { ApiHttpError } from '../api/http-error.ts';
-import type { ApiRequestOptions } from '../api/http-request.ts';
+import { newApiRequestHeaders, readApiErrorBody, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 
 export type ReadStateClientSnapshotOptions =
@@ -133,17 +132,9 @@ export async function readStateGroupSnapshot(
 async function readPointSnapshot<T>(input: PointReadInput<T>): Promise<T> {
     const startedAt = performance.now();
     try {
-        const headers = new Headers({ 'content-type': 'application/json' });
-        const session = input.options.authSession === undefined
-            ? readSession()
-            : input.options.authSession;
-        if (session) {
-            headers.set('authorization', `Bearer ${session.accessToken}`);
-            headers.set('x-client-id', session.clientId);
-        }
         const response = await fetch(`${readApiBaseUrl()}${input.path}`, {
             method: 'GET',
-            headers,
+            headers: newApiRequestHeaders(input.options),
             signal: input.options.signal
         });
         if (!response.ok) {
@@ -151,7 +142,7 @@ async function readPointSnapshot<T>(input: PointReadInput<T>): Promise<T> {
                 'GET',
                 input.path,
                 response.status,
-                await readErrorBody(response),
+                await readApiErrorBody(response),
                 response.headers
             );
         }
@@ -168,15 +159,6 @@ async function readPointSnapshot<T>(input: PointReadInput<T>): Promise<T> {
             startedAt
         });
         throw error;
-    }
-}
-
-async function readErrorBody(response: Response): Promise<string> {
-    try {
-        return await response.text();
-    }
-    catch {
-        return '';
     }
 }
 

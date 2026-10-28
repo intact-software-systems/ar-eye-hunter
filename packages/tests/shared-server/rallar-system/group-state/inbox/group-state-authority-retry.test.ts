@@ -27,6 +27,7 @@ describe('GroupStateInboxService authority capture and retry', () => {
             throw new RuntimeStateWriteConflictError();
         };
         const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion({
+            traceId: 'trace-test-fixture',
             type: AppInboxType.GROUP_CREATE,
             resourceId: 'create-authority-retry',
             contextId: 'authority-retry',

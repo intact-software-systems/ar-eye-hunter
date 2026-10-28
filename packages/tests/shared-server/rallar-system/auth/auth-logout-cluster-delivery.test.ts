@@ -109,7 +109,9 @@ describe('auth logout exact-session cluster delivery', () => {
     it('replays auth completion without another notice and delivers captured authority after producer proof removal', async () => {
         const fixture = await createFixture();
         const entry = await fixture.logout();
-        expect(await fixture.auth.service.logoutSession({ requestId: 'logout', session: fixture.session })).toMatchObject({ right: { loggedOut: true } });
+        expect(await fixture.auth.service.logoutSession({ requestId: 'logout', traceId: 'trace-auth-test', session: fixture.session })).toMatchObject({
+            right: { loggedOut: true }
+        });
         expect([...fixture.auth.database.outboxEntries.values()]).toHaveLength(1);
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
@@ -126,7 +128,7 @@ describe('auth logout exact-session cluster delivery', () => {
         const result = await runAuthInboxCommand({
             ...fixture.auth,
             minimumEntries: 2,
-            pending: fixture.auth.service.logoutSession({ requestId: 'logout', session: fixture.session })
+            pending: fixture.auth.service.logoutSession({ requestId: 'logout', traceId: 'trace-auth-test', session: fixture.session })
         });
         expect(result.left).toBeDefined();
         expect(fixture.failure.proofSeen).toBe(true);
@@ -148,7 +150,7 @@ describe('auth logout exact-session cluster delivery', () => {
         const result = await runAuthInboxCommand({
             ...fixture.auth,
             minimumEntries: 2,
-            pending: fixture.auth.service.logoutSession({ requestId: 'logout', session: fixture.session })
+            pending: fixture.auth.service.logoutSession({ requestId: 'logout', traceId: 'trace-auth-test', session: fixture.session })
         });
         expect(result.left).toBeDefined();
         expect(writesDuringHash.length).toBeGreaterThan(0);
@@ -214,7 +216,11 @@ async function createFixture(cluster = true): Promise<LogoutFixture> {
         session,
         sessions: new AuthSessionRepository(repository),
         logout: async (): Promise<ResourceEntry> => {
-            const result = await runAuthInboxCommand({ ...auth, minimumEntries: 2, pending: auth.service.logoutSession({ requestId: 'logout', session }) });
+            const result = await runAuthInboxCommand({
+                ...auth,
+                minimumEntries: 2,
+                pending: auth.service.logoutSession({ requestId: 'logout', traceId: 'trace-auth-test', session })
+            });
             expect(result.left).toBeUndefined();
             const entries = [...auth.database.outboxEntries.values()];
             expect(entries).toHaveLength(1);
@@ -228,6 +234,7 @@ async function issueSession(auth: AuthInboxTestRuntime, repository: FakeRuntimeS
         ...auth,
         pending: auth.service.issueSession({
             requestId: 'issue',
+            traceId: 'trace-auth-test',
             clientId: 'client',
             username: 'alice',
             authority: { kind: 'static-client', clientId: 'client', normalizedUsername: 'alice' },

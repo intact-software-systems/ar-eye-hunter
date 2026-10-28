@@ -118,7 +118,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
                 senderId: 'sender/'.repeat(30),
                 msgId: `message/${entry.key.contextId}/${'long/'.repeat(50)}`,
                 sessionId: 'session/'.repeat(30),
-                traceId: 'trace/'.repeat(30)
+                traceId: 'trace-'.repeat(21)
             }
         };
         const decision = await readSupersedenceDecision({ store: first, message: message, nowMs: Date.now });

@@ -205,8 +205,7 @@ function joinCommand(): GroupMutationCommand {
             joinCode: null,
             actorPrincipalId: 'carol',
             actorSessionId: 'carol-session',
-            reason: null,
-            traceId: null
+            reason: null
         }
     };
 }
@@ -222,7 +221,6 @@ function connectPresenceCommand(): GroupMutationCommand {
             actorPrincipalId: 'alice',
             actorSessionId: 'alice-session',
             reason: null,
-            traceId: null,
             principalId: 'alice',
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
@@ -235,6 +233,7 @@ function connectPresenceCommand(): GroupMutationCommand {
 
 function mutationFacts(principalId: string): GroupMutationFacts {
     return {
+        traceId: 'trace-group-lifecycle-safety-baseline',
         nowEpochMs: 2_000,
         attemptAtEpochMs: 2_000,
         expireAtEpochMs: 253_402_300_799_999,

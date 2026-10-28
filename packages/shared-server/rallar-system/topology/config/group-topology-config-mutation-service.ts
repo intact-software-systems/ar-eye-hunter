@@ -1,5 +1,6 @@
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import type { AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
 import {
@@ -36,7 +37,7 @@ export interface GroupTopologyConfigMutationAttemptRead {
 export interface GroupTopologyConfigMutationValidation {
     readonly command: mutationContracts.GroupTopologyConfigMutationCommand;
     readonly read: GroupTopologyConfigMutationAttemptRead;
-    readonly attemptCount: number;
+    readonly attempt: AppInboxCommandAttempt;
     readonly computed: mutationContracts.GroupTopologyConfigMutationComputed;
 }
 
@@ -68,7 +69,7 @@ export class GroupTopologyConfigMutationService {
     compute(
         command: mutationContracts.GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number
+        attempt: AppInboxCommandAttempt
     ): mutationContracts.GroupTopologyConfigMutationComputed {
         const idempotency = probeTopologyConfigMutationIdempotency(
             command,
@@ -81,7 +82,7 @@ export class GroupTopologyConfigMutationService {
         return computeTopologyConfigMutation({
             command,
             read: read.state,
-            facts: toTopologyConfigMutationFacts(command, read, attemptCount),
+            facts: toTopologyConfigMutationFacts(command, read, attempt),
             serverDefaults: read.serverDefaults
         });
     }
@@ -89,8 +90,8 @@ export class GroupTopologyConfigMutationService {
     validate(
         validation: GroupTopologyConfigMutationValidation
     ): readonly mutationContracts.TopologyConfigMutationValidationIssue[] {
-        const { command, read, attemptCount } = validation;
-        const facts = toTopologyConfigMutationFacts(command, read, attemptCount);
+        const { command, read, attempt } = validation;
+        const facts = toTopologyConfigMutationFacts(command, read, attempt);
         return [
             ...validateTopologyConfigMutationPolicy(command, read.state, facts),
             ...validateTopologyConfigMutation({
@@ -122,7 +123,7 @@ export class GroupTopologyConfigMutationService {
 function toTopologyConfigMutationFacts(
     command: mutationContracts.GroupTopologyConfigMutationCommand,
     read: GroupTopologyConfigMutationAttemptRead,
-    attemptCount: number
+    attempt: AppInboxCommandAttempt
 ): mutationContracts.GroupTopologyConfigMutationFacts {
     return {
         resolvedOverrideExpiresAtEpochMs: command.operation === 'putOverride'
@@ -134,7 +135,8 @@ function toTopologyConfigMutationFacts(
             : null,
         isPlatformAdmin: read.isPlatformAdmin,
         policyNowEpochMs: read.policyNowEpochMs,
-        attemptCount,
-        expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs
+        attemptCount: attempt.attemptCount,
+        expireAtEpochMs: command.capturedAtEpochMs + read.finishedRetentionMs,
+        traceId: attempt.traceId
     };
 }

@@ -61,6 +61,7 @@ describe('CRDT mutation exact validation', () => {
             document: SUBSTITUTED_DOCUMENT
         });
         const substituted = computeCrdtMutation({
+            traceId: 'trace-crdt-mutation-validation',
             command: substitutedCommand,
             read: createMutationRead(),
             serviceId: 'substituted-server'
@@ -86,6 +87,7 @@ describe('CRDT mutation exact validation', () => {
             document: SUBSTITUTED_DOCUMENT
         });
         const substituted = computeCrdtMutation({
+            traceId: 'trace-crdt-mutation-validation',
             command: substitutedCommand,
             read: createReplayRead(substitutedCommand),
             serviceId: 'substituted-server'
@@ -111,6 +113,7 @@ describe('CRDT mutation exact validation', () => {
             document: SUBSTITUTED_DOCUMENT
         });
         const substituted = computeCrdtMutation({
+            traceId: 'trace-crdt-mutation-validation',
             command: substitutedCommand,
             read: createMutationRead({ featureDecision: disabledFeature('substituted policy') }),
             serviceId: 'substituted-server'
@@ -129,7 +132,7 @@ describe('CRDT mutation exact validation', () => {
             document: DOCUMENT
         });
         const read = createMutationRead();
-        const computed = computeCrdtMutation({ command, read, serviceId: 'server-1' });
+        const computed = computeCrdtMutation({ traceId: 'trace-crdt-mutation-validation', command, read, serviceId: 'server-1' });
         if (computed.outcome !== 'write' || computed.updateWrite === null) {
             throw new TypeError('Expected an accepted append mutation');
         }
@@ -184,7 +187,7 @@ describe('CRDT mutation exact validation', () => {
             responseAudience: createAudience()
         });
         const read = createMutationRead({ document: createMetadata() });
-        const computed = computeCrdtMutation({ command, read, serviceId: 'server-1' });
+        const computed = computeCrdtMutation({ traceId: 'trace-crdt-mutation-validation', command, read, serviceId: 'server-1' });
         if (computed.outcome !== 'write' || computed.snapshotWrite === null) {
             throw new TypeError('Expected an accepted compact mutation');
         }
@@ -219,7 +222,7 @@ describe('CRDT mutation exact validation', () => {
             document: DOCUMENT
         });
         const read = createMutationRead();
-        const computed = computeCrdtMutation({ command, read, serviceId: 'server-1' });
+        const computed = computeCrdtMutation({ traceId: 'trace-crdt-mutation-validation', command, read, serviceId: 'server-1' });
         let propertyReads = 0;
         const candidate = new Proxy(computed, {
             get(target, property, receiver) {
@@ -244,7 +247,7 @@ function validate(
         repository: { readMutation: () => Promise.resolve(read) },
         serviceId: 'server-1'
     });
-    return service.validate({ command, read, computed });
+    return service.validate({ traceId: 'trace-crdt-mutation-validation', command, read, computed });
 }
 
 async function createAppendCommand(input: AppendCommandInput): Promise<CrdtAppendCommand> {

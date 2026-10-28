@@ -32,7 +32,7 @@ import {
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
 import {
     AppInboxAttemptDeadlineExceededError,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueue,
     type AppInboxMessageContext
 } from '../app-inbox-contracts.ts';
 import {
@@ -56,13 +56,13 @@ import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 const DEFAULT_APP_INBOX_CONFLICT_RETRY_MAX_DELAY_MS = 1200;
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
-    readonly undecodedEnqueue: AppInboxEnqueueInput;
+    readonly undecodedEnqueue: AppInboxEnqueue;
     readonly deadline: ClaimableDeadlineClaim;
 }
 
 interface AppInboxPhaseOperation<Result> {
     readonly operation: 'handler-action' | 'write-result';
-    readonly enqueue: AppInboxEnqueueInput;
+    readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
     readonly action: () => Promise<Result>;
     readonly details: RallarTimingDetails;
@@ -151,7 +151,7 @@ export class AppInboxHandlerExecutor {
         input: AppInboxHandlerExecutor.Input<Command, Result>
     ): Promise<ResourceInboxHandlerOutcome | undefined> {
         const { registration, entry } = input;
-        const undecodedEnqueue: AppInboxEnqueueInput = {
+        const undecodedEnqueue: AppInboxEnqueue = {
             type: registration.type,
             resourceId: entry.key.resourceId,
             contextId: entry.key.contextId,

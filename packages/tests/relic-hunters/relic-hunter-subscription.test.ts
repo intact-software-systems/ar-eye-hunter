@@ -118,6 +118,7 @@ function toMessage(
         resourceId: raw.route.resourceId,
         roomId,
         senderId: 'default-qbox-server',
+        traceId: raw.id.traceId,
         payload: event,
         raw,
         receivedAtEpochMs: 0,

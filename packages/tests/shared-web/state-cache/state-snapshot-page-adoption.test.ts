@@ -91,6 +91,7 @@ function createLargeGroupPublication(): LargeGroupPublication {
         snapshotVersion: 1
     });
     const entries = computeGroupStateSyncEntries({
+        traceId: 'trace-state-snapshot-page-adoption',
         commandId: 'large-room-publication',
         aggregateRef: snapshot.group,
         acceptedCausalRevision: snapshot.causalRevision,

@@ -17,7 +17,7 @@ import {
     decodeDurableTopologyAppInboxCommand,
     toTopologyAppInboxType
 } from '../topology/inbox/topology-app-inbox-command.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueue } from './app-inbox-contracts.ts';
 
 export interface LogicalAppInboxCommand {
     readonly type: AppInboxType;
@@ -26,7 +26,7 @@ export interface LogicalAppInboxCommand {
 }
 
 export function toLogicalAppInboxCommand(
-    enqueue: AppInboxEnqueueInput
+    enqueue: AppInboxEnqueue
 ): JsonWireValue {
     const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data);
     if (stableAuth) {

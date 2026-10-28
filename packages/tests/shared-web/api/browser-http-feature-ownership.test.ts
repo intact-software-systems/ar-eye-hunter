@@ -7,10 +7,12 @@ import { rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-members
 import { readStateGroupTopology, readStateScopedGlobalGraph } from '@shared-web/browser/rtc/rtc-topology-http-api.ts';
 import { connectStateClientSession } from '@shared-web/browser/session/client-session-http-api.ts';
 import { refreshStateHeartbeat } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
+import { readStateClientSnapshot, readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { listStateGroupEventPage } from '@shared-web/browser/state-read/state-event-http-api.ts';
 import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import { readStateGroupStats } from '@shared-web/browser/stats/rallar-stats-http-api.ts';
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import {
@@ -168,14 +170,87 @@ describe('browser HTTP feature ownership characterization', () => {
         expect(observations.every((call) => !hasRequestId(call.body))).toBe(true);
     });
 
+    it('sends each request its own grammar-valid x-request-id', async () => {
+        stubFetch((call) =>
+            call.url.endsWith('/groups') ? jsonResponse([groupSnapshot()]) : call.url.endsWith('/api/config')
+                ? connectionAndCrdtResponse(call.url)
+                : mutationResponse(call.url)
+        );
+
+        await readApiConfig();
+        await listStateGroups(scope, { authSession });
+        await roomGroupStateHttpApi.createGroup({
+            request: createGroupBody(),
+            options: { requestId: 'create-request-000001' },
+            scope
+        });
+
+        const traces = observations.map((call) => call.headers.get('x-request-id') ?? '');
+        expect(traces.map((traceId) => validateALTraceId(traceId))).toEqual([[], [], []]);
+        expect(new Set(traces).size).toBe(3);
+    });
+
+    it('sends the point reads with the api headers and their own x-request-id', async () => {
+        stubFetch(() => new Response('not found', { status: 404 }));
+
+        await expect(readStateClientSnapshot('owner-1', scope, { authSession })).rejects.toMatchObject({ status: 404 });
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession })).rejects.toMatchObject({ status: 404 });
+
+        expect(observations.map(toMethodAndPath)).toEqual([
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/clients/owner-1',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room-1'
+        ]);
+        for (const call of observations) {
+            expect(call.headers.get('authorization')).toBe('Bearer token-1');
+            expect(call.headers.get('x-client-id')).toBe('owner-1');
+            expect(validateALTraceId(call.headers.get('x-request-id') ?? '')).toEqual([]);
+        }
+        expect(observations[0]?.headers.get('x-request-id')).not.toBe(observations[1]?.headers.get('x-request-id'));
+    });
+
+    it('continues a caller trace as x-request-id on a mutation and a point read', async () => {
+        stubFetch((call) => call.method === 'GET' ? new Response('not found', { status: 404 }) : mutationResponse(call.url));
+
+        await roomGroupStateHttpApi.createGroup({
+            request: createGroupBody(),
+            options: { requestId: 'create-request-000001', traceId: 'trace-continued-create' },
+            scope
+        });
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession, traceId: 'trace-continued-read' }))
+            .rejects.toMatchObject({ status: 404 });
+
+        expect(observations.map((call) => call.headers.get('x-request-id'))).toEqual([
+            'trace-continued-create',
+            'trace-continued-read'
+        ]);
+    });
+
+    it('refuses a malformed caller trace as a typed validation issue before sending', async () => {
+        stubFetch((call) => mutationResponse(call.url));
+
+        await expect(roomGroupStateHttpApi.createGroup({
+            request: createGroupBody(),
+            options: { requestId: 'create-request-000001', traceId: 'not a trace' },
+            scope
+        })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [{
+                path: '$.traceId',
+                code: 'malformed',
+                message: 'Trace id must contain only letters, digits, underscores or hyphens'
+            }]
+        });
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession, traceId: '' })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [{ path: '$.traceId', code: 'malformed', message: 'Trace id must be 1 to 128 characters' }]
+        });
+        expect(observations).toEqual([]);
+    });
+
     it('preserves snapshot refresh and heartbeat retry identity', async () => {
         const client = clientSnapshot();
         const group = groupSnapshot();
         let clientHeartbeatAttempts = 0;
-        vi.spyOn(crypto, 'randomUUID')
-            .mockReturnValueOnce('client-heartbeat-request-id' as `${string}-${string}-${string}-${string}-${string}`)
-            .mockReturnValueOnce('client-repair-request-id' as `${string}-${string}-${string}-${string}-${string}`)
-            .mockReturnValueOnce('group-heartbeat-request-id' as `${string}-${string}-${string}-${string}-${string}`);
         stubFetch((call) =>
             refreshAndHeartbeatResponse({
                 call,
@@ -206,11 +281,10 @@ describe('browser HTTP feature ownership characterization', () => {
 
         const heartbeatCalls = observations.filter((call) => call.url.includes('/heartbeat/requests/'));
         expect(heartbeatCalls).toHaveLength(3);
-        expect(readRequestIds(heartbeatCalls)).toEqual([
-            'client-heartbeat-request-id',
-            'client-heartbeat-request-id',
-            'group-heartbeat-request-id'
-        ]);
+        const [clientRequestId, clientRetryRequestId, groupRequestId] = readRequestIds(heartbeatCalls);
+        expect(clientRetryRequestId).toBe(clientRequestId);
+        expect(groupRequestId).not.toBe(clientRequestId);
+        expect(new Set(heartbeatCalls.map((call) => call.headers.get('x-request-id'))).size).toBe(3);
     });
 
     it('preserves director and join-code workflow actor translation', async () => {
@@ -259,7 +333,29 @@ describe('browser HTTP feature ownership characterization', () => {
             bodyText: 'temporarily unavailable'
         });
     });
+
+    it('reads a failed response\'s body the same way for a request and a point read, an unreadable body as empty', async () => {
+        const bodies = ['temporarily unavailable', 'temporarily unavailable', undefined, undefined];
+        stubFetch(() => toFailedResponse(bodies.shift()));
+
+        const failed = { status: 503, bodyText: 'temporarily unavailable' };
+        const unreadable = { status: 503, bodyText: '' };
+
+        await expect(readApiConfig()).rejects.toMatchObject(failed);
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession })).rejects.toMatchObject(failed);
+        await expect(readApiConfig()).rejects.toMatchObject(unreadable);
+        await expect(readStateGroupSnapshot('room-1', scope, { authSession })).rejects.toMatchObject(unreadable);
+    });
 });
+
+/** A 503 whose body reads as the given text, or whose body read fails when there is none. */
+function toFailedResponse(body: string | undefined): Response {
+    const response = new Response(body ?? null, { status: 503 });
+    if (body === undefined) {
+        vi.spyOn(response, 'text').mockRejectedValue(new TypeError('body stream already read'));
+    }
+    return response;
+}
 
 function stubFetch(response: (call: FetchObservation) => Response): void {
     vi.stubGlobal(

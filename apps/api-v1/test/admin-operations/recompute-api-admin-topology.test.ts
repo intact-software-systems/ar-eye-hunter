@@ -49,6 +49,7 @@ Deno.test('admin topology recompute materializes the authenticated request facts
             expiresAtEpochMs: NOW_EPOCH_MS + 60_000
         },
         requestId: 'admin-topology-request-0001',
+        traceId: 'trace-admin-fixture',
         request: {
             groupRef: {
                 applicationId: 'app-1',

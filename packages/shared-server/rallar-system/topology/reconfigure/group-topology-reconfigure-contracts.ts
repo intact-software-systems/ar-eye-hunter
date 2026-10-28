@@ -20,6 +20,8 @@ export interface GroupTopologyReconfigureRead {
     readonly authorityGuard: persistence.GroupStateAuthorityGuard;
     readonly actorIsPlatformAdmin: boolean;
     readonly finishedRetentionMs: number;
+    /** The AppInbox attempt's trace; it enters the outbox row, never the command. */
+    readonly traceId: string;
 }
 
 export interface GroupTopologyReconfigureValidationIssue {

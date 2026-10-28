@@ -117,6 +117,7 @@ async function enqueueAndReserveRttRefresh(queue: InMemoryQueueBox, outboxQueueR
     const resourceId = toRtcRttTopologyOutboxId(receiptId, group.group, `sha256:${'a'.repeat(64)}`);
     await outboxQueueReader.outbox.enqueueIfAbsent(
         computeRtcTopologyOutboxInsert({
+            traceId: 'trace-rtc-topology-work-timing',
             commandId: resourceId,
             aggregateRef: group.group,
             acceptedCausalRevision: group.causalRevision,

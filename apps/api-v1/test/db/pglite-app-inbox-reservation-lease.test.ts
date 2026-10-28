@@ -75,6 +75,7 @@ Deno.test('PGlite AppInbox reclaims a reservation abandoned past its lease and r
 
         const pending = commandClient.enqueueAndWait({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            traceId: 'trace-app-inbox-fixture',
             resourceId: REQUEST_ID,
             contextId: 'reservation-lease-client',
             data: { requestId: REQUEST_ID }

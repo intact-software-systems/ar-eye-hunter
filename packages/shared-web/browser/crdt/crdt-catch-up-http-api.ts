@@ -1,7 +1,7 @@
 import type { RallarCrdtCatchUpRequestEnvelope, RallarCrdtCatchUpResponseEnvelope } from '@shared/crdt/mod.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 
 type CrdtCatchUpResult =
     | Readonly<{
@@ -17,13 +17,13 @@ async function catchUpRallarCrdtDocument(
     request: RallarCrdtCatchUpRequestEnvelope,
     options?: ApiRequestOptions
 ): Promise<RallarCrdtCatchUpResponseEnvelope> {
-    const response = await executeHttpRequest<RallarCrdtCatchUpRequestEnvelope, CrdtCatchUpResult>(
-        readApiBaseUrl(),
-        '/api/crdt/catch-up',
-        'POST',
-        request,
+    const response = await sendApiHttpRequest<RallarCrdtCatchUpRequestEnvelope, CrdtCatchUpResult>({
+        baseUrl: readApiBaseUrl(),
+        path: '/api/crdt/catch-up',
+        method: 'POST',
+        body: request,
         options
-    );
+    });
 
     if (!response.ok) {
         throw new Error(response.error);

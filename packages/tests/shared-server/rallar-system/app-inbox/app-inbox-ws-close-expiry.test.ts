@@ -31,6 +31,7 @@ it('bounds a lost-close group guard to the shared retry retention horizon', asyn
     const connectedAtEpochMs = facts.input.connectedAtEpochMs - 50;
 
     const pending = processAuthenticated(harness.group, harness.authSession, {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: 'presence-lost-close',
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -92,6 +93,7 @@ async function createRoom(
     groupId: string
 ): Promise<void> {
     const pending = processAuthenticated(harness.group, harness.authSession, {
+        traceId: 'trace-test-fixture',
         type: AppInboxType.GROUP_CREATE,
         resourceId: `create-${groupId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,

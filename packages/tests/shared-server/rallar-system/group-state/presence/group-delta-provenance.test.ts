@@ -95,7 +95,7 @@ describe('group presence delta producer provenance', () => {
         else {
             const work = decodeCanonicalGroupPresenceSummaryWork(producer.message, producer.entry);
             const [read] = (await producer.worker.read(
-                [{ work, reservation: { key: producer.entry.key, expectedAttempts: 1 } }],
+                [{ traceId: 'trace-group-delta-provenance', work, reservation: { key: producer.entry.key, expectedAttempts: 1 } }],
                 producer.now
             )).right ?? [];
             const row = producer.worker.compute(toSummaryExpansion(work, read!)).downstreamOutboxWrites[0]!.entry;
@@ -119,10 +119,14 @@ describe('group presence delta producer provenance', () => {
             expect(result.downstreamOutboxWrites).toHaveLength(1);
             return result;
         });
-        const queued = computeGroupPresenceSummaryEntry({
-            ...decodeCanonicalGroupPresenceSummaryWork(producer.message, producer.entry),
-            commandId: 'second-summary'
-        }, 'producer-api');
+        const queued = computeGroupPresenceSummaryEntry(
+            {
+                ...decodeCanonicalGroupPresenceSummaryWork(producer.message, producer.entry),
+                commandId: 'second-summary'
+            },
+            'producer-api',
+            'trace-group-delta-provenance'
+        );
         const second = { ...queued, status: EntityStatus.RESERVED, dequeueAudit: producer.entry.dequeueAudit };
         await producer.resources.entries.write(second);
         await producer.worker.processReservedEntry(decodePersistedALMessage(second.resource), second);

@@ -1,5 +1,7 @@
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import {
     toRtcTopologyPublicationId
@@ -7,27 +9,69 @@ import {
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 
-/** Strict synchronous validation for an authoritative persisted publication. */
-export function validateRtcTopologyPublication(
+/** Why a stored publication cannot be used: `unsupported` predates envelope version 4, `malformed` is corrupt. */
+export interface RtcTopologyPublicationRefusal {
+    readonly code: 'unsupported' | 'malformed';
+    readonly message: string;
+}
+
+const PRE_V4_PUBLICATION_KEYS = [
+    'publicationId',
+    'workId',
+    'groupRef',
+    'sourceGroupStateCausalRevision',
+    'overlayVersion',
+    'targetGroupSnapshotVersion',
+    'recipientSessionIds',
+    'snapshot',
+    'expiresAtEpochMs',
+    'createdAtEpochMs'
+] as const;
+
+const PUBLICATION_KEYS = [...PRE_V4_PUBLICATION_KEYS, 'traceId'] as const;
+
+/** Strict decode of an authoritative persisted publication; a pre-v4 row is refused as `unsupported`. */
+export function decodeRtcTopologyPublication(
     value: unknown,
     expectedRef: GroupRef
-): asserts value is RtcTopologyPublication {
-    const publication = record(value, 'RTC topology publication');
-    exactKeys(publication, [
-        'publicationId',
-        'workId',
-        'groupRef',
-        'sourceGroupStateCausalRevision',
-        'overlayVersion',
-        'targetGroupSnapshotVersion',
-        'recipientSessionIds',
-        'snapshot',
-        'expiresAtEpochMs',
-        'createdAtEpochMs'
-    ]);
-    validateExactGroupRef(publication.groupRef, expectedRef);
+): Either<RtcTopologyPublicationRefusal, RtcTopologyPublication> {
+    try {
+        const publication = decodePublicationRecord(value, 'RTC topology publication');
+        if (hasExactKeys(publication, PRE_V4_PUBLICATION_KEYS)) {
+            return Either.ofLeft({
+                code: 'unsupported',
+                message: 'RTC topology publication predates AL envelope version 4'
+            });
+        }
+        assertPublicationFields(publication, expectedRef);
+        return Either.ofRight(value as RtcTopologyPublication);
+    }
+    catch (error) {
+        return Either.ofLeft({
+            code: 'malformed',
+            message: error instanceof TypeError ? error.message : 'RTC topology publication is invalid'
+        });
+    }
+}
+
+/** Programmer invariant for a publication this process built or already decoded. */
+export function assertRtcTopologyPublication(
+    value: RtcTopologyPublication,
+    expectedRef: GroupRef
+): void {
+    decodeRtcTopologyPublication(value, expectedRef).fold((refusal) => {
+        throw new TypeError(refusal.message);
+    }, () => undefined);
+}
+
+function assertPublicationFields(publication: JsonWireObject, expectedRef: GroupRef): void {
+    exactKeys(publication, PUBLICATION_KEYS);
+    assertExactGroupRef(publication.groupRef, expectedRef);
     nonEmptyString(publication.publicationId, 'publication id');
     nonEmptyString(publication.workId, 'work id');
+    if (decodeALTraceId(publication.traceId).left !== undefined) {
+        throw new TypeError('RTC topology publication trace is invalid');
+    }
     const overlayVersion = publication.overlayVersion;
     const targetGroupSnapshotVersion = publication.targetGroupSnapshotVersion;
     const createdAtEpochMs = publication.createdAtEpochMs;
@@ -50,25 +94,29 @@ export function validateRtcTopologyPublication(
     ) {
         throw new TypeError('RTC topology publication recipients are invalid');
     }
+    safeInteger(publication.expiresAtEpochMs, createdAtEpochMs + 1, 'expiresAtEpochMs');
+    assertPublicationSnapshot(publication, expectedRef);
+}
+
+function assertPublicationSnapshot(publication: JsonWireObject, expectedRef: GroupRef): void {
     const snapshot = decodeRtcTopologySnapshot(
         decodeJsonWireValue(publication.snapshot, 'RTC topology publication snapshot'),
         expectedRef
     );
-    safeInteger(publication.expiresAtEpochMs, createdAtEpochMs + 1, 'expiresAtEpochMs');
     if (
         !rtcTopologySemanticEqual(
             snapshot.sourceGroupStateCausalRevision,
             publication.sourceGroupStateCausalRevision
         ) ||
-        snapshot.version !== overlayVersion ||
+        snapshot.version !== publication.overlayVersion ||
         !rtcTopologySemanticEqual(snapshot.activeSessionIds, publication.recipientSessionIds)
     ) {
         throw new TypeError('RTC topology publication winner is internally inconsistent');
     }
 }
 
-function validateExactGroupRef(value: unknown, expected: GroupRef): void {
-    const ref = record(value, 'RTC topology publication group ref');
+function assertExactGroupRef(value: unknown, expected: GroupRef): asserts value is GroupRef {
+    const ref = decodePublicationRecord(value, 'RTC topology publication group ref');
     exactKeys(ref, ['applicationId', 'workspaceId', 'groupId']);
     nonEmptyString(ref.applicationId, 'group application id');
     nonEmptyString(ref.workspaceId, 'group workspace id');
@@ -84,22 +132,24 @@ function sameGroupRef(left: GroupRef, right: GroupRef): boolean {
         left.groupId === right.groupId;
 }
 
-function record(value: unknown, label: string): Record<string, unknown> {
+function decodePublicationRecord(value: unknown, label: string): JsonWireObject {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} is invalid`);
     }
-    return value as Record<string, unknown>;
+    return value as JsonWireObject;
 }
 
 function exactKeys(
-    value: Record<string, unknown>,
+    value: JsonWireObject,
     expected: readonly string[]
 ): void {
-    const keys = Object.keys(value).sort();
-    const canonical = [...expected].sort();
-    if (!rtcTopologySemanticEqual(keys, canonical)) {
+    if (!hasExactKeys(value, expected)) {
         throw new TypeError('RTC topology publication fields are invalid');
     }
+}
+
+function hasExactKeys(value: JsonWireObject, expected: readonly string[]): boolean {
+    return rtcTopologySemanticEqual(Object.keys(value).sort(), [...expected].sort());
 }
 
 function nonEmptyString(value: unknown, label: string): asserts value is string {
@@ -121,7 +171,7 @@ function safeInteger(
 function causalRevision(
     value: unknown
 ): asserts value is GroupStateCausalRevision {
-    const revision = record(value, 'RTC topology source causal revision');
+    const revision = decodePublicationRecord(value, 'RTC topology source causal revision');
     exactKeys(revision, ['groupRevision', 'presenceRevision']);
     safeInteger(revision.groupRevision, 0, 'source group revision');
     safeInteger(revision.presenceRevision, 0, 'source presence revision');

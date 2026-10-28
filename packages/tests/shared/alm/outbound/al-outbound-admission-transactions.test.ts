@@ -425,7 +425,7 @@ it('reads a control decision surface from one readonly transaction before its wr
         carrier: 'ws'
     });
     const ack = newALAckControlMessage(
-        { v: 3, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() },
+        { v: 4, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now(), traceId: 'trace-al-outbound-admission-transactions' },
         {
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,
@@ -632,7 +632,7 @@ function createOrderedOutboundMessage(resourceId: string, seq: number): ALMessag
 
 function createAcknowledgement(msgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId, senderId: 'receiver', ts: Date.now() },
+        { v: 4, msgId, senderId: 'receiver', ts: Date.now(), traceId: 'trace-al-outbound-admission-transactions' },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',

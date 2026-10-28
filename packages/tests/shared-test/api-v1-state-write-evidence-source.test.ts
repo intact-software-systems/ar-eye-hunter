@@ -238,19 +238,23 @@ describe('API-v1 PGlite state-write evidence source', () => {
                 }]
             })
         };
-        const page = toAdminPruneOutbox({
-            kind: 'page',
-            jobId,
-            category: 'app-data',
-            requestedBy: command.requestedBy,
-            requestedSessionId: command.requestedSessionId,
-            capturedAtEpochMs: command.capturedAtEpochMs,
-            expireAtEpochMs: command.expireAtEpochMs,
-            pageSize: command.pageSize,
-            afterCursor: null,
-            pageIndex: 0,
-            appData: command.appData
-        }, 'server-1');
+        const page = toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId,
+                category: 'app-data',
+                requestedBy: command.requestedBy,
+                requestedSessionId: command.requestedSessionId,
+                capturedAtEpochMs: command.capturedAtEpochMs,
+                expireAtEpochMs: command.expireAtEpochMs,
+                pageSize: command.pageSize,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: command.appData
+            },
+            'server-1',
+            'trace-api-v1-state-write-evidence-source'
+        );
         const sql = createEvidenceSql(async (parts, ...values) => {
             const query = parts.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
             if (query.includes('from resource_inbox i')) {

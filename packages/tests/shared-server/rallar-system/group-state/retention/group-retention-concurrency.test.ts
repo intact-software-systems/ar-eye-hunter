@@ -46,7 +46,9 @@ describe('retention conditional writes on real database storage', () => {
             const winner = await fixture.repository.findGroup(RETENTION_REF);
             await expect(commitRetention(fixture, archive.computed)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect(await fixture.repository.findGroup(RETENTION_REF)).toEqual(winner);
-            const fresh = fixture.retention.compute(await fixture.retention.read(archive.ingress, 2));
+            const fresh = fixture.retention.compute(
+                await fixture.retention.read(archive.ingress, { attemptCount: 2, traceId: 'trace-group-retention-concurrency' })
+            );
             await commitRetention(fixture, fresh);
             expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe(operation === 'metadata' ? 'archived' : 'active');
             if (operation === 'metadata') {
@@ -98,7 +100,9 @@ describe('retention conditional writes on real database storage', () => {
             expect(await fixture.repository.listPresenceSessions(RETENTION_REF)).toEqual([]);
         }
         else {
-            const retry = fixture.retention.compute(await fixture.retention.read(archive.ingress, 2));
+            const retry = fixture.retention.compute(
+                await fixture.retention.read(archive.ingress, { attemptCount: 2, traceId: 'trace-group-retention-concurrency' })
+            );
             await commitRetention(fixture, retry);
             expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('active');
             expect((await fixture.repository.listPresenceSessions(RETENTION_REF)).some((session) => session.status === 'active')).toBe(true);
@@ -117,8 +121,10 @@ describe('retention conditional writes on real database storage', () => {
 
         await commitRetention(fixture, accepted.computed);
         await expect(commitRetention(fixture, stale.computed)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-        expect(fixture.retention.compute(await fixture.retention.read(stale.ingress, 2)).outcome).toBe('no-op');
-        expect(fixture.retention.compute(await fixture.retention.read(accepted.ingress, 2)))
+        expect(
+            fixture.retention.compute(await fixture.retention.read(stale.ingress, { attemptCount: 2, traceId: 'trace-group-retention-concurrency' })).outcome
+        ).toBe('no-op');
+        expect(fixture.retention.compute(await fixture.retention.read(accepted.ingress, { attemptCount: 2, traceId: 'trace-group-retention-concurrency' })))
             .toEqual({ outcome: 'replay', receipt: accepted.computed.receipt });
         expect((await fixture.repository.listEvents(RETENTION_REF)).filter((event) => event.eventType === 'group-archived')).toHaveLength(1);
     }, 30_000);

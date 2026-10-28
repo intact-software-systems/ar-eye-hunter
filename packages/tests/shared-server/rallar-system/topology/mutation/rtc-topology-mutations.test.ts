@@ -42,7 +42,7 @@ describe('RTC topology publication mutation phases', () => {
 
     it('shares a strict persisted publication validator from a neutral pure contract module', () => {
         const publicationContractUrl = new URL(
-            '../../../../../shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts',
+            '../../../../../shared-server/rallar-system/topology/publication/decode-rtc-topology-publication.ts',
             import.meta.url
         );
         expect(existsSync(publicationContractUrl)).toBe(true);
@@ -70,8 +70,8 @@ describe('RTC topology publication mutation phases', () => {
             ),
             'utf8'
         );
-        expect(mutationSource).toMatch(/validate-rtc-topology-publication/);
-        expect(publicationRepositorySource).toMatch(/validate-rtc-topology-publication/);
+        expect(mutationSource).toMatch(/decode-rtc-topology-publication/);
+        expect(publicationRepositorySource).toMatch(/decode-rtc-topology-publication/);
     });
     it('computes and validates an absent topology guard deterministically from frozen input', () => {
         const groupRef: GroupRef = {
@@ -485,7 +485,8 @@ function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: st
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot: snapshot,
         expiresAtEpochMs: 10000,
-        createdAtEpochMs
+        createdAtEpochMs,
+        traceId: 'trace-rtc-topology-mutations'
     } as const;
 }
 

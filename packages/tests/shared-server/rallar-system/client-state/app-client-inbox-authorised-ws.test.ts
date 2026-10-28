@@ -32,6 +32,8 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/
 import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
+const CONNECT_TRACE_ID = 'trace-app-client-inbox-authorised-ws';
+
 const SERVICE_ID = 'server-12345678';
 const AUDIENCE_SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
@@ -101,8 +103,8 @@ it('consumes the upgrade ticket in the connect transaction so a replayed ticket 
     const ticketDigest = await putAuthorisedWsTestTicket(authSessions, authSession);
 
     const connects = [
-        service.writeAuthorisedWsClientConnect({ authSession, generationId: 'generation-1', ticketDigest }),
-        service.writeAuthorisedWsClientConnect({ authSession, generationId: 'generation-2', ticketDigest })
+        service.writeAuthorisedWsClientConnect({ authSession, generationId: 'generation-1', ticketDigest, traceId: CONNECT_TRACE_ID }),
+        service.writeAuthorisedWsClientConnect({ authSession, generationId: 'generation-2', ticketDigest, traceId: CONNECT_TRACE_ID })
     ];
     await queue.waitForEntryCount(2);
     const [first, replay] = await drainUntilSettled(reader, connects);
@@ -238,13 +240,15 @@ it('serves an authorised websocket disconnect after its own connect behind a bac
         backlogConnects.push(service.writeAuthorisedWsClientConnect({
             authSession: session,
             generationId: 'generation-1',
-            ticketDigest: await putAuthorisedWsTestTicket(authSessions, session)
+            ticketDigest: await putAuthorisedWsTestTicket(authSessions, session),
+            traceId: CONNECT_TRACE_ID
         }));
     }
     const closingConnect = { authSession: closing, generationId: 'generation-1' } as const;
     const closingConnected = service.writeAuthorisedWsClientConnect({
         ...closingConnect,
-        ticketDigest: await putAuthorisedWsTestTicket(authSessions, closing)
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, closing),
+        traceId: CONNECT_TRACE_ID
     });
     await queue.waitForEntryCount(backlog.length + 1);
     const connect = requireQueuedConnect(await queue.readEntries(), closing.sessionId);
@@ -524,7 +528,7 @@ async function connectAuthorisedWs(
     input: ToAuthorisedWsClientConnectionInput & Readonly<{ ticketDigest: string; }>
 ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
     const queuedBefore = (await queue.readEntries()).length;
-    const connected = service.writeAuthorisedWsClientConnect(input);
+    const connected = service.writeAuthorisedWsClientConnect({ ...input, traceId: CONNECT_TRACE_ID });
     await queue.waitForEntryCount(queuedBefore + 1);
     const [result] = await drainUntilSettled(reader, [connected]);
     return result!;

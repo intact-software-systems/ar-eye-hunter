@@ -87,7 +87,7 @@ export async function createServerIngressFixture(
 
 export function createIncomingMessage(): ALMessage {
     return {
-        id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'session-1' },
+        id: { v: 4, msgId: 'message-1', ts: 1, senderId: 'session-1', traceId: 'trace-ws-queue-box-server-ingress-fixture' },
         route: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
     };

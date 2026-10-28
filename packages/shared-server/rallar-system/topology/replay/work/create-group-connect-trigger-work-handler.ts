@@ -138,7 +138,6 @@ export function toAutomaticGroupConnectCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null,
             expectedFormationEpoch: identity.formationEpoch,
             expectedLayout,
             connectTriggerGeneration: identity.triggerGeneration

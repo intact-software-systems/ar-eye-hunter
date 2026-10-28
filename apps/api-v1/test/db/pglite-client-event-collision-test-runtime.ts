@@ -114,6 +114,7 @@ async function preparePGliteClientEvent(
     const command = toClientMutationCommand(
         commandInput,
         {
+            traceId: 'trace-pglite-client-event-collision-test-runtime',
             nowEpochMs,
             serviceId: 'pglite-client-service',
             eventId,

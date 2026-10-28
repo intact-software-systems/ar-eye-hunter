@@ -7,7 +7,10 @@ import {
 } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { toPhysicalAppInboxQueueKey } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import {
+    createDefaultAppInboxQueueMessage,
+    toPhysicalAppInboxQueueKey
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
@@ -32,7 +35,6 @@ import {
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
 import { createBenchmarkAuthSession } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-workload.ts';
 import { TestResourceInbox } from '../../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
-import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const profile = {
@@ -214,6 +216,7 @@ describe('state-write diagnostic projection', () => {
                 defaultCommandId: profile.logicalResourceId
             }),
             {
+                traceId: 'trace-state-write-diagnostic-projection',
                 nowEpochMs: session.issuedAtEpochMs,
                 serviceId: 'PRIVATE-worker-b',
                 eventId: 'PRIVATE-read-event',
@@ -586,7 +589,12 @@ describe('state-write diagnostic projection', () => {
                     }
                 }
             }
-        ].map((enqueue) => ({ ...enqueue, senderId: 'PRIVATE-principal', data: { secret: 'PRIVATE-payload' } }));
+        ].map((enqueue) => ({
+            ...enqueue,
+            senderId: 'PRIVATE-principal',
+            traceId: 'trace-state-write-diagnostic',
+            data: { secret: 'PRIVATE-payload' }
+        }));
         const events: RallarTimingEvent[] = [];
         const persistedKeys: Key[] = [];
         const client = new AppInboxCommandClient(
@@ -596,7 +604,7 @@ describe('state-write diagnostic projection', () => {
                         newLaneConcurrency: 1
                     }, Temporal.Now.instant),
                     newResourceId: () => 'PRIVATE-generated',
-                    createMessage: createAppInboxQueueMessageFixture
+                    createMessage: createDefaultAppInboxQueueMessage
                 }, { serviceId: 'PRIVATE-worker-a', defaultTopicId: 'app-inbox.client-state' }),
                 reservationClient: {
                     reserveMaterializedEntry: async () => {

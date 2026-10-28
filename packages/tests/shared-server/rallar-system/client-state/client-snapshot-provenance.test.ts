@@ -435,6 +435,18 @@ describe('client snapshot provenance computation', () => {
 
         // Every page build re-serializes the whole principal snapshot; one build per compute is the cost contract.
         expect(computeStateSnapshotPages).toHaveBeenCalledTimes(1);
+        // Every state-sync envelope the mutation publishes carries the trace of the queued command.
+        const outbox = computed.outcome === 'completed' && computed.mutation.outcome === 'write'
+            ? computed.mutation.outbox
+            : [];
+        expect(outbox.length).toBeGreaterThan(0);
+        expect(outbox.map(({ message }) => message.id.traceId)).toEqual(outbox.map(() => command.facts.traceId));
+        // The event and every audit stamp carry the same envelope trace; no request body supplies one.
+        const write = computed.outcome === 'completed' && computed.mutation.outcome === 'write'
+            ? computed.mutation
+            : undefined;
+        expect(write?.event.traceId).toBe(command.facts.traceId);
+        expect(write?.principal.value.updated.traceId).toBe(command.facts.traceId);
         const sidecarWrites = computed.outcome === 'completed' ? computed.sidecarWrites : [];
         expect(sidecarWrites.map((write) => ({
             resourceId: write.queueKey.resourceId,
@@ -442,23 +454,23 @@ describe('client snapshot provenance computation', () => {
             digest: JSON.parse(write.value).digest
         }))).toEqual([
             {
-                resourceId: '--snapshot-page--------3l3eod9ywabyf',
+                resourceId: '--snapshot-page----------13yvi54kepr',
                 targetKind: 'scoped-principal-broadcast',
-                digest: '944b7465e368453a3792d4935a1766428c985c72a33cf03720a47a8f59471bec'
+                digest: '3003c5f5836a1ee487193682082a234126ae4d13125cf623c61184f5e3a1c3a9'
             },
             {
-                resourceId: '--snapshot-page--------24zodg2oyjb9e',
+                resourceId: '--snapshot-page--------1snftlganx6hm',
                 targetKind: 'scoped-unicast',
-                digest: 'd63bc9e0f1fffe4f06360c0a103ee7bfe4c457b1ab8044ddac761e7f2b570a26'
+                digest: '7133688f0651deb5f05ed7f824e7f57b0308dd174d7cd13e25e32d6bb31cdb42'
             },
             {
                 resourceId: 'connect-1-principal-st-2r959tktplfmi',
                 targetKind: 'scoped-principal-broadcast',
-                digest: '62ce0a30664f70c5f7a92da4194dfae0827302125b008cb01cd518d11e586dd6'
+                digest: '6fc46b50d830d38fa290e3982f7d8ffa678d84f8a57be54cb4d019939abe1d59'
             }
         ]);
         expect(createHash('sha256').update(JSON.stringify(sidecarWrites)).digest('hex'))
-            .toBe('3e06f98302c30781e81e570bb06be9125dc5ca281e1dbac54bed3c0914c05e11');
+            .toBe('14caf38d69236f5ad33278e6d4e8aaa045c8b5042bbe44e714586f6d7f4711b6');
     });
 });
 

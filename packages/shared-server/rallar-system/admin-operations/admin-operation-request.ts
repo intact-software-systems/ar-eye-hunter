@@ -16,4 +16,5 @@ export interface AdminOperationMutationRequest<TRequest> {
     readonly adminSession: IssuedAuthSession;
     readonly request: TRequest;
     readonly requestId: string;
+    readonly traceId: string;
 }

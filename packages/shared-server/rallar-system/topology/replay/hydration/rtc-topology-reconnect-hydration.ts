@@ -1,3 +1,4 @@
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -257,7 +258,8 @@ export class RtcTopologyReconnectHydration {
         const messages = materializeRtcTopologyHydrationMessages({
             connection,
             topology,
-            nowEpochMs: this.#nowEpochMs()
+            nowEpochMs: this.#nowEpochMs(),
+            traceId: newALTraceId()
         });
         for (const message of messages) {
             const encoded = this.#socket.encode(message);

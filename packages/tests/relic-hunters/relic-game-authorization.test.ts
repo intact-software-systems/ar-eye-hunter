@@ -1,4 +1,5 @@
 import { createRelicGame, RELIC_PROTOCOL_VERSION } from '@relic-hunters/mod.ts';
+import { captureRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import {
@@ -117,9 +118,13 @@ describe('Relic current authority', () => {
         const fixture = await createGameFixture();
         try {
             const replaced = { ...fixture.command, actor: { ...fixture.command.actor, issuedAtEpochMs: fixture.owner.issuedAtEpochMs + 1 } };
-            const read = await fixture.service.read(fixture.service.capture(replaced, null, 'default-qbox-server'));
+            const read = await fixture.service.read(fixture.service.capture(captureRelicGameCommand(replaced), null, 'default-qbox-server'));
             expect(fixture.service.needsInitialState(read)).toBe(false);
-            expect(fixture.service.compute(read).result).toMatchObject({ status: 'refused', code: 'invalid-session', httpStatus: 401 });
+            expect(fixture.service.compute({ ...read, attemptCount: 1, traceId: 'trace-relic-game-authorization' }).result).toMatchObject({
+                status: 'refused',
+                code: 'invalid-session',
+                httpStatus: 401
+            });
             await new AuthSessionPersistence(fixture.runtime).deleteSession(fixture.owner);
             await expect(fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server'))
                 .rejects.toMatchObject({ result: { code: 'invalid-session' } });

@@ -95,6 +95,7 @@ describe('Postgres client snapshot provenance transaction', () => {
                         authSession,
                         generationId: 'proof-generation',
                         ticketDigest,
+                        traceId: 'trace-client-snapshot-provenance',
                         input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
                     })
                 );

@@ -28,7 +28,6 @@ describe('group presence mutation computation', () => {
                 actorPrincipalId: null,
                 actorSessionId: null,
                 reason: null,
-                traceId: null,
                 principalId: 'alice',
                 generationId: 'generation-1',
                 generationVersion: 1_000,
@@ -49,7 +48,6 @@ describe('group presence mutation computation', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 heartbeatTtlMs: 5_000
             }
         });
@@ -80,7 +78,6 @@ describe('heartbeat lease renewal classification', () => {
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 reason: null,
-                traceId: null,
                 principalId: 'alice',
                 generationId: 'generation-1',
                 lastHeartbeatAtEpochMs: 1_500,

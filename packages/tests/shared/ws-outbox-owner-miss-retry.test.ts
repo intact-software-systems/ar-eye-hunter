@@ -537,7 +537,7 @@ function createUnicastMessage(
     resourceId = 'reply-1'
 ): ALMessage {
     return {
-        id: { v: 3, msgId, ts: Date.now(), senderId: 'server-worker' },
+        id: { v: 4, msgId, ts: Date.now(), senderId: 'server-worker', traceId: 'trace-ws-outbox-owner-miss-retry' },
         route: { ...RAW_ENTRY_KEY, resourceId },
         targets: { mode: 'unicast', toPeerId: 'writer-session' },
         constraints: { expiresAtMs: Date.now() + 60_000 },
@@ -562,7 +562,7 @@ function createSocket(): WsOutboxTestSocket {
 function expectNativeUnicast(socket: WsOutboxTestSocket, msgId: string, resourceId = 'reply-1'): void {
     expect(socket.connections.get('writer-session')?.sent.map((text) => JSON.parse(text))).toEqual([
         expect.objectContaining({
-            id: expect.objectContaining({ v: 3, msgId, senderId: 'server-worker' }),
+            id: expect.objectContaining({ v: 4, msgId, senderId: 'server-worker', traceId: 'trace-ws-outbox-owner-miss-retry' }),
             route: { topicId: 'app.crdt', resourceId, contextId: 'rallar-server' },
             targets: { mode: 'unicast', toPeerId: 'writer-session' },
             payload: { typeId: 'rallar.crdt.append-response.v1', contentType: 'application/json', resource: '{}' }

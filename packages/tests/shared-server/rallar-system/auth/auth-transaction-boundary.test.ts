@@ -38,6 +38,7 @@ async function commitsIssuedSessionAndResultAtomically(): Promise<void> {
     });
     const pending = fixture.service.issueSession({
         requestId: 'issue-session-1',
+        traceId: 'trace-auth-test',
         clientId: 'client-1',
         username: 'alice',
         authority: {
@@ -95,6 +96,7 @@ async function deniesSessionWhenUserIsDisabledAfterEnqueue(): Promise<void> {
     await users.putUser(user);
     const pending = fixture.service.issueSession({
         requestId: 'disabled-session-request',
+        traceId: 'trace-auth-test',
         clientId: user.clientId,
         username: user.username,
         ttlMs: 60_000,
@@ -124,6 +126,7 @@ async function rereadsUserPolicyAfterRetryConflict(): Promise<void> {
     const userRead = vi.spyOn(fixture.runtimeRepository, 'findEntry');
     const pending = fixture.auth.service.issueSession({
         requestId: 'retry-disabled-session-request',
+        traceId: 'trace-auth-test',
         clientId: fixture.user.clientId,
         username: fixture.user.username,
         ttlMs: 60_000,

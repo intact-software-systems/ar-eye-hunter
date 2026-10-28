@@ -11,6 +11,7 @@ export interface RtcTopologyHydrationMessageInput {
     readonly connection: ConnectionContext;
     readonly topology: RallarOverlayTopologySnapshot;
     readonly nowEpochMs: number;
+    readonly traceId: string;
 }
 
 export function materializeRtcTopologyHydrationMessages(
@@ -34,7 +35,8 @@ export function materializeRtcTopologyHydrationMessages(
             ]),
             ts: connection.generationStartedAtEpochMs,
             senderId: 'rallar-server',
-            sessionId: connection.id
+            sessionId: connection.id,
+            traceId: input.traceId
         },
         route: toAppQueueKey({
             topicId: AppTopics.overlayTopology,

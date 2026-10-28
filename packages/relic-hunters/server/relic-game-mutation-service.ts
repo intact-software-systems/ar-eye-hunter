@@ -4,6 +4,7 @@ import {
     type RoomOwnedAppData
 } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AppInboxCommandAttempt } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
     writeAppOutboxInserts,
     type AppOutboxInsert
@@ -64,16 +65,18 @@ export const RELIC_ROOM_DATA_BINDING: RoomOwnedAppData.Binding = {
 };
 
 export namespace RelicGameMutationService {
+    /** The transport's command: its trace rides the admitted envelope, never the captured command. */
     export interface CommandInput {
         readonly operation: 'ensure' | 'reset' | 'command';
         readonly gameId: string;
         readonly requestId: string;
+        readonly traceId: string;
         readonly actor: Readonly<{ clientId: string; sessionId: string; issuedAtEpochMs: number; }>;
         readonly authorization: 'authenticated' | 'group-policy';
         readonly move: RelicCommand | null;
     }
 
-    export interface Command extends Omit<CommandInput, 'move'> {
+    export interface Command extends Omit<CommandInput, 'move' | 'traceId'> {
         readonly move: RelicGameMove | null;
     }
 
@@ -91,6 +94,8 @@ export namespace RelicGameMutationService {
         readonly group: GroupStateAuthoritativeSnapshot | null;
         readonly save: RoomOwnedAppData.Read;
     }
+
+    export interface Attempt extends Read, AppInboxCommandAttempt {}
 
     export interface RefusalReason {
         readonly code: string;
@@ -205,15 +210,15 @@ export class RelicGameMutationService {
             : toPublicRelicSnapshot(decodeStoredRelicSave(entry.value, entry.schemaVersion, command.gameId));
     }
 
-    compute(read: RelicGameMutationService.Read): RelicGameMutationService.Computed {
-        return computeRelicGameMutation(read);
+    compute(attempt: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
+        return computeRelicGameMutation(attempt);
     }
 
     validate(
-        read: RelicGameMutationService.Read,
+        attempt: RelicGameMutationService.Attempt,
         computed: RelicGameMutationService.Computed
     ): readonly ComputedDataValidationIssue[] {
-        return validateComputedProjection(computeRelicGameMutation(read), computed, 'relic');
+        return validateComputedProjection(computeRelicGameMutation(attempt), computed, 'relic');
     }
 
     async write(transaction: PSqlSql, computed: RelicGameMutationService.Computed): Promise<void> {
@@ -291,7 +296,7 @@ function authorizeRelicGameMutation(
     return null;
 }
 
-function computeRelicGameMutation(read: RelicGameMutationService.Read): RelicGameMutationService.Computed {
+function computeRelicGameMutation(read: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
     const { command } = read.ingress;
     const denial = authorizeRelicGameMutation(read);
     if (denial !== null) {
@@ -412,7 +417,14 @@ function refusal(
 export function captureRelicGameCommand(
     value: RelicGameMutationService.CommandInput
 ): RelicGameMutationService.Command {
-    return decodeRelicGameCommand({ ...value, move: value.move === null ? null : captureRelicGameMove(value.move) });
+    return decodeRelicGameCommand({
+        operation: value.operation,
+        gameId: value.gameId,
+        requestId: value.requestId,
+        actor: value.actor,
+        authorization: value.authorization,
+        move: value.move === null ? null : captureRelicGameMove(value.move)
+    });
 }
 
 export function decodeRelicGameCommand(value: unknown): RelicGameMutationService.Command {

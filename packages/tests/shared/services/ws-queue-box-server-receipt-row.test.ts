@@ -191,7 +191,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 
 function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs },
+        { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs, traceId: 'trace-ws-queue-box-server-receipt-row' },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
@@ -208,7 +208,7 @@ function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
 function receiptMessage(input: ReceiptMessageInput): ALMessage {
     return {
         ...newALReceiptControlMessage(
-            { v: 3, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs },
+            { v: 4, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs, traceId: 'trace-ws-queue-box-server-receipt-row' },
             {
                 msgId: 'room-message-1',
                 originPeerId: 'a',
