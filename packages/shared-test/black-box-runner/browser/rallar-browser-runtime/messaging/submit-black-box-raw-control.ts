@@ -5,7 +5,6 @@ import {
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
-import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { BlackBoxRallarControlSubmitInput } from '../black-box-rallar-operation-contracts.ts';
@@ -17,6 +16,8 @@ export namespace SubmitBlackBoxRawControl {
         readonly sessionId: string | undefined;
         readonly context: ApiMiddleware | undefined;
         readonly nowMs: number;
+        /** The trace of the acknowledged message: the ACK is the same causal chain, never a new one. */
+        readonly traceId: string;
     }
 
     export interface Submission {
@@ -27,9 +28,9 @@ export namespace SubmitBlackBoxRawControl {
 
 /**
  * A harness capability the product never exercises: no product path sends a control with a version its peers do not
- * support. It shapes the ACK this session would send for the named message, swaps in the requested `typeId`, and
- * admits the envelope through the carrier admission a product control takes, so the addressee judges it as it would
- * judge any control that arrives.
+ * support. It shapes the ACK this session would send for the named message under that message's trace, swaps in the
+ * requested `typeId`, and admits the envelope through the carrier admission a product control takes, so the addressee
+ * judges it as it would judge any control that arrives.
  */
 export async function submitBlackBoxRawControl(
     input: SubmitBlackBoxRawControl.Input
@@ -56,7 +57,7 @@ function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: s
         msgId: control.msgId,
         senderId: sessionId,
         ts: nowMs,
-        traceId: newALTraceId()
+        traceId: input.traceId
     }, {
         ackedMsgId: control.ackedMsgId,
         fromPeerId: sessionId,

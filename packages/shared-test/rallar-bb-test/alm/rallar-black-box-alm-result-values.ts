@@ -36,6 +36,8 @@ export interface RallarBlackBoxTestMessagesControlResultValue {
     readonly verdict: ALDeliveryAdmissionVerdict['kind'];
     /** The detail of the verdict itself; absent for `admitted`, `duplicate` and `pending`, which carry none. */
     readonly reason?: string;
+    /** The trace the control envelope carried, that of the acknowledged message; absent when the control was refused unadmitted. */
+    readonly traceId?: string;
 }
 
 export interface RallarBlackBoxTestMessagesObserveResultValue

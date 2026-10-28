@@ -248,9 +248,15 @@ and optionally `connection`. The page builds, under the authored `msgId`, the AC
 envelope its own session would send for `ackedMsgId` to `toPeerId`, that message's
 sender, and swaps in `typeId`, so the addressee's admission outcome names this one
 control, and so a recipe can send a control version its addressee does not support.
+The envelope carries the trace of `ackedMsgId`, read from the message the page
+received (the last 16 of each type it holds) or, failing that, from the handle of a
+message this page sent; a control never mints a trace. A page that holds `ackedMsgId`
+by neither refuses the control with verdict `refused`, reason `acked-message-unknown`,
+no `traceId`, and admits nothing.
 The envelope goes through the carrier admission a product control takes. It returns
-`{ msgId, typeId, carrier, verdict, reason? }`: the control's own msgId and that
-carrier's verdict, which says only whether this page's carrier took the control:
+`{ msgId, typeId, carrier, verdict, reason?, traceId? }`: the control's own msgId, the
+trace the envelope carried, and that carrier's verdict, which says only whether this
+page's carrier took the control:
 `admitted`, or another admission verdict such as `duplicate` for a msgId this page's
 store already holds. The addressee records its own `admission-outcome` for the control, which is
 the verdict a recipe asserts on the addressee's page. `msgId`, `ackedMsgId` and

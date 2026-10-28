@@ -1,0 +1,117 @@
+{
+  "description": "No-browser API-v1 request trace echo: a valid x-request-id comes back unchanged on the response, and a hostile one (wrong charset, 129 characters) is replaced by a server-minted trace that satisfies the trace grammar and differs from what was sent. The runner compares x-request-id only because its response-header allow-list admits it.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "echoesAValidRequestId",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/webrtc/ice",
+        "headers": {
+          "x-request-id": "request-trace-echo-{runId}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "headers": {
+          "x-request-id": "request-trace-echo-{runId}"
+        }
+      }
+    },
+    {
+      "name": "mintsForARequestIdOutsideTheTraceCharset",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/webrtc/ice",
+        "headers": {
+          "x-request-id": "bad header!"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "headers": {
+          "x-request-id": "string"
+        }
+      }
+    },
+    {
+      "name": "echoOfTheBadCharsetRequestIdIsAMintedTrace",
+      "type": "assert",
+      "actual": {
+        "echoed": "{resultsByName.mintsForARequestIdOutsideTheTraceCharset.0.actual.headers.x-request-id}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "echoed",
+            "matches": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          {
+            "path": "echoed",
+            "notEquals": "bad header!"
+          }
+        ]
+      }
+    },
+    {
+      "name": "mintsForA129CharacterRequestId",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/webrtc/ice",
+        "headers": {
+          "x-request-id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "headers": {
+          "x-request-id": "string"
+        }
+      }
+    },
+    {
+      "name": "echoOfTheOverlongRequestIdIsAMintedTrace",
+      "type": "assert",
+      "actual": {
+        "echoed": "{resultsByName.mintsForA129CharacterRequestId.0.actual.headers.x-request-id}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "echoed",
+            "matches": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          {
+            "path": "echoed",
+            "notEquals": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    }
+  ]
+}

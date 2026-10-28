@@ -552,6 +552,65 @@ it('replays a handle\'s envelope on the named carrier and reports that admission
         .rejects.toThrow('messages.send names carrier, payload beside replayOnCarrier; a replay names only the handle and its carrier.');
 });
 
+const rawControl = {
+    carrier: 'rtc' as const,
+    typeId: 'al.control.ack.v1',
+    msgId: 'control-1',
+    ackedMsgId: 'request-1',
+    toPeerId: 'bob-session'
+};
+const admittedVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 } as const;
+
+it('acknowledges a retained received message under that message\'s trace', async () => {
+    const { runtime, receive } = await loadReceivingRuntime();
+    receive(withTrace(toInboundRequest('request-1', vi.fn()), 'trace-acked-received'));
+    facade.behavior.submitRawControl.mockResolvedValueOnce({ msgId: 'control-1', verdict: admittedVerdict });
+
+    expect(await runtime.submitControl(rawControl)).toEqual({
+        msgId: 'control-1',
+        typeId: 'al.control.ack.v1',
+        carrier: 'rtc',
+        verdict: 'admitted',
+        reason: undefined,
+        traceId: 'trace-acked-received'
+    });
+    expect(facade.behavior.submitRawControl).toHaveBeenCalledWith(rawControl, 'trace-acked-received');
+});
+
+it('acknowledges a message this page sent under the trace of its delivery handle', async () => {
+    const runtime = await loadDeliveryRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    facade.behavior.submitRawControl.mockResolvedValueOnce({ msgId: 'control-1', verdict: admittedVerdict });
+
+    const result = await runtime.submitControl({ ...rawControl, ackedMsgId: delivery.msgId });
+
+    expect(result).toMatchObject({ verdict: 'admitted', traceId: delivery.handle.traceId });
+    expect(facade.behavior.submitRawControl).toHaveBeenCalledWith(
+        { ...rawControl, ackedMsgId: delivery.msgId },
+        delivery.handle.traceId
+    );
+});
+
+it('refuses a raw control that acknowledges a message neither received nor sent by this page, admitting nothing', async () => {
+    const { runtime, receive } = await loadReceivingRuntime();
+    receive(toInboundRequest('request-held', vi.fn()));
+    const admittedMsgIds: string[] = [];
+    facade.behavior.submitRawControl.mockImplementation(async (control) => {
+        admittedMsgIds.push(control.msgId);
+        return { msgId: control.msgId, verdict: admittedVerdict };
+    });
+
+    expect(await runtime.submitControl({ ...rawControl, ackedMsgId: 'request-unknown' })).toEqual({
+        msgId: 'control-1',
+        typeId: 'al.control.ack.v1',
+        carrier: 'rtc',
+        verdict: 'refused',
+        reason: 'acked-message-unknown',
+        traceId: undefined
+    });
+    expect(admittedMsgIds).toEqual([]);
+});
+
 it('stamps an absolute floor as given and resolves aboveCurrentBy against the sender\'s current room version', async () => {
     const runtime = await loadDeliveryRuntime();
     facade.behavior.resolveRoomSendFence.mockReturnValue({ minSnapshotVersion: 12, rosterVersion: 3 });
@@ -1497,6 +1556,10 @@ function toInboundReply(requestMsgId: string): RallarMessage<RallarMessagePayloa
             actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
         }
     };
+}
+
+function withTrace(message: RallarMessage<RallarMessagePayload>, traceId: string): RallarMessage<RallarMessagePayload> {
+    return { ...message, traceId, raw: { ...message.raw, id: { ...message.raw.id, traceId } } };
 }
 
 function toInboundRequest(

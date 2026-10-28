@@ -143,12 +143,14 @@ export function decodeAlmMessagesControlResultValue(value: unknown): RallarBlack
         throw toAlmInvalidRuntimeResultError(`${path}.verdict`);
     }
     const reason = readAlmOptionalStringField(record, path, 'reason');
+    const traceId = readAlmOptionalStringField(record, path, 'traceId');
     return {
         msgId: requireAlmStringField(record, path, 'msgId'),
         typeId: requireAlmStringField(record, path, 'typeId'),
         carrier,
         verdict,
-        ...(reason === undefined ? {} : { reason })
+        ...(reason === undefined ? {} : { reason }),
+        ...(traceId === undefined ? {} : { traceId })
     };
 }
 

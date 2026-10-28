@@ -153,7 +153,11 @@ export interface BlackBoxBrowserMessagesDependency
 /** The session registry that the facade senders open handles in, so the ledger holds none of its own. */
 export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {
     replayCapturedMessage(replay: BlackBoxCapturedMessageReplay): Promise<ALDeliveryAdmissionVerdict>;
-    submitRawControl(control: BlackBoxRallarControlSubmitInput): Promise<SubmitBlackBoxRawControl.Submission>;
+    /** `traceId` is that of the message the control acknowledges, which the control inherits. */
+    submitRawControl(
+        control: BlackBoxRallarControlSubmitInput,
+        traceId: string
+    ): Promise<SubmitBlackBoxRawControl.Submission>;
     /** The fence the product stamps on a room send that states no floor: the sender's cached room and roster versions. */
     resolveRoomSendFence(roomRef: GroupRef): RoomSendFence;
 }
@@ -275,12 +279,13 @@ function toBlackBoxBrowserMessagingPorts(
                     sessionId: session.connection.session()?.sessionId,
                     context: session.session.readMiddleware()
                 }),
-            submitRawControl: async (control) =>
+            submitRawControl: async (control, traceId) =>
                 await submitBlackBoxRawControl({
                     control,
                     sessionId: session.connection.session()?.sessionId,
                     context: session.session.readMiddleware(),
-                    nowMs: Date.now()
+                    nowMs: Date.now(),
+                    traceId
                 }),
             resolveRoomSendFence: (roomRef) => state.roomStateStore.resolveRoomSendFence(roomRef)
         },

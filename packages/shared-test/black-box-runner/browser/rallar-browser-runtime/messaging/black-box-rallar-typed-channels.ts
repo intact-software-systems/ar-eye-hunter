@@ -81,6 +81,17 @@ export class BlackBoxRallarTypedChannels {
         return message;
     }
 
+    /** The trace of the retained arrival with this `msgId`, whatever its type; undefined when the page holds none. */
+    getReceivedTraceId(msgId: string): string | undefined {
+        for (const received of this.#receivedByType.values()) {
+            const message = received.find((candidate) => candidate.raw.id.msgId === msgId);
+            if (message !== undefined) {
+                return message.raw.id.traceId;
+            }
+        }
+        return undefined;
+    }
+
     open(
         config: BlackBoxRallarConnectionConfig,
         route: TypedChannelRoute

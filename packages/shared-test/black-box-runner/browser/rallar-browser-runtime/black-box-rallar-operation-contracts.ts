@@ -371,6 +371,8 @@ export interface BlackBoxRallarMessageReplayDiagnostics {
 /**
  * A harness capability, not a product path: one raw control envelope under the authored `msgId`, shaped as the ACK of
  * `ackedMsgId` from this session and carrying `typeId`, admitted on `carrier` for `toPeerId`, the sender of that message.
+ * The envelope carries the trace of `ackedMsgId`, which the page knows from a message it received or sent; a page that
+ * knows neither refuses the control.
  */
 export interface BlackBoxRallarControlSubmitInput {
     readonly carrier: ALDeliveryCarrier;
@@ -388,6 +390,8 @@ export interface BlackBoxRallarControlSubmitDiagnostics {
     readonly verdict: ALDeliveryAdmissionVerdict['kind'];
     /** The verdict's own detail; undefined for `admitted`, `duplicate` and `pending`, which carry none. */
     readonly reason: string | undefined;
+    /** The trace the envelope carried, that of the acknowledged message; undefined when the control was refused unadmitted. */
+    readonly traceId: string | undefined;
 }
 
 export interface BlackBoxRallarMessageSendDiagnostics {
