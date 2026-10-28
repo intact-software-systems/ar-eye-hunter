@@ -185,6 +185,7 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
             authSession,
             generationId: 'generation',
             ticketDigest,
+            traceId: 'trace-client-snapshot-cluster-bridge',
             input: {
                 ...recipient.scope,
                 clientInstanceId: 'browser',

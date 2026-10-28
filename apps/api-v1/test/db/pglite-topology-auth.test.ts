@@ -557,7 +557,8 @@ Deno.test(
                     authority.sessionId,
                     newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
                     AppTopics.rtt,
-                    rtt
+                    rtt,
+                    { traceId: 'trace-pglite-rtt-ingress' }
                 );
                 const dispatchRtt = () =>
                     wsSocket.dispatchMessage(newALUntargetedMessage(
@@ -574,6 +575,14 @@ Deno.test(
                     createApiV1TestQueueResilience()
                 );
                 assert.equal(wsIngressCapturedAt.length, 1);
+                assert.deepEqual(
+                    await sql<{ traceId: string; }[]>`
+                        select ri_resource::jsonb #>> '{id,traceId}' as "traceId" from resource_inbox
+                        where ri_type_id = 'APP_INBOX'
+                        and ri_resource::jsonb #>> '{payload,typeId}' = 'RTC_RTT_SUBMIT'
+                    `,
+                    [{ traceId: 'trace-pglite-rtt-ingress' }]
+                );
                 const secondIngressStartedAtEpochMs = Date.now();
                 await dispatchRtt();
                 const captureDeadline = setTimeout(

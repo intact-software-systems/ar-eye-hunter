@@ -182,7 +182,6 @@ function hasExactAdminMutationSubmission(
             callName: 'createCrdtAdminCommand',
             argumentPath: 'input.mutation'
         }) &&
-        facts.calls.every((call) => !isCallNamed(call, 'writeCrdtCommandUntilCompletion')) &&
         ['rebuild-projection', 'compact', 'lifecycle', 'erase'].includes(operation)
     );
 }
@@ -201,11 +200,11 @@ function traceCrdtAdminCommandReservation(
     program: MutationRoutingAstNode,
     submission: MutationRoutingAstNode
 ): CrdtAdminCommandReservationTrace | undefined {
-    const reservationCall = unwrapExpression(asNodes(submission.arguments)[0]);
+    const reservationCall = unwrapExpression(decodeAstNodes(submission.arguments)[0]);
     if (!reservationCall || !isCallNamed(reservationCall, 'createCrdtAdminCommandReservation')) {
         return undefined;
     }
-    const reservationInputs = asNodes(reservationCall.arguments);
+    const reservationInputs = decodeAstNodes(reservationCall.arguments);
     const reservationInput = reservationInputs[0];
     const builders = findFunctionLikes(program, 'createCrdtAdminCommandReservation');
     const builder = builders[0];
@@ -237,11 +236,11 @@ function traceCrdtAdminCommandReservation(
 function readFunctionReturnObject(
     owner: MutationRoutingAstNode
 ): MutationRoutingAstNode | undefined {
-    const body = asNode(owner.body);
+    const body = decodeAstNode(owner.body);
     if (body?.type !== 'BlockStatement') {
         return undefined;
     }
-    const completion = readStatementListCompletion(asNodes(body.body));
+    const completion = readStatementListCompletion(decodeAstNodes(body.body));
     const returned = completion.kind === 'return'
         ? unwrapExpression(completion.value)
         : undefined;
@@ -255,13 +254,13 @@ function readObjectPropertyValue(
     if (object?.type !== 'ObjectExpression') {
         return undefined;
     }
-    const properties = asNodes(object.properties).filter(
-        (property) => !property.computed && readName(asNode(property.key)) === propertyName
+    const properties = decodeAstNodes(object.properties).filter(
+        (property) => !property.computed && readName(decodeAstNode(property.key)) === propertyName
     );
     if (properties.length !== 1 || properties[0]?.type !== 'ObjectProperty') {
         return undefined;
     }
-    return asNode(properties[0].value);
+    return decodeAstNode(properties[0].value);
 }
 
 function readObjectFunctionProperty(
@@ -271,8 +270,8 @@ function readObjectFunctionProperty(
     if (object?.type !== 'ObjectExpression') {
         return undefined;
     }
-    const properties = asNodes(object.properties).filter(
-        (property) => !property.computed && readName(asNode(property.key)) === propertyName
+    const properties = decodeAstNodes(object.properties).filter(
+        (property) => !property.computed && readName(decodeAstNode(property.key)) === propertyName
     );
     if (properties.length !== 1) {
         return undefined;
@@ -281,7 +280,7 @@ function readObjectFunctionProperty(
     if (property?.type === 'ObjectMethod') {
         return property;
     }
-    const value = property?.type === 'ObjectProperty' ? asNode(property.value) : undefined;
+    const value = property?.type === 'ObjectProperty' ? decodeAstNode(property.value) : undefined;
     return value && isFunctionNode(value) ? value : undefined;
 }
 
@@ -328,7 +327,7 @@ function readScopeBindings(
     if (scope.type === 'CatchClause') {
         appendPatternBinding({
             bindings,
-            pattern: asNode(scope.param),
+            pattern: decodeAstNode(scope.param),
             declarationStatement: scope,
             bindingName
         });
@@ -336,7 +335,7 @@ function readScopeBindings(
     if (scope.type === 'ClassDeclaration' || scope.type === 'ClassExpression') {
         appendPatternBinding({
             bindings,
-            pattern: asNode(scope.id),
+            pattern: decodeAstNode(scope.id),
             declarationStatement: scope,
             bindingName
         });
@@ -353,12 +352,12 @@ function appendFunctionBindings(
     if (scope.type === 'FunctionDeclaration' || scope.type === 'FunctionExpression') {
         appendPatternBinding({
             bindings,
-            pattern: asNode(scope.id),
+            pattern: decodeAstNode(scope.id),
             declarationStatement: scope,
             bindingName
         });
     }
-    for (const parameter of asNodes(scope.params)) {
+    for (const parameter of decodeAstNodes(scope.params)) {
         appendPatternBinding({
             bindings,
             pattern: parameter,
@@ -373,16 +372,16 @@ function appendDirectStatementBindings(
     scope: MutationRoutingAstNode,
     bindingName: string
 ): void {
-    for (const statement of asNodes(scope.body)) {
+    for (const statement of decodeAstNodes(scope.body)) {
         appendStatementBinding(bindings, statement, bindingName);
     }
-    const loopDeclaration = asNode(scope.init) ?? asNode(scope.left);
+    const loopDeclaration = decodeAstNode(scope.init) ?? decodeAstNode(scope.left);
     if (loopDeclaration?.type === 'VariableDeclaration') {
         appendVariableDeclarationBindings(bindings, loopDeclaration, bindingName);
     }
     if (scope.type === 'SwitchStatement') {
-        for (const caseNode of asNodes(scope.cases)) {
-            for (const statement of asNodes(caseNode.consequent)) {
+        for (const caseNode of decodeAstNodes(scope.cases)) {
+            for (const statement of decodeAstNodes(caseNode.consequent)) {
                 appendStatementBinding(bindings, statement, bindingName);
             }
         }
@@ -400,7 +399,7 @@ function appendStatementBinding(
     else if (statement.type === 'FunctionDeclaration' || statement.type === 'ClassDeclaration') {
         appendPatternBinding({
             bindings,
-            pattern: asNode(statement.id),
+            pattern: decodeAstNode(statement.id),
             declarationStatement: statement,
             bindingName
         });
@@ -412,8 +411,8 @@ function appendVariableDeclarationBindings(
     declarationStatement: MutationRoutingAstNode,
     bindingName: string
 ): void {
-    for (const declaration of asNodes(declarationStatement.declarations)) {
-        if (patternBindsName(asNode(declaration.id), bindingName)) {
+    for (const declaration of decodeAstNodes(declarationStatement.declarations)) {
+        if (patternBindsName(decodeAstNode(declaration.id), bindingName)) {
             bindings.push({ declaration, declarationStatement });
         }
     }
@@ -439,19 +438,19 @@ function patternBindsName(
         return readName(pattern) === bindingName;
     }
     if (pattern.type === 'AssignmentPattern') {
-        return patternBindsName(asNode(pattern.left), bindingName);
+        return patternBindsName(decodeAstNode(pattern.left), bindingName);
     }
     if (pattern.type === 'RestElement' || pattern.type === 'TSParameterProperty') {
-        return patternBindsName(asNode(pattern.argument ?? pattern.parameter), bindingName);
+        return patternBindsName(decodeAstNode(pattern.argument ?? pattern.parameter), bindingName);
     }
     if (pattern.type === 'ObjectProperty') {
-        return patternBindsName(asNode(pattern.value), bindingName);
+        return patternBindsName(decodeAstNode(pattern.value), bindingName);
     }
     if (pattern.type === 'ObjectPattern') {
-        return asNodes(pattern.properties).some((property) => patternBindsName(property, bindingName));
+        return decodeAstNodes(pattern.properties).some((property) => patternBindsName(property, bindingName));
     }
     if (pattern.type === 'ArrayPattern') {
-        return asNodes(pattern.elements).some((element) => patternBindsName(element, bindingName));
+        return decodeAstNodes(pattern.elements).some((element) => patternBindsName(element, bindingName));
     }
     return false;
 }
@@ -496,8 +495,8 @@ function isImmutableSubmittedCommand(input: ImmutableSubmittedCommandInput): boo
 
 function readWrittenBinding(write: MutationRoutingAstNode): string {
     return write.type === 'AssignmentExpression'
-        ? readName(asNode(write.left))
-        : readName(asNode(write.argument));
+        ? readName(decodeAstNode(write.left))
+        : readName(decodeAstNode(write.argument));
 }
 
 function hasExactCommandOperation(program: MutationRoutingAstNode, operation: string): boolean {
@@ -514,7 +513,7 @@ function hasExactCommandOperation(program: MutationRoutingAstNode, operation: st
     if (!creation || !isCallNamed(creation, 'createCrdtMutationCommand')) {
         return false;
     }
-    const operationValue = readEffectiveOperation(asNodes(creation.arguments)[0]);
+    const operationValue = readEffectiveOperation(decodeAstNodes(creation.arguments)[0]);
     return [`literal:${operation}`, 'member:input.operation'].includes(operationValue ?? '');
 }
 
@@ -542,7 +541,7 @@ function readLiveSwitchReturn(
 ): MutationRoutingAstNode | undefined {
     const switches = findAll(
         owner,
-        (node) => node.type === 'SwitchStatement' && readMemberPath(asNode(node.discriminant)) === discriminant
+        (node) => node.type === 'SwitchStatement' && readMemberPath(decodeAstNode(node.discriminant)) === discriminant
     );
     if (switches.length !== 1) {
         return undefined;
@@ -551,8 +550,8 @@ function readLiveSwitchReturn(
     if (!switchStatement) {
         return undefined;
     }
-    const cases = asNodes(switchStatement.cases);
-    const start = cases.findIndex((caseNode) => readString(asNode(caseNode.test)) === operation);
+    const cases = decodeAstNodes(switchStatement.cases);
+    const start = cases.findIndex((caseNode) => readString(decodeAstNode(caseNode.test)) === operation);
     return start < 0 ? undefined : readFallthroughReturn(cases.slice(start));
 }
 
@@ -560,7 +559,7 @@ function readFallthroughReturn(
     cases: readonly MutationRoutingAstNode[]
 ): MutationRoutingAstNode | undefined {
     for (const caseNode of cases) {
-        const completion = readStatementListCompletion(asNodes(caseNode.consequent));
+        const completion = readStatementListCompletion(decodeAstNodes(caseNode.consequent));
         if (completion.kind === 'return') {
             return completion.value;
         }
@@ -585,13 +584,13 @@ function readStatementListCompletion(
 
 function readStatementCompletion(statement: MutationRoutingAstNode): LiveCompletion {
     if (statement.type === 'ReturnStatement') {
-        return { kind: 'return', value: asNode(statement.argument) };
+        return { kind: 'return', value: decodeAstNode(statement.argument) };
     }
     if (statement.type === 'ThrowStatement' || statement.type === 'BreakStatement') {
         return { kind: 'abrupt' };
     }
     if (statement.type === 'BlockStatement') {
-        return readStatementListCompletion(asNodes(statement.body));
+        return readStatementListCompletion(decodeAstNodes(statement.body));
     }
     if (statement.type === 'IfStatement') {
         return readIfStatementCompletion(statement);
@@ -603,8 +602,8 @@ function readStatementCompletion(statement: MutationRoutingAstNode): LiveComplet
 }
 
 function readIfStatementCompletion(statement: MutationRoutingAstNode): LiveCompletion {
-    const condition = readBoolean(asNode(statement.test));
-    const consequent = asNode(statement.consequent);
+    const condition = readBoolean(decodeAstNode(statement.test));
+    const consequent = decodeAstNode(statement.consequent);
     if (!consequent) {
         return { kind: 'ambiguous' };
     }
@@ -612,7 +611,7 @@ function readIfStatementCompletion(statement: MutationRoutingAstNode): LiveCompl
         return readStatementCompletion(consequent);
     }
     if (condition === false) {
-        const alternate = asNode(statement.alternate);
+        const alternate = decodeAstNode(statement.alternate);
         return alternate ? readStatementCompletion(alternate) : { kind: 'continue' };
     }
     return { kind: 'ambiguous' };
@@ -627,7 +626,7 @@ function hasExactLiveOperationCall(input: ExactLiveOperationCallInput): boolean 
     if (!call) {
         return false;
     }
-    const operation = readEffectiveOperation(asNodes(call.arguments)[0]);
+    const operation = readEffectiveOperation(decodeAstNodes(call.arguments)[0]);
     return input.expectedOperationValues.includes(operation ?? '');
 }
 
@@ -642,7 +641,7 @@ function hasExactNestedOperationCall(input: ExactLiveOperationCallInput): boolea
         return false;
     }
     return input.expectedOperationValues.includes(
-        readEffectiveOperation(asNodes(calls[0]?.arguments)[0]) ?? ''
+        readEffectiveOperation(decodeAstNodes(calls[0]?.arguments)[0]) ?? ''
     );
 }
 
@@ -660,7 +659,7 @@ function hasSingleLiveCallWithArgument(
     );
     return (
         calls.length === 1 &&
-        readMemberPath(asNodes(calls[0]?.arguments)[0]) === input.argumentPath
+        readMemberPath(decodeAstNodes(calls[0]?.arguments)[0]) === input.argumentPath
     );
 }
 
@@ -669,7 +668,7 @@ function hasSingleLiveMemberCall(
     ownerName: string
 ): boolean {
     return readLiveFunctionFacts(root).calls.filter((call) => {
-        const path = readMemberPath(asNode(call.callee));
+        const path = readMemberPath(decodeAstNode(call.callee));
         return path.endsWith(`.${ownerName}.execute`);
     }).length === 1;
 }
@@ -679,17 +678,17 @@ function readEffectiveOperation(object: MutationRoutingAstNode | undefined): str
         return undefined;
     }
     let operation: string | undefined;
-    for (const property of asNodes(object.properties)) {
+    for (const property of decodeAstNodes(object.properties)) {
         if (property.type === 'SpreadElement') {
-            const spread = readMemberPath(asNode(property.argument));
+            const spread = readMemberPath(decodeAstNode(property.argument));
             operation = spread === 'mutation' || spread === 'input' ? `member:${spread}.operation` : undefined;
             continue;
         }
         if (property.computed) {
             return undefined;
         }
-        if (property.type === 'ObjectProperty' && readName(asNode(property.key)) === 'operation') {
-            operation = readOperationValue(asNode(property.value));
+        if (property.type === 'ObjectProperty' && readName(decodeAstNode(property.key)) === 'operation') {
+            operation = readOperationValue(decodeAstNode(property.value));
         }
     }
     return operation;
@@ -711,9 +710,9 @@ function readLiveFunctionFacts(root: MutationRoutingAstNode): LiveFunctionFacts 
 }
 
 function visitLiveFunction(root: MutationRoutingAstNode, facts: LiveFunctionFacts): void {
-    const body = asNode(root.body);
+    const body = decodeAstNode(root.body);
     if (body?.type === 'BlockStatement') {
-        visitLiveStatementList(asNodes(body.body), facts);
+        visitLiveStatementList(decodeAstNodes(body.body), facts);
         return;
     }
     visitLiveExpression(body ?? root, facts);
@@ -734,21 +733,21 @@ function visitLiveStatementList(
 function visitLiveStatement(statement: MutationRoutingAstNode, facts: LiveFunctionFacts): boolean {
     if (statement.type === 'VariableDeclaration') {
         facts.declarations.push(statement);
-        for (const declaration of asNodes(statement.declarations)) {
-            visitLiveExpression(asNode(declaration.init), facts);
+        for (const declaration of decodeAstNodes(statement.declarations)) {
+            visitLiveExpression(decodeAstNode(declaration.init), facts);
         }
         return true;
     }
     if (statement.type === 'ExpressionStatement') {
-        visitLiveExpression(asNode(statement.expression), facts);
+        visitLiveExpression(decodeAstNode(statement.expression), facts);
         return true;
     }
     if (statement.type === 'ReturnStatement' || statement.type === 'ThrowStatement') {
-        visitLiveExpression(asNode(statement.argument), facts);
+        visitLiveExpression(decodeAstNode(statement.argument), facts);
         return false;
     }
     if (statement.type === 'BlockStatement') {
-        return visitLiveStatementList(asNodes(statement.body), facts);
+        return visitLiveStatementList(decodeAstNodes(statement.body), facts);
     }
     if (statement.type === 'IfStatement') {
         return visitLiveIfStatement(statement, facts);
@@ -760,9 +759,9 @@ function visitLiveIfStatement(
     statement: MutationRoutingAstNode,
     facts: LiveFunctionFacts
 ): boolean {
-    visitLiveExpression(asNode(statement.test), facts);
-    const condition = readBoolean(asNode(statement.test));
-    const consequent = asNode(statement.consequent);
+    visitLiveExpression(decodeAstNode(statement.test), facts);
+    const condition = readBoolean(decodeAstNode(statement.test));
+    const consequent = decodeAstNode(statement.consequent);
     if (!consequent) {
         return false;
     }
@@ -770,11 +769,11 @@ function visitLiveIfStatement(
         return visitLiveStatement(consequent, facts);
     }
     if (condition === false) {
-        const alternate = asNode(statement.alternate);
+        const alternate = decodeAstNode(statement.alternate);
         return alternate ? visitLiveStatement(alternate, facts) : true;
     }
     const consequentContinues = visitLiveStatement(consequent, facts);
-    const alternate = asNode(statement.alternate);
+    const alternate = decodeAstNode(statement.alternate);
     const alternateContinues = alternate ? visitLiveStatement(alternate, facts) : true;
     return consequentContinues || alternateContinues;
 }
@@ -796,7 +795,7 @@ function visitLiveExpression(
     }
     if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
         facts.calls.push(node);
-        for (const argument of asNodes(node.arguments)) {
+        for (const argument of decodeAstNodes(node.arguments)) {
             visitLiveExpression(argument, facts);
         }
         return;
@@ -812,13 +811,13 @@ function visitLiveConditionalExpression(
     expression: MutationRoutingAstNode,
     facts: LiveFunctionFacts
 ): void {
-    visitLiveExpression(asNode(expression.test), facts);
-    const condition = readBoolean(asNode(expression.test));
+    visitLiveExpression(decodeAstNode(expression.test), facts);
+    const condition = readBoolean(decodeAstNode(expression.test));
     if (condition !== false) {
-        visitLiveExpression(asNode(expression.consequent), facts);
+        visitLiveExpression(decodeAstNode(expression.consequent), facts);
     }
     if (condition !== true) {
-        visitLiveExpression(asNode(expression.alternate), facts);
+        visitLiveExpression(decodeAstNode(expression.alternate), facts);
     }
 }
 
@@ -830,7 +829,7 @@ function visitLiveExpressionChildren(
         if (['loc', 'start', 'end', 'comments', 'tokens', 'type'].includes(key)) {
             continue;
         }
-        for (const node of Array.isArray(child) ? asNodes(child) : [asNode(child)]) {
+        for (const node of Array.isArray(child) ? decodeAstNodes(child) : [decodeAstNode(child)]) {
             if (node && !isFunctionNode(node)) {
                 visitLiveExpression(node, facts);
             }
@@ -844,11 +843,11 @@ function findFunctionLikes(
 ): readonly MutationRoutingAstNode[] {
     return findAll(program, (node) => functionLikeName(node) === name).flatMap((node) => {
         if (node.type === 'VariableDeclarator') {
-            const initializer = asNode(node.init);
+            const initializer = decodeAstNode(node.init);
             return initializer ? [initializer] : [];
         }
         if (node.type === 'ObjectProperty') {
-            const value = asNode(node.value);
+            const value = decodeAstNode(node.value);
             return value ? [value] : [];
         }
         return [node];
@@ -857,30 +856,30 @@ function findFunctionLikes(
 
 function functionLikeName(node: MutationRoutingAstNode): string {
     if (node.type === 'FunctionDeclaration') {
-        return readName(asNode(node.id));
+        return readName(decodeAstNode(node.id));
     }
     if (
         node.type === 'ClassMethod' ||
         node.type === 'ClassPrivateMethod' ||
         node.type === 'ObjectMethod'
     ) {
-        return readName(asNode(node.key));
+        return readName(decodeAstNode(node.key));
     }
     if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') {
         return '';
     }
-    const value = asNode(node.type === 'VariableDeclarator' ? node.init : node.value);
+    const value = decodeAstNode(node.type === 'VariableDeclarator' ? node.init : node.value);
     return value && (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
-        ? readName(asNode(node.type === 'VariableDeclarator' ? node.id : node.key))
+        ? readName(decodeAstNode(node.type === 'VariableDeclarator' ? node.id : node.key))
         : '';
 }
 
 function findAll(
-    value: unknown,
+    root: MutationRoutingAstNode,
     predicate: (node: MutationRoutingAstNode) => boolean
 ): MutationRoutingAstNode[] {
     const found: MutationRoutingAstNode[] = [];
-    visit(value, (node) => {
+    visit(root, (node) => {
         if (predicate(node)) {
             found.push(node);
         }
@@ -888,22 +887,13 @@ function findAll(
     return found;
 }
 
-function visit(value: unknown, visitor: (node: MutationRoutingAstNode) => void): void {
-    if (!value || typeof value !== 'object') {
-        return;
-    }
-    if (Array.isArray(value)) {
-        for (const child of value) {
-            visit(child, visitor);
-        }
-        return;
-    }
-    if (isMutationRoutingAstNode(value)) {
-        visitor(value);
-    }
-    for (const [key, child] of Object.entries(value)) {
+function visit(node: MutationRoutingAstNode, visitor: (node: MutationRoutingAstNode) => void): void {
+    visitor(node);
+    for (const [key, child] of Object.entries(node)) {
         if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) {
-            visit(child, visitor);
+            for (const childNode of decodeAstChildNodes(child)) {
+                visit(childNode, visitor);
+            }
         }
     }
 }
@@ -912,7 +902,7 @@ function isCallNamed(node: MutationRoutingAstNode, name: string): boolean {
     if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
         return false;
     }
-    return readCallName(asNode(node.callee)) === name;
+    return readCallName(decodeAstNode(node.callee)) === name;
 }
 
 function isFunctionNode(node: MutationRoutingAstNode): boolean {
@@ -935,7 +925,7 @@ function unwrapExpression(
         node?.type === 'TSTypeAssertion' ||
         node?.type === 'ParenthesizedExpression'
     ) {
-        return unwrapExpression(asNode(node.argument ?? node.expression));
+        return unwrapExpression(decodeAstNode(node.argument ?? node.expression));
     }
     return node;
 }
@@ -950,8 +940,8 @@ function readMemberPath(node: MutationRoutingAstNode | undefined): string {
     if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') {
         return '';
     }
-    const object = readMemberPath(asNode(node.object));
-    const property = readName(asNode(node.property));
+    const object = readMemberPath(decodeAstNode(node.object));
+    const property = readName(decodeAstNode(node.property));
     return object && property ? `${object}.${property}` : '';
 }
 
@@ -961,7 +951,7 @@ function readCallName(node: MutationRoutingAstNode | undefined): string {
 
 function readMemberName(node: MutationRoutingAstNode | undefined): string {
     return node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression'
-        ? readName(asNode(node.property))
+        ? readName(decodeAstNode(node.property))
         : '';
 }
 
@@ -1003,7 +993,7 @@ function sourceRangeSize(node: MutationRoutingAstNode): number {
     return start === undefined || end === undefined ? Number.POSITIVE_INFINITY : end - start;
 }
 
-function asNode(value: unknown): MutationRoutingAstNode | undefined {
+function decodeAstNode(value: unknown): MutationRoutingAstNode | undefined {
     return isMutationRoutingAstNode(value) ? value : undefined;
 }
 
@@ -1016,8 +1006,18 @@ function isMutationRoutingAstNode(value: unknown): value is MutationRoutingAstNo
     );
 }
 
-function asNodes(value: unknown): readonly MutationRoutingAstNode[] {
-    return Array.isArray(value)
-        ? value.map(asNode).filter((node): node is MutationRoutingAstNode => node !== undefined)
-        : [];
+function decodeAstNodes(value: unknown): readonly MutationRoutingAstNode[] {
+    if (typeof value !== 'object' || value === null || !Array.isArray(value)) {
+        return [];
+    }
+    return value.map(decodeAstNode).filter((node): node is MutationRoutingAstNode => node !== undefined);
+}
+
+/** A node's child is a node, an array of children, or a value that holds no node. */
+function decodeAstChildNodes(value: unknown): readonly MutationRoutingAstNode[] {
+    if (Array.isArray(value)) {
+        return value.flatMap(decodeAstChildNodes);
+    }
+    const node = decodeAstNode(value);
+    return node === undefined ? [] : [node];
 }

@@ -123,7 +123,11 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
                 `${input.generationId}-ticket`
             );
             const queued = await readPGliteQueuedKeys(sql);
-            void client.writeAuthorisedWsClientConnect({ ...input, ticketDigest });
+            void client.writeAuthorisedWsClientConnect({
+                ...input,
+                ticketDigest,
+                traceId: 'trace-pglite-app-inbox-ws-close-harness'
+            });
             return await waitForNewPGliteQueueEntry(reader, sql, queued);
         }
     };

@@ -119,6 +119,7 @@ async function createConnectWriteFixture(sql: PGliteSql): Promise<ConnectWriteFi
                 authSession: SESSION,
                 generationId,
                 ticketDigest,
+                traceId: 'trace-pglite-authorised-ws-connect-write',
                 input: { applicationId: 'app-1', workspaceId: 'default', connectedAtEpochMs }
             }).then((written) => written.right);
             return { key: await waitForQueuedConnect(sql, generationId), result };

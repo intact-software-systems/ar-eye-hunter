@@ -174,7 +174,7 @@ export class AppClientInboxService {
         input: ToAuthorisedWsClientConnectEnqueueInput
     ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
         return await this.commandClient.enqueueAndWaitForResult(
-            { ...toAuthorisedWsClientConnectEnqueue(input), traceId: newALTraceId() },
+            { ...toAuthorisedWsClientConnectEnqueue(input), traceId: input.traceId },
             decodeAuthorisedWsClientMutationResult
         );
     }

@@ -1,4 +1,3 @@
-import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RallarCrdtAuditSink, RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -17,7 +16,6 @@ import {
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
 import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
 import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
@@ -97,7 +95,6 @@ export namespace AppCrdtInboxService {
 }
 
 export class AppCrdtInboxService {
-    private readonly commandClient: AppInboxCommandClient;
     private readonly queueEntryWriter: AppInboxQueueEntryWriter;
     private readonly reservationClient: AppInboxReservationClient;
     private readonly resultWaiter: AppInboxResultWaiter;
@@ -120,7 +117,6 @@ export class AppCrdtInboxService {
             options: config.appInbox,
             wakeOwningQueue: dependencies.wakeQueueEngine
         });
-        this.commandClient = clientRuntime.commandClient;
         this.queueEntryWriter = clientRuntime.queueEntryWriter;
         this.reservationClient = clientRuntime.reservationClient;
         this.resultWaiter = clientRuntime.resultWaiter;
@@ -180,24 +176,6 @@ export class AppCrdtInboxService {
         this.handlers.assertRegistrationComplete(CRDT_MUTATION_INBOX_TYPES);
     }
 
-    async writeCrdtCommandUntilCompletion(
-        command: CrdtMutationCommand
-    ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
-        const decoded = decodeCrdtMutationCommand(command);
-        return await this.commandClient.enqueueAndWaitForResult(
-            {
-                type: toCrdtAppInboxType(decoded),
-                topicId: CRDT_APP_INBOX_TOPIC,
-                resourceId: decoded.deliveryId,
-                contextId: decoded.documentKey,
-                senderId: decoded.actor.sessionId,
-                traceId: newALTraceId(),
-                data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
-            },
-            decodeCrdtMutationResult
-        );
-    }
-
     async writeHttpAdminCommandUntilCompletion(
         reservation: AppCrdtInboxService.HttpAdminCommandReservation
     ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
@@ -248,22 +226,6 @@ export class AppCrdtInboxService {
             reserved,
             decodeCrdtMutationResult
         );
-    }
-
-    writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
-        const decoded = decodeCrdtMutationCommand(command);
-        void this.queueEntryWriter.enqueue({
-            type: toCrdtAppInboxType(decoded),
-            topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: decoded.deliveryId,
-            contextId: decoded.documentKey,
-            senderId: decoded.actor.sessionId,
-            traceId: newALTraceId(),
-            data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
-        }).catch((caught) => {
-            const error = caught instanceof Error ? caught : new Error(String(caught));
-            console.error('Error enqueueing CRDT AppInbox command without waiting', error);
-        });
     }
 
     async createAndEnqueueAppend(input: CreateAndEnqueueCrdtAppendInput): Promise<CrdtAppendCommand> {

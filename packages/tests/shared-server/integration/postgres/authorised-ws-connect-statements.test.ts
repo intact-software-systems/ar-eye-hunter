@@ -108,6 +108,7 @@ async function prepareConnect(
                 authSession,
                 generationId: `${authSession.sessionId}-generation`,
                 ticketDigest,
+                traceId: 'trace-authorised-ws-connect-statements',
                 input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: Date.now() }
             })
         );

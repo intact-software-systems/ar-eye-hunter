@@ -283,6 +283,7 @@ async function connect(
             authSession,
             generationId: `${label}-generation`,
             ticketDigest,
+            traceId: 'trace-app-inbox-finished-retention',
             input: { ...harness.scope, clientInstanceId: 'browser', connectedAtEpochMs: nowEpochMs }
         })
     );

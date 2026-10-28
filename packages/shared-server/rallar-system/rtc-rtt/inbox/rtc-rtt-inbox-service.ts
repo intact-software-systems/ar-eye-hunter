@@ -1,4 +1,3 @@
-import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -85,12 +84,11 @@ export class RtcRttInboxService {
         input: Readonly<{
             rtt: RttMeasurementInfo;
             alSenderId: string;
+            traceId: string;
             capturedAtEpochMs: number;
         }>
     ): Promise<ResourceEntry> {
-        return await this.queueEntryWriter.enqueue({
-            ...await this.handler.createEnqueue(input),
-            traceId: newALTraceId()
-        });
+        const { traceId, ...request } = input;
+        return await this.queueEntryWriter.enqueue({ ...await this.handler.createEnqueue(request), traceId });
     }
 }

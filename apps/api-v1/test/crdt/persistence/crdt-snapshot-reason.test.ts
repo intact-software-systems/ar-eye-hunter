@@ -86,8 +86,18 @@ Deno.test(
             assert.equal(command.operation, 'compact');
             assert.equal(command.snapshot?.metadata.reason, REASON);
 
-            service.writeCrdtCommandNoWaiting(command);
+            const written = service.writeHttpAdminCommandUntilCompletion({
+                operation: 'compact',
+                requestId: command.deliveryId,
+                traceId: 'trace-crdt-snapshot-reason-compact',
+                callerId: command.actor.actorId,
+                documentKey: command.documentKey,
+                semanticHash: command.commandHash,
+                materialize: () => Promise.resolve(command),
+                matches: () => true
+            });
             await drain(inboxQueueReader, sql);
+            assert.equal((await written).right?.operation, 'compact');
             const [stored] = await sql<PersistedSnapshotResultRow[]>`
       select s.snapshot_envelope, s.reason, r.ris_resource
       from crdt_snapshots s

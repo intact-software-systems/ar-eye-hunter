@@ -25,7 +25,7 @@ import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
 
 describe('RTC RTT websocket AppInbox routing', () => {
-    it('acknowledges persisted RTT ingress after durable enqueue without result effects', async () => {
+    it('acknowledges persisted RTT ingress after durable enqueue, under the measurement\'s trace, without result effects', async () => {
         const enqueuedMutations: RtcRttTopicMutationInput[] = [];
         const socket = await createHarness({
             enqueueMutation: (input) => {
@@ -45,12 +45,14 @@ describe('RTC RTT websocket AppInbox routing', () => {
             'session-a',
             newALEventRoute(AppTopics.rtt, 'room-1', 'rtt-1'),
             AppTopics.rtt,
-            rtt
+            rtt,
+            { traceId: 'trace-rtt-measurement' }
         )));
 
         await expect.poll(() => enqueuedMutations).toEqual([{
             rtt,
             alSenderId: 'session-a',
+            traceId: 'trace-rtt-measurement',
             capturedAtEpochMs: expect.any(Number)
         }]);
     });

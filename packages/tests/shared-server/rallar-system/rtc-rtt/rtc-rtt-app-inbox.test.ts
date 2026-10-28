@@ -30,6 +30,7 @@ describe('durable RTC RTT refinement work', () => {
         await service.enqueue({
             rtt,
             alSenderId: rtt.sessionIdFrom,
+            traceId: 'trace-rtc-rtt-app-inbox',
             capturedAtEpochMs: harness.nowEpochMs
         });
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -65,6 +66,7 @@ describe('durable RTC RTT refinement work', () => {
                 version: 1
             },
             alSenderId: 'alice-session',
+            traceId: 'trace-rtc-rtt-app-inbox',
             capturedAtEpochMs: harness.nowEpochMs
         };
         const rejected = {

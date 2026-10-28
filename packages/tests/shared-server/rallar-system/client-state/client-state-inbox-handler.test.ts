@@ -217,6 +217,7 @@ describe('ClientStateInboxHandler phases', () => {
                 authSession: SESSION,
                 generationId: CONNECTION.generationId,
                 ticketDigest: TICKET_DIGEST,
+                traceId: 'trace-client-state-inbox-handler',
                 input: {
                     ...SCOPE,
                     clientInstanceId: CONNECTION.clientInstanceId,
