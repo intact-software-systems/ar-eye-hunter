@@ -355,6 +355,52 @@ describe('typed message fallback identity', () => {
         ]);
     });
 
+    it('keeps the send\'s trace when its RTC leg is refused as unsupported and WS takes the message', async () => {
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({
+                msg,
+                lane: 'volatile',
+                preparedMessages: [],
+                dropReason: 'ack receiver is unsupported for rtc multicast targets',
+                dropReasonCode: 'unsupported'
+            })
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver', traceId: 'trace-fallback' });
+
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(fixture.attempts.map((attempt) => [attempt.carrier, attempt.message.id.traceId])).toEqual([
+            ['rtc', 'trace-fallback'],
+            ['ws', 'trace-fallback']
+        ]);
+        expect(handle.traceId).toBe('trace-fallback');
+    });
+
+    it('keeps the send\'s trace across the post-admission hand-over to WS', async () => {
+        const fixture = createChannel({ firstVerdict: ADMITTED_VERDICT });
+        const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver', traceId: 'trace-hand-over' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        fixture.settlements.rtc({
+            kind: 'receipt-exhausted',
+            msgId: handle.msgId,
+            carrier: 'rtc',
+            atMs: Date.now(),
+            mode: 'receiver',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['peer-1'],
+            cause: 'budget',
+            detail: 'No receipt arrived.'
+        });
+
+        await vi.waitFor(() => expect(fixture.attempts).toHaveLength(2));
+        expect(fixture.attempts.map((attempt) => [attempt.carrier, attempt.message.id.traceId])).toEqual([
+            ['rtc', 'trace-hand-over'],
+            ['ws', 'trace-hand-over']
+        ]);
+    });
+
     it('keeps a re-ask\'s corrId across the volatile downgrade', async () => {
         const fixture = createChannel({
             firstVerdict: { kind: 'storage-unavailable', cause: 'quota', detail: 'The storage quota is exhausted.' },

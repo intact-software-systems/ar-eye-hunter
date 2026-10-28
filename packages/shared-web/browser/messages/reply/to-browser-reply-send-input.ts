@@ -7,9 +7,10 @@ import { toALReplyContextId } from '@shared/al-contracts/reply/to-al-reply-conte
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 
 /**
- * A unicast to the requester's session on the request's topic and in its room, on the `command` purpose's delivery
- * defaults. The context is `toALReplyContextId`, the server reply's rule; the requester matches on `replyToMsgId`,
- * never the route. A request that named no room is answered outside any room, never in the responder's default room.
+ * A unicast to the requester's session under the request's trace, on the request's topic and in its room, on the
+ * `command` purpose's delivery defaults. The context is `toALReplyContextId`, the server reply's rule; the requester
+ * matches on `replyToMsgId`, never the route. A request that named no room is answered outside any room, never in the
+ * responder's default room.
  */
 export function toBrowserReplySendInput<R>(
     request: ALMessage,
@@ -28,6 +29,7 @@ export function toBrowserReplySendInput<R>(
         payload,
         reliability: defaults.reliability,
         ack: defaults.ack,
-        ttlMs: options?.ttlMs ?? defaults.ttlMs
+        ttlMs: options?.ttlMs ?? defaults.ttlMs,
+        traceId: request.id.traceId
     };
 }

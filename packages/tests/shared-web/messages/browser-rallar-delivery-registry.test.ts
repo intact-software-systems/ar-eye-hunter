@@ -909,6 +909,7 @@ function toReply(msgId: string, senderId: string, replyToMsgId: string): RallarM
         contextId: raw.route.contextId,
         resourceId: raw.route.resourceId,
         senderId,
+        traceId: raw.id.traceId,
         payload: {},
         raw,
         receivedAtEpochMs: START_MS,

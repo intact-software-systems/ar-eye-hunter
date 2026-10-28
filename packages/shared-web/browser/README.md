@@ -108,7 +108,7 @@ directory does not own product workflows.
   [connectStateGroupPresenceSession](./rooms/room-group-state-http-api.ts).
   Both operations return an authoritative `GroupSnapshot`; rejected HTTP
   responses surface as `ApiHttpError` from
-  [executeHttpRequest](./api/http-request.ts).
+  [sendApiHttpRequest](./api/send-api-http-request.ts).
 - [createRoomFormation](./rooms/formation/create-room-formation.ts) owns the room-bound formation
   handle over the public types in
   [rallar-room-formation-contracts.ts](./rooms/formation/rallar-room-formation-contracts.ts):

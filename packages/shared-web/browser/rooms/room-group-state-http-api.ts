@@ -2,7 +2,7 @@ import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-requ
 import type { QuickJoinGroupRequest, QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiMutationRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiMutationRequestOptions } from '../api/send-api-http-request.ts';
 import { defaultStateScope, toStateGroupHttpPath, toStateScopeHttpPath } from '../api/state-http-path.ts';
 import type {
     AcceptStateGroupInviteBody,
@@ -263,13 +263,13 @@ function putRoomGroupState<TRequest, TResponse>(
 async function mutateRoomGroupState<TRequest, TResponse>(
     input: RoomGroupHttpMutationInput<TRequest>
 ): Promise<TResponse> {
-    return await executeHttpRequest<TRequest, TResponse>(
-        readApiBaseUrl(),
-        toApiMutationRequestPath(input.path, input.options.requestId),
-        input.method,
-        input.request,
-        input.options
-    );
+    return await sendApiHttpRequest<TRequest, TResponse>({
+        baseUrl: readApiBaseUrl(),
+        path: toApiMutationRequestPath(input.path, input.options.requestId),
+        method: input.method,
+        body: input.request,
+        options: input.options
+    });
 }
 
 function roomGroupPath(input: Pick<RoomGroupRequestInput<never>, 'groupId' | 'scope'>): string {

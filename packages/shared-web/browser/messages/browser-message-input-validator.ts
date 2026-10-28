@@ -13,6 +13,7 @@ import { assertPersistedALQos } from '@shared/al-contracts/al-message-persistenc
 import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     validateRallarGroupRef,
@@ -242,6 +243,9 @@ export class BrowserMessageInputValidator {
         this.pushOptionalNonNegativeInteger(input.ttlMs, '$.ttlMs', issues);
         issues.push(...validateQosRequest(input.qos));
         issues.push(...validateCorrId(input.corrId));
+        if (input.traceId !== undefined) {
+            issues.push(...validateALTraceId(input.traceId));
+        }
     }
 
     /** A `room.` topic is room-scoped by its name, so the server refuses a world send on it as malformed. */

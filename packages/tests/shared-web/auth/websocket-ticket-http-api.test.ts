@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import type { ApiMutationRequestOptions } from '@shared-web/browser/api/http-request.ts';
+import type { ApiMutationRequestOptions } from '@shared-web/browser/api/send-api-http-request.ts';
 import {
     configureWebSocketTicketCircuitBreaker,
     configureWebSocketTicketLocalRateLimit,

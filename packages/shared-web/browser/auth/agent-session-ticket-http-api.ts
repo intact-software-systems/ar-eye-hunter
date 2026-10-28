@@ -7,7 +7,7 @@ import type {
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiMutationRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiMutationRequestOptions } from '../api/send-api-http-request.ts';
 
 export async function issueAgentSessionTickets(
     request: AgentSessionTicketRequest,
@@ -21,13 +21,13 @@ export async function issueAgentSessionTicketsAt(
     request: AgentSessionTicketRequest,
     options: ApiMutationRequestOptions
 ): Promise<AgentSessionTicketResponse> {
-    return await executeHttpRequest<AgentSessionTicketRequest, AgentSessionTicketResponse>(
-        normalizeExplicitApiBaseUrl(apiBaseUrl),
-        toApiMutationRequestPath('/api/auth/agent-session-tickets', options.requestId),
-        'POST',
-        request,
+    return await sendApiHttpRequest<AgentSessionTicketRequest, AgentSessionTicketResponse>({
+        baseUrl: normalizeExplicitApiBaseUrl(apiBaseUrl),
+        path: toApiMutationRequestPath('/api/auth/agent-session-tickets', options.requestId),
+        method: 'POST',
+        body: request,
         options
-    );
+    });
 }
 
 export async function consumeAgentSessionTicket(
@@ -42,16 +42,16 @@ export async function consumeAgentSessionTicketAt(
     request: ConsumeAgentSessionTicketRequest,
     options: ApiMutationRequestOptions
 ): Promise<AuthSession> {
-    return await executeHttpRequest<ConsumeAgentSessionTicketRequest, AuthSession>(
-        normalizeExplicitApiBaseUrl(apiBaseUrl),
-        toApiMutationRequestPath(
+    return await sendApiHttpRequest<ConsumeAgentSessionTicketRequest, AuthSession>({
+        baseUrl: normalizeExplicitApiBaseUrl(apiBaseUrl),
+        path: toApiMutationRequestPath(
             '/api/auth/agent-session-tickets/consume',
             options.requestId
         ),
-        'POST',
-        request,
+        method: 'POST',
+        body: request,
         options
-    );
+    });
 }
 
 function normalizeExplicitApiBaseUrl(value: string): string {

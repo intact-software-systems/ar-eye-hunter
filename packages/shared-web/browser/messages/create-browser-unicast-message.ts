@@ -73,7 +73,8 @@ export function createBrowserUnicastMessage<T>(
             ack: defaults.ack,
             ownership: send.ownership ?? 'shared',
             qos: defaults.qos,
-            actions: input.actions
+            actions: input.actions,
+            traceId: send.traceId
         }
     );
 }

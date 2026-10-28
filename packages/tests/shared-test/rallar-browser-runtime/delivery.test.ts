@@ -1507,6 +1507,7 @@ function toInboundRequest(
         transport: 'ws',
         roomId: 'room-1',
         senderId: 'bob-session',
+        traceId: 'trace-delivery',
         typeId: 'alm.conformance',
         topicId: 'alm.conformance',
         contextId: 'room-1',

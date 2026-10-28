@@ -38,6 +38,7 @@ export function toRallarStateEventMessage<T>(
         resourceId: message.route.resourceId,
         roomId: readRallarMessageRoomId(message),
         senderId: message.id.senderId,
+        traceId: message.id.traceId,
         payload: decodeMessagePayload<T>(message),
         raw: message,
         receivedAtEpochMs: Date.now()

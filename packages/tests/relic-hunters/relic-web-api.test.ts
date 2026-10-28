@@ -6,6 +6,7 @@ import {
     toPublicRelicSnapshot,
     type RelicCommand
 } from '@relic-hunters/mod.ts';
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import {
@@ -58,12 +59,30 @@ describe('Relic Hunters web API client', () => {
         const [url, init = {}] = fetch.mock.calls[0];
         expect(url).toMatch(/^\/api\/relic\/games\/room%2F1\/commands\/requests\/[0-9a-f-]{36}$/);
         expect(init.method).toBe('POST');
-        expect(init.headers).toMatchObject({
-            authorization: 'Bearer token-1',
-            'content-type': 'application/json',
-            'x-client-id': 'client-1'
-        });
+        const headers = new Headers(init.headers);
+        expect(headers.get('authorization')).toBe('Bearer token-1');
+        expect(headers.get('content-type')).toBe('application/json');
+        expect(headers.get('x-client-id')).toBe('client-1');
         expect(JSON.parse(String(init.body))).toEqual(command);
+    });
+
+    it('sends each Relic request with the api headers and its own grammar-valid x-request-id', async () => {
+        writeSession(session());
+        const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+            new Response(JSON.stringify(toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1))), { status: 200 })
+        );
+        vi.stubGlobal('fetch', fetch);
+
+        await fetchRelicSnapshot('room-1');
+        await resetRelicGame('room-1');
+        await sendRelicCommand('room-1', joinCommand());
+
+        const headers = fetch.mock.calls.map(([, init]) => new Headers(init?.headers));
+        const traces = headers.map((sent) => sent.get('x-request-id') ?? '');
+        expect(headers.map((sent) => sent.get('authorization'))).toEqual(['Bearer token-1', 'Bearer token-1', 'Bearer token-1']);
+        expect(headers.map((sent) => sent.get('x-client-id'))).toEqual(['client-1', 'client-1', 'client-1']);
+        expect(traces.map((traceId) => validateALTraceId(traceId))).toEqual([[], [], []]);
+        expect(new Set(traces).size).toBe(3);
     });
 
     it('gives each reset a request identity and rejects malformed success payloads', async () => {

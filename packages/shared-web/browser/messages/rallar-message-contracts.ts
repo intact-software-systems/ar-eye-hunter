@@ -23,6 +23,8 @@ export interface RallarMessage<T = never> {
     readonly resourceId: string;
     readonly roomId?: string;
     readonly senderId: string;
+    /** The sender's trace, `raw.id.traceId`. */
+    readonly traceId: string;
     readonly payload: T;
     readonly raw: ALMessage;
     readonly receivedAtEpochMs: number;
@@ -67,6 +69,8 @@ export interface RallarMessageSendBase<T> extends Pick<RallarOperationOptions, '
     readonly qos?: ALQosPolicyRequest;
     /** A re-ask under an earlier request's correlation; absent, the message starts its own (its msgId). */
     readonly corrId?: string;
+    /** Links the send to an earlier operation's trace; absent, the send mints its own. */
+    readonly traceId?: string;
 }
 
 /**
@@ -138,6 +142,7 @@ export interface RallarMessageHandle {
     readonly msgId: string;
     readonly typeId: string;
     readonly corrId: string;
+    readonly traceId: string;
     /** The request this message replies to; absent when the message is not a reply. */
     readonly replyToMsgId: string | undefined;
     /** Immutable receipt of the connection acquired for this send; unassociated internal handles report absent. */

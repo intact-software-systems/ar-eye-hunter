@@ -685,6 +685,7 @@ function message<T>(input: AuthorityMessageFixtureInput<T>): RallarMessage<T> {
         resourceId: 'resource-1',
         roomId: 'room-1',
         senderId: input.senderId,
+        traceId: 'trace-rallar-game-authority-client',
         payload: input.payload,
         raw: {
             id: { v: 4, msgId: 'authority-fixture', senderId: input.senderId, ts: 1_000, traceId: 'trace-rallar-game-authority-client' },

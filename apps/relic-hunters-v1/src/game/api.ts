@@ -4,6 +4,7 @@ import {
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
+import { newApiRequestHeaders } from '@shared-web/browser/api/send-api-http-request.ts';
 import { readSession } from '@shared/api/auth.ts';
 
 export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -13,10 +14,7 @@ export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSna
     }
 
     const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}`, {
-        headers: {
-            authorization: `Bearer ${session.accessToken}`,
-            'x-client-id': session.clientId
-        }
+        headers: newApiRequestHeaders({ authSession: session })
     });
     if (response.status === 404) {
         return undefined;
@@ -36,13 +34,7 @@ export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapsho
 
     const response = await fetch(
         `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/reset/requests/${crypto.randomUUID()}`,
-        {
-            method: 'POST',
-            headers: {
-                authorization: `Bearer ${session.accessToken}`,
-                'x-client-id': session.clientId
-            }
-        }
+        { method: 'POST', headers: newApiRequestHeaders({ authSession: session }) }
     );
     if (!response.ok) {
         throw new Error(`Failed to reset expedition: ${response.status}`);
@@ -64,11 +56,7 @@ export async function sendRelicCommand(
         `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/commands/requests/${crypto.randomUUID()}`,
         {
             method: 'POST',
-            headers: {
-                authorization: `Bearer ${session.accessToken}`,
-                'content-type': 'application/json',
-                'x-client-id': session.clientId
-            },
+            headers: newApiRequestHeaders({ authSession: session }),
             body: JSON.stringify(command)
         }
     );

@@ -1484,6 +1484,7 @@ async function emitFakeCapability(
         contextId: 'room-1',
         resourceId: 'capability',
         senderId: capability.peerId,
+        traceId: raw.id.traceId,
         payload,
         raw,
         receivedAtEpochMs: 1_100,

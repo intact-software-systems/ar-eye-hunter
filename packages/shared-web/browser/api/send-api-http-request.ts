@@ -1,0 +1,106 @@
+import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { readSession } from '@shared/api/auth.ts';
+
+import { ApiHttpError, type ApiHttpMethod } from './http-error.ts';
+
+export type ApiRequestOptions = Readonly<{
+    signal?: AbortSignal;
+    authSession?: AuthSession | null;
+}>;
+
+export type ApiMutationRequestOptions =
+    & ApiRequestOptions
+    & Readonly<{
+        requestId: string;
+    }>;
+
+export interface SendApiHttpRequestInput<TRequest> {
+    readonly baseUrl: string;
+    readonly path: string;
+    readonly method: ApiHttpMethod;
+    /** Required by POST and PUT; absent, the request has no body. */
+    readonly body: TRequest | undefined;
+    /** Absent, the request reads the stored session and has no abort signal. */
+    readonly options: ApiRequestOptions | undefined;
+}
+
+/** The session a request authenticates as: an absent `authSession` reads the stored session; `null` is none. */
+export function readApiRequestSession(options: ApiRequestOptions): AuthSession | undefined {
+    if (options.authSession === undefined) {
+        return readSession();
+    }
+    return options.authSession ?? undefined;
+}
+
+/**
+ * The one place browser API request headers are built: every request carries its own `x-request-id` trace, and the
+ * session's credentials when it has one.
+ */
+export function newApiRequestHeaders(options: ApiRequestOptions): Headers {
+    const headers = new Headers({ 'content-type': 'application/json', 'x-request-id': newALTraceId() });
+    const session = readApiRequestSession(options);
+    if (session) {
+        headers.set('authorization', `Bearer ${session.accessToken}`);
+        headers.set('x-client-id', session.clientId);
+    }
+    return headers;
+}
+
+/** A refused response's body as text; a body that cannot be read is empty. */
+export async function readApiErrorBody(response: Response): Promise<string> {
+    try {
+        return await response.text();
+    }
+    catch {
+        return '';
+    }
+}
+
+export async function sendApiHttpRequest<TRequest, TResult>(
+    input: SendApiHttpRequestInput<TRequest>
+): Promise<TResult> {
+    const options = input.options ?? {};
+    const response = await fetch(`${input.baseUrl}${input.path}`, {
+        method: input.method,
+        headers: newApiRequestHeaders(options),
+        signal: options.signal,
+        body: toHttpRequestBody(input, options)
+    });
+    if (!response.ok) {
+        throw new ApiHttpError(
+            input.method,
+            input.path,
+            response.status,
+            await readApiErrorBody(response),
+            response.headers
+        );
+    }
+    return (await response.json()) as TResult;
+}
+
+function toHttpRequestBody<TRequest>(
+    { method, path, body }: SendApiHttpRequestInput<TRequest>,
+    options: ApiRequestOptions
+): string | undefined {
+    if ((method === 'POST' || method === 'PUT') && body === undefined) {
+        throw new Error(`${method} ${path} requires a body`);
+    }
+    if (method === 'GET' || body === undefined) {
+        return undefined;
+    }
+    return JSON.stringify(toRequestIdFreeBody(body, options));
+}
+
+function toRequestIdFreeBody<TRequest>(body: TRequest, options: ApiRequestOptions): TRequest | object {
+    if (
+        !('requestId' in options) ||
+        typeof body !== 'object' ||
+        body === null ||
+        Array.isArray(body)
+    ) {
+        return body;
+    }
+
+    return Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'requestId'));
+}

@@ -10,7 +10,7 @@ import type { StateEventCursor, StateEventPage } from '@shared/api/state-event-t
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { defaultStateScope, toStateScopeHttpPath } from '../api/state-http-path.ts';
 
 export type StateEventListRequestOptions<TEventType extends string> =
@@ -21,6 +21,14 @@ export type StateEventListRequestOptions<TEventType extends string> =
         after?: StateEventCursor;
     }>;
 
+interface StateEventPathInput<TEventType extends string> {
+    readonly scope: StateScope;
+    readonly collection: 'clients' | 'groups';
+    readonly id: string;
+    readonly suffix: 'events' | 'events/page';
+    readonly options: StateEventListRequestOptions<TEventType> | undefined;
+}
+
 export type GroupStateEventListRequestOptions = StateEventListRequestOptions<GroupEventType>;
 export type ClientStateEventListRequestOptions = StateEventListRequestOptions<ClientEventType>;
 
@@ -29,13 +37,13 @@ export async function listStateGroupEvents(
     scope: StateScope = defaultStateScope(),
     options?: GroupStateEventListRequestOptions
 ): Promise<GroupEvent[]> {
-    const response = await executeHttpRequest<void, GroupEvent[]>(
-        readApiBaseUrl(),
-        stateEventPath(scope, 'groups', groupId, 'events', options),
-        'GET',
-        undefined,
+    const response = await sendApiHttpRequest<void, GroupEvent[]>({
+        baseUrl: readApiBaseUrl(),
+        path: toStateEventPath({ scope, collection: 'groups', id: groupId, suffix: 'events', options }),
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
     validateAuthoritativeGroupEventList(response, { ...scope, groupId });
     return response;
 }
@@ -45,13 +53,13 @@ export async function listStateGroupEventPage(
     scope: StateScope = defaultStateScope(),
     options?: GroupStateEventListRequestOptions
 ): Promise<StateEventPage<GroupEvent>> {
-    const response = await executeHttpRequest<void, StateEventPage<GroupEvent>>(
-        readApiBaseUrl(),
-        stateEventPath(scope, 'groups', groupId, 'events/page', options),
-        'GET',
-        undefined,
+    const response = await sendApiHttpRequest<void, StateEventPage<GroupEvent>>({
+        baseUrl: readApiBaseUrl(),
+        path: toStateEventPath({ scope, collection: 'groups', id: groupId, suffix: 'events/page', options }),
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
     validateAuthoritativeGroupEventPage(response, { ...scope, groupId });
     return response;
 }
@@ -61,13 +69,13 @@ export async function listStateClientEvents(
     scope: StateScope = defaultStateScope(),
     options?: ClientStateEventListRequestOptions
 ): Promise<ClientEvent[]> {
-    const response = await executeHttpRequest<void, ClientEvent[]>(
-        readApiBaseUrl(),
-        stateEventPath(scope, 'clients', principalId, 'events', options),
-        'GET',
-        undefined,
+    const response = await sendApiHttpRequest<void, ClientEvent[]>({
+        baseUrl: readApiBaseUrl(),
+        path: toStateEventPath({ scope, collection: 'clients', id: principalId, suffix: 'events', options }),
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
     validateAuthoritativeClientEventList(response, { ...scope, principalId });
     return response;
 }
@@ -77,23 +85,19 @@ export async function listStateClientEventPage(
     scope: StateScope = defaultStateScope(),
     options?: ClientStateEventListRequestOptions
 ): Promise<StateEventPage<ClientEvent>> {
-    const response = await executeHttpRequest<void, StateEventPage<ClientEvent>>(
-        readApiBaseUrl(),
-        stateEventPath(scope, 'clients', principalId, 'events/page', options),
-        'GET',
-        undefined,
+    const response = await sendApiHttpRequest<void, StateEventPage<ClientEvent>>({
+        baseUrl: readApiBaseUrl(),
+        path: toStateEventPath({ scope, collection: 'clients', id: principalId, suffix: 'events/page', options }),
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
     validateAuthoritativeClientEventPage(response, { ...scope, principalId });
     return response;
 }
 
-function stateEventPath<TEventType extends string>(
-    scope: StateScope,
-    collection: 'clients' | 'groups',
-    id: string,
-    suffix: 'events' | 'events/page',
-    options?: StateEventListRequestOptions<TEventType>
+function toStateEventPath<TEventType extends string>(
+    { scope, collection, id, suffix, options }: StateEventPathInput<TEventType>
 ): string {
     const path = `${toStateScopeHttpPath(scope)}/${collection}/${encodeURIComponent(id)}/${suffix}`;
     const query = new URLSearchParams();

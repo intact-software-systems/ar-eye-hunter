@@ -1,13 +1,16 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { WebSocketTicketResponse } from '@shared/api/api-config.ts';
-import { readSession } from '@shared/api/auth.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter } from '@shared/resilience/rate-limiter.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { ApiHttpError } from '../api/http-error.ts';
-import { executeHttpRequest, type ApiMutationRequestOptions } from '../api/http-request.ts';
+import {
+    readApiRequestSession,
+    sendApiHttpRequest,
+    type ApiMutationRequestOptions
+} from '../api/send-api-http-request.ts';
 
 export type WebSocketTicketBackoffState = Readonly<
     | {
@@ -61,6 +64,7 @@ const DEFAULT_WS_TICKET_CIRCUIT_BREAKER: WebSocketTicketCircuitBreakerConfig = {
 };
 const WS_TICKET_LOCAL_RATE_LIMIT_REASON = 'WebSocket ticket request suppressed by local client rate limiter.';
 const WS_TICKET_CIRCUIT_OPEN_REASON = 'WebSocket ticket request suppressed by local circuit breaker.';
+const WS_TICKET_COOLDOWN_REASON = 'WebSocket ticket request suppressed until cooldown expires.';
 
 let webSocketTicketBackoffState: WebSocketTicketBackoffState = { status: 'idle' };
 let webSocketTicketLocalRateLimitConfig = DEFAULT_WS_TICKET_LOCAL_RATE_LIMIT;
@@ -110,12 +114,7 @@ export async function createWebSocketTicket(
         webSocketTicketBackoffState.status === 'cooldown' &&
         webSocketTicketBackoffState.retryAtEpochMs > now
     ) {
-        throw new ApiHttpError(
-            'POST',
-            '/api/auth/ws-ticket',
-            429,
-            'WebSocket ticket request suppressed until cooldown expires.'
-        );
+        throw new ApiHttpError('POST', '/api/auth/ws-ticket', 429, WS_TICKET_COOLDOWN_REASON);
     }
     if (!webSocketTicketCircuitBreaker.isAllowedThrough()) {
         markWebSocketTicketCircuitOpen();
@@ -123,8 +122,7 @@ export async function createWebSocketTicket(
     }
 
     try {
-        const session = options.authSession === undefined ? readSession() : options.authSession;
-        const limiterKey = session?.sessionId ?? 'anonymous';
+        const limiterKey = readApiRequestSession(options)?.sessionId ?? 'anonymous';
         const ticket = await RateLimiter.tryToExecuteOrElse<WebSocketTicketResponse>(
             readWebSocketTicketLocalLimiter(limiterKey),
             () => createWebSocketTicketThroughCircuitBreaker(options),
@@ -139,17 +137,22 @@ export async function createWebSocketTicket(
             error.status === 429 &&
             error.bodyText !== WS_TICKET_LOCAL_RATE_LIMIT_REASON
         ) {
-            const failedAt = Date.now();
-            webSocketTicketBackoffState = {
-                status: 'cooldown',
-                retryAtEpochMs: failedAt + readRetryAfterMs(error.headers, failedAt),
-                lastStatus: 429,
-                lastFailureAtEpochMs: failedAt,
-                reason: error.bodyText
-            };
+            setWebSocketTicketCooldown(error);
         }
         throw error;
     }
+}
+
+/** A server 429 holds every ticket request until its `retry-after`, or the default backoff without one. */
+function setWebSocketTicketCooldown(error: ApiHttpError): void {
+    const failedAt = Date.now();
+    webSocketTicketBackoffState = {
+        status: 'cooldown',
+        retryAtEpochMs: failedAt + readRetryAfterMs(error.headers, failedAt),
+        lastStatus: 429,
+        lastFailureAtEpochMs: failedAt,
+        reason: error.bodyText
+    };
 }
 
 function createWebSocketTicketCircuitBreaker(
@@ -193,19 +196,19 @@ function readRetryAfterMs(headers: Headers | undefined, nowMs: number): number {
         : DEFAULT_WS_TICKET_429_BACKOFF_MS;
 }
 
-async function executeWebSocketTicketAttempt(
+async function sendWebSocketTicketAttempt(
     options: ApiMutationRequestOptions
 ): Promise<WebSocketTicketAttempt> {
     try {
         return {
             kind: 'ok',
-            ticket: await executeHttpRequest<Record<string, never>, WebSocketTicketResponse>(
-                readApiBaseUrl(),
-                toApiMutationRequestPath('/api/auth/ws-ticket', options.requestId),
-                'POST',
-                {},
+            ticket: await sendApiHttpRequest<Record<string, never>, WebSocketTicketResponse>({
+                baseUrl: readApiBaseUrl(),
+                path: toApiMutationRequestPath('/api/auth/ws-ticket', options.requestId),
+                method: 'POST',
+                body: {},
                 options
-            )
+            })
         };
     }
     catch (error) {
@@ -264,7 +267,7 @@ async function createWebSocketTicketThroughCircuitBreaker(
 ): Promise<WebSocketTicketResponse> {
     const result = await CircuitBreaker.tryToExecute<WebSocketTicketAttempt>(
         webSocketTicketCircuitBreaker,
-        () => executeWebSocketTicketAttempt(options),
+        () => sendWebSocketTicketAttempt(options),
         isSuccessfulWebSocketTicketAttempt
     );
     return result.fold(

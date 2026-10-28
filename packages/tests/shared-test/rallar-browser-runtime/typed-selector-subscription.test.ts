@@ -60,6 +60,7 @@ function toInboundMessage(transport: 'rtc' | 'ws', typeId: string, phase: string
         contextId: 'room',
         resourceId: 'resource',
         senderId: 'sender',
+        traceId: raw.id.traceId,
         payload: { specimen: transport, phase },
         raw,
         receivedAtEpochMs: 123,

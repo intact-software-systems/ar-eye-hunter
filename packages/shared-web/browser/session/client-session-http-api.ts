@@ -3,7 +3,7 @@ import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-requ
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiMutationRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiMutationRequestOptions } from '../api/send-api-http-request.ts';
 import { defaultStateScope, toStateScopeHttpPath } from '../api/state-http-path.ts';
 import type {
     ConnectStateClientSessionBody,
@@ -45,11 +45,11 @@ async function mutateClientSession<TRequest>(
     const clientPath = `${toStateScopeHttpPath(scope)}/clients/${encodeURIComponent(input.principalId)}`;
     const instancePath = `${clientPath}/instances/${encodeURIComponent(input.clientInstanceId)}`;
     const sessionPath = `${instancePath}/sessions/${encodeURIComponent(input.sessionId)}${suffix}`;
-    return await executeHttpRequest<TRequest, ClientSnapshot>(
-        readApiBaseUrl(),
-        toApiMutationRequestPath(sessionPath, input.options.requestId),
-        method,
-        input.request,
-        input.options
-    );
+    return await sendApiHttpRequest<TRequest, ClientSnapshot>({
+        baseUrl: readApiBaseUrl(),
+        path: toApiMutationRequestPath(sessionPath, input.options.requestId),
+        method: method,
+        body: input.request,
+        options: input.options
+    });
 }

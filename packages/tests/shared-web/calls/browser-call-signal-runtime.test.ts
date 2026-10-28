@@ -228,6 +228,7 @@ function toMessage<T>(payload: T): RallarMessage<T> {
         contextId: 'call-1',
         resourceId: '',
         senderId: 'peer-caller',
+        traceId: 'trace-browser-call-signal-runtime',
         receivedAtEpochMs: 1,
         raw: {
             id: { v: 4, msgId: 'signal-1', senderId: 'peer-caller', ts: 1, traceId: 'trace-browser-call-signal-runtime' },

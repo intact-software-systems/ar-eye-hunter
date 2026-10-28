@@ -3,7 +3,7 @@ export * from './browser/api/http-error.ts';
 export type {
     ApiMutationRequestOptions,
     ApiRequestOptions
-} from './browser/api/http-request.ts';
+} from './browser/api/send-api-http-request.ts';
 export * from './browser/api/state-http-path.ts';
 export * from './browser/api/state-mutation-http-contracts.ts';
 export * from './browser/auth/agent-session-ticket-http-api.ts';

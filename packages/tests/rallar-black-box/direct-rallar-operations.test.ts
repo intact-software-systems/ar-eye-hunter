@@ -805,6 +805,7 @@ function createDirectMessage(input: DirectMessageInput): RallarMessage<RallarMes
         contextId: 'bb-group',
         resourceId: '',
         senderId: 'sender',
+        traceId: 'trace-direct-rallar-operations',
         receivedAtEpochMs: 1,
         raw: {
             id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1, traceId: 'trace-direct-rallar-operations' },

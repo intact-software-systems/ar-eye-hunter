@@ -244,6 +244,7 @@ function toRepliedMessage(handle: RallarMessageHandle): Parameters<BrowserRallar
         contextId: raw.route.contextId,
         resourceId: raw.route.resourceId,
         senderId: raw.id.senderId,
+        traceId: raw.id.traceId,
         payload: {},
         raw,
         receivedAtEpochMs: 0,

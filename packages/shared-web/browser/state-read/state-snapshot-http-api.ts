@@ -5,7 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { executeHttpRequest, type ApiRequestOptions } from '../api/http-request.ts';
+import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import {
     defaultStateScope,
     toStateGroupHttpPath,
@@ -17,26 +17,26 @@ export async function listStateClients(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<ClientSnapshot[]> {
-    return await executeHttpRequest<void, ClientSnapshot[]>(
-        readApiBaseUrl(),
-        `${toStateScopeHttpPath(scope)}/clients`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, ClientSnapshot[]>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateScopeHttpPath(scope)}/clients`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function listStateGroups(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<GroupSnapshot[]> {
-    return await executeHttpRequest<void, GroupSnapshot[]>(
-        readApiBaseUrl(),
-        `${toStateScopeHttpPath(scope)}/groups`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GroupSnapshot[]>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateScopeHttpPath(scope)}/groups`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 export async function listStateGroupDirectory(
@@ -44,13 +44,13 @@ export async function listStateGroupDirectory(
     request: GroupDirectoryRequest = {},
     options?: ApiRequestOptions
 ): Promise<GroupDirectoryPage> {
-    return await executeHttpRequest<void, GroupDirectoryPage>(
-        readApiBaseUrl(),
-        `${toStateScopeHttpPath(scope)}/group-directory${toGroupDirectoryQueryString(request)}`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GroupDirectoryPage>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateScopeHttpPath(scope)}/group-directory${toGroupDirectoryQueryString(request)}`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }
 
 function toGroupDirectoryQueryString(request: GroupDirectoryRequest): string {
@@ -90,11 +90,11 @@ export async function readStateGroupFormationView(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions
 ): Promise<GroupFormationView> {
-    return await executeHttpRequest<void, GroupFormationView>(
-        readApiBaseUrl(),
-        `${toStateGroupHttpPath(scope, groupId)}/formation`,
-        'GET',
-        undefined,
+    return await sendApiHttpRequest<void, GroupFormationView>({
+        baseUrl: readApiBaseUrl(),
+        path: `${toStateGroupHttpPath(scope, groupId)}/formation`,
+        method: 'GET',
+        body: undefined,
         options
-    );
+    });
 }

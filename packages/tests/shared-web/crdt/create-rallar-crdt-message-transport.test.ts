@@ -59,6 +59,7 @@ describe('built-in CRDT message admission', () => {
             typeId: 'update',
             topicId: 'crdt',
             senderId: 'peer',
+            traceId: 'trace-create-rallar-crdt-message-transport',
             receivedAtEpochMs: 1,
             contextId: 'room',
             resourceId: 'update',

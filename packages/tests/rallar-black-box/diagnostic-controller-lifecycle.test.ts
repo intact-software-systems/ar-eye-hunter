@@ -750,6 +750,7 @@ function createDiagnosticMessage(text: string): RallarMessage<RallarMessagePaylo
     return {
         transport: 'ws',
         senderId: 'remote',
+        traceId: 'trace-diagnostic-controller-lifecycle',
         typeId: 'room.manual.message',
         topicId: 'room.manual.message',
         contextId: 'room-a',
