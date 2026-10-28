@@ -90,6 +90,31 @@ async function runRotationUntilAlive(
     }
 }
 
+it('types the trace and correlation of a claim as present together or null together', () => {
+    const claim = {
+        kind: 'claim-settled',
+        lane: 'durable',
+        workerId: DIAGNOSTICS_WORKER_ID,
+        effectId: 'dispatch:sender:claimed',
+        msgId: 'claimed',
+        subjectMsgId: 'claimed',
+        typeId: null,
+        payloadKind: 'dispatch-local',
+        durationMs: 0,
+        attempts: 1,
+        outcome: 'completed',
+        queueWaitMs: 0,
+        dueAtMs: 0,
+        batchStartedAtMs: 0,
+        startedAtMs: 0
+    } as const;
+    const untraced: ALInboundRuntimeDiagnosticsEvent = { ...claim, traceId: null, corrId: null };
+    // @ts-expect-error A correlation without its trace is no claim a lane states.
+    const halfTraced: ALInboundRuntimeDiagnosticsEvent = { ...claim, traceId: null, corrId: 'claimed' };
+
+    expect([untraced, halfTraced].map((event) => event.kind)).toEqual(['claim-settled', 'claim-settled']);
+});
+
 it.each(['memory', 'indexeddb'] as const)(
     'names the message an ingress committed and the drain that delivered it over %s',
     async (kind) => {

@@ -11,6 +11,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
@@ -29,6 +30,8 @@ import {
     computeALDeliveryDeadline,
     computeALDeliveryLifecycle
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 type MessagesPortKind =
     | 'messages.send'
@@ -797,23 +800,18 @@ export class AlmReloadPorts {
 
     /** The hint served: the held message's repair commit, stated as the sender's own commit while the hold stands. */
     private recordRepairDispatch(held: PortMessage): void {
-        this.sender.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.outbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'commit-phases',
-                    lane: 'durable',
-                    senderId: 'sender',
-                    msgId: held.msgId,
-                    typeId: held.command.typeId,
-                    origin: 'repair',
-                    readDurationMs: 0,
-                    readOperationCount: 0,
-                    commitDurationMs: 0,
-                    commitOutcome: 'committed'
-                }
-            }
+        recordOutboundDiagnostic(this.sender, {
+            kind: 'commit-phases',
+            lane: 'durable',
+            senderId: 'sender',
+            msgId: held.msgId,
+            typeId: held.command.typeId,
+            origin: 'repair',
+            readDurationMs: 0,
+            readOperationCount: 0,
+            commitDurationMs: 0,
+            commitOutcome: 'committed',
+            ...toPortMessageTrace(held)
         });
     }
 
@@ -846,28 +844,24 @@ export class AlmReloadPorts {
      * Over WS the relay is the hop that buffers and releases, out of the receiver page's sight, so none is stated there.
      */
     private recordBufferedRelease(orderingKey: string, successor: PortMessage): void {
-        this.receiver.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.inbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'claim-settled',
-                    lane: 'durable',
-                    workerId: 'receiver-inbound',
-                    effectId: `release:${encodeURIComponent(`${orderingKey}:sender:0`)}:${successor.command.seq}`,
-                    msgId: null,
-                    typeId: null,
-                    subjectMsgId: null,
-                    payloadKind: 'release-buffered',
-                    durationMs: 0,
-                    attempts: 1,
-                    outcome: 'completed',
-                    queueWaitMs: 0,
-                    dueAtMs: this.now,
-                    batchStartedAtMs: this.now,
-                    startedAtMs: this.now
-                }
-            }
+        recordInboundDiagnostic(this.receiver, {
+            kind: 'claim-settled',
+            lane: 'durable',
+            workerId: 'receiver-inbound',
+            effectId: `release:${encodeURIComponent(`${orderingKey}:sender:0`)}:${successor.command.seq}`,
+            msgId: null,
+            typeId: null,
+            subjectMsgId: null,
+            payloadKind: 'release-buffered',
+            durationMs: 0,
+            attempts: 1,
+            outcome: 'completed',
+            queueWaitMs: 0,
+            dueAtMs: this.now,
+            batchStartedAtMs: this.now,
+            startedAtMs: this.now,
+            traceId: null,
+            corrId: null
         });
     }
 
@@ -884,20 +878,15 @@ export class AlmReloadPorts {
             detail: 'The RTC leg handed the send over to WS.'
         };
         this.deliver(message);
-        this.receiver.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.inbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'admission-outcome',
-                    workerId: 'receiver-inbound',
-                    msgId: message.msgId,
-                    typeId: message.command.typeId,
-                    carrier: 'ws',
-                    outcome: handedOver.outcome,
-                    reason: handedOver.reason
-                }
-            }
+        recordInboundDiagnostic(this.receiver, {
+            kind: 'admission-outcome',
+            workerId: 'receiver-inbound',
+            msgId: message.msgId,
+            typeId: message.command.typeId,
+            carrier: 'ws',
+            outcome: handedOver.outcome,
+            reason: handedOver.reason,
+            ...toPortMessageTrace(message)
         });
     }
 
@@ -920,20 +909,15 @@ export class AlmReloadPorts {
             return;
         }
         this.recordSenderNack(message, 'committed');
-        this.receiver.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.inbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'admission-outcome',
-                    workerId: 'receiver-inbound',
-                    msgId: message.msgId,
-                    typeId: message.command.typeId,
-                    carrier: 'rtc',
-                    outcome: 'rejected',
-                    reason: 'not-yet-in-sync: Awaiting the required room snapshot version'
-                }
-            }
+        recordInboundDiagnostic(this.receiver, {
+            kind: 'admission-outcome',
+            workerId: 'receiver-inbound',
+            msgId: message.msgId,
+            typeId: message.command.typeId,
+            carrier: 'rtc',
+            outcome: 'rejected',
+            reason: 'not-yet-in-sync: Awaiting the required room snapshot version',
+            ...toPortMessageTrace(message)
         });
     }
 
@@ -952,19 +936,14 @@ export class AlmReloadPorts {
     }
 
     private recordSenderNack(message: PortMessage, outcome: 'committed' | 'not-handled'): void {
-        this.sender.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.outbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'control-admission',
-                    msgId: `${message.msgId}-nack`,
-                    typeId: 'al.control.nack.v2',
-                    targetMsgId: message.msgId,
-                    outcome,
-                    reason: 'none'
-                }
-            }
+        recordOutboundDiagnostic(this.sender, {
+            kind: 'control-admission',
+            msgId: `${message.msgId}-nack`,
+            typeId: 'al.control.nack.v2',
+            targetMsgId: message.msgId,
+            outcome,
+            reason: 'none',
+            ...toPortControlTrace(message, `${message.msgId}-nack`)
         });
     }
 
@@ -1027,20 +1006,15 @@ export class AlmReloadPorts {
             this.recordSenderNack(message, 'committed');
             return;
         }
-        this.receiver.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.inbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'admission-outcome',
-                    workerId: 'receiver-inbound',
-                    msgId: message.msgId,
-                    typeId: message.command.typeId,
-                    carrier: 'rtc',
-                    outcome: 'not-handled',
-                    reason: 'resync-required'
-                }
-            }
+        recordInboundDiagnostic(this.receiver, {
+            kind: 'admission-outcome',
+            workerId: 'receiver-inbound',
+            msgId: message.msgId,
+            typeId: message.command.typeId,
+            carrier: 'rtc',
+            outcome: 'not-handled',
+            reason: 'resync-required',
+            ...toPortMessageTrace(message)
         });
         if (this.recoveryOwnerInstalled) {
             this.recordRecoveryOwnerInvocation(message);
@@ -1073,20 +1047,15 @@ export class AlmReloadPorts {
     ): RallarBlackBoxTestCommandOutcome {
         const original = this.handles.get(replay.handleId);
         assert(original);
-        this.receiver.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.inbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'admission-outcome',
-                    workerId: 'receiver-inbound',
-                    msgId: original.msgId,
-                    typeId: original.command.typeId,
-                    carrier: replay.carrier,
-                    outcome: 'not-handled',
-                    reason: 'duplicate'
-                }
-            }
+        recordInboundDiagnostic(this.receiver, {
+            kind: 'admission-outcome',
+            workerId: 'receiver-inbound',
+            msgId: original.msgId,
+            typeId: original.command.typeId,
+            carrier: replay.carrier,
+            outcome: 'not-handled',
+            reason: 'duplicate',
+            ...toPortMessageTrace(original)
         });
         return {
             status: 'ok',
@@ -1096,19 +1065,14 @@ export class AlmReloadPorts {
 
     /** Over RTC the receiver's hop ACK reaches the sender, whose outbound owner commits it as the product does. */
     private admitReceiverAck(message: PortMessage): void {
-        this.sender.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.outbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'control-admission',
-                    msgId: `${message.msgId}-ack`,
-                    typeId: 'al.control.ack.v2',
-                    targetMsgId: message.msgId,
-                    outcome: 'committed',
-                    reason: 'none'
-                }
-            }
+        recordOutboundDiagnostic(this.sender, {
+            kind: 'control-admission',
+            msgId: `${message.msgId}-ack`,
+            typeId: 'al.control.ack.v2',
+            targetMsgId: message.msgId,
+            outcome: 'committed',
+            reason: 'none',
+            ...toPortControlTrace(message, `${message.msgId}-ack`)
         });
     }
 
@@ -1118,20 +1082,15 @@ export class AlmReloadPorts {
             if (phase === 'complete' && message.state !== 'acknowledged') {
                 return;
             }
-            this.sender.recordEvent({
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.outbound_diagnostics',
-                payload: {
-                    data: {
-                        kind: 'control-admission',
-                        msgId: `${message.msgId}-receipt-${phase}`,
-                        typeId: 'al.control.receipt.v1',
-                        targetMsgId: message.msgId,
-                        outcome: 'committed',
-                        reason: 'none',
-                        phase
-                    }
-                }
+            recordOutboundDiagnostic(this.sender, {
+                kind: 'control-admission',
+                msgId: `${message.msgId}-receipt-${phase}`,
+                typeId: 'al.control.receipt.v1',
+                targetMsgId: message.msgId,
+                outcome: 'committed',
+                reason: 'none',
+                phase,
+                ...toPortControlTrace(message, `${message.msgId}-receipt-${phase}`)
             });
         }
     }
@@ -1239,6 +1198,30 @@ export class AlmReloadPorts {
         }
         message.deliveredRecipientRoles = deliveredRecipientRoles;
     }
+}
+
+/** A page's AL outbound diagnostic, typed as the runtime states it so the double keeps the production shape. */
+function recordOutboundDiagnostic(page: RallarBlackBoxTestRuntime, event: ALOutboundRuntimeDiagnosticsEvent): void {
+    page.recordEvent({
+        kind: 'diagnostic',
+        topic: 'rallar.browser.alm.outbound_diagnostics',
+        payload: { data: event }
+    });
+}
+
+/** A page's AL inbound diagnostic, typed as the runtime states it so the double keeps the production shape. */
+function recordInboundDiagnostic(page: RallarBlackBoxTestRuntime, event: ALInboundRuntimeDiagnosticsEvent): void {
+    page.recordEvent({ kind: 'diagnostic', topic: 'rallar.browser.alm.inbound_diagnostics', payload: { data: event } });
+}
+
+/** A port message carries no actions, so it starts its own correlation under one literal trace. */
+function toPortMessageTrace(message: PortMessage): ALMessageTrace {
+    return { traceId: `trace-${message.msgId}`, corrId: message.msgId };
+}
+
+/** A control travels under the trace of the message it answers and correlates under its own id. */
+function toPortControlTrace(message: PortMessage, controlMsgId: string): ALMessageTrace {
+    return { traceId: toPortMessageTrace(message).traceId, corrId: controlMsgId };
 }
 
 /** The floor a send states, resolved against the snapshot its sender held when it sent. */

@@ -164,6 +164,27 @@ it('names no trace for a decision made before the stored message was read', asyn
     }]);
 });
 
+it('types the trace and correlation of a decision as present together or null together', () => {
+    const decision = {
+        kind: 'dispatch-decision',
+        lane: 'durable',
+        workerId: 'worker',
+        effectId: 'dispatch:sender:signal',
+        msgId: 'signal',
+        typeId: null,
+        carrier: 'ws',
+        attempts: 0,
+        atEpochMs: 100,
+        disposition: 'shutdown'
+    } as const;
+    const traced: ALInboundRuntimeDiagnosticsEvent = { ...decision, traceId: 'trace-signal', corrId: 'signal' };
+    const untraced: ALInboundRuntimeDiagnosticsEvent = { ...decision, traceId: null, corrId: null };
+    // @ts-expect-error A trace without its correlation is no decision a producer states.
+    const halfTraced: ALInboundRuntimeDiagnosticsEvent = { ...decision, traceId: 'trace-signal', corrId: null };
+
+    expect([traced, untraced, halfTraced].map((event) => event.kind)).toEqual(Array(3).fill('dispatch-decision'));
+});
+
 it.each<DispatchResultScenario>(
     [
         { returned: 'completed', canDispatch: true, disposition: 'port-returned', calls: ['port'] },

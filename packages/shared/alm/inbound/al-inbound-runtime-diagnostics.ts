@@ -40,24 +40,24 @@ export type ALInboundDispatchDisposition =
     | 'port-retry'
     | 'port-threw';
 
-export interface ALInboundDispatchDecision {
-    readonly kind: 'dispatch-decision';
-    readonly lane: ALStoreDurability;
-    readonly workerId: string;
-    readonly effectId: string;
-    readonly msgId: string | null;
-    readonly typeId: string | null;
-    readonly carrier: ALDeliveryCarrier;
-    readonly attempts: number;
-    readonly atEpochMs: number;
-    readonly disposition: ALInboundDispatchDisposition;
-    /** Null when the decision came before the stored message was read: a shutdown or an expired row. */
-    readonly traceId: string | null;
-    readonly corrId: string | null;
-}
+/** The trace pair is null when the decision came before the stored message was read: a shutdown or an expired row. */
+export type ALInboundDispatchDecision =
+    & Readonly<{
+        kind: 'dispatch-decision';
+        lane: ALStoreDurability;
+        workerId: string;
+        effectId: string;
+        msgId: string | null;
+        typeId: string | null;
+        carrier: ALDeliveryCarrier;
+        attempts: number;
+        atEpochMs: number;
+        disposition: ALInboundDispatchDisposition;
+    }>
+    & ALMessageTraceOrNull;
 
 /** One concrete WS selection; exact callback settlement is not a native application receipt. */
-export interface ALInboundConsumerInvocation {
+export interface ALInboundConsumerInvocation extends ALMessageTrace {
     readonly kind: 'consumer-invocation';
     readonly msgId: string;
     readonly typeId: string;
@@ -66,8 +66,6 @@ export interface ALInboundConsumerInvocation {
     readonly outcome: 'returned' | 'retry' | 'threw' | 'not-invoked';
     readonly beganAtMs: number;
     readonly settledAtMs: number;
-    readonly traceId: string;
-    readonly corrId: string;
 }
 
 /**
@@ -108,20 +106,21 @@ export type ALInboundRuntimeDiagnosticsEvent =
     | ALInboundRtcAckIngress
     | ALInboundAcknowledgementEvidence.Association
     | ALInboundAcknowledgementEvidence.Handoff
-    | Readonly<{
-        kind: 'admission-outcome';
-        workerId: string;
-        /** Original message identifier for this admission observation. */
-        msgId: string;
-        typeId: string;
-        /** The carrier the message arrived on. */
-        carrier: ALDeliveryCarrier;
-        outcome: ALInboundAdmissionOutcome;
-        /** The plan's drop reason, the rejection's code, or the acceptance kind that carries neither. */
-        reason: string;
-        traceId: string;
-        corrId: string;
-    }>
+    | (
+        & Readonly<{
+            kind: 'admission-outcome';
+            workerId: string;
+            /** Original message identifier for this admission observation. */
+            msgId: string;
+            typeId: string;
+            /** The carrier the message arrived on. */
+            carrier: ALDeliveryCarrier;
+            outcome: ALInboundAdmissionOutcome;
+            /** The plan's drop reason, the rejection's code, or the acceptance kind that carries neither. */
+            reason: string;
+        }>
+        & ALMessageTrace
+    )
     | Readonly<{
         /** A value that never decoded as an AL envelope, so it has no message identity, only its source. */
         kind: 'undecoded-rejection';
@@ -129,33 +128,35 @@ export type ALInboundRuntimeDiagnosticsEvent =
         fromPeerId: string;
         rejection: ALMessageRejection['code'];
     }>
-    | Readonly<{
-        /**
-         * A reply no open slot admitted: already replied, timed out, or unobserved (no retained request, or it came
-         * over RTC).
-         */
-        kind: 'reply-late';
-        msgId: string;
-        replyToMsgId: string;
-        typeId: string;
-        senderId: string;
-        carrier: ALDeliveryCarrier;
-        cause: 'replied' | 'timed-out' | 'unobserved';
-        traceId: string;
-        corrId: string;
-    }>
-    | Readonly<{
-        /** A reply whose sender is not the peer the request addressed, so the registry refused it. */
-        kind: 'reply-wrong-responder';
-        msgId: string;
-        replyToMsgId: string;
-        typeId: string;
-        senderId: string;
-        carrier: ALDeliveryCarrier;
-        expectedSenderId: string;
-        traceId: string;
-        corrId: string;
-    }>
+    | (
+        & Readonly<{
+            /**
+             * A reply no open slot admitted: already replied, timed out, or unobserved (no retained request, or it came
+             * over RTC).
+             */
+            kind: 'reply-late';
+            msgId: string;
+            replyToMsgId: string;
+            typeId: string;
+            senderId: string;
+            carrier: ALDeliveryCarrier;
+            cause: 'replied' | 'timed-out' | 'unobserved';
+        }>
+        & ALMessageTrace
+    )
+    | (
+        & Readonly<{
+            /** A reply whose sender is not the peer the request addressed, so the registry refused it. */
+            kind: 'reply-wrong-responder';
+            msgId: string;
+            replyToMsgId: string;
+            typeId: string;
+            senderId: string;
+            carrier: ALDeliveryCarrier;
+            expectedSenderId: string;
+        }>
+        & ALMessageTrace
+    )
     | Readonly<{
         kind: 'effect-drain';
         /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
@@ -195,41 +196,42 @@ export type ALInboundRuntimeDiagnosticsEvent =
          */
         promoted: number;
     }>
-    | Readonly<{
-        kind: 'claim-settled';
-        /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
-        lane: ALStoreDurability;
-        workerId: string;
-        effectId: string;
-        /** The claimed message. Null for `release-buffered`, which names a track and a sequence and no message. */
-        msgId: string | null;
-        /** The message the effect acts on: the join key from an ACK back to the delivery it acknowledges. */
-        subjectMsgId: string | null;
-        /**
-         * The claimed message's type. Null for `dispatch-local` and `forward-message`, whose effect
-         * retains only a message reference, and for `release-buffered`, which retains neither.
-         */
-        typeId: string | null;
-        payloadKind: ALInboundDurableEffect['kind'];
-        /** What this claim's own work cost, from the decoded effect to the outcome it returned. */
-        durationMs: number;
-        /** Processing attempts the row has spent, this claim included. */
-        attempts: number;
-        outcome: ALWorkOutcome['status'];
-        /** How long the row had been due when its batch's run loop started: `batchStartedAtMs − dueAtMs`. */
-        queueWaitMs: number;
-        dueAtMs: number;
-        /** When the batch's run loop started, after its selection and reservation and before its first claim. */
-        batchStartedAtMs: number;
-        /** When this claim's own work began, so `startedAtMs − batchStartedAtMs` is its wait behind earlier claims. */
-        startedAtMs: number;
+    | (
+        & Readonly<{
+            kind: 'claim-settled';
+            /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
+            lane: ALStoreDurability;
+            workerId: string;
+            effectId: string;
+            /** The claimed message. Null for `release-buffered`, which names a track and a sequence and no message. */
+            msgId: string | null;
+            /** The message the effect acts on: the join key from an ACK back to the delivery it acknowledges. */
+            subjectMsgId: string | null;
+            /**
+             * The claimed message's type. Null for `dispatch-local` and `forward-message`, whose effect
+             * retains only a message reference, and for `release-buffered`, which retains neither.
+             */
+            typeId: string | null;
+            payloadKind: ALInboundDurableEffect['kind'];
+            /** What this claim's own work cost, from the decoded effect to the outcome it returned. */
+            durationMs: number;
+            /** Processing attempts the row has spent, this claim included. */
+            attempts: number;
+            outcome: ALWorkOutcome['status'];
+            /** How long the row had been due when its batch's run loop started: `batchStartedAtMs − dueAtMs`. */
+            queueWaitMs: number;
+            dueAtMs: number;
+            /** When the batch's run loop started, after its selection and reservation and before its first claim. */
+            batchStartedAtMs: number;
+            /** When this claim's own work began, so `startedAtMs − batchStartedAtMs` is its wait behind earlier claims. */
+            startedAtMs: number;
+        }>
         /**
          * The claimed message's trace and correlation. Null where `typeId` is: a reference or a buffered release
          * retains no envelope to read them from.
          */
-        traceId: string | null;
-        corrId: string | null;
-    }>
+        & ALMessageTraceOrNull
+    )
     | Readonly<{
         kind: 'rotation-alive';
         /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */

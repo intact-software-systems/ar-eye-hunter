@@ -12,7 +12,7 @@ import {
     type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
-import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
+import { toALMessageTrace, type ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -242,15 +242,13 @@ export interface ALOutboundCongestionDrop {
  * channel or socket could not take, of any message the page holds there, relay forwards and controls included, and
  * `hand-over` by a fallback strategy that moved a congested leg of its own send to the other carrier.
  */
-export interface ALOutboundCongestionDiagnostic {
+export interface ALOutboundCongestionDiagnostic extends ALMessageTrace {
     readonly kind: 'congestion';
     readonly carrier: ALDeliveryCarrier;
     readonly cause: ALCongestionCause;
     readonly action: 'drop' | 'defer' | 'hand-over';
     readonly priority: number;
     readonly msgId: string;
-    readonly traceId: string;
-    readonly corrId: string;
 }
 
 /**
@@ -285,7 +283,7 @@ export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired'
  * The QR terminal fact for one exact ACK/hop; sent establishes local submission, not recipient delivery. The trace
  * and correlation are the ACK's own, which names the trace of the message it acknowledges.
  */
-export interface ALOutboundRtcAckSubmission {
+export interface ALOutboundRtcAckSubmission extends ALMessageTrace {
     readonly kind: 'rtc-ack-submission';
     readonly controlMsgId: string;
     readonly controlSenderId: string;
@@ -296,8 +294,6 @@ export interface ALOutboundRtcAckSubmission {
     readonly submissionAttempted: boolean;
     /** Terminal observer time, after QR's settlement microtask; not the instant native send ran. */
     readonly observedAtEpochMs: number;
-    readonly traceId: string;
-    readonly corrId: string;
 }
 
 /** One hand-off of the session's messages that the RTC carrier's rate limiter or open circuit breaker refused. */
@@ -343,43 +339,45 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         available: boolean;
         durationMs: number;
     }>
-    | Readonly<{
-        kind: 'commit-phases';
-        /** The store pair this commit read and wrote; only the IndexedDB lane's timings describe the runner. */
-        lane: ALStoreDurability;
-        senderId: string;
-        /** The message this commit admitted, so one signaling offer can be followed across the phases. */
-        msgId: string;
-        /** The message's payload type: which lane the commit belongs to (RTC signaling, app traffic, control). */
-        typeId: string;
-        origin: ALOutboundCommitOrigin;
-        readDurationMs: number;
-        /** Admission-store round trips observed while this commit's read chain ran. */
-        readOperationCount: number;
-        commitDurationMs: number;
-        commitOutcome: ALOutboundCommitBundleOutcome;
-        traceId: string;
-        corrId: string;
-    }>
-    | Readonly<{
-        kind: 'control-admission';
-        /** The control message's own id: the join key to the inbound `admission-outcome` that routed it. */
-        msgId: string;
-        typeId: string;
-        /** The outbound message this control answers. */
-        targetMsgId: string;
-        outcome: ALOutboundControlAdmissionResult['kind'];
-        /** The rejection's reasons, or `none` for every other outcome. */
-        reason: string;
-        /**
-         * The receipt's phase, present exactly when the control is a WS server receipt: no other control has one,
-         * so absence means "not a receipt" rather than a missing phase.
-         */
-        phase?: ALReceiptPayload['phase'];
+    | (
+        & Readonly<{
+            kind: 'commit-phases';
+            /** The store pair this commit read and wrote; only the IndexedDB lane's timings describe the runner. */
+            lane: ALStoreDurability;
+            senderId: string;
+            /** The message this commit admitted, so one signaling offer can be followed across the phases. */
+            msgId: string;
+            /** The message's payload type: which lane the commit belongs to (RTC signaling, app traffic, control). */
+            typeId: string;
+            origin: ALOutboundCommitOrigin;
+            readDurationMs: number;
+            /** Admission-store round trips observed while this commit's read chain ran. */
+            readOperationCount: number;
+            commitDurationMs: number;
+            commitOutcome: ALOutboundCommitBundleOutcome;
+        }>
+        & ALMessageTrace
+    )
+    | (
+        & Readonly<{
+            kind: 'control-admission';
+            /** The control message's own id: the join key to the inbound `admission-outcome` that routed it. */
+            msgId: string;
+            typeId: string;
+            /** The outbound message this control answers. */
+            targetMsgId: string;
+            outcome: ALOutboundControlAdmissionResult['kind'];
+            /** The rejection's reasons, or `none` for every other outcome. */
+            reason: string;
+            /**
+             * The receipt's phase, present exactly when the control is a WS server receipt: no other control has one,
+             * so absence means "not a receipt" rather than a missing phase.
+             */
+            phase?: ALReceiptPayload['phase'];
+        }>
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
-        traceId: string;
-        corrId: string;
-    }>
+        & ALMessageTrace
+    )
     | Readonly<{
         kind: 'effect-drain';
         lane: ALStoreDurability;

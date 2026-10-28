@@ -150,6 +150,37 @@ every session the page opens. The event's `data` is the event itself:
   dequeue commits, `repair` for retransmission. It is on all four
   commit-scoped kinds, so a hold is charged to the work behind it rather than
   guessed at from a duration
+- `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
+  `control-admission` (after a receipt's `phase`), `receipt-confirmation`,
+  `congestion` and `rtc-ack-submission`. `traceId` is the message's envelope
+  trace (`id.traceId`) and `corrId` its correlation (`actions.corrId`, or its
+  own `msgId` when it carries none): the same identity the server's rows and
+  the browser's send handle name. On `control-admission`,
+  `receipt-confirmation` and `rtc-ack-submission` the pair is the control's
+  own, and a control travels under the trace of the message it answers. The
+  sender- and batch-scoped kinds (`sender-queue-wait`, the two
+  `browser-lock-*` phases, `effect-drain`, `readiness-probe`,
+  `rtc-handoff-refusal` and `rtc-queued-bytes-high-water`) carry neither.
+  Because the pair is appended after every other field, a wait that matches
+  earlier fields in their emitted order still matches; match the trace itself
+  with a `payloadFields` entry on `data.traceId`, not a `contains` across it:
+
+  ```json
+  {
+    "kind": "commit-phases",
+    "lane": "durable",
+    "senderId": "peer-a",
+    "msgId": "msg-1",
+    "typeId": "chat.message.v1",
+    "origin": "send",
+    "readDurationMs": 1,
+    "readOperationCount": 9,
+    "commitDurationMs": 2,
+    "commitOutcome": "committed",
+    "traceId": "trace-1",
+    "corrId": "msg-1"
+  }
+  ```
 - the phase's own identity fields: `senderId`, `queued` and
   `queuedBehindOrigin` for `sender-queue-wait`; `senderId`, `lockName` and
   `available` for the two `browser-lock-*` phases; `workerId`,
@@ -258,12 +289,15 @@ every session the page opens. The event's `data` is the event itself:
   nothing reads `AL receipt moves no receipt of its message`, and one about a
   message the origin never sent reads `AL receipt names no retained outbound
   message of its origin`. It also carries the receipt's `phase` (`admitted`,
-  `complete` or `timed-out`) as its last field. No other control has a phase, so
-  the field is absent from every other `control-admission` event; it is optional
-  only for that reason. Because it comes last, a wait that matches `typeId`,
-  `targetMsgId` and `outcome` in their emitted order still matches a receipt,
-  and one that appends `"reason":"none","phase":"complete"` matches only the
-  committed terminal receipt. When its arrival also produces a captured inbound
+  `complete` or `timed-out`) straight after `reason`, followed only by the
+  trailing `traceId` and `corrId` every message-scoped kind ends with. No other
+  control has a phase, so the field is absent from every other
+  `control-admission` event; it is optional only for that reason. Because the
+  phase adds nothing before `reason` and follows it directly, a wait that
+  matches `typeId`, `targetMsgId` and `outcome` in their emitted order still
+  matches a receipt, and one that appends `"reason":"none","phase":"complete"`
+  matches only the committed terminal receipt:
+  `{"kind":"control-admission","msgId":"receipt-1","typeId":"al.control.receipt.v1","targetMsgId":"msg-1","outcome":"committed","reason":"none","phase":"complete","traceId":"trace-1","corrId":"receipt-1"}`. When its arrival also produces a captured inbound
   `admission-outcome`, that event carries the same `typeId`, carrier `ws` and
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
@@ -272,9 +306,9 @@ every session the page opens. The event's `data` is the event itself:
   admission attempt that reaches a validation decision or actual commit
   return, including rejected, conflicted and expired attempts. Read/commit
   exceptions remain with the existing storage-failure owner and produce no
-  new confirmation observation or invented commit disposition. The existing
-  `control-admission` bytes and phase-last field order
-  are unchanged. It carries the receipt control's `msgId`, `typeId` and
+  new confirmation observation or invented commit disposition. It leaves the
+  `control-admission` event as it is, `phase` straight after `reason`. It
+  carries the receipt control's `msgId`, `typeId` and
   `controlSenderId`, the decoded `targetMsgId` and `originPeerId`, exact
   `expectedRecipientPeerIds` and `confirmedRecipientPeerIds`, `snapshotVersion`,
   `phase` and `observedAtEpochMs`. The server's `snapshotVersion` is an audience
@@ -292,7 +326,9 @@ every session the page opens. The event's `data` is the event itself:
   snapshot of the exact once-computed logical acknowledgement fact passed to
   the existing emitter on commit, before carrier/lane/time stamping. It
   includes the expected, confirmed and unconfirmed recipients, confirmed and
-  unconfirmed hops, mode, subject `msgId` and actual `complete` flag.
+  unconfirmed hops, mode, subject `msgId` and actual `complete` flag. The
+  event ends with the receipt control's `traceId` and `corrId`; the server
+  stamps a receipt with the trace of the message it confirms.
   Missing pending, candidate, expiry, sender version or settlement is explicitly
   `null`, preserved in serialized recordings. A noncommitted attempt has no
   settlement; a `complete` phase may still carry incomplete logical
@@ -337,6 +373,45 @@ publication succeed. The event's `data` is the event itself:
 - `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
   to, on every kind. One page runs a WS inbound owner and an RTC inbound
   owner, so this says which carrier an event came from
+- `traceId` then `corrId` close every message-scoped kind: `admission-outcome`,
+  `claim-settled`, `dispatch-decision`, `consumer-invocation`,
+  `rtc-ack-ingress`, `reply-late` and `reply-wrong-responder`, and the
+  `incoming`, `control` and `generated` identities of
+  `acknowledgement-association` and `acknowledgement-handoff`. They are the
+  message's envelope trace and its correlation (`actions.corrId`, or its own
+  `msgId` when it carries none); a reply's `corrId` is the correlation of the
+  request it answers. On `rtc-ack-ingress` and the acknowledgement identities
+  the pair is the ACK's own, and an ACK travels under the trace of the message
+  it acknowledges. Two kinds can lack a decoded message, and carry both fields
+  as `null` together, never one alone: `dispatch-decision` when the decision
+  came before the stored message was read (a shutdown or an expired row), and
+  `claim-settled` for `dispatch-local`, `forward-message` and
+  `release-buffered`, whose effect retains only a message reference or none,
+  so the pair is null exactly where `typeId` is. `effect-drain`,
+  `rotation-alive` and `undecoded-rejection` carry neither. Like the outbound
+  pair, it is appended after every other field:
+
+  ```json
+  {
+    "kind": "claim-settled",
+    "lane": "durable",
+    "workerId": "al-inbound:worker-1",
+    "effectId": "dispatch:peer-a:msg-1",
+    "msgId": "msg-1",
+    "subjectMsgId": "msg-1",
+    "typeId": null,
+    "payloadKind": "dispatch-local",
+    "durationMs": 1,
+    "attempts": 1,
+    "outcome": "completed",
+    "queueWaitMs": 0,
+    "dueAtMs": 1000,
+    "batchStartedAtMs": 1000,
+    "startedAtMs": 1000,
+    "traceId": null,
+    "corrId": null
+  }
+  ```
 - `lane`, on `effect-drain`, `claim-settled` and `rotation-alive`: `durable` for
   the owner over the IndexedDB pair, `volatile` for the one over the session's
   memory pair (worker id `…/volatile`)
