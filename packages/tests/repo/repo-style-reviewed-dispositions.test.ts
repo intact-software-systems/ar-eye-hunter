@@ -136,8 +136,12 @@ describe('reviewed repository style dispositions', () => {
             const entries = reviewedDispositions.filter((entry) =>
                 entry.path === directory && entry.rule === finding.ruleId && entry.symbol === finding.symbol
             );
-            expect(entries).toHaveLength(1);
-            expect(entries[0].maximumMagnitude).toBe(findingMagnitude(finding));
+            expect(entries).toEqual([{
+                path: directory,
+                rule: finding.ruleId,
+                symbol: finding.symbol,
+                maximumMagnitude: findingMagnitude(finding)
+            }]);
             expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
             expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}-neighbor` })).toBe(false);
             expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'prefix:unreviewed' })).toBe(false);
