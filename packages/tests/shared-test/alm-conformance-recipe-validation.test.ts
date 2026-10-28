@@ -25,6 +25,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  * `cross-carrier-duplicate` needs both transports, once per order.
  * The fallback family (D56) needs the fallback cell.
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
+ * The server's group-state deltas reach a page over ws only, so server-originated runs there.
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
@@ -46,6 +47,7 @@ const CARRIER_SCENARIO_IDS = {
         'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
+        'server-originated',
         'capacity',
         'capacity-age',
         'capacity-tracks',

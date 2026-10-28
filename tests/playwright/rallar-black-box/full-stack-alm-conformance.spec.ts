@@ -254,10 +254,14 @@ test.describe('ALM conformance lane', () => {
     }
 });
 
-/** Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions. */
+/**
+ * Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions; the
+ * server-originated cell joins request traces to the deltas and the receipt they cause.
+ */
 function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
     return scenario.scenarioId === 'delivery-lifecycle' ||
         scenario.scenarioId === 'delivery-reload' ||
+        scenario.scenarioId === 'server-originated' ||
         readAlmReceiptRolesEntries(scenario.sender).length > 0;
 }
 

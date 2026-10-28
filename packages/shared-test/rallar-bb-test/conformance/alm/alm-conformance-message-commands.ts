@@ -1,5 +1,6 @@
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
     RallarBlackBoxTestCommand,
@@ -78,8 +79,9 @@ interface AlmConformanceResultAssertionInput {
         | 'lte'
         | 'length'
         | 'contains'
-        | 'exists';
-    readonly expected: string | number | boolean;
+        | 'exists'
+        | 'matchesShape';
+    readonly expected: ApiJsonValue;
 }
 
 /** One fact a scenario reads from the observation of its first send: the assertion name, the field, how and what. */

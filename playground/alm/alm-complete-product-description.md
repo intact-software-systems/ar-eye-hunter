@@ -638,9 +638,12 @@ lifetime of the server's head, a track silent for over an hour restarts at `seq`
 `relay-rejected` and removes its whole pending receipt (D155). The receiver's
 recovery owner is the typed channel's, as for a browser sender. The WS server
 fixture, the shared-key schedule over memory, IndexedDB and pglite with the
-gated PostgreSQL two-connection case, and the api-v1 end-to-end test prove it;
-no conformance cell exercises a server-originated send, since no harness step
-makes the server publish one (D155).
+gated PostgreSQL two-connection case, and the api-v1 end-to-end test prove it.
+The `server-originated` conformance cell exercises a server-originated send,
+though not its ordering, in the local lane: the receiver's ACK of a
+receiver-receipted group-state delta, caused by an HTTP membership write under
+its `x-request-id`, records the receipt entry the admin realtime read lists
+under that trace.
 
 ## Deduplication and supersedence
 

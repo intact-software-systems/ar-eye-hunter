@@ -24,7 +24,6 @@ import type {
 import {
     toConnectCommand,
     toEnsureGroupCommand,
-    toOwnerLeaseLapseWait,
     toSelfMembershipCommand,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
@@ -77,6 +76,7 @@ import { replyFirstWins } from './scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from './scenarios/reply/reply-timeout-late.ts';
 import { replyUndelivered } from './scenarios/reply/reply-undelivered.ts';
 import { serverCommand } from './scenarios/server-command.ts';
+import { serverOriginated } from './scenarios/server-originated.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
 import { capacityAge } from './scenarios/volatile-bound/capacity-age.ts';
@@ -84,6 +84,7 @@ import { capacityTracks } from './scenarios/volatile-bound/capacity-tracks.ts';
 import { capacity } from './scenarios/volatile-bound/capacity.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
 import { wsUnicastReceipt } from './scenarios/ws-unicast-receipt.ts';
+import { toOwnerLeaseLapseWait } from './to-pause-command.ts';
 
 export interface AlmConformanceScenario {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -158,6 +159,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     wsUnicastReceipt,
     unicastFallback,
     serverCommand,
+    serverOriginated,
     capacity,
     capacityAge,
     capacityTracks,
@@ -233,7 +235,8 @@ function toAlmConformanceScenario(
             scenarioId: definition.scenarioId,
             scenarioKey: definition.scenarioKey,
             role,
-            roles: definition.roles
+            roles: definition.roles,
+            messageSelector: definition.messageSelector
         };
         const commands = role === 'sender' || role === 'successor'
             ? definition.toSenderCommands(step)

@@ -23,6 +23,7 @@ import {
     type AlmReceivedTraceIdentityInput
 } from './assess-alm-received-trace-identity.ts';
 import { assessAlmReloadIdentity } from './assess-alm-reload-identity.ts';
+import { assessAlmServerOriginatedIdentity, toTracedRequests } from './assess-alm-server-originated-identity.ts';
 import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
 
 export interface AlmConformanceIdentityParticipant {
@@ -61,8 +62,11 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         return issues;
     }
     const sends = sender.participant.recipe.commands.filter(isIdentitySend);
-    if (sends.length === 0 && readAlmReceiptRolesEntries(sender.participant.recipe).length === 0) {
-        return ['ALM lifecycle, reload or pinned receipt sender evidence is missing.'];
+    if (
+        sends.length === 0 && readAlmReceiptRolesEntries(sender.participant.recipe).length === 0 &&
+        toTracedRequests(sender.participant.recipe.commands).length === 0
+    ) {
+        return ['ALM lifecycle, reload, pinned receipt or traced request sender evidence is missing.'];
     }
     issues.push(...assessAlmReceiptRoleIdentity({
         sender,
@@ -76,6 +80,7 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         receiver,
         sends.filter((send) => send.payload.marker === 'delivery-reload')
     ));
+    issues.push(...assessAlmServerOriginatedIdentity({ sender, receiver }));
     return issues;
 }
 

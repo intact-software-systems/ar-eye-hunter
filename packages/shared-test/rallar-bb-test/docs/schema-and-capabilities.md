@@ -569,6 +569,20 @@ shows the last outcome per row, not a count of retries, so `fallback-within-dead
 `not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
 three `not-ready` entries).
 
+The `server-originated` cell (`ws`, smoke, two-agent family) proves that a send the server originates carries the trace
+of the request that caused it. Its definition's `messageSelector` `{ topicId: 'group-state.event' }` replaces the
+scenario channel on both connects, so both pages hear the server's group-state deltas. The sender leaves the group and
+rejoins it through the self-service membership route, each request under its own `x-request-id`
+(`alm-ws-server-originated-sender-trace-left`, then `-trace-active`), and asserts that each response echoes it. The
+receiver waits for each delta as a `rallar.browser.ws.message` whose `data.topicId` is `group-state.event` and whose
+envelope trace `data.traceId` and event trace `data.payload.event.traceId` both equal the request's, holds one second
+for its ACK to settle, reads `GET /api/admin/operations/realtime` (the lane's receiver, `bob`, is a platform admin under
+`prod-in-memory`) and asserts with `matchesShape` that `almReceipts.diagnostics.messages` holds an entry with the
+rejoin's trace and `lastSettlementKind` `acknowledgement`. Those entries are process-local, so the cell runs in the
+one-process local lane: hosted manifest 18 withholds it, since its combined connect carries the scenario topic's
+selector. The identity assessment joins the echo, the one receiver wait that names each trace, the delta's `msgId`, and
+the admin entry of the last trace, confirmed by the receiver's own session.
+
 The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
 sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's
 `typeId`, `remaining: 'until-cleared'`, sends one room send with `ack: 'receiver'`, and releases the hold with
