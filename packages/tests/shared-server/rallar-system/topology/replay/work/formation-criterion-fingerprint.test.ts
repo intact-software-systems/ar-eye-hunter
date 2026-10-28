@@ -40,7 +40,6 @@ import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-top
 import { createRtcTopologyGroupSnapshot } from '../../rtc-topology-test-fixtures.ts';
 
 const NOW = 1_000;
-const WORK_TRACE_ID = 'trace-formation-criterion-fingerprint';
 
 interface CriterionFingerprintFixtureOptions {
     readonly durationNowMs?: () => number;
@@ -68,14 +67,14 @@ describe('formation criterion after unchanged topology inputs', () => {
         async (stage) => {
             const fixture = createCriterionFingerprintFixture();
             const heldStage = stage === 'connecting' ? 'planned' : 'reconfiguring';
-            await fixture.process({ group: lifecycleSnapshot(heldStage, 1), origin: 'commanded' });
+            await fixture.process({ group: lifecycleSnapshot(heldStage, 1), origin: 'commanded', traceId: 'trace-revision-1' });
             const published = await fixture.snapshots.findSnapshot(fixture.current.group);
             expect(published).toMatchObject({ state: 'active', activeSessionIds: [], version: 1 });
             expect(fixture.submitted).toEqual([]);
             fixture.effects.length = 0;
             const metricsBefore = fixture.topologyService.readMetrics();
 
-            const entry = await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic' });
+            const entry = await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic', traceId: 'trace-revision-2' });
 
             const metricsAfter = fixture.topologyService.readMetrics();
             expect(metricsAfter.topologyRebuildSkippedFingerprintCount)
@@ -97,7 +96,7 @@ describe('formation criterion after unchanged topology inputs', () => {
                     })
                 }),
                 atEpochMs: NOW,
-                traceId: WORK_TRACE_ID
+                traceId: 'trace-revision-2'
             }]);
         }
     );
@@ -105,21 +104,21 @@ describe('formation criterion after unchanged topology inputs', () => {
     it('petitions a met presence trigger under the work row trace after a committed publication', async () => {
         const fixture = createCriterionFingerprintFixture({ phasedPolicy: presencePlanPolicy() });
 
-        await fixture.process({ group: presentFormingSnapshot(1), origin: 'commanded' });
+        await fixture.process({ group: presentFormingSnapshot(1), origin: 'commanded', traceId: 'trace-revision-1' });
 
         expect(fixture.automated.map(({ command, traceId }) => ({ operation: command.operation, traceId })))
-            .toEqual([{ operation: 'planGroupLayout', traceId: WORK_TRACE_ID }]);
+            .toEqual([{ operation: 'planGroupLayout', traceId: 'trace-revision-1' }]);
     });
 
     it('petitions a met presence trigger under the work row trace when the stored plan stays unchanged', async () => {
         const fixture = createCriterionFingerprintFixture({ phasedPolicy: presencePlanPolicy() });
-        await fixture.process({ group: presentFormingSnapshot(1), origin: 'commanded' });
+        await fixture.process({ group: presentFormingSnapshot(1), origin: 'commanded', traceId: 'trace-revision-1' });
         fixture.automated.length = 0;
 
-        await fixture.process({ group: presentFormingSnapshot(2), origin: 'automatic' });
+        await fixture.process({ group: presentFormingSnapshot(2), origin: 'automatic', traceId: 'trace-revision-2' });
 
         expect(fixture.topologyService.readMetrics().topologyPublishSkippedUnchangedCount).toBe(1);
-        expect(fixture.automated.map((submission) => submission.traceId)).toEqual([WORK_TRACE_ID]);
+        expect(fixture.automated.map((submission) => submission.traceId)).toEqual(['trace-revision-2']);
     });
 
     it('petitions a met presence trigger under the work row trace when a newer plan supersedes the work', async () => {
@@ -138,23 +137,23 @@ describe('formation criterion after unchanged topology inputs', () => {
             }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
-        await fixture.process({ group: newer, origin: 'commanded' });
+        await fixture.process({ group: newer, origin: 'commanded', traceId: 'trace-newer-plan' });
         fixture.automated.length = 0;
         fixture.current = presentSnapshot('planned', 1);
-        const unpublished = await reserveUnpublishedRevision(fixture.queue, fixture.current);
+        const unpublished = await reserveUnpublishedRevision(fixture.queue, fixture.current, 'trace-unpublished-revision-1');
 
         await fixture.handler.onMessage(decodePersistedALMessage(unpublished.resource), unpublished);
 
         expect(await fixture.snapshots.findSnapshot(fixture.current.group))
             .toMatchObject({ state: 'active', sourceGroupStateCausalRevision: { groupRevision: 2 } });
         expect(fixture.automated.map(({ command, traceId }) => ({ operation: command.operation, traceId })))
-            .toEqual([{ operation: 'connectGroup', traceId: WORK_TRACE_ID }]);
+            .toEqual([{ operation: 'connectGroup', traceId: 'trace-unpublished-revision-1' }]);
     });
 
     it('persists the supplied wall-clock instant when topology work completes', async () => {
         const fixture = createCriterionFingerprintFixture();
 
-        const entry = await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
+        const entry = await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded', traceId: 'trace-revision-1' });
 
         const completed = await fixture.queue.getItem(entry.key);
         expect(completed?.status).toBe(EntityStatus.COMPLETED);
@@ -166,7 +165,7 @@ describe('formation criterion after unchanged topology inputs', () => {
         const fixture = createCriterionFingerprintFixture({ durationNowMs: () => times.shift() ?? 28 });
         fixture.failCommit = true;
 
-        await expect(fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' }))
+        await expect(fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded', traceId: 'trace-revision-1' }))
             .rejects.toThrow('Injected commit failure');
 
         expect(fixture.topologyService.readMetrics()).toMatchObject({
@@ -194,9 +193,9 @@ describe('formation criterion after unchanged topology inputs', () => {
         'does not petition a fingerprint-identical %s stage',
         async (stage) => {
             const fixture = createCriterionFingerprintFixture();
-            await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
+            await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded', traceId: 'trace-revision-1' });
 
-            await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic' });
+            await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic', traceId: 'trace-revision-2' });
 
             expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(1);
             expect(fixture.submitted).toEqual([]);
@@ -205,10 +204,10 @@ describe('formation criterion after unchanged topology inputs', () => {
 
     it('does not petition when reservation completion rolls back, and evaluates on retry', async () => {
         const fixture = createCriterionFingerprintFixture();
-        await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
+        await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded', traceId: 'trace-revision-1' });
         fixture.failCommit = true;
 
-        await expect(fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' }))
+        await expect(fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic', traceId: 'trace-revision-2' }))
             .rejects.toThrow('Injected commit failure');
 
         const reserved = await fixture.queue.getItem(toCoalescedGroupRevisionKey(fixture.current.group));
@@ -228,7 +227,7 @@ describe('formation criterion after unchanged topology inputs', () => {
         'does not use the cached fingerprint as readiness when the planned row is %s',
         async (state) => {
             const fixture = createCriterionFingerprintFixture();
-            await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
+            await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded', traceId: 'trace-revision-1' });
             const published = await fixture.snapshots.findSnapshot(fixture.current.group);
             if (published === undefined) {
                 throw new Error('Initial work must publish a plan');
@@ -237,24 +236,25 @@ describe('formation criterion after unchanged topology inputs', () => {
             if (state === 'removed') {
                 await fixture.snapshots.commitSnapshot({ candidate: { ...published, state: 'removed' } });
             }
-            await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' });
+            await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic', traceId: 'trace-revision-2' });
 
             expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(0);
             expect(await fixture.snapshots.findSnapshot(fixture.current.group)).toMatchObject({
                 state: 'active',
                 sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 }
             });
-            expect(fixture.submitted.map((submission) => submission.traceId)).toEqual([WORK_TRACE_ID]);
+            expect(fixture.submitted.map((submission) => submission.traceId)).toEqual(['trace-revision-2']);
         }
     );
 
     it('plans a delayed membership change from the current group, so a superseded stage petitions nothing (D290)', async () => {
         const fixture = createCriterionFingerprintFixture();
-        await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
-        await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' });
+        await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded', traceId: 'trace-revision-1' });
+        await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic', traceId: 'trace-revision-2' });
         const delayed = await reserveGroupRevision(fixture.queue, {
             group: lifecycleSnapshot('connecting', 2),
-            origin: 'automatic'
+            origin: 'automatic',
+            traceId: 'trace-delayed-revision-2'
         });
         expect(fixture.submitted).toHaveLength(1);
         fixture.submitted.length = 0;
@@ -363,11 +363,13 @@ function createCriterionFingerprintFixture(
 interface ProcessGroupRevisionInput {
     readonly group: GroupSnapshot;
     readonly origin: 'automatic' | 'commanded';
+    /** Each work row's own trace, so a pin names the row its petition came from. */
+    readonly traceId: string;
 }
 
 async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroupRevisionInput): Promise<ResourceEntry> {
     const work = computeCoalescedRtcTopologyGroupRevisionWork({
-        traceId: WORK_TRACE_ID,
+        traceId: input.traceId,
         aggregateRef: input.group.group,
         groupSnapshot: input.group,
         origin: input.origin,
@@ -430,10 +432,14 @@ function presentSnapshot(stage: GroupLifecycleState, revision: number): GroupSna
 }
 
 /** A commanded recompute that publishes nothing: a stale candidate for it is superseded rather than republished. */
-async function reserveUnpublishedRevision(queue: InMemoryQueueBox, group: GroupSnapshot): Promise<ResourceEntry> {
+async function reserveUnpublishedRevision(
+    queue: InMemoryQueueBox,
+    group: GroupSnapshot,
+    traceId: string
+): Promise<ResourceEntry> {
     const resourceId = `unpublished:${group.causalRevision.groupRevision}`;
     const work = computeRtcTopologyOutboxInsert({
-        traceId: WORK_TRACE_ID,
+        traceId,
         commandId: resourceId,
         resourceId,
         aggregateRef: toCanonicalGroupRef(group.group),

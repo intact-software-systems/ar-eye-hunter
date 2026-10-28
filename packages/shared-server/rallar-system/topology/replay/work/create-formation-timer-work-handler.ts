@@ -58,16 +58,8 @@ async function consumeFormationTimer(
     if (options.nowEpochMs() < work.notBeforeEpochMs) {
         throw new Error('Formation timer is not due yet; retry release will walk it forward');
     }
-    const snapshot = await options.findGroupSnapshotByRef(work.groupRef, {
-        minSnapshotVersion: work.groupSnapshotVersion
-    });
-    if (!snapshot) {
-        return;
-    }
-    if (snapshot.group.formationEpoch < work.formationEpoch) {
-        throw new Error('Formation timer group snapshot is behind; retry after refreshing group state');
-    }
-    if (snapshot.group.formationEpoch > work.formationEpoch) {
+    const snapshot = await readArmingStageSnapshot(options, work);
+    if (snapshot === null) {
         return;
     }
     const atEpochMs = options.nowEpochMs();
@@ -96,6 +88,27 @@ async function consumeFormationTimer(
             await evaluateFormationDeadline(options, { work, snapshot, traceId });
             return;
     }
+}
+
+/**
+ * The group at the timer's own epoch, or null when the group is gone or has
+ * moved past the stage that armed the timer. A snapshot still behind the
+ * timer throws so the retry release rereads it.
+ */
+async function readArmingStageSnapshot(
+    options: FormationTimerWorkHandlerOptions,
+    work: GroupFormationTimerWork
+): Promise<GroupSnapshot | null> {
+    const snapshot = await options.findGroupSnapshotByRef(work.groupRef, {
+        minSnapshotVersion: work.groupSnapshotVersion
+    });
+    if (!snapshot) {
+        return null;
+    }
+    if (snapshot.group.formationEpoch < work.formationEpoch) {
+        throw new Error('Formation timer group snapshot is behind; retry after refreshing group state');
+    }
+    return snapshot.group.formationEpoch > work.formationEpoch ? null : snapshot;
 }
 
 interface EvaluateFormationDeadlineInput {

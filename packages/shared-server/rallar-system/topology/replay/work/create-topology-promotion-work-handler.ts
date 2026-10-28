@@ -1,8 +1,8 @@
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
-import type { GroupSystemCommandPort } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
-import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/to-apply-planned-layout-command.ts';
-import { decodeTopologyPromotionWork } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
+import type { GroupSystemCommandPort } from '../../../group-state/inbox/group-system-command-submission.ts';
+import { toApplyPlannedLayoutCommand } from '../../../group-state/to-apply-planned-layout-command.ts';
+import { decodeTopologyPromotionWork } from '../../../group-state/topology-promotion-outbox-entry.ts';
 
 export interface TopologyPromotionWorkHandlerOptions {
     readonly topologyPublication: GroupSystemCommandPort;
