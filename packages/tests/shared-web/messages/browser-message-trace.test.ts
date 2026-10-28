@@ -69,6 +69,19 @@ describe('the trace of a browser send', () => {
         expect(fixture.registry.size()).toBe(0);
     });
 
+    it('returns every issue of a send whose trace and correlation are both invalid', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+
+        const sending = fixture.sender.sendWs({ ...SEND, scope: 'room', traceId: 'trace id', corrId: '' }, undefined);
+
+        await expect(sending).rejects.toMatchObject({
+            issues: expect.arrayContaining([
+                expect.objectContaining({ path: '$.traceId' }),
+                expect.objectContaining({ path: '$.corrId' })
+            ])
+        });
+    });
+
     it('hands the receiver the sender\'s trace, and the receiver\'s reply carries it under the request\'s correlation', async () => {
         const sending = createBrowserMessageSenderFixture();
         const replying = createBrowserMessageSenderFixture();

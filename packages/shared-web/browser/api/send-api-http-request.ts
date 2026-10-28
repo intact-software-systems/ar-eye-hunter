@@ -4,16 +4,14 @@ import { readSession } from '@shared/api/auth.ts';
 
 import { ApiHttpError, type ApiHttpMethod } from './http-error.ts';
 
-export type ApiRequestOptions = Readonly<{
-    signal?: AbortSignal;
-    authSession?: AuthSession | null;
-}>;
+export interface ApiRequestOptions {
+    readonly signal?: AbortSignal;
+    readonly authSession?: AuthSession | null;
+}
 
-export type ApiMutationRequestOptions =
-    & ApiRequestOptions
-    & Readonly<{
-        requestId: string;
-    }>;
+export interface ApiMutationRequestOptions extends ApiRequestOptions {
+    readonly requestId: string;
+}
 
 export interface SendApiHttpRequestInput<TRequest> {
     readonly baseUrl: string;
@@ -33,10 +31,6 @@ export function readApiRequestSession(options: ApiRequestOptions): AuthSession |
     return options.authSession ?? undefined;
 }
 
-/**
- * The one place browser API request headers are built: every request carries its own `x-request-id` trace, and the
- * session's credentials when it has one.
- */
 export function newApiRequestHeaders(options: ApiRequestOptions): Headers {
     const headers = new Headers({ 'content-type': 'application/json', 'x-request-id': newALTraceId() });
     const session = readApiRequestSession(options);
@@ -47,7 +41,6 @@ export function newApiRequestHeaders(options: ApiRequestOptions): Headers {
     return headers;
 }
 
-/** A refused response's body as text; a body that cannot be read is empty. */
 export async function readApiErrorBody(response: Response): Promise<string> {
     try {
         return await response.text();

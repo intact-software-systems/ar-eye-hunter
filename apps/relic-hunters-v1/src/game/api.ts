@@ -4,7 +4,7 @@ import {
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
-import { newApiRequestHeaders } from '@shared-web/browser/api/send-api-http-request.ts';
+import { newApiRequestHeaders, readApiErrorBody } from '@shared-web/browser/api/send-api-http-request.ts';
 import { readSession } from '@shared/api/auth.ts';
 
 export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -61,7 +61,7 @@ export async function sendRelicCommand(
         }
     );
     if (!response.ok) {
-        const body = await response.text().catch(() => '');
+        const body = await readApiErrorBody(response);
         throw new Error(`Failed to send expedition command: ${response.status} ${body}`);
     }
 

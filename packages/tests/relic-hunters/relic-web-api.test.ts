@@ -119,6 +119,17 @@ describe('Relic Hunters web API client', () => {
             'Failed to send expedition command: 400 invalid command'
         );
     });
+
+    it('surfaces an unreadable command failure body as empty, as the shared API error reader does', async () => {
+        writeSession(session());
+        const unreadable = new Response('invalid command', { status: 400 });
+        vi.spyOn(unreadable, 'text').mockRejectedValue(new TypeError('body stream already read'));
+        vi.stubGlobal('fetch', vi.fn(async () => unreadable));
+
+        await expect(sendRelicCommand('room-1', joinCommand())).rejects.toThrow(
+            /^Failed to send expedition command: 400 $/
+        );
+    });
 });
 
 function session(): AuthSession {

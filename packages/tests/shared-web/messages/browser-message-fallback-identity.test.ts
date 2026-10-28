@@ -377,6 +377,27 @@ describe('typed message fallback identity', () => {
         expect(handle.traceId).toBe('trace-fallback');
     });
 
+    it('keeps the minted trace of a send that names none when its RTC leg is refused and WS takes the message', async () => {
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({
+                msg,
+                lane: 'volatile',
+                preparedMessages: [],
+                dropReason: 'ack receiver is unsupported for rtc multicast targets',
+                dropReasonCode: 'unsupported'
+            })
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver' });
+
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(fixture.attempts.map((attempt) => [attempt.carrier, attempt.message.id.traceId])).toEqual([
+            ['rtc', handle.traceId],
+            ['ws', handle.traceId]
+        ]);
+    });
+
     it('keeps the send\'s trace across the post-admission hand-over to WS', async () => {
         const fixture = createChannel({ firstVerdict: ADMITTED_VERDICT });
         const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver', traceId: 'trace-hand-over' });

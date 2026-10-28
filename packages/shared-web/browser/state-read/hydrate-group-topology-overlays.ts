@@ -237,9 +237,21 @@ function decodeGroupTopologyManagementView(
         throw new TypeError('Group topology view overlayId is not canonical for the requested group');
     }
 
+    return { overlayId, ...decodeTopologyRoleSnapshots(value, groupRef, overlayId) };
+}
+
+function decodeTopologyRoleSnapshots(
+    value: GroupTopologyManagementView,
+    groupRef: GroupRef,
+    overlayId: string
+): Pick<DecodedGroupTopologyView, 'snapshot' | 'acceptedSnapshot'> {
     return {
-        overlayId,
-        snapshot: decodeTopologyRoleSnapshot({ value: value.snapshot, groupRef, overlayId, role: 'snapshot' }),
+        snapshot: decodeTopologyRoleSnapshot({
+            value: value.snapshot,
+            groupRef,
+            overlayId,
+            role: 'snapshot'
+        }),
         acceptedSnapshot: decodeTopologyRoleSnapshot({
             value: value.acceptedSnapshot,
             groupRef,

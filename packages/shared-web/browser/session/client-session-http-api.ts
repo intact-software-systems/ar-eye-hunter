@@ -48,7 +48,7 @@ async function mutateClientSession<TRequest>(
     return await sendApiHttpRequest<TRequest, ClientSnapshot>({
         baseUrl: readApiBaseUrl(),
         path: toApiMutationRequestPath(sessionPath, input.options.requestId),
-        method: method,
+        method,
         body: input.request,
         options: input.options
     });

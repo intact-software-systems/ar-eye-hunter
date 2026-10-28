@@ -13,20 +13,10 @@ import { readApiBaseUrl } from '../api-client-config.ts';
 import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { defaultStateScope, toStateScopeHttpPath } from '../api/state-http-path.ts';
 
-export type StateEventListRequestOptions<TEventType extends string> =
-    & ApiRequestOptions
-    & Readonly<{
-        eventTypes?: readonly TEventType[];
-        limit?: number;
-        after?: StateEventCursor;
-    }>;
-
-interface StateEventPathInput<TEventType extends string> {
-    readonly scope: StateScope;
-    readonly collection: 'clients' | 'groups';
-    readonly id: string;
-    readonly suffix: 'events' | 'events/page';
-    readonly options: StateEventListRequestOptions<TEventType> | undefined;
+export interface StateEventListRequestOptions<TEventType extends string> extends ApiRequestOptions {
+    readonly eventTypes?: readonly TEventType[];
+    readonly limit?: number;
+    readonly after?: StateEventCursor;
 }
 
 export type GroupStateEventListRequestOptions = StateEventListRequestOptions<GroupEventType>;
@@ -94,6 +84,14 @@ export async function listStateClientEventPage(
     });
     validateAuthoritativeClientEventPage(response, { ...scope, principalId });
     return response;
+}
+
+interface StateEventPathInput<TEventType extends string> {
+    readonly scope: StateScope;
+    readonly collection: 'clients' | 'groups';
+    readonly id: string;
+    readonly suffix: 'events' | 'events/page';
+    readonly options: StateEventListRequestOptions<TEventType> | undefined;
 }
 
 function toStateEventPath<TEventType extends string>(
