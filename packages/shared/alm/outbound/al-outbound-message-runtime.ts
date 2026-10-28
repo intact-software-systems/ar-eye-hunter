@@ -450,7 +450,7 @@ export namespace ALOutboundMessageRuntime {
     export interface SendLifecycle {
         readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
-        /** This message's own signal: `cancel(msgId)` aborts it directly; disposal aborts every live one. */
+        /** This message's own signal: `cancel(msgId, traceId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
         readonly expiresAtMs: number | undefined;
         readonly leaseUntilMs: number | undefined;
@@ -554,7 +554,8 @@ export namespace ALOutboundMessageRuntime {
  *   Each lane may commit its members together or individually; there is no cross-store atomicity.
  * - A control, a receipt and a retransmission go to the memory lane that owns the target message (a
  *   memory read), else to the durable lane.
- * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes.
+ * - `cancel(msgId, traceId)`, which states `cancelled` under the caller's trace, and `handOver(msgId)` are
+ *   runtime-wide: one set of send controls serves both lanes.
  * - Only the durable lane admits foreign dequeue rows. The volatile lane names none and takes no
  *   browser lock, since Web Locks guard cross-tab IndexedDB commits and memory is per tab.
  * - The volatile lane's worker id is `${effectWorkerId}/volatile`, the checkpoint lane's

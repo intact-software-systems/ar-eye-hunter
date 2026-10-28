@@ -403,6 +403,12 @@ identity, makes the diagnostics class payload-free and closes PC9 (D454). One co
 (`rtc-topology-hydration-message.ts:37`) and the browser compares it
 (`state-cache/is-rtc-topology-current-state-message.ts:44`); I1b leaves it alone and is trace only.
 
+I1b-ii-a adds the maintainer's rulings R11–R12 of 2026-10-28:
+
+- **R11:** I1b-ii lands as two pull requests: I1b-ii-a, the trace on the runtime, first; then I1b-ii-b, the harness
+  identity and the payload-free diagnostics class, which closes PC9.
+- **R12:** the maintainer approved the six-task I1b-ii-a plan as written.
+
 ### 6.a One identity, three carriers (R6, D447)
 
 The trace id is one string with one grammar, `[A-Za-z0-9_-]{1,128}` (a UUID fits), owned by
@@ -619,7 +625,8 @@ I1b-ii also owns the trace on harness identity: the black-box runner's compared 
 control, which mints its own trace today (`submit-black-box-raw-control.ts`).
 
 **As applied (I1b-ii-a).** I1b-ii lands as two pull requests (R11). I1b-ii-a puts the trace on the runtime, and
-I1b-ii-b, next and outcome-shaped, owns the harness identity, the payload-free diagnostics class and PC9.
+I1b-ii-b, next and outcome-shaped, owns the harness send and message identity, the payload-free diagnostics class
+and PC9.
 
 - The formation cycle keeps the trace of the message that caused each submission. Its four ports share one
   `GroupSystemCommandSubmission` and one `GroupSystemCommandPort`, the trace rides

@@ -1121,7 +1121,8 @@ current `atMs` and the `lane` that stated it (`durable` or `volatile`; a runtime
 so a throwing sink logs and returns rather than changing dispatch, retry, or claim
 behaviour. Every fact carries a required `traceId`: the trace of the request whose commit stated it.
 That is the message's own trace, the replacement's on `superseded`, the admitted control's on a
-settlement a control states, and the caller's on `cancel`. No settlement mints a trace. The browser's sink for these settlements is the in-memory delivery registry,
+settlement a control states, and the caller's on `cancel`. No settlement mints a trace. The browser's sink
+for these settlements is the in-memory delivery registry,
 [`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)
 (`packages/shared-web/browser/messages/`), which reduces each settlement into the
 sending handle's lifecycle.
