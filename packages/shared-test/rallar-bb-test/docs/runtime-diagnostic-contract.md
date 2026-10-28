@@ -398,8 +398,8 @@ publication succeed. The event's `data` is the event itself:
     "workerId": "al-inbound:worker-1",
     "effectId": "dispatch:peer-a:msg-1",
     "msgId": "msg-1",
-    "subjectMsgId": "msg-1",
     "typeId": null,
+    "subjectMsgId": "msg-1",
     "payloadKind": "dispatch-local",
     "durationMs": 1,
     "attempts": 1,
@@ -820,6 +820,24 @@ receipt's control id, subject/origin, phase and exact audience snapshot:
   (`sent-live`, `no-recipients`, `expired`, `partial-failure`, `failed`) and counts,
   plus publisher return/throw. A returned publication can coexist with wrapper
   `not-ready`; a returned direct failure can precede a publisher throw.
+
+Every record names a trace, `traceId`. The safe projection requires it on every
+kind and checks it like any identity, so a record with a missing or unsafe
+trace is refused whole:
+
+- `receipt-work`, `receipt-transport` and `receipt-publication` carry
+  `ALOutboundReceiptFacts.traceId`, the receipt control's trace, which is its
+  subject message's; `receipt-outbox` carries the issued receipt's, the same
+  subject's
+- `business-socket-decision` carries the subject message's own trace
+  (`WsQueueBoxServerReceiptBusinessFacts.traceId`)
+- `socket-decision`, `ack-relay` and `ack-rejection` carry the ACK control's
+  own trace (`WsQueueBoxServerReceiptAckFacts.traceId`), which equals its
+  subject's in production because the ACK is built with it; a refusal without
+  a decoded control identity records nothing
+- `ack-count` carries the live aggregate's trace, else the counted control's;
+  its `source` is `local` or `relayed`, since the test-only `direct` count is
+  gone
 
 Facts are frozen before mutable consumers and sink calls wait for the real work
 batch's mandatory release/end logic. Callback evidence never asserts release

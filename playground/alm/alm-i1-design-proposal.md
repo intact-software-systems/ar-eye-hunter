@@ -550,6 +550,13 @@ boundary mints, each pinned to validate and to differ between two mints:
 Beside them, the HTTP middleware mints only when `x-request-id` is absent or invalid, the browser mints one per HTTP
 request, and `buildALMessage` mints only when a caller passes no trace.
 
+**As applied (I1b-ii-a).** The activation status clock arm and the four formation-cycle enqueues no longer mint. The
+topology work cycle submits one `GroupSystemCommandSubmission { command, atEpochMs, traceId }` under the trace of
+the message that caused it, and `armStatusClock(work, traceId)` arms the clock under the arming trace (D455). The
+remaining server mints are the planning service's local publication, the replay repair, the reconnect hydration, the
+retention and expired-presence sweeps, the session cleanup and client disconnect of a socket close, and the
+expired-session sweep.
+
 ### 6.f The audit stamp is the trace (R9, D452)
 
 The mutation request bodies lose their optional `traceId` (27 OpenAPI schemas, the group and client validators, the
@@ -611,6 +618,34 @@ recipes' assertion surface (R7). Docs close PC9. The hosted manifests regenerate
 I1b-ii also owns the trace on harness identity: the black-box runner's compared response headers and the harness raw
 control, which mints its own trace today (`submit-black-box-raw-control.ts`).
 
+**As applied (I1b-ii-a).** I1b-ii lands as two pull requests (R11). I1b-ii-a puts the trace on the runtime, and
+I1b-ii-b, next and outcome-shaped, owns the harness identity, the payload-free diagnostics class and PC9.
+
+- The formation cycle keeps the trace of the message that caused each submission. Its four ports share one
+  `GroupSystemCommandSubmission` and one `GroupSystemCommandPort`, the trace rides
+  `WriteAcceptedRtcTopologyWorkInput.traceId`, and a trailing criterion petition keeps the trace of the message that
+  last requested it (D455). This was the first I1b-ii item D454 named.
+- `RallarTimingEvent.traceId` is set by every request- or message-scoped timing producer, and the HTTP line's
+  `requestId` equals it. It is absent only where a producer holds no decoded message or request, and its JSDoc names
+  that complete set (D456). The AppInbox timing lines are among the producers that set it.
+- The ws-receipt facts carry the trace: the outbound receipt facts, the business-socket and ACK facts, `ack-count`,
+  `receipt-outbox` and `ack-rejection`. `ALDeliverySettlement.traceId` is required, `cancel` takes the caller's trace,
+  and the admin receipt entry and its OpenAPI schema require `traceId` (D457). No recipe can observe the admin entry's
+  trace yet, so its recipe assertion joins I1b-ii-b's server-originated cell.
+- `toALMessageTrace(message)` appends `traceId` then `corrId` last on every message-scoped runtime diagnostic,
+  after `control-admission`'s optional `phase` too, because a recipe wait matches `reason` and `phase` as neighbours
+  (D458). `dispatch-decision` and `claim-settled` carry both as `null` together where no decoded message exists.
+- The black-box safe projections admit the trace: the timing projection as an identity, the receipt projection as a
+  required field (D456, D457).
+- The runner compares the echoed `x-request-id`, and the harness raw control acknowledges under the acknowledged
+  message's trace, read from a retained received message or the page's own delivery handle; an unknown message is
+  refused `acked-message-unknown` before any admission, and the raw control no longer mints (D459).
+
+Still planned for I1b-ii-b: `traceId` and `corrId` on the harness `messages.send` result value and the typed-channel
+message event, the assessors' sender and receiver trace equality across the reload and fallback cells, the
+server-originated cell, the payload-free diagnostics class with its sentinel guard, the regenerated hosted manifests
+and the docs that close PC9.
+
 ### 6.i Decisions
 
 - **D447** One trace identity: `id.traceId` is required, `[A-Za-z0-9_-]{1,128}`, owned by `al-contracts/trace/`;
@@ -642,7 +677,18 @@ control, which mints its own trace today (`submit-black-box-raw-control.ts`).
   Deno route tests, because the black-box runner drops `x-request-id`.
 - **D454** I1b-ii as in §6.h: diagnostics and harness identity, the payload-free diagnostics class with its sentinel
   guard, message evidence keeps payloads (R7), docs close PC9. Harness identity includes the runner's compared
-  response headers and the harness raw control's trace.
+  response headers and the harness raw control's trace. As applied: I1b-ii lands as I1b-ii-a, the runtime half
+  (D455–D459), and I1b-ii-b, next and outcome-shaped (R11).
+- **D455** (I1b-ii-a) The formation cycle submits one `GroupSystemCommandSubmission` through one
+  `GroupSystemCommandPort` under the causing message's trace; twelve mint sites remain, listed in the roadmap's D455.
+- **D456** (I1b-ii-a) `RallarTimingEvent.traceId` on every request- or message-scoped timing line; the HTTP
+  `requestId` equals it; the JSDoc names the producers without one.
+- **D457** (I1b-ii-a) The receipt observations, `ALDeliverySettlement.traceId` and the admin receipt entry carry the
+  trace; the entry's recipe assertion joins I1b-ii-b.
+- **D458** (I1b-ii-a) `toALMessageTrace` appends `traceId` then `corrId` last on every message-scoped diagnostic,
+  after `phase`; two kinds are nullable together.
+- **D459** (I1b-ii-a) The runner compares `x-request-id`; the raw control inherits the acknowledged message's trace or
+  is refused `acked-message-unknown`.
 
 ### 6.j Corrections and carries
 

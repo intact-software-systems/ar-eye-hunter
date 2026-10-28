@@ -127,9 +127,37 @@ trace observes the first request's trace. A handler reads
 families carry it in `AppInboxCommandAttempt { attemptCount, traceId }`. No trace
 is minted inside a pure compute, because `validate` and the stored-row validators
 recompute it. Work-derived rows take the retained work row's envelope trace, and
-controls take their subject message's. Only an autonomous enqueue or publication,
-such as a sweep, a timer or a socket close, mints a trace at its boundary. The
-audit stamp and the group and client events take the trace from the handler facts.
+controls take their subject message's. Only an autonomous enqueue or publication
+with no cause mints a trace at its boundary: the retention and expired-presence
+sweeps, the session cleanup and client disconnect of a socket close, the
+expired-session sweep, the planning service's local publication, the replay repair
+and the reconnect hydration. The audit stamp and the group and client events take
+the trace from the handler facts.
+
+**The formation cycle keeps the trace.** The topology work cycle submits its
+formation criterion, formation automation, topology publication and activation
+status commands as one `GroupSystemCommandSubmission { command, atEpochMs, traceId }`
+through a `GroupSystemCommandPort`
+(`rallar-system/group-state/inbox/group-system-command-submission.ts`). The trace
+is the one of the message that caused the submission. A trailing formation
+criterion petition fires from a timer under the trace of the message that last
+requested it. The activation status clock is armed with `armStatusClock(work,
+traceId)` and writes its row under that trace. So a join, its formation timers and
+its activation publication follow one trace, and the formation cycle mints none.
+
+**Timing lines and receipt observations name the trace.** `RallarTimingEvent.traceId`
+names the request or message a timing line describes. The HTTP line sets it beside
+an equal `requestId`. The AppInbox client, waiter, executor, transaction and phase
+lines take it from the enqueue input, the wait or the message, and the other
+request- and message-scoped producers set it too. It is absent only where a producer
+holds no decoded message or request, such as the AppInbox dequeue pass, its
+boundary, the computed queue failure and the retry exhaustion; the field's JSDoc in
+`rallar-system/observability/timing.ts` names that complete set. A WS receipt
+observation names the trace of the message it is about: a business socket decision
+and an issued receipt carry the subject's, an ACK's facts carry the ACK's own (its
+subject's in production), and `ack-count` carries the live aggregate's. The
+`ws-receipt` timing line copies the observation's trace. The admin realtime
+receipt entry names the trace of the message's latest receipt fact.
 
 Authoritative persisted, replicated, queued, event, snapshot, receipt, and
 successful response fields are mandatory fields by default. Current writers
