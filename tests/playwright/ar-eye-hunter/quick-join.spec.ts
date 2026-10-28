@@ -15,6 +15,8 @@ roomBrowserTest(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
+        await alice.addInitScript(installArenaWebGlObservation);
+        await bob.addInitScript(installArenaWebGlObservation);
         const bobOperations = await signIn(bob, 'bob');
         await bob.route(
             '**/groups/quick-join/requests/*',
@@ -66,6 +68,15 @@ roomBrowserTest(
         await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
         await expect(bobOperations.locator('.room-row.active')).toContainText(replacement.group.displayName);
         await bob.screenshot({ path: testInfo.outputPath('quick-join-replacement.png'), fullPage: true });
+        // interaction: one WebGL acquisition per mounted canvas avoids repeating driver initialization on room changes.
+        await expect(alice.getByLabel('AR Eye Hunter gameplay canvas')).toHaveAttribute(
+            'data-test-webgl-acquisitions',
+            '1'
+        );
+        await expect(bob.getByLabel('AR Eye Hunter gameplay canvas')).toHaveAttribute(
+            'data-test-webgl-acquisitions',
+            '1'
+        );
     }
 );
 
@@ -224,10 +235,59 @@ roomBrowserTest('a director canvas shot adopts a match accepted between animatio
     await page.goto(`/@fs${fixturePath}`);
     const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
     await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+    await page.getByRole('button', { name: 'Inspect renderer' }).click();
     await page.evaluate(() => window.dispatchEvent(new Event('test-pause-animation-frames')));
     await page.getByRole('button', { name: 'Accept match snapshot' }).click();
     await expect(page.getByTestId('accepted-match')).toHaveText('accepted-match');
     await canvas.click({ position: { x: 320, y: 240 } });
     await expect(page.getByTestId('shot-hit')).toHaveText('true');
     await expect(page.getByTestId('published-match')).toHaveText('accepted-match');
+    await page.evaluate(() => document.exitPointerLock());
+    await page.getByRole('button', { name: 'Change room' }).click();
+    await page.evaluate(() => window.dispatchEvent(new Event('test-resume-animation-frames')));
+    await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+    await expect(canvas).toHaveAttribute('data-arena-pointer-down-count', '0');
+    await expect(page.getByTestId('published-match')).toHaveText('none');
+    await canvas.click({ position: { x: 320, y: 240 } });
+    await expect(page.getByTestId('shot-hit')).toHaveText('true');
+    await expect(page.getByTestId('published-room')).toHaveText('replacement-arena');
+    await expect(page.getByTestId('published-match')).toHaveText('none');
+    await page.evaluate(() => document.exitPointerLock());
+    await page.getByRole('button', { name: 'Change player' }).click();
+    await expect(canvas).toHaveAttribute('data-arena-pointer-down-count', '0');
+    await page.getByRole('button', { name: 'Inspect renderer' }).click();
+    // interaction: the canvas owns one engine and one live scene/render loop after identity and room replacement.
+    expect(JSON.parse(await page.getByTestId('renderer-inspection').innerText())).toEqual({
+        sameEngine: true,
+        originalEngineDisposed: false,
+        originalSceneDisposed: true,
+        scenes: 1,
+        loops: 1
+    });
+    await page.getByRole('button', { name: 'Unmount arena' }).click();
+    await expect(canvas).toHaveCount(0);
+    await page.getByRole('button', { name: 'Inspect renderer' }).click();
+    expect(JSON.parse(await page.getByTestId('renderer-inspection').innerText())).toEqual({
+        sameEngine: false,
+        originalEngineDisposed: true,
+        originalSceneDisposed: true,
+        scenes: 0,
+        loops: 0
+    });
 });
+
+function installArenaWebGlObservation(): void {
+    HTMLCanvasElement.prototype.getContext = new Proxy(HTMLCanvasElement.prototype.getContext, {
+        apply(target, canvas: HTMLCanvasElement, argumentsList: Parameters<HTMLCanvasElement['getContext']>) {
+            const context = Reflect.apply(target, canvas, argumentsList);
+            const kind = argumentsList[0];
+            if (
+                context && typeof kind === 'string' && kind.startsWith('webgl') &&
+                canvas.getAttribute('aria-label') === 'AR Eye Hunter gameplay canvas'
+            ) {
+                canvas.dataset.testWebglAcquisitions = String(Number(canvas.dataset.testWebglAcquisitions ?? 0) + 1);
+            }
+            return context;
+        }
+    });
+}

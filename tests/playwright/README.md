@@ -86,3 +86,60 @@ sequence and must not be presented as directly comparable timings. Controlled
 browser regressions in `relic-hunters/turn-reset.spec.ts` also cover ordinary
 snapshot updates, refused Reset, automatic submission across expedition resets,
 and recovery that first observes an already-expired new round.
+
+
+## Chromium room timing diagnostics
+
+Set `RALLAR_BROWSER_TIMING=1` to capture both players in cases using
+`roomBrowserTest` (the two-player AR Eye private entry and Quick Join cases, and
+Relic full-stack private entry cases). Each test attempt writes `browser-timing-host.jsonl`
+and, when a guest is used, `browser-timing-guest.jsonl` in its output directory.
+The flag is off by default; the hosted AR Eye room lane enables it. In that
+full-stack config it also retains native traces for successful cases, preserving
+the existing snapshot capture and disabled filmstrip screenshots. This lets a
+passing but stalled action be correlated with metrics. It does not
+change rendering, workflow assertions, browser topology or deadlines.
+
+Each file begins with runtime, renderer, machine and explicit source revision
+metadata. Renderer metrics use CDP's `timeTicks` domain (elapsed time, not CPU
+utilization); process `cpuTimeSeconds` is cumulative CPU time from Chromium.
+Each channel reads independently with one second between completed reads. Every
+record has the runner wall-clock request/response bounds: a slow renderer read
+must not be assigned to an instantaneous point. Use deltas within one PID and
+metric lifetime, and account for navigation resets. An unfinished read at stop
+is `incomplete`, and a protocol failure is `failed`, never a zero measurement.
+A final `stopped` record proves capture teardown ran; its absence means the
+artifact is partial. The test outcome still comes from Playwright.
+Metrics include task/script/layout durations, JS heap and DOM counts. They do
+not identify JS hot functions, allocation sites, GC pauses or a GPU driver stall.
+
+The release lane also retains `runner-processes.log`: epoch milliseconds,
+`ps` PID/parent/cumulative CPU-percent/RSS-KiB/command-name rows, and Linux aggregate
+`/proc/stat` CPU counters. Command arguments and environment are excluded. Use
+CPU counter deltas for interval utilization; `ps` CPU percentage is a lifetime
+average. These system samples continue if a renderer stops responding. Match
+Chromium process IDs with the browser samples; unrelated runner processes are
+context, not attribution to the game. The timing artifact is uploaded on pass or
+failure before component tests clear the output directory. The same artifact includes
+the retained native `trace.zip` files; these are broader synthetic-account test
+evidence, not redacted numeric records.
+
+For a local diagnostic, use the normal app command with this extra flag and an
+ignored output directory, for example:
+
+```sh
+RALLAR_ROOM_JOURNEY_REVISION=$(git rev-parse HEAD) RALLAR_BROWSER_TIMING=1 \
+  RALLAR_ARENA_FULL_STACK=1 npx playwright test \
+  --config apps/ar-eye-hunter-v1/playwright.config.ts \
+  tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
+  tests/playwright/ar-eye-hunter/quick-join.spec.ts \
+  --project=desktop-delivery --workers=1 --trace=on \
+  --output=tmp/perf/ar-eye-browser
+```
+
+These numeric artifacts exclude page URLs, request contents and raw protocol
+errors. Native Playwright traces have a broader data surface: retain them only
+for synthetic test accounts. Correlate their action and non-WebSocket request
+times with the numeric samples. The timing capture adds protocol and file I/O
+work, so compare repeated equivalent runs and report its presence. A passing
+retry is not proof of a fixed root cause.

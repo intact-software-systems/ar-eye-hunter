@@ -1,35 +1,119 @@
-import { useState } from 'react';
+import type { AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
+import { EngineStore } from '@babylonjs/core/Engines/engineStore.js';
+import type { Scene } from '@babylonjs/core/scene.js';
+import {
+    StrictMode,
+    useRef,
+    useState
+} from 'react';
 import { createRoot } from 'react-dom/client';
+
 import { BabylonArena } from '../../../apps/ar-eye-hunter-v1/src/game/babylon-arena.tsx';
 import type { BabylonArenaProps } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-contracts.ts';
 import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
-const nowEpochMs = Date.now();
-const initial = createInitialArenaState(44, nowEpochMs);
-const initialSnapshot: ArenaSnapshot = {
-    ...toArenaSnapshot(initial, 'shot-arena', nowEpochMs),
-    targets: [{ ...initial.targets[0], position: [-45, 1.72, -43], velocity: [0, 0, 0], health: 10 }]
-};
+interface FixtureSceneInput {
+    readonly snapshot: ArenaSnapshot;
+    readonly sessionId: string;
+    readonly onShot: BabylonArenaProps['onLocalShot'];
+    readonly onSnapshot: BabylonArenaProps['onArenaSnapshot'];
+}
+interface InitialRenderer {
+    readonly engine: AbstractEngine;
+    readonly scene: Scene;
+}
 
 function ShotRegressionScene() {
-    const [snapshot, setSnapshot] = useState(initialSnapshot);
+    const [snapshot, setSnapshot] = useState(() => createFixtureSnapshot('shot-arena'));
     const [published, setPublished] = useState<ArenaSnapshot>();
     const [hit, setHit] = useState(false);
-    const props: BabylonArenaProps = {
-        localSessionId: 'host',
-        localUsername: 'alice',
+    const [sessionId, setSessionId] = useState('host');
+    const [mounted, setMounted] = useState(true);
+    const props = createFixtureSceneProps({
+        snapshot,
+        sessionId,
+        onShot: (_shot, accepted) => setHit(accepted.hit),
+        onSnapshot: (next) => {
+            setPublished(next);
+            setSnapshot(next);
+        }
+    });
+    return (
+        <>
+            <button onClick={() => setSnapshot(startFixtureMatch)}>Accept match snapshot</button>
+            <button
+                onClick={() => {
+                    setSnapshot(createFixtureSnapshot('replacement-arena'));
+                    setPublished(undefined);
+                    setHit(false);
+                }}
+            >
+                Change room
+            </button>
+            <button onClick={() => setSessionId('replacement-player')}>Change player</button>
+            <button onClick={() => setMounted(false)}>Unmount arena</button>
+            <RendererInspection />
+            <output data-testid="accepted-match">{snapshot.match?.matchId ?? 'none'}</output>
+            <output data-testid="published-match">{published?.match?.matchId ?? 'none'}</output>
+            <output data-testid="published-room">{published?.roomId ?? 'none'}</output>
+            <output data-testid="shot-hit">{String(hit)}</output>
+            {mounted && <BabylonArena {...props} />}
+        </>
+    );
+}
+
+function RendererInspection() {
+    const initial = useRef<InitialRenderer | undefined>(undefined);
+    const [inspection, setInspection] = useState('');
+    return (
+        <>
+            <button
+                onClick={() => {
+                    const engine = EngineStore.Instances[0];
+                    if (!initial.current && engine?.scenes[0]) {
+                        initial.current = { engine, scene: engine.scenes[0] };
+                    }
+                    setInspection(JSON.stringify({
+                        sameEngine: engine !== undefined && engine === initial.current?.engine,
+                        originalEngineDisposed: initial.current?.engine.isDisposed,
+                        originalSceneDisposed: initial.current?.scene.isDisposed,
+                        scenes: engine?.scenes.length ?? 0,
+                        loops: engine?.activeRenderLoops.length ?? 0
+                    }));
+                }}
+            >
+                Inspect renderer
+            </button>
+            <output data-testid="renderer-inspection">{inspection}</output>
+        </>
+    );
+}
+
+function createFixtureSnapshot(roomId: string): ArenaSnapshot {
+    const now = Date.now();
+    const initial = createInitialArenaState(44, now);
+    return {
+        ...toArenaSnapshot(initial, roomId, now),
+        targets: [{ ...initial.targets[0], position: [-45, 1.72, -43], velocity: [0, 0, 0], health: 10 }]
+    };
+}
+
+function createFixtureSceneProps({ snapshot, sessionId, onShot, onSnapshot }: FixtureSceneInput): BabylonArenaProps {
+    return {
+        localSessionId: sessionId,
+        localUsername: sessionId,
         localColor: '#00ff88',
-        roomId: 'shot-arena',
+        roomId: snapshot.roomId,
         roomReady: true,
         networkEnabled: true,
         authority: {
-            roomId: 'shot-arena',
-            sessionId: 'host',
+            roomId: snapshot.roomId,
+            sessionId,
             epoch: 1,
             local: true,
             fresh: true,
-            freshUntilEpochMs: nowEpochMs + 120_000
+            freshUntilEpochMs: snapshot.sentAtEpochMs + 120_000
         },
         linkState: { tone: 'live', label: 'Live arena', detail: 'Component fixture', playerCount: 1, actionNeeded: false },
         presenceNotices: [],
@@ -43,21 +127,9 @@ function ShotRegressionScene() {
         onPickupIntent: () => {},
         onLocalCombatChange: () => {},
         onLocalPlayerChange: () => {},
-        onLocalShot: (_shot, accepted) => setHit(accepted.hit),
-        onArenaSnapshot: (next) => {
-            setPublished(next);
-            setSnapshot(next);
-        }
+        onLocalShot: onShot,
+        onArenaSnapshot: onSnapshot
     };
-    return (
-        <>
-            <button onClick={() => setSnapshot(startFixtureMatch)}>Accept match snapshot</button>
-            <output data-testid="accepted-match">{snapshot.match?.matchId ?? 'none'}</output>
-            <output data-testid="published-match">{published?.match?.matchId ?? 'none'}</output>
-            <output data-testid="shot-hit">{String(hit)}</output>
-            <BabylonArena {...props} />
-        </>
-    );
 }
 
 function startFixtureMatch(previous: ArenaSnapshot): ArenaSnapshot {
@@ -81,4 +153,8 @@ const root = document.getElementById('root');
 if (!root) {
     throw new Error('The scene fixture requires its root element.');
 }
-createRoot(root).render(<ShotRegressionScene />);
+createRoot(root).render(
+    <StrictMode>
+        <ShotRegressionScene />
+    </StrictMode>
+);

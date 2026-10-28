@@ -1,5 +1,5 @@
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
-import { Engine } from '@babylonjs/core/Engines/engine.js';
+import type { Engine } from '@babylonjs/core/Engines/engine.js';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
@@ -57,6 +57,7 @@ import { buildArena, buildLayoutProps } from './arena-world-view.ts';
 export namespace ArenaSceneRuntime {
     export interface Input {
         readonly canvas: HTMLCanvasElement;
+        readonly engine: Engine;
         readonly props: RefObject<BabylonArenaProps>;
         readonly mobileSettings: MobileControlSettings;
         readonly audioSettings: ArenaAudioSettings;
@@ -64,7 +65,7 @@ export namespace ArenaSceneRuntime {
     }
 }
 
-/** Owns one canvas/room scene lifetime; accepted state belongs to simulation. */
+/** Owns one room scene; the canvas owner retains the engine and simulation owns accepted state. */
 export class ArenaSceneRuntime {
     private readonly canvas: HTMLCanvasElement;
     private readonly props: RefObject<BabylonArenaProps>;
@@ -122,8 +123,8 @@ export class ArenaSceneRuntime {
         this.clock = input.clock;
         this.mobileSettings = input.mobileSettings;
         this.audioSettings = input.audioSettings;
-        const graphics = createArenaGraphics(input.canvas);
-        this.engine = graphics.engine;
+        const graphics = createArenaGraphics(input.engine);
+        this.engine = input.engine;
         this.scene = graphics.scene;
         this.camera = graphics.camera;
         this.glow = graphics.glow;
@@ -179,9 +180,9 @@ export class ArenaSceneRuntime {
             clearTimeout(timer);
         }
         this.pulseTimers.clear();
+        this.engine.stopRenderLoop(this.render);
         this.audio.dispose();
         this.scene.dispose();
-        this.engine.dispose();
         for (const key of Object.keys(this.canvas.dataset)) {
             if (key.startsWith('arena')) {
                 delete this.canvas.dataset[key];
@@ -262,14 +263,12 @@ export class ArenaSceneRuntime {
 }
 
 interface ArenaGraphics {
-    readonly engine: Engine;
     readonly scene: Scene;
     readonly camera: FreeCamera;
     readonly glow: GlowLayer;
 }
 
-function createArenaGraphics(canvas: HTMLCanvasElement): ArenaGraphics {
-    const engine = new Engine(canvas, true, { antialias: true, preserveDrawingBuffer: true, stencil: true });
+function createArenaGraphics(engine: Engine): ArenaGraphics {
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.003, 0.018, 0.014, 1);
     scene.ambientColor = Color3.FromHexString(ARENA_SCENE_THEME.acid).scale(0.18);
@@ -280,7 +279,7 @@ function createArenaGraphics(canvas: HTMLCanvasElement): ArenaGraphics {
     camera.fov = 0.94;
     const glow = new GlowLayer('arena-glow', scene);
     glow.intensity = 0.92;
-    return { engine, scene, camera, glow };
+    return { scene, camera, glow };
 }
 
 function initialMusicState(

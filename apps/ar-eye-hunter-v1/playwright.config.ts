@@ -61,7 +61,11 @@ export default defineConfig({
     use: {
         baseURL: 'http://127.0.0.1:5186',
         trace: fullStackEnabled
-            ? { mode: 'retain-on-failure', screenshots: false, snapshots: true }
+            ? {
+                mode: process.env.RALLAR_BROWSER_TIMING === '1' ? 'on' : 'retain-on-failure',
+                screenshots: false,
+                snapshots: true
+            }
             : 'on-first-retry',
         screenshot: 'only-on-failure'
     },

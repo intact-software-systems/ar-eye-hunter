@@ -217,12 +217,36 @@ jobs:
         if: ${{ matrix.game == 'ar-eye' }}
         env:
           RALLAR_ARENA_FULL_STACK: '1'
+          RALLAR_BROWSER_TIMING: '1'
         run: |
+          mkdir -p tmp/perf/ar-eye-browser
+          (
+            while true; do
+              date -u +%s%3N
+              ps -eo pid,ppid,pcpu,rss,comm
+              head -1 /proc/stat
+              sleep 1
+            done
+          ) > tmp/perf/ar-eye-browser/runner-processes.log &
+          sampler_pid=$!
+          trap 'kill "$sampler_pid" 2>/dev/null || true; wait "$sampler_pid" 2>/dev/null || true' EXIT
           npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
             tests/playwright/ar-eye-hunter/director-capability-delivery.spec.ts \
             tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts \
             tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
+
+      - name: Upload AR Eye browser timing
+        if: ${{ always() && matrix.game == 'ar-eye' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ar-eye-browser-timing
+          path: |
+            apps/ar-eye-hunter-v1/test-results/**/browser-timing-*.jsonl
+            apps/ar-eye-hunter-v1/test-results/**/trace.zip
+            tmp/perf/ar-eye-browser/runner-processes.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Run Relic private room entry browser tests
         if: ${{ matrix.game == 'relic' }}
