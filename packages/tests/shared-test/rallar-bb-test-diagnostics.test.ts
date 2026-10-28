@@ -186,13 +186,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 topic: 'rallar.browser.ws.unhandled_message',
                 transport: 'ws',
                 severity: 'warning',
-                message: 'Unhandled WS message: room.unknown',
-                detail: {
-                    typeId: 'room.unknown',
-                    payload: {
-                        text: 'ignored'
-                    }
-                },
+                detail: { pattern: 'unhandled-ws-message', source: 'console.warn' },
                 source: 'unit-test'
             })
         });
@@ -212,9 +206,9 @@ describe('rallar-bb-test runtime diagnostics', () => {
         const assertResult = await runtime.execute({
             kind: 'assert',
             commandId: 'assert-ws-warning',
-            source: 'recentDiagnostics.0.payload.data.typeId',
+            source: 'recentDiagnostics.0.payload.data.pattern',
             operator: 'equals',
-            expected: 'room.unknown'
+            expected: 'unhandled-ws-message'
         });
 
         expect(waitResult.ok).toBe(true);
@@ -226,10 +220,8 @@ describe('rallar-bb-test runtime diagnostics', () => {
                     topic: 'rallar.browser.ws.unhandled_message',
                     transport: 'ws',
                     severity: 'warning',
-                    message: 'Unhandled WS message: room.unknown',
-                    data: {
-                        typeId: 'room.unknown'
-                    }
+                    message: 'rallar.browser.ws.unhandled_message',
+                    data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
                 }
             }
         });

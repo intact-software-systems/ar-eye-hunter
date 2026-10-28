@@ -1309,6 +1309,12 @@ WS/RTC runtime diagnostics should use
 the producing `source`, plus the `transport`, connection/group/peer identifiers
 and structured `data`/`error` details a diagnostic concerns. `wait` can match these diagnostics by event fields and payload paths,
 and `assert` can read them through `diagnostics` or `recentDiagnostics`.
+No application payload enters a page-level diagnostic: the console-warning
+bridge sends only a fixed `pattern` token and `source: 'console.warn'` as
+`data`, and the `ws.send` result (`{ connection, via, rallar, sendObservation }`)
+and its `rallar.browser.ws.send_completed` diagnostic carry no copy of the sent
+payload. Message evidence (`kind: "message"` events and wait results) keeps its
+payloads as the assertion surface.
 
 `assert` is a small browser-agent evidence check. It reads only whitelisted
 runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,

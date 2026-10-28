@@ -300,7 +300,6 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly contextId: string | undefined;
     readonly resourceId: string | undefined;
     readonly minSnapshotVersion: number | undefined;
-    readonly message: RallarMessagePayload;
     readonly result: BlackBoxRallarDeliveryObservation;
     readonly wsStatus: RallarWsStatus;
     readonly rtcStatus: RallarRtcStatus;

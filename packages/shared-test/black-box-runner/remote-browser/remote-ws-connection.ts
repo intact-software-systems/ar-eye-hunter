@@ -83,7 +83,7 @@ export function toWsUrl(request: WsInteractionRequest): string | undefined {
     return request.url || request.path;
 }
 
-export function toRemoteWsPayload(request: WsInteractionRequest): RallarBlackBoxTestWsSendCommand['data'] {
+function toRemoteWsPayload(request: WsInteractionRequest): RallarBlackBoxTestWsSendCommand['data'] {
     return request.send !== undefined
         ? request.send
         : request.message !== undefined

@@ -207,9 +207,9 @@ it('subscribes before WebSocket sends and preserves message metadata', async () 
         scope: 'room',
         typeId: 'room.manual.message',
         topicId: 'room.manual.message',
-        contextId: 'bb-group',
-        message: { text: 'hello over ws' }
+        contextId: 'bb-group'
     });
+    expect(result).not.toHaveProperty('message');
     expect(facade.records.wsMessageSubscriptions[0]?.[0]).toEqual({
         typeId: 'room.manual.message',
         topicId: 'room.manual.message'

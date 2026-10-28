@@ -111,7 +111,6 @@ export class BlackBoxRallarWsSendController {
             ...context,
             scope: prepared.scope,
             minSnapshotVersion: prepared.request.minSnapshotVersion,
-            message: prepared.request.payload,
             result: toDeliveryObservation(handle.msgId, handle.lifecycle()),
             wsStatus: this.#input.health.getWsStatus(),
             rtcStatus: this.#input.health.getRtcStatus(config)

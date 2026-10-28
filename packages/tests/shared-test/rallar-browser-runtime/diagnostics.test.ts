@@ -285,18 +285,14 @@ it('bridges relevant browser console warnings into structured diagnostics', asyn
             topic: 'rallar.browser.ws.unhandled_message',
             transport: 'ws',
             severity: 'warning',
-            data: expect.objectContaining({
-                message: 'Unhandled WS message: room.unknown'
-            })
+            data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
         }),
         expect.objectContaining({
             kind: 'diagnostic',
             topic: 'rallar.browser.rtc.data_channel_warning',
             transport: 'realtime',
             severity: 'warning',
-            data: expect.objectContaining({
-                message: 'Received data channel for different data channel name: rtc-data-channel vs rtc-realtime'
-            })
+            data: { pattern: 'data-channel-name-mismatch', source: 'console.warn' }
         })
     ]));
 
@@ -305,7 +301,7 @@ it('bridges relevant browser console warnings into structured diagnostics', asyn
     expect(console.warn).toBe(originalWarn);
 });
 
-it('keeps warning diagnostics serializable when native console arguments are circular', async () => {
+it('never serializes a native console argument, even a circular one', async () => {
     const runtime = await loadRuntime();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     onTestFinished(() => warnSpy.mockRestore());
@@ -332,9 +328,9 @@ it('keeps warning diagnostics serializable when native console arguments are cir
         kind: 'diagnostic',
         topic: 'rallar.browser.ws.unhandled_message',
         severity: 'warning',
-        data: { message: 'Unhandled WS message: circular ' }
+        data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
     });
-    expect(() => JSON.stringify(events.at(-1))).not.toThrow();
+    expect(JSON.stringify(events.at(-1))).not.toContain('circular');
 });
 
 it('emits room join failure diagnostics for permission-style failures', async () => {

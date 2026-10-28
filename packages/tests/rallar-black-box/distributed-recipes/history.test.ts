@@ -34,7 +34,7 @@ describe('distributed recipes history', () => {
                             diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
                             topic: 'rallar.browser.ws.unhandled_message',
                             severity: 'warning',
-                            message: 'Unhandled WS message',
+                            message: 'rallar.browser.ws.unhandled_message',
                             transport: 'ws',
                             groupId: 'bb-group',
                             senderId: 'agent-a',
@@ -42,10 +42,7 @@ describe('distributed recipes history', () => {
                             topicId: 'room.payload',
                             contextId: 'bb-group',
                             resourceId: 'payload-1',
-                            data: {
-                                typeId: 'rallar.message',
-                                topicId: 'room.payload'
-                            },
+                            data: { pattern: 'unhandled-ws-message', source: 'console.warn' },
                             source: 'browser-rallar-runtime'
                         }
                     }
@@ -71,7 +68,7 @@ describe('distributed recipes history', () => {
                             diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
                             topic: 'rallar.browser.rtc.data_channel_mismatch',
                             severity: 'warning',
-                            message: 'Received data channel for different data channel name.',
+                            message: 'rallar.browser.rtc.data_channel_mismatch',
                             transport: 'realtime',
                             groupId: 'bb-group',
                             peerId: 'agent-b',
@@ -104,7 +101,7 @@ describe('distributed recipes history', () => {
             peerId: 'agent-b'
         });
         expect(monitor.runtimeDiagnostics[1]).toMatchObject({
-            message: 'Unhandled WS message',
+            message: 'rallar.browser.ws.unhandled_message',
             typeId: 'rallar.message',
             topicId: 'room.payload',
             correlatedFailureKeys: expect.arrayContaining(['start-b'])

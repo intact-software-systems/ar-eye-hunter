@@ -296,6 +296,7 @@ describe('rallar-bb runtime sockets', () => {
             connection: 'rallarApi',
             via: 'rallar-signaling-websocket'
         });
+        expect(JSON.stringify(sendResult.value)).not.toContain('hello over signaling');
         expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.sent_via_rallar_signaling')).toBe(true);
     });
 
