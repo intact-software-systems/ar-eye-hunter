@@ -371,14 +371,14 @@ class DeliveryLane {
             kind: 'message',
             topic: 'rallar.browser.ws.message',
             connection: 'receiver',
-            data: { typeId: send.typeId, msgId: 'message-1', payload, traceId: 'trace-message-1', corrId: 'message-1' }
+            data: { typeId: send.typeId, msgId: 'message-1', transport: 'ws', payload, traceId: 'trace-message-1', corrId: 'message-1' }
         });
         if (this.failure === 'duplicate') {
             this.agents.get('receiver')?.receiveRallarBrowserEvent({
                 kind: 'message',
                 topic: 'rallar.browser.ws.message',
                 connection: 'receiver',
-                data: { typeId: send.typeId, msgId: 'message-1', payload, traceId: 'trace-message-1', corrId: 'message-1' }
+                data: { typeId: send.typeId, msgId: 'message-1', transport: 'ws', payload, traceId: 'trace-message-1', corrId: 'message-1' }
             });
         }
         this.delivered.push({ payload });

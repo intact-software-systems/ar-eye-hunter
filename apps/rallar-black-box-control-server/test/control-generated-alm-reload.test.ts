@@ -754,7 +754,7 @@ for (const retirement of ['cancelled', 'deadline'] as const) {
             windowMs: 1
         });
         assert(received.ok && isJsonRecordValue(received.value));
-        assertEquals(received.value.count, 0);
+        assertEquals(received.value.observed, 0);
     });
 }
 

@@ -753,7 +753,10 @@ admission-storage polling.
 window, so a scenario that legitimately produced the same message earlier needs
 a distinct `typeId` to say which occurrence it means. A presence claim settles
 as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
-passes only when fewer than `max(count, 1)` messages arrived.
+passes only when fewer than `max(count, 1)` messages arrived. Its result
+lists each matched copy's `msgId`, `traceId`, `corrId` and `transport` as
+`received`, in arrival order; a matched copy whose `traceId` is missing or
+outside the trace grammar fails the command as an invalid runtime result.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
@@ -1311,10 +1314,12 @@ and structured `data`/`error` details a diagnostic concerns. `wait` can match th
 and `assert` can read them through `diagnostics` or `recentDiagnostics`.
 No application payload enters a page-level diagnostic: the console-warning
 bridge sends only a fixed `pattern` token and `source: 'console.warn'` as
-`data`, and the `ws.send` result (`{ connection, via, rallar, sendObservation }`)
-and its `rallar.browser.ws.send_completed` diagnostic carry no copy of the sent
-payload. Message evidence (`kind: "message"` events and wait results) keeps its
-payloads as the assertion surface.
+`data`. No `ws.send` result carries a copy of the sent payload: over the Rallar
+signaling socket it is `{ connection, via, rallar, sendObservation }` and its
+`rallar.browser.ws.send_completed` diagnostic omits the payload too; over a raw
+browser WebSocket it is `{ connection, sendObservation }`. Message evidence
+(`kind: "message"` events and wait results) keeps its payloads as the assertion
+surface.
 
 `assert` is a small browser-agent evidence check. It reads only whitelisted
 runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,

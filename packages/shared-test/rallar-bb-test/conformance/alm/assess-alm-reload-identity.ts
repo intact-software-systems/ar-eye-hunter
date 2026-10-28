@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type { BlackBoxRallarDocumentFacts } from '../../../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import { isRallarBlackBoxTestMessagesSendCommand } from '../../alm/is-rallar-black-box-test-messages-send-command.ts';
 import type {
@@ -9,7 +11,7 @@ import type {
 } from '../../rallar-black-box-test-contracts.ts';
 import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
-import { isSameJsonValue } from '../../wait/wait-event-match.ts';
+import { decodePayloadPathValue, isSameJsonValue } from '../../wait/wait-event-match.ts';
 import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from './alm-reload-pair.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 
@@ -71,6 +73,7 @@ export function assessAlmReloadIdentity(
             continue;
         }
         issues.push(...assessReloadCommands(evidence));
+        issues.push(...assessReloadTrace(evidence));
         issues.push(...assessReloadDocuments(evidence));
         issues.push(...assessReloadRetention(evidence));
         issues.push(...assessReloadStorage(evidence));
@@ -171,11 +174,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
             ['http.request', 'rtc.connect', 'health', 'stats', 'wait', 'barrier'].includes(command.kind)
         ) && recovery.every((command) => command.kind !== 'rtc.connect');
     const absenceValue = resultValue(evidence.receiver, absence);
-    const receives = recovery.filter((command) =>
-        command.kind === 'wait' && command.absent !== true &&
-        command.match.kind === 'message' && command.match.payloadPath === 'data.payload' &&
-        isSameJsonValue(command.match.equals, decodeJsonValue(send.payload))
-    );
+    const receives = toRecoveredReceives(evidence);
     const correctAbsence = receives.length === 1 && absence.match.kind === 'message' &&
         absence.match.payloadPath === 'data.payload' &&
         isSameJsonValue(absence.match.equals, decodeJsonValue(send.payload)) &&
@@ -187,6 +186,24 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
             reloadValue.readyTimeoutMs === evidence.reload.readyTimeoutMs
         ? []
         : [`${checkpoint.key}: reload must preserve native holds, one original send, subscriptions and exact phase work.`];
+}
+
+/** The recovered original keeps its generated identity, so it carries the trace its pre-reload send returned. */
+function assessReloadTrace(evidence: ReloadEvidence): readonly string[] {
+    const sent = readJsonPath(resultValue(evidence.sender, evidence.send), 'traceId');
+    const receives = toRecoveredReceives(evidence);
+    const received = readJsonPath(resultValue(evidence.receiver, receives[0]), 'event.payload.data.traceId');
+    return receives.length === 1 && nonemptyString(sent) && received === sent
+        ? []
+        : [`${evidence.checkpoint.key}: the recovered original must carry the original send's trace.`];
+}
+
+function toRecoveredReceives({ recovery, send }: ReloadEvidence): readonly RallarBlackBoxTestWaitCommand[] {
+    return recovery.filter((command): command is RallarBlackBoxTestWaitCommand =>
+        command.kind === 'wait' && command.absent !== true &&
+        command.match.kind === 'message' && command.match.payloadPath === 'data.payload' &&
+        isSameJsonValue(command.match.equals, decodeJsonValue(send.payload))
+    );
 }
 
 /** The suffix only reads: its waits are the reloaded stores' recovery reads on the storage topic. */
@@ -218,15 +235,15 @@ function hasReloadNativeHolds({ send, prefix }: ReloadEvidence): boolean {
 
 function assessReloadDocuments(evidence: ReloadEvidence): readonly string[] {
     const beforeCommands = evidence.prefix.filter((command) => command.kind === 'health');
-    const before = readPath(resultValue(evidence.sender, beforeCommands[0]), ['rallar']);
+    const before = readJsonPath(resultValue(evidence.sender, beforeCommands[0]), 'rallar');
     const after = resultValue(evidence.sender, evidence.suffix[0]);
-    const receiverBefore = readPath(resultValue(evidence.receiver, evidence.receiverBefore.at(-1)), ['rallar']);
-    const receiverAfter = readPath(resultValue(evidence.receiver, evidence.recovery.at(-1)), ['rallar']);
-    const beforeDocument = readPath(before, ['document']);
-    const afterDocument = readPath(after, ['document']);
-    const receiverDocument = readPath(receiverBefore, ['document']);
-    const receiverAfterDocument = readPath(receiverAfter, ['document']);
-    const session = readPath(before, ['session']);
+    const receiverBefore = readJsonPath(resultValue(evidence.receiver, evidence.receiverBefore.at(-1)), 'rallar');
+    const receiverAfter = readJsonPath(resultValue(evidence.receiver, evidence.recovery.at(-1)), 'rallar');
+    const beforeDocument = readJsonPath(before, 'document');
+    const afterDocument = readJsonPath(after, 'document');
+    const receiverDocument = readJsonPath(receiverBefore, 'document');
+    const receiverAfterDocument = readJsonPath(receiverAfter, 'document');
+    const session = readJsonPath(before, 'session');
     const sameSession = isJsonRecordValue(session) && isJsonRecordValue(after) &&
         nonemptyString(session.clientId) && nonemptyString(session.sessionId) &&
         session.clientId === after.clientId && session.sessionId === after.sessionId;
@@ -272,9 +289,9 @@ function assessReloadStorage(evidence: ReloadEvidence): readonly string[] {
     const sameDocument = counters.length === 2 && counters.every((command) => command.reset !== true) &&
         prefix.indexOf(counters[0]) < prefix.indexOf(send) && prefix.indexOf(counters[1]) > prefix.indexOf(send) &&
         !prefix.slice(prefix.indexOf(counters[0]) + 1).some((command) => command.kind === 'rtc.connect');
-    const admission = positiveCounterDelta(before, held, ['byOwner', 'al-admission']);
-    const work = positiveCounterDelta(before, held, ['byOwner', 'al-work']);
-    const write = positiveCounterDelta(before, held, ['byKind', 'write']);
+    const admission = positiveCounterDelta(before, held, 'byOwner.al-admission');
+    const work = positiveCounterDelta(before, held, 'byOwner.al-work');
+    const write = positiveCounterDelta(before, held, 'byKind.write');
     const recovered = resultValue(sender, evidence.suffix.at(-1));
     return sameDocument && validStorageCounts(before) && validStorageCounts(held) && validStorageCounts(recovered) &&
             admission && work && write
@@ -282,7 +299,7 @@ function assessReloadStorage(evidence: ReloadEvidence): readonly string[] {
         : [`${checkpoint.key}: original-document storage must advance admission/work owners and atomic writes from its baseline.`];
 }
 
-function validStorageCounts(value: unknown): boolean {
+function validStorageCounts(value: ApiJsonValue | undefined): boolean {
     if (!isJsonRecordValue(value) || !validCount(value.total) || !isJsonRecordValue(value.byOwner)) {
         return false;
     }
@@ -294,13 +311,18 @@ function validCount(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function positiveCounterDelta(before: unknown, after: unknown, path: readonly string[]): boolean {
-    const value = readPath(before, path);
+function positiveCounterDelta(
+    before: ApiJsonValue | undefined,
+    after: ApiJsonValue | undefined,
+    path: string
+): boolean {
+    const value = readJsonPath(before, path);
     // Native operation counts omit an unobserved kind; absence of the bucket itself is invalid evidence.
-    const baseline = value === undefined && path[0] === 'byKind' && isJsonRecordValue(readPath(before, ['byKind']))
-        ? 0
-        : value;
-    const held = readPath(after, path);
+    const baseline =
+        value === undefined && path.startsWith('byKind.') && isJsonRecordValue(readJsonPath(before, 'byKind'))
+            ? 0
+            : value;
+    const held = readJsonPath(after, path);
     return typeof baseline === 'number' && Number.isFinite(baseline) && baseline >= 0 &&
         typeof held === 'number' && Number.isFinite(held) && held > baseline;
 }
@@ -308,19 +330,13 @@ function positiveCounterDelta(before: unknown, after: unknown, path: readonly st
 function resultValue(
     participant: RecordedAlmConformanceParticipant,
     command: RallarBlackBoxTestCommand | undefined
-): unknown {
-    return command?.commandId ? participant.results.get(command.commandId)?.value : undefined;
+): ApiJsonValue | undefined {
+    return command?.commandId ? decodeJsonValue(participant.results.get(command.commandId)?.value) : undefined;
 }
 
-function readPath(value: unknown, path: readonly string[]): unknown {
-    let current = value;
-    for (const field of path) {
-        if (!isJsonRecordValue(current)) {
-            return undefined;
-        }
-        current = current[field];
-    }
-    return current;
+function readJsonPath(value: ApiJsonValue | undefined, path: string): ApiJsonValue | undefined {
+    const lookup = decodePayloadPathValue(value, path);
+    return lookup.exists ? lookup.value : undefined;
 }
 
 function validDocument(value: unknown): value is BlackBoxRallarDocumentFacts {

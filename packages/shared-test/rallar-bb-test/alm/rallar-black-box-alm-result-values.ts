@@ -89,6 +89,25 @@ export interface RallarBlackBoxTestMessagesReplyResultValue {
     readonly corrId: string;
 }
 
+/** One matched inbound copy, read from its typed-channel event `data`. */
+export interface AlmReceivedMessageIdentity {
+    readonly msgId: string;
+    readonly traceId: string;
+    readonly corrId: string;
+    readonly transport: ALDeliveryCarrier;
+}
+
+export interface RallarBlackBoxTestMessagesReceivedResultValue {
+    readonly typeId: string;
+    /** Absent when the count names no single message. */
+    readonly msgId?: string;
+    readonly count: number;
+    readonly observed: number;
+    readonly absent: boolean;
+    /** Every matched copy in arrival order. */
+    readonly received: readonly AlmReceivedMessageIdentity[];
+}
+
 export interface RallarBlackBoxTestStorageCountersResultValue {
     readonly total: number;
     readonly byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;

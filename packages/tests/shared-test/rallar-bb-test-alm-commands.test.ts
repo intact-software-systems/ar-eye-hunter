@@ -231,20 +231,20 @@ function topicsOf(state: RallarBlackBoxTestState): readonly string[] {
     return state.events.map((event: RallarBlackBoxTestEvent) => event.topic);
 }
 
-function inboundMessageEvent(msgId: string) {
+function inboundMessageEvent(msgId: string, typeId = 'alm.conformance', traceId = 'trace-inbound-1') {
     return {
         kind: 'message',
         topic: 'rallar.browser.ws.message',
         connection: 'aliceRtc',
         transport: 'ws',
-        typeId: 'alm.conformance',
+        typeId,
         data: {
             msgId,
-            typeId: 'alm.conformance',
+            typeId,
             topicId: 'alm.topic',
             transport: 'ws',
             payload: { n: 1 },
-            traceId: 'trace-inbound-1',
+            traceId,
             corrId: msgId
         }
     } as const;
@@ -1102,11 +1102,63 @@ describe('ALM browser adapter execution', () => {
             msgId: 'msg-1',
             count: 1,
             observed: 1,
-            absent: false
+            absent: false,
+            received: [{ msgId: 'msg-1', traceId: 'trace-inbound-1', corrId: 'msg-1', transport: 'ws' }]
         });
         expect(short.ok).toBe(false);
         expect(short.value).toMatchObject({ count: 2, observed: 1, absent: false });
         expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.received');
+    });
+
+    it('lists each matched copy\'s identity in arrival order and leaves out another typeId', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-1', 'alm.conformance', 'trace-first'));
+        runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-other', 'alm.other', 'trace-other'));
+        runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-2', 'alm.conformance', 'trace-second'));
+
+        const counted = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-listed',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 2,
+            windowMs: 40
+        });
+
+        expect(counted.ok, counted.error?.message).toBe(true);
+        expect(counted.value).toMatchObject({
+            observed: 2,
+            received: [
+                { msgId: 'msg-1', traceId: 'trace-first', corrId: 'msg-1', transport: 'ws' },
+                { msgId: 'msg-2', traceId: 'trace-second', corrId: 'msg-2', transport: 'ws' }
+            ]
+        });
+    });
+
+    it('fails a matched copy whose trace is outside the grammar as an invalid runtime result', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-1', 'alm.conformance', 'trace:not-in-grammar'));
+
+        const counted = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-untraced',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 1,
+            windowMs: 40
+        });
+
+        expect(counted.ok).toBe(false);
+        expect(counted.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: 'The page runtime returned no usable messages.received event.data.traceId.'
+        });
     });
 
     it('aborts a messages.received poll promptly when the recipe is cancelled', async () => {

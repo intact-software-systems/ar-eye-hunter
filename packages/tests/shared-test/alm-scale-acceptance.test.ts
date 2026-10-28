@@ -276,12 +276,16 @@ function recordTrafficArrivals(runtime: RallarBlackBoxBrowserTestRuntime, scenar
             connection: prefix,
             topic: 'rallar.browser.messages.rtc.message',
             data: {
+                msgId: `${prefix}-arrival-${index}`,
                 typeId: `room.ar-eye-hunter.director.${
                     scenario.role === 'director' && !(scenario.wrongType && index === shotCount - 1) ? 'intent' : 'event'
                 }.v1`,
+                transport: 'rtc',
                 payload: decodeTrafficFixture(
                     JSON.stringify(payload).replaceAll('{auth.sessionId}', scenario.wrongDirector ? 'wrong-director' : 'director-session')
-                )
+                ),
+                traceId: `trace-${prefix}-arrival-${index}`,
+                corrId: `${prefix}-arrival-${index}`
             }
         });
     }

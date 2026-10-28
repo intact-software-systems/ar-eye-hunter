@@ -27,6 +27,7 @@ import {
 } from './decode-alm-delivery-failure.ts';
 import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
+    AlmReceivedMessageIdentity,
     RallarBlackBoxTestMessagesAwaitReplyResultValue,
     RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
@@ -116,6 +117,17 @@ export function decodeAlmMessagesSendResultValue(
         ...(reason === undefined ? {} : { reason }),
         traceId: requireAlmTraceIdField(record, path),
         corrId: requireAlmStringField(record, path, 'corrId')
+    };
+}
+
+export function decodeAlmReceivedMessageIdentity(value: unknown): AlmReceivedMessageIdentity {
+    const record = decodeAlmRuntimeRecord(value);
+    const path = 'messages.received event.data';
+    return {
+        msgId: requireAlmStringField(record, path, 'msgId'),
+        traceId: requireAlmTraceIdField(record, path),
+        corrId: requireAlmStringField(record, path, 'corrId'),
+        transport: requireAlmCarrierLegField(record, path, 'transport')
     };
 }
 
@@ -310,12 +322,16 @@ function requireAlmCarrierField(
     return carrier;
 }
 
-function requireAlmCarrierLegField(record: RallarBlackBoxTestRecord, path: string): ALDeliveryCarrier {
+function requireAlmCarrierLegField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    field = 'carrier'
+): ALDeliveryCarrier {
     const carrier = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.find((candidate) =>
-        candidate === record.carrier
+        candidate === record[field]
     );
     if (carrier === undefined) {
-        throw toAlmInvalidRuntimeResultError(`${path}.carrier`);
+        throw toAlmInvalidRuntimeResultError(`${path}.${field}`);
     }
     return carrier;
 }

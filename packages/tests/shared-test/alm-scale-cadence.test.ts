@@ -182,7 +182,14 @@ it('starts all six generated shots on five-second offsets despite two-second lea
         kind: 'message',
         connection: 'alm-scale-player',
         topic: 'rallar.browser.messages.rtc.message',
-        data: { typeId: 'room.ar-eye-hunter.director.event.v1', payload: started }
+        data: {
+            msgId: 'director-started',
+            typeId: 'room.ar-eye-hunter.director.event.v1',
+            transport: 'rtc',
+            payload: started,
+            traceId: 'trace-alm-scale-cadence',
+            corrId: 'director-started'
+        }
     });
     const traffic = getTraffic();
     const window = traffic.groups[0].commands[0];
@@ -691,7 +698,7 @@ class ScaleCohort {
                 trackedReceiptAlgo: handle.lifecycle().receiptAlgo,
                 traceId: 'trace-alm-scale-cadence'
             });
-            this.deliver(actor, payload);
+            this.deliver(actor, payload, msgId);
             const ackMs = actor.role === 'player' ? this.policy.shotAckMs : 0;
             if (ackMs !== undefined) {
                 setTimeout(() => this.acknowledge(actor, msgId), ackMs);
@@ -706,7 +713,7 @@ class ScaleCohort {
         return handle;
     }
 
-    private deliver(sender: ScaleActor, payload: ScaleWirePayload): void {
+    private deliver(sender: ScaleActor, payload: ScaleWirePayload, msgId: string): void {
         if (sender.role === 'director') {
             this.lifecycle.push(payload);
         }
@@ -715,7 +722,7 @@ class ScaleCohort {
                 kind: 'message',
                 topic: 'rallar.browser.messages.rtc.message',
                 connection: `alm-scale-${receiver.role}`,
-                data: { typeId: payload.typeId, payload }
+                data: { msgId, typeId: payload.typeId, transport: 'rtc', payload, traceId: 'trace-alm-scale-cadence', corrId: msgId }
             });
         }
     }
