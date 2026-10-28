@@ -6,8 +6,14 @@ import {
     computeFormationTimerEntry,
     decodeFormationTimerWork
 } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
+import type { GroupFormationTimerWork } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import {
+    GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+    GroupConnectTriggerLatchRepository,
+    toGroupConnectTriggerStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { computeFormationCriterionCommand } from '@shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts';
 import { createFormationTimerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts';
@@ -15,6 +21,10 @@ import type { GroupFormationAutomationPort } from '@shared-server/rallar-system/
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createGroupAuthorityFacts, transitionCommand } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
 
 import { createTestGroup } from '../../../../../create-test-group.ts';
@@ -111,9 +121,11 @@ describe('formation timer work handler', () => {
                     nowEpochMs
                 })
             },
-            readLifecyclePolicy: async () => ({ status: 'absent' }),
-            submitCommand: async (command) => {
-                submittedCommands.push(command);
+            formationCriterion: {
+                readLifecyclePolicy: async () => ({ status: 'absent' }),
+                submitCommand: async ({ command }) => {
+                    submittedCommands.push(command);
+                }
             },
             formationAutomation: unusedFormationAutomation(),
             nowEpochMs: () => nowEpochMs
@@ -141,9 +153,11 @@ describe('formation timer work handler', () => {
             },
             readPlannedTopology: async () => null,
             topologyPlanning: unusedTopologyPlanning(current, nowEpochMs),
-            readLifecyclePolicy: async () => ({ status: 'absent' }),
-            submitCommand: async (command) => {
-                submittedCommands.push(command);
+            formationCriterion: {
+                readLifecyclePolicy: async () => ({ status: 'absent' }),
+                submitCommand: async ({ command }) => {
+                    submittedCommands.push(command);
+                }
             },
             formationAutomation: createFormationAutomation(submittedCommands),
             nowEpochMs: () => nowEpochMs
@@ -186,9 +200,11 @@ describe('formation timer work handler', () => {
             findGroupSnapshotByRef: async () => behind,
             readPlannedTopology: async () => null,
             topologyPlanning: unusedTopologyPlanning(behind, nowEpochMs),
-            readLifecyclePolicy: async () => ({ status: 'absent' }),
-            submitCommand: async () => {
-                throw new Error('A behind snapshot must not submit a command');
+            formationCriterion: {
+                readLifecyclePolicy: async () => ({ status: 'absent' }),
+                submitCommand: async () => {
+                    throw new Error('A behind snapshot must not submit a command');
+                }
             },
             formationAutomation: unusedFormationAutomation(),
             nowEpochMs: () => nowEpochMs
@@ -221,9 +237,11 @@ describe('formation timer work handler', () => {
             findGroupSnapshotByRef: async () => current,
             readPlannedTopology: async () => null,
             topologyPlanning: unusedTopologyPlanning(current, nowEpochMs),
-            readLifecyclePolicy: async () => ({ status: 'absent' }),
-            submitCommand: async () => {
-                throw new Error('A superseded timer must not submit a command');
+            formationCriterion: {
+                readLifecyclePolicy: async () => ({ status: 'absent' }),
+                submitCommand: async () => {
+                    throw new Error('A superseded timer must not submit a command');
+                }
             },
             formationAutomation: unusedFormationAutomation(),
             nowEpochMs: () => nowEpochMs
@@ -247,6 +265,24 @@ describe('formation timer work handler', () => {
                 })
             )
         ).resolves.toBeUndefined();
+    });
+
+    it.each(
+        [
+            { kind: 'retry', lifecycleState: 'forming', planned: null, operation: 'planGroupLayout' },
+            { kind: 'plan', lifecycleState: 'forming', planned: null, operation: 'planGroupLayout' },
+            { kind: 'connect', lifecycleState: 'planned', planned: 'active', operation: 'connectGroup' },
+            { kind: 'deadline', lifecycleState: 'connecting', planned: null, operation: 'failGroupFormation' },
+            { kind: 'deadline', lifecycleState: 'connecting', planned: 'active', operation: 'activateGroup' }
+        ] as const
+    )('submits the $kind timer $operation under the timer message trace', async ({ kind, lifecycleState, planned, operation }) => {
+        const timer = await createTracedTimerHarness({ kind, lifecycleState, planned });
+
+        await timer.handler.onMessage(formationTimerMessage('trace-formation-timer-1'), timer.entry);
+
+        expect(timer.submissions.map(({ command, traceId }) => ({ operation: command.operation, traceId }))).toEqual([
+            { operation, traceId: 'trace-formation-timer-1' }
+        ]);
     });
 
     it('rejects timer work without the snapshot version required by the current reader', () => {
@@ -305,13 +341,94 @@ function unusedTopologyPlanning(group: ReturnType<typeof formationGroup>, nowEpo
     };
 }
 
-function formationTimerMessage() {
+function formationTimerMessage(traceId?: string) {
     return newALUntargetedMessage(
         'formation-timer-test',
         newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
         AppOutboxType.FORMATION_TIMER,
-        {}
+        {},
+        { traceId }
     );
+}
+
+interface TracedTimerHarnessInput {
+    readonly kind: GroupFormationTimerWork['kind'];
+    readonly lifecycleState: GroupLifecycleState;
+    readonly planned: 'active' | null;
+}
+
+async function createTracedTimerHarness(input: TracedTimerHarnessInput) {
+    const nowEpochMs = 2_000;
+    const base = createTopologyTestGroupSnapshot();
+    const group = {
+        ...base,
+        group: createTestGroup({
+            ...base.group,
+            lifecycleState: input.lifecycleState,
+            formationEpoch: 3,
+            formationAttemptCount: 1,
+            establishmentStartedAtEpochMs: 1_000,
+            snapshotVersion: 8
+        })
+    };
+    const planned: RallarOverlayTopologySnapshot | null = input.planned === null ? null : {
+        groupRef: group.group,
+        overlayId: toScopedOverlayId(group.group),
+        name: 'candidate',
+        topology: 'tree',
+        degreeLimit: 2,
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+        version: 1,
+        state: 'active',
+        sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 0 },
+        createdByClientId: 'server',
+        createdAtEpochMs: 1_000,
+        updatedAtEpochMs: 1_000
+    };
+    const runtime = new FakeRuntimeStateRepository();
+    const identity = { groupRef: toCanonicalGroupRef(group.group), formationEpoch: 3, triggerGeneration: 'plan-1' };
+    await runtime.upsert(
+        GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+        toGroupConnectTriggerStorageKey(identity),
+        JSON.stringify({ ...identity, notBeforeEpochMs: 1_000, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
+        NEVER_EXPIRE_AT_TIMESTAMP
+    );
+    const submissions: GroupSystemCommandSubmission[] = [];
+    const submitCommand = async (submission: GroupSystemCommandSubmission) => {
+        submissions.push(submission);
+    };
+    const handler = createFormationTimerWorkHandler({
+        findGroupSnapshotByRef: async () => group,
+        readPlannedTopology: async () => planned,
+        topologyPlanning: unusedTopologyPlanning(group, nowEpochMs),
+        formationCriterion: {
+            readLifecyclePolicy: async () => ({ status: 'present', policy: resolveGroupLifecyclePolicyPreset('managed') }),
+            submitCommand
+        },
+        formationAutomation: {
+            latches: new GroupConnectTriggerLatchRepository(runtime),
+            readGroup: async () => group.group,
+            readPlanned: async () => planned,
+            submitCommand,
+            nowEpochMs: () => nowEpochMs
+        },
+        nowEpochMs: () => nowEpochMs
+    });
+    const entry = computeFormationTimerEntry({
+        traceId: 'trace-formation-timer-entry',
+        work: {
+            kind: input.kind,
+            groupRef: group.group,
+            formationEpoch: group.group.formationEpoch,
+            groupSnapshotVersion: group.group.snapshotVersion,
+            notBeforeEpochMs: nowEpochMs
+        },
+        senderId: 'formation-timer-test',
+        createdAtEpochMs: 1_000,
+        expireAtEpochMs: 60_000
+    });
+    return { handler, entry, submissions };
 }
 
 function unusedFormationAutomation(): GroupFormationAutomationPort {
@@ -323,7 +440,7 @@ function createFormationAutomation(commands?: GroupMutationCommand[]): GroupForm
         latches: new GroupConnectTriggerLatchRepository(new FakeRuntimeStateRepository()),
         readGroup: async () => null,
         readPlanned: async () => null,
-        submitCommand: async (command) => {
+        submitCommand: async ({ command }) => {
             if (commands === undefined) {
                 throw new Error('unexpected automation submission');
             }

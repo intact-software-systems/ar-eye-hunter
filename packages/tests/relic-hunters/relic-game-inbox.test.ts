@@ -31,13 +31,14 @@ describe('Relic AppInbox ownership', () => {
                 expect(await fixture.repository.findGroup(fixture.ref)).toBeDefined();
                 return createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
             };
-            const enqueued = await fixture.inbox.enqueue(fixture.command, proposal);
+            const enqueued = await fixture.inbox.enqueue({ ...fixture.command, traceId: 'trace-relic-timed-initialize' }, proposal);
             expect(proposals).toBe(1);
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect(await fixture.inbox.wait(enqueued)).toEqual({ status: 'initialized', gameId: fixture.ref.groupId });
             const phases = timings.filter((event) => event.component === 'relic-game');
             expect(phases.map((event) => event.operation)).toEqual(['read', 'compute', 'validate', 'write']);
+            expect(phases.map((event) => event.traceId)).toEqual(Array(4).fill('trace-relic-timed-initialize'));
             expect(phases.every((event) =>
                 event.requestId === fixture.command.requestId &&
                 event.groupId === fixture.ref.groupId && event.details?.attempt === 1 && event.status === 'ok'

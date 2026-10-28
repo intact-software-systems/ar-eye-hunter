@@ -149,7 +149,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 msgId: previous.msgId,
                 carrier: 'rtc',
                 atMs: AT_MS,
-                attemptId: 'attempt-1'
+                attemptId: 'attempt-1',
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
 
             expect(next.evidence.attempts.map((attempt) => attempt.unroutableReason)).toEqual([undefined]);
@@ -196,7 +197,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 carrier: 'ws',
                 atMs: AT_MS,
                 reason: 'no-route',
-                detail: 'no carrier left to try'
+                detail: 'no carrier left to try',
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
 
             expect(next.state).toBe('failed');
@@ -231,7 +233,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 msgId: opened.msgId,
                 carrier: 'rtc',
                 atMs: AT_MS + 500,
-                attemptId: 'attempt-1'
+                attemptId: 'attempt-1',
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
 
             expect(next.evidence.attempts).toBe(opened.evidence.attempts);
@@ -388,7 +391,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 expectedRecipientPeerIds: ['peer-1', 'peer-2'],
                 confirmedRecipientPeerIds: ['peer-1'],
                 unconfirmedRecipientPeerIds: ['peer-2'],
-                complete
+                complete,
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
 
             expect(next.state).toBe(complete ? 'acknowledged' : admitted.state);
@@ -405,7 +409,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 msgId: previous.msgId,
                 carrier: 'rtc',
                 atMs: AT_MS,
-                detail: 'deadline passed'
+                detail: 'deadline passed',
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
 
             expect(next.state).toBe('expired');
@@ -457,7 +462,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 expectedRecipientPeerIds: ['peer-1'],
                 confirmedRecipientPeerIds: ['peer-1'],
                 unconfirmedRecipientPeerIds: [],
-                complete: true
+                complete: true,
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
             const next = computeALDeliveryLifecycle(acknowledged, toSupersededSettlement());
 
@@ -475,7 +481,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 kind: 'cancelled',
                 msgId: previous.msgId,
                 carrier: 'rtc',
-                atMs: AT_MS
+                atMs: AT_MS,
+                traceId: 'trace-compute-al-delivery-lifecycle'
             });
 
             expect(next.state).toBe('cancelled');
@@ -505,7 +512,8 @@ describe('terminal guard', () => {
             kind: 'cancelled',
             msgId: MSG_ID,
             carrier: 'rtc',
-            atMs: AT_MS
+            atMs: AT_MS,
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
         expect(isALDeliveryTerminal(cancelled)).toBe(true);
 
@@ -540,7 +548,8 @@ describe('terminal guard', () => {
             kind: 'cancelled',
             msgId: MSG_ID,
             carrier: 'rtc',
-            atMs: AT_MS
+            atMs: AT_MS,
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
         expect(isALDeliveryTerminal(cancelled)).toBe(true);
 
@@ -555,7 +564,8 @@ describe('terminal guard', () => {
             expectedRecipientPeerIds: ['peer-1', 'peer-2'],
             confirmedRecipientPeerIds: ['peer-1'],
             unconfirmedRecipientPeerIds: ['peer-2'],
-            complete: true
+            complete: true,
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         expect(next.state).toBe('cancelled');
@@ -569,7 +579,8 @@ describe('terminal guard', () => {
             kind: 'cancelled',
             msgId: MSG_ID,
             carrier: 'rtc',
-            atMs: AT_MS
+            atMs: AT_MS,
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         const next = computeALDeliveryLifecycle(cancelled, {
@@ -577,7 +588,8 @@ describe('terminal guard', () => {
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: AT_MS + 1,
-            detail: 'ignored'
+            detail: 'ignored',
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         expect(next).toEqual({ ...cancelled, lateSettlementCount: 1 });
@@ -686,7 +698,8 @@ describe('relay rejection (D50)', () => {
             carrier: 'rtc',
             atMs: AT_MS,
             relayRejection,
-            detail
+            detail,
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         expect(next.state).toBe('rejected');
@@ -708,7 +721,8 @@ describe('relay rejection (D50)', () => {
             cause: 'hop-refused',
             hopPeerId: 'relay-1',
             nackReason: 'membership-fenced',
-            detail: 'Hop relay-1 refused the message: membership-fenced.'
+            detail: 'Hop relay-1 refused the message: membership-fenced.',
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         expect(next.state).toBe('failed');
@@ -741,7 +755,8 @@ describe('a late relay rejection', () => {
             carrier: 'ws',
             atMs: AT_MS,
             relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
-            detail: 'The server relay refused the message: resync-required.'
+            detail: 'The server relay refused the message: resync-required.',
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         expect(next.state).toBe('transport-accepted');
@@ -759,7 +774,8 @@ describe('carrier refusal handed to the fallback carrier', () => {
             carrier: 'rtc',
             atMs: AT_MS,
             reason: 'unsupported',
-            detail: 'ack receiver is unsupported for rtc multicast targets'
+            detail: 'ack receiver is unsupported for rtc multicast targets',
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
         const retried = computeALDeliveryLifecycle(refused, {
             ...toAdmissionSettlement(refused, { kind: 'admitted', durable: true, queuedAttempts: 1 }),
@@ -791,7 +807,8 @@ describe('a durable send admitted without storage', () => {
             carrier: 'ws',
             atMs: AT_MS,
             requested: 'local-outbox',
-            cause: 'quota'
+            cause: 'quota',
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
         const admitted = computeALDeliveryLifecycle(
             downgraded,
@@ -866,7 +883,8 @@ describe('transport-accepted terminality', () => {
             msgId: sent.msgId,
             carrier: 'rtc',
             atMs: AT_MS + 1,
-            detail: 'late expiry, ignored'
+            detail: 'late expiry, ignored',
+            traceId: 'trace-compute-al-delivery-lifecycle'
         });
 
         expect(next.state).toBe('transport-accepted');
@@ -1005,7 +1023,14 @@ describe('the receipt the admitting carrier tracks (R-S3a-4)', () => {
         { state: 'cancelled' as const, settlement: toCancelledSettlement() },
         {
             state: 'expired' as const,
-            settlement: { kind: 'expired' as const, msgId: MSG_ID, carrier: 'rtc' as const, atMs: AT_MS, detail: 'deadline passed' }
+            settlement: {
+                kind: 'expired' as const,
+                msgId: MSG_ID,
+                carrier: 'rtc' as const,
+                atMs: AT_MS,
+                detail: 'deadline passed',
+                traceId: 'trace-compute-al-delivery-lifecycle'
+            }
         }
     ])('keeps $state when a late admission lands and records its evidence', ({ state, settlement }) => {
         const opened = createLifecycle('receiver');
@@ -1282,7 +1307,7 @@ function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
 }
 
 function toCancelledSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind: 'cancelled'; }>> {
-    return { kind: 'cancelled', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS };
+    return { kind: 'cancelled', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS, traceId: 'trace-compute-al-delivery-lifecycle' };
 }
 
 function toQueuedLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
@@ -1310,7 +1335,8 @@ function toReceiverReceipt(
         expectedRecipientPeerIds: ['b', 'c', 'd'],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: unconfirmed,
-        complete
+        complete,
+        traceId: 'trace-compute-al-delivery-lifecycle'
     };
 }
 
@@ -1321,7 +1347,8 @@ function toSupersededSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind
         carrier: 'rtc',
         atMs: AT_MS,
         replacementMsgId: 'msg-2',
-        detail: 'A newer message replaced this one.'
+        detail: 'A newer message replaced this one.',
+        traceId: 'trace-compute-al-delivery-lifecycle'
     };
 }
 
@@ -1338,13 +1365,21 @@ function toAdmissionSettlement(
     verdict: ALDeliveryAdmissionVerdict,
     trackedReceiptAlgo: ALAckAlgo = previous.receiptAlgo
 ): Extract<ALDeliverySettlement, Readonly<{ kind: 'admission'; }>> {
-    return { kind: 'admission', msgId: previous.msgId, carrier: 'rtc', atMs: AT_MS, verdict, trackedReceiptAlgo };
+    return {
+        kind: 'admission',
+        msgId: previous.msgId,
+        carrier: 'rtc',
+        atMs: AT_MS,
+        verdict,
+        trackedReceiptAlgo,
+        traceId: 'trace-compute-al-delivery-lifecycle'
+    };
 }
 
 function toAttemptStartedSettlement(
     attemptId: string
 ): Extract<ALDeliverySettlement, Readonly<{ kind: 'attempt-started'; }>> {
-    return { kind: 'attempt-started', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS, attemptId };
+    return { kind: 'attempt-started', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS, attemptId, traceId: 'trace-compute-al-delivery-lifecycle' };
 }
 
 interface AttemptSettledOverrides {
@@ -1367,7 +1402,8 @@ function toAttemptSettledSettlement(
         outcome: overrides.outcome,
         submissionAttempted: overrides.submissionAttempted,
         detail: overrides.detail,
-        willRetry: overrides.willRetry
+        willRetry: overrides.willRetry,
+        traceId: 'trace-compute-al-delivery-lifecycle'
     };
 }
 

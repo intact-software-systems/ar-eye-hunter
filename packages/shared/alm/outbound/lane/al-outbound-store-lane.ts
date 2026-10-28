@@ -566,6 +566,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input.settlements({
             kind: 'attempt-started',
             msgId,
+            traceId: canonicalMessage.id.traceId,
             attemptId: effect.effectId
         });
         try {
@@ -597,13 +598,14 @@ export class ALOutboundStoreLane<TPrepared> {
      * until that same deadline so unspent retries survive downtime.
      */
     private emitWorkExpiry(effect: ALOutboundEffectSnapshot<TPrepared>): void {
-        const msgId = effect.canonicalMessage?.id.msgId;
-        if (msgId === undefined || !statesMessageDeadline(effect.payload.kind)) {
+        const id = effect.canonicalMessage?.id;
+        if (id === undefined || !statesMessageDeadline(effect.payload.kind)) {
             return;
         }
         this.input.settlements({
             kind: 'expired',
-            msgId,
+            msgId: id.msgId,
+            traceId: id.traceId,
             detail: 'Outbound work reached the message deadline before its attempt ran.'
         });
     }

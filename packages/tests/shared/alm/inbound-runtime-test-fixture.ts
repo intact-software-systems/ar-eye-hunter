@@ -238,6 +238,8 @@ export interface InboundTestMessageInput {
     readonly acknowledged?: boolean;
     /** Absent leaves the envelope's durability to the policy default. */
     readonly durability?: ALDurabilityAlgo;
+    /** Absent mints a fresh trace, as a sender with no earlier operation does. */
+    readonly traceId?: string;
 }
 
 export function createInboundTestMessage(input: InboundTestMessageInput): ALMessage {
@@ -247,7 +249,7 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
         INBOUND_TEST_SELF_PEER_ID,
         'chat.private-text.v1',
         { text: input.msgId },
-        { ttlMs: 60_000, qos: toInboundTestQos(input) }
+        { ttlMs: 60_000, qos: toInboundTestQos(input), traceId: input.traceId }
     );
     return {
         ...message,

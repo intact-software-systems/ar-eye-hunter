@@ -12,7 +12,10 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import {
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
-import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
+import {
+    createAppInboxRetryFinalizer,
+    recordAppInboxRetryExhaustionTiming
+} from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import {
@@ -58,10 +61,7 @@ import {
     createGroupFormationMetricsRecorder,
     type RallarGroupFormationMetricsRecorder
 } from '@shared-server/rallar-system/observability/formation-metrics.ts';
-import {
-    recordRallarTiming,
-    type RallarTimingSink
-} from '@shared-server/rallar-system/observability/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     createAppInboxCompletionRelay,
     type AppInboxCompletionNoticeChannel
@@ -525,27 +525,6 @@ function createAppInboxDequeueOptions(
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,
         onRetryExhaustionRecovery: finalizeAppInboxRetry,
-        onRetryExhaustionTelemetry: (exhaustion) => {
-            recordRallarTiming({
-                sink: input.timing,
-                event: {
-                    component: 'app-inbox-handler',
-                    operation: 'retry-exhaustion',
-                    requestId: exhaustion.entry.key.resourceId,
-                    details: {
-                        processingAttempts: exhaustion.processingAttempts,
-                        reservationAttempt: exhaustion.reservationAttempt,
-                        selectedLane: exhaustion.lane,
-                        classification: exhaustion.classification,
-                        exhaustion: exhaustion.exhausted,
-                        source: exhaustion.failure.source,
-                        queueAgeMs: exhaustion.queueAgeMs,
-                        dueAgeMs: exhaustion.dueAgeMs
-                    }
-                },
-                status: 'ok',
-                durationMs: 0
-            });
-        }
+        onRetryExhaustionTelemetry: (exhaustion) => recordAppInboxRetryExhaustionTiming(input.timing, exhaustion)
     };
 }

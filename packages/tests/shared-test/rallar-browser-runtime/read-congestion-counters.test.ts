@@ -13,7 +13,16 @@ function toCongestion(
     action: 'drop' | 'defer' | 'hand-over',
     carrier: 'ws' | 'rtc' = 'rtc'
 ): ALOutboundRuntimeDiagnosticsEvent {
-    return { kind: 'congestion', carrier, cause: 'backpressured', action, priority: 0, msgId: `msg-${action}` };
+    return {
+        kind: 'congestion',
+        carrier,
+        cause: 'backpressured',
+        action,
+        priority: 0,
+        msgId: `msg-${action}`,
+        traceId: `trace-msg-${action}`,
+        corrId: `msg-${action}`
+    };
 }
 
 function emitOutbound(event: ALOutboundRuntimeDiagnosticsEvent): void {

@@ -281,6 +281,9 @@ async function expectEveryTimedSuccess(createTimed: CreateTimedGroupStateService
             status: 'ok',
             ...expectedTimingIdentity(operation)
         });
+        if (operation !== 'read' && operation !== 'readWithSnapshot') {
+            expect(timingEvents[index], operation).not.toHaveProperty('traceId');
+        }
     }
 }
 
@@ -337,6 +340,7 @@ function expectedTimingIdentity(operation: TimedAsyncOperation) {
         return {
             ...empty,
             requestId: 'timing-read-request',
+            traceId: 'trace-timing-read',
             applicationId: 'timing-app',
             workspaceId: 'timing-workspace',
             groupId: 'timing-group'

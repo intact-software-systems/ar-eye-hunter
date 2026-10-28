@@ -109,7 +109,13 @@ describe('auth reservation preparation', () => {
 
     it('wakes the queue for a replay that finds its intent still NEW, instead of waiting for the idle poll', async () => {
         let wakes = 0;
+        const waitTraces: (string | undefined)[] = [];
         const auth = createAuthInboxTestRuntime({
+            timing: (event) => {
+                if (event.operation === 'wait-completion') {
+                    waitTraces.push(event.traceId);
+                }
+            },
             runtimeRepository: new FakeRuntimeStateRepository(),
             serviceId: 'replay-wake-auth',
             credentialSecret: 'replay-wake-secret-0123456789abcdef',
@@ -130,6 +136,7 @@ describe('auth reservation preparation', () => {
 
         const replay = auth.service.replayLogoutSessionWithCredentialProof({
             requestId: 'replay-wake-logout',
+            traceId: 'trace-replay-wake-logout',
             clientId: session.clientId,
             accessToken: session.accessToken
         });
@@ -138,6 +145,7 @@ describe('auth reservation preparation', () => {
         const result = await runAuthInboxCommand({ pending: original, queue: auth.queue, reader: auth.reader });
         expect(result.right).toEqual({ loggedOut: true });
         await expect(replay).resolves.toEqual(result);
+        expect([...waitTraces].sort()).toEqual(['trace-auth-test', 'trace-replay-wake-logout']);
     });
 
     it.each(['candidate', 'live-row'] as const)('uses the owned auth observation for %s', async (boundary) => {

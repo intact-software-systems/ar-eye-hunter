@@ -149,7 +149,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     const accepted = claimRttRefinementSkip(attempt);
     if (accepted !== null) {
         await writeSkippedRttRefinement({ options, entry, facts, reservationFinish, accepted });
-        await deferredCriterionPetitioner?.request(accepted.work, mutationRead);
+        await deferredCriterionPetitioner?.request(accepted.work, mutationRead, facts.traceId);
         return;
     }
     const computationInput = await readRtcTopologyWorkComputationInput({
@@ -176,7 +176,8 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         options,
         accepted: computed.accepted,
         computedWrite: computed.write,
-        computeDurationMs: options.topologyPlanning.readDurationNowMs() - computeStartedAtMs
+        computeDurationMs: options.topologyPlanning.readDurationNowMs() - computeStartedAtMs,
+        traceId: facts.traceId
     });
 }
 
@@ -277,7 +278,8 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
         options,
         accepted,
         computedWrite,
-        computeDurationMs: 0
+        computeDurationMs: 0,
+        traceId: facts.traceId
     });
 }
 
@@ -367,6 +369,8 @@ interface WriteAcceptedRtcTopologyWorkInput {
     readonly accepted: AcceptedRtcTopologyWork;
     readonly computedWrite: AcceptedRtcTopologyWorkWrite;
     readonly computeDurationMs: number;
+    /** The work row's trace: every petition the committed decision makes submits under it. */
+    readonly traceId: string;
 }
 
 async function writeAcceptedRtcTopologyWork(
@@ -377,14 +381,15 @@ async function writeAcceptedRtcTopologyWork(
         timing: input.options.timing,
         serviceId: input.options.serviceId,
         accepted: input.accepted,
-        computeDurationMs: input.computeDurationMs
+        computeDurationMs: input.computeDurationMs,
+        traceId: input.traceId
     });
 }
 
 async function writeRtcTopologyWorkDecision(
     input: WriteAcceptedRtcTopologyWorkInput
 ): Promise<void> {
-    const { options, accepted, computedWrite, computeDurationMs } = input;
+    const { options, accepted, computedWrite, computeDurationMs, traceId } = input;
     if (accepted.decision === 'skipped-rtt-refinement') {
         await writeCompletionOnly(options.database, computedWrite);
         return;
@@ -394,14 +399,14 @@ async function writeRtcTopologyWorkDecision(
         options.topologyPlanning.recordTopologyRebuildSkippedFingerprint();
         // Topology inputs exclude lifecycle: entering a dialing stage can
         // activate against this stored layout without a rebuild/publication.
-        await petitionCommittedCriterion(options, accepted.criterionPetition);
+        await petitionCommittedCriterion(options, accepted.criterionPetition, traceId);
         return;
     }
     if (
         accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen' ||
         accepted.decision === 'held-young-layout'
     ) {
-        await writeSkippedTopologyWork({ options, accepted, computedWrite, computeDurationMs });
+        await writeSkippedTopologyWork({ options, accepted, computedWrite, computeDurationMs, traceId });
         return;
     }
     const computed = accepted.computed;
@@ -413,7 +418,7 @@ async function writeRtcTopologyWorkDecision(
         // revision: this one still carries presence evidence the winner may
         // not have seen, and the trigger fences that evidence itself.
         if (accepted.criterionPetition !== null) {
-            await petitionGroupStageTrigger(options, accepted.criterionPetition.authority);
+            await petitionGroupStageTrigger(options, accepted.criterionPetition.authority, traceId);
         }
         return;
     }
@@ -424,7 +429,7 @@ async function writeRtcTopologyWorkDecision(
         deliveryAppend: options.topologyDelivery?.append
     }, transaction);
     recordCommittedPlanningObservation(options, accepted, computeDurationMs);
-    await finishCommittedTopologyWork(options, accepted, computed);
+    await finishCommittedTopologyWork({ options, accepted, computed, traceId });
 }
 
 async function writeCompletionOnly(
@@ -462,12 +467,13 @@ interface WriteSkippedTopologyWorkInput {
     >;
     readonly computedWrite: AcceptedRtcTopologyWorkWrite;
     readonly computeDurationMs: number;
+    readonly traceId: string;
 }
 
 async function writeSkippedTopologyWork(
     input: WriteSkippedTopologyWorkInput
 ): Promise<void> {
-    const { options, accepted, computedWrite, computeDurationMs } = input;
+    const { options, accepted, computedWrite, computeDurationMs, traceId } = input;
     const transaction = requireTopologyTransactionWrite(computedWrite);
     await writeRtcTopologyPublicationTransaction({
         database: options.database,
@@ -481,13 +487,18 @@ async function writeSkippedTopologyWork(
         recordCommittedPlanningObservation(options, accepted, computeDurationMs);
         options.topologyPlanning.recordTopologyPublication(false);
     }
-    await petitionCommittedCriterion(options, accepted.criterionPetition);
+    await petitionCommittedCriterion(options, accepted.criterionPetition, traceId);
+}
+
+interface FinishCommittedTopologyWorkInput {
+    readonly options: RtcTopologyWorkHandlerOptions;
+    readonly accepted: Extract<AcceptedRtcTopologyWork, { decision: 'accepted'; }>;
+    readonly computed: Exclude<AcceptedRtcTopologyMutation, Readonly<{ outcome: 'superseded'; }>>;
+    readonly traceId: string;
 }
 
 async function finishCommittedTopologyWork(
-    options: RtcTopologyWorkHandlerOptions,
-    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'accepted'; }>,
-    computed: Exclude<AcceptedRtcTopologyMutation, Readonly<{ outcome: 'superseded'; }>>
+    { options, accepted, computed, traceId }: FinishCommittedTopologyWorkInput
 ): Promise<void> {
     const committedSnapshot = computed.outcome === 'write'
         ? computed.snapshotGuard.candidate
@@ -502,7 +513,7 @@ async function finishCommittedTopologyWork(
         await petitionCommittedCriterion(options, {
             authority: accepted.criterionPetition.authority,
             planned: committedSnapshot
-        });
+        }, traceId);
     }
     if (accepted.publication) {
         options.topologyPlanning.recordTopologyPublication(true);
@@ -526,19 +537,21 @@ function recordCommittedPlanningObservation(
 
 async function petitionCommittedCriterion(
     options: RtcTopologyWorkHandlerOptions,
-    petition: CommittedCriterionPetition | null
+    petition: CommittedCriterionPetition | null,
+    traceId: string
 ): Promise<void> {
     if (petition === null) {
         return;
     }
-    await petitionFormationCriterion(options, petition.authority, petition.planned);
-    await petitionGroupStageTrigger(options, petition.authority);
+    await petitionFormationCriterion(options, petition, traceId);
+    await petitionGroupStageTrigger(options, petition.authority, traceId);
     // The criterion leg returns early outside establishment; the status leg
     // does not, because coverage is exactly what an `active` group reports.
     await petitionGroupActivationStatus({
         dependencies: options,
         authority: petition.authority,
         planned: petition.planned,
-        dwell: null
+        dwell: null,
+        traceId
     });
 }

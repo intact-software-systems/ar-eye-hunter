@@ -22,6 +22,7 @@ export class ClientAdminSupport {
             dependencies: this.dependencies,
             operation: 'explain.client',
             adminSession: input.adminSession,
+            traceId: input.traceId,
             timing: {},
             readNarrative: async () => {
                 const ref: ClientPrincipalRef = {

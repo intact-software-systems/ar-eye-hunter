@@ -73,7 +73,8 @@ describe('readALOutboundDequeueWait', () => {
             outcome: 'not-ready',
             submissionAttempted: false,
             detail: 'RTC room transport is halted',
-            willRetry: true
+            willRetry: true,
+            traceId: MESSAGE.id.traceId
         }]);
         expect(hold.released).toBeUndefined();
     });

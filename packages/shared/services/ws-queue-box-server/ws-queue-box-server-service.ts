@@ -668,11 +668,7 @@ export class WsQueueBoxServerService {
 
     private recordCurrentnessAckRejection(observation: WsQueueBoxServerService.SocketObservation): void {
         const { ackFacts, currentnessRejection } = observation;
-        if (
-            this.receiptObserver === undefined || currentnessRejection === undefined || ackFacts === undefined ||
-            ackFacts.controlMsgId === undefined || ackFacts.controlSenderId === undefined ||
-            ackFacts.controlCreatedAtEpochMs === undefined
-        ) {
+        if (this.receiptObserver === undefined || currentnessRejection === undefined || ackFacts === undefined) {
             return;
         }
         recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
@@ -681,6 +677,7 @@ export class WsQueueBoxServerService {
             controlMsgId: ackFacts.controlMsgId,
             controlSenderId: ackFacts.controlSenderId,
             controlCreatedAtEpochMs: ackFacts.controlCreatedAtEpochMs,
+            traceId: ackFacts.traceId,
             rejectionCode: 'unauthorized',
             owner: 'inbound-authority',
             connectionId: observation.connectionId,

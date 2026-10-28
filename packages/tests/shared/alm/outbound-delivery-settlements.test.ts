@@ -116,7 +116,8 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
             carrier: 'ws',
             atMs: 0,
             verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
-            trackedReceiptAlgo: 'receiver'
+            trackedReceiptAlgo: 'receiver',
+            traceId: 'trace-outbound-delivery-settlements'
         }
     );
 }
@@ -140,13 +141,13 @@ it('stamps every settlement with the lane that stated it, and its own cancel wit
 
     await enqueueOutboundOrThrow(runtime, durable);
     await enqueueOutboundOrThrow(runtime, volatile);
-    runtime.cancel('msg-never-admitted');
+    runtime.cancel('msg-never-admitted', 'trace-cancel-never-admitted');
 
     const lanesOf = (msgId: string) => settlements.filter((settlement) => settlement.msgId === msgId).map(({ lane }) => lane);
     expect(lanesOf(durable.id.msgId)).toEqual(['durable', 'durable']);
     expect(lanesOf(volatile.id.msgId)).toEqual(['volatile', 'volatile']);
     expect(settlements.filter((settlement) => settlement.msgId === 'msg-never-admitted')).toStrictEqual([
-        { kind: 'cancelled', msgId: 'msg-never-admitted', carrier: 'ws', atMs: expect.any(Number) }
+        { kind: 'cancelled', msgId: 'msg-never-admitted', traceId: 'trace-cancel-never-admitted', carrier: 'ws', atMs: expect.any(Number) }
     ]);
 });
 
@@ -160,11 +161,12 @@ it.each(BACKEND_KINDS)(
             planOutgoingMessage: planSend(),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
-        const message = createOutboundMessage('msg-settled-sent');
+        const message = createOutboundMessage('msg-settled-sent', { traceId: 'trace-settled-sent' });
 
         await enqueueOutboundOrThrow(runtime, message);
 
         expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
+        expect(settlements.map((settlement) => settlement.traceId)).toEqual(['trace-settled-sent', 'trace-settled-sent']);
         expect(settlements[0]).toMatchObject({
             kind: 'attempt-started',
             msgId: message.id.msgId,
@@ -197,7 +199,7 @@ it.each(BACKEND_KINDS)('states that a not-ready attempt will be tried again over
             retryAfterMs: 50
         })
     });
-    const message = createOutboundMessage('msg-settled-not-ready');
+    const message = createOutboundMessage('msg-settled-not-ready', { traceId: 'trace-settled-not-ready' });
 
     await enqueueOutboundOrThrow(runtime, message);
 
@@ -211,7 +213,8 @@ it.each(BACKEND_KINDS)('states that a not-ready attempt will be tried again over
         outcome: 'not-ready',
         submissionAttempted: false,
         detail: 'No carrier lane yet',
-        willRetry: true
+        willRetry: true,
+        traceId: 'trace-settled-not-ready'
     }]);
 });
 
@@ -274,7 +277,8 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             expectedRecipientPeerIds: ['peer-1', 'peer-2'],
             confirmedRecipientPeerIds: ['peer-1'],
             unconfirmedRecipientPeerIds: ['peer-2'],
-            complete: false
+            complete: false,
+            traceId: 'trace-outbound-runtime-test-fixture'
         },
         {
             kind: 'acknowledgement',
@@ -288,7 +292,8 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             expectedRecipientPeerIds: ['peer-1', 'peer-2'],
             confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-outbound-runtime-test-fixture'
         }
     ]);
 });
@@ -338,7 +343,8 @@ it.each(BACKEND_KINDS)(
             lane: 'durable',
             atMs: expect.any(Number),
             relayRejection: { relay: 'peer', peerId: 'peer-1', reason: 'resync-required' },
-            detail: 'Hop peer-1 refused the message: resync-required.'
+            detail: 'Hop peer-1 refused the message: resync-required.',
+            traceId: 'trace-outbound-delivery-settlements'
         }]);
         const lifecycle = settlements.reduce(computeALDeliveryLifecycle, toQueuedLifecycle(message));
         expect(lifecycle.state).toBe('rejected');
@@ -363,7 +369,7 @@ it.each(BACKEND_KINDS)('states expiry for work claimed past its own deadline ove
             return { status: 'sent', submissionAttempted: true };
         }
     });
-    const message = createOutboundMessage('msg-claimed-past-deadline', { ttlMs: 1_000 });
+    const message = createOutboundMessage('msg-claimed-past-deadline', { ttlMs: 1_000, traceId: 'trace-claimed-past-deadline' });
 
     await runtime.enqueueIfAbsent(message);
     // The owner's clock passes the message deadline while its work is still unclaimed.
@@ -379,7 +385,8 @@ it.each(BACKEND_KINDS)('states expiry for work claimed past its own deadline ove
         carrier: 'ws',
         lane: 'durable',
         atMs: ownerNowMs,
-        detail: expect.any(String)
+        detail: expect.any(String),
+        traceId: 'trace-claimed-past-deadline'
     }]);
 });
 
@@ -439,15 +446,19 @@ it.each(BACKEND_KINDS)('states the old message superseded when its replacement c
         planOutgoingMessage: planSupersedingSend(),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
-    const old = createOutboundMessage('msg-superseded-old');
-    const replacement = createOutboundMessage('msg-superseded-replacement');
+    const old = createOutboundMessage('msg-superseded-old', { traceId: 'trace-superseded-old' });
+    const replacement = createOutboundMessage('msg-superseded-replacement', { traceId: 'trace-superseded-replacement' });
 
     await enqueueOutboundOrThrow(runtime, old);
     await enqueueOutboundOrThrow(runtime, replacement);
 
     // No claim has run: the drain is held, so only the replacement's commit can have said it.
     expect(settlements.filter((settlement) => settlement.msgId === old.id.msgId)).toEqual([
-        expect.objectContaining({ kind: 'superseded', replacementMsgId: replacement.id.msgId })
+        expect.objectContaining({
+            kind: 'superseded',
+            replacementMsgId: replacement.id.msgId,
+            traceId: 'trace-superseded-replacement'
+        })
     ]);
     await held.release(runtime);
     await expect.poll(async () => {
@@ -457,9 +468,9 @@ it.each(BACKEND_KINDS)('states the old message superseded when its replacement c
 
     const oldSettlements = settlements.filter((settlement) => settlement.msgId === old.id.msgId);
     expect(oldSettlements).toEqual([
-        expect.objectContaining({ kind: 'superseded' }),
-        expect.objectContaining({ kind: 'attempt-started' }),
-        expect.objectContaining({ kind: 'attempt-settled', outcome: 'superseded' })
+        expect.objectContaining({ kind: 'superseded', traceId: 'trace-superseded-replacement' }),
+        expect.objectContaining({ kind: 'attempt-started', traceId: 'trace-superseded-old' }),
+        expect.objectContaining({ kind: 'attempt-settled', outcome: 'superseded', traceId: 'trace-superseded-old' })
     ]);
     const lifecycle = oldSettlements.reduce(computeALDeliveryLifecycle, toQueuedLifecycle(old));
     expect(lifecycle.state).toBe('superseded');
@@ -682,11 +693,11 @@ it.each(BACKEND_KINDS)(
                 return { status: 'sent', submissionAttempted: true };
             }
         });
-        const message = createOutboundMessage('msg-cancelled-before-drain');
+        const message = createOutboundMessage('msg-cancelled-before-drain', { traceId: 'trace-cancelled-before-drain' });
 
         // The owner has admitted no work for this id yet; the cancellation is still remembered.
-        expect(runtime.cancel(message.id.msgId)).toBe('cancelled');
-        expect(runtime.cancel(message.id.msgId)).toBe('already-cancelled');
+        expect(runtime.cancel(message.id.msgId, message.id.traceId)).toBe('cancelled');
+        expect(runtime.cancel(message.id.msgId, message.id.traceId)).toBe('already-cancelled');
 
         await runtime.enqueueIfAbsent(message);
         await runOutboundWorkTask(runtime);
@@ -696,7 +707,8 @@ it.each(BACKEND_KINDS)(
             kind: 'cancelled',
             msgId: message.id.msgId,
             carrier: 'ws',
-            atMs: expect.any(Number)
+            atMs: expect.any(Number),
+            traceId: 'trace-cancelled-before-drain'
         }]);
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
     }
@@ -725,7 +737,7 @@ it.each(BACKEND_KINDS)(
         expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started']);
         expect(capturedSignal?.aborted).toBe(false);
 
-        expect(runtime.cancel(message.id.msgId)).toBe('cancelled');
+        expect(runtime.cancel(message.id.msgId, message.id.traceId)).toBe('cancelled');
 
         expect(capturedSignal?.aborted).toBe(true);
         expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'cancelled']);
@@ -767,7 +779,7 @@ it.each(BACKEND_KINDS)(
         // The abort lands mid-await, inside `writeAttemptedSend`'s own read -- before its carrier runs.
         const readSendGuards = stores.admissionStore.readSendGuards.bind(stores.admissionStore);
         vi.spyOn(stores.admissionStore, 'readSendGuards').mockImplementationOnce(async (sent) => {
-            runtime.cancel(sent.id.msgId);
+            runtime.cancel(sent.id.msgId, sent.id.traceId);
             return await readSendGuards(sent);
         });
 
@@ -870,7 +882,7 @@ it('completes an ack-timeout effect for a cancelled message without retrying it'
     await enqueueOutboundOrThrow(runtime, message);
     expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
 
-    expect(runtime.cancel(message.id.msgId)).toBe('cancelled');
+    expect(runtime.cancel(message.id.msgId, message.id.traceId)).toBe('cancelled');
 
     // The acknowledgement row falls due on the queue's clock; cancellation preempts its repair.
     await new Promise((resolve) => setTimeout(resolve, ACK_TIMEOUT_WINDOW_MS + 30));

@@ -10,13 +10,13 @@ const nowMs = Date.now;
 const deliveries = new BrowserRallarDeliveryRegistry({
     nowMs,
     ...BROWSER_DELIVERY_RETENTION,
-    cancel: (msgId) => {
+    cancel: (msgId, traceId) => {
         const middleware = browserTransportRuntime.readMiddleware()?.middleware;
         try {
-            middleware?.rtcRxStreamer.cancelOutbox(msgId);
+            middleware?.rtcRxStreamer.cancelOutbox(msgId, traceId);
         }
         finally {
-            middleware?.webSocketQueueBox.cancelOutbox(msgId);
+            middleware?.webSocketQueueBox.cancelOutbox(msgId, traceId);
         }
     }
 });

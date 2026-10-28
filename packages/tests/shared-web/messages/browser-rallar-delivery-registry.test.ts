@@ -362,10 +362,17 @@ describe('BrowserRallarDeliveryRegistry', () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            const recorded = vi.spyOn(harness.registry, 'record');
 
             handle.cancel();
 
             expect(harness.cancelledMsgIds).toEqual(['msg-1']);
+            expect(harness.cancelledTraceIds).toEqual(['trace-browser-rallar-delivery-registry']);
+            expect(recorded).toHaveBeenCalledWith(expect.objectContaining({
+                kind: 'cancelled',
+                msgId: 'msg-1',
+                traceId: 'trace-browser-rallar-delivery-registry'
+            }));
             const lifecycle = handle.lifecycle();
             expect(lifecycle.state).toBe('cancelled');
             expect(lifecycle.evidence.reason).toBe('Cancelled by the sender.');
@@ -848,6 +855,7 @@ class DeliveryRegistryHarness {
     readonly registry: BrowserRallarDeliveryRegistry;
     private currentMs = START_MS;
     private readonly cancellations: string[] = [];
+    private readonly cancelledTraces: string[] = [];
     private readonly cancelEmitters = new Set<(msgId: string) => void>();
 
     constructor(limits: DeliveryRegistryHarness.Limits = { retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: MAX_ENTRIES }) {
@@ -855,8 +863,9 @@ class DeliveryRegistryHarness {
             nowMs: () => this.currentMs,
             retainTerminalMs: limits.retainTerminalMs,
             maxEntries: limits.maxEntries,
-            cancel: (msgId) => {
+            cancel: (msgId, traceId) => {
                 this.cancellations.push(msgId);
+                this.cancelledTraces.push(traceId);
                 for (const emit of this.cancelEmitters) {
                     emit(msgId);
                 }
@@ -866,6 +875,10 @@ class DeliveryRegistryHarness {
 
     get cancelledMsgIds(): readonly string[] {
         return this.cancellations;
+    }
+
+    get cancelledTraceIds(): readonly string[] {
+        return this.cancelledTraces;
     }
 
     /** Models a carrier's synchronous cancellation settlement. */
@@ -937,12 +950,13 @@ function toAdmittedSettlement(msgId: string, atMs: number, trackedReceiptAlgo: A
         carrier: 'rtc',
         atMs,
         verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
-        trackedReceiptAlgo
+        trackedReceiptAlgo,
+        traceId: 'trace-browser-rallar-delivery-registry'
     };
 }
 
 function toAttemptStartedSettlement(msgId: string, atMs: number): ALDeliverySettlement {
-    return { kind: 'attempt-started', msgId, carrier: 'rtc', atMs, attemptId: 'attempt-1' };
+    return { kind: 'attempt-started', msgId, carrier: 'rtc', atMs, attemptId: 'attempt-1', traceId: 'trace-browser-rallar-delivery-registry' };
 }
 
 function toAttemptSentSettlement(msgId: string, atMs: number): ALDeliverySettlement {
@@ -955,7 +969,8 @@ function toAttemptSentSettlement(msgId: string, atMs: number): ALDeliverySettlem
         outcome: 'sent',
         submissionAttempted: true,
         detail: undefined,
-        willRetry: false
+        willRetry: false,
+        traceId: 'trace-browser-rallar-delivery-registry'
     };
 }
 
@@ -971,12 +986,13 @@ function toAcknowledgementSettlement(msgId: string, atMs: number): ALDeliverySet
         expectedRecipientPeerIds: ['peer-1'],
         confirmedRecipientPeerIds: ['peer-1'],
         unconfirmedRecipientPeerIds: [],
-        complete: true
+        complete: true,
+        traceId: 'trace-browser-rallar-delivery-registry'
     };
 }
 
 function toCancelledSettlement(msgId: string, atMs: number): ALDeliverySettlement {
-    return { kind: 'cancelled', msgId, carrier: 'rtc', atMs };
+    return { kind: 'cancelled', msgId, carrier: 'rtc', atMs, traceId: 'trace-browser-rallar-delivery-registry' };
 }
 
 function toSupersededSettlement(msgId: string, atMs: number): ALDeliverySettlement {
@@ -986,6 +1002,7 @@ function toSupersededSettlement(msgId: string, atMs: number): ALDeliverySettleme
         carrier: 'rtc',
         atMs,
         replacementMsgId: 'msg-2',
-        detail: 'A newer message replaced this one.'
+        detail: 'A newer message replaced this one.',
+        traceId: 'trace-browser-rallar-delivery-registry'
     };
 }

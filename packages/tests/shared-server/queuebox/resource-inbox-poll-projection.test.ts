@@ -125,7 +125,7 @@ describe('resource inbox poll projection', () => {
             options: normalizeAppInboxOptions({ phaseTiming: true, waitMaxElapsedMsecs: 0 })
         });
         const result = await waiter.waitForResult(
-            { enqueue: { type: AppInboxType.GROUP_CREATE, ...key, data: null }, key: key, winner: false },
+            { enqueue: { type: AppInboxType.GROUP_CREATE, ...key, data: null }, key: key, traceId: 'trace-poll-projection', winner: false },
             (value) => value
         );
         expect(result.left).toMatchObject({ code: 'app-inbox-unavailable', status: 503 });

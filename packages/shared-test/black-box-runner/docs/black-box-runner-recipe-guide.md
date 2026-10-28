@@ -232,10 +232,16 @@ Common fields:
 - `expect.statusCodes`: accepted status array
 - `expect.headers`: expected response headers by name (case-insensitive), with
   exact values or the usual type tokens (`string`, `integer`, `any`, `a|b`);
-  only the runner's allow-listed observability headers are observable
-  (`Cache-Control`, `ETag`, `Rallar-Group-Revision`, `Rallar-Presence-Revision`,
-  `Rallar-State-Revision`, `Rallar-State-Source`), so expecting any other name
-  fails
+  only the headers on the runner's allow-list
+  (`normalize-black-box-response-headers.ts`) are observable: the four
+  `Access-Control-*` headers, `Cache-Control`, `ETag`, `Retry-After`, `Vary`,
+  `Rallar-Group-Revision`, `Rallar-Presence-Revision`, `Rallar-State-Revision`,
+  `Rallar-State-Source` and `X-Request-Id`, so expecting any other name fails. `X-Request-Id` is the trace the server echoes: the
+  request's own value when it is a valid trace (`A-Za-z0-9_-`, 1 to 128
+  characters), otherwise a minted one. Compare a valid echo with `expect.headers`;
+  to check a minted one, expect the type token `string`, then `assert` the value
+  read as `{resultsByName.<step>.0.actual.headers.x-request-id}` with a `matches`
+  and a `notEquals` comparator (`tests/api-v1/api-v1-request-trace-echo.json`)
 - `expect.body`: expected response JSON
 - `expect.bodyAnyOf`: accepted response body shapes
 - `expect.maxDurationMs`: fail the step when its measured `durationMs` exceeds

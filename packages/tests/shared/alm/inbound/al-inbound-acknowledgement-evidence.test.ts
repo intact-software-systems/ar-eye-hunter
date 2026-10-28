@@ -428,14 +428,27 @@ it('associates the exact received ACK with independently stored regenerated cont
     });
     expect(JSON.parse(JSON.stringify(captured)).data).toEqual(association?.data);
     expect(association?.data).toMatchObject({
-        incoming: { controlMsgId: 'incoming-control', subjectMsgId: 'subject', originPeerId: 'origin', logicalRecipientPeerId: 'leaf', carrier: 'ws' },
+        incoming: {
+            controlMsgId: 'incoming-control',
+            subjectMsgId: 'subject',
+            originPeerId: 'origin',
+            logicalRecipientPeerId: 'leaf',
+            carrier: 'ws',
+            traceId: 'trace-al-inbound-acknowledgement-evidence',
+            corrId: 'incoming-control'
+        },
         attempts: [{
             candidate: {
                 ownerPeerId: 'origin',
                 parentPeerId: 'parent',
-                generated: [
-                    { controlMsgId: 'generated-1:0', logicalRecipientPeerId: 'leaf', carrier: 'rtc' }
-                ]
+                // The regenerated ACK travels under the trace of the ACK it answers, so both name one trace.
+                generated: [{
+                    controlMsgId: 'generated-1:0',
+                    logicalRecipientPeerId: 'leaf',
+                    carrier: 'rtc',
+                    traceId: 'trace-al-inbound-acknowledgement-evidence',
+                    corrId: 'generated-1:0'
+                }]
             },
             commit: 'committed'
         }],

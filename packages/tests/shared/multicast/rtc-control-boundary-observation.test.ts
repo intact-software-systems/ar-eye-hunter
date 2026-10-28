@@ -75,16 +75,22 @@ describe('exact RTC ACK boundary observations', () => {
                     ORIGIN_ROOM,
                     'room.ar-eye-hunter.director.intent.v1',
                     { kind: 'player-shot-intent', senderId, seq: 1 },
-                    { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+                    {
+                        ack: 'group-leader',
+                        reliability: 'at-least-once',
+                        ttlMs: 30_000,
+                        qos: { durability: { algo: 'volatile' } },
+                        traceId: `trace-${senderId}-shot`
+                    }
                 )
             );
             const relayed = messages[0]!;
             const direct = messages[1]!;
             const hops = [
-                { subject: relayed, fromPeerId: 'director', toPeerId: '02', status: 'delivered' },
-                { subject: relayed, fromPeerId: '02', toPeerId: '04', status: 'forwarded' },
-                { subject: relayed, fromPeerId: '04', toPeerId: '03', status: 'forwarded' },
-                { subject: direct, fromPeerId: 'director', toPeerId: '02', status: 'delivered' }
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: 'director', toPeerId: '02', status: 'delivered' },
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '02', toPeerId: '04', status: 'forwarded' },
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '04', toPeerId: '03', status: 'forwarded' },
+                { subject: direct, traceId: 'trace-02-shot', fromPeerId: 'director', toPeerId: '02', status: 'delivered' }
             ] as const;
             // All business, origin and frame observers exist before the first admission.
             const deliveries = new Map(messages.map((message) => [message.id.msgId, Promise.withResolvers<ALMessage>()]));
@@ -360,7 +366,10 @@ describe('exact RTC ACK boundary observations', () => {
                         controlSenderId: ack.id.senderId,
                         fromPeerId: hop.fromPeerId,
                         toPeerId: hop.toPeerId,
-                        carrier: 'rtc'
+                        carrier: 'rtc',
+                        // Every hop's ACK travels under the trace of the message it acknowledges.
+                        traceId: hop.traceId,
+                        corrId: ack.id.msgId
                     };
                     expect(inbound.get(hop.toPeerId)).toContainEqual(expect.objectContaining({
                         kind: 'acknowledgement-association',

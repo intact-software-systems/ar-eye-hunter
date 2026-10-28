@@ -283,6 +283,23 @@ describe('AppInboxDequeuePassTiming', () => {
         ]);
     });
 
+    it('names no trace on a claimed entry or on the pass boundary, since the pass decodes no message', () => {
+        const executor = createSimulatedExecutor();
+        const claimed = createAttempt('claimed', Reservator.NEW);
+
+        executor.observer.onPassStarted();
+        executor.observer.onEntryClaimed(claimed);
+        executor.observer.onHandlerStarted(claimed);
+        executor.run(1);
+        executor.observer.onHandlerFinished(claimed);
+        executor.observer.onPassFinished();
+
+        expect(executor.timing.map((event) => event.operation)).toEqual(['dequeue-pass', 'dequeue-pass-boundary']);
+        for (const event of executor.timing) {
+            expect(event).not.toHaveProperty('traceId');
+        }
+    });
+
     it('closes a pass that claimed nothing with its boundary line alone', () => {
         const executor = createSimulatedExecutor();
 

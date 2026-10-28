@@ -1,5 +1,6 @@
 import { resolvePublicServerUrl } from '@shared-server/http/resolve-public-server-url.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import { installApiDocumentationRoutes } from '../src/routes/swagger-routes.ts';
@@ -11,6 +12,38 @@ const TOPOLOGY_CONFIG_MUTATION_PATH = `${TOPOLOGY_CONFIG_PATH}/requests/{request
 const TOPOLOGY_OVERRIDE_PATH = `${SCOPED_GROUP_PATH}/topology/override`;
 const TOPOLOGY_OVERRIDE_MUTATION_PATH = `${TOPOLOGY_OVERRIDE_PATH}/requests/{requestId}`;
 const TOPOLOGY_RECONFIGURE_MUTATION_PATH = `${SCOPED_GROUP_PATH}/topology/reconfigure/requests/{requestId}`;
+
+const RECEIPT_MODES = ['hop', 'subtree', 'receiver', 'leader'] as const satisfies readonly ALReceiptMode[];
+const RECEIPT_MODES_ARE_EXHAUSTIVE: [Exclude<ALReceiptMode, (typeof RECEIPT_MODES)[number]>] extends [never] ? true :
+    false = true;
+
+Deno.test('OpenAPI JSON lists every receipt mode and the trace on the admin receipt entry', async () => {
+    const app = installApiDocumentationRoutes(new Hono());
+    const response = await app.request('/api/openapi.json');
+    const json = await response.json() as {
+        components: {
+            schemas: {
+                AdminOperationsAlmReceiptEntry: {
+                    required: readonly string[];
+                    properties: {
+                        mode: { enum: readonly string[]; };
+                        traceId: { type: string; pattern: string; };
+                    };
+                };
+            };
+        };
+    };
+    const entry = json.components.schemas.AdminOperationsAlmReceiptEntry;
+
+    assert.equal(RECEIPT_MODES_ARE_EXHAUSTIVE, true);
+    assert.deepEqual([...entry.properties.mode.enum].sort(), [...RECEIPT_MODES].sort());
+    assert.ok(entry.required.includes('traceId'));
+    assert.deepEqual(entry.properties.traceId, {
+        type: 'string',
+        pattern: '^[A-Za-z0-9_-]{1,128}$',
+        description: 'The trace of the message\'s latest receipt fact.'
+    });
+});
 
 Deno.test('swagger public server URL trusts proxy HTTPS headers', () => {
     const request = new Request('http://internal-api:8080/swagger-ui', {

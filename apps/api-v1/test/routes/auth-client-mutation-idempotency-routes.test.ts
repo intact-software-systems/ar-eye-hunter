@@ -155,7 +155,11 @@ Deno.test('logout reauthenticates before credential-proof replay disclosure', as
 
     const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
         method: 'POST',
-        headers: { authorization: 'Bearer invalidated-token', 'x-client-id': 'alice' },
+        headers: {
+            authorization: 'Bearer invalidated-token',
+            'x-client-id': 'alice',
+            'x-request-id': 'trace-logout-proof-replay'
+        },
         body: JSON.stringify({})
     });
 
@@ -164,6 +168,7 @@ Deno.test('logout reauthenticates before credential-proof replay disclosure', as
     assert.equal(liveLogoutCalls, 0);
     assert.deepEqual(proofCalls, [{
         requestId: REQUEST_ID,
+        traceId: 'trace-logout-proof-replay',
         accessToken: 'invalidated-token',
         clientId: 'alice'
     }]);

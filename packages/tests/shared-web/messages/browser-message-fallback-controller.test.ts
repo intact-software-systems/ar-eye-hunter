@@ -157,7 +157,8 @@ function toNotReady(
         outcome: 'not-ready',
         submissionAttempted: false,
         detail: 'The RTC frame was dropped.',
-        willRetry: true
+        willRetry: true,
+        traceId: 'trace-browser-message-fallback-controller'
     };
 }
 
@@ -171,7 +172,8 @@ function toExhausted(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettl
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['peer-1'],
         cause: 'budget',
-        detail: EXHAUSTED_DETAIL
+        detail: EXHAUSTED_DETAIL,
+        traceId: 'trace-browser-message-fallback-controller'
     };
 }
 
@@ -181,7 +183,8 @@ function toNotYetInSyncExhausted(msgId: string): ALDeliverySettlement {
         msgId,
         carrier: 'rtc',
         atMs: Date.now(),
-        detail: 'The not-yet-in-sync retry budget of 3 ran out.'
+        detail: 'The not-yet-in-sync retry budget of 3 ran out.',
+        traceId: 'trace-browser-message-fallback-controller'
     };
 }
 
@@ -201,7 +204,8 @@ function toReceipt(
         expectedRecipientPeerIds: ['peer-1'],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: ['peer-1'].filter((peerId) => !confirmed.includes(peerId)),
-        complete: confirmed.length === 1
+        complete: confirmed.length === 1,
+        traceId: 'trace-browser-message-fallback-controller'
     };
 }
 

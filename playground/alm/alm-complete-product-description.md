@@ -1000,16 +1000,32 @@ most recently updated receipted messages, who confirmed each receipt and whether
 reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
 (S3c-ii, D75).
 
-**PLANNED — F1, S1, and I1b-ii, end-to-end observability:** There is no shared
+**CURRENT — I1b-ii-a, the trace on the runtime:** every message-scoped runtime
+diagnostic ends with the message's `traceId`, then its `corrId`, after a
+receipt's `phase` too. Two kinds carry both as `null` together where no decoded
+message exists: a `dispatch-decision` made before the stored message is read,
+and a `claim-settled` for a reference-only or buffered-release effect. Every
+request- or message-scoped server timing line names the trace, and the HTTP
+line's `requestId` equals it. A line whose producer holds no decoded message or
+request, such as the AppInbox dequeue pass, carries none. The WS server's
+receipt observations, every delivery settlement and each admin receipt entry on
+`/api/admin/operations/realtime` name the trace. The formation cycle keeps the
+trace of the message that caused it, so a join, its formation timers and its
+activation publication follow one trace. The black-box runner compares the
+echoed `x-request-id`, and the harness raw control acknowledges under the
+acknowledged message's trace.
+
+**PLANNED — F1, S1, and I1b-ii-b, end-to-end observability:** There is no shared
 lifecycle event stream, IndexedDB cost telemetry, or payload-safe logging
 contract. F1 adds the AL-owned IndexedDB counter and ALM metrics in the lanes,
 S1 the lifecycle events. The trace itself is carried end to end since I1b-i, and
-the HTTP timing line records it as its `requestId`. I1b-ii puts the trace on the
-message-scoped runtime diagnostics, the AppInbox timing lines and the harness
-identity, and adds the payload-free diagnostics contract: no diagnostic the
-conformance lane records may carry a message payload, which a sentinel-payload
-guard proves. Message evidence events keep their payloads as the recipes'
-assertion surface.
+it is on the runtime diagnostics, the timing lines and the receipts since
+I1b-ii-a. I1b-ii-b puts the trace on the harness identity, the `messages.send`
+result and the typed-channel message event, and proves sender and receiver
+trace equality in the lane. It adds the payload-free diagnostics contract: no
+diagnostic the conformance lane records may carry a message payload, which a
+sentinel-payload guard proves. Message evidence events keep their payloads as
+the recipes' assertion surface.
 
 **PLANNED — I2a, storage health:** In production the storage-reset sink does
 nothing, and no storage-health or recovery event exists. I2a puts the following

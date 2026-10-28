@@ -8,6 +8,7 @@ import {
     decodePersistedALMessageRow,
     toChangedALMessageRow
 } from '../../al-contracts/al-message-persistence-validation.ts';
+import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
@@ -213,6 +214,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             msgId: dispatch.msg.id.msgId,
             typeId: dispatch.msg.payload.typeId,
             origin: dispatch.origin,
+            trace: toALMessageTrace(dispatch.msg),
             nowMs: () => this.readNowMs(),
             getReadOperationCount: () => this.admissionStore.getReadOperationCount()
         });

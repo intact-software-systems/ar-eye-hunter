@@ -46,7 +46,8 @@ describe('submitBlackBoxRawControl', () => {
             control: CONTROL,
             sessionId: 'recipient-b',
             context: toAdmittingContext(submitted, wake),
-            nowMs: 1_000
+            nowMs: 1_000,
+            traceId: 'trace-acked-received'
         });
 
         expect(submission).toEqual({ msgId: 'control-1', verdict: ADMITTED });
@@ -54,7 +55,7 @@ describe('submitBlackBoxRawControl', () => {
         expect(submitted).toHaveLength(1);
         const [control] = submitted;
         expect(control).toMatchObject({
-            id: { msgId: 'control-1', senderId: 'recipient-b', ts: 1_000 },
+            id: { msgId: 'control-1', senderId: 'recipient-b', ts: 1_000, traceId: 'trace-acked-received' },
             targets: { mode: 'unicast', toPeerId: 'origin' },
             payload: { typeId: 'al.control.ack.v1' }
         });
@@ -76,7 +77,8 @@ describe('submitBlackBoxRawControl', () => {
             control: CONTROL,
             sessionId: undefined,
             context: undefined,
-            nowMs: 1_000
+            nowMs: 1_000,
+            traceId: 'trace-acked-received'
         })).rejects.toThrow('Raw control submission unavailable: no connected session.');
     });
 

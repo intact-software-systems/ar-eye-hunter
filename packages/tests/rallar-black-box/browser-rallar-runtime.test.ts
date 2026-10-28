@@ -1389,7 +1389,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     carrier: 'rtc',
                     atMs: Date.now(),
                     reason: 'no-route',
-                    detail
+                    detail,
+                    traceId: 'trace-browser-rallar-runtime'
                 });
                 return handle;
             });

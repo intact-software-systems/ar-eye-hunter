@@ -67,6 +67,7 @@ export class ALOutboundMessageEffects<TPrepared> {
         evidence?.recordAuthority(authority.status, nowMs);
         const skip = computeALOutboundRetainedAdmissionSkip({
             msgId: pending.message.msgId,
+            traceId: msg.id.traceId,
             expiresAtMs: pending.message.expiresAtMs,
             nowMs,
             disposed: this.dependencies.sendSignal.aborted,
@@ -92,6 +93,7 @@ export class ALOutboundMessageEffects<TPrepared> {
         this.dependencies.settlements({
             kind: 'admission',
             msgId: pending.message.msgId,
+            traceId: msg.id.traceId,
             verdict: result.computed.verdict,
             trackedReceiptAlgo: result.computed.trackedReceiptAlgo
         });
@@ -111,6 +113,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             this.dependencies.settlements({
                 kind: 'attempt-settled',
                 msgId: send.payload.message.msgId,
+                traceId: send.lifecycle.canonicalMessage.id.traceId,
                 attemptId: send.attemptId,
                 outcome: 'failed',
                 submissionAttempted: false,
@@ -126,11 +129,13 @@ export class ALOutboundMessageEffects<TPrepared> {
     ): Promise<ALWorkAttemptResult> {
         const { lifecycle } = send;
         const msgId = send.payload.message.msgId;
+        const traceId = lifecycle.canonicalMessage.id.traceId;
         const guards = await this.dependencies.admissionStore.readSendGuards(lifecycle.canonicalMessage);
         if (guards.kind === 'superseded') {
             this.dependencies.settlements({
                 kind: 'attempt-settled',
                 msgId,
+                traceId,
                 attemptId: send.attemptId,
                 outcome: 'superseded',
                 submissionAttempted: false,
@@ -147,6 +152,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             this.dependencies.settlements({
                 kind: 'expired',
                 msgId,
+                traceId,
                 detail: 'The message deadline passed before its carrier ran.'
             });
             return { status: 'completed' };
@@ -191,6 +197,7 @@ export class ALOutboundMessageEffects<TPrepared> {
         this.dependencies.settlements({
             kind: 'attempt-settled',
             msgId,
+            traceId: send.lifecycle.canonicalMessage.id.traceId,
             attemptId: send.attemptId,
             outcome: 'cancelled',
             submissionAttempted: false,
@@ -208,11 +215,13 @@ export class ALOutboundMessageEffects<TPrepared> {
     ): ALWorkOutcome {
         const disposition = computeALOutboundSendDisposition(settled, timing);
         const msgId = send.payload.message.msgId;
+        const traceId = send.lifecycle.canonicalMessage.id.traceId;
         // A `not-ready` attempt the deadline ended carries no meaning of its own: the expiry is the fact.
         if (disposition.expiredDetail === undefined || settled.status !== 'not-ready') {
             this.dependencies.settlements({
                 kind: 'attempt-settled',
                 msgId,
+                traceId,
                 attemptId: send.attemptId,
                 outcome: settled.status,
                 submissionAttempted: settled.submissionAttempted,
@@ -221,7 +230,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             });
         }
         if (disposition.expiredDetail !== undefined) {
-            this.dependencies.settlements({ kind: 'expired', msgId, detail: disposition.expiredDetail });
+            this.dependencies.settlements({ kind: 'expired', msgId, traceId, detail: disposition.expiredDetail });
         }
         return disposition.outcome;
     }
@@ -253,6 +262,7 @@ interface ALOutboundRetainedAdmissionSkip {
 
 interface ComputeALOutboundRetainedAdmissionSkipInput {
     readonly msgId: string;
+    readonly traceId: string;
     readonly expiresAtMs: number;
     readonly nowMs: number;
     readonly disposed: boolean;
@@ -301,6 +311,7 @@ function computeALOutboundRetainedAdmissionSkip(
             settlement: {
                 kind: 'admission',
                 msgId: input.msgId,
+                traceId: input.traceId,
                 verdict: { kind: 'deferred', reason: 'not-yet-in-sync', detail: authority.reason },
                 trackedReceiptAlgo: 'none'
             }
@@ -316,6 +327,7 @@ function toALOutboundRetainedAdmissionSkipSettlement(
         return {
             kind: 'expired',
             msgId: input.msgId,
+            traceId: input.traceId,
             detail: 'The retained admission reached its deadline before it was replayed.'
         };
     }
@@ -323,6 +335,7 @@ function toALOutboundRetainedAdmissionSkipSettlement(
         ? {
             kind: 'admission',
             msgId: input.msgId,
+            traceId: input.traceId,
             verdict: { kind: 'refused', reason: 'unauthorized', detail: input.authority.reason },
             trackedReceiptAlgo: 'none'
         }

@@ -44,7 +44,16 @@ function requirePorts(): RallarDiagnosticsPortsInput {
 }
 
 function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
-    ports.outboundDiagnostics?.({ kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'defer', priority: 0, msgId: 'msg-1' });
+    ports.outboundDiagnostics?.({
+        kind: 'congestion',
+        carrier: 'rtc',
+        cause: 'backpressured',
+        action: 'defer',
+        priority: 0,
+        msgId: 'msg-1',
+        traceId: 'trace-msg-1',
+        corrId: 'msg-1'
+    });
     ports.inboundDiagnostics?.({
         kind: 'admission-outcome',
         workerId: 'worker-1',
@@ -52,7 +61,9 @@ function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
         typeId: 'test.delivery',
         carrier: 'rtc',
         outcome: 'unauthorized',
-        reason: 'unauthorized'
+        reason: 'unauthorized',
+        traceId: 'trace-msg-1',
+        corrId: 'msg-1'
     });
     ports.storage?.({ kind: 'ordering-tracks', storeId: 'store-1', tracks: 3 });
     ports.storage?.({
@@ -318,8 +329,23 @@ it('retains delivery results, retry outcomes and receipts with ALM recording Off
             { attemptId: 'second', outcome: 'sent', submissionAttempted: true, willRetry: false }
         ] as const
     ) {
-        facade.deliveries.record({ kind: 'attempt-started', msgId: sent.msgId, carrier: 'ws', atMs: 1, attemptId: attempt.attemptId });
-        facade.deliveries.record({ kind: 'attempt-settled', msgId: sent.msgId, carrier: 'ws', atMs: 2, detail: undefined, ...attempt });
+        facade.deliveries.record({
+            kind: 'attempt-started',
+            msgId: sent.msgId,
+            carrier: 'ws',
+            atMs: 1,
+            attemptId: attempt.attemptId,
+            traceId: 'trace-alm-recording'
+        });
+        facade.deliveries.record({
+            kind: 'attempt-settled',
+            msgId: sent.msgId,
+            carrier: 'ws',
+            atMs: 2,
+            detail: undefined,
+            ...attempt,
+            traceId: 'trace-alm-recording'
+        });
     }
     facade.deliveries.record({
         kind: 'acknowledgement',
@@ -332,7 +358,8 @@ it('retains delivery results, retry outcomes and receipts with ALM recording Off
         expectedRecipientPeerIds: ['peer-1'],
         confirmedRecipientPeerIds: ['peer-1'],
         unconfirmedRecipientPeerIds: [],
-        complete: true
+        complete: true,
+        traceId: 'trace-alm-recording'
     });
     await expect(runtime.readReceipts({ connection: 'alm-recording', handleId: 'receipt' })).resolves.toMatchObject({
         state: 'acknowledged',

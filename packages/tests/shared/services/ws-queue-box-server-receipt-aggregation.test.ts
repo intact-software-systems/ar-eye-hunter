@@ -353,25 +353,34 @@ describe('WS server receipt aggregate', () => {
             ack: { fromPeerId: 'b', logicalRecipientPeerId: 'b', ackedMsgId: 'other-message' },
             reason: 'AL acknowledgement names no receipt this server aggregates'
         }
-    ])('refuses $name as a typed rejection that counts nothing', ({ ack, reason }) => {
-        const aggregation = createAggregation();
+    ])('refuses $name as a typed rejection that counts nothing', async ({ ack, reason }) => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
         aggregation.recordAdmission(admission());
 
-        expect(aggregation.recordAck(aggregateAck(ack)).left).toEqual({ code: 'unauthorized', message: reason });
-        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })).right)
-            .toEqual({ receipt: undefined, deadlineAtMs: 30_000, traceId: 'trace-room-message-1' });
+        expect(aggregation.readRelayedAckRejection(aggregateAck(ack))).toEqual({ code: 'unauthorized', message: reason });
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck(ack)));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+
+        expect(enqueued).toEqual([]);
     });
 
-    it('refuses a repeat ACK for a counted recipient and answers complete exactly once', () => {
-        const aggregation = createAggregation();
+    it('refuses a repeat ACK for a counted recipient and answers complete exactly once', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
         aggregation.recordAdmission(admission());
-        aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
 
-        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })).left?.message)
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
             .toBe('AL acknowledgement confirms a peer the receipt already counted');
-        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })).right?.receipt)
-            .toMatchObject({ phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] });
-        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })).left?.message)
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })));
+
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
+            .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] }]);
+        expect(enqueued.map((message) => message.id.traceId)).toEqual(['trace-room-message-1']);
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
@@ -415,10 +424,10 @@ describe('WS server receipt aggregates at their cap', () => {
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
     });
 
-    it('ends the oldest aggregate, as its deadline would, when an admission finds the cap reached', () => {
+    it('ends the oldest aggregate, as its deadline would, when an admission finds the cap reached', async () => {
         const aggregation = createAggregation();
         admitAggregates(aggregation, 1);
-        aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
         admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES - 1, 1);
 
         const [evicted] = admitAggregates(aggregation, 1, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
@@ -436,7 +445,7 @@ describe('WS server receipt aggregates at their cap', () => {
             deadlineAtMs: 30_000,
             traceId: 'trace-room-message-1'
         });
-        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })).left?.message)
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         const swept = aggregation.sweep(Number.MAX_SAFE_INTEGER);
         expect(swept).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
@@ -464,14 +473,14 @@ describe('WS server receipt aggregates at their cap', () => {
 });
 
 describe('WS server receipt aggregates past their deadline', () => {
-    it('leaves a deadline at the window to the sweep, which a late read must not pre-empt', () => {
+    it('leaves a deadline at the window to the sweep, which a late read must not pre-empt', async () => {
         const clock = { nowMs: 1_000 };
         const aggregation = createAggregation([], () => clock.nowMs);
         const deadlineAtMs = clock.nowMs + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS;
         aggregation.recordAdmission({ ...admission(), deadlineAtMs });
         clock.nowMs = deadlineAtMs + 2;
 
-        aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
 
         expect(aggregation.sweep(clock.nowMs)).toMatchObject([
             { receipt: { msgId: 'room-message-1', phase: 'timed-out' }, traceId: 'trace-room-message-1' }
@@ -544,6 +553,14 @@ function aggregateAck(
         status: 'delivered',
         observedAtEpochMs: 1_000
     };
+}
+
+/** The receiver ACK as the control message the server counts, under the subject's trace. */
+function aggregateAckControl(ack: ALAckPayload): ALMessage {
+    return newALAckControlMessage(
+        { v: 4, msgId: `ack-${ack.fromPeerId}`, senderId: ack.fromPeerId, ts: 1_000, traceId: 'trace-room-message-1' },
+        ack
+    );
 }
 
 async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<ReceiptFixture> {

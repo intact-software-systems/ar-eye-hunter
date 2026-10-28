@@ -113,6 +113,7 @@ export class RelicGameInboxService {
             component: 'relic-game',
             serviceId: this.config.serviceId,
             requestId: command.requestId,
+            traceId: context.message.id.traceId,
             ...toRelicRoomGroupRef(command.gameId),
             principalId: command.actor.clientId,
             sessionId: command.actor.sessionId,

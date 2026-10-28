@@ -214,6 +214,7 @@ describe('black-box HTTP response evidence', () => {
             'Access-Control-Allow-Headers': 'Authorization,If-None-Match',
             'Access-Control-Expose-Headers': 'ETag',
             Vary: 'Origin, Authorization, x-client-id',
+            'X-Request-Id': 'trace-echoed-1',
             Authorization: 'Bearer secret',
             'Set-Cookie': 'session=secret'
         });
@@ -226,7 +227,8 @@ describe('black-box HTTP response evidence', () => {
             'access-control-expose-headers': 'ETag',
             vary: 'Origin, Authorization, x-client-id',
             'rallar-state-revision': '8',
-            'rallar-state-source': 'durable'
+            'rallar-state-source': 'durable',
+            'x-request-id': 'trace-echoed-1'
         });
     });
 });

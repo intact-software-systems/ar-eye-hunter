@@ -74,7 +74,7 @@ export interface HoldSender {
     createMessage(resourceId: string, ttlMs: number): ALMessage;
     /** Opens the registry handle and admits the message; the caller drains. */
     send(message: ALMessage): Promise<RallarMessageHandle>;
-    cancel(msgId: string): void;
+    cancel(msgId: string, traceId: string): void;
     drain(): Promise<void>;
     /** Moves the clock the retry schedule reads; never waits on it. */
     advance(ms: number): Promise<void>;
@@ -215,7 +215,7 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
         outboundAdmissionNamespace: resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.namespace,
         hold: RTC_HOLD,
         createMessage: createRtcLifecycleMessages(group.group),
-        cancel: (msgId) => void manager.cancel(msgId),
+        cancel: (msgId, traceId) => void manager.cancel(msgId, traceId),
         advance: async (ms) => void vi.setSystemTime(Date.now() + ms),
         deliver: (frame) => void channel.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => decideSend.mock.calls.map(([, serialized]) => toSerializedTypeId(serialized)),
@@ -333,7 +333,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         outboundAdmissionNamespace: resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.namespace,
         hold: WS_HOLD,
         createMessage: (resourceId, ttlMs) => toWsHeldMessage({ sessionId, resourceId, ttlMs }),
-        cancel: (msgId) => void service.cancelOutbox(msgId),
+        cancel: (msgId, traceId) => void service.cancelOutbox(msgId, traceId),
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
         deliver: (frame) => native.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => readiness.mock.calls.map(([serialized]) => toSerializedTypeId(serialized)),
@@ -674,7 +674,7 @@ async function runHoldEscalation(
         case 'ack-timeout':
             return await runAckTimeoutClaim(sender, msgId);
         case 'cancel-held':
-            return sender.cancel(sent.held.id.msgId);
+            return sender.cancel(sent.held.id.msgId, sent.held.id.traceId);
         case 'expired-row-evicted':
             return await setNextAcksReadEvictionRaced(sender.outboundAdmissionNamespace, msgId);
         case 'ack-inside-retry-schedule':

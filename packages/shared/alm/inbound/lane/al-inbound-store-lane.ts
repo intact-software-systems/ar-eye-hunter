@@ -33,7 +33,11 @@ import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
 import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
-import { toALInboundClaimIdentity, type ALInboundDeferredEffect } from '../al-inbound-runtime-diagnostics.ts';
+import {
+    toALInboundClaimIdentity,
+    toALInboundClaimTrace,
+    type ALInboundDeferredEffect
+} from '../al-inbound-runtime-diagnostics.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
@@ -495,7 +499,8 @@ export class ALInboundStoreLane {
                 queueWaitMs: Math.max(0, settled.batchStartedAtMs - dueAtMs),
                 dueAtMs,
                 batchStartedAtMs: settled.batchStartedAtMs,
-                startedAtMs: settled.startedAtMs
+                startedAtMs: settled.startedAtMs,
+                ...toALInboundClaimTrace(settled.effect.payload)
             });
         }
         catch { /* Optional diagnostics cannot change mandatory work. */ }

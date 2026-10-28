@@ -22,6 +22,7 @@ export class GroupAdminSupport {
             dependencies: this.dependencies,
             operation: 'explain.group',
             adminSession: input.adminSession,
+            traceId: input.traceId,
             timing: {},
             readNarrative: async () => {
                 const groupRef = input.request.groupRef;

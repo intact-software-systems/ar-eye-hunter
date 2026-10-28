@@ -35,7 +35,8 @@ describe('ResetAdminMetrics', () => {
                 requestId: 'reset-1',
                 categories: ['rtc-topology'],
                 reason: 'operator-test'
-            }
+            },
+            traceId: 'trace-admin-metrics-reset'
         });
 
         expect(resets).toEqual(['rtc-topology']);
@@ -54,6 +55,7 @@ describe('ResetAdminMetrics', () => {
             operation: 'metrics.reset',
             status: 'ok',
             requestId: 'reset-1',
+            traceId: 'trace-admin-metrics-reset',
             principalId: 'platform-admin',
             sessionId: 'admin-session',
             details: {
@@ -86,7 +88,8 @@ describe('ResetAdminMetrics', () => {
 
         const result = await resetMetrics.execute({
             adminSession: createAdminSession(),
-            request: { categories: ['group-formation'] }
+            request: { categories: ['group-formation'] },
+            traceId: 'trace-admin-metrics-reset-formation'
         });
 
         expect(result.before).toEqual({

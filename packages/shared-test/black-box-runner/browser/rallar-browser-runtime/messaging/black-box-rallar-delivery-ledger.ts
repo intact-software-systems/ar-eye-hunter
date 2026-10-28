@@ -41,6 +41,7 @@ import {
     resolveBlackBoxRallarMessagePeer,
     resolveBlackBoxRallarRecipientPeer
 } from './resolve-black-box-rallar-message-peer.ts';
+import { writeBlackBoxRallarControl } from './write-black-box-rallar-control.ts';
 
 export namespace BlackBoxRallarDeliveryLedger {
     export interface Input {
@@ -178,15 +179,13 @@ export class BlackBoxRallarDeliveryLedger {
         control: BlackBoxRallarControlSubmitInput
     ): Promise<BlackBoxRallarControlSubmitDiagnostics> => {
         const lease = this.#input.resources.lease();
-        const { msgId, verdict } = await this.#input.deliveries.submitRawControl(control);
+        const diagnostics = await writeBlackBoxRallarControl({
+            control,
+            typedChannels: this.#input.typedChannels,
+            deliveries: this.#input.deliveries
+        });
         this.#input.resources.assertCurrent(lease, 'Rallar raw control completed after the runtime closed.');
-        return {
-            msgId,
-            typeId: control.typeId,
-            carrier: control.carrier,
-            verdict: verdict.kind,
-            reason: 'detail' in verdict ? verdict.detail : undefined
-        };
+        return diagnostics;
     };
 
     /** `aboveCurrentBy` reads the version the product would stamp by itself, so the floor sits just past it. */

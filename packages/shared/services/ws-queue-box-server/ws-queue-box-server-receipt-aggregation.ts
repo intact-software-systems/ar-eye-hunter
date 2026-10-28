@@ -63,7 +63,10 @@ interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggreg
 
 interface WsQueueBoxServerReceiptCountObservation {
     readonly ack: ALAckPayload;
-    readonly source: WsQueueBoxServerReceiptCountSource | undefined;
+    readonly control: ALMessage['id'];
+    readonly source: WsQueueBoxServerReceiptCountSource;
+    /** The counted aggregate's trace, else the counted control's when no aggregate is live. */
+    readonly traceId: string;
     readonly before: WsQueueBoxServerReceiptAggregateFacts | undefined;
     readonly after: WsQueueBoxServerReceiptAggregateFacts | undefined;
     readonly countAtEpochMs: number;
@@ -228,6 +231,7 @@ export class WsQueueBoxServerReceiptAggregation {
                     controlMsgId: observation.controlIdentity.msgId,
                     controlSenderId: observation.controlIdentity.senderId,
                     controlCreatedAtEpochMs: observation.controlIdentity.ts,
+                    traceId: observation.controlIdentity.traceId,
                     rejectionCode: 'unauthorized',
                     owner: 'receipt-aggregation',
                     stage: observation.stage,
@@ -273,20 +277,10 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** A counted ACK; its `complete` receipt when it confirms the last expected recipient, none before. */
-    recordAck(
-        ack: ALAckPayload,
-        source?: WsQueueBoxServerReceiptCountSource
-    ): Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck> {
-        const counted = this.countAck(ack, source);
-        if (counted.observation !== undefined) {
-            recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, counted.observation);
-        }
-        return counted.result;
-    }
-
     private countAck(
         ack: ALAckPayload,
-        source: WsQueueBoxServerReceiptCountSource | undefined
+        control: ALMessage['id'],
+        source: WsQueueBoxServerReceiptCountSource
     ): WsQueueBoxServerReceiptCountDecision {
         const key = toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId);
         const nowMs = this.#dependencies.clock.nowMs();
@@ -324,9 +318,16 @@ export class WsQueueBoxServerReceiptAggregation {
         }
         return {
             result,
-            observation: ackFacts === undefined
-                ? undefined
-                : this.toCountObservation({ ack: ackFacts, source, before, after, countAtEpochMs: nowMs, outcome })
+            observation: ackFacts === undefined ? undefined : this.toCountObservation({
+                ack: ackFacts,
+                control,
+                source,
+                traceId: aggregate?.traceId ?? control.traceId,
+                before,
+                after,
+                countAtEpochMs: nowMs,
+                outcome
+            })
         };
     }
 
@@ -337,11 +338,12 @@ export class WsQueueBoxServerReceiptAggregation {
             kind: 'ack-count',
             serverPeerId: this.#dependencies.serverPeerId,
             ack: count.ack,
-            controlMsgId: count.source?.controlMsgId,
-            controlSenderId: count.source?.controlSenderId,
-            controlCreatedAtEpochMs: count.source?.controlCreatedAtEpochMs,
-            source: count.source?.source ?? 'direct',
-            relayPublisherId: count.source?.relayPublisherId,
+            controlMsgId: count.control.msgId,
+            controlSenderId: count.control.senderId,
+            controlCreatedAtEpochMs: count.control.ts,
+            traceId: count.traceId,
+            source: count.source.source,
+            relayPublisherId: count.source.relayPublisherId,
             before: count.before,
             after: toImmutableWsQueueBoxServerReceiptAggregate(count.after),
             countAtEpochMs: count.countAtEpochMs,
@@ -396,16 +398,10 @@ export class WsQueueBoxServerReceiptAggregation {
             await this.#dependencies.acceptServerControl(message);
             return;
         }
-        const source: WsQueueBoxServerReceiptCountSource | undefined = this.#dependencies.receiptObserver
-            ? {
-                source: relayed ? 'relayed' : 'local',
-                relayPublisherId,
-                controlMsgId: message.id.msgId,
-                controlSenderId: message.id.senderId,
-                controlCreatedAtEpochMs: message.id.ts
-            }
-            : undefined;
-        const counted = this.countAck(control.payload, source);
+        const counted = this.countAck(control.payload, message.id, {
+            source: relayed ? 'relayed' : 'local',
+            relayPublisherId
+        });
         try {
             const result = counted.result.right;
             if (result?.receipt !== undefined) {
@@ -535,6 +531,7 @@ export class WsQueueBoxServerReceiptAggregation {
                     kind: 'receipt-outbox',
                     serverPeerId: this.#dependencies.serverPeerId,
                     receiptControlMsgId,
+                    traceId: issued.traceId,
                     receipt: frozenReceipt,
                     deadlineAtMs,
                     ...enqueueFacts

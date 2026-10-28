@@ -142,7 +142,7 @@ describe('Quick Join through AppInbox', () => {
         await createRoom(harness, 'arena', 'AR Eye Hunter');
 
         const result = await quickJoin(harness, {
-            traceId: 'trace-test-fixture',
+            traceId: 'trace-quick-join-bob',
             scope: SCOPE,
             request: { requestId: 'quick-bob', kind: 'room', q: ' EYE HUNTER ', includeEmpty: true }
         });
@@ -167,6 +167,7 @@ describe('Quick Join through AppInbox', () => {
             expect(phase).toMatchObject({
                 ...SCOPE,
                 requestId: 'quick-bob',
+                traceId: 'trace-quick-join-bob',
                 principalId: 'bob',
                 sessionId: harness.sessions.bob.sessionId,
                 serviceId: 'server-12345678',

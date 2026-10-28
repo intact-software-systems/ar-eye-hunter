@@ -9,6 +9,7 @@ import {
     decodeGroupConnectTriggerWork,
     type GroupConnectTriggerWork
 } from '../../../group-state/group-connect-trigger-outbox-entry.ts';
+import type { GroupSystemCommandPort } from '../../../group-state/inbox/group-system-command-submission.ts';
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import type {
     GroupConnectTriggerIdentity,
@@ -16,32 +17,33 @@ import type {
 } from '../../../group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
 
-export interface GroupFormationAutomationPort {
+export interface GroupFormationAutomationPort extends GroupSystemCommandPort {
     readonly latches: GroupConnectTriggerLatchRepository;
     readonly readGroup: (ref: GroupRef) => Promise<Group | null>;
     readonly readPlanned: (ref: GroupRef) => Promise<RallarOverlayTopologySnapshot | null>;
-    readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     readonly nowEpochMs: () => number;
 }
 
 export function createGroupConnectTriggerWorkHandler(port: GroupFormationAutomationPort): OnMessageCallback {
     return {
-        onMessage: async (_message, entry) => {
+        onMessage: async (message, entry) => {
             const work = decodeGroupConnectTriggerWork(entry.resource);
-            await petitionGroupConnectTriggerWork(port, work);
+            await petitionGroupConnectTriggerWork(port, work, message.id.traceId);
         }
     };
 }
 
 async function petitionGroupConnectTriggerWork(
     port: GroupFormationAutomationPort,
-    work: GroupConnectTriggerWork
+    work: GroupConnectTriggerWork,
+    traceId: string
 ): Promise<void> {
+    const petition: GroupConnectTriggerPetition = { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId };
     if (work.kind === 'intent') {
-        await petitionGroupConnectTrigger(port, work, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, work, petition);
         return;
     }
-    await petitionAwaitingGroupConnectTriggers(port, work.groupRef, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+    await petitionAwaitingGroupConnectTriggers(port, work.groupRef, petition);
 }
 
 /**
@@ -58,11 +60,17 @@ export type GroupConnectTriggerSettle =
     | Readonly<{ kind: 'clock'; atEpochMs: number; }>
     | Readonly<{ kind: 'satisfied'; observedFormationEpoch: number; }>;
 
+export interface GroupConnectTriggerPetition {
+    readonly settle: GroupConnectTriggerSettle;
+    /** The petitioning message's trace; the connect command is submitted under it. */
+    readonly traceId: string;
+}
+
 /** Every latch still awaiting publication in the group's current epoch, petitioned in turn. */
 export async function petitionAwaitingGroupConnectTriggers(
     port: GroupFormationAutomationPort,
     groupRef: GroupRef,
-    settle: GroupConnectTriggerSettle
+    petition: GroupConnectTriggerPetition
 ): Promise<void> {
     const group = await port.readGroup(groupRef);
     if (group === null) {
@@ -70,14 +78,14 @@ export async function petitionAwaitingGroupConnectTriggers(
     }
     const latches = await port.latches.listAwaiting(groupRef, group.formationEpoch);
     for (const { latch } of latches) {
-        await petitionGroupConnectTrigger(port, latch, settle);
+        await petitionGroupConnectTrigger(port, latch, petition);
     }
 }
 
 export async function petitionGroupConnectTrigger(
     port: GroupFormationAutomationPort,
     identity: GroupConnectTriggerIdentity,
-    settle: GroupConnectTriggerSettle
+    { settle, traceId }: GroupConnectTriggerPetition
 ): Promise<void> {
     const row = await port.latches.read(identity);
     if (row === null || row.latch.state !== 'awaiting-publication') {
@@ -92,29 +100,43 @@ export async function petitionGroupConnectTrigger(
     if (settle.kind === 'satisfied' && settle.observedFormationEpoch !== identity.formationEpoch) {
         return;
     }
+    const publication = await readDialablePublication(port, identity, row.latch.supersedesLayoutIdentity);
+    if (publication === null) {
+        return;
+    }
+    await port.submitCommand({
+        command: toAutomaticGroupConnectCommand(identity, publication),
+        atEpochMs: port.nowEpochMs(),
+        traceId
+    });
+}
+
+/** The published layout the latched group may dial now, or null while its stage or publication says wait. */
+async function readDialablePublication(
+    port: GroupFormationAutomationPort,
+    identity: GroupConnectTriggerIdentity,
+    supersedesLayoutIdentity: GroupLayoutIdentity | null
+): Promise<GroupLayoutIdentity | null> {
     const group = await port.readGroup(identity.groupRef);
     if (
         group === null || group.formationEpoch !== identity.formationEpoch ||
         !holdsPlannedCandidateAt(group.lifecycleState)
     ) {
-        return;
+        return null;
     }
     const planned = await port.readPlanned(identity.groupRef);
     if (planned === null || planned.state !== 'active') {
         // Intent remains in the latch; publication creates fresh durable work.
-        return;
+        return null;
     }
     const publication = toGroupLayoutIdentity(planned);
-    if (
-        row.latch.supersedesLayoutIdentity !== null &&
-        isSameGroupLayoutIdentity(publication, row.latch.supersedesLayoutIdentity)
-    ) {
+    if (supersedesLayoutIdentity !== null && isSameGroupLayoutIdentity(publication, supersedesLayoutIdentity)) {
         // The reconfigure's own replan has not published yet, so this is the
         // candidate it means to replace. Dialing it would enter `reconnecting`
         // on the stale layout and freeze the replan (plan slice 11d).
-        return;
+        return null;
     }
-    await port.submitCommand(toAutomaticGroupConnectCommand(identity, publication), port.nowEpochMs());
+    return publication;
 }
 
 export function toAutomaticGroupConnectCommand(

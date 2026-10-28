@@ -38,8 +38,9 @@ const COMMAND: AppInboxEnqueueInput = {
 };
 
 describe('AppInboxCommandClient', () => {
-    it('passes the durable queue identity to the result decoding boundary', async () => {
+    it('passes the durable queue identity and the command trace to the wait and names the trace on its lines', async () => {
         const decodedValues: JsonWireValue[] = [];
+        const timing: RallarTimingEvent[] = [];
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
@@ -65,6 +66,7 @@ describe('AppInboxCommandClient', () => {
                         expect(written.enqueue).toEqual(COMMAND);
                         expect(written.key).toEqual({ topicId: '', resourceId: 'command-1', contextId: 'app:workspace:principal' });
                         expect(written.winner).toBe(true);
+                        expect(written.traceId).toBe('trace-app-inbox-command-client');
                         const value = { status: 'stored' } as const;
                         decodedValues.push(value);
                         return Either.ofRight(decodeResult(value));
@@ -73,8 +75,9 @@ describe('AppInboxCommandClient', () => {
             },
             {
                 serviceId: 'server-12345678',
+                timing: (event) => timing.push(event),
                 options: {
-                    phaseTiming: false,
+                    phaseTiming: true,
                     waitMaxElapsedMsecs: 1_000,
                     waitRetryIntervalMsecs: 1,
                     waitMaxRetryIntervalMsecs: 1,
@@ -95,6 +98,10 @@ describe('AppInboxCommandClient', () => {
 
         expect(result).toEqual(Either.ofRight({ accepted: true }));
         expect(decodedValues).toEqual([{ status: 'stored' }]);
+        expect(timing.map((event) => `${event.component}:${event.operation}:${event.requestId}:${event.traceId}`)).toEqual([
+            'app-inbox-phase:enqueue:command-1:trace-app-inbox-command-client',
+            'app-inbox:enqueueAndWaitForResult:command-1:trace-app-inbox-command-client'
+        ]);
     });
 
     it('lets a command it wrote take the wake of a handler that completes within the enqueue, while a replay reads first', async () => {
@@ -184,7 +191,7 @@ describe('AppInboxCommandClient', () => {
             }
         );
         const command = { ...COMMAND, topicId: COMMAND.type };
-        const placeholder = { ...command, data: null };
+        const placeholder = { ...command, traceId: 'trace-reserved-placeholder', data: null };
         const reserve = (data: JsonWireValue) =>
             client.reserveMaterializedAndWaitForResult(
                 { received: { ...command, data }, placeholder, materialize: async () => ({ ...command, data }) },
@@ -196,14 +203,17 @@ describe('AppInboxCommandClient', () => {
         await expect(reserve({ requestId: 'command-1', principalId: 'other-principal' })).rejects
             .toBeInstanceOf(AppInboxIdempotencyConflictError);
 
-        expect(reserved.map((reservation) => reservation.winner)).toEqual([true, false]);
-        expect(timing.map((event) => `${event.component}:${event.operation}:${event.requestId}`)).toEqual([
-            'app-inbox-phase:enqueue:command-1',
-            'app-inbox:enqueueAndWaitForResult:command-1',
-            'app-inbox-phase:enqueue:command-1',
-            'app-inbox:enqueueAndWaitForResult:command-1',
-            'app-inbox-phase:enqueue:command-1',
-            'app-inbox:enqueueAndWaitForResult:command-1'
+        expect(reserved.map(({ winner, traceId }) => ({ winner, traceId }))).toEqual([
+            { winner: true, traceId: 'trace-reserved-placeholder' },
+            { winner: false, traceId: 'trace-reserved-placeholder' }
+        ]);
+        expect(timing.map((event) => `${event.component}:${event.operation}:${event.requestId}:${event.traceId}`)).toEqual([
+            'app-inbox-phase:enqueue:command-1:trace-reserved-placeholder',
+            'app-inbox:enqueueAndWaitForResult:command-1:trace-reserved-placeholder',
+            'app-inbox-phase:enqueue:command-1:trace-reserved-placeholder',
+            'app-inbox:enqueueAndWaitForResult:command-1:trace-reserved-placeholder',
+            'app-inbox-phase:enqueue:command-1:trace-reserved-placeholder',
+            'app-inbox:enqueueAndWaitForResult:command-1:trace-reserved-placeholder'
         ]);
     });
 });

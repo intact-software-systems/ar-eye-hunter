@@ -7,6 +7,8 @@ export interface GroupStatePhaseTiming {
     readonly component: 'group-retention' | 'group-quick-join';
     readonly serviceId: string;
     readonly requestId: string;
+    /** The trace of the queued message whose attempt the phase belongs to. */
+    readonly traceId: string;
     readonly scope: StateScope;
     /** Quick Join has no selected room when its read begins. */
     readonly groupId: string | undefined;
@@ -29,6 +31,7 @@ export async function timeGroupStatePhase<Result>(
         operation,
         serviceId: input.serviceId,
         requestId: input.requestId,
+        traceId: input.traceId,
         ...input.scope,
         groupId: input.groupId,
         principalId: input.principalId,

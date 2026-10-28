@@ -45,7 +45,8 @@ describe('ExportAdminCrdtDebug', () => {
 
         const result = await exportDebug.execute({
             adminSession: createAdminSession(),
-            request: { document: DOCUMENT }
+            request: { document: DOCUMENT },
+            traceId: 'trace-admin-crdt-debug-export'
         });
 
         expect(repositoryCalls).toEqual([{
@@ -64,6 +65,7 @@ describe('ExportAdminCrdtDebug', () => {
         });
         expect(timingEvents[0]).toMatchObject({
             operation: 'crdt.debug-export',
+            traceId: 'trace-admin-crdt-debug-export',
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             principalId: 'platform-admin',

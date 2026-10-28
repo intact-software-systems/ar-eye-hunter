@@ -88,7 +88,8 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             lane: 'durable',
             atMs: expect.any(Number),
             relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
-            detail: 'The server relay refused the message: resync-required.'
+            detail: 'The server relay refused the message: resync-required.',
+            traceId: 'trace-ws-queue-box-client-relay-rejection'
         }]);
         expect(JSON.stringify(rejected)).not.toContain('server-1');
         // A send that tracks no receipt is already terminal at transport-accepted: the rejection lands as evidence only.
@@ -131,7 +132,8 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
                 lane: 'durable',
                 atMs: expect.any(Number),
                 relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-                detail: 'The server relay refused the message: unauthorized.'
+                detail: 'The server relay refused the message: unauthorized.',
+                traceId: 'trace-ws-queue-box-client-relay-rejection'
             }]
         );
         const lifecycle = origin.settlements
@@ -196,7 +198,8 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             lane: 'durable',
             atMs: expect.any(Number),
             relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' },
-            detail: 'The server relay refused the message: membership-fenced.'
+            detail: 'The server relay refused the message: membership-fenced.',
+            traceId: 'trace-ws-queue-box-client-relay-rejection'
         }]);
         const lifecycle = origin.settlements
             .filter((settlement) => settlement.msgId === 'broadcast-fenced')
@@ -329,7 +332,8 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             cause: 'hop-refused',
             hopPeerId: 'server-1',
             nackReason: 'unauthorized',
-            detail: 'Hop server-1 refused the message: unauthorized.'
+            detail: 'Hop server-1 refused the message: unauthorized.',
+            traceId: 'trace-ws-queue-box-client-relay-rejection'
         }]);
         expect(
             await origin.outboundStores.admissionStore.readReceiptState({

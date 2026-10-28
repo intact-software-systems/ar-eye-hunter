@@ -65,7 +65,7 @@ describe('browser delivery settlement relay', () => {
         const handle = sender.registry.open(createMessage('volatile-send'), 'ws');
 
         owner.epoch.settlements.ws({ ...toAttemptStarted(handle.msgId, 'attempt-1'), lane: 'volatile' });
-        owner.epoch.settlements.ws({ kind: 'cancelled', msgId: handle.msgId, carrier: 'ws', atMs: 1 });
+        owner.epoch.settlements.ws({ kind: 'cancelled', msgId: handle.msgId, carrier: 'ws', atMs: 1, traceId: 'trace-browser-delivery-settlement-relay' });
         await flushChannel();
 
         expect(wire).toEqual([]);
@@ -122,7 +122,8 @@ describe('browser delivery settlement relay', () => {
             carrier: 'ws',
             atMs: 2,
             detail: 'deadline',
-            lane: 'durable'
+            lane: 'durable',
+            traceId: 'trace-browser-delivery-settlement-relay'
         });
         owner.epoch.settlements.ws(toAttemptStarted(handle.msgId, 'attempt-late'));
         owner.epoch.settlements.ws(toAttemptStarted(handle.msgId, 'attempt-later'));
@@ -174,7 +175,7 @@ function createMessage(msgId: string): ALMessage {
 }
 
 function toAttemptStarted(msgId: RallarMessageHandle['msgId'], attemptId: string): ALDeliverySettlement {
-    return { kind: 'attempt-started', msgId, carrier: 'ws', atMs: 1, attemptId, lane: 'durable' };
+    return { kind: 'attempt-started', msgId, carrier: 'ws', atMs: 1, attemptId, lane: 'durable', traceId: 'trace-browser-delivery-settlement-relay' };
 }
 
 /** The fake delivers on a microtask per receiver; one macrotask drains every delivery a post queued. */

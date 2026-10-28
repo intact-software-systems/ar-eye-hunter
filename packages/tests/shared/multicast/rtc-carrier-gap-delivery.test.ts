@@ -239,7 +239,8 @@ function toLifecycle(
             carrier: 'rtc',
             atMs: Date.now(),
             verdict: admission.verdict,
-            trackedReceiptAlgo: admission.trackedReceiptAlgo
+            trackedReceiptAlgo: admission.trackedReceiptAlgo,
+            traceId: 'trace-rtc-carrier-gap-delivery'
         },
         ...fixture.settlements.filter((settlement) => settlement.msgId === message.id.msgId)
     ];

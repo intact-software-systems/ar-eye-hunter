@@ -99,7 +99,8 @@ describe('Rallar Game match', () => {
                 ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
                 : state === 'rejected'
                 ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
-                : { kind: 'superseded', detail: 'Replaced' }
+                : { kind: 'superseded', detail: 'Replaced' },
+            traceId: 'trace-rallar-game-match'
         });
         expect(await sending).toEqual(
             state === 'queued'

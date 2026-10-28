@@ -74,7 +74,14 @@ describe('message handle admission', () => {
     it('retains synchronous transport settlement that arrives before admission returns', async () => {
         const fixture = createBrowserMessageSenderFixture();
         fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => {
-            fixture.registry.record({ kind: 'attempt-started', msgId: message.id.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'sync' });
+            fixture.registry.record({
+                kind: 'attempt-started',
+                msgId: message.id.msgId,
+                carrier: 'ws',
+                atMs: Date.now(),
+                attemptId: 'sync',
+                traceId: 'trace-browser-message-handle-admission'
+            });
             fixture.registry.record({
                 kind: 'attempt-settled',
                 msgId: message.id.msgId,
@@ -84,7 +91,8 @@ describe('message handle admission', () => {
                 outcome: 'sent',
                 submissionAttempted: true,
                 detail: undefined,
-                willRetry: false
+                willRetry: false,
+                traceId: 'trace-browser-message-handle-admission'
             });
             return toQueuedMessageAdmission(message);
         };
@@ -294,7 +302,14 @@ describe('a send its carrier refuses congested', () => {
         const fixture = createCongestedRtcFixture((event) => diagnostics.push(event));
 
         const handle = await fixture.sender.sendTyped(
-            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback', reliability: 'best-effort' },
+            {
+                typeId: 'room.ready',
+                payload: true,
+                strategy: 'rtc-with-ws-fallback',
+                reliability: 'best-effort',
+                traceId: 'trace-hand-over',
+                corrId: 'corr-hand-over'
+            },
             undefined
         );
         const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
@@ -312,7 +327,9 @@ describe('a send its carrier refuses congested', () => {
             cause: 'backpressured',
             action: 'hand-over',
             priority: 0,
-            msgId: handle.msgId
+            msgId: handle.msgId,
+            traceId: 'trace-hand-over',
+            corrId: 'corr-hand-over'
         }]);
     });
 

@@ -35,12 +35,14 @@ function isTrustedServerAdmissionRefusal(
 
 export function toALOutboundRelayRejectedFact(
     msgId: string,
+    traceId: string,
     relayRejection: ALDeliveryRelayRejection
 ): ALOutboundSettlementFact {
     const relay = relayRejection.relay === 'trusted-server' ? 'The server relay' : `Hop ${relayRejection.peerId}`;
     return {
         kind: 'relay-rejected',
         msgId,
+        traceId,
         relayRejection,
         detail: `${relay} refused the message: ${relayRejection.reason}.`
     };

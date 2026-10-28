@@ -19,23 +19,28 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
-import { toCanonicalGroupRef, type Group, type GroupRef } from '@shared/api/group-types.ts';
+import {
+    toCanonicalGroupRef,
+    type Group,
+    type GroupRef
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+
 import type { GroupActivationStatusClockWork } from '../../../group-state/activation-status-clock-outbox-entry.ts';
+import type { GroupSystemCommandPort } from '../../../group-state/inbox/group-system-command-submission.ts';
 import {
     toReadGroupLifecyclePolicy,
     type GroupLifecyclePolicyRead
 } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
-
-import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import { toUpdateGroupActivationStatusCommand } from '../../../group-state/to-update-group-activation-status-command.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 
-export interface GroupActivationStatusPort {
-    submitCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void>;
+export interface GroupActivationStatusPort extends GroupSystemCommandPort {
     readLifecyclePolicy(groupRef: GroupRef): Promise<GroupLifecyclePolicyRead>;
-    /** Arms the durable dwell clock; a second arm inside one dwell is a duplicate. */
-    armStatusClock(work: GroupActivationStatusClockWork): Promise<void>;
+    /**
+     * Arms the durable dwell clock under the arming petition's trace; a second arm inside one dwell is a duplicate.
+     */
+    armStatusClock(work: GroupActivationStatusClockWork, traceId: string): Promise<void>;
 }
 
 export interface GroupActivationStatusPetitionDependencies {
@@ -67,6 +72,8 @@ export interface PetitionGroupActivationStatusInput {
      * the only path allowed to confirm one.
      */
     readonly dwell: Readonly<{ satisfied: true; dueAtEpochMs: number; }> | null;
+    /** The petitioning message's trace; the status command and every clock arm carry it. */
+    readonly traceId: string;
 }
 
 interface GroupActivationObservation {
@@ -90,6 +97,7 @@ interface PublishGroupActivationPetitionInput {
     readonly observation: GroupActivationObservation;
     readonly dwell: PetitionGroupActivationStatusInput['dwell'];
     readonly nowEpochMs: number;
+    readonly traceId: string;
 }
 
 interface ArmEvidenceExpiryInput {
@@ -98,10 +106,11 @@ interface ArmEvidenceExpiryInput {
     readonly formationEpoch: number;
     readonly coverageBasisLayoutIdentity: GroupLayoutIdentity;
     readonly nowEpochMs: number;
+    readonly traceId: string;
 }
 
 export async function petitionGroupActivationStatus(
-    { dependencies, authority, planned, dwell }: PetitionGroupActivationStatusInput
+    { dependencies, authority, planned, dwell, traceId }: PetitionGroupActivationStatusInput
 ): Promise<void> {
     const port = dependencies.activationStatus;
     if (port === undefined || planned === null || planned.state !== 'active') {
@@ -116,7 +125,7 @@ export async function petitionGroupActivationStatus(
         return;
     }
     const observation = computeGroupActivationObservation({ authority, planned, basis, policy });
-    await publishGroupActivationPetition({ port, observation, dwell, nowEpochMs: authority.nowEpochMs });
+    await publishGroupActivationPetition({ port, observation, dwell, nowEpochMs: authority.nowEpochMs, traceId });
 }
 
 function resolveMeasurableGroupActivationBasis(
@@ -175,7 +184,7 @@ function computeGroupActivationObservation(
 }
 
 async function publishGroupActivationPetition(
-    { port, observation, dwell, nowEpochMs }: PublishGroupActivationPetitionInput
+    { port, observation, dwell, nowEpochMs, traceId }: PublishGroupActivationPetitionInput
 ): Promise<void> {
     const { groupRef, formationEpoch, coverageBasisLayoutIdentity, reading, action } = observation;
     if (action.kind === 'arm-dwell' && dwell === null) {
@@ -186,12 +195,12 @@ async function publishGroupActivationPetition(
             coverageBasisLayoutIdentity,
             candidateCondition: action.condition,
             dueAtEpochMs: action.dueAtEpochMs
-        });
+        }, traceId);
         return;
     }
     if (action.kind !== 'none') {
-        await port.submitCommand(
-            toUpdateGroupActivationStatusCommand({
+        await port.submitCommand({
+            command: toUpdateGroupActivationStatusCommand({
                 groupRef,
                 formationEpoch,
                 coverageBasisLayoutIdentity,
@@ -199,20 +208,21 @@ async function publishGroupActivationPetition(
                 evidenceWatermark: action.kind === 'arm-dwell' ? null : reading.evidenceWatermark,
                 dwell: action.kind === 'arm-dwell' ? dwell : null
             }),
-            nowEpochMs
-        );
+            atEpochMs: nowEpochMs,
+            traceId
+        });
     }
     // A confirmed dwell does not arm expiry. Otherwise only evidence can decay;
     // an absent status or a zero-evidence floor must leave no recurring clock.
     const expiresEvidence = action.kind === 'write' || action.kind === 'none' && observation.hasPublishedStatus;
     if (expiresEvidence && reading.evidenceWatermark !== null) {
-        await armEvidenceExpiry({ port, groupRef, formationEpoch, coverageBasisLayoutIdentity, nowEpochMs });
+        await armEvidenceExpiry({ port, groupRef, formationEpoch, coverageBasisLayoutIdentity, nowEpochMs, traceId });
     }
 }
 
 /** Consumed when it fires and re-armed only while the next reading still counts evidence. */
 async function armEvidenceExpiry(
-    { port, groupRef, formationEpoch, coverageBasisLayoutIdentity, nowEpochMs }: ArmEvidenceExpiryInput
+    { port, groupRef, formationEpoch, coverageBasisLayoutIdentity, nowEpochMs, traceId }: ArmEvidenceExpiryInput
 ): Promise<void> {
     await port.armStatusClock({
         kind: 'evidence-expiry',
@@ -221,5 +231,5 @@ async function armEvidenceExpiry(
         coverageBasisLayoutIdentity,
         candidateCondition: null,
         dueAtEpochMs: nowEpochMs + GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS
-    });
+    }, traceId);
 }

@@ -1,3 +1,4 @@
+import type { ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type {
     ALOutboundCommitBundleOutcome,
@@ -12,6 +13,7 @@ export namespace ALOutboundCommitPhases {
         readonly msgId: string;
         readonly typeId: string;
         readonly origin: ALOutboundCommitOrigin;
+        readonly trace: ALMessageTrace;
         readonly nowMs: () => number;
         readonly getReadOperationCount: () => number;
     }
@@ -70,7 +72,8 @@ export class ALOutboundCommitPhases {
             readDurationMs: this.readDurationMs,
             readOperationCount: this.readOperationCount,
             commitDurationMs: this.commitDurationMs,
-            commitOutcome: this.commitOutcome
+            commitOutcome: this.commitOutcome,
+            ...this.input.trace
         };
     }
 

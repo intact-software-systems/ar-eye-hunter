@@ -203,6 +203,20 @@ Deno.test('HTTP timing middleware echoes, records and exposes a valid x-request-
     assert.deepEqual(trace, { echoed: 'trace_Valid-1', read: 'trace_Valid-1', recorded: 'trace_Valid-1' });
 });
 
+Deno.test('HTTP timing middleware names the request trace on its line and keeps the request id equal to it', async () => {
+    const events: RallarTimingEvent[] = [];
+
+    await createTracedApp(events).request('/api/trace', {
+        method: 'POST',
+        headers: { 'x-request-id': 'trace-http-timing-1' }
+    });
+
+    assert.deepEqual(
+        events.map(({ traceId, requestId }) => ({ traceId, requestId })),
+        [{ traceId: 'trace-http-timing-1', requestId: 'trace-http-timing-1' }]
+    );
+});
+
 Deno.test('HTTP timing middleware echoes the trace on a route that returns its own Response', async () => {
     const app = new Hono();
     app.use('/api/*', createHttpTimingMiddleware({ timing: () => undefined }));

@@ -27,7 +27,8 @@ describe('the WS server settlement recorder (D58, D61, C10)', () => {
                 unconfirmedPeerIds: ['b'],
                 lastSettlementKind: 'acknowledgement',
                 receiptExhausted: false,
-                updatedAtEpochMs: NOW_EPOCH_MS
+                updatedAtEpochMs: NOW_EPOCH_MS,
+                traceId: 'trace-receipt-subject-1'
             }]
         });
     });
@@ -48,7 +49,8 @@ describe('the WS server settlement recorder (D58, D61, C10)', () => {
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
             cause: 'budget',
-            detail: 'The receipt ran out of retries after 3 of 3.'
+            detail: 'The receipt ran out of retries after 3 of 3.',
+            traceId: 'trace-receipt-subject-1'
         });
         recorder.settlements(attemptSettled('snapshot-1'));
 
@@ -57,7 +59,8 @@ describe('the WS server settlement recorder (D58, D61, C10)', () => {
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
             receiptExhausted: true,
-            lastSettlementKind: 'attempt-settled'
+            lastSettlementKind: 'attempt-settled',
+            traceId: 'trace-receipt-subject-1'
         })]);
     });
 
@@ -123,7 +126,8 @@ function acknowledgement(
         expectedRecipientPeerIds: [...confirmed, ...unconfirmed],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: unconfirmed,
-        complete: unconfirmed.length === 0
+        complete: unconfirmed.length === 0,
+        traceId: 'trace-receipt-subject-1'
     };
 }
 
@@ -137,6 +141,7 @@ function attemptSettled(msgId: string): ALDeliverySettlement {
         outcome: 'sent',
         submissionAttempted: true,
         detail: undefined,
-        willRetry: false
+        willRetry: false,
+        traceId: 'trace-receipt-attempt-1'
     };
 }

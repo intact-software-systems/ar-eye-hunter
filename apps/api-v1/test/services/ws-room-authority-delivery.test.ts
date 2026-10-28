@@ -218,6 +218,7 @@ Deno.test('a room send behind the server snapshot is retained at ingress with it
                 senderId: 'alice',
                 typeId: 'chat.message.v1',
                 topicId: 'room.chat',
+                traceId: 'trace-ws-room-authority-delivery',
                 connectionId: 'alice',
                 fromPeerId: 'alice',
                 authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
@@ -1103,7 +1104,8 @@ function roomMessage(floors: Readonly<{ minSnapshotVersion?: number; rosterVersi
     return newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'room-delivery'), ROOM, 'chat.message.v1', { text: 'hello' }, {
         ...floors,
         reliability: 'best-effort',
-        ack: 'none'
+        ack: 'none',
+        traceId: 'trace-ws-room-authority-delivery'
     });
 }
 

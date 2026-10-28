@@ -69,7 +69,8 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
             expectedRecipientPeerIds: ['peer-1'],
             confirmedRecipientPeerIds: ['peer-1'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: MESSAGE.id.traceId
         });
     });
 

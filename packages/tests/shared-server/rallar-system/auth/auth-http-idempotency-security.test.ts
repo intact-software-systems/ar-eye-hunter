@@ -59,16 +59,19 @@ describe('auth HTTP AppInbox idempotency security', () => {
 
         await expect(runtime.auth.service.replayLogoutSessionWithCredentialProof({
             requestId: SHARED_REQUEST_ID,
+            traceId: 'trace-logout-replay',
             clientId: first.clientId,
             accessToken: first.accessToken
         })).resolves.toMatchObject({ right: { loggedOut: true } });
         await expect(runtime.auth.service.replayLogoutSessionWithCredentialProof({
             requestId: SHARED_REQUEST_ID,
+            traceId: 'trace-logout-replay',
             clientId: second.clientId,
             accessToken: second.accessToken
         })).resolves.toMatchObject({ right: { loggedOut: true } });
         await expect(runtime.auth.service.replayLogoutSessionWithCredentialProof({
             requestId: SHARED_REQUEST_ID,
+            traceId: 'trace-logout-replay',
             clientId: second.clientId,
             accessToken: first.accessToken
         })).resolves.toBeNull();

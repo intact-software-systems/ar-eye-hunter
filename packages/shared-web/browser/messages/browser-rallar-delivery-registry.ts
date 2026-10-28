@@ -79,8 +79,11 @@ export namespace BrowserRallarDeliveryRegistry {
         /** Terminal entries are kept this long so a late `wait()` still reads its evidence. */
         readonly retainTerminalMs: number;
         readonly maxEntries: number;
-        /** Reaches every carrier owner the message was admitted to; the registry records the `cancelled` settlement itself. */
-        cancel(msgId: string): void;
+        /**
+         * Reaches every carrier owner the message was admitted to, under the message's own trace; the registry records
+         * the `cancelled` settlement itself.
+         */
+        cancel(msgId: string, traceId: string): void;
     }
 
     export interface ReplyCounts {
@@ -292,7 +295,7 @@ export class BrowserRallarDeliveryRegistry {
             return;
         }
 
-        this.input.cancel(observation.msgId);
+        this.input.cancel(observation.msgId, observation.traceId);
         // An owner that held the message emits its own `cancelled` synchronously inside that call.
         if (isALDeliveryTerminal(observation.lifecycle)) {
             return;
@@ -301,6 +304,7 @@ export class BrowserRallarDeliveryRegistry {
         this.record({
             kind: 'cancelled',
             msgId: observation.msgId,
+            traceId: observation.traceId,
             carrier: observation.carrier,
             atMs: this.input.nowMs()
         });

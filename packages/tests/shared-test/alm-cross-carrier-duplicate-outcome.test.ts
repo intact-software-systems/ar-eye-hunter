@@ -166,7 +166,9 @@ describe('the cross-carrier duplicate outcome wait', () => {
             carrier: 'ws',
             attempts: 1,
             atEpochMs: Date.now(),
-            disposition: 'port-returned'
+            disposition: 'port-returned',
+            traceId: duplicate.traceId,
+            corrId: duplicate.corrId
         };
         const wrongScenario: ALInboundRuntimeDiagnosticsEvent = {
             ...duplicate,

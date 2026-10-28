@@ -5,7 +5,11 @@ import {
 } from 'vitest';
 
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
+import {
+    createAppInboxRetryFinalizer,
+    recordAppInboxRetryExhaustionTiming
+} from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type {
     ResourceInboxReservationObservationRequest,
@@ -38,6 +42,33 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from './test-support/test-app-in
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
 describe('AppInbox retry exhaustion', () => {
+    it('names no trace on the transaction line of a retry exhaustion, which holds the entry and no decoded message', async () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createAtomicHarness({ attempts: 20 });
+        const finalizeRetry = createAppInboxRetryFinalizer({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            database: harness.database.sql,
+            timing: (event) => timing.push(event)
+        });
+
+        await finalizeRetry(toExhaustion(harness.entry));
+
+        expect(timing.map((event) => event.operation)).toEqual(['transaction']);
+        expect(timing[0]).not.toHaveProperty('traceId');
+    });
+
+    it('names no trace on the retry-exhaustion telemetry line, which holds the entry and no decoded message', () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createAtomicHarness({ attempts: 20 });
+
+        recordAppInboxRetryExhaustionTiming((event) => timing.push(event), toExhaustion(harness.entry));
+
+        expect(timing.map((event) => [event.component, event.operation, event.requestId])).toEqual([
+            ['app-inbox-handler', 'retry-exhaustion', harness.entry.key.resourceId]
+        ]);
+        expect(timing[0]).not.toHaveProperty('traceId');
+    });
+
     it('persists attempt-20 diagnostics and FAILED completion in one transaction', async () => {
         const harness = createAtomicHarness({ attempts: 20 });
         const telemetry: ResourceInboxRetryExhaustion[] = [];

@@ -397,7 +397,7 @@ export function holdOutboundClaims<TPrepared>(
 
 export function createOutboundMessage(
     resourceId: string,
-    options?: { ttlMs?: number; }
+    options?: { ttlMs?: number; traceId?: string; }
 ) {
     return newALUnicastMessage(
         'self',
@@ -411,7 +411,7 @@ export function createOutboundMessage(
         {
             text: resourceId
         },
-        { ttlMs: options?.ttlMs ?? 30_000 }
+        { ttlMs: options?.ttlMs ?? 30_000, traceId: options?.traceId }
     );
 }
 

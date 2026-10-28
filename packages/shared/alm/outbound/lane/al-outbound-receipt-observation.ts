@@ -14,13 +14,15 @@ import type { ALOutboundDispatchPhase, ALOutboundMessageRuntime } from '../al-ou
 
 export interface ALOutboundReceiptFacts {
     readonly receiptControlMsgId: string;
+    /** The receipt control's trace: the subject message's, which every receipt of it carries. */
+    readonly traceId: string;
     readonly receipt: ALReceiptPayload;
 }
 
 export interface ALOutboundReceiptWorkObservation extends ALOutboundReceiptFacts {
     readonly kind: 'receipt-work';
     readonly workerId: string;
-    /** Compact joins only: the original effect/key may contain session, trace or prepared data. */
+    /** Compact joins only: the original effect/key may contain session or prepared data; the trace is identity, in the facts. */
     readonly effectLocator: string;
     readonly workLocator: string;
     readonly effectKind: 'admit-message' | 'dequeue-message' | 'send-prepared';
@@ -183,6 +185,7 @@ export function toALOutboundReceiptFacts(message: ALMessage): ALOutboundReceiptF
         }
         return Object.freeze({
             receiptControlMsgId: message.id.msgId,
+            traceId: message.id.traceId,
             receipt: Object.freeze({
                 msgId: value.msgId,
                 originPeerId: value.originPeerId,

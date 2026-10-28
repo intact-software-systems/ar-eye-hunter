@@ -30,6 +30,7 @@ interface SafeApiTimingRecordDto {
 const IDENTITY_FIELDS = [
     'serviceId',
     'requestId',
+    'traceId',
     'applicationId',
     'workspaceId',
     'groupId',
@@ -153,6 +154,7 @@ function toSafeTopologyPromotionRecord(record: Readonly<Record<string, unknown>>
         durationMs: record.durationMs as number,
         atEpochMs: record.atEpochMs as number,
         ...(isSafeApiTimingIdentity(record.serviceId) ? { serviceId: record.serviceId } : {}),
+        ...(isSafeApiTimingIdentity(record.traceId) ? { traceId: record.traceId } : {}),
         applicationId: record.applicationId,
         workspaceId: record.workspaceId,
         groupId: record.groupId,

@@ -10,6 +10,8 @@ export interface AdminOperationReadRequest {
 export interface AdminOperationWriteRequest<TRequest> {
     readonly adminSession: AuthSession;
     readonly request: TRequest;
+    /** The trace of the admin HTTP request; its timing line names it. */
+    readonly traceId: string;
 }
 
 export interface AdminOperationMutationRequest<TRequest> {

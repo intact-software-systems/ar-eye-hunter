@@ -1,6 +1,7 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '../al-contracts/al-control-type-ids.ts';
 import type { ALQosInputProvider } from '../al-contracts/al-policy.ts';
+import { toALMessageTrace } from '../al-contracts/trace/to-al-message-trace.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     writeALOutboundCongestionDeferral,
@@ -201,6 +202,7 @@ export class RtcOutboundSubmission {
                     fromPeerId: this.dependencies.connectionService.input.sessionId,
                     toPeerId: peerId
                 };
+                const trace = toALMessageTrace(msg);
                 return (value) => {
                     resolveSettlement(value);
                     try {
@@ -210,7 +212,8 @@ export class RtcOutboundSubmission {
                             carrier: 'rtc',
                             status: value.status,
                             submissionAttempted: value.submissionAttempted,
-                            observedAtEpochMs: this.dependencies.clock.nowMs()
+                            observedAtEpochMs: this.dependencies.clock.nowMs(),
+                            ...trace
                         });
                     }
                     catch { /* Optional projection and clock cannot replace mandatory settlement. */ }

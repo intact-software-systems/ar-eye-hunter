@@ -35,6 +35,7 @@ export class ExportAdminCrdtDebug {
                 component: 'admin-operations',
                 operation: 'crdt.debug-export',
                 serviceId: this.options.serviceId,
+                traceId: input.traceId,
                 applicationId: document.applicationId,
                 workspaceId: document.workspaceId,
                 principalId: input.adminSession.clientId,

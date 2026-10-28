@@ -389,7 +389,7 @@ let deliverySequence = 0;
 const deliveries: BlackBoxBrowserDeliveriesDependency = {
     getHandle: (msgId) => deliveryRegistry.getHandle(msgId),
     replayCapturedMessage: async (replay) => await facadeBehavior.replayCapturedMessage(replay),
-    submitRawControl: async (control) => await facadeBehavior.submitRawControl(control),
+    submitRawControl: async (control, traceId) => await facadeBehavior.submitRawControl(control, traceId),
     resolveRoomSendFence: (roomRef) => facadeBehavior.resolveRoomSendFence(roomRef)
 };
 
@@ -559,7 +559,8 @@ export function openFacadeDelivery(
             carrier,
             atMs: Date.now(),
             verdict,
-            trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+            trackedReceiptAlgo: handle.lifecycle().receiptAlgo,
+            traceId: 'trace-browser-runtime-facade-test-double'
         });
     }
     return handle;

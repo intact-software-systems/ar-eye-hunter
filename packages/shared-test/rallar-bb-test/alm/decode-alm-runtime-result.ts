@@ -1,4 +1,5 @@
 import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
+import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
     AL_DELIVERY_STATES,
@@ -143,13 +144,38 @@ export function decodeAlmMessagesControlResultValue(value: unknown): RallarBlack
         throw toAlmInvalidRuntimeResultError(`${path}.verdict`);
     }
     const reason = readAlmOptionalStringField(record, path, 'reason');
+    const traceId = decodeAlmControlTraceId(record, { path, verdict, reason });
     return {
         msgId: requireAlmStringField(record, path, 'msgId'),
         typeId: requireAlmStringField(record, path, 'typeId'),
         carrier,
         verdict,
-        ...(reason === undefined ? {} : { reason })
+        ...(reason === undefined ? {} : { reason }),
+        ...(traceId === undefined ? {} : { traceId })
     };
+}
+
+interface AlmControlTraceInput {
+    readonly path: string;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    readonly reason: string | undefined;
+}
+
+/** Only the harness's refusal of an unknown acknowledged message carries no trace; every other control inherits one. */
+function decodeAlmControlTraceId(record: RallarBlackBoxTestRecord, input: AlmControlTraceInput): string | undefined {
+    const { path, verdict, reason } = input;
+    const isUnknownAckRefusal = verdict === 'refused' && reason === 'acked-message-unknown';
+    if (isUnknownAckRefusal) {
+        if (record.traceId !== undefined) {
+            throw toAlmInvalidRuntimeResultError(`${path}.traceId`);
+        }
+        return undefined;
+    }
+    const traceId = decodeALTraceId(record.traceId);
+    if (traceId.left !== undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.traceId`);
+    }
+    return traceId.right;
 }
 
 function isAlmAdmissionVerdictKind(value: unknown): value is ALDeliveryAdmissionVerdict['kind'] {

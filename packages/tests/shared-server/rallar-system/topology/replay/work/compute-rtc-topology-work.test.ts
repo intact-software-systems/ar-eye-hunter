@@ -259,18 +259,26 @@ describe('RTC topology RTT-refresh work', () => {
         });
         const events: RallarTimingEvent[] = [];
 
-        recordRtcTopologyWorkTiming({ timing: undefined, serviceId: 'topology-service', accepted: held, computeDurationMs: 3 });
+        recordRtcTopologyWorkTiming({
+            timing: undefined,
+            serviceId: 'topology-service',
+            accepted: held,
+            computeDurationMs: 3,
+            traceId: 'trace-held-recompute'
+        });
         recordRtcTopologyWorkTiming({
             timing: (event) => events.push(event),
             serviceId: 'topology-service',
             accepted: held,
-            computeDurationMs: 3
+            computeDurationMs: 3,
+            traceId: 'trace-held-recompute'
         });
 
         expect(events).toEqual([expect.objectContaining({
             component: 'rtc-topology-work',
             operation: 'recompute',
             groupId: 'group-1',
+            traceId: 'trace-held-recompute',
             durationMs: 3,
             details: expect.objectContaining({
                 workKind: 'rtt-refresh',

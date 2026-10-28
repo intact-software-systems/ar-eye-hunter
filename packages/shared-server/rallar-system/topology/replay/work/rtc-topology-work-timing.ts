@@ -8,6 +8,8 @@ export interface RecordRtcTopologyWorkTimingInput {
     readonly serviceId: string | undefined;
     readonly accepted: AcceptedRtcTopologyWork;
     readonly computeDurationMs: number;
+    /** The work row's trace. */
+    readonly traceId: string;
 }
 
 /**
@@ -27,6 +29,7 @@ export function recordRtcTopologyWorkTiming(input: RecordRtcTopologyWorkTimingIn
             component: 'rtc-topology-work',
             operation: 'recompute',
             serviceId: input.serviceId,
+            traceId: input.traceId,
             applicationId: accepted.group.group.applicationId,
             workspaceId: accepted.group.group.workspaceId,
             groupId: accepted.group.group.groupId,

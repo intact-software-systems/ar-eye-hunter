@@ -19,6 +19,7 @@ export function createApiV1WsReceiptObserver(
             component: 'ws-receipt',
             operation: wsReceipt.kind,
             serviceId: input.serviceId,
+            traceId: wsReceipt.traceId,
             details: { publisherId: input.publisherId },
             wsReceipt
         };

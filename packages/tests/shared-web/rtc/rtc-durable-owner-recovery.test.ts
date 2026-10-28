@@ -110,7 +110,7 @@ it.each(['cancel', 'dispose'] as const)('prevents the current owner writing afte
     await drainAndExpectRetainedEdge(fresh, original);
     const native = fresh.native;
     if (operation === 'cancel') {
-        fresh.manager.cancel(original.id.msgId);
+        fresh.manager.cancel(original.id.msgId, original.id.traceId);
     }
     else {
         await fresh.close();

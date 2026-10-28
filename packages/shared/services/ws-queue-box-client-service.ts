@@ -16,6 +16,7 @@ import {
     type ALMessagePlanningObservations,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
+import { toALMessageTrace } from '../al-contracts/trace/to-al-message-trace.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -496,8 +497,8 @@ export class WsQueueBoxClientService {
         return await this.inboundRuntime.writeRetainedDeliveriesDueNow(messages);
     }
 
-    cancelOutbox(msgId: string): ALOutboundCancelOutcome {
-        return this.outboundRuntime.cancel(msgId);
+    cancelOutbox(msgId: string, traceId: string): ALOutboundCancelOutcome {
+        return this.outboundRuntime.cancel(msgId, traceId);
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
@@ -640,7 +641,8 @@ export class WsQueueBoxClientService {
             carrier: 'ws',
             ...result,
             beganAtMs,
-            settledAtMs: this.dependencies.inboundRuntime.clock.nowMs()
+            settledAtMs: this.dependencies.inboundRuntime.clock.nowMs(),
+            ...toALMessageTrace(message)
         });
     }
 

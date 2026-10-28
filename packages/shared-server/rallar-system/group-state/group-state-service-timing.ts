@@ -18,6 +18,8 @@ interface GroupStateTimingDetails {
     readonly actorPrincipalId?: string;
     readonly createdByPrincipalId?: string;
     readonly requestId?: string;
+    /** Present only on a queued mutation's read: no other operation of the service is handed a message. */
+    readonly traceId?: string;
     readonly sessionId?: string;
 }
 
@@ -273,6 +275,7 @@ function toScopeTimingDetails(scope: GroupScope): GroupStateTimingDetails {
 function toMutationTimingDetails(command: GroupStateMutationCommand): GroupStateTimingDetails {
     return {
         requestId: command.command.requestId ?? undefined,
+        traceId: command.facts.traceId,
         applicationId: command.command.aggregateRef.applicationId,
         workspaceId: command.command.aggregateRef.workspaceId,
         groupId: command.command.aggregateRef.groupId
@@ -289,6 +292,7 @@ function toGroupStateTimingEventInput(
         operation,
         serviceId,
         requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
+        ...(details.traceId === undefined ? {} : { traceId: details.traceId }),
         applicationId: typeof details.applicationId === 'string' ? details.applicationId : undefined,
         workspaceId: typeof details.workspaceId === 'string' ? details.workspaceId : undefined,
         groupId: typeof details.groupId === 'string' ? details.groupId : undefined,

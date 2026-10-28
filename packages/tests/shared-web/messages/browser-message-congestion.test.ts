@@ -166,8 +166,8 @@ function createCongestionMessage(sequence: number, reliability: 'best-effort' | 
         TYPE_ID,
         { sequence },
         ack === undefined
-            ? { reliability, ack: 'none', ttlMs: 30_000 }
-            : { reliability, ack, ttlMs: 30_000, qos: { ack: { algo: 'hop' } } }
+            ? { reliability, ack: 'none', ttlMs: 30_000, traceId: `trace-congested-${sequence}` }
+            : { reliability, ack, ttlMs: 30_000, qos: { ack: { algo: 'hop' } }, traceId: `trace-congested-${sequence}` }
     );
 }
 
@@ -237,9 +237,10 @@ describe('a best-effort send its carrier holds at the watermark, through the fac
         expect(fixture.rtc.channels.b!.sent).toEqual([]);
         expect(fixture.rtc.channels.c!.sent).toEqual([]);
         expect(fixture.socket.sent.map((frame) => JSON.parse(frame).id.msgId)).toEqual([handle.msgId]);
+        const trace = { traceId: 'trace-congested-1', corrId: handle.msgId };
         expect(fixture.readCongestion()).toEqual([
-            { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'drop', priority: 0, msgId: handle.msgId },
-            { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'hand-over', priority: 0, msgId: handle.msgId }
+            { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'drop', priority: 0, msgId: handle.msgId, ...trace },
+            { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'hand-over', priority: 0, msgId: handle.msgId, ...trace }
         ]);
     });
 
@@ -269,9 +270,16 @@ describe('a best-effort send its carrier holds at the watermark, through the fac
         expect(lifecycle).toMatchObject({ state: 'rejected', evidence: { failure: { kind: 'refused', reason: 'congested' } } });
         expect(lifecycle.evidence.attempts).toEqual([]);
         expect(fixture.socket.sent).toEqual([]);
-        expect(fixture.readCongestion()).toEqual([
-            { kind: 'congestion', carrier: 'ws', cause: 'backpressured', action: 'drop', priority: 0, msgId: handle.msgId }
-        ]);
+        expect(fixture.readCongestion()).toEqual([{
+            kind: 'congestion',
+            carrier: 'ws',
+            cause: 'backpressured',
+            action: 'drop',
+            priority: 0,
+            msgId: handle.msgId,
+            traceId: 'trace-congested-1',
+            corrId: handle.msgId
+        }]);
     });
 });
 

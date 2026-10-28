@@ -194,7 +194,7 @@ every server message keeps its one backend.
   is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
 - **Controls, receipts and retransmission** go to the memory lane, volatile or checkpoint, that owns
   the target message (a memory read each), else to the durable lane.
-- **One cancel.** `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
+- **One cancel.** `cancel(msgId, traceId)` is runtime-wide: one set of send controls serves both lanes.
 - **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
   takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab. A
   planner that returns zero prepared messages for a volatile message must settle it (drop code or an
@@ -804,7 +804,9 @@ bound is refused. A receipt writes no work and no `ack-timeout` schedule; the se
 `acceptReceipt` takes the receipt control message itself and records its verdict as the same
 `control-admission` diagnostic, under the control's own id with the receipt's message as
 `targetMsgId`, whether it commits or is refused. Only a receipt's diagnostic carries a `phase`
-(`admitted`, `complete` or `timed-out`), its last field; every other control's has none.
+(`admitted`, `complete` or `timed-out`), straight after `reason`; every other control's has none. Every
+`control-admission` diagnostic ends with the control's own `traceId`, then its `corrId`, so on a receipt
+they follow `phase`.
 
 Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`.
 Under `hop` and `subtree` the row counts next hops, so its peers are both the hop lists and the
@@ -1098,8 +1100,8 @@ registers the callback. Native completion invokes it after queue mutation. This 
 a language-level event bridge, not a forward dependency between services. No
 additional queue, pending-work registry, or timer is introduced by settlement.
 
-`ALOutboundMessageRuntime.cancel(msgId)` aborts one message's own live transport
-signal and states one `cancelled` settlement; disposal aborts every live signal but
+`ALOutboundMessageRuntime.cancel(msgId, traceId)` aborts one message's own live transport
+signal and states one `cancelled` settlement under the caller's trace; disposal aborts every live signal but
 states none of its own. Either way, an attempt that already stated `attempt-started`
 still terminates with its own `attempt-settled` (`outcome: 'cancelled'`, `willRetry:
 false`) -- stated directly when the abort lands before the carrier runs (inside the
@@ -1117,7 +1119,10 @@ the runtime's private `emitSettlement` stamps the fact with its own `carrier`, t
 current `atMs` and the `lane` that stated it (`durable` or `volatile`; a runtime-wide
 `cancel` names none) into the `ALDeliverySettlement` the sink receives, and guards that call
 so a throwing sink logs and returns rather than changing dispatch, retry, or claim
-behaviour. The browser's sink for these settlements is the in-memory delivery registry,
+behaviour. Every fact carries a required `traceId`: the trace of the request whose commit stated it.
+That is the message's own trace, the replacement's on `superseded`, the admitted control's on a
+settlement a control states, and the caller's on `cancel`. No settlement mints a trace. The browser's sink
+for these settlements is the in-memory delivery registry,
 [`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)
 (`packages/shared-web/browser/messages/`), which reduces each settlement into the
 sending handle's lifecycle.

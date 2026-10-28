@@ -1,12 +1,17 @@
 import { AppInboxReservationConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
+import { computeAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
 import { createAtomicHarness } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../test-support/test-app-inbox-finished-retention.ts';
 
 describe('AppInboxTransactionWriter atomic finalization', () => {
     it('commits mutation, outbox, result, and completion in one transaction', async () => {
@@ -153,5 +158,47 @@ describe('AppInboxTransactionWriter atomic finalization', () => {
             expect(event.details).toMatchObject({ attempt: 7 });
             expect(event.details).not.toHaveProperty('plan');
         }
+    });
+
+    it('names the trace of the attempt message on its transaction line', async () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createAtomicHarness({ timing: (event) => timing.push(event) });
+        const message = { ...harness.context.message, id: { ...harness.context.message.id, traceId: 'trace-transaction-1' } };
+
+        await harness.service.commit({ ...harness.context, message }, { status: 'accepted' }, async () => {});
+
+        expect(timing.filter((event) => event.operation === 'transaction').map((event) => event.traceId)).toEqual([
+            'trace-transaction-1'
+        ]);
+    });
+
+    it('names no trace on the transaction line of a computed queue failure, whose message was never decoded', async () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter(
+            { database: harness.database.sql, nowEpochMs: () => 1_000 },
+            { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'server-1', timing: (event) => timing.push(event) }
+        );
+        const computed = computeAppInboxCompletion({
+            finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
+            entry: harness.entry,
+            completedAtEpochMs: 1_000,
+            status: EntityStatus.NON_RETRYABLE,
+            durableResult: null
+        });
+
+        await writer.writeComputedQueueFailure(
+            computeResourceInboxAttempt({
+                entry: harness.entry,
+                selectedLane: Reservator.NEW,
+                selectedAtEpochMs: 1_000,
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
+            }),
+            computed
+        );
+
+        expect(timing.map((event) => event.operation)).toEqual(['transaction']);
+        expect(timing[0]).not.toHaveProperty('traceId');
     });
 });

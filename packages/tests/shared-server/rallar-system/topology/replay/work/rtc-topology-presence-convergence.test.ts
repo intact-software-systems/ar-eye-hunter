@@ -2,8 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import type { GroupPlannedLayoutRow } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-planned-layout-promotion.ts';
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
@@ -255,7 +255,9 @@ class PresenceConvergenceFixture {
     });
     readonly promotion = createTopologyPromotionWorkHandler({
         nowEpochMs: () => this.now,
-        submitCommand: async (command) => await this.applyPromotion(command)
+        topologyPublication: {
+            submitCommand: async (submission) => await this.applyPromotion(submission)
+        }
     });
     private readonly promoted = new Set<string>();
 
@@ -389,13 +391,13 @@ class PresenceConvergenceFixture {
         }
     }
 
-    async applyPromotion(command: GroupMutationCommand): Promise<void> {
-        const ingress = await this.service.captureTopologyPublicationMutationIngress(command, this.now);
+    async applyPromotion({ command, atEpochMs, traceId }: GroupSystemCommandSubmission): Promise<void> {
+        const ingress = await this.service.captureTopologyPublicationMutationIngress(command, atEpochMs);
         const mutation: GroupStateMutationCommand = {
             authorityProof: null,
             descriptor: null,
             command: ingress.command,
-            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId: 'trace-rtc-topology-presence-convergence' }
+            facts: { ...ingress.facts, attemptCount: 1, attemptAtEpochMs: ingress.facts.nowEpochMs, traceId }
         };
         const read = await this.service.read(mutation);
         const computed = this.service.compute(mutation, read);

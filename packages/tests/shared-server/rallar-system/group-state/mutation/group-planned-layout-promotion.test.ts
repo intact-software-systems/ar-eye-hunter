@@ -449,10 +449,11 @@ describe('applyPlannedLayout through the inbox lane', () => {
             plannedRow.value,
             NEVER_EXPIRE_AT_TIMESTAMP
         );
-        await harness.service.enqueueTopologyPublicationCommand(
-            toApplyPlannedLayoutCommand({ groupRef: LANE_GROUP_REF, formationEpoch: 0, expectedLayout }),
-            harness.nowEpochMs
-        );
+        await harness.service.enqueueTopologyPublicationCommand({
+            command: toApplyPlannedLayoutCommand({ groupRef: LANE_GROUP_REF, formationEpoch: 0, expectedLayout }),
+            atEpochMs: harness.nowEpochMs,
+            traceId: 'trace-group-planned-layout-promotion'
+        });
         timing.length = 0;
         if (failAcceptedWrite) {
             const failWrite = (namespace: string) => {
@@ -479,6 +480,7 @@ describe('applyPlannedLayout through the inbox lane', () => {
                 operation: 'promote',
                 status: 'ok',
                 groupId: LANE_GROUP_REF.groupId,
+                traceId: 'trace-group-planned-layout-promotion',
                 details: {
                     expected: 'group=4;presence=6;version=3;state=active',
                     planned: 'group=4;presence=7;version=4;state=active',

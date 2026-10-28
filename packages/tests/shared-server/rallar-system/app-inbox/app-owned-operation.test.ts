@@ -61,7 +61,7 @@ describe('app-owned AppInbox operation', () => {
 
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
 
-        expect(await client.resultWaiter.waitForResult({ enqueue: COMMAND, key: entry.key, winner }, (value) => value))
+        expect(await client.resultWaiter.waitForResult({ enqueue: COMMAND, key: entry.key, traceId: COMMAND.traceId, winner }, (value) => value))
             .toEqual(Either.ofRight({ accepted: { quantity: 3 }, actor: { principalId: 'clerk-1' } }));
         expect((await results.findByKey(entry.key))?.status).toBe('COMPLETED');
         expect((await client.queueEntryWriter.writeIfAbsent(COMMAND)).winner).toBe(false);

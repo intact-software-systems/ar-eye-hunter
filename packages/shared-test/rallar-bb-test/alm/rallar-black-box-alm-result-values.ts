@@ -34,8 +34,16 @@ export interface RallarBlackBoxTestMessagesControlResultValue {
     readonly typeId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict['kind'];
-    /** The detail of the verdict itself; absent for `admitted`, `duplicate` and `pending`, which carry none. */
+    /**
+     * The detail of the verdict itself, absent for `admitted`, `duplicate` and `pending`, which carry none; or the
+     * harness's own `acked-message-unknown`, on a refusal before any admission.
+     */
     readonly reason?: string;
+    /**
+     * The trace the control envelope carried, that of the acknowledged message. Absent only on the harness's
+     * `refused` / `acked-message-unknown` result, which admitted nothing; the decoder requires it on every other verdict.
+     */
+    readonly traceId?: string;
 }
 
 export interface RallarBlackBoxTestMessagesObserveResultValue

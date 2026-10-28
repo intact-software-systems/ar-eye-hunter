@@ -79,7 +79,12 @@ describe('Committed AppInbox completion publication', () => {
             options
         });
         let returned = false;
-        const pending = client.resultWaiter.waitForResult({ enqueue: harness.context.enqueue, key: harness.entry.key, winner: false }, (value) => value)
+        const pending = client.resultWaiter.waitForResult({
+            enqueue: harness.context.enqueue,
+            key: harness.entry.key,
+            traceId: harness.context.message.id.traceId,
+            winner: false
+        }, (value) => value)
             .then((result) => {
                 returned = true;
                 return result;

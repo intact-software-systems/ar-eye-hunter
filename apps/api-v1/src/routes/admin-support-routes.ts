@@ -5,12 +5,14 @@ import type {
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
 import {
     requireApiAdminSession as defaultRequireApiAdminSession,
     type ApiAdminAuthDependencies
 } from '../services/admin-auth-service.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import {
     decodeAdminSupportExplainClientRequest,
     decodeAdminSupportExplainCrdtDocumentRequest,
@@ -92,10 +94,12 @@ async function respondToAdminSupportRequest<TRequest>(
     try {
         const adminSession = await requireAdminSession(context, dependencies);
         const request = routeRequest.decode(await readOptionalJsonBody(context));
-        return context.json(await routeRequest.write({ adminSession, request }));
+        return context.json(
+            await routeRequest.write({ adminSession, request, traceId: readApiRequestTraceId(context) })
+        );
     }
     catch (error) {
-        return toErrorResponse(context, error);
+        return toErrorResponse(context, toError(error));
     }
 }
 
@@ -138,9 +142,9 @@ async function readOptionalJsonBody(context: Context): Promise<JsonWireValue> {
 
 function toErrorResponse(
     context: { json(value: { readonly error: string; }, status?: number): Response; },
-    error: unknown
+    error: Error
 ): Response {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error.message;
     const status = isStatusError(error)
         ? error.status
         : message.includes('not found')
@@ -156,7 +160,6 @@ function toErrorResponse(
     return context.json({ error: message }, status);
 }
 
-function isStatusError(error: unknown): error is Error & { status: number; } {
-    return error instanceof Error &&
-        typeof (error as Error & { status?: number; }).status === 'number';
+function isStatusError(error: Error): error is Error & { status: number; } {
+    return typeof (error as Error & { status?: number; }).status === 'number';
 }

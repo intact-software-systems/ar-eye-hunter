@@ -179,7 +179,14 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         enqueued: true
     });
     const before = events.slice();
-    delivery.registry.record({ kind: 'attempt-started', msgId: delivery.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'attempt-1' });
+    delivery.registry.record({
+        kind: 'attempt-started',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        attemptId: 'attempt-1',
+        traceId: 'trace-delivery'
+    });
     delivery.registry.record({
         kind: 'attempt-settled',
         msgId: delivery.msgId,
@@ -189,7 +196,8 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         outcome: 'sent',
         submissionAttempted: true,
         detail: undefined,
-        willRetry: false
+        willRetry: false,
+        traceId: 'trace-delivery'
     });
     expect(await runtime.observeDelivery({ ...query, state: ['transport-accepted'], timeoutMs: 100 })).toMatchObject({
         state: 'transport-accepted',
@@ -208,7 +216,8 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
         unconfirmedRecipientPeerIds: ['peer-3'],
-        complete: false
+        complete: false,
+        traceId: 'trace-delivery'
     });
     expect(await runtime.readReceipts(query)).toMatchObject({
         state: 'transport-accepted',
@@ -231,7 +240,8 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         unconfirmedRecipientPeerIds: [],
-        complete: true
+        complete: true,
+        traceId: 'trace-delivery'
     });
     expect(await runtime.readReceipts(query)).toMatchObject({
         state: 'acknowledged',
@@ -244,7 +254,8 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         carrier: 'ws',
         atMs: Date.now(),
         relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
-        detail: 'The server relay refused the message: resync-required.'
+        detail: 'The server relay refused the message: resync-required.',
+        traceId: 'trace-delivery'
     });
     expect(await runtime.readReceipts(query)).toMatchObject({
         state: 'acknowledged',
@@ -269,7 +280,8 @@ it('projects the carrier of every settled attempt beside its outcome, in attempt
             msgId: delivery.msgId,
             carrier,
             atMs: Date.now(),
-            attemptId
+            attemptId,
+            traceId: 'trace-delivery'
         });
         delivery.registry.record({
             kind: 'attempt-settled',
@@ -280,7 +292,8 @@ it('projects the carrier of every settled attempt beside its outcome, in attempt
             outcome,
             submissionAttempted: outcome === 'sent',
             detail: undefined,
-            willRetry: outcome === 'not-ready'
+            willRetry: outcome === 'not-ready',
+            traceId: 'trace-delivery'
         });
     };
 
@@ -306,14 +319,16 @@ it('projects the reason of a refused admission leg the fallback carrier took ove
         carrier: 'rtc',
         atMs: Date.now(),
         reason: 'congested',
-        detail: 'Carrier backpressure dropped the send'
+        detail: 'Carrier backpressure dropped the send',
+        traceId: 'trace-delivery'
     });
     delivery.registry.record({
         kind: 'attempt-started',
         msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
-        attemptId: 'ws-attempt'
+        attemptId: 'ws-attempt',
+        traceId: 'trace-delivery'
     });
     delivery.registry.record({
         kind: 'attempt-settled',
@@ -324,7 +339,8 @@ it('projects the reason of a refused admission leg the fallback carrier took ove
         outcome: 'sent',
         submissionAttempted: true,
         detail: undefined,
-        willRetry: false
+        willRetry: false,
+        traceId: 'trace-delivery'
     });
 
     expect(await runtime.readReceipts(query)).toMatchObject({
@@ -550,6 +566,65 @@ it('replays a handle\'s envelope on the named carrier and reports that admission
         .rejects.toThrow('messages.send.replayOnCarrier must name a handleId and a ws or rtc carrier.');
     await expect(runtime.sendMessage({ ...replay, carrier: 'ws', payload: { n: 2 } }))
         .rejects.toThrow('messages.send names carrier, payload beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
+const rawControl = {
+    carrier: 'rtc' as const,
+    typeId: 'al.control.ack.v1',
+    msgId: 'control-1',
+    ackedMsgId: 'request-1',
+    toPeerId: 'bob-session'
+};
+const admittedVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 } as const;
+
+it('acknowledges a retained received message under that message\'s trace', async () => {
+    const { runtime, receive } = await loadReceivingRuntime();
+    receive(withTrace(toInboundRequest('request-1', vi.fn()), 'trace-acked-received'));
+    facade.behavior.submitRawControl.mockResolvedValueOnce({ msgId: 'control-1', verdict: admittedVerdict });
+
+    expect(await runtime.submitControl(rawControl)).toEqual({
+        msgId: 'control-1',
+        typeId: 'al.control.ack.v1',
+        carrier: 'rtc',
+        verdict: 'admitted',
+        reason: undefined,
+        traceId: 'trace-acked-received'
+    });
+    expect(facade.behavior.submitRawControl).toHaveBeenCalledWith(rawControl, 'trace-acked-received');
+});
+
+it('acknowledges a message this page sent under the trace of its delivery handle', async () => {
+    const runtime = await loadDeliveryRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    facade.behavior.submitRawControl.mockResolvedValueOnce({ msgId: 'control-1', verdict: admittedVerdict });
+
+    const result = await runtime.submitControl({ ...rawControl, ackedMsgId: delivery.msgId });
+
+    expect(result).toMatchObject({ verdict: 'admitted', traceId: 'trace-browser-runtime-facade-test-double' });
+    expect(facade.behavior.submitRawControl).toHaveBeenCalledWith(
+        { ...rawControl, ackedMsgId: delivery.msgId },
+        'trace-browser-runtime-facade-test-double'
+    );
+});
+
+it('refuses a raw control that acknowledges a message neither received nor sent by this page, admitting nothing', async () => {
+    const { runtime, receive } = await loadReceivingRuntime();
+    receive(toInboundRequest('request-held', vi.fn()));
+    const admittedMsgIds: string[] = [];
+    facade.behavior.submitRawControl.mockImplementation(async (control) => {
+        admittedMsgIds.push(control.msgId);
+        return { msgId: control.msgId, verdict: admittedVerdict };
+    });
+
+    expect(await runtime.submitControl({ ...rawControl, ackedMsgId: 'request-unknown' })).toEqual({
+        msgId: 'control-1',
+        typeId: 'al.control.ack.v1',
+        carrier: 'rtc',
+        verdict: 'refused',
+        reason: 'acked-message-unknown',
+        traceId: undefined
+    });
+    expect(admittedMsgIds).toEqual([]);
 });
 
 it('stamps an absolute floor as given and resolves aboveCurrentBy against the sender\'s current room version', async () => {
@@ -808,7 +883,8 @@ it('projects the hand-over to the fallback carrier on every ledger view (D56)', 
         to: 'ws',
         reason: 'not-ready',
         atMs: 5,
-        detail: 'three consecutive not-ready attempts'
+        detail: 'three consecutive not-ready attempts',
+        traceId: 'trace-delivery'
     });
 
     const handle = { connection: 'aliceAlm', handleId: 'h-1' };
@@ -879,7 +955,8 @@ it.each([
             carrier: 'ws',
             atMs: Date.now(),
             reason,
-            detail
+            detail,
+            traceId: 'trace-delivery'
         });
         return handle;
     });
@@ -1438,7 +1515,14 @@ it.each(
         const handle = await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', payload }, undefined);
         await handle.wait({ until: ['queued'], timeoutMs: 100 });
         if (state === 'transport-accepted') {
-            fixture.registry.record({ kind: 'attempt-started', carrier: 'rtc', msgId: handle.msgId, atMs: Date.now(), attemptId: 'attempt-1' });
+            fixture.registry.record({
+                kind: 'attempt-started',
+                carrier: 'rtc',
+                msgId: handle.msgId,
+                atMs: Date.now(),
+                attemptId: 'attempt-1',
+                traceId: 'trace-delivery'
+            });
             fixture.registry.record({
                 kind: 'attempt-settled',
                 carrier: 'rtc',
@@ -1448,7 +1532,8 @@ it.each(
                 outcome: 'sent',
                 submissionAttempted: true,
                 detail: undefined,
-                willRetry: false
+                willRetry: false,
+                traceId: 'trace-delivery'
             });
         }
         return handle;
@@ -1497,6 +1582,10 @@ function toInboundReply(requestMsgId: string): RallarMessage<RallarMessagePayloa
             actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
         }
     };
+}
+
+function withTrace(message: RallarMessage<RallarMessagePayload>, traceId: string): RallarMessage<RallarMessagePayload> {
+    return { ...message, traceId, raw: { ...message.raw, id: { ...message.raw.id, traceId } } };
 }
 
 function toInboundRequest(

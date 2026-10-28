@@ -200,7 +200,8 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     }
 
     /** The terminal statement of a message whose repair budget dispatch found spent; a repeat states nothing. */
-    private settleRepairExhausted(msgId: string, detail: string): void {
+    private settleRepairExhausted(message: ALMessage, detail: string): void {
+        const msgId = message.id.msgId;
         if (this.exhaustedMsgIds.has(msgId)) {
             return;
         }
@@ -215,6 +216,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         this.dependencies.settlements({
             kind: 'admission',
             msgId,
+            traceId: message.id.traceId,
             trackedReceiptAlgo: 'none',
             verdict: { kind: 'skipped', reason: 'repair-exhausted', detail }
         });
@@ -316,7 +318,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             }
         });
         if (computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
-            this.settleRepairExhausted(repair.msg.id.msgId, computed.verdict.detail);
+            this.settleRepairExhausted(repair.msg, computed.verdict.detail);
         }
     }
 }

@@ -549,7 +549,9 @@ it('records an AL inbound admission diagnostics event into the agent event log',
         typeId: 'alm.conformance.delivery-baseline',
         carrier: 'rtc',
         outcome: 'unauthorized',
-        reason: 'unauthorized'
+        reason: 'unauthorized',
+        traceId: 'trace-msg-7',
+        corrId: 'msg-7'
     });
 
     expect(events).toEqual(expect.arrayContaining([
@@ -563,7 +565,9 @@ it('records an AL inbound admission diagnostics event into the agent event log',
                 typeId: 'alm.conformance.delivery-baseline',
                 carrier: 'rtc',
                 outcome: 'unauthorized',
-                reason: 'unauthorized'
+                reason: 'unauthorized',
+                traceId: 'trace-msg-7',
+                corrId: 'msg-7'
             }
         })
     ]));

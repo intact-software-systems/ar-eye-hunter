@@ -35,8 +35,8 @@ service reports its final actual socket result. Relayed counts carry the actual
 notice publisher, without claiming authentication by a receiving socket.
 
 The count engine constructs its existing result and immutable before/after
-observation together. `recordAck` reports after constructing that result;
-`acceptControlMessage` reports in `finally` after receipt enqueue/settlement.
+observation together, and `acceptControlMessage`, the one aggregate path, reports
+it in `finally` after receipt enqueue/settlement.
 A thrown enqueue exposes no enqueue verdict; an actual returned enqueue verdict
 is captured before the settlement consumer and remains observable if settlement
 throws. Sink failures are guarded. Diagnostics have no authority over delivery.

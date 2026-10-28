@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     nowMs,
     recordRallarTiming,
@@ -41,6 +43,8 @@ interface ClientStatePhaseTimingInput {
 interface ClientStateMutationCommitTimingInput {
     readonly timing: ClientStateMutationTiming;
     readonly writes: readonly ClientMutationComputedWrite[];
+    /** The trace of the queued message whose attempt commits the writes. */
+    readonly traceId: string;
 }
 
 interface RecordClientStateMutationCommitInput extends ClientStateMutationCommitTimingInput {
@@ -93,6 +97,7 @@ export function timeClientStateReadPhase<T>(
             operation: input.operation,
             serviceId: input.timing.serviceId,
             requestId: input.command.requestId ?? undefined,
+            traceId: input.command.facts.traceId,
             ...input.command.aggregateRef
         },
         action
@@ -123,7 +128,7 @@ export function timeClientStateMutationPhase<T>(
             event: toMutationTiming(input.operation, input.command, input.timing.serviceId),
             status: 'error',
             durationMs: nowMs() - startedAtEpochMs,
-            error
+            error: toError(error)
         });
         throw error;
     }
@@ -151,7 +156,7 @@ export async function timeClientStateMutationCommit<T>(
             ...input,
             status: 'error',
             durationMs: nowMs() - startedAtEpochMs,
-            error
+            error: toError(error)
         });
         throw error;
     }
@@ -166,6 +171,7 @@ function recordClientStateMutationCommit(input: RecordClientStateMutationCommitI
                 operation: 'mutation.write',
                 serviceId: input.timing.serviceId,
                 requestId: write.receipt.requestId ?? undefined,
+                traceId: input.traceId,
                 ...write.receipt.aggregateRef
             },
             status: input.status,
@@ -185,6 +191,7 @@ function toMutationTiming(
         operation,
         serviceId,
         requestId: command.requestId ?? undefined,
+        traceId: command.facts.traceId,
         ...command.aggregateRef,
         details: {
             attempt: command.facts.attemptCount,

@@ -2369,6 +2369,29 @@
       "description": "No-browser API-v1 SPA statistics missing-auth denial, non-member group denial, scoped success reads, and OpenAPI contract coverage."
     },
     {
+      "id": "api-v1-request-trace-echo",
+      "recipe": "tests/api-v1/api-v1-request-trace-echo.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-request-trace-echo",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 request trace echo: a valid x-request-id is echoed on the response unchanged, and a hostile one (wrong charset, 129 characters) is replaced by a server-minted trace that satisfies the trace grammar."
+    },
+    {
       "id": "api-v1-crdt-catch-up-auth",
       "recipe": "tests/api-v1/api-v1-crdt-catch-up-auth.json",
       "category": "api-v1-black-box",

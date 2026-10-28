@@ -23,6 +23,8 @@ export interface ToALOutboundAcknowledgementFactInput {
     readonly receipt: Pick<ALOutboundPendingAckSnapshot, 'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds'>;
     readonly hops: OverlayTree;
     readonly complete: boolean;
+    /** The trace of the request whose commit moved the receipt. */
+    readonly traceId: string;
 }
 
 export interface TrackALOutboundPendingAckSnapshotInput {
@@ -158,6 +160,7 @@ export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgeme
     return {
         kind: 'acknowledgement',
         msgId: receipt.msgId,
+        traceId: input.traceId,
         mode: receipt.mode,
         confirmedHopPeerIds: receiverHops ? hops.completedHopPeerIds : receipt.ackedPeerIds,
         unconfirmedHopPeerIds: receiverHops
@@ -191,6 +194,7 @@ export function toALOutboundEmptyAudienceReceipt<TPrepared>(
     return toALOutboundAcknowledgementFact({
         receipt: { msgId: plan.msg.id.msgId, mode: 'receiver', expectedPeerIds: [], ackedPeerIds: [] },
         hops: { nextHopPeerIds: [], completedHopPeerIds: [] },
-        complete: true
+        complete: true,
+        traceId: plan.msg.id.traceId
     });
 }

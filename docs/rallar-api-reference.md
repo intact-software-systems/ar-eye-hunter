@@ -42,7 +42,11 @@ attempt, so a replay under another trace returns the original result. The AppInb
 command envelope carries the request's trace, and every row and publication the
 command writes carries it too. The group and client mutation request bodies take no
 `traceId`: a body trace is refused with `400` as an unknown field. The audit stamp
-and the state event name the trace of the request whose command ran.
+and the state event name the trace of the request whose command ran. The
+`x-request-id` response header is observable to black-box recipes: the runner keeps
+it among the response headers `expect.headers` compares. A recipe asserts a minted
+echo with an `assert` step that `matches` the trace grammar and `notEquals` the
+value it sent.
 
 ## Browser Rallar
 
@@ -2445,8 +2449,9 @@ Read routes:
   RTC topology metrics, group-formation metrics, the ALM receipt diagnostics (`almReceipts`), and the
   group audience cache size (`caches.groupAudienceSnapshots`, the groups whose current snapshot that cache
   keeps; it holds the process's only version-probed read-through cache today). Responses include a warning
-  because these metrics are process-local in multi-server deployments. `alm.deliveredMarkers` counts the unexpired
-  delivered markers in the shared Postgres store; when that read fails, the whole response fails.
+  because these metrics are process-local in multi-server deployments. Each `almReceipts.diagnostics.messages`
+  entry carries a required `traceId`, the trace of the message's latest receipt fact. `alm.deliveredMarkers` counts
+  the unexpired delivered markers in the shared Postgres store; when that read fails, the whole response fails.
 - `GET /api/admin/operations/state` and
   `GET /api/admin/operations/state/apps/:applicationId/workspaces/:workspaceId`
   return client, group, and state-event aggregates.

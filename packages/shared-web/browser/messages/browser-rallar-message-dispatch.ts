@@ -7,6 +7,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -46,6 +47,7 @@ interface CapturedMessageAdmission {
 /** The verdict of one carrier leg and what the strategy does next with it. */
 interface CarrierAdmission {
     readonly msgId: string;
+    readonly traceId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict;
     readonly trackedReceiptAlgo: ALAckAlgo;
@@ -125,6 +127,7 @@ export class BrowserRallarMessageDispatch {
                 lifetime.settlements[delivery.carrier]({
                     kind: 'admission',
                     msgId: delivery.message.id.msgId,
+                    traceId: delivery.message.id.traceId,
                     carrier: delivery.carrier,
                     atMs: this.input.nowMs(),
                     verdict: { kind: 'failed', detail: toError(caught).message },
@@ -205,6 +208,7 @@ export class BrowserRallarMessageDispatch {
     ): CarrierAdmission {
         return {
             msgId: delivery.message.id.msgId,
+            traceId: delivery.message.id.traceId,
             carrier: delivery.carrier,
             verdict: result.verdict,
             trackedReceiptAlgo: result.trackedReceiptAlgo,
@@ -295,7 +299,8 @@ function writeCongestionHandOverDiagnostic(
         cause: 'backpressured',
         action: 'hand-over',
         priority: normalizeALQosPolicy(result.message).effective.congestion.opts.priority,
-        msgId: result.message.id.msgId
+        msgId: result.message.id.msgId,
+        ...toALMessageTrace(result.message)
     });
 }
 
@@ -411,10 +416,10 @@ export function computeFallbackDisposition(
 
 /** A refusal the fallback carrier takes over is evidence of the refused leg, not the verdict: `rejected` is terminal. */
 function toCarrierAdmissionSettlement(admission: CarrierAdmission, atMs: number): ALDeliverySettlement {
-    const { msgId, carrier, verdict, trackedReceiptAlgo } = admission;
+    const { msgId, traceId, carrier, verdict, trackedReceiptAlgo } = admission;
     return admission.fallback !== 'stop' && verdict.kind === 'refused'
-        ? { kind: 'carrier-refused', msgId, carrier, atMs, reason: verdict.reason, detail: verdict.detail }
-        : { kind: 'admission', msgId, carrier, atMs, verdict, trackedReceiptAlgo };
+        ? { kind: 'carrier-refused', msgId, traceId, carrier, atMs, reason: verdict.reason, detail: verdict.detail }
+        : { kind: 'admission', msgId, traceId, carrier, atMs, verdict, trackedReceiptAlgo };
 }
 
 function toDurabilityDowngradeSettlement(
@@ -425,6 +430,7 @@ function toDurabilityDowngradeSettlement(
     return {
         kind: 'durability-downgrade',
         msgId: admission.msgId,
+        traceId: admission.traceId,
         carrier: admission.carrier,
         atMs,
         ...downgrade
@@ -436,14 +442,15 @@ function toCarrierAdmissionEndSettlement(
     admission: CarrierAdmission,
     atMs: number
 ): ALDeliverySettlement | undefined {
-    const { msgId, carrier, verdict } = admission;
+    const { msgId, traceId, carrier, verdict } = admission;
     if (admission.fallback === 'expired') {
-        return { kind: 'expired', msgId, carrier, atMs, detail: 'Message deadline elapsed before fallback.' };
+        return { kind: 'expired', msgId, traceId, carrier, atMs, detail: 'Message deadline elapsed before fallback.' };
     }
     return verdict.kind === 'unroutable'
         ? {
             kind: 'attempts-exhausted',
             msgId,
+            traceId,
             carrier,
             atMs,
             reason: verdict.reason,

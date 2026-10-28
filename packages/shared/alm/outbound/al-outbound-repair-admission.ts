@@ -197,6 +197,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             this.dependencies.settlements({
                 kind: 'not-yet-in-sync-exhausted',
                 msgId,
+                traceId: msg.id.traceId,
                 detail: `The not-yet-in-sync retry budget of ${retry.maxAttempts} ran out.`
             });
         }
@@ -368,11 +369,12 @@ export class ALOutboundRepairAdmission<TPrepared> {
             throw new RetryableConflictError('Outbound receipt exhaustion commit conflict');
         }
         if (status === 'committed') {
-            this.dependencies.settlements(toALOutboundReceiptExhaustedFact(
-                pending,
-                { cause: 'budget' },
-                `The receipt ran out of retries after ${pending.attempts} of ${pending.maxAttempts}.`
-            ));
+            this.dependencies.settlements(toALOutboundReceiptExhaustedFact({
+                receipt: pending,
+                exhaustion: { cause: 'budget' },
+                detail: `The receipt ran out of retries after ${pending.attempts} of ${pending.maxAttempts}.`,
+                traceId: msg.id.traceId
+            }));
         }
     }
 

@@ -10,6 +10,7 @@ import {
     writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeGroupConnectTriggerEntry, decodeGroupConnectTriggerWork } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
@@ -153,22 +154,53 @@ describe('connect intent handoff', () => {
             latches,
             readGroup: async () => automaticRead().group!.value,
             readPlanned: async () => planned,
-            submitCommand: async (command: GroupMutationCommand) => {
+            submitCommand: async ({ command }: GroupSystemCommandSubmission) => {
                 commands.push(command);
             },
             nowEpochMs: () => 2000
         };
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-connect-trigger-1' });
         expect(commands).toEqual([]);
         planned = PLANNED;
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-connect-trigger-1' });
         planned = { ...PLANNED, version: 2 };
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-connect-trigger-1' });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-connect-trigger-1' });
         expect(commands.map((command) => command.operation === 'connectGroup' ? command.input.expectedLayout.version : null)).toEqual([1, 2, 2]);
         expect(commands[0]!.commandId).not.toBe(commands[1]!.commandId);
         expect(commands[1]!.commandId).toBe(commands[2]!.commandId);
         expect((await latches.read(IDENTITY))?.latch.state).toBe('awaiting-publication');
+    });
+
+    it('the connect trigger submits under the trigger message trace', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        await runtime.upsert(
+            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            toGroupConnectTriggerStorageKey(IDENTITY),
+            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+        const submissions: GroupSystemCommandSubmission[] = [];
+        const handler = createGroupConnectTriggerWorkHandler({
+            latches: new GroupConnectTriggerLatchRepository(runtime),
+            readGroup: async () => automaticRead().group!.value,
+            readPlanned: async () => PLANNED,
+            submitCommand: async (submission) => {
+                submissions.push(submission);
+            },
+            nowEpochMs: () => 2000
+        });
+        const entry = computeGroupConnectTriggerEntry({
+            traceId: 'trace-connect-trigger-1',
+            work: { kind: 'intent', ...IDENTITY, wakeIdentity: 'source' },
+            senderId: 'origin',
+            createdAtEpochMs: 1000,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+
+        await handler.onMessage(JSON.parse(entry.resource) as ALMessage, entry);
+
+        expect(submissions.map((submission) => submission.traceId)).toEqual(['trace-connect-trigger-1']);
     });
 
     it('consumes the matching latch in the same group and planned-layout guarded batch', () => {
@@ -303,8 +335,8 @@ describe('retry handoff commit races and replay', () => {
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         const command = toAutomaticGroupConnectCommand(IDENTITY, LAYOUT);
-        await harness.service.enqueueFormationAutomationCommand(command, 1000);
-        await harness.service.enqueueFormationAutomationCommand(command, 2000);
+        await harness.service.enqueueFormationAutomationCommand({ command, atEpochMs: 1000, traceId: 'trace-connect-replay-1' });
+        await harness.service.enqueueFormationAutomationCommand({ command, atEpochMs: 2000, traceId: 'trace-connect-replay-2' });
         expect((await latches.read(IDENTITY))?.latch.state).toBe('awaiting-publication');
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         expect(await latches.read(IDENTITY)).toMatchObject({ revision: 2, latch: { state: 'consumed' } });
@@ -353,7 +385,7 @@ describe('retry handoff commit races and replay', () => {
             latches,
             readGroup: async () => visibleGroup,
             readPlanned: async () => visiblePlan,
-            submitCommand: async (command: GroupMutationCommand) => {
+            submitCommand: async ({ command }: GroupSystemCommandSubmission) => {
                 commands.push(command);
             },
             nowEpochMs: () => 2000

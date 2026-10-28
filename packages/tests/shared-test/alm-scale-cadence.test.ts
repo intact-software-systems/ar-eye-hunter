@@ -104,7 +104,8 @@ function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessage
         carrier: 'rtc',
         atMs: Date.now(),
         verdict: { kind: 'admitted', durable: false, queuedAttempts: 1 },
-        trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+        trackedReceiptAlgo: handle.lifecycle().receiptAlgo,
+        traceId: 'trace-alm-scale-cadence'
     });
     setTimeout(() =>
         registry.record({
@@ -118,7 +119,8 @@ function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessage
             expectedRecipientPeerIds: ['director-session'],
             confirmedRecipientPeerIds: ['director-session'],
             unconfirmedRecipientPeerIds: [],
-            complete: true
+            complete: true,
+            traceId: 'trace-alm-scale-cadence'
         }), 2_000);
     return handle;
 }
@@ -686,7 +688,8 @@ class ScaleCohort {
                 carrier: 'rtc',
                 atMs: Date.now(),
                 verdict: { kind: 'admitted', durable: false, queuedAttempts: 1 },
-                trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+                trackedReceiptAlgo: handle.lifecycle().receiptAlgo,
+                traceId: 'trace-alm-scale-cadence'
             });
             this.deliver(actor, payload);
             const ackMs = actor.role === 'player' ? this.policy.shotAckMs : 0;
@@ -734,7 +737,8 @@ class ScaleCohort {
             expectedRecipientPeerIds: expected,
             confirmedRecipientPeerIds: confirmed,
             unconfirmedRecipientPeerIds: unconfirmed,
-            complete: unconfirmed.length === 0
+            complete: unconfirmed.length === 0,
+            traceId: 'trace-alm-scale-cadence'
         });
     }
 
@@ -946,7 +950,8 @@ it.each([
                 expectedRecipientPeerIds: ['director-session'],
                 confirmedRecipientPeerIds: ['director-session'],
                 unconfirmedRecipientPeerIds: [],
-                complete: true
+                complete: true,
+                traceId: 'trace-alm-scale-cadence'
             });
         }
     }

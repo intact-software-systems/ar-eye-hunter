@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 export type RallarTimingStatus = 'ok' | 'error';
 
 export type RallarTimingDetails = Readonly<Record<string, string | number | boolean | undefined>>;
@@ -11,6 +13,18 @@ export type RallarTimingEvent = Readonly<{
     atEpochMs: number;
     serviceId?: string;
     requestId?: string;
+    /**
+     * The trace of the request or message the line describes. Absent exactly where the producer holds neither:
+     * - the AppInbox dequeue pass and the dequeue-pass boundary, the computed queue failure's transaction line, and the
+     *   retry-exhaustion transaction and telemetry lines, which hold a queue entry but no decoded message;
+     * - the ALM outbound dequeue, captured-policy and Postgres release lines and the queuebox pub/sub lines, which see
+     *   claimed rows, batches or key notices, never a decoded message;
+     * - the group-state service's ingress captures, sweeps and storage reads (every operation but a queued mutation's
+     *   read), the principal group list and the REST snapshot read diagnostics, whose contracts carry no message;
+     * - process and harness samples: event-loop lag, heap, the Postgres statement census, the black-box control
+     *   server's lines and the state-write benchmark SQL.
+     */
+    traceId?: string;
     applicationId?: string;
     workspaceId?: string;
     groupId?: string;
@@ -35,7 +49,7 @@ export interface RecordRallarTimingInput {
     readonly event: RallarTimingEventInput;
     readonly status: RallarTimingStatus;
     readonly durationMs: number;
-    readonly error?: unknown;
+    readonly error?: Error;
 }
 
 export function recordRallarTiming(input: RecordRallarTimingInput): void {
@@ -85,7 +99,7 @@ export async function timeRallarAsync<T>(
             event: input,
             status: 'error',
             durationMs: nowMs() - startedAt,
-            error
+            error: toError(error)
         });
         throw error;
     }
@@ -117,9 +131,6 @@ function toRoundedDurationMs(durationMs: number): number {
     return Math.round(durationMs * 100) / 100;
 }
 
-function toTimingError(error: unknown): RallarTimingEvent['error'] {
-    return {
-        name: error instanceof Error ? error.name : undefined,
-        message: error instanceof Error ? error.message : String(error)
-    };
+function toTimingError(error: Error): RallarTimingEvent['error'] {
+    return { name: error.name, message: error.message };
 }

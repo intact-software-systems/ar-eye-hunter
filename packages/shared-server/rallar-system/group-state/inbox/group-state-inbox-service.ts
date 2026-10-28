@@ -36,7 +36,6 @@ import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';
-import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import {
     toGroupSessionCleanupEnqueue,
     writeGroupSessionCleanup
@@ -63,6 +62,7 @@ import {
 } from './group-state-inbox-handler.ts';
 import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
+import type { GroupSystemCommandSubmission } from './group-system-command-submission.ts';
 import { timeGroupStatePhase, type GroupStatePhaseTiming } from './time-group-state-phase.ts';
 import { toAuthenticatedGroupMutationQueueKey } from './to-authenticated-group-mutation-queue-key.ts';
 import { toGroupMutationDescriptor } from './to-group-mutation-descriptor.ts';
@@ -172,52 +172,40 @@ export class GroupStateInboxService {
     }
 
     async enqueueFormationCriterionCommand(
-        command: GroupMutationCommand,
-        atEpochMs: number
+        { command, atEpochMs, traceId }: GroupSystemCommandSubmission
     ): Promise<void> {
-        const ingress = await this.groupStateService.captureFormationCriterionMutationIngress(
-            command,
-            atEpochMs
-        );
+        const ingress = await this.groupStateService.captureFormationCriterionMutationIngress(command, atEpochMs);
         await this.queueEntryWriter.enqueue({
             ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_CRITERION, ingress),
-            traceId: newALTraceId()
+            traceId
         });
     }
 
-    async enqueueFormationAutomationCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void> {
+    async enqueueFormationAutomationCommand(
+        { command, atEpochMs, traceId }: GroupSystemCommandSubmission
+    ): Promise<void> {
         const ingress = await this.groupStateService.captureFormationAutomationMutationIngress(command, atEpochMs);
         await this.queueEntryWriter.enqueue({
             ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_AUTOMATION, ingress),
-            traceId: newALTraceId()
+            traceId
         });
     }
 
     async enqueueTopologyPublicationCommand(
-        command: GroupMutationCommand,
-        atEpochMs: number
+        { command, atEpochMs, traceId }: GroupSystemCommandSubmission
     ): Promise<void> {
-        const ingress = await this.groupStateService.captureTopologyPublicationMutationIngress(
-            command,
-            atEpochMs
-        );
+        const ingress = await this.groupStateService.captureTopologyPublicationMutationIngress(command, atEpochMs);
         await this.queueEntryWriter.enqueue({
             ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_TOPOLOGY_PUBLICATION, ingress),
-            traceId: newALTraceId()
+            traceId
         });
     }
 
-    async enqueueActivationStatusCommand(
-        command: GroupMutationCommand,
-        atEpochMs: number
-    ): Promise<void> {
-        const ingress = await this.groupStateService.captureActivationStatusMutationIngress(
-            command,
-            atEpochMs
-        );
+    async enqueueActivationStatusCommand({ command, atEpochMs, traceId }: GroupSystemCommandSubmission): Promise<void> {
+        const ingress = await this.groupStateService.captureActivationStatusMutationIngress(command, atEpochMs);
         await this.queueEntryWriter.enqueue({
             ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_ACTIVATION_STATUS, ingress),
-            traceId: newALTraceId()
+            traceId
         });
     }
 
@@ -311,6 +299,7 @@ export class GroupStateInboxService {
             component: 'group-quick-join',
             serviceId: this.serviceId,
             requestId: command.requestId,
+            traceId: context.message.id.traceId,
             scope: command.scope,
             groupId: undefined,
             principalId: command.actorPrincipalId,

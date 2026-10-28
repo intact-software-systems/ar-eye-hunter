@@ -1,4 +1,4 @@
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupSystemCommandSubmission } from '@shared-server/rallar-system/group-state/inbox/group-system-command-submission.ts';
 import {
     GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
     GroupConnectTriggerLatchRepository,
@@ -68,7 +68,7 @@ class ObserverHarness {
     private policy: GroupLifecyclePolicyRead = { status: 'present', policy: resolveGroupLifecyclePolicyPreset('managed') };
     private currentRead: RtcTopologyMutationRead = { snapshot: storedEntry('plan', planned), publicationClaim: null };
     readonly calls: string[] = [];
-    readonly submitted: GroupMutationCommand[] = [];
+    readonly submissions: GroupSystemCommandSubmission[] = [];
     readonly scheduled: Array<{ delayMs: number; callback: () => Promise<void>; }> = [];
     readonly dependencies: DeferredCriterionPetitionDependencies;
 
@@ -91,9 +91,9 @@ class ObserverHarness {
                     this.calls.push('policy');
                     return this.policy;
                 },
-                submitCommand: async (command) => {
+                submitCommand: async (submission) => {
                     this.calls.push('submit');
-                    this.submitted.push(command);
+                    this.submissions.push(submission);
                 },
                 deferred: {
                     minIntervalMs: 500,
@@ -149,9 +149,15 @@ describe('formation criterion read and scheduling owner', () => {
 
     it('owns the policy read before computing and submitting a publication petition', async () => {
         const harness = new ObserverHarness();
-        await petitionFormationCriterion(harness.dependencies, harness.authority(), planned);
+        await petitionFormationCriterion(harness.dependencies, { authority: harness.authority(), planned }, 'trace-criterion-1');
         expect(harness.calls).toEqual(['policy', 'submit']);
-        expect(harness.submitted).toHaveLength(1);
+        expect(harness.submissions).toHaveLength(1);
+    });
+
+    it('submits the criterion under the petitioning message trace', async () => {
+        const harness = new ObserverHarness();
+        await petitionFormationCriterion(harness.dependencies, { authority: harness.authority(), planned }, 'trace-criterion-1');
+        expect(harness.submissions.map((submission) => submission.traceId)).toEqual(['trace-criterion-1']);
     });
 
     it.each(
@@ -163,50 +169,67 @@ describe('formation criterion read and scheduling owner', () => {
         const harness = new ObserverHarness();
         const authority = harness.authority();
         await petitionFormationCriterion(harness.dependencies, {
-            ...authority,
-            group: { ...group, group: { ...group.group, lifecycleState: stage } }
-        }, { ...planned, state });
+            authority: { ...authority, group: { ...group, group: { ...group.group, lifecycleState: stage } } },
+            planned: { ...planned, state }
+        }, 'trace-criterion-1');
         expect(harness.calls).toEqual([]);
-        expect(harness.submitted).toEqual([]);
+        expect(harness.submissions).toEqual([]);
     });
 
     it('uses the injected clock and one trailing schedule, then rereads current policy', async () => {
         const harness = new ObserverHarness();
         const observer = createDeferredCriterionPetitioner(harness.dependencies)!;
-        await observer.request(work, harness.read());
+        await observer.request(work, harness.read(), 'trace-deferred-leading');
         expect(harness.calls).toEqual(['authority', 'policy', 'submit']);
         harness.advanceTo(1100);
-        await observer.request(work, harness.read());
+        await observer.request(work, harness.read(), 'trace-deferred-a');
         harness.advanceTo(1200);
-        await observer.request(work, harness.read());
+        await observer.request(work, harness.read(), 'trace-deferred-b');
         expect(harness.scheduled.map((entry) => entry.delayMs)).toEqual([400]);
-        expect(harness.submitted).toHaveLength(1);
+        expect(harness.submissions).toHaveLength(1);
         harness.replacePolicy({ status: 'corrupt', reason: 'changed after scheduling' });
         harness.advanceTo(1500);
         await harness.scheduled[0].callback();
         expect(harness.calls).toEqual(['authority', 'policy', 'submit', 'plan', 'authority', 'policy']);
-        expect(harness.submitted).toHaveLength(1);
+        expect(harness.submissions).toHaveLength(1);
         harness.replacePolicy({ status: 'present', policy: resolveGroupLifecyclePolicyPreset('managed') });
         harness.advanceTo(2000);
-        await observer.request(work, harness.read());
-        expect(harness.submitted).toHaveLength(2);
+        await observer.request(work, harness.read(), 'trace-deferred-later');
+        expect(harness.submissions).toHaveLength(2);
+    });
+
+    it('submits a trailing petition under the trace of the message that last requested it', async () => {
+        const harness = new ObserverHarness();
+        const observer = createDeferredCriterionPetitioner(harness.dependencies)!;
+        await observer.request(work, harness.read(), 'trace-deferred-leading');
+        harness.advanceTo(1100);
+        await observer.request(work, harness.read(), 'trace-deferred-a');
+        harness.advanceTo(1200);
+        await observer.request(work, harness.read(), 'trace-deferred-b');
+        harness.advanceTo(1500);
+        await harness.scheduled[0].callback();
+        expect(harness.submissions.map((submission) => submission.traceId)).toEqual([
+            'trace-deferred-leading',
+            'trace-deferred-b'
+        ]);
     });
 
     it('does not petition a plan removed before the trailing callback runs', async () => {
         const harness = new ObserverHarness();
         const observer = createDeferredCriterionPetitioner(harness.dependencies)!;
-        await observer.request(work, harness.read());
+        await observer.request(work, harness.read(), 'trace-deferred-leading');
         harness.advanceTo(1100);
-        await observer.request(work, harness.read());
+        await observer.request(work, harness.read(), 'trace-deferred-a');
         harness.removePlan();
         harness.advanceTo(1500);
         await harness.scheduled[0].callback();
         expect(harness.calls).toEqual(['authority', 'policy', 'submit', 'plan']);
-        expect(harness.submitted).toHaveLength(1);
+        expect(harness.submissions).toHaveLength(1);
     });
 });
 
 const PRESENCE_PLAN: GroupStageTrigger = { kind: 'presence', memberCount: 2, fallbackMs: 5_000 };
+const STAGE_TRACE_ID = 'trace-stage-trigger-1';
 
 function createStageTriggerPolicy(
     planTrigger: GroupStageTrigger,
@@ -219,7 +242,7 @@ function createStageTriggerPolicy(
 interface StageTriggerHarness {
     readonly dependencies: StageTriggerPetitionDependencies;
     readonly authority: GroupTopologyPlanningAuthority;
-    readonly commands: GroupMutationCommand[];
+    readonly submissions: GroupSystemCommandSubmission[];
     readonly latches: GroupConnectTriggerLatchRepository;
 }
 
@@ -260,12 +283,12 @@ async function createStageTriggerHarness(
             NEVER_EXPIRE_AT_TIMESTAMP
         );
     }
-    const commands: GroupMutationCommand[] = [];
+    const submissions: GroupSystemCommandSubmission[] = [];
     const policyRead: GroupLifecyclePolicyRead = input.policy === 'corrupt'
         ? { status: 'corrupt', reason: 'not json' }
         : { status: 'present', policy: input.policy };
     return {
-        commands,
+        submissions,
         latches,
         authority: {
             group: snapshot,
@@ -283,8 +306,8 @@ async function createStageTriggerHarness(
                 latches,
                 readGroup: async () => snapshot.group,
                 readPlanned: async () => planned,
-                submitCommand: async (command) => {
-                    commands.push(command);
+                submitCommand: async (submission) => {
+                    submissions.push(submission);
                 },
                 nowEpochMs: () => 4_000
             }
@@ -301,12 +324,38 @@ describe('presence stage trigger petition', () => {
             awaitingLatchNotBeforeEpochMs: null
         });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-        expect(harness.commands.map((command) => command.operation)).toEqual(['planGroupLayout', 'planGroupLayout']);
-        expect(new Set(harness.commands.map((command) => command.commandId)).size).toBe(1);
-        expect(harness.commands[0]!.commandId).toContain('formation-automation:v2:presence-plan:');
+        expect(harness.submissions.map(({ command }) => command.operation)).toEqual(['planGroupLayout', 'planGroupLayout']);
+        expect(new Set(harness.submissions.map(({ command }) => command.commandId)).size).toBe(1);
+        expect(harness.submissions[0]!.command.commandId).toContain('formation-automation:v2:presence-plan:');
+    });
+
+    it('submits the presence plan under the petitioning message trace', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'forming',
+            onlineMemberCount: 2,
+            policy: createStageTriggerPolicy(PRESENCE_PLAN, { kind: 'manual' }),
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
+
+        expect(harness.submissions.map((submission) => submission.traceId)).toEqual([STAGE_TRACE_ID]);
+    });
+
+    it('submits a satisfied connect trigger under the petitioning message trace', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'planned',
+            onlineMemberCount: 2,
+            policy: createStageTriggerPolicy({ kind: 'manual' }, PRESENCE_PLAN),
+            awaitingLatchNotBeforeEpochMs: 9_000
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
+
+        expect(harness.submissions.map((submission) => submission.traceId)).toEqual([STAGE_TRACE_ID]);
     });
 
     it('waits below the threshold', async () => {
@@ -317,9 +366,9 @@ describe('presence stage trigger petition', () => {
             awaitingLatchNotBeforeEpochMs: null
         });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-        expect(harness.commands).toEqual([]);
+        expect(harness.submissions).toEqual([]);
     });
 
     // Both stages that hold a planned candidate answer to the connect
@@ -334,9 +383,9 @@ describe('presence stage trigger petition', () => {
                 awaitingLatchNotBeforeEpochMs: 9_000
             });
 
-            await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+            await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-            expect(harness.commands.map((command) => command.operation)).toEqual(['connectGroup']);
+            expect(harness.submissions.map(({ command }) => command.operation)).toEqual(['connectGroup']);
         }
     );
 
@@ -352,9 +401,9 @@ describe('presence stage trigger petition', () => {
             awaitingLatchNotBeforeEpochMs: null
         });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-        expect(harness.commands).toEqual([]);
+        expect(harness.submissions).toEqual([]);
     });
 
     it('petitions nothing for a group whose formation is immediate', async () => {
@@ -366,9 +415,9 @@ describe('presence stage trigger petition', () => {
             awaitingLatchNotBeforeEpochMs: null
         });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-        expect(harness.commands).toEqual([]);
+        expect(harness.submissions).toEqual([]);
     });
 
     it('petitions nothing on a corrupt stored policy', async () => {
@@ -379,9 +428,9 @@ describe('presence stage trigger petition', () => {
             awaitingLatchNotBeforeEpochMs: null
         });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-        expect(harness.commands).toEqual([]);
+        expect(harness.submissions).toEqual([]);
     });
 
     it('petitions nothing from a stage no trigger governs', async () => {
@@ -392,8 +441,8 @@ describe('presence stage trigger petition', () => {
             awaitingLatchNotBeforeEpochMs: null
         });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority, STAGE_TRACE_ID);
 
-        expect(harness.commands).toEqual([]);
+        expect(harness.submissions).toEqual([]);
     });
 });

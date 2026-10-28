@@ -99,7 +99,7 @@ function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
 }
 
 function createObservedDispatch(planChange: (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan, ordered = false): ObservedDispatch {
-    const original = createInboundTestMessage({ msgId: 'signal', seq: ordered ? 1 : undefined });
+    const original = createInboundTestMessage({ msgId: 'signal', seq: ordered ? 1 : undefined, traceId: 'trace-signal' });
     const msg = { ...original, payload: { ...original.payload, typeId: 'rtc-signaling' } };
     const written = computeALInboundWorkEntry({
         namespace: 'al-inbound-runtime',
@@ -136,8 +136,53 @@ it.each(
         carrier: 'ws',
         attempts: 0,
         atEpochMs: 100,
-        disposition
+        disposition,
+        traceId: 'trace-signal',
+        corrId: 'signal'
     }]);
+});
+
+it('names no trace for a decision made before the stored message was read', async () => {
+    const fixture = createDispatchFixture({ returned: 'completed', canDispatch: true, sinkThrows: false });
+    const { effect } = createObservedDispatch((plan) => plan);
+    fixture.delivery.dispose();
+
+    expect(await fixture.delivery.deliver(effect, undefined)).toBe('retry');
+    expect(fixture.events).toEqual([{
+        kind: 'dispatch-decision',
+        lane: 'durable',
+        workerId: 'worker',
+        effectId: 'dispatch:sender:signal',
+        msgId: 'signal',
+        typeId: null,
+        carrier: 'ws',
+        attempts: 0,
+        atEpochMs: 100,
+        disposition: 'shutdown',
+        traceId: null,
+        corrId: null
+    }]);
+});
+
+it('types the trace and correlation of a decision as present together or null together', () => {
+    const decision = {
+        kind: 'dispatch-decision',
+        lane: 'durable',
+        workerId: 'worker',
+        effectId: 'dispatch:sender:signal',
+        msgId: 'signal',
+        typeId: null,
+        carrier: 'ws',
+        attempts: 0,
+        atEpochMs: 100,
+        disposition: 'shutdown'
+    } as const;
+    const traced: ALInboundRuntimeDiagnosticsEvent = { ...decision, traceId: 'trace-signal', corrId: 'signal' };
+    const untraced: ALInboundRuntimeDiagnosticsEvent = { ...decision, traceId: null, corrId: null };
+    // @ts-expect-error A trace without its correlation is no decision a producer states.
+    const halfTraced: ALInboundRuntimeDiagnosticsEvent = { ...decision, traceId: 'trace-signal', corrId: null };
+
+    expect([traced, untraced, halfTraced].map((event) => event.kind)).toEqual(Array(3).fill('dispatch-decision'));
 });
 
 it.each<DispatchResultScenario>(

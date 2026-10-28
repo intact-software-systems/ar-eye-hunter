@@ -269,12 +269,14 @@ describe('formation instants armed at the attempt', () => {
 });
 
 describe('connect trigger latching by policy', () => {
-    function latchFor(
-        connectTrigger: GroupStageTrigger,
-        previous: GroupLifecycleState,
-        authority: 'none' | 'formation-automation' = 'none',
-        formationAttemptCount = 0
-    ) {
+    interface LatchForInput {
+        readonly connectTrigger: GroupStageTrigger;
+        readonly previous: GroupLifecycleState;
+        readonly authority: 'none' | 'formation-automation';
+        readonly formationAttemptCount: number;
+    }
+
+    function latchFor({ connectTrigger, previous, authority, formationAttemptCount }: LatchForInput) {
         const command = transitionCommand('planGroupLayout');
         const facts = { ...createGroupAuthorityFacts(), internalAuthority: authority } as const;
         return computeGroupConnectTrigger({
@@ -311,32 +313,43 @@ describe('connect trigger latching by policy', () => {
     }
 
     it('latches an application plan under an immediate connect trigger, settled at the plan', () => {
-        const computed = latchFor({ kind: 'immediate' }, 'forming');
+        const computed = latchFor({ connectTrigger: { kind: 'immediate' }, previous: 'forming', authority: 'none', formationAttemptCount: 0 });
         expect(computed.effect?.operation).toBe('insert');
         expect(latchedNotBefore(computed)).toBe(0);
         expect(computed.outboxEntries).toHaveLength(1);
     });
 
     it('latches an after connect trigger at its settle instant', () => {
-        const computed = latchFor({ kind: 'after', settleMs: 900 }, 'forming');
+        const computed = latchFor({ connectTrigger: { kind: 'after', settleMs: 900 }, previous: 'forming', authority: 'none', formationAttemptCount: 0 });
         expect(latchedNotBefore(computed)).toBe(NOW_EPOCH_MS + 900);
     });
 
     it('latches a presence connect trigger at its fallback, petitioned sooner when the threshold is met', () => {
-        const computed = latchFor({ kind: 'presence', memberCount: 2, fallbackMs: 5_000 }, 'forming');
+        const computed = latchFor({
+            connectTrigger: { kind: 'presence', memberCount: 2, fallbackMs: 5_000 },
+            previous: 'forming',
+            authority: 'none',
+            formationAttemptCount: 0
+        });
         expect(latchedNotBefore(computed)).toBe(NOW_EPOCH_MS + 5_000);
     });
 
     it('latches nothing for an application plan under a manual connect trigger', () => {
-        expect(latchFor({ kind: 'manual' }, 'forming')).toEqual({ effect: null, outboxEntries: [] });
+        expect(latchFor({ connectTrigger: { kind: 'manual' }, previous: 'forming', authority: 'none', formationAttemptCount: 0 })).toEqual({
+            effect: null,
+            outboxEntries: []
+        });
     });
 
     it('latches nothing for the plan trigger\'s own plan under a manual connect trigger', () => {
-        expect(latchFor({ kind: 'manual' }, 'forming', 'formation-automation')).toEqual({ effect: null, outboxEntries: [] });
+        expect(latchFor({ connectTrigger: { kind: 'manual' }, previous: 'forming', authority: 'formation-automation', formationAttemptCount: 0 })).toEqual({
+            effect: null,
+            outboxEntries: []
+        });
     });
 
     it('keeps a re-plan after a failed attempt latched under a manual connect trigger: the series was sanctioned', () => {
-        const computed = latchFor({ kind: 'manual' }, 'forming', 'formation-automation', 1);
+        const computed = latchFor({ connectTrigger: { kind: 'manual' }, previous: 'forming', authority: 'formation-automation', formationAttemptCount: 1 });
         expect(computed.effect?.operation).toBe('insert');
         expect(latchedNotBefore(computed)).toBe(0);
     });
@@ -369,7 +382,10 @@ describe('connect trigger latching by policy', () => {
     });
 
     it('latches nothing on an idempotent replan while planned', () => {
-        expect(latchFor({ kind: 'immediate' }, 'planned')).toEqual({ effect: null, outboxEntries: [] });
+        expect(latchFor({ connectTrigger: { kind: 'immediate' }, previous: 'planned', authority: 'none', formationAttemptCount: 0 })).toEqual({
+            effect: null,
+            outboxEntries: []
+        });
     });
 });
 
@@ -418,7 +434,7 @@ async function createAutomationPort(
         latches: new GroupConnectTriggerLatchRepository(runtime),
         readGroup: async () => input.group,
         readPlanned: async () => input.planned,
-        submitCommand: async (command) => {
+        submitCommand: async ({ command }) => {
             commands.push(command);
         },
         nowEpochMs: () => input.nowEpochMs
@@ -430,14 +446,14 @@ describe('connect trigger settle', () => {
 
     it('leaves a publication ahead of the settle latched', async () => {
         const port = await createAutomationPort({ group: plannedGroup, planned: PLANNED, notBeforeEpochMs: 5_000, nowEpochMs: 4_999 });
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-stage-trigger-timers' });
         expect(port.commands).toEqual([]);
         expect((await port.latches.read(IDENTITY))?.latch.state).toBe('awaiting-publication');
     });
 
     it('connects once the settle has passed and the layout is published', async () => {
         const port = await createAutomationPort({ group: plannedGroup, planned: PLANNED, notBeforeEpochMs: 5_000, nowEpochMs: 5_000 });
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-stage-trigger-timers' });
         expect(port.commands.map((command) => command.operation)).toEqual(['connectGroup']);
     });
 
@@ -459,7 +475,7 @@ describe('connect trigger settle', () => {
             nowEpochMs: 5_000,
             supersedesLayoutIdentity: toGroupLayoutIdentity(PLANNED)
         });
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-stage-trigger-timers' });
         expect(port.commands).toEqual([]);
         expect((await port.latches.read(IDENTITY))?.latch.state).toBe('awaiting-publication');
     });
@@ -474,7 +490,7 @@ describe('connect trigger settle', () => {
             nowEpochMs: 5_000,
             supersedesLayoutIdentity: toGroupLayoutIdentity(PLANNED)
         });
-        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { settle: { kind: 'clock', atEpochMs: port.nowEpochMs() }, traceId: 'trace-stage-trigger-timers' });
         expect(port.commands.map((command) => command.operation)).toEqual(['connectGroup']);
         expect(
             port.commands.map((command) => command.operation === 'connectGroup' ? command.input.expectedLayout : null)
@@ -546,7 +562,6 @@ function createTimerHandler(
         planned: RallarOverlayTopologySnapshot | null;
         port: GroupFormationAutomationPort;
         nowEpochMs: number;
-        submitAutomation?: GroupMutationCommand[];
         submitCriterion?: GroupMutationCommand[];
     }>
 ) {
@@ -566,12 +581,14 @@ function createTimerHandler(
                 nowEpochMs: input.nowEpochMs
             })
         },
-        readLifecyclePolicy: async () => ({
-            status: 'present',
-            policy: resolveGroupLifecyclePolicyPreset('optimistic')
-        }),
-        submitCommand: async (command) => {
-            input.submitCriterion?.push(command);
+        formationCriterion: {
+            readLifecyclePolicy: async () => ({
+                status: 'present',
+                policy: resolveGroupLifecyclePolicyPreset('optimistic')
+            }),
+            submitCommand: async ({ command }) => {
+                input.submitCriterion?.push(command);
+            }
         },
         formationAutomation: input.port,
         nowEpochMs: () => input.nowEpochMs

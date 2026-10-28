@@ -525,8 +525,8 @@ export class WebRtcRxStreamerService {
         return this.onRttMeasurementCallbacks.delete(id);
     }
 
-    cancelOutbox(msgId: string): ALOutboundCancelOutcome {
-        return this.multicast.cancel(msgId);
+    cancelOutbox(msgId: string, traceId: string): ALOutboundCancelOutcome {
+        return this.multicast.cancel(msgId, traceId);
     }
 
     async handOverOutbox(msgId: string): Promise<void> {

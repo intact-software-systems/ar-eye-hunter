@@ -229,7 +229,7 @@ describe('required capture at final message admission', () => {
                 { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
                 'test',
                 {},
-                { ttlMs: 100, minSnapshotVersion: 9, rosterVersion: 4 }
+                { ttlMs: 100, minSnapshotVersion: 9, rosterVersion: 4, traceId: 'trace-congested-capture' }
             );
             const rtcCapture = sessionDeliveries.readRtcCapture(context);
             const handle = deliveries.open(message, 'rtc', rtcCapture);
@@ -245,9 +245,16 @@ describe('required capture at final message admission', () => {
             });
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(diagnostics).toEqual([
-                { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'hand-over', priority: 0, msgId: handle.msgId }
-            ]);
+            expect(diagnostics).toEqual([{
+                kind: 'congestion',
+                carrier: 'rtc',
+                cause: 'backpressured',
+                action: 'hand-over',
+                priority: 0,
+                msgId: handle.msgId,
+                traceId: 'trace-congested-capture',
+                corrId: handle.msgId
+            }]);
             expect(handle.rtcCapture()).toEqual({ status: 'observed', value: receipt });
             expect(handle.msgId).toBe(message.id.msgId);
             expect(handle.lifecycle().expiresAtMs).toBe(message.constraints?.expiresAtMs);

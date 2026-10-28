@@ -121,15 +121,17 @@ export function computeALOutboundControlAdmission(
 /**
  * The delivery facts a committed control states: a relay's refusal of the whole send, or the receipt the control
  * moved -- followed by `receipt-exhausted` when a hop refused the message for good and so ended a receipt it still
- * owed. A control that changed no receipt states nothing.
+ * owed. A control that changed no receipt states nothing. Each fact carries the control's trace, the subject's in
+ * production because a control is built with it.
  */
 export function toALOutboundControlSettlements(
-    candidate: ALControlAdmissionCandidate
+    candidate: ALControlAdmissionCandidate,
+    traceId: string
 ): readonly ALOutboundSettlementFact[] {
     const { read, history } = candidate;
     const relayRejection = resolveALOutboundRelayRejection(read);
     if (relayRejection !== undefined) {
-        return [toALOutboundRelayRejectedFact(read.targetMsgId, relayRejection)];
+        return [toALOutboundRelayRejectedFact(read.targetMsgId, traceId, relayRejection)];
     }
     const snapshot = resolveAcceptedReceipt(candidate);
     if (snapshot === undefined) {
@@ -141,9 +143,10 @@ export function toALOutboundControlSettlements(
             nextHopPeerIds: read.sent?.policy.ackTracking?.nextHopPeerIds ?? [],
             completedHopPeerIds: toALOutboundCompletedHopPeerIds(history.kind === 'acks' ? history.values : [])
         },
-        complete: isALOutboundReceiptComplete(snapshot)
+        complete: isALOutboundReceiptComplete(snapshot),
+        traceId
     });
-    const refused = toRefusedReceiptFact(read, snapshot);
+    const refused = toRefusedReceiptFact(read, snapshot, traceId);
     return refused === undefined ? [acknowledgement] : [acknowledgement, refused];
 }
 
@@ -153,7 +156,8 @@ export function toALOutboundControlSettlements(
  */
 function toRefusedReceiptFact(
     read: ALControlAdmissionRead,
-    receipt: ALOutboundPendingAckSnapshot
+    receipt: ALOutboundPendingAckSnapshot,
+    traceId: string
 ): ALOutboundSettlementFact | undefined {
     if (
         read.parsed.type !== 'nack' || !isTerminalNack(read.parsed.payload) ||
@@ -162,11 +166,12 @@ function toRefusedReceiptFact(
         return undefined;
     }
     const nack = read.parsed.payload;
-    return toALOutboundReceiptExhaustedFact(
+    return toALOutboundReceiptExhaustedFact({
         receipt,
-        { cause: 'hop-refused', hopPeerId: nack.fromPeerId, nackReason: nack.reason },
-        `Hop ${nack.fromPeerId} refused the message: ${nack.reason}.`
-    );
+        exhaustion: { cause: 'hop-refused', hopPeerId: nack.fromPeerId, nackReason: nack.reason },
+        detail: `Hop ${nack.fromPeerId} refused the message: ${nack.reason}.`,
+        traceId
+    });
 }
 
 export function controlTargetMsgId(parsed: ALParsedControlMessage): string {

@@ -21,7 +21,8 @@ const SETTLEMENT: ALDeliverySettlement = {
     msgId: 'message-1',
     carrier: 'ws',
     atMs: 1,
-    attemptId: 'attempt-1'
+    attemptId: 'attempt-1',
+    traceId: 'trace-browser-al-session-channel'
 };
 
 /** Like the browser's `BroadcastChannel`, a closed port throws on post. */

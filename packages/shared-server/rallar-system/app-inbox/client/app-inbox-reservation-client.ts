@@ -68,6 +68,7 @@ export class AppInboxReservationClient {
             entry,
             enqueue: validation.command,
             key: entry.key,
+            traceId: placeholder.traceId,
             winner
         };
     }

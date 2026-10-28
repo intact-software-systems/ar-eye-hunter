@@ -55,7 +55,8 @@ export function toRallarAlmReceiptEntry(
                 unconfirmedPeerIds: settlement.unconfirmedRecipientPeerIds,
                 lastSettlementKind: settlement.kind,
                 receiptExhausted: current?.receiptExhausted ?? false,
-                updatedAtEpochMs: nowEpochMs
+                updatedAtEpochMs: nowEpochMs,
+                traceId: settlement.traceId
             };
         case 'receipt-exhausted':
             return {
@@ -65,7 +66,8 @@ export function toRallarAlmReceiptEntry(
                 unconfirmedPeerIds: settlement.unconfirmedPeerIds,
                 lastSettlementKind: settlement.kind,
                 receiptExhausted: true,
-                updatedAtEpochMs: nowEpochMs
+                updatedAtEpochMs: nowEpochMs,
+                traceId: settlement.traceId
             };
         default:
             return current === undefined

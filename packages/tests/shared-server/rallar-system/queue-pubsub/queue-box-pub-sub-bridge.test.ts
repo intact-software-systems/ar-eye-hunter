@@ -19,7 +19,8 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage, decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -37,6 +38,7 @@ import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -177,6 +179,49 @@ describe('QueueBoxPubSubBridge', () => {
         ]);
         expect(bridge.subscribedChannels).toEqual(['queuebox-events']);
         expect(deliveredMessages).toEqual([message]);
+    });
+
+    it('names the receipt control\'s trace on its cluster publication', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const observations: WsQueueBoxServerReceiptObservation[] = [];
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher)
+            }),
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            receiptObserver: (observation) => observations.push(observation)
+        });
+        const receipt = decodePersistedALMessageValue({
+            ...newALReceiptControlMessage(
+                { v: 4, msgId: 'receipt-1', senderId: 'server', ts: Date.now(), traceId: 'trace-receipt-subject-1' },
+                {
+                    msgId: 'subject',
+                    originPeerId: 'origin',
+                    phase: 'complete',
+                    expectedRecipientPeerIds: ['recipient'],
+                    confirmedRecipientPeerIds: ['recipient'],
+                    snapshotVersion: 7,
+                    observedAtEpochMs: 1000
+                }
+            ),
+            constraints: { expiresAtMs: Date.now() + 30_000 }
+        });
+
+        await outboxPublishers[0](
+            receipt,
+            QueueBoxUtilities.toResourceEntryFromMsg(receipt, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
+            STORED_POLICY_HANDOFF
+        );
+
+        expect(observations).toEqual([expect.objectContaining({
+            kind: 'receipt-publication',
+            receiptControlMsgId: 'receipt-1',
+            traceId: 'trace-receipt-subject-1',
+            publisherId: 'publisher-1',
+            outcome: 'returned'
+        })]);
     });
 
     it('marks the exact key before a held cluster publish and after its return', async () => {

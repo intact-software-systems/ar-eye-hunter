@@ -119,7 +119,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         await fixture.runtime.handOver(message.id.msgId);
         await claims.release(fixture.runtime);
 
-        expect(fixture.runtime.cancel(message.id.msgId)).toBe('cancelled');
+        expect(fixture.runtime.cancel(message.id.msgId, message.id.traceId)).toBe('cancelled');
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'cancelled'))
             .toHaveLength(1);
     });

@@ -116,11 +116,12 @@ describe('browser Rallar message subscriptions', () => {
             kind: 'reply-late',
             msgId: 'reply-1',
             replyToMsgId: 'request-1',
-            corrId: 'request-1',
             typeId: 'app.ask.v1',
             senderId: 'peer-1',
             carrier: 'rtc',
-            cause: 'unobserved'
+            cause: 'unobserved',
+            traceId: 'trace-browser-rallar-message-subscriptions',
+            corrId: 'request-1'
         }]);
     });
 });

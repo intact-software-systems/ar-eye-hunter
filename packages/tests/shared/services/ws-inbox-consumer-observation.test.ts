@@ -92,7 +92,9 @@ it.each(['returned', 'retry', 'threw'] as const)('names an actual exact-type cal
         selection: 'exact-type',
         outcome,
         beganAtMs: 100,
-        settledAtMs: 100
+        settledAtMs: 100,
+        traceId: 'trace-ws-inbox-consumer-observation',
+        corrId: 'signal'
     }]);
     expect(JSON.stringify(toConsumerInvocations(fixture.events))).not.toContain('private');
 });

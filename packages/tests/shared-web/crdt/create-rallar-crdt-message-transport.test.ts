@@ -96,7 +96,8 @@ describe('built-in CRDT message admission', () => {
             msgId: delivery.handle.msgId,
             atMs: Date.now(),
             verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
-            trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo
+            trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo,
+            traceId: 'trace-create-rallar-crdt-message-transport'
         });
         expect(await sending).toEqual({ transport: carrier, status: 'sent', reason: undefined });
     });

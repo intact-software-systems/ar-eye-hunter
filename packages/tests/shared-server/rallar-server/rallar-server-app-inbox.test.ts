@@ -8,6 +8,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { serializeCanonicalMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
@@ -80,6 +81,25 @@ describe('public application AppInbox', () => {
         expect(replay).toEqual(first);
         const rows = await storage.sql<{ ri_resource: string; }[]>`select ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`;
         expect(rows.map((row) => JSON.parse(row.ri_resource).id.traceId)).toEqual(['trace-a']);
+    });
+
+    it('names an enqueue\'s own trace on its wait, and the retained message\'s trace on a replay read that brings none', async () => {
+        const waitTraces: (string | undefined)[] = [];
+        const harness = createHarness(storage.sql, () => {}, (event) => {
+            if (event.operation === 'wait-completion') {
+                waitTraces.push(event.traceId);
+            }
+        });
+        const operation = registerStock(harness);
+        harness.inbox.start();
+
+        const admitted = await operation.enqueue({ command: COMMAND, traceId: 'trace-first-enqueue' });
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        await admitted.right!.wait();
+        await (await operation.readAdmission(COMMAND))!.right!.wait();
+        await (await operation.enqueue({ command: COMMAND, traceId: 'trace-second-enqueue' })).right!.wait();
+
+        expect(waitTraces).toEqual(['trace-first-enqueue', 'trace-first-enqueue', 'trace-second-enqueue']);
     });
 
     it('returns durable admission and wakes its owner before any worker runs or result wait begins', async () => {
@@ -467,7 +487,11 @@ interface Harness {
     alwaysConflict: boolean;
 }
 
-function createHarness(database: PSqlSql, wakeOwningQueue: () => void = () => {}): Harness {
+function createHarness(
+    database: PSqlSql,
+    wakeOwningQueue: () => void = () => {},
+    timing?: RallarTimingSink
+): Harness {
     const repositories = createPSqlResourceInboxRepository(database, () => new Date());
     const results = new ResourceInboxResultsRepository(database);
     const finalizeRetry = createAppInboxRetryFinalizer({ database, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS });
@@ -485,7 +509,14 @@ function createHarness(database: PSqlSql, wakeOwningQueue: () => void = () => {}
     }, {
         serviceId: 'inventory-worker',
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
-        options: { waitMaxElapsedMsecs: 2000, waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 }
+        timing,
+        options: {
+            waitMaxElapsedMsecs: 2000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 5,
+            waitJitterRatio: 0,
+            phaseTiming: timing !== undefined
+        }
     });
     return {
         inbox,

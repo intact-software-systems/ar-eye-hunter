@@ -64,6 +64,7 @@ interface AppInboxPhaseOperation<Result> {
     readonly operation: 'handler-action' | 'write-result';
     readonly enqueue: AppInboxEnqueue;
     readonly key: Key;
+    readonly traceId: string;
     readonly action: () => Promise<Result>;
     readonly details: RallarTimingDetails;
 }
@@ -169,6 +170,7 @@ export class AppInboxHandlerExecutor {
                 operation: String(registration.type),
                 serviceId: this.serviceId,
                 requestId: entry.key.resourceId,
+                traceId: input.message.id.traceId,
                 details: {
                     type: registration.type,
                     topicId: entry.key.topicId,
@@ -241,6 +243,7 @@ export class AppInboxHandlerExecutor {
                 operation: 'handler-action',
                 enqueue: begun.context.enqueue,
                 key: attempt.entry.key,
+                traceId: attempt.message.id.traceId,
                 action: async () => await attempt.registration.handle(begun.command, begun.context),
                 details: {}
             });
@@ -302,6 +305,7 @@ export class AppInboxHandlerExecutor {
             operation: 'write-result',
             enqueue: context.enqueue,
             key: context.entry.key,
+            traceId: context.message.id.traceId,
             action: async () => {
                 await this.resultRepository.replace(
                     toResourceEntryWithUpdatedResource(
@@ -402,6 +406,7 @@ export class AppInboxHandlerExecutor {
                 operation: 'queue-retry',
                 serviceId: this.serviceId,
                 requestId: enqueue.resourceId,
+                traceId: input.message.id.traceId,
                 details: {
                     ...attemptDetails,
                     attempts: attemptDetails.attempt,
@@ -428,6 +433,7 @@ export class AppInboxHandlerExecutor {
                 operation: 'handler-deadline-expired',
                 serviceId: this.serviceId,
                 requestId: entry.key.resourceId,
+                traceId: input.message.id.traceId,
                 details: {
                     type: input.registration.type,
                     topicId: entry.key.topicId,
@@ -460,6 +466,7 @@ export class AppInboxHandlerExecutor {
                 operation: 'handler-outran-lease',
                 serviceId: this.serviceId,
                 requestId: entry.key.resourceId,
+                traceId: input.message.id.traceId,
                 details: {
                     type: input.registration.type,
                     topicId: entry.key.topicId,
@@ -490,6 +497,7 @@ export class AppInboxHandlerExecutor {
                     operation: phase.operation,
                     serviceId: this.serviceId,
                     requestId: phase.enqueue.resourceId,
+                    traceId: phase.traceId,
                     details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
                 }
             },
