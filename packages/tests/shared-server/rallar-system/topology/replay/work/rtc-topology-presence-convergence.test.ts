@@ -229,6 +229,7 @@ class PresenceConvergenceFixture {
         runtimeRepository: this.runtime,
         now: () => this.now,
         serviceId: 'presence-test',
+        senderPeerId: 'ws-server',
         recomputeDebounceMs: 0,
         recomputeMaxWaitMs: 0
     });

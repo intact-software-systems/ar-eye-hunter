@@ -22,10 +22,10 @@ describe('group presence summary coalesced slices', () => {
         const groupId = 'removed-twice-room';
         await seedOpenGroupWithMember(runtime, groupId, 'bob');
         const eventsBefore = await listEvents(runtime, groupId);
-        await connect(runtime, groupId, 'bob', 'generation-1', BASE_EPOCH_MS + 1_000);
-        await disconnect(runtime, groupId, 'bob', 'generation-1', BASE_EPOCH_MS + 2_000);
-        await connect(runtime, groupId, 'bob', 'generation-2', BASE_EPOCH_MS + 3_000);
-        await disconnect(runtime, groupId, 'bob', 'generation-2', BASE_EPOCH_MS + 4_000);
+        await connect(runtime, { groupId, principalId: 'bob', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 1_000 });
+        await disconnect(runtime, { groupId, principalId: 'bob', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 2_000 });
+        await connect(runtime, { groupId, principalId: 'bob', generationId: 'generation-2', nowEpochMs: BASE_EPOCH_MS + 3_000 });
+        await disconnect(runtime, { groupId, principalId: 'bob', generationId: 'generation-2', nowEpochMs: BASE_EPOCH_MS + 4_000 });
 
         const deltas = await expandBatch(runtime, groupId, eventsBefore.length);
 
@@ -46,13 +46,13 @@ describe('group presence summary coalesced slices', () => {
         const groupId = 'merged-slice-room';
         await seedOpenGroupWithMember(runtime, groupId, 'bob');
         const eventsBefore = await listEvents(runtime, groupId);
-        await connect(runtime, groupId, 'alice', 'generation-1', BASE_EPOCH_MS + 1_000);
-        await connect(runtime, groupId, 'bob', 'generation-1', BASE_EPOCH_MS + 2_000);
+        await connect(runtime, { groupId, principalId: 'alice', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 1_000 });
+        await connect(runtime, { groupId, principalId: 'bob', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 2_000 });
         await createService(runtime, BASE_EPOCH_MS + 3_000).joinGroup(SCOPE, groupId, {
             actorPrincipalId: 'carol',
             requestId: `join-${groupId}-carol`
         });
-        await connect(runtime, groupId, 'carol', 'generation-1', BASE_EPOCH_MS + 4_000);
+        await connect(runtime, { groupId, principalId: 'carol', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 4_000 });
 
         const deltas = await expandBatch(runtime, groupId, eventsBefore.length);
 
@@ -117,13 +117,16 @@ async function seedOpenGroupWithMember(
     });
 }
 
-async function connect(
-    runtime: GroupBarrierRepository,
-    groupId: string,
-    principalId: string,
-    generationId: string,
-    nowEpochMs: number
-): Promise<void> {
+/** One presence session generation of a member, connected or disconnected at its own instant. */
+interface PresenceSessionStep {
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly generationId: string;
+    readonly nowEpochMs: number;
+}
+
+async function connect(runtime: GroupBarrierRepository, step: PresenceSessionStep): Promise<void> {
+    const { groupId, principalId, generationId, nowEpochMs } = step;
     await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         principalId,
         generationId,
@@ -134,13 +137,8 @@ async function connect(
     });
 }
 
-async function disconnect(
-    runtime: GroupBarrierRepository,
-    groupId: string,
-    principalId: string,
-    generationId: string,
-    nowEpochMs: number
-): Promise<void> {
+async function disconnect(runtime: GroupBarrierRepository, step: PresenceSessionStep): Promise<void> {
+    const { groupId, principalId, generationId, nowEpochMs } = step;
     await createService(runtime, nowEpochMs).disconnectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         generationId,
         connectionGenerationId: `ws-${generationId}`,
@@ -166,7 +164,8 @@ async function expandBatch(
         recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 10_000,
-        serviceId: 'summary-worker'
+        serviceId: 'summary-worker',
+        senderPeerId: 'ws-server'
     });
     const commands = (await listEvents(runtime, groupId)).slice(seedEventCount).map(toSummaryCommand);
     const reads: readonly GroupPresenceSummaryWorkRead[] = (await work.read(

@@ -9,6 +9,7 @@ import {
     toConfig
 } from '../../json-compare/compare-json-values.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
+import { tryResolvePath } from '../execution/black-box-value-resolution.ts';
 import type { LocalWsRequest } from '../execution/local-websocket-session.ts';
 import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
 import {
@@ -53,6 +54,8 @@ export interface WsInteractionResponse {
     readonly message?: unknown;
     readonly messages?: readonly unknown[];
     readonly count?: ApiJsonValue;
+    /** The path whose value identifies one publication, so a count counts publications rather than their retransmitted frames. */
+    readonly countDistinctBy?: string;
     readonly absent?: unknown;
     readonly close?: unknown;
     readonly comparison?: string;
@@ -162,6 +165,15 @@ export async function waitForWsMessageCount(input: WsWaitInput): Promise<WsInter
             details
         });
     }
+    const countDistinctBy = interaction.response?.countDistinctBy;
+    if (countDistinctBy !== undefined && (typeof countDistinctBy !== 'string' || countDistinctBy.length === 0)) {
+        return toWsFailureStatus({
+            config,
+            interaction,
+            result: 'WebSocket count wait expects expect.countDistinctBy to be a non-empty JSON path.',
+            details
+        });
+    }
     if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
         return toWsFailureStatus({ config, interaction, result: 'WebSocket count duration must be positive', details });
     }
@@ -172,8 +184,8 @@ export async function waitForWsMessageCount(input: WsWaitInput): Promise<WsInter
 function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCountBound): WsInteractionResult {
     const { interaction, config, context } = input;
     const messages = context.wsMessages[window.connectionName] ?? [];
-    const matchedCount =
-        messages.filter((message) => matchesWsMessage(interaction.response?.message, message, interaction)).length;
+    const matched = messages.filter((message) => matchesWsMessage(interaction.response?.message, message, interaction));
+    const matchedCount = computeWsMatchedCount(matched, interaction.response?.countDistinctBy);
     const details = {
         ...input.details,
         connection: window.connectionName,
@@ -191,6 +203,14 @@ function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCo
             details
         });
     }
+    if (matchedCount === undefined) {
+        return toWsFailureStatus({
+            config,
+            interaction,
+            result: 'WebSocket count wait found a matched frame without a value at expect.countDistinctBy.',
+            details
+        });
+    }
     return matchedCount >= bound.min && matchedCount <= bound.max
         ? toWsSuccessStatus(config, interaction, details)
         : toWsFailureStatus({
@@ -199,6 +219,21 @@ function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCo
             result: 'WebSocket message count did not match the expectation',
             details
         });
+}
+
+/** The matched frames, or the distinct identities among them; undefined when a matched frame carries no identity. */
+function computeWsMatchedCount(
+    matched: readonly WsMessageObservation[],
+    countDistinctBy: string | undefined
+): number | undefined {
+    if (countDistinctBy === undefined) {
+        return matched.length;
+    }
+    const identities = matched.map((message) => tryResolvePath(countDistinctBy, message.data));
+    if (identities.some((identity) => !identity.found)) {
+        return undefined;
+    }
+    return new Set(identities.map((identity) => JSON.stringify(identity.value))).size;
 }
 
 function hasCompleteWsObservations(input: WsWaitInput, window: WsWaitWindow): boolean {

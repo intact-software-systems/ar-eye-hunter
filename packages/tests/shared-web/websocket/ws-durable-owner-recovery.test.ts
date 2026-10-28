@@ -225,7 +225,8 @@ it('retains the restored room original until actual scoped presence authorizes i
             recomputeMaxWaitMs: 0,
             runtimeRepository,
             now: () => Date.now(),
-            serviceId: 'reload-presence'
+            serviceId: 'reload-presence',
+            senderPeerId: 'ws-server'
         }),
         runtime: runtimeRepository,
         ref: roomRef,

@@ -220,7 +220,8 @@ async function convergePresenceSummaryForCacheTest(
         recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => 2_001,
-        serviceId: 'cache-convergence-test'
+        serviceId: 'cache-convergence-test',
+        senderPeerId: 'ws-server'
     });
     const read = await readSummaryWork(work, command, 2_001);
     const expansion = toSummaryExpansion(command, read);

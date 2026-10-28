@@ -145,7 +145,8 @@ function createWork(runtime: GroupBarrierRepository): GroupPresenceSummaryWork {
         recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 1_000,
-        serviceId: 'summary-worker'
+        serviceId: 'summary-worker',
+        senderPeerId: 'ws-server'
     });
 }
 

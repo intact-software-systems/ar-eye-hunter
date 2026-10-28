@@ -21,6 +21,8 @@ interface ActivationClockScenario {
     readonly terminalStatus: GroupActivationStatus;
     readonly terminalEvent: GroupActivationStatus | undefined;
     readonly duplicate: boolean;
+    /** The server retransmits a receipted delta to a socket that never acknowledges it, under the same msgId. */
+    readonly retransmitted: boolean;
 }
 
 const ACCEPTED_LAYOUT = { groupRevision: 37, presenceRevision: 19, version: 4, state: 'active' } as const;
@@ -48,7 +50,8 @@ const SCENARIO: ActivationClockScenario = {
     activeStatus: ACTIVE,
     terminalStatus: FAILED,
     terminalEvent: FAILED,
-    duplicate: false
+    duplicate: false,
+    retransmitted: false
 };
 const WRONG_SERIES = [
     { name: 'epoch', status: { ...ACTIVE, formationEpoch: 11 } },
@@ -91,6 +94,16 @@ describe('API-v1 activation clock decay recipe', () => {
             actual: { matchedCount: 2, waitedMs: 45000 }
         });
         expect(report.resultsByName.theQuietGroupFellBelowTheViableFloor[0].status).toBe('SUCCESS');
+    });
+
+    it('counts each status write once however often its receipted delta is retransmitted', async () => {
+        const report = await executeClockScenario({ ...SCENARIO, retransmitted: true });
+
+        expect(report.summary.failure).toBe(0);
+        expect(report.resultsByName.theClockWritesTheStatusExactlyTwice[0]).toMatchObject({
+            status: 'SUCCESS',
+            actual: { matchedCount: 2, waitedMs: 45000 }
+        });
     });
 
     it('rejects an additional current-series publication near the end of the original clock window', async () => {
@@ -177,14 +190,17 @@ function createClockHttpPort(scenario: ActivationClockScenario): BlackBoxFetch {
         }
         const socket = SimulatedWebSocket.instances[0];
         if (reads === 0) {
-            await socket.receive(toStatusFrame(PREDECESSOR));
-            await socket.receive(toStatusFrame(ACTIVE));
+            await socket.receive(toStatusFrame(PREDECESSOR, 'status-predecessor'));
+            await socket.receive(toStatusFrame(ACTIVE, 'status-active'));
+            if (scenario.retransmitted) {
+                setTimeout(() => void socket.receive(toStatusFrame(ACTIVE, 'status-active')), 2000);
+            }
             const terminalEvent = scenario.terminalEvent;
             if (terminalEvent) {
-                setTimeout(() => void socket.receive(toStatusFrame(terminalEvent)), 32000);
+                setTimeout(() => void socket.receive(toStatusFrame(terminalEvent, 'status-terminal')), 32000);
             }
             if (scenario.duplicate) {
-                setTimeout(() => void socket.receive(toStatusFrame(ACTIVE)), 44999);
+                setTimeout(() => void socket.receive(toStatusFrame(ACTIVE, 'status-duplicate')), 44999);
             }
         }
         reads++;
@@ -207,8 +223,9 @@ function toGroupSnapshot(lifecycleState: string, activationStatus: GroupActivati
     };
 }
 
-function toStatusFrame(activationStatus: GroupActivationStatus): string {
+function toStatusFrame(activationStatus: GroupActivationStatus, msgId: string): string {
     return JSON.stringify({
+        id: { msgId },
         route: { topicId: 'group-state.event' },
         payload: {
             typeId: 'group-state.delta.v1',

@@ -157,7 +157,8 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
             recomputeDebounceMs: 0,
             recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
-            serviceId: 'summary-handler'
+            serviceId: 'summary-handler',
+            senderPeerId: 'ws-server'
         });
         const statements: string[] = [];
         const transaction = ((
@@ -191,6 +192,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: Object.assign(async () => undefined, { begin }) as never,
             serviceId: 'summary-handler',
+            senderPeerId: 'ws-server',
             wakeQueue,
             now: () => 5_000
         });

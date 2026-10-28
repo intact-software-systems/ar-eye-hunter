@@ -2,7 +2,7 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import type { GroupLifecyclePolicyInput } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
@@ -51,6 +51,8 @@ interface TracedRow {
     readonly type: string;
     readonly typeId: string;
     readonly traceId: string;
+    readonly senderId: string;
+    readonly ack: string | null;
 }
 
 Deno.test({
@@ -101,6 +103,13 @@ Deno.test({
             }
             assert.ok(rows.some((row) => row.type === 'WS_OUTBOX'), 'the chain wrote WS publications');
             assert.deepEqual(rows.filter((row) => row.traceId !== CHAIN_TRACE_ID), []);
+            const deltas = rows.filter((row) => row.type === 'WS_OUTBOX' && row.typeId === AppTopics.groupStateEvent);
+            assert.ok(deltas.length > 0, 'the chain wrote group-state deltas');
+            // A receiver acknowledges the peer that sent the delta, so the sender is the WS service the browser is connected to.
+            assert.deepEqual(
+                deltas.filter((row) => row.senderId !== runtime.wsQBoxServerService.name || row.ack !== 'receiver'),
+                []
+            );
         }
         finally {
             await server.stop();
@@ -208,7 +217,9 @@ async function readRowsAfter(sql: PGliteSql, watermark: number): Promise<readonl
     return await sql<TracedRow[]>`
         select ri_row_id::double precision as "rowId", ri_type_id as type,
                ri_resource::jsonb #>> '{payload,typeId}' as "typeId",
-               ri_resource::jsonb #>> '{id,traceId}' as "traceId"
+               ri_resource::jsonb #>> '{id,traceId}' as "traceId",
+               ri_resource::jsonb #>> '{id,senderId}' as "senderId",
+               ri_resource::jsonb #>> '{delivery,ack}' as ack
         from resource_inbox
         where ri_row_id > ${watermark} and ri_type_id in ('APP_INBOX', 'APP_OUTBOX', 'WS_OUTBOX')
         order by ri_row_id

@@ -33,6 +33,8 @@ import {
 } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
+/** The WS service the delta's receivers acknowledge, not the process that summarised the group. */
+const WS_SERVICE_PEER_ID = 'ws-service-peer';
 
 describe('group presence summary delta emission', () => {
     it('emits only the canonical envelope event row', async () => {
@@ -45,10 +47,11 @@ describe('group presence summary delta emission', () => {
         if (eventRow === undefined) {
             throw new Error('Expected emitted group state event row');
         }
-        expect(decodePersistedALMessage(eventRow.resource).id.msgId).toContain(
-            ':member-state:delta-envelope:'
-        );
-        expect(decodePersistedALMessage(eventRow.resource).id.traceId).toBe(SUMMARY_EXPANSION_TRACE_ID);
+        const eventMessage = decodePersistedALMessage(eventRow.resource);
+        expect(eventMessage.id.msgId).toContain(':member-state:delta-envelope:');
+        expect(eventMessage.id.traceId).toBe(SUMMARY_EXPANSION_TRACE_ID);
+        expect(eventMessage.id.senderId).toBe(WS_SERVICE_PEER_ID);
+        expect(eventMessage.delivery?.ack).toBe('receiver');
         expect(decodeEventRowPayload(eventRow)).toEqual(
             computeGroupStateDeltaEnvelope({
                 event: result.command.event,
@@ -171,7 +174,8 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
         recomputeMaxWaitMs: 0,
         runtimeRepository: scenario.runtime,
         now: () => BASE_EPOCH_MS + 1_000,
-        serviceId: 'summary-worker'
+        serviceId: 'summary-worker',
+        senderPeerId: WS_SERVICE_PEER_ID
     });
     const ref = groupRef(scenario.groupId);
     const repository = createTestGroupStateRepository(scenario.runtime);

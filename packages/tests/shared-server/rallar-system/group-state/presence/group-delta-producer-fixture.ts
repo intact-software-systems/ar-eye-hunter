@@ -64,6 +64,7 @@ export async function createGroupDeltaProducer(sql?: PSqlSql, timing?: RallarTim
         recomputeDebounceMs: 0,
         recomputeMaxWaitMs: 0,
         serviceId: 'producer-api',
+        senderPeerId: 'ws-server',
         now: () => now,
         timing
     });

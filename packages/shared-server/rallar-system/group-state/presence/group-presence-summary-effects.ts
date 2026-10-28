@@ -106,6 +106,8 @@ export type GroupPresenceSummaryWrite =
 
 export interface ComputeGroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
+    /** The WS service peer that sends the group-state delta, the peer its receivers acknowledge. */
+    readonly senderPeerId: string;
     /** The server-wide replan window, the one every group coalesced through before per-group windows existed. */
     readonly recomputeDebounceMs: number;
     /** The server-wide bound on that window, measured from the first pending change of a series. */
@@ -120,7 +122,7 @@ export interface ComputeGroupPresenceSummaryOutboxInput {
     readonly summaryPredecessorCausalRevision: GroupStateCausalRevision | null;
     readonly snapshot: GroupSnapshot;
     readonly audience: StateSyncAudience;
-    readonly serviceId: string;
+    readonly senderPeerId: string;
     readonly traceId: string;
 }
 
@@ -383,7 +385,7 @@ function toGroupPresenceSummaryOutboxInput(
             workspaceId: work.aggregateRef.workspaceId,
             resourceId: work.aggregateRef.groupId
         },
-        serviceId: options.serviceId,
+        senderPeerId: options.senderPeerId,
         traceId
     };
 }
@@ -391,7 +393,7 @@ function toGroupPresenceSummaryOutboxInput(
 function computeGroupPresenceSummaryOutboxEntries(
     input: ComputeGroupPresenceSummaryOutboxInput
 ): readonly ResourceEntry[] {
-    const { work, audience, serviceId, traceId } = input;
+    const { work, audience, senderPeerId, traceId } = input;
     return computeGroupStateSyncEntries(
         {
             commandId: work.commandId,
@@ -403,7 +405,7 @@ function computeGroupPresenceSummaryOutboxEntries(
             effects: [computeGroupStateEventEffect(input)],
             traceId
         },
-        serviceId
+        senderPeerId
     );
 }
 

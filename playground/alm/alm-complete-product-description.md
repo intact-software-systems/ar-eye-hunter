@@ -998,7 +998,11 @@ Full RTC envelopes are no longer logged by the receive service. The WS server re
 most recently updated receipted messages, who confirmed each receipt and whether it ran out, on
 `/api/admin/operations/realtime` (S3c-i, D61, D73). A failed delivery states a typed `evidence.failure` beside its prose
 reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
-(S3c-ii, D75).
+(S3c-ii, D75). In production the group-state delta is the server's receipted publication: a room broadcast with
+`ack: 'receiver'` to the group's frozen session audience, sent under the WS service's peer id, the peer a session's
+ACK names, so its entry lists the sessions that acknowledged it under the trace of the request that caused it, and
+ends `receipt-exhausted` naming the rest. A client-state event and every snapshot page stay unreceipted: a principal
+audience names no room to confirm against, and a snapshot page is superseded by the next.
 
 **CURRENT — I1b-ii-a, the trace on the runtime:** every message-scoped runtime
 diagnostic ends with the message's `traceId`, then its `corrId`, after a

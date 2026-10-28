@@ -929,6 +929,14 @@ already consumed before the wait. Consumption, observation loss, or a connection
 change during the window prevents the runner from certifying a count. A count
 wait itself leaves observations available for later checks.
 
+On `ws.wait` and `ws.send`, `expect.countDistinctBy` names the path whose value
+identifies one publication, and the count counts distinct values among the
+matching frames instead of the frames. A receiver-receipted server publication,
+such as a group-state delta, is retransmitted to a socket that never
+acknowledges it, and a recipe socket never does, so count such publications with
+`"countDistinctBy": "id.msgId"`. A matching frame without a value at that path
+fails the count.
+
 ## Array Comparison Is Unordered In Every Mode
 
 Every comparison mode matches array elements by containment, not by position.

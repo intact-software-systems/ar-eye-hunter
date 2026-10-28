@@ -404,7 +404,7 @@ function createApiV1MutationInboxFactories(
 function createGroupStateInboxServiceFactory(
     input: CreateGroupStateInboxServiceFactoryInput
 ): CreateRallarMiddlewareOptions['createGroupStateInboxService'] {
-    return ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) => {
+    return ({ inboxQueueReader, outboxQueueReader, wsQBoxServerService, wakeQueueEngine }) => {
         const presenceSummary = new GroupPresenceSummaryWork({
             runtimeRepository: input.runtimeStateRepository,
             outboxQueueReader,
@@ -412,6 +412,7 @@ function createGroupStateInboxServiceFactory(
             recomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
             database: input.database,
             serviceId: input.serviceId,
+            senderPeerId: wsQBoxServerService.name,
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
             formationMetrics: input.groupFormationMetrics.presenceSummary,

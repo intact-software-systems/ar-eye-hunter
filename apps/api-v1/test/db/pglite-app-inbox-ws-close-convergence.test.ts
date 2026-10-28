@@ -152,7 +152,8 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
             recomputeMaxWaitMs: 0,
             runtimeRepository: harness.runtime,
             database: sql,
-            serviceId: 'pglite-close-test'
+            serviceId: 'pglite-close-test',
+            senderPeerId: 'ws-server'
         });
         outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry)

@@ -214,6 +214,7 @@ describe('group presence summary phase timing', () => {
             recomputeDebounceMs: 0,
             recomputeMaxWaitMs: 0,
             serviceId: 'producer-api',
+            senderPeerId: 'ws-server',
             now: () => producer.now,
             timing: (event) => timingEvents.push(event)
         });
