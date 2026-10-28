@@ -68,6 +68,20 @@ describe('public application AppInbox', () => {
         expect(owner.facts).toEqual([]);
     });
 
+    it('replays a command submitted again under another trace and keeps the winner\'s trace on its one row', async () => {
+        const harness = createHarness(storage.sql);
+        const operation = registerStock(harness);
+        harness.inbox.start();
+
+        const first = await drain(harness.reader, operation.submit({ command: COMMAND, traceId: 'trace-a' }));
+        const replay = await drain(harness.reader, operation.submit({ command: COMMAND, traceId: 'trace-b' }));
+
+        expect(first).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(replay).toEqual(first);
+        const rows = await storage.sql<{ ri_resource: string; }[]>`select ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`;
+        expect(rows.map((row) => JSON.parse(row.ri_resource).id.traceId)).toEqual(['trace-a']);
+    });
+
     it('returns durable admission and wakes its owner before any worker runs or result wait begins', async () => {
         const wakeObservations: Promise<readonly { status: string; }[]>[] = [];
         const harness = createHarness(storage.sql, () => {

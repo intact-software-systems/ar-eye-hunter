@@ -295,7 +295,9 @@ describe('inbound control admission', () => {
             throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
         });
 
-        const conflicted = await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL);
+        const acknowledgement = createAcknowledgement('receiver');
+        const traced = { ...acknowledgement, id: { ...acknowledgement.id, traceId: 'trace-replayed-acknowledgement' } };
+        const conflicted = await control.admit(traced, WS_ARRIVAL);
 
         expect(conflicted).toEqual({ kind: 'pending-control' });
         expect((await readAcknowledgements(backend, admissionStore)).acks).toEqual([]);
@@ -321,8 +323,10 @@ describe('inbound control admission', () => {
         expect(commits).toHaveLength(1);
         expect(commits[0]!.workKinds).toEqual(['send-control', 'send-control']);
         expect(commits[0]!.storeKeys).toContainEqual(expect.stringContaining(':control:acks:'));
-        expect((await readRetainedWork(admissionStore, workQueue)).map((work) => work.payload.kind).toSorted())
-            .toEqual(['admit-control', 'send-control', 'send-control']);
+        const work = await readRetainedWork(admissionStore, workQueue);
+        expect(work.map((entry) => entry.payload.kind).toSorted()).toEqual(['admit-control', 'send-control', 'send-control']);
+        expect(work.flatMap((entry) => entry.payload.kind === 'send-control' ? [entry.payload.msg.id.traceId] : []))
+            .toEqual([traced.id.traceId, traced.id.traceId]);
     });
 
     it('retains a conflicting acknowledgement under the carrier it arrived on and records it under that carrier', async () => {
