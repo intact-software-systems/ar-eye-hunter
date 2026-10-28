@@ -3,7 +3,10 @@ import type { RallarServerApplicationSystemInstallers } from '@shared-server/ral
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
-import { computeActivationStatusClockEntry } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
+import {
+    computeActivationStatusClockEntry,
+    type GroupActivationStatusClockWork
+} from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
@@ -20,6 +23,7 @@ import {
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
+import type { EnqueueResourceEntryController } from '@shared/queuebox/queue-box-types.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 import { toAuthorisedWsClientDisconnectInput, toGroupPresenceSessionCleanupInput } from '../routes/ws-routes.ts';
@@ -43,6 +47,12 @@ export interface CreateApiV1SystemInstallersInput {
     readonly timing: RallarTimingSink;
     /** The topology recompute decision line's sink, present only while timing is on. */
     readonly recomputeTiming: RallarTimingSink | undefined;
+}
+
+export interface ActivationStatusClockArmInput {
+    readonly outbox: Pick<EnqueueResourceEntryController, 'enqueueIfAbsent'>;
+    readonly serviceId: string;
+    readonly nowEpochMs: () => number;
 }
 
 /** A clock outlives its due instant long enough to survive a slow queue, and no longer. */
@@ -139,22 +149,11 @@ function createTopologyAppOutboxOptions(
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueActivationStatusCommand(command, atEpochMs),
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
-            // enqueueIfAbsent is the arm: the entry's key is the series and the
-            // band, so N nodes observing one dip write one row, and a re-arm
-            // inside the dwell leaves the original due instant standing --
-            // which is the dwell's meaning, continuous time rather than a
-            // restart.
-            armStatusClock: async (work) => {
-                await runtime.outboxQueueReader.outbox.enqueueIfAbsent(
-                    computeActivationStatusClockEntry({
-                        work,
-                        senderId: input.serviceId,
-                        createdAtEpochMs: input.nowEpochMs(),
-                        expireAtEpochMs: work.dueAtEpochMs + ACTIVATION_STATUS_CLOCK_EXPIRY_MS,
-                        traceId: newALTraceId()
-                    })
-                );
-            }
+            armStatusClock: createActivationStatusClockArm({
+                outbox: runtime.outboxQueueReader.outbox,
+                serviceId: input.serviceId,
+                nowEpochMs: input.nowEpochMs
+            })
         },
         topologyPublication: {
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
@@ -165,6 +164,27 @@ function createTopologyAppOutboxOptions(
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs)
         }
+    };
+}
+
+/**
+ * enqueueIfAbsent is the arm: the entry's key is the series and the band, so N nodes observing one dip write one row,
+ * and a re-arm inside the dwell leaves the original due instant standing -- which is the dwell's meaning, continuous
+ * time rather than a restart. Each arm is its own autonomous publication and mints its trace.
+ */
+export function createActivationStatusClockArm(
+    input: ActivationStatusClockArmInput
+): (work: GroupActivationStatusClockWork) => Promise<void> {
+    return async (work) => {
+        await input.outbox.enqueueIfAbsent(
+            computeActivationStatusClockEntry({
+                work,
+                senderId: input.serviceId,
+                createdAtEpochMs: input.nowEpochMs(),
+                expireAtEpochMs: work.dueAtEpochMs + ACTIVATION_STATUS_CLOCK_EXPIRY_MS,
+                traceId: newALTraceId()
+            })
+        );
     };
 }
 

@@ -1,22 +1,18 @@
 import { loadSync } from '@std/dotenv';
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
 import { createDefaultApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { myServerId } from '@api-v1/src/runtime/runtime-identity.ts';
 import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
-import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
-import { RelicGameInboxFailureError } from '@relic-hunters/server/relic-game-inbox-service.ts';
-import { isRelicGameMoveInput } from '@relic-hunters/server/relic-game-move.ts';
-import { RelicGameMutationRefusedError } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
-import { toError } from '@shared/resilience/to-error.ts';
 
 import { createRelicGameServices } from './create-relic-game-services.ts';
 import { initRelicDocsLandingRoute } from './relic-docs-landing-route.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
+import { initRelicGameRoutes } from './relic-game-routes.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
 import { installRelicPlanningAiTopic } from './relic-planning-ai-topic.ts';
@@ -110,60 +106,7 @@ app.get(
 initRelicDocsLandingRoute(app);
 initRelicSwaggerRoutes(app);
 
-app.use('/api/relic/*', async (c, next) => {
-    try {
-        await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        await next();
-    }
-    catch (error) {
-        return toAuthErrorResponse(c, error);
-    }
-});
-
-app.get('/api/relic/games/:gameId', async (c) => {
-    try {
-        const gameId = c.req.param('gameId');
-        const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        return c.json(await relicGame.ensureSnapshot(gameId, session, crypto.randomUUID()));
-    }
-    catch (error) {
-        return relicRestErrorResponse(c, toError(error));
-    }
-});
-
-app.post('/api/relic/games/:gameId/commands/requests/:requestId', async (c) => {
-    try {
-        const gameId = c.req.param('gameId');
-        const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        const body = await c.req.json().catch(() => undefined);
-        const command = {
-            ...(typeof body === 'object' && body !== null ? body : {}),
-            gameId,
-            username: session.username
-        };
-
-        if (!isRelicGameMoveInput(command)) {
-            return c.json({ error: 'Invalid relic command' }, 400);
-        }
-
-        return c.json(await relicGame.applyCommand(command, session, c.req.param('requestId')));
-    }
-    catch (error) {
-        return relicRestErrorResponse(c, toError(error));
-    }
-});
-
-app.post('/api/relic/games/:gameId/reset/requests/:requestId', async (c) => {
-    try {
-        const gameId = c.req.param('gameId');
-        const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
-        const snapshot = await relicGame.reset(gameId, session, c.req.param('requestId'));
-        return c.json(snapshot);
-    }
-    catch (error) {
-        return relicRestErrorResponse(c, toError(error));
-    }
-});
+initRelicGameRoutes(app, { relicGame, sessions: rallar.runtime.authSessionRepository });
 
 rallar.installSystemTopics();
 rallar.installWebSocketLifecycle();
@@ -173,16 +116,6 @@ rallar.start({ queueWorkers: configuration.apiV1.topology.replay.queueWorkers })
 
 Deno.serve({ port: configuration.http.port }, app.fetch);
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
-
-function relicRestErrorResponse(c: Context, error: Error): Response {
-    if (error instanceof RelicGameMutationRefusedError) {
-        return c.json({ error: error.message, code: error.result.code }, error.result.httpStatus);
-    }
-    if (error instanceof RelicGameInboxFailureError) {
-        return Response.json({ error: error.message, code: error.failure.code }, { status: error.failure.status });
-    }
-    return toAuthErrorResponse(c, error);
-}
 
 function loadEnvironment(): void {
     loadEnvFileIfPresent(new URL('../.env', import.meta.url));

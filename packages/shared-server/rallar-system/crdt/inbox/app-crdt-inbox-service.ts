@@ -53,6 +53,7 @@ export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 export interface CreateAndEnqueueCrdtAppendInput {
     readonly update: RallarCrdtUpdateEnvelope;
     readonly deliveryId: string;
+    readonly traceId: string;
     readonly actor: CrdtMutationActor;
     readonly responseAudience: CrdtMutationResponseAudience;
     readonly capturedAtEpochMs: number;
@@ -290,7 +291,7 @@ export class AppCrdtInboxService {
             resourceId: command.deliveryId,
             contextId: command.documentKey,
             senderId: command.actor.sessionId,
-            traceId: newALTraceId(),
+            traceId: input.traceId,
             data: encodeAppInboxCommand(command, 'CRDT append AppInbox command')
         });
         return command;

@@ -55,6 +55,7 @@ export async function createGameFixture(gameId = 'expedition-1') {
         operation: 'ensure',
         gameId: ref.groupId,
         requestId: 'initialize-owner',
+        traceId: RELIC_FIXTURE_TRACE_ID,
         actor: {
             clientId: fixture.owner.clientId,
             sessionId: fixture.owner.sessionId,
@@ -62,7 +63,7 @@ export async function createGameFixture(gameId = 'expedition-1') {
         },
         authorization: 'group-policy',
         move: null
-    } satisfies RelicGameMutationService.Command;
+    } satisfies RelicGameMutationService.CommandInput;
     return Object.assign(fixture, { ref, data, service, command });
 }
 

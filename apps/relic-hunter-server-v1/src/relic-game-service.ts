@@ -39,6 +39,13 @@ export interface RelicHunterServer {
 export namespace RelicHunterGameService {
     export type Session = Pick<IssuedAuthSession, 'sessionId' | 'clientId' | 'username' | 'issuedAtEpochMs'>;
 
+    /** One REST request's identity: its session, its idempotent request ID and its `x-request-id` trace. */
+    export interface RestRequest {
+        readonly session: Session;
+        readonly requestId: string;
+        readonly traceId: string;
+    }
+
     export interface Options {
         readonly mode: RelicGameMutationService.Command['authorization'];
         readonly inbox: Pick<RelicGameInboxService, 'execute' | 'enqueue'>;
@@ -58,47 +65,38 @@ export class RelicHunterGameService {
         this.options = options;
     }
 
-    async ensureSnapshot(
-        gameId: string,
-        session: RelicHunterGameService.Session,
-        requestId: string
-    ): Promise<RelicPublicSnapshot> {
+    async ensureSnapshot(gameId: string, request: RelicHunterGameService.RestRequest): Promise<RelicPublicSnapshot> {
         return await this.execute({
             operation: 'ensure',
             gameId,
             move: null,
-            requestId,
-            actor: toActor(session),
+            requestId: request.requestId,
+            traceId: request.traceId,
+            actor: toActor(request.session),
             authorization: this.options.mode
         });
     }
 
-    async applyCommand(
-        move: RelicCommand,
-        session: RelicHunterGameService.Session,
-        requestId: string
-    ): Promise<RelicPublicSnapshot> {
+    async applyCommand(move: RelicCommand, request: RelicHunterGameService.RestRequest): Promise<RelicPublicSnapshot> {
         return await this.execute({
             operation: 'command',
             gameId: move.gameId,
-            requestId,
-            move: { ...move, username: session.username },
-            actor: toActor(session),
+            requestId: request.requestId,
+            traceId: request.traceId,
+            move: { ...move, username: request.session.username },
+            actor: toActor(request.session),
             authorization: this.options.mode
         });
     }
 
-    async reset(
-        gameId: string,
-        session: RelicHunterGameService.Session,
-        requestId: string
-    ): Promise<RelicPublicSnapshot> {
+    async reset(gameId: string, request: RelicHunterGameService.RestRequest): Promise<RelicPublicSnapshot> {
         return await this.execute({
             operation: 'reset',
             gameId,
-            requestId,
+            requestId: request.requestId,
+            traceId: request.traceId,
             move: null,
-            actor: toActor(session),
+            actor: toActor(request.session),
             authorization: this.options.mode
         });
     }
@@ -124,6 +122,7 @@ export class RelicHunterGameService {
                 operation: 'command',
                 gameId: message.payload.gameId,
                 requestId: message.raw.id.msgId,
+                traceId: message.raw.id.traceId,
                 actor: toActor(session),
                 authorization: 'group-policy',
                 move: { ...message.payload, username: session.username }

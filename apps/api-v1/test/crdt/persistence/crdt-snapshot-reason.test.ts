@@ -58,6 +58,7 @@ Deno.test(
             await service.createAndEnqueueAppend({
                 update: update(now - 10_000),
                 deliveryId: 'append-delivery',
+                traceId: 'trace-crdt-snapshot-reason',
                 actor: actor(),
                 responseAudience: {
                     kind: 'room',

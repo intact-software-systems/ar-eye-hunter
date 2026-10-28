@@ -3,6 +3,7 @@ import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topol
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type {
     AuditStamp,
     GroupRef,
@@ -47,6 +48,17 @@ describe('RtcTopologyReconnectHydrator', () => {
         const messages = harness.sentMessages(connection);
         expect(messages).toHaveLength(2);
         expect(new Set(messages.map((message) => message.id.msgId)).size).toBe(2);
+    });
+
+    it('hydrates each room\'s topology under a fresh valid trace', async () => {
+        const harness = new ReconnectHydrationHarness({ topologies: [createTopology({ groupId: 'room-a' }), createTopology({ groupId: 'room-b' })] });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const traces = harness.sentMessages(connection).map((message) => message.id.traceId);
+        expect(traces.flatMap(validateALTraceId)).toEqual([]);
+        expect(new Set(traces).size).toBe(2);
     });
 
     it.each([

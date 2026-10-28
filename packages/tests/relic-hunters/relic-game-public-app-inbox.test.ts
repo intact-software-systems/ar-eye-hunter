@@ -8,6 +8,7 @@ import {
     RELIC_TYPES
 } from '@relic-hunters/mod.ts';
 import { encodeRelicGameStateAppData } from '@relic-hunters/server/encode-relic-game-state-app-data.ts';
+import { captureRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { newALBroadcastMessage, newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
@@ -23,6 +24,7 @@ describe('Relic public application AppInbox', () => {
         const fixture = await createInboxFixture();
         try {
             const initial = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs - 10);
+            const command = captureRelicGameCommand(fixture.command);
             const enqueue = {
                 type: 'app:relic-hunters:mutate' as const,
                 topicId: 'app:relic-hunters:mutate',
@@ -30,9 +32,9 @@ describe('Relic public application AppInbox', () => {
                 resourceId: fixture.command.requestId,
                 senderId: fixture.owner.sessionId,
                 traceId: 'trace-relic-retained-row',
-                data: { ...fixture.command },
+                data: { ...command },
                 authority: {
-                    command: { ...fixture.command },
+                    command: { ...command },
                     initial: encodeRelicGameStateAppData(initial),
                     capturedAtEpochMs: fixture.nowEpochMs - 5,
                     serverPeerId: 'retained-server'
@@ -150,9 +152,9 @@ describe('Relic public application AppInbox', () => {
             const retained = await fixture.resources.entries.findByKey(key);
             const envelope = JSON.parse(JSON.parse(retained!.resource).payload.resource);
             expect(proposals).toBe(2);
-            expect(envelope.data).toEqual(fixture.command);
+            expect(envelope.data).toEqual(captureRelicGameCommand(fixture.command));
             expect(envelope.senderId).toBe(fixture.owner.sessionId);
-            expect(envelope.authority.command).toEqual(fixture.command);
+            expect(envelope.authority.command).toEqual(captureRelicGameCommand(fixture.command));
             expect(envelope.authority.capturedAtEpochMs).toBe(fixture.nowEpochMs);
             expect([fixture.nowEpochMs + 1, fixture.nowEpochMs + 2]).toContain(envelope.authority.initial.createdAtEpochMs);
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));

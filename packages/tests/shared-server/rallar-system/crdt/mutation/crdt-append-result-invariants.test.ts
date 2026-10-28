@@ -45,6 +45,7 @@ describe('CRDT append and administration result invariants', () => {
         const command = await service.createAndEnqueueAppend({
             update: update('semantic-update'),
             deliveryId: 'transport-delivery-1',
+            traceId: 'trace-crdt-append-result-invariants',
             actor: actor(),
             responseAudience: audience('principal'),
             capturedAtEpochMs,

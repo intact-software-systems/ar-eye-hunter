@@ -11,6 +11,7 @@ export function createCrdtWsMutationIngress(
             await appCrdtInboxService.createAndEnqueueAuthenticatedAppend({
                 update: accepted.envelope,
                 deliveryId: accepted.raw.id.msgId,
+                traceId: accepted.raw.id.traceId,
                 trustedSessionId: trusted.sessionId,
                 responseAudience: {
                     kind: accepted.envelope.document.scope === 'room'

@@ -741,6 +741,7 @@ function createObservedAggregation(
     aggregation.recordAdmission({
         msgId: 'subject',
         originPeerId: 'origin',
+        traceId: 'trace-ws-queue-box-server-receipt-observation',
         expectedRecipientPeerIds: ['recipient', 'other'],
         snapshotVersion: 7,
         deadlineAtMs: 30000
@@ -936,7 +937,9 @@ describe('owned receipt count observation', () => {
         expect(aggregation.recordAck({ ...payload, fromPeerId: 'outside', logicalRecipientPeerId: 'outside' }).left?.code).toBe('unauthorized');
         clock.value = 30000;
         expect(aggregation.recordAck({ ...payload, fromPeerId: 'other', logicalRecipientPeerId: 'other' }).left?.code).toBe('unauthorized');
-        expect(aggregation.sweep(30000)).toMatchObject([{ phase: 'timed-out', confirmedRecipientPeerIds: ['recipient'] }]);
+        expect(aggregation.sweep(30000)).toMatchObject([
+            { receipt: { phase: 'timed-out', confirmedRecipientPeerIds: ['recipient'] } }
+        ]);
         expect(events.map((event) => event.kind === 'ack-count' ? { source: event.source, clock: event.countAtEpochMs, outcome: event.outcome } : undefined))
             .toEqual([
                 { source: 'direct', clock: 1000, outcome: 'partial' },
@@ -973,6 +976,7 @@ describe('owned receipt count observation', () => {
         aggregation.recordAdmission({
             msgId: 'subject',
             originPeerId: 'origin',
+            traceId: 'trace-ws-queue-box-server-receipt-observation',
             expectedRecipientPeerIds: ['recipient'],
             snapshotVersion: 7,
             deadlineAtMs: 30000
@@ -1293,6 +1297,7 @@ it('publishes count evidence after the existing control receipt effects so sink 
     fixture.aggregation.recordAdmission({
         msgId: 'subject',
         originPeerId: 'origin',
+        traceId: 'trace-ws-queue-box-server-receipt-observation',
         expectedRecipientPeerIds: ['recipient'],
         snapshotVersion: 7,
         deadlineAtMs: 30000

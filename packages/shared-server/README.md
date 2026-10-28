@@ -144,6 +144,9 @@ the application owns authorization, proposals and mutation/publication policy.
 `commit` receives the exact result and a transaction-bound write and resolves
 after state, final outbox and completion commit together.
 
+`enqueue` and `submit` take `{ command, traceId }`: the caller's trace (an HTTP
+request's `x-request-id`, or a WS command's envelope trace) rides the admitted
+envelope, and the retained command and its idempotency identity never carry it.
 `enqueue` returns `Either<failure, Admission<Result>>` after durable admission;
 its bound `wait()` decodes the exact retained winner's result. `readAdmission`
 returns retained pending or completed admission immediately, or `undefined` only

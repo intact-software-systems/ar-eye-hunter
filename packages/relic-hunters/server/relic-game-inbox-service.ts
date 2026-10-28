@@ -84,7 +84,7 @@ export class RelicGameInboxService {
         const service = this.dependencies.service;
         const observed = await service.read(ingress);
         const initial = service.needsInitialState(observed) ? await createInitialState() : null;
-        const admitted = await this.operation.enqueue({ ...ingress, initial });
+        const admitted = await this.operation.enqueue({ command: { ...ingress, initial }, traceId: value.traceId });
         return admitted.fold(throwRelicInboxFailure, (admission) => admission);
     }
 

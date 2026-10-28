@@ -24,6 +24,7 @@ export type ReadCurrentCrdtMutationSession = (
 export interface AuthenticatedCrdtAppendInput {
     readonly update: RallarCrdtUpdateEnvelope;
     readonly deliveryId: string;
+    readonly traceId: string;
     readonly trustedSessionId: string;
     readonly responseAudience: Omit<CrdtMutationResponseAudience, 'senderSessionId'>;
     readonly capturedAtEpochMs: number;
@@ -33,6 +34,7 @@ export interface AuthenticatedCrdtAppendInput {
 export interface EnqueueAuthenticatedCrdtAppendInput {
     readonly update: RallarCrdtUpdateEnvelope;
     readonly deliveryId: string;
+    readonly traceId: string;
     readonly actor: CrdtMutationActor;
     readonly responseAudience: CrdtMutationResponseAudience;
     readonly capturedAtEpochMs: number;
@@ -59,6 +61,7 @@ export async function createAndEnqueueAuthenticatedCrdtAppend(
     return await dependencies.enqueue({
         update: input.update,
         deliveryId: input.deliveryId,
+        traceId: input.traceId,
         actor: {
             actorId: session.clientId,
             principalId: session.username,

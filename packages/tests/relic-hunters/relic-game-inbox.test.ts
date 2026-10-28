@@ -62,6 +62,31 @@ describe('Relic AppInbox ownership', () => {
         }
     }, 30_000);
 
+    it('admits a command under its transport trace and publishes every effect under it', async () => {
+        const fixture = await createInboxFixture();
+        try {
+            const proposal = async () => createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
+            const ensure = await fixture.inbox.enqueue(fixture.command, proposal);
+            await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            await fixture.inbox.wait(ensure);
+            const reset = { ...fixture.command, operation: 'reset' as const, requestId: 'traced-reset', traceId: 'trace-relic-transport-command' };
+
+            const queued = await fixture.inbox.enqueue(reset, proposal);
+            await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect(await fixture.inbox.wait(queued)).toEqual({ status: 'applied', gameId: fixture.ref.groupId });
+
+            const rows = await fixture.storage.sql<{ type: string; traceId: string; }[]>`
+                select ri_type_id as type, ri_resource::jsonb #>> '{id,traceId}' as "traceId" from resource_inbox
+                where ri_resource_id = ${reset.requestId} or (ri_type_id = 'WS_OUTBOX' and ri_resource_id like 'relic:%')
+            `;
+            expect(rows.map((row) => row.type).sort()).toEqual(['APP_INBOX', 'WS_OUTBOX']);
+            expect(rows.map((row) => row.traceId)).toEqual([reset.traceId, reset.traceId]);
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    }, 30_000);
+
     it.each([
         '48e1ca3a-fb77-46ef-bd12-630b05a628f0',
         'ws-command:48e1ca3a-fb77-46ef-bd12-630b05a628f0:8afe7cc4-b11a-453f-a2a9-7ccce3eb0963'

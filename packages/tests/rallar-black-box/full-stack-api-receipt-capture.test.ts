@@ -155,7 +155,7 @@ function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]):
         });
         try {
             owner.recordAdmission({
-                msgId: 'subject', originPeerId: 'origin',
+                msgId: 'subject', originPeerId: 'origin', traceId: 'trace-full-stack-api-receipt-capture',
                 expectedRecipientPeerIds: ${JSON.stringify(expectedRecipientPeerIds)},
                 snapshotVersion: 7, deadlineAtMs: 30000
             });

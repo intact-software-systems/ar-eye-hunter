@@ -27,6 +27,7 @@ interface StockCommand {
 
 const COMMAND: StockCommand = { warehouse: 'warehouse-1', requestId: 'request-1', quantity: 3, capturedAt: null };
 const TYPE = 'app:inventory:reserve';
+const TRACE_ID = 'trace-public-app-inbox';
 
 let storage: ResourceInboxTestStorage;
 beforeEach(async () => {
@@ -37,11 +38,23 @@ beforeEach(async () => {
 afterEach(async () => await storage?.close());
 
 describe('public application AppInbox', () => {
+    it('admits and runs the application command under the trace its caller enqueued it with', async () => {
+        const harness = createHarness(storage.sql);
+        const operation = registerStock(harness);
+        harness.inbox.start();
+
+        await drain(harness.reader, operation.submit({ command: COMMAND, traceId: 'trace-public-app-inbox-request' }));
+
+        const [row] = await storage.sql<{ ri_resource: string; }[]>`select ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`;
+        expect(JSON.parse(row.ri_resource).id.traceId).toBe('trace-public-app-inbox-request');
+        expect(harness.traces).toEqual(['trace-public-app-inbox-request']);
+    });
+
     it('leaves another application pending until a cold owning worker can replay its captured facts', async () => {
         const admitted = createHarness(storage.sql);
         const operation = registerStock(admitted);
         admitted.inbox.start();
-        await operation.enqueue(COMMAND);
+        await operation.enqueue({ command: COMMAND, traceId: TRACE_ID });
         const before = await storage.sql`select ri_status, ri_attempts, ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`;
         const platformOnly = createHarness(storage.sql);
         platformOnly.inbox.start();
@@ -51,7 +64,7 @@ describe('public application AppInbox', () => {
         const replay = registerStock(owner);
         owner.inbox.start();
         expect(await drain(owner.reader, replay.readReplay(COMMAND))).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
-        expect(await replay.submit(COMMAND)).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
+        expect(await replay.submit({ command: COMMAND, traceId: TRACE_ID })).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
         expect(owner.facts).toEqual([]);
     });
 
@@ -65,7 +78,7 @@ describe('public application AppInbox', () => {
         const operation = registerStock(harness);
         harness.inbox.start();
         expect(await operation.readAdmission(COMMAND)).toBeUndefined();
-        const admitted = await operation.enqueue(COMMAND);
+        const admitted = await operation.enqueue({ command: COMMAND, traceId: TRACE_ID });
         expect(admitted.left).toBeUndefined();
         const replay = await operation.readAdmission(COMMAND);
         expect(replay?.left).toBeUndefined();
@@ -75,7 +88,9 @@ describe('public application AppInbox', () => {
         expect(harness.afterCommit).toEqual([]);
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
         expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'NEW' }]);
-        expect((await operation.enqueue({ ...COMMAND, quantity: 4 })).left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
+        expect((await operation.enqueue({ command: { ...COMMAND, quantity: 4 }, traceId: TRACE_ID })).left).toMatchObject({
+            code: 'app-inbox-idempotency-conflict'
+        });
         expect((await operation.readAdmission({ ...COMMAND, quantity: 4 }))?.left).toMatchObject({ code: 'app-inbox-idempotency-conflict' });
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
         expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'COMPLETED' }]);
@@ -96,9 +111,9 @@ describe('public application AppInbox', () => {
         });
         const operation = registerStock(harness);
         harness.inbox.start();
-        await expect(operation.enqueue(COMMAND)).rejects.toThrow('Owning queue unavailable');
+        await expect(operation.enqueue({ command: COMMAND, traceId: TRACE_ID })).rejects.toThrow('Owning queue unavailable');
         expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'NEW' }]);
-        const retry = await operation.enqueue(COMMAND);
+        const retry = await operation.enqueue({ command: COMMAND, traceId: TRACE_ID });
         expect(retry.right).toBeDefined();
         expect(wakes).toBe(2);
         expect(harness.facts).toEqual([101]);
@@ -115,16 +130,16 @@ describe('public application AppInbox', () => {
             wakes += 1;
         });
         const operation = registerStock(harness, decodeBoundStockResult);
-        expect((await operation.enqueue(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
+        expect((await operation.enqueue({ command: COMMAND, traceId: TRACE_ID })).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
         expect((await operation.readAdmission(COMMAND))?.left).toMatchObject({ code: 'app-inbox-lifecycle-rejected' });
         expect(wakes).toBe(0);
         harness.inbox.start();
-        const admitted = await operation.enqueue(COMMAND);
+        const admitted = await operation.enqueue({ command: COMMAND, traceId: TRACE_ID });
         expect(await admitted.right!.wait()).toEqual(Either.ofRight(exact));
         expect(harness.facts).toEqual([]);
         await storage.sql`update resource_inbox set ri_resource = replace(ri_resource, 'inventory-session', 'wrong-session') where ri_type_id = 'APP_INBOX'`;
         await expect(operation.readAdmission(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
-        await expect(operation.enqueue(COMMAND)).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
+        await expect(operation.enqueue({ command: COMMAND, traceId: TRACE_ID })).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
         expect(wakes).toBe(1);
         expect(harness.afterCommit).toEqual([]);
     });
@@ -136,12 +151,12 @@ describe('public application AppInbox', () => {
         });
         const operation = registerStock(harness);
         harness.inbox.start();
-        const first = await drain(harness.reader, operation.submit(COMMAND));
+        const first = await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }));
         expect(first).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
         expect(wakes).toBe(1);
         expect(await operation.readReplay(COMMAND)).toEqual(first);
         expect(wakes).toBe(1);
-        expect(await operation.submit(COMMAND)).toEqual(first);
+        expect(await operation.submit({ command: COMMAND, traceId: TRACE_ID })).toEqual(first);
         expect(wakes).toBe(2);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([7]);
@@ -157,7 +172,7 @@ describe('public application AppInbox', () => {
             harness.inbox.start();
             const result = await drain(harness.reader, operation.readReplay(COMMAND));
             expect(result).toEqual(Either.ofRight({ remaining, capturedAt: 501 }));
-            expect(await operation.submit(COMMAND)).toEqual(result);
+            expect(await operation.submit({ command: COMMAND, traceId: TRACE_ID })).toEqual(result);
             expect(harness.facts).toEqual([]);
             expect(await storage.sql`select ri_resource from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_resource: original }]);
             expect(await storage.sql`select quantity from inventory`).toEqual([{ quantity }]);
@@ -180,7 +195,7 @@ describe('public application AppInbox', () => {
         const operation = registerStock(harness, decodeBoundStockResult);
         harness.inbox.start();
         expect((await operation.readReplay(COMMAND))?.left).toMatchObject({ code: 'app-inbox-result-corrupt' });
-        expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-result-corrupt' });
+        expect((await operation.submit({ command: COMMAND, traceId: TRACE_ID })).left).toMatchObject({ code: 'app-inbox-result-corrupt' });
         expect(harness.facts).toEqual([]);
         expect(await storage.sql`select quantity from inventory`).toEqual([{ quantity: 10 }]);
     });
@@ -192,7 +207,7 @@ describe('public application AppInbox', () => {
         const operation = registerStock(harness, decodeBoundStockResult);
         harness.inbox.start();
         expect(await operation.readReplay(COMMAND)).toEqual(Either.ofRight(exact));
-        expect(await operation.submit(COMMAND)).toEqual(Either.ofRight(exact));
+        expect(await operation.submit({ command: COMMAND, traceId: TRACE_ID })).toEqual(Either.ofRight(exact));
         expect(harness.facts).toEqual([]);
     });
 
@@ -200,19 +215,24 @@ describe('public application AppInbox', () => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
         harness.inbox.start();
-        await drain(harness.reader, operation.submit(COMMAND));
+        await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }));
         expect((await operation.readReplay({ ...COMMAND, quantity: 4 }))?.left).toMatchObject({ code: 'app-inbox-idempotency-conflict', status: 409 });
-        expect((await operation.submit({ ...COMMAND, quantity: 4 })).left).toMatchObject({ code: 'app-inbox-idempotency-conflict', status: 409 });
+        expect((await operation.submit({ command: { ...COMMAND, quantity: 4 }, traceId: TRACE_ID })).left).toMatchObject({
+            code: 'app-inbox-idempotency-conflict',
+            status: 409
+        });
         expect(harness.facts).toEqual([101]);
         await storage.sql`update resource_inbox set fk_ext_bank_id = 'wrong-scope' where ri_topic_id = ${TYPE}`;
-        await expect(operation.submit({ ...COMMAND, warehouse: 'wrong-scope' })).rejects.toMatchObject({ code: 'app-inbox-malformed-command' });
+        await expect(operation.submit({ command: { ...COMMAND, warehouse: 'wrong-scope' }, traceId: TRACE_ID })).rejects.toMatchObject({
+            code: 'app-inbox-malformed-command'
+        });
     });
 
     it.each(['route', 'authority', 'data', 'sender', 'result'])('fails closed on a corrupt durable %s', async (corruption) => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
         harness.inbox.start();
-        await drain(harness.reader, operation.submit(COMMAND));
+        await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }));
         if (corruption === 'result') {
             await storage.sql`update resource_inbox_results set ris_resource = '"invalid-result"'`;
             expect((await operation.readReplay(COMMAND))?.left).toMatchObject({ code: 'app-inbox-result-corrupt' });
@@ -247,7 +267,7 @@ describe('public application AppInbox', () => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
         harness.inbox.start();
-        const pending = operation.submit(COMMAND);
+        const pending = operation.submit({ command: COMMAND, traceId: TRACE_ID });
         await waitForEntry(storage.sql);
         await storage
             .sql`update resource_inbox set ri_resource = replace(ri_resource, 'app:inventory:reserve', 'app:inventory:unknown'), ri_topic_id = 'app:inventory:unknown'`;
@@ -271,11 +291,11 @@ describe('public application AppInbox', () => {
             wakes += 1;
         });
         const operation = registerStock(harness);
-        expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
+        expect((await operation.submit({ command: COMMAND, traceId: TRACE_ID })).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
         harness.inbox.start();
         expect(() => registerStock(harness)).toThrow();
         harness.inbox.stop();
-        expect((await operation.submit(COMMAND)).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
+        expect((await operation.submit({ command: COMMAND, traceId: TRACE_ID })).left).toMatchObject({ code: 'app-inbox-lifecycle-rejected', status: 503 });
         expect(await storage.sql`select * from resource_inbox`).toEqual([]);
         expect(wakes).toBe(0);
     });
@@ -285,9 +305,9 @@ describe('public application AppInbox', () => {
         harness.failAfterCommit = true;
         const operation = registerStock(harness);
         harness.inbox.start();
-        const result = await drain(harness.reader, operation.submit(COMMAND));
+        const result = await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }));
         expect(result).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
-        expect(await operation.submit(COMMAND)).toEqual(result);
+        expect(await operation.submit({ command: COMMAND, traceId: TRACE_ID })).toEqual(result);
         expect(harness.readQuantities).toEqual([10]);
         expect(harness.afterCommit).toEqual([7]);
         expect(await storage.sql`select ri_type_id, ri_status from resource_inbox order by ri_type_id`).toEqual([
@@ -300,7 +320,10 @@ describe('public application AppInbox', () => {
         const harness = createHarness(storage.sql);
         const operation = registerStock(harness);
         harness.inbox.start();
-        const results = await drain(harness.reader, Promise.all([operation.submit(COMMAND), operation.submit(COMMAND)]));
+        const results = await drain(
+            harness.reader,
+            Promise.all([operation.submit({ command: COMMAND, traceId: TRACE_ID }), operation.submit({ command: COMMAND, traceId: TRACE_ID })])
+        );
         expect(results).toEqual([Either.ofRight({ remaining: 7, capturedAt: 101 }), Either.ofRight({ remaining: 7, capturedAt: 101 })]);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([7]);
@@ -345,7 +368,7 @@ describe('public application AppInbox', () => {
             }
             await proposalGate.promise;
             const proposal = await Promise.resolve(++proposals);
-            return await operation.submit({ ...command, capturedAt: proposal });
+            return await operation.submit({ command: { ...command, capturedAt: proposal }, traceId: TRACE_ID });
         }
         const results = await drain(harness.reader, Promise.all([submitWithExternalProposal(COMMAND), submitWithExternalProposal(COMMAND)]));
         expect(proposals).toBe(2);
@@ -363,7 +386,9 @@ describe('public application AppInbox', () => {
         harness.conflictOnce = true;
         const operation = registerStock(harness);
         harness.inbox.start();
-        expect(await drain(harness.reader, operation.submit(COMMAND))).toEqual(Either.ofRight({ remaining: 6, capturedAt: 101 }));
+        expect(await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }))).toEqual(
+            Either.ofRight({ remaining: 6, capturedAt: 101 })
+        );
         expect(harness.readQuantities).toEqual([10, 9]);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([6]);
@@ -379,7 +404,9 @@ describe('public application AppInbox', () => {
             })
         );
         await writeAppOutboxInsert(storage.sql, collision);
-        expect((await drain(harness.reader, operation.submit(COMMAND))).left).toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+        expect((await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }))).left).toMatchObject({
+            code: 'resource-inbox-invariant-corruption'
+        });
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
         expect(harness.afterCommit).toEqual([]);
         expect(await storage.sql`select ris_status from resource_inbox_results`).toEqual([{ ris_status: 'FAILED' }]);
@@ -390,7 +417,7 @@ describe('public application AppInbox', () => {
         harness.alwaysConflict = true;
         const operation = registerStock(harness);
         harness.inbox.start();
-        const pending = operation.submit(COMMAND);
+        const pending = operation.submit({ command: COMMAND, traceId: TRACE_ID });
         await waitForEntry(storage.sql);
         await storage
             .sql`update resource_inbox set ri_attempts = 19, ri_status = 'RETRY', start_ts = (now() at time zone 'UTC') - interval '2 seconds', end_ts = (now() at time zone 'UTC') - interval '1 second', next_ts = (now() at time zone 'UTC') - interval '1 second' where ri_type_id = 'APP_INBOX'`;
@@ -405,7 +432,7 @@ describe('public application AppInbox', () => {
         harness.failWrite = true;
         const operation = registerStock(harness);
         harness.inbox.start();
-        const result = await drain(harness.reader, operation.submit(COMMAND));
+        const result = await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }));
         expect(result.left).toMatchObject({ code: 'app-inbox-malformed-command' });
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
         expect(harness.afterCommit).toEqual([]);
@@ -419,6 +446,7 @@ interface Harness {
     readonly facts: number[];
     readonly readQuantities: number[];
     readonly afterCommit: number[];
+    readonly traces: string[];
     conflictOnce: boolean;
     failWrite: boolean;
     failAfterCommit: boolean;
@@ -452,6 +480,7 @@ function createHarness(database: PSqlSql, wakeOwningQueue: () => void = () => {}
         facts: [],
         readQuantities: [],
         afterCommit: [],
+        traces: [],
         conflictOnce: false,
         failWrite: false,
         failAfterCommit: false,
@@ -482,6 +511,7 @@ async function reserveStock(harness: Harness, command: StockCommand, context: Ap
         { quantity: number; revision: number; }[]
     >`select quantity, revision from inventory where warehouse = ${command.warehouse}`;
     harness.readQuantities.push(read.quantity);
+    harness.traces.push(context.message.id.traceId);
     const computed = { remaining: read.quantity - command.quantity, capturedAt: command.capturedAt };
     if (computed.remaining < 0 || computed.capturedAt === null) {
         throw new TypeError('Invalid stock reservation');

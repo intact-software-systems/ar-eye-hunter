@@ -28,13 +28,14 @@ it('runs the public counter example through admission, conditional write and exa
         const counters = new CounterService({ appInbox, database: storage.sql, nowEpochMs: () => 101 });
         appInbox.start();
         const command = { counterId: 'visits', requestId: 'click-1', capturedAtEpochMs: null };
-        const admitted = await counters.increment.enqueue(command);
+        const traceId = 'trace-counter-example';
+        const admitted = await counters.increment.enqueue({ command, traceId });
         expect(admitted.left).toBeUndefined();
         expect(await storage.sql`select value, revision from app_counter`).toEqual([{ value: 2, revision: 0 }]);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
         const exact = { status: 'updated', counterId: 'visits', value: 3, capturedAtEpochMs: 101 };
         expect((await admitted.right!.wait()).right).toEqual(exact);
-        expect((await counters.increment.submit(command)).right).toEqual(exact);
+        expect((await counters.increment.submit({ command, traceId })).right).toEqual(exact);
         expect(
             await storage.sql`
             select (extract(epoch from (entry.expire_ts - entry.end_ts)) * 1000)::integer as retained_ms,
@@ -46,7 +47,7 @@ it('runs the public counter example through admission, conditional write and exa
         `
         ).toEqual([{ retained_ms: 3_600_000, result_expiry_matches: true }]);
         expect(await storage.sql`select value, revision from app_counter`).toEqual([{ value: 3, revision: 1 }]);
-        const missing = await counters.increment.enqueue({ ...command, counterId: 'other' });
+        const missing = await counters.increment.enqueue({ command: { ...command, counterId: 'other' }, traceId });
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
         expect((await missing.right!.wait()).right).toEqual({ status: 'refused', counterId: 'other', capturedAtEpochMs: 101, code: 'counter-unavailable' });
     }

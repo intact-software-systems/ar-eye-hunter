@@ -275,6 +275,19 @@ describe('inbound control admission', () => {
             .toEqual(['send-control', 'send-control']);
     });
 
+    it('relays upstream under the trace of the acknowledgement it admits, never a fresh one', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedPendingAcknowledgement(admissionStore);
+        const acknowledgement = createAcknowledgement('receiver');
+
+        expect((await control.admit(acknowledgement, WS_ARRIVAL)).kind).toBe('committed');
+
+        const relayed = (await readRetainedWork(admissionStore, workQueue)).map((work) =>
+            work.payload.kind === 'send-control' ? work.payload.msg.id.traceId : undefined
+        );
+        expect(relayed).toEqual([acknowledgement.id.traceId, acknowledgement.id.traceId]);
+    });
+
     it('retains admit-control work for a conflicting commit and replays it to completion', async () => {
         const { backend, write, admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);

@@ -1,4 +1,5 @@
 import { createRelicGame, RELIC_PROTOCOL_VERSION } from '@relic-hunters/mod.ts';
+import { captureRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -85,7 +86,7 @@ describe('Relic authoritative save mutations', () => {
             const ensure = await prepareGameWrite(fixture, fixture.command, initial);
             await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, ensure.computed));
             const resetIngress = fixture.service.capture(
-                { ...fixture.command, operation: 'reset', requestId: 'captured-reset' },
+                captureRelicGameCommand({ ...fixture.command, operation: 'reset', requestId: 'captured-reset' }),
                 initial,
                 'default-qbox-server'
             );

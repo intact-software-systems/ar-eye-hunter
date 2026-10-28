@@ -18,7 +18,6 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
-import { newALTraceId } from '../../al-contracts/trace/al-trace-id.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -95,10 +94,14 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly controlIdentity: ALMessage['id'] | undefined;
     }
 
-    /** What the server froze when it admitted a `receiver` room message: the audience its receipt answers for. */
+    /**
+     * What the server froze when it admitted a `receiver` room message: the audience its receipt answers for, and the
+     * message's trace, which every receipt of it carries.
+     */
     export interface Admission {
         readonly msgId: string;
         readonly originPeerId: string;
+        readonly traceId: string;
         readonly expectedRecipientPeerIds: readonly string[];
         readonly snapshotVersion: number;
         readonly deadlineAtMs: number;
@@ -141,20 +144,22 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly receipt: ALReceiptPayload | undefined;
         /** The aggregate's message deadline, which the receipt row outlives by the receipt grace. */
         readonly deadlineAtMs: number;
+        readonly traceId: string;
     }
 
-    /** An aggregate the cap ended before its deadline: its `timed-out` receipt, as of the eviction. */
-    export interface EndedAggregate {
+    /** A receipt the server writes for its aggregate: the row outlives the message deadline by the receipt grace. */
+    export interface IssuedReceipt {
         readonly receipt: ALReceiptPayload;
         readonly deadlineAtMs: number;
+        readonly traceId: string;
     }
 
     export interface RecordedAdmission {
         /** False when the message's aggregate was already live: the admission that started it wrote its receipt. */
         readonly started: boolean;
         readonly admitted: ALReceiptPayload;
-        /** Absent unless this admission found the cap reached. */
-        readonly evicted: EndedAggregate | undefined;
+        /** The `timed-out` receipt of the oldest aggregate, absent unless this admission found the cap reached. */
+        readonly evicted: IssuedReceipt | undefined;
     }
 }
 
@@ -312,7 +317,8 @@ export class WsQueueBoxServerReceiptAggregation {
             }
             result = Either.ofRight({
                 receipt: complete ? toReceiptPayload(after, 'complete', nowMs) : undefined,
-                deadlineAtMs: after.deadlineAtMs
+                deadlineAtMs: after.deadlineAtMs,
+                traceId: after.traceId
             });
             outcome = complete ? 'complete' : 'partial';
         }
@@ -345,10 +351,10 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** The `timed-out` receipt of every aggregate whose deadline has passed; each leaves the map. */
-    sweep(nowMs: number): readonly ALReceiptPayload[] {
+    sweep(nowMs: number): readonly WsQueueBoxServerReceiptAggregation.IssuedReceipt[] {
         return this.#deadlines.takeDue(nowMs).flatMap((key) => {
             const aggregate = this.#aggregates.take(key);
-            return aggregate === undefined ? [] : [toReceiptPayload(aggregate, 'timed-out', nowMs)];
+            return aggregate === undefined ? [] : [toIssuedReceipt(aggregate, 'timed-out', nowMs)];
         });
     }
 
@@ -370,9 +376,13 @@ export class WsQueueBoxServerReceiptAggregation {
             return;
         }
         if (recorded.evicted !== undefined) {
-            await this.writeReceipt(recorded.evicted.receipt, recorded.evicted.deadlineAtMs);
+            await this.writeReceipt(recorded.evicted);
         }
-        await this.writeReceipt(recorded.admitted, admission.deadlineAtMs);
+        await this.writeReceipt({
+            receipt: recorded.admitted,
+            deadlineAtMs: admission.deadlineAtMs,
+            traceId: admission.traceId
+        });
     }
 
     /**
@@ -399,7 +409,7 @@ export class WsQueueBoxServerReceiptAggregation {
         try {
             const result = counted.result.right;
             if (result?.receipt !== undefined) {
-                await this.writeReceipt(result.receipt, result.deadlineAtMs);
+                await this.writeReceipt({ ...result, receipt: result.receipt });
             }
         }
         finally {
@@ -432,6 +442,7 @@ export class WsQueueBoxServerReceiptAggregation {
         return !aggregated ? undefined : {
             msgId: message.id.msgId,
             originPeerId,
+            traceId: message.id.traceId,
             expectedRecipientPeerIds: toFrozenAudience(message, originPeerId, roomAudience.recipientPeerIds),
             snapshotVersion: roomAudience.snapshotVersion,
             deadlineAtMs: Math.min(
@@ -446,16 +457,14 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** The oldest admitted aggregate, ended as a passed deadline ends it, when one more would pass the cap. */
-    private takeOldestAggregateAtCap(nowMs: number): WsQueueBoxServerReceiptAggregation.EndedAggregate | undefined {
+    private takeOldestAggregateAtCap(nowMs: number): WsQueueBoxServerReceiptAggregation.IssuedReceipt | undefined {
         if (this.#aggregates.size() < WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES) {
             return undefined;
         }
         const [oldest] = this.#aggregates.keys();
         const aggregate = this.#aggregates.take(oldest);
         this.#deadlines.delete(oldest);
-        return aggregate === undefined
-            ? undefined
-            : { receipt: toReceiptPayload(aggregate, 'timed-out', nowMs), deadlineAtMs: aggregate.deadlineAtMs };
+        return aggregate === undefined ? undefined : toIssuedReceipt(aggregate, 'timed-out', nowMs);
     }
 
     private deleteAggregate(key: string): void {
@@ -475,19 +484,20 @@ export class WsQueueBoxServerReceiptAggregation {
 
     private async writeTimedOutReceipts(): Promise<void> {
         const nowMs = this.#dependencies.clock.nowMs();
-        for (const receipt of this.sweep(nowMs)) {
-            await this.writeReceipt(receipt, nowMs);
+        for (const issued of this.sweep(nowMs)) {
+            await this.writeReceipt(issued);
         }
     }
 
     /** A receipt row outlives its message's deadline by the receipt grace, as the origin's receipt row does. */
-    private async writeReceipt(receipt: ALReceiptPayload, deadlineAtMs: number): Promise<void> {
+    private async writeReceipt(issued: WsQueueBoxServerReceiptAggregation.IssuedReceipt): Promise<void> {
+        const { receipt, deadlineAtMs } = issued;
         const id = {
             v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: this.#dependencies.newControlId(),
             senderId: this.#dependencies.serverPeerId,
             ts: receipt.observedAtEpochMs,
-            traceId: newALTraceId()
+            traceId: issued.traceId
         };
         const expiresAtMs = Math.max(deadlineAtMs, receipt.observedAtEpochMs) + AL_RECEIPT_DEADLINE_GRACE_MS;
         const message = decodePersistedALMessageValue({
@@ -618,6 +628,18 @@ function toFrozenAudience(
 
 function toReceiptAggregateKey(originPeerId: string, msgId: string): string {
     return JSON.stringify([originPeerId, msgId]);
+}
+
+function toIssuedReceipt(
+    aggregate: WsQueueBoxServerReceiptAggregate,
+    phase: ALReceiptPayload['phase'],
+    observedAtEpochMs: number
+): WsQueueBoxServerReceiptAggregation.IssuedReceipt {
+    return {
+        receipt: toReceiptPayload(aggregate, phase, observedAtEpochMs),
+        deadlineAtMs: aggregate.deadlineAtMs,
+        traceId: aggregate.traceId
+    };
 }
 
 function toReceiptPayload(

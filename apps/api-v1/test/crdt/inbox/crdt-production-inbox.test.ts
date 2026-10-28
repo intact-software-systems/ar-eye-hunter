@@ -144,6 +144,7 @@ Deno.test(
             await service.createAndEnqueueAppend({
                 update: update('factory-enqueue', now - 10_000),
                 deliveryId: 'factory-delivery',
+                traceId: 'trace-crdt-production-inbox',
                 actor: {
                     actorId: 'client-1',
                     principalId: 'client-1',
@@ -187,6 +188,7 @@ for (const stage of FAILURE_STAGES) {
             await service.createAndEnqueueAppend({
                 update: update(`${stage}-update`, now - 10_000),
                 deliveryId: `${stage}-delivery`,
+                traceId: 'trace-crdt-production-inbox',
                 actor: {
                     actorId: 'client-1',
                     principalId: 'client-1',
@@ -459,6 +461,7 @@ async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
     await service.createAndEnqueueAppend({
         update: envelope,
         deliveryId,
+        traceId: 'trace-crdt-production-inbox',
         actor: {
             actorId: 'client-1',
             principalId: 'client-1',

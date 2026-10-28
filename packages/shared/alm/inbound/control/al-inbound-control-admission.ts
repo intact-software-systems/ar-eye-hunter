@@ -1,7 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALControlAcceptance } from '../../../al-contracts/al-control.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
-import { newALTraceId } from '../../../al-contracts/trace/al-trace-id.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
@@ -112,7 +111,8 @@ export class ALInboundControlAdmission {
             return { kind: 'not-handled' };
         }
         const nowMs = this.clock.nowMs();
-        const read = await this.readControlAdmission({ ...decoded.right!.payload, carrier: arrival.carrier }, nowMs);
+        const ack = { ...decoded.right!.payload, carrier: arrival.carrier };
+        const read = await this.readControlAdmission(arrival, ack, nowMs);
         if (read === undefined) {
             return { kind: 'not-handled' };
         }
@@ -172,8 +172,12 @@ export class ALInboundControlAdmission {
         await this.port.retainIfAbsent(work.entry);
     }
 
-    /** An acknowledgement whose peer owns no tracked message, or an ambiguous one, is not handled. */
+    /**
+     * An acknowledgement whose peer owns no tracked message, or an ambiguous one, is not handled. The ACKs it relays
+     * carry the trace of the acknowledgement they relay, which names the acknowledged message's trace.
+     */
     private async readControlAdmission(
+        arrival: ALInboundControlArrival,
         ack: ALAckPayload,
         nowMs: number
     ): Promise<ALInboundControlAdmissionRead | undefined> {
@@ -196,7 +200,7 @@ export class ALInboundControlAdmission {
             acks: surface.acks,
             nowMs,
             controlMsgId: this.newControlId(),
-            traceId: newALTraceId()
+            traceId: arrival.msg.id.traceId
         };
     }
 }

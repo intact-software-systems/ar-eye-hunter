@@ -22,7 +22,10 @@ import type {
     GroupPresenceAdmission,
     GroupPresenceSummary
 } from '@shared/api/group-types.ts';
-import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import {
+    computeGroupPresenceSummaryEntry,
+    GROUP_PRESENCE_SUMMARY_OUTBOX_TYPE
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -166,6 +169,20 @@ describe('group mutation receipt causal invariants', () => {
             for (const write of computed.outboxWrites) {
                 expect(decodePersistedALMessage(write.entry.resource).id.traceId).toBe(facts.traceId);
             }
+        });
+
+        it('carries one trace on the presence summary envelope and the event it summarizes', () => {
+            const facts = createMutationFacts();
+            const computed = computeGroupMutation({ command: createMutationCommand(), read: createMutationRead(), facts });
+            if (computed.outcome !== 'write') {
+                throw new Error('Expected group write computation');
+            }
+
+            const summaries = computed.outboxWrites
+                .map((write) => decodePersistedALMessage(write.entry.resource))
+                .filter((message) => message.payload.typeId === GROUP_PRESENCE_SUMMARY_OUTBOX_TYPE);
+            expect(summaries).toHaveLength(1);
+            expect(JSON.parse(summaries[0]!.payload.resource).data.event.traceId).toBe(summaries[0]!.id.traceId);
         });
 
         it('stamps the audit and the event with the trace of the queued command, never a body trace', () => {

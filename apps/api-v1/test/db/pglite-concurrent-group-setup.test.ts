@@ -102,6 +102,35 @@ Deno.test('PGlite ordinary group setup completes for one director and fourteen c
     });
 });
 
+Deno.test('PGlite group creation writes its command and every outbox row under the request x-request-id', async () => {
+    await withPGliteSql(async (sql) => {
+        const setup = createGroupSetupRuntime(sql);
+        const [director] = await createGroupSetupSessions(setup.mutation);
+        assert.ok(director);
+        setup.engine.start();
+        try {
+            const requestId = 'traced-ensure-group-request';
+            const created = await writeGroupSetupRequest(setup.app, director, {
+                requestId,
+                path: `${GROUP_PATH}/requests/${requestId}`,
+                method: 'POST',
+                body: { groupId: GROUP_REF.groupId, displayName: GROUP_REF.groupId, kind: 'room', joinMode: 'open' }
+            });
+            assert.equal(created.status, 201);
+
+            const rows = await sql<{ type: string; traceId: string; }[]>`
+                select ri_type_id as type, ri_resource::jsonb #>> '{id,traceId}' as "traceId" from resource_inbox
+                where ri_type_id in ('APP_INBOX', 'APP_OUTBOX', 'WS_OUTBOX')
+            `;
+            assert.ok(rows.some((row) => row.type !== 'APP_INBOX'), 'the mutation wrote outbox rows');
+            assert.deepEqual(new Set(rows.map((row) => row.traceId)), new Set([requestId]));
+        }
+        finally {
+            await setup.engine.stop();
+        }
+    });
+});
+
 function createGroupSetupRuntime(sql: PGliteSql): GroupSetupRuntime {
     const mutation = createGroupSetupMutation(sql);
     const { engine, groupInbox } = createGroupSetupQueue(mutation);
@@ -252,7 +281,12 @@ async function writeGroupSetupRequest(app: Hono, session: IssuedAuthSession, req
     const startedAt = performance.now();
     const pending = Promise.resolve(app.request(request.path, {
         method: request.method,
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId },
+        headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${session.accessToken}`,
+            'x-client-id': session.clientId,
+            'x-request-id': request.requestId
+        },
         body: JSON.stringify(request.body)
     })).then(async (response) => ({
         requestId: request.requestId,

@@ -72,7 +72,7 @@ function createRouterDouble() {
             SERVER_PEER_ID,
             RELIC_TYPES.aiPlanningRequest,
             requestJson,
-            { groupRef: context.roomRef, reliability: 'at-least-once', ack: 'receiver' }
+            { groupRef: context.roomRef, reliability: 'at-least-once', ack: 'receiver', traceId: 'trace-relic-planning-request' }
         );
         requests.push(raw);
         const message = { payload: decodeRallarServerAiJsonRequest(requestJson), raw };
@@ -126,6 +126,7 @@ describe('the Relic planning AI topic', () => {
         expect(reply.message.targets).toEqual({ mode: 'unicast', toPeerId: ASKER_SESSION_ID, groupRef: REF });
         const request = router.requests[0]!;
         expect(reply.message.actions).toEqual({ corrId: request.id.msgId, replyToMsgId: request.id.msgId });
+        expect(reply.message.id.traceId).toBe('trace-relic-planning-request');
         const result = JSON.parse(reply.message.payload.resource);
         expect(result).toMatchObject({
             requestId: 'relic-planning:room-1:r1:alice',

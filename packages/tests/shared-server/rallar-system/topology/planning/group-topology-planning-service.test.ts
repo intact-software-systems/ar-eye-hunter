@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
@@ -460,7 +461,29 @@ describe('GroupTopologyPlanningService', () => {
 
         expect(response.published).toBe(false);
     });
+
+    it('publishes a local topology under a fresh valid trace per publication', async () => {
+        const traces = [...await readLocalPublicationTraces(), ...await readLocalPublicationTraces()];
+
+        expect(traces).toHaveLength(2);
+        expect(traces.flatMap(validateALTraceId)).toEqual([]);
+        expect(traces[0]).not.toBe(traces[1]);
+    });
 });
+
+async function readLocalPublicationTraces(): Promise<readonly string[]> {
+    const traces: string[] = [];
+    const group = groupWithSessionsIn('active');
+    await createPlanningService({ group }).reconfigureGroupTopology({
+        groupRef: group.group,
+        groupSnapshot: group,
+        publisher: (page) => {
+            traces.push(page.id.traceId);
+            return 1;
+        }
+    });
+    return traces;
+}
 
 function groupWithSessionsIn(
     lifecycleState: GroupLifecycleState
