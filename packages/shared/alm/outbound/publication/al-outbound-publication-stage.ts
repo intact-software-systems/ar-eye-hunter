@@ -31,7 +31,8 @@ import {
 import type { ALOutboundStagedPublication } from './al-outbound-staged-publication.ts';
 import {
     computeALPublicationReconfiguration,
-    isSameALPublicationPolicy
+    isSameALPublicationPolicy,
+    type ALPublicationSupersession
 } from './compute-al-publication-reconfiguration.ts';
 import { computeALPublicationSelection } from './compute-al-publication-selection.ts';
 
@@ -47,6 +48,9 @@ export interface ALOutboundPublicationLaneReport {
 export interface ALOutboundPublicationStageReport extends ALOutboundPublicationLedgerReport {
     readonly lanes: number;
 }
+
+const NEWER_VALUE_DETAIL = 'A newer live value of the stream displaced it before its opportunity.';
+const SHRUNK_RETENTION_DETAIL = 'The live channel\'s retention shrank, and newer values of the stream displaced it.';
 
 const DISPOSED_VERDICT: ALDeliveryAdmissionVerdict = {
     kind: 'skipped',
@@ -147,7 +151,11 @@ export class ALOutboundPublicationStage<TContext> {
         this.input.settle(toStagedSettlement(publication));
         this.ledger.count('staged', 1);
         this.writeStream(lane, publication.streamKey, retained);
-        this.settleSuperseded(displaced, publication, publication.stagedAtMs);
+        this.settleSuperseded(
+            displaced.map((value) => ({ displaced: value, replacement: publication })),
+            publication.stagedAtMs,
+            NEWER_VALUE_DETAIL
+        );
         if (lane.nextOpportunityAtMs === undefined) {
             this.scheduleLane(lane, publication.stagedAtMs);
             this.input.queueEngine.wake();
@@ -250,9 +258,7 @@ export class ALOutboundPublicationStage<TContext> {
         streamKeys.forEach((streamKey, index) =>
             this.writeStream(lane, streamKey, reconfiguration.remaining[index] ?? [])
         );
-        reconfiguration.superseded.forEach(({ displaced, replacement }) =>
-            this.settleSuperseded([displaced], replacement, atMs)
-        );
+        this.settleSuperseded(reconfiguration.superseded, atMs, SHRUNK_RETENTION_DETAIL);
         this.ledger.count('refused', reconfiguration.oversized.length);
         reconfiguration.oversized.forEach((publication) =>
             this.settleAdmission(publication, atMs, {
@@ -265,19 +271,19 @@ export class ALOutboundPublicationStage<TContext> {
     }
 
     private settleSuperseded(
-        displaced: readonly ALOutboundStagedPublication<TContext>[],
-        replacement: ALOutboundStagedPublication<TContext>,
-        atMs: number
+        supersessions: readonly ALPublicationSupersession<ALOutboundStagedPublication<TContext>>[],
+        atMs: number,
+        detail: string
     ): void {
-        this.ledger.count('superseded', displaced.length);
-        displaced.forEach((value) =>
+        this.ledger.count('superseded', supersessions.length);
+        supersessions.forEach(({ displaced, replacement }) =>
             this.input.settle({
                 kind: 'superseded',
-                msgId: value.msgId,
-                carrier: value.carrier,
+                msgId: displaced.msgId,
+                carrier: displaced.carrier,
                 atMs,
                 replacementMsgId: replacement.msgId,
-                detail: 'A newer live value of the stream displaced it before its opportunity.',
+                detail,
                 traceId: replacement.traceId
             })
         );

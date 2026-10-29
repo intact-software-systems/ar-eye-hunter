@@ -352,16 +352,17 @@ describe('BrowserPublicationStages', () => {
         expect(fixture.stages.readLane(connect.context, LANE_KEY)).toMatchObject({ staged: 0, streams: 0 });
     });
 
-    it('answers a cancel false when no stage holds the value', () => {
+    it('answers a cancel false when no stage holds the value, including one its stopped stage held', () => {
         const fixture = createStagesFixture();
 
         expect(fixture.stages.cancel('unknown-msg')).toBe(false);
 
         const connect = createConnect(fixture);
-        stageDelivery(fixture, toLiveDelivery(connect, 'entity-1'), connect.epoch);
+        const stopped = toLiveDelivery(connect, 'entity-1');
+        stageDelivery(fixture, stopped, connect.epoch);
         fixture.stages.stopStage();
 
-        expect(fixture.stages.cancel('unknown-msg')).toBe(false);
+        expect(fixture.stages.cancel(stopped.message.id.msgId)).toBe(false);
         expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['staged', 'admission']);
     });
 });

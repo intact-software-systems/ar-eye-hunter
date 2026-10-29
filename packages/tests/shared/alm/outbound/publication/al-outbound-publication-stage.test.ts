@@ -594,10 +594,13 @@ describe('ALOutboundPublicationStage', () => {
         stageValue(fixture, 'w1', { resourceId: 'entity-2', policy: LATEST_POLICY });
 
         const superseded = fixture.settlements.filter((settlement) => settlement.kind === 'superseded');
-        expect(superseded.map((settlement) => [settlement.msgId, settlement.replacementMsgId])).toEqual([
-            [first?.msgId, third?.msgId],
-            [second?.msgId, third?.msgId]
-        ]);
+        expect(superseded.map((settlement) => [settlement.msgId, settlement.replacementMsgId, settlement.detail])).toEqual(
+            [first, second].map((displaced) => [
+                displaced?.msgId,
+                third?.msgId,
+                'The live channel\'s retention shrank, and newer values of the stream displaced it.'
+            ])
+        );
         expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({
             policy: LATEST_POLICY,
             staged: 2,

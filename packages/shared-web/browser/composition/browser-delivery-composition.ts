@@ -45,5 +45,7 @@ const deliveries = new BrowserRallarDeliveryRegistry({
     })
 });
 const sessionDeliveries = new BrowserSessionDeliveries(deliveries, browserTransportRuntime, readSession);
+// Never unsubscribed: the composition lives as long as the page.
+sessionDeliveries.onSessionEnd(() => publicationStages.stopStage());
 
 export const browserDeliveryComposition = { nowMs, publicationStages, deliveries, sessionDeliveries };

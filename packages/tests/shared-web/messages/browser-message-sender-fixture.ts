@@ -30,10 +30,13 @@ interface BrowserMessageSenderFixture {
     replaceTransport(): void;
 }
 
-/** Without a `registry`, the fixture builds one whose cancel takes the composition's route: the stages, then the carriers. */
+/**
+ * Without `givenRegistry`, the fixture builds one whose cancel takes the composition's route: the stages, then the
+ * carriers. As the composition does, it stops the stages at session end.
+ */
 export function createBrowserMessageSenderFixture(
     maxPayloadBytes = 64 * 1024,
-    givenRegistry: BrowserRallarDeliveryRegistry | undefined = undefined,
+    givenRegistry?: BrowserRallarDeliveryRegistry,
     middleware = createDefaultApiMiddlewareTestDouble()
 ): BrowserMessageSenderFixture {
     let activeMiddleware = middleware;
@@ -49,6 +52,7 @@ export function createBrowserMessageSenderFixture(
         readMiddleware: () => activeMiddleware,
         readRtcCaptureReceipt: () => undefined
     }, () => activeMiddleware.session);
+    sessionDeliveries.onSessionEnd(() => publicationStages.stopStage());
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };

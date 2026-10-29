@@ -72,7 +72,7 @@ export namespace BrowserRallarMessageDispatch {
     export interface Input {
         readonly deliveries: BrowserRallarDeliveryRegistry;
         readonly sessionDeliveries: BrowserSessionDeliveries;
-        /** Built before `deliveries`, whose cancel reaches them before the carriers (D479). */
+        /** Built before `deliveries`, whose cancel reaches them before the carriers (D479); its owner stops them at session end. */
         readonly publicationStages: BrowserPublicationStages;
         readonly nowMs: () => number;
     }
@@ -87,8 +87,6 @@ export class BrowserRallarMessageDispatch {
 
     constructor(input: BrowserRallarMessageDispatch.Input) {
         this.input = input;
-        // Never unsubscribed: the dispatch lives as long as its facade, and a page holds one.
-        input.sessionDeliveries.onSessionEnd(() => input.publicationStages.stopStage());
     }
 
     /** A send its admission refuses settles at once; a live one is staged, and its leg waits for its opportunity. */
@@ -102,7 +100,6 @@ export class BrowserRallarMessageDispatch {
         const refusal = this.readAdmissionRefusal(delivery);
         const { publication } = delivery;
         if (refusal === undefined && publication !== undefined) {
-            // A staged send's first leg: its admission refusal is read here, and the connect's close stops its stage.
             this.input.publicationStages.stage({
                 delivery: { ...delivery, publication },
                 epoch,

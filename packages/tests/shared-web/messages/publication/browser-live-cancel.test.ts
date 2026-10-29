@@ -1,3 +1,4 @@
+import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
@@ -61,6 +62,19 @@ function toPoseSend(resourceId: string) {
     return { typeId: 'arena.pose.v1', roomId: 'room', resourceId, payload: { seq: 1, text: 'pose' } };
 }
 
+/** Each state the handle moves into from now on, in order; a late settlement that keeps the state adds nothing. */
+function recordTransitions(handle: RallarMessageHandle): string[] {
+    const transitions: string[] = [];
+    let current = handle.lifecycle().state;
+    handle.onEvent((lifecycle) => {
+        if (lifecycle.state !== current) {
+            current = lifecycle.state;
+            transitions.push(current);
+        }
+    });
+    return transitions;
+}
+
 /** Runs one engine pass and joins the runnable it started: `stop` awaits the work the engine owns. */
 async function runEnginePass(engine: InboxOutboxEngine): Promise<void> {
     await engine.executeOnce();
@@ -71,11 +85,12 @@ describe('cancelling a live channel send', () => {
     it('settles a staged value cancelled at its stage, reaches no carrier, and never admits it', async () => {
         const fixture = createLiveCancelFixture(async (message) => await Promise.resolve(toQueuedMessageAdmission(message)));
         const handle = await fixture.sender.sendRtc(toPoseSend('entity-1'), LIVE_CHANNEL);
+        const transitions = recordTransitions(handle);
 
         handle.cancel();
         await runEnginePass(fixture.engine);
 
-        expect(handle.lifecycle().state).toBe('cancelled');
+        expect(transitions).toEqual(['cancelled']);
         expect(fixture.carrierCancels).toEqual([]);
         expect(fixture.admitted).toEqual([]);
     });
@@ -103,12 +118,13 @@ describe('cancelling a live channel send', () => {
         const pass = fixture.engine.executeOnce();
         await vi.waitFor(() => expect(fixture.admitted.map((message) => message.id.msgId)).toEqual([handle.msgId]));
 
+        const transitions = recordTransitions(handle);
         handle.cancel();
         releaseAdmission();
         await pass;
         await fixture.engine.stop();
 
         expect(fixture.carrierCancels).toEqual([['rtc', handle.msgId], ['ws', handle.msgId]]);
-        expect(handle.lifecycle().state).toBe('cancelled');
+        expect(transitions).toEqual(['cancelled']);
     });
 });
