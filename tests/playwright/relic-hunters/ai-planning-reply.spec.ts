@@ -62,6 +62,7 @@ async function startPlanningExpedition(
     await page.getByLabel('Display name').fill('Alice');
     await page.getByLabel('Password').fill('test-only-password');
     await page.getByRole('button', { name: 'Create Hunter' }).click();
-    await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+    // The authenticated session already has presence in this expedition.
+    await expect(page.getByRole('button', { name: 'Relic Hunters Expedition' })).toBeDisabled({ timeout: 30_000 });
     await expect(page.locator('#hud-ai').getByRole('button', { name: 'Ask' })).toBeEnabled();
 }

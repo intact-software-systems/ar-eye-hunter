@@ -146,6 +146,7 @@ async function enterExpedition(page: Page): Promise<void> {
     await page.getByLabel('Display name', { exact: true }).fill('Alice');
     await page.getByLabel('Password', { exact: true }).fill('test-only-password');
     await page.getByRole('button', { name: 'Create Hunter' }).click();
-    await page.getByRole('button', { name: /^Relic Hunters Expedition/ }).click();
+    // The authenticated session already has presence in this expedition.
+    await expect(page.getByRole('button', { name: /^Relic Hunters Expedition/ })).toBeDisabled({ timeout: 30_000 });
     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
 }
