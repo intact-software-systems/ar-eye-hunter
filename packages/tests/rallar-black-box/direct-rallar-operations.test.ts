@@ -24,6 +24,13 @@ const session: AuthSession = {
     expiresAtEpochMs: Date.now() + 60_000
 };
 
+const snapshot: GroupSnapshot = createGroupSnapshotFixture({
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'bb-group',
+    sessionIds: [session.sessionId]
+});
+
 describe('direct Rallar operations', () => {
     it('reports every invalid send field before loading the facade', async () => {
         const result = await runDirectRallarWsSend(
@@ -785,12 +792,6 @@ describe('direct Rallar operations', () => {
     });
 });
 
-const snapshot: GroupSnapshot = createGroupSnapshotFixture({
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-    groupId: 'bb-group',
-    sessionIds: [session.sessionId]
-});
 function unsupportedOperation(): never {
     throw new Error('Operation is outside this direct scenario');
 }
