@@ -21,7 +21,9 @@ and it has no status list.
   (`maxEntries` on `LatestRepository`, ALM P1b, D114) and the motion sample
   window (`packages/shared/rallar-motion/buffer.ts`). Its third candidate user
   is ALM's realtime demand to keep only the last N copies of a type, a bounded
-  history per key (D118). The decision is taken with ALM I2b's plan.
+  history per key (D118). I2b took no such collection; the decision is taken with
+  Slice 1 of `playground/alm/alm-publication-qos-addendum.md`, whose newest-N
+  retention per stream key is that demand.
 - Five shared-mechanism consolidations the V1c audit ranked (D278) and the
   V1c closure recorded, not selected (D420, D421 and D423–D426 in
   `playground/alm/alm-v1c-step2-design-proposal.md`), measured on `ab27df0a9`:
@@ -64,3 +66,43 @@ and it has no status list.
   throws, which is why the closure did not change it.
 - The topology and configuration commands read the group's whole roster and every session (`read-topology-config-mutation.ts` → `read-group-state-authority.ts`; 201 rows per call in the state-write bench's hot workload, identical before V1c): narrow the read to the decision surface.
 - The coalesced completion poll reads every waiting command's status row each tick; a terminal-status filter would cut the rows at the cost of the non-terminal telemetry the wait does not need.
+- ALM harness evidence carried from PR #731 (D461): one shape per
+  `rallar.browser.ws.message` topic, since the `ws.send` subscription path
+  records a bare `data: message.payload` while `messages.received` decodes the
+  identities (`black-box-rallar-ws-send-controller.ts`,
+  `black-box-rallar-connection-subscriptions.ts`); a bounded, named `reason`
+  field on control-run event evidence rows instead of free-text `data.reason`;
+  and the RTC send results (`black-box-rallar-rtc-send-controller.ts`), which
+  still echo `sent` outside the payload-free diagnostics class.
+- The `x-request-id` literal beside `AL_TRACE_ID_HTTP_HEADER`
+  (`packages/shared/al-contracts/trace/al-trace-id.ts`): api-v1's
+  `http-timing-middleware.ts` and the CORS lists in
+  `install-api-http-middleware.ts`, shared-web's `send-api-http-request.ts` and
+  the runner's `normalize-black-box-response-headers.ts` each spell it.
+- The api-v1 formation-large and medium-scale gates
+  (`.github/workflows/api-v1-formation-gate.yml`,
+  `api-v1-medium-scale-gate.yml`) wait 30 s for the managed API's startup
+  marker (`packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-readiness.mts`),
+  which a cold Deno cache can outlast (#728).
+- ALM persistence outcomes the QoS plan keeps outcome-shaped
+  (`playground/alm/alm-qos-product-plan.md` §7.6): a durable owner hosted in a
+  worker; a per-message persistence barrier; the Temporal polyfill leaving the
+  browser bundle (an estimated 39.7 KiB brotli, D110); and the fence-snapshot
+  fold (§7.3), which merges the D17 fence snapshot into the decision read.
+- ALM schema mismatch: D3 deletes incompatible browser storage, but since #652
+  `openIndexedDbAdmissionStorage` refuses it with `ALStorageSchemaMismatchError`
+  and keeps the rows, so nothing reclaims it; the `reset-blocked` cause and the
+  `schema-id-mismatch` and `store-schema-mismatch` reset reasons have no
+  producer, and the QoS plan's sections 2 and 8 still describe deletion. A
+  ruling picks one and aligns D3, those types and the QoS plan (roadmap F9,
+  PC10).
+- `packages/shared/alm/al-runtime-state-stores.ts` exports
+  `ALInboundRuntimeStateStore`, `InMemoryALInboundRuntimeStateStore` and
+  `PersistentALInboundRuntimeStateStore`, which nothing constructs; the
+  persistent one's `readAllValues` is the last whole-store read under
+  `packages/shared/alm` (D8; roadmap F15).
+- ALM congestion beyond V1b: relay fanout reduction and alternate routes under
+  congestion, routing around one backpressured peer, congestion on RTC
+  unicasts, server-side WS backpressure, and an outbound claim order that
+  rotates across senders or tracks (V1b-ii measured the sender-blind order and
+  kept it).

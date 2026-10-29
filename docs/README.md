@@ -5,9 +5,11 @@ Package and app notes stay next to the code they describe. This index links to
 them. It does not copy them.
 
 Historical implementation plans are not product documentation.
-[plans/README.md](../plans/README.md) says where a written plan belongs. The ALM
-design that is still underway lives in `playground/alm/`, starting at
-`playground/alm/alm-improvement-plan.md`.
+[plans/README.md](../plans/README.md) says where a written plan belongs. ALM's
+delivery roadmap (Releases 1 to 8, `playground/alm/alm-improvement-plan.md`) is
+complete. The ALM design that continues is the publication QoS and pub/sub
+addendum, `playground/alm/alm-publication-qos-addendum.md`, and the product
+contract is `playground/alm/alm-complete-product-description.md`.
 
 ## Product
 

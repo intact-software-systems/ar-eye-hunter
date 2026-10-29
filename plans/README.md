@@ -15,9 +15,16 @@ completion record here.
 - A written multi-slice spec, when one is useful, lives at
   `plans/active/<topic>.md`. The pull request remains the delivery record.
   There is no index of those files.
-- The ALM design set stays at `playground/alm/`. It is current work. The
-  snapshot readers in `playground/alm/tools/` belong to the hosted lifecycle
-  diagnosis beside those documents.
+- The ALM keep-set at `playground/alm/` is four documents: the delivery
+  roadmap `alm-improvement-plan.md`, the product contract
+  `alm-complete-product-description.md`, the persistence and performance QoS
+  plan `alm-qos-product-plan.md` and the publication QoS and pub/sub addendum
+  `alm-publication-qos-addendum.md`, the design that continues. The snapshot
+  readers in `playground/alm/tools/` read a control run snapshot from the hosted
+  ALM lane artifact `alm-conformance-lane-<sha>`
+  (`alm-observation/<carrier>-<scope>-snapshot.json`, such as
+  `ws-smoke-snapshot.json`); each takes the snapshot path, as in
+  `node playground/alm/tools/lifecycle-trace.mjs <snapshot.json>`.
 
 ## When a plan is finished
 
@@ -29,4 +36,4 @@ A later deletion is allowed only when the outcomes are already in the tree or in
 request, no open pull request still modifies the path, and neither this file nor `docs/README.md`
 names the plan as current work. If one of those checks fails, leave the file.
 
-The keep-set is the ALM design named above. `plans/backlog.md` is not a plan to delete.
+The keep-set is the four ALM documents named above. `plans/backlog.md` is not a plan to delete.

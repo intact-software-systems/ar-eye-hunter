@@ -218,8 +218,8 @@ each operation. It also waits in the queue behind the per-sender commit Web Lock
 
 ### 7.3 P1: the durable path's cost
 
-P1 weakens no guarantee. It ships as two serial PRs, P1a then P1b (D108), designed in the
-[P1 design proposal](alm-p1-design-proposal.md). Its levers keep the spike's order (section 7.5,
+P1 weakens no guarantee. It ships as two serial PRs, P1a then P1b (D108), designed in
+`alm-p1-design-proposal.md`. Its levers keep the spike's order (section 7.5,
 D90), and each lands only with before-and-after pins and harness figures (D111):
 
 1. **Take the Temporal polyfill off the storage hot path (P1a, D110).**
@@ -558,7 +558,7 @@ on the minimal plan. The reading states its machine and that it is not a phone.
 - **Decided (D134, 2026-10-02).** Relic's command channel moves to `local-checkpoint` with
   `onStorageUnavailable: 'refuse'`; the proof is a reload mid-command in the Relic full-stack
   Playwright spec; a command admitted inside the last interval is lost with the page and reads
-  `unobservable`. The design is [alm-i2b-design-proposal.md](alm-i2b-design-proposal.md).
+  `unobservable`. The design is `alm-i2b-design-proposal.md`.
 
 ### 10.3 Beside S3c, now
 
