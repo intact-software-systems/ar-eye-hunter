@@ -17,13 +17,6 @@ and it has no status list.
 - One group-formation acceptance scenario remains unpinned in
   `docs/rallar-group-formation-architecture.md`: `pacing-sweep`, which needs a
   headless parallelism sweep over `maxConcurrentEdgeSetups`.
-- A generic bounded FIFO in `packages/shared`, beside the cache cap
-  (`maxEntries` on `LatestRepository`, ALM P1b, D114) and the motion sample
-  window (`packages/shared/rallar-motion/buffer.ts`). Its third candidate user
-  is ALM's realtime demand to keep only the last N copies of a type, a bounded
-  history per key (D118). I2b took no such collection; the decision is taken with
-  Slice 1 of `playground/alm/alm-publication-qos-addendum.md`, whose newest-N
-  retention per stream key is that demand.
 - Five shared-mechanism consolidations the V1c audit ranked (D278) and the
   V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history), measured on `ab27df0a9`:
   the AL checkpoint writer and the reconnect hydrator keep their own trailing

@@ -1,3 +1,4 @@
+import { retainNewest } from '../cache/retain-newest.ts';
 import { classifyRallarMotionDiscontinuity } from './discontinuity.ts';
 import { deadReckonRallarMotion, interpolateRallarMotion, interpolateRallarMotionHermite } from './interpolation.ts';
 import { sanitizeRallarMotionNonNegative } from './math.ts';
@@ -46,7 +47,7 @@ export const DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS: Required<
     interpolationMode: 'linear'
 };
 
-export function createRallarMotionBuffer<TMetadata = unknown>(
+export function createRallarMotionBuffer<TMetadata>(
     options: RallarMotionBufferOptions = {}
 ): RallarMotionBuffer<TMetadata> {
     const resolved = normalizeRallarMotionBufferOptions(options);
@@ -86,7 +87,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
             }
 
             const beforeTrim = track.samples.length;
-            trimTrackToMaxSamples(track, resolved.maxSamplesPerEntity);
+            track.samples = [...retainNewest(track.samples, resolved.maxSamplesPerEntity).retained];
             const retained = track.samples.includes(sample);
             const droppedSampleCount = beforeTrim - track.samples.length;
 
@@ -299,15 +300,6 @@ function isDiscontinuous<TMetadata>(
 
     return classifyRallarMotionDiscontinuity(source, target, options)
         .discontinuous;
-}
-
-function trimTrackToMaxSamples<TMetadata>(
-    track: EntityMotionTrack<TMetadata>,
-    maxSamplesPerEntity: number
-): void {
-    while (track.samples.length > maxSamplesPerEntity) {
-        track.samples.shift();
-    }
 }
 
 function compareRallarMotionSamples<TMetadata>(

@@ -5,6 +5,8 @@ import {
     toALPublicationLaneKey,
     toALPublicationStreamKey
 } from '../../../al-contracts/publication/to-al-publication-stream-key.ts';
+import { retainNewest } from '../../../cache/retain-newest.ts';
+import { computeNextCadenceAtMs } from '../../../resilience/cadence.ts';
 import { toError } from '../../../resilience/to-error.ts';
 import type { InboxOutboxEngine } from '../../../services/inbox-outbox-engine.ts';
 import type {
@@ -19,8 +21,6 @@ import {
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundStagedPublication } from './al-outbound-staged-publication.ts';
-import { computeALPublicationNextOpportunityAtMs } from './compute-al-publication-opportunity.ts';
-import { computeALPublicationRetention } from './compute-al-publication-retention.ts';
 import { computeALPublicationSelection } from './compute-al-publication-selection.ts';
 
 export interface ALOutboundPublicationLaneReport {
@@ -153,24 +153,21 @@ export class ALOutboundPublicationStage<TContext> {
         lane: ALOutboundPublicationLane<TContext>,
         publication: ALOutboundStagedPublication<TContext>
     ): ALOutboundStagedPublication<TContext> | undefined {
-        const { retained, displaced } = computeALPublicationRetention({
-            retained: lane.streams.get(publication.streamKey) ?? [],
-            incoming: publication,
-            retainNewest: lane.policy.retainNewest
-        });
+        const staged = [...(lane.streams.get(publication.streamKey) ?? []), publication];
+        const { retained, displaced } = retainNewest(staged, lane.policy.retainNewest);
         lane.streams.set(publication.streamKey, retained);
-        if (displaced !== undefined) {
+        displaced.forEach((value) =>
             this.input.settle({
                 kind: 'superseded',
-                msgId: displaced.msgId,
-                carrier: displaced.carrier,
+                msgId: value.msgId,
+                carrier: value.carrier,
                 atMs: publication.stagedAtMs,
                 replacementMsgId: publication.msgId,
                 detail: 'A newer live value of the stream displaced it before its opportunity.',
                 traceId: publication.traceId
-            });
-        }
-        return displaced;
+            })
+        );
+        return displaced[0];
     }
 
     /** Its owner drops a disposed stage in the same synchronous step, so a later stage() is a wiring defect. */
@@ -249,8 +246,8 @@ export class ALOutboundPublicationStage<TContext> {
     }
 
     private scheduleLane(lane: ALOutboundPublicationLane<TContext>, nowMs: number): void {
-        lane.nextOpportunityAtMs = computeALPublicationNextOpportunityAtMs({
-            lastOpportunityAtMs: lane.lastOpportunityAtMs,
+        lane.nextOpportunityAtMs = computeNextCadenceAtMs({
+            lastAtMs: lane.lastOpportunityAtMs,
             cadenceMs: lane.policy.cadenceMs,
             nowMs
         });

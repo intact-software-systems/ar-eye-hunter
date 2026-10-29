@@ -1,3 +1,4 @@
+import { computeNextCadenceAtMs, isCadenceDue } from '../resilience/cadence.ts';
 import { distanceRallarMotionVec3, distanceRallarMotionWrappedVec3 } from './math.ts';
 import type {
     RallarMotionSendGate,
@@ -13,7 +14,7 @@ export function shouldSendRallarMotionSample(
     nextAllowedEpochMs: number,
     cadenceMs: number
 ): boolean {
-    return cadenceMs <= 0 || nowEpochMs >= nextAllowedEpochMs;
+    return isCadenceDue({ lastAtMs: nextAllowedEpochMs - cadenceMs, cadenceMs, nowMs: nowEpochMs });
 }
 
 export function shouldSendRallarMotionUpdate(
@@ -23,7 +24,7 @@ export function shouldSendRallarMotionUpdate(
         return {
             shouldSend: true,
             reason: 'initial',
-            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input)
+            nextAllowedEpochMs: computeSentNextAllowedEpochMs(input)
         };
     }
 
@@ -35,7 +36,7 @@ export function shouldSendRallarMotionUpdate(
         return {
             shouldSend: true,
             reason: 'force',
-            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input)
+            nextAllowedEpochMs: computeSentNextAllowedEpochMs(input)
         };
     }
 
@@ -58,11 +59,15 @@ export function shouldSendRallarMotionUpdate(
 
     const idleCadenceMs = Math.max(0, input.idleCadenceMs ?? 0);
     if (idleCadenceMs > 0) {
-        const nextAllowedEpochMs = input.lastSentAtEpochMs + idleCadenceMs;
+        const idleDue = isCadenceDue({
+            lastAtMs: input.lastSentAtEpochMs,
+            cadenceMs: idleCadenceMs,
+            nowMs: input.nowEpochMs
+        });
         return {
-            shouldSend: input.nowEpochMs >= nextAllowedEpochMs,
-            reason: input.nowEpochMs >= nextAllowedEpochMs ? 'idle' : 'waiting',
-            nextAllowedEpochMs
+            shouldSend: idleDue,
+            reason: idleDue ? 'idle' : 'waiting',
+            nextAllowedEpochMs: input.lastSentAtEpochMs + idleCadenceMs
         };
     }
 
@@ -136,6 +141,14 @@ function movementReasonFor(
     }
 
     return undefined;
+}
+
+function computeSentNextAllowedEpochMs(input: RallarMotionSendUpdateInput): number {
+    return computeNextCadenceAtMs({
+        lastAtMs: input.nowEpochMs,
+        cadenceMs: normalizedCadence(input),
+        nowMs: input.nowEpochMs
+    });
 }
 
 function normalizedCadence(input: RallarMotionSendGateOptions): number {

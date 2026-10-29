@@ -1001,8 +1001,9 @@ value ([`ALOutboundStagedPublication`](./publication/al-outbound-staged-publicat
 
 `stage()` refuses a value heavier than `drain.bytes` as `oversized` and settles nothing, so the caller settles the
 refusal; otherwise it settles `staged` at once, and a value that pushes its stream past `retainNewest` displaces the
-stream's oldest, which settles `superseded` with the new value's `msgId` as `replacementMsgId`
-([`computeALPublicationRetention`](./publication/compute-al-publication-retention.ts)). Staging on an idle lane
+stream's oldest, which settles `superseded` with the new value's `msgId` as `replacementMsgId`; the stage appends
+the value and keeps the newest `retainNewest` with [`retainNewest`](../../cache/retain-newest.ts), the primitive the
+motion buffer's per-entity window shares. Staging on an idle lane
 opens an opportunity at once and wakes the engine; on a scheduled lane the value waits for that lane's boundary.
 
 The stage registers one task, at most one runnable at a time, on the session's `InboxOutboxEngine`; its `isWork`
@@ -1013,7 +1014,7 @@ deadline passed `expired`, then takes the streams in order, each oldest first, u
 that throws settles each selected value `admission` `failed` with its message, and the opportunity writes one
 payload-free `publication-opportunity` diagnostic (`laneKey`, `atMs`, `selected`, `deferred`, `expired`,
 `bytes`). The next boundary is one cadence after the opportunity
-([`computeALPublicationNextOpportunityAtMs`](./publication/compute-al-publication-opportunity.ts)), so a lane the
+([`computeNextCadenceAtMs`](../../resilience/cadence.ts), which the motion send gate shares), so a lane the
 engine reaches late runs one bounded opportunity, never a catch-up burst. A lane its opportunity emptied stays
 scheduled for one more boundary, so a value staged within the cadence still waits, and then goes idle. After the due
 lanes ran, the task calls `wakeAt` with the earliest next opportunity, or with `undefined` once every lane is idle.
