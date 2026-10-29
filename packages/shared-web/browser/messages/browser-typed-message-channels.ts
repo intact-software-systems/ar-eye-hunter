@@ -1,6 +1,10 @@
 import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import {
+    validateBrowserLiveSend,
+    type BrowserLiveSendOptions
+} from '@shared-web/browser/messages/publication/validate-browser-live-send.ts';
 import type {
     RallarRoomMessageChannelDefinition,
     RallarTypedMessageChannel,
@@ -11,6 +15,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
@@ -48,15 +53,25 @@ export class BrowserTypedMessageChannels {
         const policy: BrowserTypedChannelPolicy = {
             purpose: definition.purpose,
             durability: definition.durability,
-            onStorageUnavailable: definition.onStorageUnavailable ?? 'refuse'
+            onStorageUnavailable: definition.onStorageUnavailable ?? 'refuse',
+            publication: toChannelPublication(definition.publication)
         };
         return {
-            send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
-                await this.input.sender.sendTyped({ ...options, ...route, payload }, policy),
-            sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
-                await this.input.sender.sendRtc({ ...options, ...route, payload }, policy),
-            sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
-                await this.input.sender.sendWs({ ...options, ...route, payload }, policy),
+            send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) => {
+                const send = { ...options, ...route, payload };
+                throwIfLiveSendIssues(send, policy);
+                return await this.input.sender.sendTyped(send, policy);
+            },
+            sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) => {
+                const send = { ...options, ...route, payload };
+                throwIfLiveSendIssues(send, policy);
+                return await this.input.sender.sendRtc(send, policy);
+            },
+            sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) => {
+                const send = { ...options, ...route, payload };
+                throwIfLiveSendIssues(send, policy);
+                return await this.input.sender.sendWs(send, policy);
+            },
             onRtc: (handler) =>
                 this.input.rtc.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
@@ -103,5 +118,21 @@ export class BrowserTypedMessageChannels {
             onRtc: (handler) => channel.onRtc(handler),
             onWs: (handler) => channel.onWs(handler)
         };
+    }
+}
+
+/** A copy, so a definition changed after the channel was created changes nothing. */
+function toChannelPublication(publication: ALPublicationPolicy | undefined): ALPublicationPolicy | undefined {
+    return publication === undefined ? undefined : { ...publication, drain: { ...publication.drain } };
+}
+
+/** A live channel's send is refused here, where its policy is known, before the sender opens a handle. */
+function throwIfLiveSendIssues(
+    send: BrowserLiveSendOptions,
+    policy: BrowserTypedChannelPolicy
+): void {
+    const issues = policy.publication === undefined ? [] : validateBrowserLiveSend(send);
+    if (issues.length > 0) {
+        throwRallarValidation(issues);
     }
 }

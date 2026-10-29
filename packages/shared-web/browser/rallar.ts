@@ -283,6 +283,10 @@ export const rallar: RallarFacade = createRallarFacade();
 
 export type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 export type { ALDurabilityAlgo, ALQosPolicyRequest, ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
+export type {
+    ALPublicationDrainBudget,
+    ALPublicationPolicy
+} from '@shared/al-contracts/publication/al-publication-policy.ts';
 export type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 export type {
     ALDeliveryFailure,

@@ -359,7 +359,7 @@ function recordWsAdmissions(
 function toCheckpointChannel(
     onStorageUnavailable: BrowserTypedChannelPolicy['onStorageUnavailable']
 ): BrowserTypedChannelPolicy {
-    return { purpose: 'command', durability: 'local-checkpoint', onStorageUnavailable };
+    return { purpose: 'command', durability: 'local-checkpoint', onStorageUnavailable, publication: undefined };
 }
 
 const AVAILABLE: ALStorageAvailability = { kind: 'available' };
@@ -388,7 +388,7 @@ function createStorageFixture(
 function toDurableChannel(
     onStorageUnavailable: BrowserTypedChannelPolicy['onStorageUnavailable']
 ): BrowserTypedChannelPolicy {
-    return { purpose: 'command', durability: 'local-outbox', onStorageUnavailable };
+    return { purpose: 'command', durability: 'local-outbox', onStorageUnavailable, publication: undefined };
 }
 
 function toStorageUnavailableAdmission(message: ALMessage): ALOutboundEnqueueResult {

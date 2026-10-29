@@ -50,6 +50,7 @@ import {
     validateBrowserPeerInput,
     validateBrowserPeerServer
 } from './create-browser-unicast-message.ts';
+import { toBrowserPublicationDelivery } from './publication/to-browser-publication-delivery.ts';
 import { toBrowserReplySendInput } from './reply/to-browser-reply-send-input.ts';
 import {
     validateBrowserRtcPeerSend,
@@ -60,6 +61,12 @@ interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
     readonly roomId: string;
     readonly roomRef: GroupRef;
+}
+
+/** A send's first leg before its channel decides what storage may refuse and, on a live channel, its publication. */
+interface BrowserDeliveryStart
+    extends Omit<BrowserRallarMessageDispatch.Delivery, 'onStorageUnavailable' | 'publication'> {
+    readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
 interface CapturedMessagePayload {
@@ -159,7 +166,7 @@ export class BrowserRallarMessageSender {
             message,
             canFallback: false,
             payloadIssues: payloadValidation.issues,
-            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+            channel
         });
     }
 
@@ -225,7 +232,7 @@ export class BrowserRallarMessageSender {
             message,
             canFallback: false,
             payloadIssues: payloadValidation.issues,
-            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+            channel
         });
     }
 
@@ -323,7 +330,7 @@ export class BrowserRallarMessageSender {
             }),
             canFallback: peer.strategy === 'rtc-with-ws-fallback',
             payloadIssues: payloadValidation.issues,
-            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+            channel
         });
     }
 
@@ -357,7 +364,7 @@ export class BrowserRallarMessageSender {
             message,
             canFallback: true,
             payloadIssues: payloadValidation.issues,
-            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+            channel
         });
     }
 
@@ -370,7 +377,13 @@ export class BrowserRallarMessageSender {
         return { serialized: validation.serialized, issues: validation.issues };
     }
 
-    private startDelivery(delivery: BrowserRallarMessageDispatch.Delivery): RallarMessageHandle {
+    private startDelivery(start: BrowserDeliveryStart): RallarMessageHandle {
+        const { channel, ...leg } = start;
+        const delivery: BrowserRallarMessageDispatch.Delivery = {
+            ...leg,
+            ...toBrowserPublicationDelivery(leg.message, channel),
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+        };
         const handle = this.input.deliveries.open(delivery.message, delivery.carrier, delivery.rtcCapture);
         this.input.dispatch.send(delivery);
         return handle;

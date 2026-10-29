@@ -3,6 +3,7 @@ import type { RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-fa
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
@@ -181,7 +182,11 @@ export interface RallarChannelRecovery {
 export interface RallarTypedMessageChannelDefinition {
     readonly topicId?: string;
     readonly typeId: string;
-    /** Fixes the send defaults (D2): at-least-once, receipted, volatile, 30 s; a send option overrides each. */
+    /**
+     * Fixes the send defaults (D2): at-least-once, receipted, volatile, 30 s; a send option overrides each. A `live`
+     * channel's sends are best-effort, unreceipted, volatile and 1 s, each names its `resourceId`, and none asks
+     * for reliability, a receipt, ordering, a claim or storage (D466, D467).
+     */
     readonly purpose: ALChannelPurpose;
     /**
      * Absent, the purpose's `volatile`; `local-checkpoint`, `local-outbox` and `local-inbox` opt the
@@ -195,6 +200,11 @@ export interface RallarTypedMessageChannelDefinition {
     readonly onStorageUnavailable?: RallarStorageUnavailablePolicy;
     /** Absent, a message the receiver can no longer order is dropped, and the inbound diagnostics state it. */
     readonly recovery?: RallarChannelRecovery;
+    /**
+     * Required on a `live` channel and refused on any other: the cadence, the newest values kept per stream and
+     * the drain budget its sends are paced by before admission. There is no default for any field.
+     */
+    readonly publication?: ALPublicationPolicy;
 }
 
 export type RallarTypedPayloadHandler<T> = (

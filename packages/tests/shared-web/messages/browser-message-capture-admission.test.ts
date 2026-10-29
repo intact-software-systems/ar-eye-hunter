@@ -98,7 +98,8 @@ describe('required capture at final message admission', () => {
                     rtcCapture,
                     canFallback: false,
                     payloadIssues: [],
-                    onStorageUnavailable: 'refuse'
+                    onStorageUnavailable: 'refuse',
+                    publication: undefined
                 })
             ).toThrow(RallarRtcCaptureUnverifiedError);
             expect(queued).toEqual([]);
@@ -151,7 +152,8 @@ describe('required capture at final message admission', () => {
                 rtcCapture: { status: 'unavailable', reason: 'absent' },
                 canFallback: false,
                 payloadIssues: [],
-                onStorageUnavailable: 'refuse'
+                onStorageUnavailable: 'refuse',
+                publication: undefined
             })
         ).not.toThrow();
         expect((await handle.wait()).lifecycle).toMatchObject({ state: 'failed', evidence: { reason: 'admission clock failed' } });
@@ -241,7 +243,8 @@ describe('required capture at final message admission', () => {
                 rtcCapture,
                 canFallback: true,
                 payloadIssues: [],
-                onStorageUnavailable: 'refuse'
+                onStorageUnavailable: 'refuse',
+                publication: undefined
             });
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 

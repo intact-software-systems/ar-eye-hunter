@@ -20,6 +20,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 interface BrowserMessageSenderFixture {
     readonly sender: BrowserRallarMessageSender;
     readonly registry: BrowserRallarDeliveryRegistry;
+    readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly middleware: ApiMiddleware;
     readonly connect: Mock<() => Promise<ApiMiddleware>>;
     replaceTransport(): void;
@@ -65,6 +66,7 @@ export function createBrowserMessageSenderFixture(
         sender,
         connect,
         registry,
+        sessionDeliveries,
         middleware,
         replaceTransport: () => {
             activeMiddleware = createDefaultApiMiddlewareTestDouble();
