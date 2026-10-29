@@ -172,6 +172,7 @@ function createBrowserSessionMessaging(
         sessionDeliveries,
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
+        readPublicationStageLimits: undefined,
         onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
     const sessionPort = session.session;

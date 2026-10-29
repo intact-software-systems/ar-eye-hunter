@@ -1,5 +1,6 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
 import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
@@ -90,8 +91,16 @@ export type ALDeliveryAdmissionVerdict =
     /** A retained admission conflict: the owner replays it; the handle stays `submitted`. */
     | Readonly<{ kind: 'pending'; }>
     | Readonly<{ kind: 'deferred'; reason: 'not-yet-in-sync'; detail: string; }>
-    /** `limit` names the session volatile bound a `capacity` refusal passed (D179); absent on every other refusal. */
-    | Readonly<{ kind: 'refused'; reason: ALDeliveryRefusalReason; limit?: ALVolatileSessionLimit; detail: string; }>
+    /**
+     * `limit` names the session volatile bound (D179) or the publication stage limit (D477) a `capacity` refusal
+     * passed; absent on every other refusal.
+     */
+    | Readonly<{
+        kind: 'refused';
+        reason: ALDeliveryRefusalReason;
+        limit?: ALVolatileSessionLimit | ALPublicationStageLimit;
+        detail: string;
+    }>
     | Readonly<{
         kind: 'unroutable';
         reason: ALDeliveryUnroutableReason;

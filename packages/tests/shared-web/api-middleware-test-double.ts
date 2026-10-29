@@ -5,6 +5,7 @@ import { createPassThroughALOutboundRuntimeDiagnosticsSink } from '@shared-web/b
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -69,6 +70,7 @@ export function createDefaultApiMiddlewareTestDouble(
             }),
             storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
             volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
+            publicationStageLimits: { ...AL_PUBLICATION_STAGE_LIMITS, ...middlewareOverrides.publicationStageLimits },
             outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
         }
     };

@@ -1,5 +1,6 @@
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationStageLimit } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import type {
     ALDeliveryDurabilityDowngrade,
@@ -34,11 +35,14 @@ export function isAlmRefusalReason(value: string): value is ALDeliveryRefusalRea
     return Object.hasOwn(ALM_REFUSAL_REASONS, value);
 }
 
-const ALM_VOLATILE_SESSION_LIMIT_NAMES: Readonly<Record<ALVolatileSessionLimit, true>> = {
+const ALM_CAPACITY_LIMIT_NAMES: Readonly<Record<ALVolatileSessionLimit | ALPublicationStageLimit, true>> = {
     admissions: true,
     bytes: true,
     age: true,
-    tracks: true
+    tracks: true,
+    streams: true,
+    'staged-values': true,
+    'staged-bytes': true
 };
 
 const ALM_SKIPPED_REASONS: Readonly<Record<ALDeliverySkippedReason, true>> = {
@@ -158,7 +162,7 @@ export function decodeAlmRelayRejection(
     return Either.ofLeft(field);
 }
 
-/** Only a `capacity` refusal may name the volatile bound it passed (D179). */
+/** Only a `capacity` refusal may name the volatile bound (D179) or the stage limit (D477) it passed. */
 function decodeAlmRefusedFailure(failure: RallarBlackBoxTestRecord): Either<string, ALDeliveryFailure> {
     const reason = decodeAlmFailureKey(ALM_REFUSAL_REASONS, failure.reason, 'reason');
     if (reason.left !== undefined || failure.limit === undefined) {
@@ -167,7 +171,7 @@ function decodeAlmRefusedFailure(failure: RallarBlackBoxTestRecord): Either<stri
     if (reason.right !== 'capacity') {
         return Either.ofLeft('failure.limit');
     }
-    return decodeAlmFailureKey(ALM_VOLATILE_SESSION_LIMIT_NAMES, failure.limit, 'limit')
+    return decodeAlmFailureKey(ALM_CAPACITY_LIMIT_NAMES, failure.limit, 'limit')
         .mapRight((limit): ALDeliveryFailure => ({ kind: 'refused', reason: 'capacity', limit }));
 }
 

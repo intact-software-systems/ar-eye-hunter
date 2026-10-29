@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import {
+    AL_PUBLICATION_STAGE_LIMITS,
+    type ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
@@ -27,9 +31,12 @@ interface StageFixture {
 
 type OpportunityDiagnostic = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-opportunity'; }>;
 
-function createStageFixture(
-    submit?: (selected: readonly ALOutboundStagedPublication<string>[]) => Promise<void>
-): StageFixture {
+interface StageFixtureOptions {
+    readonly submit?: (selected: readonly ALOutboundStagedPublication<string>[]) => Promise<void>;
+    readonly limits?: Partial<ALPublicationStageLimits>;
+}
+
+function createStageFixture(options?: StageFixtureOptions): StageFixture {
     const clock = { atMs: START_MS };
     const reportTaskFailure = vi.fn(() => undefined);
     const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.atMs, random: () => 0.5, reportTaskFailure });
@@ -40,7 +47,8 @@ function createStageFixture(
         taskId: TASK_ID,
         queueEngine: engine,
         clock: { nowMs: () => clock.atMs },
-        submit: submit ?? (async (selected) => {
+        limits: { ...AL_PUBLICATION_STAGE_LIMITS, ...options?.limits },
+        submit: options?.submit ?? (async (selected) => {
             submitted.push(selected.map((publication) => publication.context));
         }),
         settle: (settlement) => settlements.push(settlement),
@@ -142,10 +150,12 @@ describe('ALOutboundPublicationStage', () => {
             releaseSubmit = resolve;
         });
         const submitted: string[][] = [];
-        const fixture = createStageFixture(async (selected) => {
-            submitted.push(selected.map((publication) => publication.context));
-            if (submitted.length === 1) {
-                await submitHeld;
+        const fixture = createStageFixture({
+            submit: async (selected) => {
+                submitted.push(selected.map((publication) => publication.context));
+                if (submitted.length === 1) {
+                    await submitHeld;
+                }
             }
         });
         stageValue(fixture, 'v1');
@@ -291,6 +301,101 @@ describe('ALOutboundPublicationStage', () => {
         expect(fixture.stage.readLane('arena/arena.pose.v1')).toBeUndefined();
     });
 
+    it('refuses a value past the staged-values limit across its lanes, settling and staging nothing for it', () => {
+        const fixture = createStageFixture({ limits: { maxStagedValues: 2 } });
+        const policy: ALPublicationPolicy = { ...LATEST_POLICY, retainNewest: 2 };
+        stageValue(fixture, 'v1', { resourceId: 'entity-1', policy });
+        stageValue(fixture, 'v2', { topicId: 'other', resourceId: 'entity-2', policy });
+
+        const refused = stageValue(fixture, 'v3', { resourceId: 'entity-1', policy });
+
+        expect(refused).toEqual({
+            kind: 'refused',
+            reason: 'capacity',
+            limit: 'staged-values',
+            detail: 'Staging the value would hold 3 values, past the stage\'s limit of 2.',
+            msgId: refused.msgId
+        });
+        expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['staged', 'staged']);
+        expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({ staged: 1, streams: 1 });
+        expect(fixture.stage.readReport()).toMatchObject({ streams: 2, staged: 2, stagedBytes: 2 * VALUE_BYTES });
+    });
+
+    it('stages a value on a full stage when retention displaces the oldest of its stream', () => {
+        const fixture = createStageFixture({ limits: { maxStagedValues: 2, maxStagedBytes: 2 * VALUE_BYTES } });
+        const first = stageValue(fixture, 'v1', { resourceId: 'entity-1' });
+        stageValue(fixture, 'v2', { resourceId: 'entity-2' });
+
+        const replacing = stageValue(fixture, 'v3', { resourceId: 'entity-1' });
+
+        expect(replacing).toMatchObject({ kind: 'staged', displacedMsgId: first.msgId });
+        expect(fixture.stage.readReport()).toMatchObject({ streams: 2, staged: 2, stagedBytes: 2 * VALUE_BYTES });
+    });
+
+    it.each([
+        {
+            limits: { maxStreams: 1, maxStagedValues: 1, maxStagedBytes: VALUE_BYTES },
+            limit: 'streams',
+            detail: 'Staging the value would open stream 2, past the stage\'s limit of 1.'
+        },
+        {
+            limits: { maxStreams: 2, maxStagedValues: 1, maxStagedBytes: VALUE_BYTES },
+            limit: 'staged-values',
+            detail: 'Staging the value would hold 2 values, past the stage\'s limit of 1.'
+        },
+        {
+            limits: { maxStreams: 2, maxStagedValues: 2, maxStagedBytes: VALUE_BYTES + 50 },
+            limit: 'staged-bytes',
+            detail: `Staging the value would hold ${2 * VALUE_BYTES} bytes, past the stage's limit of ${VALUE_BYTES + 50}.`
+        }
+    ])('refuses a value on a new stream at the first limit it passes: $limit', ({ limits, limit, detail }) => {
+        const fixture = createStageFixture({ limits });
+        stageValue(fixture, 'v1', { resourceId: 'entity-1' });
+
+        const refused = stageValue(fixture, 'v2', { resourceId: 'entity-2' });
+
+        expect(refused).toMatchObject({ kind: 'refused', reason: 'capacity', limit, detail });
+        expect(fixture.stage.readReport()).toMatchObject({ streams: 1, staged: 1, counters: { staged: 1, refused: 1 } });
+    });
+
+    it('refuses an oversized value oversized before it reads the stage\'s limits', () => {
+        const fixture = createStageFixture({ limits: { maxStreams: 1 } });
+        stageValue(fixture, 'v1', { resourceId: 'entity-1' });
+
+        const refused = stageValue(fixture, 'v2', { resourceId: 'entity-2', bytes: LATEST_POLICY.drain.bytes + 1 });
+
+        expect(refused).toMatchObject({ kind: 'refused', reason: 'oversized' });
+    });
+
+    it('reports its totals, limits and every outcome it settled across a stage, displace, expire and opportunity', async () => {
+        const limits = { maxStreams: 8, maxStagedValues: 16, maxStagedBytes: 65_536 };
+        const fixture = createStageFixture({ limits });
+        const policy: ALPublicationPolicy = { cadenceMs: 500, retainNewest: 2, drain: { messages: 1, bytes: 65_536 } };
+        ['a1', 'a2', 'a3'].forEach((context) => stageValue(fixture, context, { policy }));
+        stageValue(fixture, 'b1', { resourceId: 'entity-2', policy, ttlMs: 0 });
+        stageValue(fixture, 'c1', { resourceId: 'entity-3', policy, bytes: policy.drain.bytes + 1 });
+        expect(fixture.stage.readReport()).toEqual({
+            lanes: 1,
+            streams: 2,
+            staged: 3,
+            stagedBytes: 3 * VALUE_BYTES,
+            limits,
+            counters: { staged: 4, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 0, deferred: 0 }
+        });
+
+        await runEnginePass(fixture.engine);
+
+        expect(fixture.submitted).toEqual([['a2']]);
+        expect(fixture.stage.readReport()).toEqual({
+            lanes: 1,
+            streams: 1,
+            staged: 1,
+            stagedBytes: VALUE_BYTES,
+            limits,
+            counters: { staged: 4, superseded: 1, expired: 1, refused: 1, cancelled: 0, admitted: 1, deferred: 1 }
+        });
+    });
+
     it('reports each opportunity with the counts it selected, deferred and expired', async () => {
         const fixture = createStageFixture();
         const policy: ALPublicationPolicy = { cadenceMs: 500, retainNewest: 3, drain: { messages: 2, bytes: 65_536 } };
@@ -338,7 +443,7 @@ describe('ALOutboundPublicationStage', () => {
     });
 
     it('settles each selected value failed when submit throws and keeps the engine task healthy', async () => {
-        const fixture = createStageFixture(() => Promise.reject(new Error('leg write failed')));
+        const fixture = createStageFixture({ submit: () => Promise.reject(new Error('leg write failed')) });
         const staged = stageValue(fixture, 'v1');
 
         await runEnginePass(fixture.engine);
@@ -358,9 +463,11 @@ describe('ALOutboundPublicationStage', () => {
             releaseSubmit = resolve;
         });
         const submitted: string[][] = [];
-        const fixture = createStageFixture(async (selected) => {
-            submitted.push(selected.map((publication) => publication.context));
-            await submitHeld;
+        const fixture = createStageFixture({
+            submit: async (selected) => {
+                submitted.push(selected.map((publication) => publication.context));
+                await submitHeld;
+            }
         });
         stageValue(fixture, 'v1');
         const pass = fixture.engine.executeOnce();
@@ -391,6 +498,7 @@ describe('ALOutboundPublicationStage', () => {
             expect.objectContaining({ kind: 'skipped', reason: 'disposed' }),
             expect.objectContaining({ kind: 'skipped', reason: 'disposed' })
         ]);
+        expect(fixture.stage.readReport()).toMatchObject({ lanes: 0, streams: 0, staged: 0, stagedBytes: 0 });
         expect(() => stageValue(fixture, 'v3')).toThrow('The publication stage is disposed.');
     });
 });

@@ -22,6 +22,7 @@ import { BrowserSessionAuthLifecycle } from '@shared-web/browser/session/session
 import { BrowserSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { createRallarSessionConnectionOperations } from '@shared-web/browser/session/session-connection-operations.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -31,6 +32,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 export interface CreateRallarSessionControllerOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
+    readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
     readonly connectionRuntime: RallarConnectionRuntimePort;
@@ -68,6 +70,7 @@ export function createRallarSessionController(
     const connectionLifecycle = new BrowserSessionConnectionLifecycle({
         qosProvider: options.qosProvider,
         readVolatileSessionLimits: options.readVolatileSessionLimits,
+        readPublicationStageLimits: options.readPublicationStageLimits,
         sessionDeliveries: options.sessionDeliveries,
         onResyncRequired: options.onResyncRequired,
         connectionRuntime: options.connectionRuntime,

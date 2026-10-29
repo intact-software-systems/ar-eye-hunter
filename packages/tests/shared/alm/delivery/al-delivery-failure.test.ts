@@ -154,6 +154,20 @@ const FAILURE_CASES: readonly FailureCase[] = [
         reason: 'The session\'s volatile bound refused the send (age).'
     },
     {
+        meaning: 'a live value refused past the staged-values limit of the publication stage ledger (D477)',
+        settlements: [
+            toAdmission({
+                kind: 'refused',
+                reason: 'capacity',
+                limit: 'staged-values',
+                detail: 'Staging the value would hold 3 values, past the stage\'s limit of 2.'
+            })
+        ],
+        state: 'rejected',
+        failure: { kind: 'refused', reason: 'capacity', limit: 'staged-values' },
+        reason: 'Staging the value would hold 3 values, past the stage\'s limit of 2.'
+    },
+    {
         meaning: 'a refusal by the trusted server',
         settlements: [ADMITTED, SERVER_REFUSAL],
         state: 'rejected',

@@ -17,6 +17,7 @@ import {
     type RallarSessionIdentity
 } from '@shared-web/browser/session/session-identity.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -46,6 +47,7 @@ export interface BrowserCrdtComposition {
 export interface CreateBrowserSessionCoreCompositionInput {
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
+    readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     /** Each connect's inbound runtimes hand their resynchronizations here. */
     readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
@@ -76,6 +78,7 @@ export function createBrowserSessionCoreComposition(
     const session = createRallarSessionController({
         qosProvider: input.qosProvider,
         readVolatileSessionLimits: input.readVolatileSessionLimits,
+        readPublicationStageLimits: input.readPublicationStageLimits,
         sessionDeliveries: input.sessionDeliveries,
         onResyncRequired: input.onResyncRequired,
         connectionRuntime: input.foundation.connectionRuntime,

@@ -9,6 +9,7 @@ import type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -59,6 +60,8 @@ export interface RallarBrowserMiddleware {
      * stay the carriers' own, so no caller can count into the bound that refuses sends.
      */
     readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
+    /** What the connect's publication stage holds at once (D477), read once when the connect began. */
+    readonly publicationStageLimits: ALPublicationStageLimits;
     /**
      * The connect's outbound diagnostics sink, which both carriers' runtimes report to; the dispatch reports its
      * hand-overs there (D186).

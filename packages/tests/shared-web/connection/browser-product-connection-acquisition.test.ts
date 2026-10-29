@@ -178,6 +178,7 @@ async function createOwnedSession(): Promise<RallarSessionController> {
     return createRallarSessionController({
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
+        readPublicationStageLimits: undefined,
         sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, foundation.transportRuntime, mocks.readSession),
         onResyncRequired: () => {},
         connectionRuntime: foundation.connectionRuntime,

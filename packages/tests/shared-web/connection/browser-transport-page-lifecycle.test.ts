@@ -130,6 +130,7 @@ function toInitOptions(): BrowserTransportInitOptions {
         rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
+        readPublicationStageLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         onResyncRequired: () => {}

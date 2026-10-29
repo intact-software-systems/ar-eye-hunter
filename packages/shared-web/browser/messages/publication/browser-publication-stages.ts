@@ -92,7 +92,8 @@ export class BrowserPublicationStages {
             clock: { nowMs: this.input.nowMs },
             submit: async (selected) => await this.submit(selected),
             settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
-            diagnostics: context.middleware.outboundDiagnostics
+            diagnostics: context.middleware.outboundDiagnostics,
+            limits: context.middleware.publicationStageLimits
         });
         this.current = { context, stage };
         this.stageOn(stage, delivery, epoch);
@@ -119,7 +120,7 @@ export class BrowserPublicationStages {
             context: { delivery, epoch }
         });
         if (result.kind === 'refused') {
-            this.settleAdmission(delivery, epoch, { kind: 'refused', reason: result.reason, detail: result.detail });
+            this.settleAdmission(delivery, epoch, result);
         }
     }
 

@@ -4,7 +4,12 @@ import { toBrowserPublicationDelivery } from '@shared-web/browser/messages/publi
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
-import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import {
+    createInitialALDeliveryLifecycle,
+    type ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -53,7 +58,10 @@ function createStagesFixture(): StagesFixture {
 }
 
 /** Opens the connect's epoch on the fixture's feed, closing the previous connect's. */
-function createConnect(fixture: StagesFixture): ConnectFixture {
+function createConnect(
+    fixture: StagesFixture,
+    publicationStageLimits: Partial<ALPublicationStageLimits> = {}
+): ConnectFixture {
     const engine = new InboxOutboxEngine({
         nowEpochMs: () => fixture.clock.atMs,
         random: () => 0.5,
@@ -63,7 +71,7 @@ function createConnect(fixture: StagesFixture): ConnectFixture {
         fixture.settlements.push(settlement);
     };
     return {
-        context: createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine } }),
+        context: createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine, publicationStageLimits } }),
         engine,
         epoch: fixture.feed.open({ ws: record, rtc: record, holds: () => true }, { relaySettlement: () => {} })
     };
@@ -273,5 +281,42 @@ describe('BrowserPublicationStages', () => {
             })
         ]);
         expect(fixture.stages.readLane(connect.context, LANE_KEY)).toBeUndefined();
+    });
+
+    it('refuses a delivery past its connect\'s staged-values limit, and its handle reads rejected with that limit', () => {
+        const fixture = createStagesFixture();
+        const connect = createConnect(fixture, { maxStagedValues: 2 });
+        const refused = toLiveDelivery(connect, 'entity-3');
+        const deliveries = [toLiveDelivery(connect, 'entity-1'), toLiveDelivery(connect, 'entity-2'), refused];
+
+        deliveries.forEach((delivery) => fixture.stages.stage(delivery, connect.epoch));
+
+        const refusal = fixture.settlements.filter((settlement) => settlement.msgId === refused.message.id.msgId);
+        expect(refusal).toEqual([
+            expect.objectContaining({
+                kind: 'admission',
+                verdict: {
+                    kind: 'refused',
+                    reason: 'capacity',
+                    limit: 'staged-values',
+                    detail: 'Staging the value would hold 3 values, past the stage\'s limit of 2.'
+                },
+                trackedReceiptAlgo: 'none'
+            })
+        ]);
+        const handle = refusal.reduce(
+            computeALDeliveryLifecycle,
+            createInitialALDeliveryLifecycle({
+                msgId: refused.message.id.msgId,
+                typeId: 'arena.pose.v1',
+                ackMode: 'none',
+                receiptAlgo: 'none',
+                expiresAtMs: START_MS + 1_000,
+                submittedAtMs: START_MS
+            })
+        );
+        expect(handle.state).toBe('rejected');
+        expect(handle.evidence.failure).toEqual({ kind: 'refused', reason: 'capacity', limit: 'staged-values' });
+        expect(fixture.stages.readLane(connect.context, LANE_KEY)).toMatchObject({ staged: 2, streams: 2 });
     });
 });

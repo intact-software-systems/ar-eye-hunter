@@ -1,6 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '../../../al-contracts/publication/al-publication-policy.ts';
+import type {
+    ALPublicationStageLimit,
+    ALPublicationStageLimits
+} from '../../../al-contracts/publication/al-publication-stage-limits.ts';
 import {
     toALPublicationLaneKey,
     toALPublicationStreamKey
@@ -20,6 +24,10 @@ import {
     type ALOutboundMessageRuntime,
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
+import {
+    ALOutboundPublicationLedger,
+    type ALOutboundPublicationLedgerReport
+} from './al-outbound-publication-ledger.ts';
 import type { ALOutboundStagedPublication } from './al-outbound-staged-publication.ts';
 import { computeALPublicationSelection } from './compute-al-publication-selection.ts';
 
@@ -30,6 +38,10 @@ export interface ALOutboundPublicationLaneReport {
     readonly nextOpportunityAtMs: number | undefined;
     readonly staged: number;
     readonly streams: number;
+}
+
+export interface ALOutboundPublicationStageReport extends ALOutboundPublicationLedgerReport {
+    readonly lanes: number;
 }
 
 const DISPOSED_VERDICT: ALDeliveryAdmissionVerdict = {
@@ -60,6 +72,8 @@ export namespace ALOutboundPublicationStage {
         readonly submit: (selected: readonly ALOutboundStagedPublication<TContext>[]) => Promise<void>;
         readonly settle: ALDeliverySettlementSink;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink;
+        /** What the stage holds at once across its lanes (D477). */
+        readonly limits: ALPublicationStageLimits;
     }
 
     export interface StageInput<TContext> {
@@ -72,8 +86,9 @@ export namespace ALOutboundPublicationStage {
 
     export type StageResult =
         | Readonly<{ kind: 'staged'; displacedMsgId: string | undefined; }>
-        /** The caller settles the refusal: the stage never opened the value. */
-        | Readonly<{ kind: 'refused'; reason: 'oversized'; detail: string; }>;
+        /** The caller settles a refusal as the value's admission verdict: the stage never opened the value. */
+        | Readonly<{ kind: 'refused'; reason: 'oversized'; detail: string; }>
+        | Readonly<{ kind: 'refused'; reason: 'capacity'; limit: ALPublicationStageLimit; detail: string; }>;
 }
 
 /**
@@ -83,10 +98,12 @@ export namespace ALOutboundPublicationStage {
 export class ALOutboundPublicationStage<TContext> {
     private readonly input: ALOutboundPublicationStage.Input<TContext>;
     private readonly lanes = new Map<string, ALOutboundPublicationLane<TContext>>();
+    private readonly ledger: ALOutboundPublicationLedger;
     private disposed = false;
 
     constructor(input: ALOutboundPublicationStage.Input<TContext>) {
         this.input = input;
+        this.ledger = new ALOutboundPublicationLedger(input.limits);
         input.queueEngine.includeTask(input.taskId, {
             name: input.taskId,
             maxConcurrency: () => 1,
@@ -98,28 +115,35 @@ export class ALOutboundPublicationStage<TContext> {
 
     /**
      * The caller stages only a value whose deadline is still ahead, as its admission refusal guarantees (D471): an
-     * expired one would displace a live value of its stream and then expire at the boundary.
+     * expired one would displace a live value of its stream and then expire at the boundary. The ledger reads the
+     * stream as retention would leave it, so a value that displaces the oldest of its stream frees that one's share.
      */
     stage(input: ALOutboundPublicationStage.StageInput<TContext>): ALOutboundPublicationStage.StageResult {
         this.assertStageOpen();
         const laneKey = toALPublicationLaneKey(input.msg);
         const lane = this.lanes.get(laneKey) ?? createIdleLane<TContext>(laneKey, input.policy);
-        if (input.bytes > lane.policy.drain.bytes) {
-            return {
-                kind: 'refused',
-                reason: 'oversized',
-                detail: `A live value of ${input.bytes} bytes exceeds the drain budget of ${lane.policy.drain.bytes}.`
-            };
+        const publication = toStagedPublication(input, laneKey, this.input.clock.nowMs());
+        const previous = lane.streams.get(publication.streamKey) ?? [];
+        const { retained, displaced } = retainNewest([...previous, publication], lane.policy.retainNewest);
+        const refusal = resolveStageRefusal(
+            lane,
+            publication,
+            this.ledger.resolveRefusal({ previous, next: retained })
+        );
+        if (refusal !== undefined) {
+            this.ledger.count('refused', 1);
+            return refusal;
         }
         this.lanes.set(laneKey, lane);
-        const publication = toStagedPublication(input, laneKey, this.input.clock.nowMs());
         this.input.settle(toStagedSettlement(publication));
-        const displaced = this.retain(lane, publication);
+        this.ledger.count('staged', 1);
+        this.writeStream(lane, publication.streamKey, retained);
+        this.settleSuperseded(displaced, publication);
         if (lane.nextOpportunityAtMs === undefined) {
             this.scheduleLane(lane, publication.stagedAtMs);
             this.input.queueEngine.wake();
         }
-        return { kind: 'staged', displacedMsgId: displaced?.msgId };
+        return { kind: 'staged', displacedMsgId: displaced[0]?.msgId };
     }
 
     /** No production caller reads it yet: S1-ii's usage report is its consumer, and the tests read it until then. */
@@ -138,6 +162,10 @@ export class ALOutboundPublicationStage<TContext> {
         };
     }
 
+    readReport(): ALOutboundPublicationStageReport {
+        return { lanes: this.lanes.size, ...this.ledger.readReport() };
+    }
+
     dispose(): void {
         if (this.disposed) {
             return;
@@ -146,17 +174,32 @@ export class ALOutboundPublicationStage<TContext> {
         this.input.queueEngine.excludeTask(this.input.taskId);
         const atMs = this.input.clock.nowMs();
         const staged = [...this.lanes.values()].flatMap((lane) => [...lane.streams.values()].flat());
+        this.lanes.forEach((lane) =>
+            [...lane.streams.keys()].forEach((streamKey) => this.writeStream(lane, streamKey, []))
+        );
         this.lanes.clear();
         staged.forEach((publication) => this.settleAdmission(publication, atMs, DISPOSED_VERDICT));
     }
 
-    private retain(
+    /** The one write of a stream's values, so the ledger's totals are always the streams' contents. */
+    private writeStream(
         lane: ALOutboundPublicationLane<TContext>,
+        streamKey: string,
+        values: readonly ALOutboundStagedPublication<TContext>[]
+    ): void {
+        this.ledger.recordStreamChange({ previous: lane.streams.get(streamKey) ?? [], next: values });
+        if (values.length === 0) {
+            lane.streams.delete(streamKey);
+            return;
+        }
+        lane.streams.set(streamKey, values);
+    }
+
+    private settleSuperseded(
+        displaced: readonly ALOutboundStagedPublication<TContext>[],
         publication: ALOutboundStagedPublication<TContext>
-    ): ALOutboundStagedPublication<TContext> | undefined {
-        const staged = [...(lane.streams.get(publication.streamKey) ?? []), publication];
-        const { retained, displaced } = retainNewest(staged, lane.policy.retainNewest);
-        lane.streams.set(publication.streamKey, retained);
+    ): void {
+        this.ledger.count('superseded', displaced.length);
         displaced.forEach((value) =>
             this.input.settle({
                 kind: 'superseded',
@@ -168,7 +211,6 @@ export class ALOutboundPublicationStage<TContext> {
                 traceId: publication.traceId
             })
         );
-        return displaced[0];
     }
 
     /** Its owner drops a disposed stage in the same synchronous step, so a later stage() is a wiring defect. */
@@ -213,8 +255,10 @@ export class ALOutboundPublicationStage<TContext> {
             drain: lane.policy.drain,
             nowMs: atMs
         });
-        streamKeys.forEach((streamKey, index) => setStreamValues(lane, streamKey, selection.remaining[index] ?? []));
+        streamKeys.forEach((streamKey, index) => this.writeStream(lane, streamKey, selection.remaining[index] ?? []));
         selection.expired.forEach((publication) => this.settleExpired(publication, atMs));
+        const deferred = selection.remaining.reduce((count, stream) => count + stream.length, 0);
+        this.ledger.count('deferred', deferred);
         lane.lastOpportunityAtMs = atMs;
         this.scheduleLane(lane, atMs);
         await this.submitSelected(selection.selected);
@@ -226,7 +270,7 @@ export class ALOutboundPublicationStage<TContext> {
             laneKey: lane.laneKey,
             atMs,
             selected: selection.selected.length,
-            deferred: selection.remaining.reduce((count, stream) => count + stream.length, 0),
+            deferred,
             expired: selection.expired.length,
             bytes: selection.selected.reduce((bytes, publication) => bytes + publication.bytes, 0)
         });
@@ -236,6 +280,7 @@ export class ALOutboundPublicationStage<TContext> {
         if (selected.length === 0) {
             return;
         }
+        this.ledger.count('admitted', selected.length);
         try {
             await this.input.submit(selected);
         }
@@ -255,6 +300,7 @@ export class ALOutboundPublicationStage<TContext> {
     }
 
     private settleExpired(publication: ALOutboundStagedPublication<TContext>, atMs: number): void {
+        this.ledger.count('expired', 1);
         this.input.settle({
             kind: 'expired',
             msgId: publication.msgId,
@@ -290,16 +336,20 @@ function isLaneDue<TContext>(lane: ALOutboundPublicationLane<TContext>, nowMs: n
     return lane.nextOpportunityAtMs !== undefined && lane.nextOpportunityAtMs <= nowMs;
 }
 
-function setStreamValues<TContext>(
+/** The drain budget bounds one value before the ledger's limits do: a value no opportunity could select is oversized. */
+function resolveStageRefusal<TContext>(
     lane: ALOutboundPublicationLane<TContext>,
-    streamKey: string,
-    values: readonly ALOutboundStagedPublication<TContext>[]
-): void {
-    if (values.length === 0) {
-        lane.streams.delete(streamKey);
-        return;
+    publication: ALOutboundStagedPublication<TContext>,
+    ledgerRefusal: ALOutboundPublicationLedger.Refusal | undefined
+): Extract<ALOutboundPublicationStage.StageResult, { kind: 'refused'; }> | undefined {
+    if (publication.bytes > lane.policy.drain.bytes) {
+        return {
+            kind: 'refused',
+            reason: 'oversized',
+            detail: `A live value of ${publication.bytes} bytes exceeds the drain budget of ${lane.policy.drain.bytes}.`
+        };
     }
-    lane.streams.set(streamKey, values);
+    return ledgerRefusal === undefined ? undefined : { kind: 'refused', reason: 'capacity', ...ledgerRefusal };
 }
 
 /** A message without a deadline never expires on the stage, as admission reads it. */

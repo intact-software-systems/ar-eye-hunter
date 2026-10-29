@@ -429,6 +429,7 @@ function createBlackBoxBrowserTransportComposition(
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
         readVolatileSessionLimits,
+        readPublicationStageLimits: undefined,
         foundation,
         state,
         sessionDeliveries: browserDeliveryComposition.sessionDeliveries,

@@ -27,6 +27,7 @@ import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/brow
 import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -63,6 +64,7 @@ const OPTIONS: BrowserConnectOptions = {
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
     qosProvider: undefined,
     readVolatileSessionLimits: () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 }),
+    readPublicationStageLimits: undefined,
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
@@ -379,6 +381,25 @@ function createConnectionService(): WebRtcConnectionService {
         writeRetainedSignalsDueNow: async () => []
     });
 }
+
+describe('the publication stage limits a connect hands its middleware (D477)', () => {
+    it('gives the middleware the limits the session reads when the connect begins', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const limits = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
+        const input = createBrowserTransportInput(SESSION, { ...OPTIONS, readPublicationStageLimits: () => limits });
+
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
+            .toBe(limits);
+    });
+
+    it('keeps the product defaults for a session that reads no limits', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const input = createBrowserTransportInput(SESSION, OPTIONS);
+
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
+            .toBe(AL_PUBLICATION_STAGE_LIMITS);
+    });
+});
 
 describe('the outbound diagnostics sink a connect hands its middleware', () => {
     it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
