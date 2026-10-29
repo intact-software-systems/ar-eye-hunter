@@ -1,4 +1,10 @@
-import type { ArenaLayoutProp, ArenaLayoutSign, ArenaLayoutSpec, ArenaPickupAnchor, Vec3Tuple } from './types.ts';
+import type {
+    ArenaLayoutProp,
+    ArenaLayoutSign,
+    ArenaLayoutSpec,
+    ArenaPickupAnchor,
+    Vec3Tuple
+} from './arena-contracts.ts';
 
 export const DEFAULT_ARENA_HALF_SIZE = 60;
 export const DEFAULT_ARENA_SIZE = DEFAULT_ARENA_HALF_SIZE * 2;
@@ -217,7 +223,8 @@ export function blocksShot(
     impact: Vec3Tuple
 ): boolean {
     return layout.props.some((prop) =>
-        prop.blocksShots && segmentIntersectsAabb(origin, impact, prop.position, prop.size)
+        prop.blocksShots &&
+        segmentIntersectsAabb({ start: origin, end: impact, center: prop.position, size: prop.size })
     );
 }
 
@@ -243,11 +250,16 @@ function readProps(value: unknown, halfSize: number): readonly ArenaLayoutProp[]
             return [];
         }
         const kind = readPropKind(item['kind']);
-        const size = readVec3(item['size'], [2.4, 1.2, 2.4], [0.4, 0.08, 0.4], [10, 8, 10]);
+        const size = readVec3({
+            value: item['size'],
+            fallback: [2.4, 1.2, 2.4],
+            min: [0.4, 0.08, 0.4],
+            max: [10, 8, 10]
+        });
         const prop: ArenaLayoutProp = {
             id: readString(item['id'], `prop-${index}`).slice(0, 64),
             kind,
-            position: clampPosition(readVec3(item['position'], [0, 1, 0]), halfSize),
+            position: clampPosition(readVec3({ value: item['position'], fallback: [0, 1, 0] }), halfSize),
             size,
             rotationY: clamp(toFiniteNumber(item['rotationY'], 0), -Math.PI, Math.PI),
             blocksShots: typeof item['blocksShots'] === 'boolean'
@@ -271,7 +283,7 @@ function readSigns(value: unknown, halfSize: number): readonly ArenaLayoutSign[]
             id: readString(item['id'], `sign-${index}`).slice(0, 64),
             title: readString(item['title'], 'COMPLIANCE NOTICE').slice(0, 24),
             detail: readString(item['detail'], 'optimism requires approval').slice(0, 44),
-            position: clampPosition(readVec3(item['position'], [0, 3, halfSize - 2]), halfSize),
+            position: clampPosition(readVec3({ value: item['position'], fallback: [0, 3, halfSize - 2] }), halfSize),
             rotationY: clamp(toFiniteNumber(item['rotationY'], 0), -Math.PI, Math.PI)
         }];
     });
@@ -287,7 +299,7 @@ function readPickupAnchors(value: unknown, halfSize: number): readonly ArenaPick
         }
         return [{
             id: readString(item['id'], `pickup-${index}`).slice(0, 64),
-            position: clampPosition(readVec3(item['position'], [0, 1.05, 0]), halfSize),
+            position: clampPosition(readVec3({ value: item['position'], fallback: [0, 1.05, 0] }), halfSize),
             weight: clamp(toFiniteNumber(item['weight'], 1), 0.25, 4)
         }];
     });
@@ -299,17 +311,19 @@ function readVec3Array(value: unknown, max: number, halfSize: number): readonly 
     }
     return value.slice(0, max).flatMap((item) =>
         Array.isArray(item)
-            ? [clampPosition(readVec3(item, [0, 1.72, 0]), halfSize)]
+            ? [clampPosition(readVec3({ value: item, fallback: [0, 1.72, 0] }), halfSize)]
             : []
     );
 }
 
-function readVec3(
-    value: unknown,
-    fallback: Vec3Tuple,
-    min?: Vec3Tuple,
-    max?: Vec3Tuple
-): Vec3Tuple {
+interface ArenaLayoutVector {
+    readonly value: unknown;
+    readonly fallback: Vec3Tuple;
+    readonly min?: Vec3Tuple;
+    readonly max?: Vec3Tuple;
+}
+
+function readVec3({ value, fallback, min, max }: ArenaLayoutVector): Vec3Tuple {
     if (!Array.isArray(value)) {
         return fallback;
     }
@@ -348,12 +362,14 @@ function hasSeparatedSpawns(spawns: readonly Vec3Tuple[]): boolean {
     return false;
 }
 
-function segmentIntersectsAabb(
-    start: Vec3Tuple,
-    end: Vec3Tuple,
-    center: Vec3Tuple,
-    size: Vec3Tuple
-): boolean {
+interface ArenaSegmentBounds {
+    readonly start: Vec3Tuple;
+    readonly end: Vec3Tuple;
+    readonly center: Vec3Tuple;
+    readonly size: Vec3Tuple;
+}
+
+function segmentIntersectsAabb({ start, end, center, size }: ArenaSegmentBounds): boolean {
     const min: Vec3Tuple = [
         center[0] - size[0] / 2,
         center[1] - size[1] / 2,

@@ -1,7 +1,6 @@
 import {
     decodeRelicSnapshotPayload,
     hasUnfinishedRelicParticipation,
-    RELIC_PROTOCOL_VERSION,
     type RelicActionInput,
     type RelicCharacterId,
     type RelicCommand,
@@ -10,6 +9,7 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import { RELIC_EXPEDITION_CAPACITY } from '@relic-hunters/src/model.ts';
 import type {
     RallarAuthChangeListener,
     RallarAuthState,
@@ -34,6 +34,13 @@ import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { deliverRelicCommand } from './runtime/deliver-relic-command.ts';
+import {
+    createRelicRematchDraft,
+    type RelicCommandDraft,
+    type RelicRematchDraft
+} from './runtime/relic-command-draft.ts';
+import { acceptRelicHunterFeedback, expireRelicHunterFeedback } from './runtime/relic-hunter-feedback.ts';
 
 import {
     createInitialRelicRuntimeDiagnostics,
@@ -52,7 +59,7 @@ import { toCreatedRelicRoomSnapshot } from './runtime/to-created-relic-room-snap
 import type { RelicWsCommandDelivery } from './send-relic-ws-command.ts';
 import type { RelicHunterEventSubscription } from './subscribe-relic-hunter-events.ts';
 import type { RelicRoundTransitionSubscription } from './subscribe-relic-round-transitions.ts';
-import { toRelicCommandPhase, type RelicCommandOutcome } from './to-relic-command-phase.ts';
+import { toRelicCommandPhase } from './to-relic-command-phase.ts';
 
 const SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
 const ROUND_TRANSITION_CUE_LOG_SIZE = 16;
@@ -66,15 +73,6 @@ export type RelicHuntersRuntimePhase =
     | 'ready'
     | 'degraded'
     | 'error';
-export type RelicCommandDraft =
-    | { readonly kind: 'join-expedition'; readonly characterId?: RelicCharacterId; }
-    | { readonly kind: 'start-expedition'; }
-    | { readonly kind: 'take-keeper'; }
-    | { readonly kind: 'submit-action'; readonly action: RelicActionInput; }
-    | { readonly kind: 'force-resolve-round'; }
-    | { readonly kind: 'pickup-relic'; readonly relicId: string; }
-    | { readonly kind: 'continue-review'; }
-    | { readonly kind: 'set-round-limit'; readonly timeLimitMs: number; };
 
 interface RelicAuthentication {
     readonly mode: 'login' | 'register';
@@ -153,6 +151,9 @@ export namespace RelicHuntersRuntime {
         takeKeeper(): Promise<void>;
         joinExpedition(characterId?: RelicCharacterId): Promise<void>;
         startExpedition(): Promise<void>;
+        setRematchReady(ready: boolean, characterId: RelicCharacterId): Promise<void>;
+        startRematch(): Promise<void>;
+        setRematchRoundLimit(timeLimitMs: number): Promise<void>;
         submitAction(action: RelicActionInput): Promise<void>;
         forceResolveRound(): Promise<void>;
         pickupRelic(relicId: string): Promise<void>;
@@ -287,6 +288,11 @@ export class RelicHuntersRuntime {
             takeKeeper: () => this.sendCommand({ kind: 'take-keeper' }),
             joinExpedition: (characterId) => this.sendCommand({ kind: 'join-expedition', characterId }),
             startExpedition: () => this.sendCommand({ kind: 'start-expedition' }),
+            setRematchReady: (ready, characterId) =>
+                this.sendRematchCommand({ kind: 'set-rematch-ready', ready, characterId }),
+            startRematch: () => this.sendRematchCommand({ kind: 'start-rematch' }),
+            setRematchRoundLimit: (timeLimitMs) =>
+                this.sendRematchCommand({ kind: 'set-rematch-round-limit', timeLimitMs }),
             submitAction: (action) => this.sendCommand({ kind: 'submit-action', action }),
             forceResolveRound: () => this.sendCommand({ kind: 'force-resolve-round' }),
             pickupRelic: (relicId) => this.sendCommand({ kind: 'pickup-relic', relicId }),
@@ -644,19 +650,10 @@ export class RelicHuntersRuntime {
         if (!this.current(attempt, true)) {
             return;
         }
-        if (event.kind === 'command-refused' && this.connection.snapshot?.phase === 'finished') {
-            return;
+        const feedback = acceptRelicHunterFeedback(this.connection, event);
+        if (feedback) {
+            this.publish(feedback);
         }
-        const previous = this.connection.lastHunterEvent;
-        const priorRefusalDisplayed = previous?.kind === 'command-refused' && this.connection.error === previous.text;
-        this.publish({
-            lastHunterEvent: event,
-            error: event.kind === 'command-refused'
-                ? event.text
-                : priorRefusalDisplayed
-                ? undefined
-                : this.connection.error
-        });
     }
 
     private receiveSnapshot(
@@ -692,16 +689,9 @@ export class RelicHuntersRuntime {
             });
             return false;
         }
-        const previous = this.connection.snapshot;
-        const feedback = this.connection.lastHunterEvent;
-        const refusalExpired = feedback?.kind === 'command-refused' && previous !== undefined && (
-            previous.createdAtEpochMs !== snapshot.createdAtEpochMs ||
-            previous.round !== snapshot.round || previous.phase !== snapshot.phase
-        );
         this.publish({
             snapshot,
-            lastHunterEvent: refusalExpired ? undefined : feedback,
-            error: refusalExpired && this.connection.error === feedback?.text ? undefined : this.connection.error,
+            ...expireRelicHunterFeedback(this.connection, snapshot),
             diagnostics: {
                 ...this.connection.diagnostics,
                 ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
@@ -761,15 +751,7 @@ export class RelicHuntersRuntime {
             if (!this.current(attempt, true) || request !== this.snapshotRequest) {
                 return;
             }
-            if (refreshesConnection) {
-                this.phase(this.connection.snapshot ? 'ready' : 'connected', {
-                    ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
-                    lastError: undefined
-                });
-            }
-            else {
-                this.diagnose({ lastError: undefined });
-            }
+            this.finishHydration(refreshesConnection);
         }
         catch (error) {
             if (!this.current(attempt, true) || request !== this.snapshotRequest) {
@@ -990,7 +972,9 @@ export class RelicHuntersRuntime {
         }
         if (
             this.connection.snapshot &&
-            (this.connection.snapshot.phase !== 'lobby' || this.connection.snapshot.players.length >= 4)
+            (this.connection.snapshot.phase !== 'lobby' && this.connection.snapshot.phase !== 'finished' ||
+                this.connection.snapshot.phase === 'lobby' &&
+                    this.connection.snapshot.players.length >= RELIC_EXPEDITION_CAPACITY)
         ) {
             return;
         }
@@ -1121,6 +1105,17 @@ export class RelicHuntersRuntime {
         }
     }
 
+    private sendRematchCommand(input: RelicRematchDraft): Promise<void> {
+        const draft = createRelicRematchDraft({
+            snapshot: this.connection.snapshot,
+            room: this.deps.roomState().currentRoom,
+            sessionId: this.connection.session?.sessionId,
+            now: this.deps.timers.nowMs(),
+            request: input
+        });
+        return draft ? this.sendCommand(draft) : Promise.resolve();
+    }
+
     private async sendCommand(input: RelicCommandDraft): Promise<void> {
         const attempt = this.attempt();
         if (
@@ -1141,33 +1136,14 @@ export class RelicHuntersRuntime {
             return;
         }
         try {
-            const command: RelicCommand = {
-                protocolVersion: RELIC_PROTOCOL_VERSION,
-                gameId: attempt.roomId,
-                username: attempt.session.username,
-                ...input
-            };
-            const delivery = input.kind === 'join-expedition'
-                ? undefined
-                : await this.deps.sendWsCommand(attempt.roomId, command);
-            if (!this.current(attempt, true)) {
-                return;
-            }
-            // Admission needs a durable result. Other commands use REST only when no WS server is known.
-            const outcome: RelicCommandOutcome = delivery === undefined
-                ? {
-                    transport: 'rest',
-                    snapshot: input.kind === 'join-expedition'
-                        ? await this.admission.join(attempt.roomId, attempt.session.sessionId, command)
-                        : await this.deps.sendRestCommand({
-                            gameId: attempt.roomId,
-                            command,
-                            requestId: crypto.randomUUID(),
-                            sessionId: attempt.session.sessionId
-                        })
-                }
-                : { transport: 'ws', delivery };
-            if (!this.current(attempt, true)) {
+            const outcome = await deliverRelicCommand({
+                dependencies: this.deps,
+                participation: this.admission,
+                draft: input,
+                attempt: { ...attempt, roomId: attempt.roomId },
+                isCurrent: () => this.current(attempt, true)
+            });
+            if (outcome === undefined || !this.current(attempt, true)) {
                 return;
             }
             if (outcome.transport === 'rest' && outcome.snapshot) {
@@ -1248,6 +1224,18 @@ export class RelicHuntersRuntime {
             if (this.current(attempt, true)) {
                 this.diagnose({ commandInFlight: undefined });
             }
+        }
+    }
+
+    private finishHydration(refreshesConnection: boolean): void {
+        if (refreshesConnection) {
+            this.phase(this.connection.snapshot ? 'ready' : 'connected', {
+                ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
+                lastError: undefined
+            });
+        }
+        else {
+            this.diagnose({ lastError: undefined });
         }
     }
 }

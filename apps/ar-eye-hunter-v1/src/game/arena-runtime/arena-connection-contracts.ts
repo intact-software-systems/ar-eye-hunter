@@ -17,7 +17,6 @@ import type { GroupDirectoryListing } from '@shared/api/group-directory/group-di
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaMatchDurationMs,
@@ -28,12 +27,13 @@ import type {
     PlayerHitAccepted,
     PlayerHitIntent,
     PlayerPose,
-    PlayerShot,
     RemotePlayer,
     RemoteShot,
     RtcLaneStatus,
-    ShotAccepted
-} from '../types.ts';
+    ShotAccepted,
+    ShotIntent
+} from '../arena-contracts.ts';
+import type { ArenaLinkState, ArenaPresenceNotice } from '../squad-link.ts';
 
 export type ArenaConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
 export type ArenaAiStatus =
@@ -186,11 +186,14 @@ export interface ArenaConnection {
     dismissPresenceNotice(id: string): void;
     sendPose(pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>): void;
     sendShot(
-        shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
+        shot: Omit<ShotIntent, 'sessionId' | 'username' | 'color'>,
         accepted: ShotAccepted
     ): void;
     sendPlayerHit(intent: PlayerHitIntent): void;
     sendPickupIntent(intent: PickupIntent): void;
+    setRematchReady(ready: boolean): Promise<void>;
+    startRematch(): Promise<void>;
+    setRematchDuration(durationMs: ArenaMatchDurationMs): Promise<void>;
     startArenaMatch(durationMs: ArenaMatchDurationMs): Promise<void>;
     publishArenaSnapshot(snapshot: ArenaSnapshot): void;
 }

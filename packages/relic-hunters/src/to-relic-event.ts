@@ -1,4 +1,4 @@
-import type { RelicAnimationCue, RelicEvent, RelicEventType } from './model.ts';
+import type { RelicAnimationCue, RelicEvent, RelicEventType, RelicGameState } from './model.ts';
 
 export interface RelicEventInput {
     readonly round: number;
@@ -32,4 +32,27 @@ function toEventHash(message: string): string {
     }
 
     return hash.toString(36);
+}
+
+export interface RelicEventAppend {
+    readonly state: Pick<RelicGameState, 'events' | 'round'>;
+    readonly message: string;
+    readonly now: number;
+    readonly options?: RelicEventOptions;
+}
+
+export function appendRelicEvent({ state, message, now, options }: RelicEventAppend): readonly RelicEvent[] {
+    return [
+        ...state.events,
+        toRelicEvent({ round: state.round, message, now, options })
+    ].slice(-64);
+}
+export interface RelicStateEvent extends RelicEventAppend {
+    readonly state: RelicGameState;
+}
+export function withRelicEvent({ state, message, now, options }: RelicStateEvent): RelicGameState {
+    return {
+        ...state,
+        events: appendRelicEvent({ state, message, now, options })
+    };
 }

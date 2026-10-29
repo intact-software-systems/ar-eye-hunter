@@ -1,10 +1,10 @@
+import type { ArenaEvent, ArenaSnapshot } from '../arena-contracts.ts';
+import { type ArenaSimulationState } from '../arena-contracts.ts';
 import {
     applyArenaEvent,
     hydrateArenaSnapshot,
-    stepArenaDirectorState,
-    type ArenaSimulationState
+    stepArenaDirectorState
 } from '../simulation.ts';
-import type { ArenaEvent, ArenaSnapshot } from '../types.ts';
 
 export namespace ArenaSceneState {
     export interface Authority {

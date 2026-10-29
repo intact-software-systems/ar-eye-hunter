@@ -26,8 +26,8 @@ function toIdentityFieldName(key, role) {
 }
 
 // Match complete JSON string tokens without requiring the surrounding fragment or runtime placeholders to parse.
-const serializedRoomIdPattern =
-    /(^|[{,]\s*)("roomId"\s*:\s*)("(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*")/g;
+const serializedScopeIdentityPattern =
+    /(^|[{,]\s*)("(roomId|groupId|applicationId|workspaceId)"\s*:\s*)("(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*")/g;
 
 export function validateHetznerRunManifestScope(value, expectedGroupRef) {
     return validateManifestScopeValue(value, expectedGroupRef, {
@@ -155,19 +155,19 @@ function validateEmbeddedScope(input) {
         return validateEmbeddedRequestScope(value, expectedGroupRef, location);
     }
     if (role === WAIT_MATCH_ROLE && key === 'contains') {
-        return validateSerializedRoomScope(value, expectedGroupRef, location);
+        return validateSerializedScope(value, expectedGroupRef, location);
     }
     return [];
 }
 
-function validateSerializedRoomScope(value, expectedGroupRef, location) {
+function validateSerializedScope(value, expectedGroupRef, location) {
     const issues = [];
-    for (const [, , , encodedRoomId] of value.matchAll(serializedRoomIdPattern)) {
-        const roomId = JSON.parse(encodedRoomId);
-        if (roomId !== expectedGroupRef.groupId) {
+    for (const [, , , field, encodedIdentity] of value.matchAll(serializedScopeIdentityPattern)) {
+        const expected = resolveScopeIdentity(expectedGroupRef, field);
+        if (JSON.parse(encodedIdentity) !== expected) {
             issues.push(
-                `${location} contains serialized room ${encodedRoomId}; ` +
-                    `expected ${JSON.stringify(expectedGroupRef.groupId)}`
+                `${location} contains serialized ${field} ${encodedIdentity}; ` +
+                    `expected ${JSON.stringify(expected)}`
             );
         }
     }
@@ -221,11 +221,7 @@ function validateManifestScopeValue(value, expectedGroupRef, traversal) {
             })
         );
         if (!isParallelGroupLabel && identityFieldNames.has(identityFieldName) && typeof entry === 'string') {
-            const expected = identityFieldName === 'applicationId'
-                ? expectedGroupRef.applicationId
-                : identityFieldName === 'workspaceId'
-                ? expectedGroupRef.workspaceId
-                : expectedGroupRef.groupId;
+            const expected = resolveScopeIdentity(expectedGroupRef, identityFieldName);
             if (entry !== expected) {
                 issues.push(
                     `${entryLocation} is ${JSON.stringify(entry)}; expected ${JSON.stringify(expected)}`
@@ -260,7 +256,7 @@ function toEmbeddedScope(value, groupRefs, traversal) {
     const { sourceGroupRef, effectiveGroupRef } = groupRefs;
     const { key, role } = traversal;
     if (role === WAIT_MATCH_ROLE && key === 'contains') {
-        return toSerializedRoomScope(value, groupRefs);
+        return toSerializedScope(value, groupRefs);
     }
     if (key === 'path') {
         const pathScope = toStatePathScope(value);
@@ -293,18 +289,26 @@ function toEmbeddedScope(value, groupRefs, traversal) {
     return `${request.prefix}${segments.join(':')}`;
 }
 
-function toSerializedRoomScope(value, groupRefs) {
+function resolveScopeIdentity(groupRef, field) {
+    return groupRef[field === 'roomId' ? 'groupId' : field];
+}
+
+function toSerializedScope(value, groupRefs) {
     const { sourceGroupRef, effectiveGroupRef } = groupRefs;
-    if (sourceGroupRef.groupId === effectiveGroupRef.groupId) {
-        return value;
+    const fragments = [];
+    let offset = 0;
+    for (const match of value.matchAll(serializedScopeIdentityPattern)) {
+        const [token, prefix, key, field, encodedIdentity] = match;
+        const source = resolveScopeIdentity(sourceGroupRef, field);
+        const effective = resolveScopeIdentity(effectiveGroupRef, field);
+        const replacement = source !== effective && JSON.parse(encodedIdentity) === source
+            ? `${prefix}${key}${JSON.stringify(effective)}`
+            : token;
+        fragments.push(value.slice(offset, match.index), replacement);
+        offset = match.index + token.length;
     }
-    return value.replace(
-        serializedRoomIdPattern,
-        (field, prefix, key, encodedRoomId) =>
-            JSON.parse(encodedRoomId) === sourceGroupRef.groupId
-                ? `${prefix}${key}${JSON.stringify(effectiveGroupRef.groupId)}`
-                : field
-    );
+    fragments.push(value.slice(offset));
+    return fragments.join('');
 }
 
 function toEffectiveScopeValue(value, groupRefs, traversal) {
@@ -333,16 +337,11 @@ function toEffectiveScopeValue(value, groupRefs, traversal) {
                 return [entryKey, entry];
             }
             const identityFieldName = toIdentityFieldName(entryKey, traversal.role);
-            if (identityFieldName === 'applicationId' && entry === sourceGroupRef.applicationId) {
-                return [entryKey, effectiveGroupRef.applicationId];
-            }
-            if (identityFieldName === 'workspaceId' && entry === sourceGroupRef.workspaceId) {
-                return [entryKey, effectiveGroupRef.workspaceId];
-            }
             if (
-                (identityFieldName === 'groupId' || identityFieldName === 'roomId') && entry === sourceGroupRef.groupId
+                identityFieldNames.has(identityFieldName) &&
+                entry === resolveScopeIdentity(sourceGroupRef, identityFieldName)
             ) {
-                return [entryKey, effectiveGroupRef.groupId];
+                return [entryKey, resolveScopeIdentity(effectiveGroupRef, identityFieldName)];
             }
             return [
                 entryKey,

@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { useCallback } from 'react';
 
 import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
@@ -7,11 +7,11 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
-import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
+import type { RtcLaneStatus } from '../../arena-contracts.ts';
+import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_FX_LANE_ID, GAME_MOTION_LANE_ID } from '../../arena-contracts.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { ArenaPresenceNotice } from '../../squadLink.ts';
-import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_FX_LANE_ID, GAME_MOTION_LANE_ID } from '../../types.ts';
-import type { RtcLaneStatus } from '../../types.ts';
+import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
+import type { ArenaPresenceNotice } from '../../squad-link.ts';
 import type {
     ArenaConnection,
     ArenaDiagnosticsRefreshOptions,

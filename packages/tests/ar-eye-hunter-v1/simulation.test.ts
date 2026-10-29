@@ -1,36 +1,37 @@
 import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
 import { describe, expect, it } from 'vitest';
 
-import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '../../../apps/ar-eye-hunter-v1/src/game/arenaLayout.ts';
+import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '../../../apps/ar-eye-hunter-v1/src/game/arena-layout.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
+import {
+    createInitialCombatState,
+    createInitialPlayerState,
+    createInitialVitalsState,
+    stepLocalPlayer
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
+import { resolveShot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-targets.ts';
+import { createInitialLoadoutState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-weapons.ts';
 import {
     applyArenaEvent,
     createInitialArenaState,
-    createInitialCombatState,
-    createInitialLoadoutState,
-    createInitialPlayerState,
-    createInitialVitalsState,
-    finishArenaMatchIfDue,
     resolveEyeAttackCue,
     resolvePickupIntent,
     resolvePlayerHitIntent,
-    resolveShot,
     spawnWeaponPickup,
-    startArenaMatch,
     stepArenaDirectorState,
-    stepLocalPlayer,
     toArenaSnapshot,
     upsertPlayerPose
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter simulation', () => {
     it('accelerates fast FPS movement and applies dash cooldowns', () => {
         const now = 1_000;
         const player = createInitialPlayerState(now);
 
-        const next = stepLocalPlayer(
+        const next = stepLocalPlayer({
             player,
-            {
+            input: {
                 moveX: 0,
                 moveZ: 1,
                 sprint: true,
@@ -42,9 +43,9 @@ describe('AR Eye Hunter simulation', () => {
                 overdrive: false,
                 pause: false
             },
-            100,
-            now
-        );
+            dtMs: 100,
+            nowEpochMs: now
+        });
 
         expect(next.position[2]).toBeGreaterThan(player.position[2]);
         expect(next.velocity[2]).toBeGreaterThan(10);
@@ -68,10 +69,11 @@ describe('AR Eye Hunter simulation', () => {
             origin,
             direction: [0, 0, 1],
             seq: 1,
-            sentAtEpochMs: now
+            sentAtEpochMs: now,
+            weaponKind: 'pulse-rifle' as const
         };
 
-        const result = resolveShot(state, createInitialCombatState(), shot, now);
+        const result = resolveShot({ state, combat: createInitialCombatState(), shot, nowEpochMs: now });
 
         expect(result.accepted.hit).toBe(true);
         expect(result.accepted.targetId).toBe(target.id);
@@ -91,10 +93,11 @@ describe('AR Eye Hunter simulation', () => {
             origin: [0, 2, 0],
             direction: [0, 1, 0],
             seq: 1,
-            sentAtEpochMs: now
+            sentAtEpochMs: now,
+            weaponKind: 'pulse-rifle' as const
         };
 
-        const result = resolveShot(state, createInitialCombatState(), shot, now);
+        const result = resolveShot({ state, combat: createInitialCombatState(), shot, nowEpochMs: now });
 
         expect(result.accepted.hit).toBe(false);
         expect(result.combat.score).toBe(0);
@@ -141,9 +144,9 @@ describe('AR Eye Hunter simulation', () => {
             yaw: Math.PI / 4
         };
 
-        const next = stepLocalPlayer(
+        const next = stepLocalPlayer({
             player,
-            {
+            input: {
                 moveX: 1,
                 moveZ: 1,
                 sprint: true,
@@ -155,10 +158,10 @@ describe('AR Eye Hunter simulation', () => {
                 overdrive: false,
                 pause: false
             },
-            500,
-            now,
-            60
-        );
+            dtMs: 500,
+            nowEpochMs: now,
+            arenaHalfSize: 60
+        });
 
         expect(Math.abs(next.position[0])).toBeLessThanOrEqual(60);
         expect(Math.abs(next.position[2])).toBeLessThanOrEqual(60);

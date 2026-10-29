@@ -1,5 +1,4 @@
 import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarFacade,
@@ -23,6 +22,7 @@ import {
 } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 
 export interface DirectRallarOperationContext {
@@ -879,23 +879,27 @@ function startDirectRallarWsDelivery(
     input: DirectRallarWsSubscribeInput,
     facade: DirectRallarFacade
 ): RallarUnsubscribe {
-    const owned = new BrowserRallarSubscriptionScope();
+    const owned = new SubscriptionScope();
     owned.add(facade.messages.ws.onMessage(input.selector, (message) => {
         if (!input.signal?.aborted) {
             return input.handler({ ...message });
         }
     }));
     const stopDelivery: RallarUnsubscribe = () => {
-        owned.unsubscribe();
-        input.signal?.removeEventListener('abort', stopDelivery);
+        try {
+            owned.unsubscribe();
+        }
+        finally {
+            input.signal?.removeEventListener('abort', stopDelivery);
+        }
     };
-    input.subscriptions?.add(stopDelivery);
     if (input.signal?.aborted) {
         stopDelivery();
     }
     else {
         input.signal?.addEventListener('abort', stopDelivery, { once: true });
     }
+    input.subscriptions?.add(stopDelivery);
     return stopDelivery;
 }
 

@@ -19,7 +19,7 @@ import {
     GAME_PROTOCOL,
     type ArenaSnapshot,
     type GameRealtimeMessage
-} from './types.ts';
+} from './arena-contracts.ts';
 
 export const GAME_SNAPSHOT_LANE_ID = 'arena-snapshot';
 

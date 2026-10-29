@@ -1,12 +1,12 @@
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
-import { blocksShot } from '../arenaLayout.ts';
+import type { RemotePlayer, Vec3Tuple } from '../arena-contracts.ts';
+import { blocksShot } from '../arena-layout.ts';
 import {
     chooseTouchAimCandidate,
     type Point2,
     type TouchAimCandidate
-} from '../mobileInput.ts';
-import type { RemotePlayer, Vec3Tuple } from '../types.ts';
+} from '../mobile-input.ts';
 import { createTouchAimPulse } from './arena-scene-effects.ts';
 import {
     addTuple,

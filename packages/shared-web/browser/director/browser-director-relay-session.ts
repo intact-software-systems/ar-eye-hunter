@@ -8,7 +8,6 @@ import type {
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
@@ -16,6 +15,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import {
     isAcceptedDirectorRelayEnvelope,
     isDirectorRelayEnvelope,
@@ -52,7 +52,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     private readonly snapshotTypeId: string;
     private readonly syncRequestTypeId: string;
     private readonly roomTarget: string | GroupRef | undefined;
-    private readonly subscriptions = new BrowserRallarSubscriptionScope();
+    private readonly subscriptions = new SubscriptionScope();
     private readonly timers: ReturnType<typeof setInterval>[] = [];
     private stopped = false;
 
@@ -167,12 +167,16 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             return;
         }
         this.stopped = true;
-        this.subscriptions.unsubscribe();
-        for (const timer of this.timers) {
-            clearInterval(timer);
+        try {
+            this.subscriptions.unsubscribe();
         }
-        this.timers.length = 0;
-        this.input.onStop(this.stop);
+        finally {
+            for (const timer of this.timers) {
+                clearInterval(timer);
+            }
+            this.timers.length = 0;
+            this.input.onStop(this.stop);
+        }
     };
 
     private guardSend(): RallarDirectorRelaySendResult | undefined {

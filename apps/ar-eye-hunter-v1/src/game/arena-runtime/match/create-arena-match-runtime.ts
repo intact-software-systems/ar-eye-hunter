@@ -3,15 +3,16 @@ import type {
     RefObject,
     SetStateAction
 } from 'react';
+import { hasValidArenaRematch } from '../../arena-rematch.ts';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 
-import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type {
     ArenaEvent,
     ArenaSnapshot,
     GameRealtimeMessage
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { isCurrentArenaPlayerSession } from '../arena-participation.ts';
 import type { ArenaPeerMessageHandlers } from '../messages/use-arena-peer-message-handlers.ts';
 import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
@@ -21,7 +22,10 @@ import { acceptArenaMatchIntent } from './handlers/accept-arena-match-intent.ts'
 
 export interface ArenaMatchRuntimeInput
     extends
-        Pick<ArenaStateAcceptance, 'acceptMatchStartIntent' | 'acceptPickup' | 'acceptPlayerHit'>,
+        Pick<
+            ArenaStateAcceptance,
+            'acceptRematchIntent' | 'acceptMatchStartIntent' | 'acceptPickup' | 'acceptPlayerHit'
+        >,
         ArenaPeerMessageHandlers {
     readonly nowMs: () => number;
     readonly acceptDirectorOutput: (message: GameRealtimeMessage, isCurrent: () => boolean) => void;
@@ -60,7 +64,7 @@ export function createArenaMatchRuntime(
             }
         },
         onSnapshot: (envelope) => {
-            if (!isCurrent()) {
+            if (!isCurrent() || !hasValidArenaRematch(envelope.payload.match)) {
                 return;
             }
             const snapshot = {

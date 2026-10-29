@@ -4,13 +4,13 @@ import {
     it
 } from 'vitest';
 
+import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { ArenaSceneState } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-state.ts';
 import {
     createInitialArenaState,
     spawnWeaponPickup,
     toArenaSnapshot
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 const initial = createInitialArenaState(44, 1_000);
 const peer: ArenaSceneState.Authority = { roomId: 'arena', sessionId: 'host', epoch: 1, local: false, fresh: true, freshUntilEpochMs: 120_000 };
@@ -26,6 +26,7 @@ function activeSnapshot(): ArenaSnapshot {
         match: {
             matchId: 'match',
             status: 'active',
+            enrollment: 'open',
             durationMs: 60_000,
             directorSessionId: 'host',
             startedAtEpochMs: 2_000,

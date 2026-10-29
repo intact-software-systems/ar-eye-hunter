@@ -2,7 +2,7 @@ import type {
     RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { findRelicCharacter } from '@relic-hunters/mod.ts';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { plural } from '../lang.ts';
 
 interface EscapeDecisionPanelProps {
@@ -65,9 +65,10 @@ export function EscapeDecisionPanel({
 
 interface VictoryPanelProps {
     readonly snapshot: RelicPublicSnapshot;
+    readonly children?: ReactNode;
 }
 
-export function VictoryPanel({ snapshot }: VictoryPanelProps) {
+export function VictoryPanel({ snapshot, children }: VictoryPanelProps) {
     const winners = snapshot.players.filter((player) => snapshot.winnerIds.includes(player.playerId));
     const sortedPlayers = [...snapshot.players].sort((left, right) => right.score - left.score);
     return (
@@ -106,6 +107,7 @@ export function VictoryPanel({ snapshot }: VictoryPanelProps) {
                     );
                 })}
             </div>
+            {children}
         </section>
     );
 }

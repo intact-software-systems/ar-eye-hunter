@@ -29,8 +29,8 @@ import type {
     GroupDirectoryRequest
 } from '@shared/api/group-directory/group-directory-types.ts';
 
+import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 describe('useRallarArena auth lifecycle', () => {
     const arena = new ArenaRuntimeTestHarness();
@@ -807,6 +807,7 @@ describe('useRallarArena auth lifecycle', () => {
                 kind: 'presence',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
+                senderGenerationId: 'generation-' + ('peer-1'),
                 seq: 1,
                 directorEpoch: 0,
                 sentAtEpochMs: 123,

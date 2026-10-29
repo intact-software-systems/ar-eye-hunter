@@ -1,3 +1,4 @@
+import { hasRelicRematchParticipation } from '@relic-hunters/src/relic-rematch.ts';
 import { useState, type FormEvent } from 'react';
 
 import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
@@ -19,18 +20,8 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
     if (!game.session || game.connectionState === 'signed-out') {
         return <RelicAuthForm game={game} />;
     }
-    const mutationPending = game.diagnostics.commandInFlight !== undefined;
-    const currentRoom = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
     const unfinished = game.participation === 'player' &&
         hasUnfinishedRelicParticipation(game.snapshot, game.session.sessionId);
-    const keeperRole = game.snapshot?.adminPlayerId
-        ? readActiveGroupSessionRole(currentRoom, game.snapshot.adminPlayerId, Date.now())
-        : undefined;
-    const keeperPresent = keeperRole !== undefined && keeperRole !== 'spectator';
-    const playerCount =
-        currentRoom?.members.filter((member) => member.status === 'active' && member.role !== 'spectator').length ?? 0;
-    const full = currentRoom?.group.maxMembers !== null && currentRoom?.group.maxMembers !== undefined &&
-        playerCount >= currentRoom.group.maxMembers;
     return (
         <div id="hud-rooms" className="panel stack">
             <div className="profile-row">
@@ -56,58 +47,7 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                 Your account reference<input value={game.session.clientId} readOnly />
             </label>
             <RelicRoomHosting game={game} />
-            {game.roomId && (
-                <div className="button-grid">
-                    {game.participation === 'spectator' && (
-                        <>
-                            <strong>Watching</strong>
-                            <button
-                                type="button"
-                                disabled={full || !!game.snapshot &&
-                                        (game.snapshot.phase !== 'lobby' || game.snapshot.players.length >= 4)}
-                                onClick={() => void game.joinAsPlayer()}
-                            >
-                                Join as player
-                            </button>
-                        </>
-                    )}
-                    {unfinished && (
-                        <>
-                            <button
-                                type="button"
-                                disabled={mutationPending}
-                                onClick={() => void game.leaveExpedition()}
-                            >
-                                Leave expedition
-                            </button>
-                            {game.snapshot?.adminPlayerId !== game.session.sessionId && (
-                                <button
-                                    type="button"
-                                    disabled={keeperPresent}
-                                    onClick={() => void game.takeKeeper()}
-                                >
-                                    Take over as Keeper
-                                </button>
-                            )}
-                            <small>
-                                Leave expedition withdraws this hunter and drops carried relics. Banked results stay
-                                saved.
-                            </small>
-                        </>
-                    )}
-                    <button
-                        type="button"
-                        disabled={mutationPending}
-                        onClick={() => void game.leaveRoom()}
-                    >
-                        Leave room
-                    </button>
-                    <small>
-                        Leave room removes this account from the room in every tab. Leave expedition keeps room
-                        membership.
-                    </small>
-                </div>
-            )}
+            {game.roomId && <RelicCurrentRoomActions game={game} />}
             <RelicRoomsList game={game} />
         </div>
     );
@@ -204,6 +144,130 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 function RelicRoomsList({ game }: RelicSessionProps) {
     const watchBlocked = game.participation === 'player' &&
         hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
+    const rows = readRelicRoomRows(game);
+    return (
+        <div className="room-list" aria-busy={game.directory.status === 'loading'}>
+            {game.directory.status === 'loading' && <p role="status">Loading public expeditions…</p>}
+            {game.directory.status === 'error' && (
+                <p role="alert">
+                    Could not refresh public expeditions. Try Refresh.
+                    {game.directory.entries.length > 0 && ' Previous results are shown.'}
+                </p>
+            )}
+            {game.directory.status === 'ready' && game.directory.entries.length === 0 && (
+                <p>No public expeditions found.</p>
+            )}
+            {rows.map((room) => <RelicRoomRow key={room.roomId} room={room} game={game} watchBlocked={watchBlocked} />)}
+        </div>
+    );
+}
+
+interface RelicPreferencesControlsProps {
+    readonly preferences: RelicPreferences;
+}
+
+export function RelicPreferencesControls({ preferences }: RelicPreferencesControlsProps) {
+    return (
+        <>
+            <button
+                type="button"
+                className={preferences.ambientEnabled ? 'active' : ''}
+                onClick={preferences.toggleAmbient}
+            >
+                {preferences.lang === 'no' ? 'Atmosfære' : 'Atmosphere'}
+            </button>
+            <button type="button" onClick={preferences.toggleLanguage} title="Switch language / Bytt språk">
+                {preferences.lang === 'en' ? 'Norsk' : 'English'}
+            </button>
+        </>
+    );
+}
+
+function RelicCurrentRoomActions({ game }: RelicSessionProps) {
+    const mutationPending = game.diagnostics.commandInFlight !== undefined;
+    const currentRoom = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
+    const unfinished = game.participation === 'player' &&
+        hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
+    const preparing = game.participation === 'player' &&
+        hasRelicRematchParticipation(game.snapshot, game.session?.sessionId);
+    const keeperRole = game.snapshot?.adminPlayerId
+        ? readActiveGroupSessionRole(currentRoom, game.snapshot.adminPlayerId, Date.now())
+        : undefined;
+    const keeperPresent = keeperRole !== undefined && keeperRole !== 'spectator';
+    const playerCount =
+        currentRoom?.members.filter((member) => member.status === 'active' && member.role !== 'spectator').length ?? 0;
+    const full = currentRoom?.group.maxMembers !== null && currentRoom?.group.maxMembers !== undefined &&
+        playerCount >= currentRoom.group.maxMembers;
+
+    return (
+        <div className="button-grid">
+            {game.participation === 'spectator' && <RelicSpectatorPromotion game={game} full={full} />}
+            {(unfinished || preparing) && (
+                <>
+                    <button
+                        type="button"
+                        disabled={mutationPending}
+                        onClick={() => void game.leaveExpedition()}
+                    >
+                        Leave expedition
+                    </button>
+                    {game.snapshot?.adminPlayerId !== game.session?.sessionId && (
+                        <button
+                            type="button"
+                            disabled={keeperPresent}
+                            onClick={() => void game.takeKeeper()}
+                        >
+                            Take over as Keeper
+                        </button>
+                    )}
+                    <small>
+                        Leave expedition withdraws this hunter and drops carried relics. Banked results stay saved.
+                    </small>
+                </>
+            )}
+            <button
+                type="button"
+                disabled={mutationPending}
+                onClick={() => void game.leaveRoom()}
+            >
+                Leave room
+            </button>
+            <small>
+                Leave room removes this account from the room in every tab. Leave expedition keeps room membership.
+            </small>
+        </div>
+    );
+}
+interface RelicSpectatorPromotionProps extends RelicSessionProps {
+    readonly full: boolean;
+}
+function RelicSpectatorPromotion({ game, full }: RelicSpectatorPromotionProps) {
+    return (
+        <>
+            <strong>Watching</strong>
+            <button
+                type="button"
+                disabled={full || !!game.snapshot &&
+                        (game.snapshot.phase !== 'lobby' && game.snapshot.phase !== 'finished' ||
+                            game.snapshot.phase === 'lobby' && game.snapshot.players.length >= 4)}
+                onClick={() => void game.joinAsPlayer()}
+            >
+                Join as player
+            </button>
+        </>
+    );
+}
+
+interface RelicRoomRowData {
+    readonly roomId: string;
+    readonly name: string;
+    readonly onlinePlayerCount: number;
+    readonly full: boolean;
+    readonly maxSpectators: number;
+    readonly spectatorCount: number;
+    readonly canWatch: boolean;
+}
+function readRelicRoomRows(game: RelicHuntersRuntime.Connection): readonly RelicRoomRowData[] {
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters') &&
         room.snapshot.members.some((member) =>
@@ -241,97 +305,41 @@ function RelicRoomsList({ game }: RelicSessionProps) {
             canWatch: true
         }))
     ];
-    return (
-        <div className="room-list" aria-busy={game.directory.status === 'loading'}>
-            {game.directory.status === 'loading' && <p role="status">Loading public expeditions…</p>}
-            {game.directory.status === 'error' && (
-                <p role="alert">
-                    Could not refresh public expeditions. Try Refresh.
-                    {publicRooms.length > 0 && ' Previous results are shown.'}
-                </p>
-            )}
-            {game.directory.status === 'ready' && game.directory.entries.length === 0 && (
-                <p>No public expeditions found.</p>
-            )}
-            {rows.map((room) => (
-                <div key={room.roomId}>
-                    <button
-                        type="button"
-                        key={room.roomId}
-                        data-room-id={room.roomId}
-                        disabled={room.roomId === game.roomId || room.full || !game.diagnostics.middlewareConnected}
-                        className={room.roomId === game.roomId ? 'room-row active' : 'room-row'}
-                        onClick={() => void game.joinRoom(room.roomId)}
-                    >
-                        <span>{room.name}</span>
-                        <small>
-                            {room.onlinePlayerCount} {room.onlinePlayerCount === 1 ? 'player' : 'players'} ·{' '}
-                            {room.spectatorCount} watching{room.full && ' · Full'}
-                        </small>
-                    </button>
-                    {!watchBlocked && room.canWatch && room.maxSpectators > 0 && (
-                        <button
-                            type="button"
-                            aria-label={`Watch ${room.name}`}
-                            disabled={room.spectatorCount >= room.maxSpectators ||
-                                !game.diagnostics.middlewareConnected}
-                            onClick={() => void game.watchRoom(room.roomId)}
-                        >
-                            Watch
-                        </button>
-                    )}
-                </div>
-            ))}
-        </div>
-    );
-}
 
-interface RelicPreferencesControlsProps {
-    readonly preferences: RelicPreferences;
+    return rows;
 }
-
-export function RelicPreferencesControls({ preferences }: RelicPreferencesControlsProps) {
+interface RelicRoomRowProps extends RelicSessionProps {
+    readonly room: RelicRoomRowData;
+    readonly watchBlocked: boolean;
+}
+function RelicRoomRow({ room, game, watchBlocked }: RelicRoomRowProps) {
     return (
-        <>
+        <div key={room.roomId}>
             <button
                 type="button"
-                className={preferences.ambientEnabled ? 'active' : ''}
-                onClick={preferences.toggleAmbient}
+                key={room.roomId}
+                data-room-id={room.roomId}
+                disabled={room.roomId === game.roomId || room.full || !game.diagnostics.middlewareConnected}
+                className={room.roomId === game.roomId ? 'room-row active' : 'room-row'}
+                onClick={() => void game.joinRoom(room.roomId)}
             >
-                {preferences.lang === 'no' ? 'Atmosfære' : 'Atmosphere'}
+                <span>{room.name}</span>
+                <small>
+                    {room.onlinePlayerCount} {room.onlinePlayerCount === 1 ? 'player' : 'players'} ·{' '}
+                    {room.spectatorCount} watching{room.full && ' · Full'}
+                </small>
             </button>
-            <button type="button" onClick={preferences.toggleLanguage} title="Switch language / Bytt språk">
-                {preferences.lang === 'en' ? 'Norsk' : 'English'}
-            </button>
-        </>
-    );
-}
-
-interface SidePanelMenuItem {
-    readonly id: string;
-    readonly label: string;
-}
-
-interface SidePanelMenuProps {
-    readonly items: readonly SidePanelMenuItem[];
-    onJump(id: string): void;
-}
-
-export function SidePanelMenu({
-    items,
-    onJump
-}: SidePanelMenuProps) {
-    return (
-        <nav className="side-panel-menu" aria-label="Side panel sections">
-            {items.map((item) => (
+            {!watchBlocked && room.canWatch && room.maxSpectators > 0 && (
                 <button
-                    key={item.id}
                     type="button"
-                    onClick={() => onJump(item.id)}
+                    aria-label={`Watch ${room.name}`}
+                    disabled={room.spectatorCount >= room.maxSpectators ||
+                        !game.diagnostics.middlewareConnected}
+                    onClick={() => void game.watchRoom(room.roomId)}
                 >
-                    {item.label}
+                    Watch
                 </button>
-            ))}
-        </nav>
+            )}
+        </div>
     );
 }

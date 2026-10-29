@@ -1,6 +1,8 @@
 import { resolveRallarGameTypeIds } from '@shared-web/game/match.ts';
 import { describe, expect, it } from 'vitest';
 
+import type { GameRealtimeMessage, PlayerPose, ShotIntent } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { GAME_AI_TOPIC_ID, GAME_DIRECTOR_TOPIC_ID } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import {
     ARENA_RALLAR_GAME_DATA_CHANNEL_LANES,
     ARENA_RALLAR_GAME_LANE_IDS,
@@ -11,8 +13,6 @@ import {
     isArenaPoseIntentFromSender,
     isArenaShotIntentFromSender
 } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import type { GameRealtimeMessage, PlayerPose, ShotIntent } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
-import { GAME_AI_TOPIC_ID, GAME_DIRECTOR_TOPIC_ID } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter Rallar Game match adapter', () => {
     it('maps AR lanes into the generic Rallar Game lane model', () => {
@@ -123,6 +123,7 @@ function shot(sessionId: string): ShotIntent {
         origin: [0, 2, 0],
         direction: [0, 0, 1],
         seq: 1,
-        sentAtEpochMs: 1_000
+        sentAtEpochMs: 1_000,
+        weaponKind: 'pulse-rifle' as const
     };
 }

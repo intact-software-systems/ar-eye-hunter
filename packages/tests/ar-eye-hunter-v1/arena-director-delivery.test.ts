@@ -28,23 +28,22 @@ import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-deliver
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
+    GAME_DIRECTOR_TOPIC_ID,
+    type ArenaSnapshot,
+    type MatchEndedAccepted,
+    type PlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import {
     createArenaRallarGameMatch,
     type ArenaRallarGameMatchHandle
 } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import {
     createInitialArenaState,
-    createInitialVitalsState,
-    finishArenaMatchIfDue,
-    startArenaMatch,
     toArenaSnapshot
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import {
-    GAME_DIRECTOR_TOPIC_ID,
-    type ArenaSnapshot,
-    type MatchEndedAccepted,
-    type PlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
+import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
+import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,
@@ -523,6 +522,39 @@ describe('arena match lifecycle delivery', () => {
         expect(arena.current?.matchDelivery).toBeUndefined();
     });
 
+    it('rejects corrupt recovered preparation before it reaches the results controls', async () => {
+        const now = Date.now();
+        const initial = createMatchFixture(now - 62_000).ended;
+        await renderDirector(arena, initial);
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        const corrupted = {
+            ...initial,
+            revision: initial.revision + 1,
+            match: {
+                ...initial.match!,
+                rematch: {
+                    durationMs: 60_000 as const,
+                    preparation: {
+                        completedGameId: initial.match!.matchId,
+                        settingsKey: 'duration:60000:0',
+                        players: [{ sessionId: session.sessionId, ready: true as const, participationKey: '' }]
+                    }
+                }
+            }
+        };
+        await act(async () => config?.onSnapshot?.(directorEnvelope(corrupted as ArenaSnapshot, now)));
+        expect(arena.current?.arenaSnapshot?.match?.rematch).toBeUndefined();
+    });
+
+    it('reports a nonthrowing rematch delivery failure instead of presenting it as sent', async () => {
+        const now = Date.now();
+        await renderDirector(arena, createMatchFixture(now - 62_000).ended);
+        mockMatch.sendIntent.mockResolvedValueOnce({ status: 'no-director', reason: 'Director expired' });
+        await act(async () => {
+            await expect(arena.current?.setRematchReady(true)).rejects.toThrow('Director expired');
+        });
+    });
+
     it('publishes the match start with a logical receipt and keeps high-rate outputs best effort', async () => {
         const nowEpochMs = Date.now();
         const delivery = await renderDirector(arena, toArenaSnapshot(createInitialArenaState(44, nowEpochMs), 'arena-1', nowEpochMs));
@@ -692,6 +724,7 @@ function directorEnvelope<T>(payload: T, sentAtEpochMs: number) {
         kind: 'intent',
         roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
         senderId: session.sessionId,
+        senderGenerationId: 'generation-' + (session.sessionId),
         seq: 1,
         directorEpoch: 1,
         sentAtEpochMs,

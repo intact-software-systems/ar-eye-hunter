@@ -36,14 +36,6 @@ import {
 import { acceptArenaMatchIntent } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/match/handlers/accept-arena-match-intent.ts';
 import type { ArenaPeerShotMessage } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
 
-import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import {
-    createInitialArenaState,
-    createInitialVitalsState,
-    spawnWeaponPickup,
-    toArenaSnapshot,
-    upsertPlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type {
     ArenaEvent,
     ArenaPickupState,
@@ -51,7 +43,15 @@ import type {
     GameRealtimeMessage,
     PickupIntent,
     PlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
+import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+import {
+    createInitialArenaState,
+    spawnWeaponPickup,
+    toArenaSnapshot,
+    upsertPlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 interface PickupSnapshotFixture {
     readonly snapshot: ArenaSnapshot;
@@ -343,6 +343,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'intent',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: session.sessionId,
+                senderGenerationId: 'generation-' + (session.sessionId),
                 seq: 1,
                 directorEpoch: 1,
                 sentAtEpochMs: fixture.nowEpochMs,
@@ -532,6 +533,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'intent',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: session.sessionId,
+                senderGenerationId: 'generation-' + (session.sessionId),
                 seq: 1,
                 directorEpoch: 1,
                 sentAtEpochMs: 1000,
@@ -561,6 +563,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'intent',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
+                senderGenerationId: 'generation-' + ('peer-1'),
                 seq: 1,
                 directorEpoch: 1,
                 sentAtEpochMs: fixture.nowEpochMs,
@@ -597,6 +600,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'intent',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
+                senderGenerationId: 'generation-' + ('peer-1'),
                 seq: 1,
                 directorEpoch: 1,
                 sentAtEpochMs: fixture.nowEpochMs,
@@ -629,6 +633,7 @@ describe('arena game realtime acceptance and egress', () => {
             kind: 'intent',
             roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-' + ('peer-1'),
             seq: 1,
             directorEpoch: 1,
             sentAtEpochMs: 1_000,
@@ -692,6 +697,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'intent',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
+                senderGenerationId: 'generation-' + ('peer-1'),
                 seq: 1,
                 directorEpoch: 1,
                 sentAtEpochMs: fixture.nowEpochMs,
@@ -733,6 +739,7 @@ describe('arena game realtime acceptance and egress', () => {
             return { status: 'sent' };
         });
         const input: ArenaMatchRuntimeInput = {
+            acceptRematchIntent: async () => {},
             nowMs: () => fixture.nowEpochMs,
             arenaMatchRef: { current: undefined },
             arenaSnapshotRef: { current: fixture.snapshot },
@@ -757,6 +764,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'intent',
                 roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'peer-1',
+                senderGenerationId: 'generation-' + ('peer-1'),
                 seq: 1,
                 directorEpoch: 1,
                 sentAtEpochMs: fixture.nowEpochMs,
@@ -780,6 +788,7 @@ describe('arena game realtime acceptance and egress', () => {
         const pendingActiveEvents: SetStateAction<typeof activeEvent>[] = [];
         const pendingEvents: SetStateAction<typeof events>[] = [];
         const input: ArenaMatchRuntimeInput = {
+            acceptRematchIntent: async () => {},
             nowMs: () => fixture.nowEpochMs,
             arenaMatchRef: { current: undefined },
             arenaSnapshotRef: { current: fixture.snapshot },
@@ -815,6 +824,7 @@ describe('arena game realtime acceptance and egress', () => {
                     kind: 'snapshot',
                     roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                     senderId: 'peer-1',
+                    senderGenerationId: 'generation-' + ('peer-1'),
                     seq: 1,
                     directorEpoch: 1,
                     sentAtEpochMs: fixture.nowEpochMs,
@@ -829,6 +839,7 @@ describe('arena game realtime acceptance and egress', () => {
                     kind: 'intent',
                     roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                     senderId: 'peer-1',
+                    senderGenerationId: 'generation-' + ('peer-1'),
                     seq: 1,
                     directorEpoch: 1,
                     sentAtEpochMs: fixture.nowEpochMs,
@@ -914,7 +925,8 @@ function acceptedIntentFixture(kind: 'hit' | 'pickup', nowEpochMs: number, peerI
                     origin: [0, 1.72, 0],
                     direction: [0, 0, 1],
                     seq: 1,
-                    sentAtEpochMs: nowEpochMs
+                    sentAtEpochMs: nowEpochMs,
+                    weaponKind: 'pulse-rifle' as const
                 },
                 targetSessionId: 'target',
                 predictedImpact: [0, 1.72, 9],
@@ -937,7 +949,8 @@ function peerShotMessage(roomRef: GroupRef | undefined) {
                 origin: [0, 2, 0] as const,
                 direction: [0, 0, 1] as const,
                 seq: 1,
-                sentAtEpochMs: 1000
+                sentAtEpochMs: 1000,
+                weaponKind: 'pulse-rifle' as const
             },
             hit: true,
             targetId: 'eye-1',
@@ -970,6 +983,7 @@ function directorEnvelope<T>(kind: 'snapshot' | 'event', payload: T) {
         kind,
         roomRef: arenaRoomRef,
         senderId: 'director-session',
+        senderGenerationId: 'generation-' + ('director-session'),
         seq: 1,
         directorEpoch: 1,
         sentAtEpochMs: Date.now(),

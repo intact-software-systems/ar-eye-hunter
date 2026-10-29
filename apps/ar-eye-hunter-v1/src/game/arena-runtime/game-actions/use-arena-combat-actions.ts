@@ -1,19 +1,19 @@
-import { useCallback } from 'react';
 import type { RefObject } from 'react';
+import { useCallback } from 'react';
 
-import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
-import { colorForId } from '../../color.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
     GAME_COMBAT_LANE_ID,
     GAME_PROTOCOL,
     type PlayerHitIntent,
     type ShotAccepted,
     type ShotIntent
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import { colorForId } from '../../color.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaPeerShotMessage } from '../messages/use-arena-peer-message-handlers.ts';

@@ -31,7 +31,7 @@ describe('Relic command evaluation', () => {
     });
 
     it('never creates a participant through a forged start command', () => {
-        const result = applyRelicCommand(undefined, {
+        const result = applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'start-expedition',
             gameId: 'room-1',
@@ -44,7 +44,11 @@ describe('Relic command evaluation', () => {
     it('resolves and finishes a solo expedition without counting an unjoined watcher', () => {
         const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
         let state = requireRelicCommandApplied(
-            applyRelicCommand(undefined, { ...command, kind: 'join-expedition' }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1 })
+            applyRelicCommand(createRelicGame('room-1', 'room-1', 1), { ...command, kind: 'join-expedition' }, {
+                presentPlayerIds: ['alice'],
+                senderId: 'alice',
+                now: 1
+            })
         ).state;
         state = { ...state, maxRounds: 1 };
         expect(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { presentPlayerIds: ['watcher'], senderId: 'watcher', now: 2 }).left?.code)
@@ -77,7 +81,7 @@ describe('Relic command evaluation', () => {
     });
 
     it('refuses administrator commands when an existing roster has no assigned administrator', () => {
-        const joined = requireRelicCommandApplied(applyRelicCommand(undefined, {
+        const joined = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'join-expedition',
             gameId: 'room-1',
@@ -105,7 +109,7 @@ describe('Relic command evaluation', () => {
     });
 
     it('refuses a newcomer starting an existing expedition with no assigned administrator', () => {
-        const joined = requireRelicCommandApplied(applyRelicCommand(undefined, {
+        const joined = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'join-expedition',
             gameId: 'room-1',
@@ -126,7 +130,7 @@ describe('Relic command evaluation', () => {
     });
 
     it('appoints the first entrant only when the roster is empty', () => {
-        const joined = requireRelicCommandApplied(applyRelicCommand(undefined, {
+        const joined = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'join-expedition',
             gameId: 'room-1',
@@ -155,8 +159,8 @@ describe('Relic command evaluation', () => {
             gameId: 'room-1',
             username: 'Alice'
         } as const;
-        const result = applyRelicCommand(undefined, command, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1234 });
-        const repeated = applyRelicCommand(undefined, command, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1234 });
+        const result = applyRelicCommand(createRelicGame('room-1', 'room-1', 1234), command, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1234 });
+        const repeated = applyRelicCommand(createRelicGame('room-1', 'room-1', 1234), command, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1234 });
 
         expect(result.left).toBeUndefined();
         expect(result.right?.state).toMatchObject({ createdAtEpochMs: 1234, updatedAtEpochMs: 1234 });

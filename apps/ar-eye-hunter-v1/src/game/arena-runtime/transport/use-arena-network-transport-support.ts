@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { useCallback } from 'react';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
+import type { ArenaSnapshot } from '../../arena-contracts.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { ArenaSnapshot } from '../../types.ts';
 import type { ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';
 
 const ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS = 1_000;

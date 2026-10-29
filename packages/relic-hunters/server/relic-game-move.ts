@@ -8,32 +8,38 @@ import {
     RELIC_PROTOCOL_VERSION,
     type RelicActionKind,
     type RelicCharacterId,
-    type RelicCommand
+    type RelicCommand,
+    type RelicRematchCommand
 } from '../mod.ts';
 
 /** Complete durable command shape; optional browser inputs are normalized before reservation. */
 export type RelicGameMove =
-    & Readonly<{
-        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
-        gameId: string;
-        username: string;
-    }>
-    & (
-        | Readonly<{ kind: 'join-expedition'; characterId: RelicCharacterId | null; }>
-        | Readonly<{
-            kind:
-                | 'start-expedition'
-                | 'force-resolve-round'
-                | 'continue-review'
-                | 'leave-expedition'
-                | 'take-keeper';
+    | RelicRematchCommand
+    | (
+        & Readonly<{
+            protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+            gameId: string;
+            username: string;
         }>
-        | Readonly<{ kind: 'pickup-relic'; relicId: string; }>
-        | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number; }>
-        | Readonly<{
-            kind: 'submit-action';
-            action: Readonly<{ kind: RelicActionKind; targetRoomId: string | null; targetPlayerId: string | null; }>;
-        }>
+        & (
+            | Readonly<{ kind: 'join-expedition'; characterId: RelicCharacterId | null; }>
+            | Readonly<{
+                kind:
+                    | 'start-expedition'
+                    | 'force-resolve-round'
+                    | 'continue-review'
+                    | 'leave-expedition'
+                    | 'take-keeper';
+            }>
+            | Readonly<{ kind: 'pickup-relic'; relicId: string; }>
+            | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number; }>
+            | Readonly<{
+                kind: 'submit-action';
+                action: Readonly<
+                    { kind: RelicActionKind; targetRoomId: string | null; targetPlayerId: string | null; }
+                >;
+            }>
+        )
     );
 
 export function isRelicGameMoveInput(value: unknown): value is RelicCommand {
@@ -73,6 +79,23 @@ export function decodeRelicGameMove(value: unknown): RelicGameMove {
     const move = requireRecord(value, 'Relic durable move');
     const keys = ['protocolVersion', 'gameId', 'username', 'kind'];
     switch (move.kind) {
+        case 'set-rematch-ready':
+            requireExactKeys(
+                move,
+                [...keys, 'completedGameId', 'settingsKey', 'ready', 'characterId', 'participationKey'],
+                'Relic rematch readiness'
+            );
+            break;
+        case 'start-rematch':
+            requireExactKeys(move, [...keys, 'completedGameId', 'settingsKey'], 'Relic rematch start');
+            break;
+        case 'set-rematch-round-limit':
+            requireExactKeys(
+                move,
+                [...keys, 'completedGameId', 'settingsKey', 'timeLimitMs'],
+                'Relic rematch settings'
+            );
+            break;
         case 'join-expedition':
             requireExactKeys(move, [...keys, 'characterId'], 'Relic join move');
             requireNullableString(move.characterId, 'Relic character ID');

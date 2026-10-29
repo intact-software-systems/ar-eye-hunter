@@ -1813,8 +1813,13 @@
                               "payload": {
                                 "protocol": "ar-eye-hunter.v1",
                                 "kind": "event",
-                                "roomId": "hetzner-headless-room",
+                                "roomRef": {
+                                  "applicationId": "rallar-server",
+                                  "workspaceId": "default",
+                                  "groupId": "hetzner-headless-room"
+                                },
                                 "senderId": "{auth.sessionId}",
+                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                 "seq": 1,
                                 "sentAtEpochMs": 1802088000000,
                                 "directorEpoch": 1,
@@ -1831,6 +1836,7 @@
                                     "match": {
                                       "matchId": "match:hetzner-headless-room:1802088000000:60000",
                                       "status": "active",
+                                      "enrollment": "open",
                                       "durationMs": 60000,
                                       "directorSessionId": "{auth.sessionId}",
                                       "startedAtEpochMs": 1802088000000,
@@ -2019,8 +2025,13 @@
                               "payload": {
                                 "protocol": "ar-eye-hunter.v1",
                                 "kind": "event",
-                                "roomId": "hetzner-headless-room",
+                                "roomRef": {
+                                  "applicationId": "rallar-server",
+                                  "workspaceId": "default",
+                                  "groupId": "hetzner-headless-room"
+                                },
                                 "senderId": "{auth.sessionId}",
+                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                 "seq": 2,
                                 "sentAtEpochMs": 1802088060000,
                                 "directorEpoch": 1,
@@ -2031,6 +2042,7 @@
                                     "match": {
                                       "matchId": "match:hetzner-headless-room:1802088000000:60000",
                                       "status": "complete",
+                                      "enrollment": "open",
                                       "durationMs": 60000,
                                       "directorSessionId": "{auth.sessionId}",
                                       "startedAtEpochMs": 1802088000000,
@@ -2303,7 +2315,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.0}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.0}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.0}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.0}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.0}\","
                                 }
                               },
                               {
@@ -2328,7 +2340,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.1}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.1}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.1}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.1}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.1}\","
                                 }
                               },
                               {
@@ -2353,7 +2365,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.2}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.2}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.2}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.2}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.2}\","
                                 }
                               },
                               {
@@ -2378,7 +2390,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.3}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.3}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.3}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.3}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.3}\","
                                 }
                               },
                               {
@@ -2403,7 +2415,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.4}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.4}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.4}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.4}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.4}\","
                                 }
                               },
                               {
@@ -2428,7 +2440,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.5}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.5}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.5}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.5}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.5}\","
                                 }
                               },
                               {
@@ -2453,7 +2465,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.6}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.6}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.6}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.6}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.6}\","
                                 }
                               },
                               {
@@ -2478,7 +2490,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.7}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.7}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.7}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.7}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.7}\","
                                 }
                               },
                               {
@@ -2503,7 +2515,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.8}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.8}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.8}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.8}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.8}\","
                                 }
                               },
                               {
@@ -2528,7 +2540,7 @@
                                   "kind": "message",
                                   "connection": "alm-scale-director",
                                   "payloadPath": "data.payload",
-                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.9}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.9}\","
+                                  "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.intent.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"intent\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.9}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.9}\",\"seq\":{loop.iteration},\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"player-shot-intent\",\"shot\":{\"sessionId\":\"{resultCache.alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt.value.expectedRecipientPeerIds.9}\","
                                 }
                               },
                               {
@@ -5102,7 +5114,7 @@
                               "kind": "message",
                               "connection": "alm-scale-player",
                               "payloadPath": "data.payload",
-                              "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.event.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"event\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"seq\":1,\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"director-match-started\",\"accepted\":{\"intent\":{\"matchId\":\"match:hetzner-headless-room:1802088000000:60000\",\"directorSessionId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"durationMs\":60000,\"sentAtEpochMs\":1802088000000},\"match\":{\"matchId\":\"match:hetzner-headless-room:1802088000000:60000\",\"status\":\"active\",\"durationMs\":60000,\"directorSessionId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"startedAtEpochMs\":1802088000000,\"endsAtEpochMs\":1802088060000,\"baseline\":{\"fixture-player-1\":{\"sessionId\":\"fixture-player-1\",\"username\":\"Player 1\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":1},\"fixture-player-2\":{\"sessionId\":\"fixture-player-2\",\"username\":\"Player 2\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":2},\"fixture-player-3\":{\"sessionId\":\"fixture-player-3\",\"username\":\"Player 3\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":3},\"fixture-player-4\":{\"sessionId\":\"fixture-player-4\",\"username\":\"Player 4\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":4},\"fixture-player-5\":{\"sessionId\":\"fixture-player-5\",\"username\":\"Player 5\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":5},\"fixture-player-6\":{\"sessionId\":\"fixture-player-6\",\"username\":\"Player 6\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":6},\"fixture-player-7\":{\"sessionId\":\"fixture-player-7\",\"username\":\"Player 7\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":7},\"fixture-player-8\":{\"sessionId\":\"fixture-player-8\",\"username\":\"Player 8\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":8},\"fixture-player-9\":{\"sessionId\":\"fixture-player-9\",\"username\":\"Player 9\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":9},\"fixture-player-10\":{\"sessionId\":\"fixture-player-10\",\"username\":\"Player 10\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":10},\"fixture-player-11\":{\"sessionId\":\"fixture-player-11\",\"username\":\"Player 11\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":11}}},\"revision\":1,\"acceptedAtEpochMs\":1802088000000}}}}"
+                              "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.event.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088000000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"event\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"seq\":1,\"sentAtEpochMs\":1802088000000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"director-match-started\",\"accepted\":{\"intent\":{\"matchId\":\"match:hetzner-headless-room:1802088000000:60000\",\"directorSessionId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"durationMs\":60000,\"sentAtEpochMs\":1802088000000},\"match\":{\"matchId\":\"match:hetzner-headless-room:1802088000000:60000\",\"status\":\"active\",\"enrollment\":\"open\",\"durationMs\":60000,\"directorSessionId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"startedAtEpochMs\":1802088000000,\"endsAtEpochMs\":1802088060000,\"baseline\":{\"fixture-player-1\":{\"sessionId\":\"fixture-player-1\",\"username\":\"Player 1\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":1},\"fixture-player-2\":{\"sessionId\":\"fixture-player-2\",\"username\":\"Player 2\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":2},\"fixture-player-3\":{\"sessionId\":\"fixture-player-3\",\"username\":\"Player 3\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":3},\"fixture-player-4\":{\"sessionId\":\"fixture-player-4\",\"username\":\"Player 4\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":4},\"fixture-player-5\":{\"sessionId\":\"fixture-player-5\",\"username\":\"Player 5\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":5},\"fixture-player-6\":{\"sessionId\":\"fixture-player-6\",\"username\":\"Player 6\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":6},\"fixture-player-7\":{\"sessionId\":\"fixture-player-7\",\"username\":\"Player 7\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":7},\"fixture-player-8\":{\"sessionId\":\"fixture-player-8\",\"username\":\"Player 8\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":8},\"fixture-player-9\":{\"sessionId\":\"fixture-player-9\",\"username\":\"Player 9\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":9},\"fixture-player-10\":{\"sessionId\":\"fixture-player-10\",\"username\":\"Player 10\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":10},\"fixture-player-11\":{\"sessionId\":\"fixture-player-11\",\"username\":\"Player 11\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":11}}},\"revision\":1,\"acceptedAtEpochMs\":1802088000000}}}}"
                             }
                           },
                           {
@@ -5151,8 +5163,13 @@
                                               "payload": {
                                                 "protocol": "ar-eye-hunter.v1",
                                                 "kind": "intent",
-                                                "roomId": "hetzner-headless-room",
+                                                "roomRef": {
+                                                  "applicationId": "rallar-server",
+                                                  "workspaceId": "default",
+                                                  "groupId": "hetzner-headless-room"
+                                                },
                                                 "senderId": "{auth.sessionId}",
+                                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                                 "seq": 1,
                                                 "sentAtEpochMs": 1802088000000,
                                                 "directorEpoch": 1,
@@ -5236,8 +5253,13 @@
                                               "payload": {
                                                 "protocol": "ar-eye-hunter.v1",
                                                 "kind": "intent",
-                                                "roomId": "hetzner-headless-room",
+                                                "roomRef": {
+                                                  "applicationId": "rallar-server",
+                                                  "workspaceId": "default",
+                                                  "groupId": "hetzner-headless-room"
+                                                },
                                                 "senderId": "{auth.sessionId}",
+                                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                                 "seq": 2,
                                                 "sentAtEpochMs": 1802088000000,
                                                 "directorEpoch": 1,
@@ -5321,8 +5343,13 @@
                                               "payload": {
                                                 "protocol": "ar-eye-hunter.v1",
                                                 "kind": "intent",
-                                                "roomId": "hetzner-headless-room",
+                                                "roomRef": {
+                                                  "applicationId": "rallar-server",
+                                                  "workspaceId": "default",
+                                                  "groupId": "hetzner-headless-room"
+                                                },
                                                 "senderId": "{auth.sessionId}",
+                                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                                 "seq": 3,
                                                 "sentAtEpochMs": 1802088000000,
                                                 "directorEpoch": 1,
@@ -5406,8 +5433,13 @@
                                               "payload": {
                                                 "protocol": "ar-eye-hunter.v1",
                                                 "kind": "intent",
-                                                "roomId": "hetzner-headless-room",
+                                                "roomRef": {
+                                                  "applicationId": "rallar-server",
+                                                  "workspaceId": "default",
+                                                  "groupId": "hetzner-headless-room"
+                                                },
                                                 "senderId": "{auth.sessionId}",
+                                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                                 "seq": 4,
                                                 "sentAtEpochMs": 1802088000000,
                                                 "directorEpoch": 1,
@@ -5491,8 +5523,13 @@
                                               "payload": {
                                                 "protocol": "ar-eye-hunter.v1",
                                                 "kind": "intent",
-                                                "roomId": "hetzner-headless-room",
+                                                "roomRef": {
+                                                  "applicationId": "rallar-server",
+                                                  "workspaceId": "default",
+                                                  "groupId": "hetzner-headless-room"
+                                                },
                                                 "senderId": "{auth.sessionId}",
+                                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                                 "seq": 5,
                                                 "sentAtEpochMs": 1802088000000,
                                                 "directorEpoch": 1,
@@ -5576,8 +5613,13 @@
                                               "payload": {
                                                 "protocol": "ar-eye-hunter.v1",
                                                 "kind": "intent",
-                                                "roomId": "hetzner-headless-room",
+                                                "roomRef": {
+                                                  "applicationId": "rallar-server",
+                                                  "workspaceId": "default",
+                                                  "groupId": "hetzner-headless-room"
+                                                },
                                                 "senderId": "{auth.sessionId}",
+                                                "senderGenerationId": "fixture-generation:{auth.sessionId}",
                                                 "seq": 6,
                                                 "sentAtEpochMs": 1802088000000,
                                                 "directorEpoch": 1,
@@ -5728,7 +5770,7 @@
                               "kind": "message",
                               "connection": "alm-scale-player",
                               "payloadPath": "data.payload",
-                              "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.event.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088060000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"event\",\"roomId\":\"hetzner-headless-room\",\"senderId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"seq\":2,\"sentAtEpochMs\":1802088060000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"director-match-ended\",\"accepted\":{\"match\":{\"matchId\":\"match:hetzner-headless-room:1802088000000:60000\",\"status\":\"complete\",\"durationMs\":60000,\"directorSessionId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"startedAtEpochMs\":1802088000000,\"endsAtEpochMs\":1802088060000,\"baseline\":{\"fixture-player-1\":{\"sessionId\":\"fixture-player-1\",\"username\":\"Player 1\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":1},\"fixture-player-2\":{\"sessionId\":\"fixture-player-2\",\"username\":\"Player 2\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":2},\"fixture-player-3\":{\"sessionId\":\"fixture-player-3\",\"username\":\"Player 3\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":3},\"fixture-player-4\":{\"sessionId\":\"fixture-player-4\",\"username\":\"Player 4\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":4},\"fixture-player-5\":{\"sessionId\":\"fixture-player-5\",\"username\":\"Player 5\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":5},\"fixture-player-6\":{\"sessionId\":\"fixture-player-6\",\"username\":\"Player 6\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":6},\"fixture-player-7\":{\"sessionId\":\"fixture-player-7\",\"username\":\"Player 7\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":7},\"fixture-player-8\":{\"sessionId\":\"fixture-player-8\",\"username\":\"Player 8\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":8},\"fixture-player-9\":{\"sessionId\":\"fixture-player-9\",\"username\":\"Player 9\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":9},\"fixture-player-10\":{\"sessionId\":\"fixture-player-10\",\"username\":\"Player 10\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":10},\"fixture-player-11\":{\"sessionId\":\"fixture-player-11\",\"username\":\"Player 11\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":11}},\"results\":[{\"sessionId\":\"fixture-player-1\",\"username\":\"Player 1\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":1},{\"sessionId\":\"fixture-player-2\",\"username\":\"Player 2\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":2},{\"sessionId\":\"fixture-player-3\",\"username\":\"Player 3\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":3},{\"sessionId\":\"fixture-player-4\",\"username\":\"Player 4\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":4},{\"sessionId\":\"fixture-player-5\",\"username\":\"Player 5\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":5},{\"sessionId\":\"fixture-player-6\",\"username\":\"Player 6\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":6},{\"sessionId\":\"fixture-player-7\",\"username\":\"Player 7\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":7},{\"sessionId\":\"fixture-player-8\",\"username\":\"Player 8\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":8},{\"sessionId\":\"fixture-player-9\",\"username\":\"Player 9\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":9},{\"sessionId\":\"fixture-player-10\",\"username\":\"Player 10\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":10},{\"sessionId\":\"fixture-player-11\",\"username\":\"Player 11\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":11}],\"completedAtEpochMs\":1802088060000},\"revision\":2,\"acceptedAtEpochMs\":1802088060000}}}}"
+                              "contains": "{\"protocol\":\"rallar.director.relay.v1\",\"topicId\":\"room.ar-eye-hunter.director\",\"typeId\":\"room.ar-eye-hunter.director.event.v1\",\"roomId\":\"hetzner-headless-room\",\"epoch\":1,\"sentAtEpochMs\":1802088060000,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"event\",\"roomRef\":{\"applicationId\":\"rallar-server\",\"workspaceId\":\"default\",\"groupId\":\"hetzner-headless-room\"},\"senderId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"senderGenerationId\":\"fixture-generation:{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"seq\":2,\"sentAtEpochMs\":1802088060000,\"directorEpoch\":1,\"payload\":{\"protocol\":\"ar-eye-hunter.v1\",\"kind\":\"director-match-ended\",\"accepted\":{\"match\":{\"matchId\":\"match:hetzner-headless-room:1802088000000:60000\",\"status\":\"complete\",\"enrollment\":\"open\",\"durationMs\":60000,\"directorSessionId\":\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\",\"startedAtEpochMs\":1802088000000,\"endsAtEpochMs\":1802088060000,\"baseline\":{\"fixture-player-1\":{\"sessionId\":\"fixture-player-1\",\"username\":\"Player 1\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":1},\"fixture-player-2\":{\"sessionId\":\"fixture-player-2\",\"username\":\"Player 2\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":2},\"fixture-player-3\":{\"sessionId\":\"fixture-player-3\",\"username\":\"Player 3\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":3},\"fixture-player-4\":{\"sessionId\":\"fixture-player-4\",\"username\":\"Player 4\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":4},\"fixture-player-5\":{\"sessionId\":\"fixture-player-5\",\"username\":\"Player 5\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":5},\"fixture-player-6\":{\"sessionId\":\"fixture-player-6\",\"username\":\"Player 6\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":6},\"fixture-player-7\":{\"sessionId\":\"fixture-player-7\",\"username\":\"Player 7\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":7},\"fixture-player-8\":{\"sessionId\":\"fixture-player-8\",\"username\":\"Player 8\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":8},\"fixture-player-9\":{\"sessionId\":\"fixture-player-9\",\"username\":\"Player 9\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":9},\"fixture-player-10\":{\"sessionId\":\"fixture-player-10\",\"username\":\"Player 10\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":10},\"fixture-player-11\":{\"sessionId\":\"fixture-player-11\",\"username\":\"Player 11\",\"score\":0,\"kills\":0,\"deaths\":0,\"joinedOrder\":11}},\"results\":[{\"sessionId\":\"fixture-player-1\",\"username\":\"Player 1\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":1},{\"sessionId\":\"fixture-player-2\",\"username\":\"Player 2\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":2},{\"sessionId\":\"fixture-player-3\",\"username\":\"Player 3\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":3},{\"sessionId\":\"fixture-player-4\",\"username\":\"Player 4\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":4},{\"sessionId\":\"fixture-player-5\",\"username\":\"Player 5\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":5},{\"sessionId\":\"fixture-player-6\",\"username\":\"Player 6\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":6},{\"sessionId\":\"fixture-player-7\",\"username\":\"Player 7\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":7},{\"sessionId\":\"fixture-player-8\",\"username\":\"Player 8\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":8},{\"sessionId\":\"fixture-player-9\",\"username\":\"Player 9\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":9},{\"sessionId\":\"fixture-player-10\",\"username\":\"Player 10\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":10},{\"sessionId\":\"fixture-player-11\",\"username\":\"Player 11\",\"scoreDelta\":0,\"killsDelta\":0,\"deathsDelta\":0,\"rank\":11}],\"completedAtEpochMs\":1802088060000},\"revision\":2,\"acceptedAtEpochMs\":1802088060000}}}}"
                             }
                           },
                           {

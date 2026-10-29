@@ -12,7 +12,7 @@
 - Player actions: `apps/ar-eye-hunter-v1/src/game/arena-runtime/actions` and
   `apps/ar-eye-hunter-v1/src/game/arena-runtime/game-actions`
 - Simulation: `apps/ar-eye-hunter-v1/src/game/simulation.ts`
-- AI director: `apps/ar-eye-hunter-v1/src/game/aiDirector.ts`
+- AI director: `apps/ar-eye-hunter-v1/src/game/ai-director.ts`
 - Rallar Game adapter: `apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts`
 - UI/runtime scene: `apps/ar-eye-hunter-v1/src/game/BabylonArena.tsx`
 

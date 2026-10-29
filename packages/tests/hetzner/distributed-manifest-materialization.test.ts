@@ -393,7 +393,9 @@ describe('Hetzner materialization contracts and effects', () => {
                     throw new Error('Traffic wait must retain its source command identity.');
                 }
                 expect({ ...wait, match: { ...wait.match, contains: original.match.contains } }).toEqual(original);
-                expect(wait.match.contains?.match(/\{[^{}]+\}/g)).toEqual(original.match.contains?.match(/\{[^{}]+\}/g));
+                expect(wait.match.contains?.match(/\{(?:resultCache|loop|auth|config)\.[^{}]+\}/g)).toEqual(
+                    original.match.contains?.match(/\{(?:resultCache|loop|auth|config)\.[^{}]+\}/g)
+                );
                 expect(wait.match.contains?.match(/match:hetzner-headless-room:1802088000000:60000/g)).toEqual(
                     original.match.contains?.match(/match:hetzner-headless-room:1802088000000:60000/g)
                 );
@@ -416,7 +418,7 @@ describe('Hetzner materialization contracts and effects', () => {
                     expect({
                         ...send.payload,
                         roomId: originalSend.payload.roomId,
-                        payload: { ...send.payload.payload, roomId: originalSend.payload.payload.roomId }
+                        payload: { ...send.payload.payload, roomRef: originalSend.payload.payload.roomRef }
                     }).toEqual(originalSend.payload);
                     const payload = replaceCommandPlaceholders(send.payload, {
                         session: {
@@ -433,7 +435,7 @@ describe('Hetzner materialization contracts and effects', () => {
                         throw new Error('Outgoing scale traffic requires its complete relay and game envelope.');
                     }
                     expect(payload.roomId).toBe(roomId);
-                    expect(payload.payload.roomId).toBe(roomId);
+                    expect(payload.payload.roomRef).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: roomId });
                     const child = toLoopChildCommand({
                         template: wait,
                         context: { loopCommandId: 'arrival-test', index: sequence - 1, iteration: sequence, elapsedMs: 0, commandIndex: index }
@@ -458,7 +460,14 @@ describe('Hetzner materialization contracts and effects', () => {
                             payload: {
                                 data: {
                                     typeId: send.typeId,
-                                    payload: { ...payload, roomId: wrongRoomId, payload: { ...payload.payload, roomId: wrongRoomId } }
+                                    payload: {
+                                        ...payload,
+                                        roomId: wrongRoomId,
+                                        payload: {
+                                            ...payload.payload,
+                                            roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: wrongRoomId }
+                                        }
+                                    }
                                 }
                             }
                         };
@@ -497,7 +506,7 @@ describe('Hetzner materialization contracts and effects', () => {
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
         const fixture = await readCaptureManifestFixture({ groupId: 'off', captureMode: 'off' });
         const contains = String
-            .raw`{"roomId" : "\u006f\u0066\u0066","matchId":"match:off:fixture","note":"{\"roomId\":\"off\"}","seq":{loop.iteration},"payload":{"roomId":"off",`;
+            .raw`{"roomId" : "\u006f\u0066\u0066","matchId":"match:off:fixture","note":"{\"roomId\":\"off\"}","seq":{loop.iteration},"payload":{"roomRef":{"applicationId":"rallar-server","workspaceId":"default","groupId":"off"},`;
         const source = {
             ...fixture,
             metadata: { ...fixture.metadata, contains },
@@ -529,7 +538,9 @@ describe('Hetzner materialization contracts and effects', () => {
             outputPath,
             recordPath,
             agentSource: 'external',
-            roomId: mode === 'explicit' ? 'quote"slash\\room' : ''
+            roomId: mode === 'explicit' ? 'quote"slash\\room' : '',
+            applicationId: mode === 'explicit' ? 'test-app' : '',
+            workspaceId: mode === 'explicit' ? 'test-workspace' : ''
         });
         const output = await readManifest(outputPath);
         const wait = output.recipes[0].recipe?.commands.at(-1);
@@ -539,14 +550,14 @@ describe('Hetzner materialization contracts and effects', () => {
         expect(wait.match.contains).toBe(
             mode === 'explicit'
                 ? String
-                    .raw`{"roomId" : "quote\"slash\\room","matchId":"match:off:fixture","note":"{\"roomId\":\"off\"}","seq":{loop.iteration},"payload":{"roomId":"quote\"slash\\room",`
+                    .raw`{"roomId" : "quote\"slash\\room","matchId":"match:off:fixture","note":"{\"roomId\":\"off\"}","seq":{loop.iteration},"payload":{"roomRef":{"applicationId":"test-app","workspaceId":"test-workspace","groupId":"quote\"slash\\room"},`
                 : contains
         );
         expect(output.metadata?.contains).toBe(contains);
         expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
     });
 
-    it('rejects a serialized source room mismatch before output writes', async (context) => {
+    it.for(['roomId', 'groupId', 'applicationId', 'workspaceId'])('rejects a serialized source %s mismatch before output writes', async (field, context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-serialized-room-mismatch-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
         const fixture = await readCaptureManifestFixture({ groupId: 'off', captureMode: 'off' });
@@ -563,7 +574,7 @@ describe('Hetzner materialization contracts and effects', () => {
                         commands: [...selection.recipe.commands, {
                             kind: 'wait' as const,
                             commandId: 'wrong-room-arrival',
-                            match: { kind: 'message' as const, contains: '{"roomId":"wrong-room","seq":{loop.iteration},' }
+                            match: { kind: 'message' as const, contains: `{"${field}":"wrong-scope","seq":{loop.iteration},` }
                         }]
                     }
                 };
@@ -575,7 +586,7 @@ describe('Hetzner materialization contracts and effects', () => {
         const sourceText = `${JSON.stringify(source, null, 2)}\n`;
         await writeFile(sourcePath, sourceText);
         await expect(runMaterializer(context, { ...materializerInvocationDefaults, sourcePath, outputPath, recordPath }))
-            .rejects.toMatchObject({ stderr: expect.stringContaining('contains serialized room "wrong-room"; expected "off"') });
+            .rejects.toMatchObject({ stderr: expect.stringContaining('contains serialized') });
         expect((await readdir(directory)).sort()).toEqual(['source.json']);
         expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
     });

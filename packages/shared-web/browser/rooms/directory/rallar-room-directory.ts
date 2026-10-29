@@ -4,11 +4,11 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
-import { BrowserRallarSubscriptionScope } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
@@ -69,7 +69,7 @@ export class RallarRoomDirectory {
         console.error('Error notifying room directory listener', error);
     });
     private readonly flights = new SingleFlight<number, void>();
-    private subscriptions: BrowserRallarSubscriptionScope | undefined;
+    private subscriptions: SubscriptionScope | undefined;
     private stopRepeating: (() => void) | undefined;
     private controller: AbortController | undefined;
     private generation = 0;
@@ -126,7 +126,7 @@ export class RallarRoomDirectory {
         if (this.subscriptions) {
             return this.flights.isInFlight(this.generation) ? this.refresh() : Promise.resolve();
         }
-        this.subscriptions = new BrowserRallarSubscriptionScope();
+        this.subscriptions = new SubscriptionScope();
         this.sessionKey = this.resolveSessionKey();
         this.pageActive = this.dependencies.activity.isActive();
         this.subscriptions.add(
@@ -139,10 +139,14 @@ export class RallarRoomDirectory {
     public stop(): void {
         const subscriptions = this.subscriptions;
         this.subscriptions = undefined;
-        subscriptions?.unsubscribe();
-        this.invalidate();
-        this.settledState = { status: 'idle', entries: [], error: undefined };
-        this.publish(this.settledState);
+        try {
+            subscriptions?.unsubscribe();
+        }
+        finally {
+            this.invalidate();
+            this.settledState = { status: 'idle', entries: [], error: undefined };
+            this.publish(this.settledState);
+        }
     }
 
     public async refresh(): Promise<void> {

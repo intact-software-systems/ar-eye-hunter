@@ -1,11 +1,11 @@
 import type { SetStateAction } from 'react';
 import { describe, expect, it } from 'vitest';
 
+import type { GameRealtimeMessage, RemoteShot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import {
     acceptArenaDirectorPeerMessage,
     type ArenaDirectorPeerMessageInput
 } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/arena-director-peer-message.ts';
-import type { GameRealtimeMessage, RemoteShot } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('accepted arena shot projection lifetime', () => {
     it.each([true, false])('applies a deferred accepted-shot update only while its owner is current (%s)', (current) => {
@@ -24,7 +24,16 @@ describe('accepted arena shot projection lifetime', () => {
             protocol: 'ar-eye-hunter.v1',
             kind: 'director-shot-accepted',
             accepted: {
-                shot: { sessionId: 'peer', username: 'peer', color: '#00ffaa', origin: [0, 2, 0], direction: [0, 0, 1], seq: 1, sentAtEpochMs: 1000 },
+                shot: {
+                    sessionId: 'peer',
+                    username: 'peer',
+                    color: '#00ffaa',
+                    origin: [0, 2, 0],
+                    direction: [0, 0, 1],
+                    seq: 1,
+                    sentAtEpochMs: 1000,
+                    weaponKind: 'pulse-rifle' as const
+                },
                 hit: true,
                 impact: [0, 2, 4],
                 scoreDelta: 120,

@@ -3,8 +3,8 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
-import { BrowserRallarSubscriptionScope } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarDataFacade, RallarDataStore } from '../../rallar-data.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
@@ -60,7 +60,7 @@ export class RallarRecentRooms {
     private readonly notifications = new SynchronousNotifications<RallarRecentRooms.State>((error) => {
         console.error('Error notifying recent rooms listener', error);
     });
-    private subscriptions: BrowserRallarSubscriptionScope | null = null;
+    private subscriptions: SubscriptionScope | null = null;
     private store: RallarDataStore<RallarRecentRooms.History> | null = null;
     private storeSubscription: RallarUnsubscribe | null = null;
     private lastEntry: RallarRoomEntry.State | null = null;
@@ -102,7 +102,7 @@ export class RallarRecentRooms {
         if (this.subscriptions) {
             return this.whenIdle();
         }
-        this.subscriptions = new BrowserRallarSubscriptionScope();
+        this.subscriptions = new SubscriptionScope();
         this.subscriptions.add(this.dependencies.auth.onChange(() => {
             const principalId = this.dependencies.auth.session()?.clientId ?? null;
             if (principalId !== this.state.principalId) {
@@ -113,13 +113,18 @@ export class RallarRecentRooms {
         return this.loadAccount(this.dependencies.auth.session()?.clientId ?? null);
     }
 
-    public stop(): Promise<void> {
+    public async stop(): Promise<void> {
         this.generation += 1;
-        this.subscriptions?.unsubscribe();
+        const subscriptions = this.subscriptions;
         this.subscriptions = null;
-        const stopped = this.enqueue(this.generation, () => this.closeStore());
-        this.publish({ principalId: null, rooms: [], status: 'signed-out', failure: null });
-        return stopped;
+        try {
+            subscriptions?.unsubscribe();
+        }
+        finally {
+            const stopped = this.enqueue(this.generation, () => this.closeStore());
+            this.publish({ principalId: null, rooms: [], status: 'signed-out', failure: null });
+            await stopped;
+        }
     }
 
     public retry(): Promise<void> {
@@ -253,11 +258,15 @@ export class RallarRecentRooms {
     }
 
     private async closeStore(): Promise<void> {
-        this.storeSubscription?.();
+        const unsubscribe = this.storeSubscription;
+        const store = this.store;
         this.storeSubscription = null;
-        if (this.store) {
-            await this.store.close();
-            this.store = null;
+        this.store = null;
+        try {
+            unsubscribe?.();
+        }
+        finally {
+            await store?.close();
         }
     }
 

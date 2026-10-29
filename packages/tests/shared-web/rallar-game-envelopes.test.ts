@@ -3,6 +3,20 @@ import { RALLAR_GAME_INTENT_SEQUENCE_WINDOW } from '@shared-web/game/rallar-game
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar Game envelopes', () => {
+    it('requires a nonempty admitted sender generation', () => {
+        expect(isRallarGameEnvelope({ ...validEnvelope, senderGenerationId: undefined }, 'test.game.v1')).toBe(false);
+        expect(isRallarGameEnvelope({ ...validEnvelope, senderGenerationId: '' }, 'test.game.v1')).toBe(false);
+    });
+
+    it('starts a separate sequence window for a new sender generation', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const previous = createRallarGameEnvelope({ ...validEnvelope, kind: 'presence', seq: 500 });
+        const current = { ...previous, senderGenerationId: 'new-generation', seq: 1 };
+        expect(tracker.accept(previous).accepted).toBe(true);
+        expect(tracker.accept(current).accepted).toBe(true);
+        expect(tracker.accept(current)).toMatchObject({ accepted: false, reason: 'duplicate-sequence' });
+    });
+
     it('rejects the same room identifier from a different application or workspace', () => {
         const roomRef = { applicationId: 'game', workspaceId: 'one', groupId: 'room' };
         const value = createRallarGameEnvelope({ ...validEnvelope, kind: 'input', roomRef });
@@ -19,6 +33,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'input',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-peer-1',
             seq: 7,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
@@ -30,6 +45,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'input',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-peer-1',
             seq: 7,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
@@ -45,6 +61,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'input',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-peer-1',
             seq: 10,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
@@ -62,6 +79,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'input',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-peer-1',
             seq: 10,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
@@ -83,6 +101,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'input',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-peer-1',
             seq: 10,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
@@ -103,6 +122,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'input',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
+            senderGenerationId: 'generation-peer-1',
             seq: 10,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
@@ -157,6 +177,7 @@ describe('Rallar Game envelopes', () => {
                     kind: 'input',
                     roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'peer-1',
+                    senderGenerationId: 'generation-peer-1',
                     seq: -1,
                     directorEpoch: 1,
                     sentAtEpochMs: 1_000,
@@ -172,6 +193,7 @@ describe('Rallar Game envelopes', () => {
                     kind: 'unknown',
                     roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'peer-1',
+                    senderGenerationId: 'generation-peer-1',
                     seq: 1,
                     directorEpoch: 1,
                     sentAtEpochMs: 1_000,
@@ -189,6 +211,7 @@ describe('Rallar Game envelopes', () => {
             kind: 'snapshot',
             roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'director-1',
+            senderGenerationId: 'generation-director-1',
             seq: 10,
             directorEpoch: 4,
             sentAtEpochMs: 1_000,
@@ -287,6 +310,7 @@ describe('Rallar Game envelopes', () => {
                     kind: 'event',
                     roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'director-1',
+                    senderGenerationId: 'generation-director-1',
                     seq: 10,
                     directorEpoch: 4,
                     sentAtEpochMs: 1_000,
@@ -301,6 +325,7 @@ describe('Rallar Game envelopes', () => {
                     kind: 'event',
                     roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'director-1',
+                    senderGenerationId: 'generation-director-1',
                     seq: 1,
                     directorEpoch: 5,
                     sentAtEpochMs: 2_000,
@@ -389,6 +414,7 @@ const validEnvelope = {
     kind: 'input',
     roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
     senderId: 'peer-1',
+    senderGenerationId: 'generation-peer-1',
     seq: 1,
     directorEpoch: 1,
     sentAtEpochMs: 1_000,

@@ -1,19 +1,19 @@
-import { useCallback } from 'react';
 import type { RefObject } from 'react';
+import { useCallback } from 'react';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { shouldSendRallarMotionSample } from '@shared/rallar-motion/mod.ts';
 
-import { createDeterministicAvatarProfile } from '../../avatarProfile.ts';
-import type { AvatarProfile } from '../../avatarProfile.ts';
-import { colorForId } from '../../color.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
     GAME_MOTION_LANE_ID,
     GAME_PROTOCOL,
     type GameRealtimeMessage,
     type PlayerPose
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import type { AvatarProfile } from '../../avatarProfile.ts';
+import { createDeterministicAvatarProfile } from '../../avatarProfile.ts';
+import { colorForId } from '../../color.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 

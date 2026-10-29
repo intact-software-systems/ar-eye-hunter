@@ -1,6 +1,6 @@
-import type { ProceduralArenaAudio } from '../arenaAudio.ts';
-import { createTouchControlDiagnostics } from '../mobileInput.ts';
-import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
+import type { ProceduralArenaAudio } from '../arena-audio.ts';
+import { createTouchControlDiagnostics } from '../mobile-input.ts';
+import type { ArenaLinkState, ArenaPresenceNotice } from '../squad-link.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 import { isHostileEye } from './arena-target-view.ts';
 

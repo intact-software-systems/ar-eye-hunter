@@ -1,0 +1,53 @@
+{
+  "description": "Reusable app-owned HTTP mutation proof: exact replay preserves the response; changed intent under the same request key conflicts.",
+  "steps": [
+    {
+      "name": "applyCommand",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "{commandPath}",
+        "headers": "{commandHeaders}",
+        "body": "{commandBody}",
+        "outputs": {
+          "replayedAppCommand": "body"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "{expectedCommandBody}"
+      }
+    },
+    {
+      "name": "replayCommand",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "{commandPath}",
+        "headers": "{commandHeaders}",
+        "body": "{commandBody}"
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "exact",
+        "body": "{replayedAppCommand}"
+      }
+    },
+    {
+      "name": "rejectChangedCommand",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "{commandPath}",
+        "headers": "{commandHeaders}",
+        "body": "{changedCommandBody}"
+      },
+      "expect": {
+        "status": 409
+      }
+    }
+  ]
+}

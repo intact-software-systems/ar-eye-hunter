@@ -37,6 +37,7 @@ export function toRelicCommandRefusedEvent(
         principalId: sender.clientId,
         playerId: sender.sessionId,
         kind: 'command-refused',
+        completedGameId: 'completedGameId' in command ? command.completedGameId : null,
         command: command.kind,
         text: error.message
     };

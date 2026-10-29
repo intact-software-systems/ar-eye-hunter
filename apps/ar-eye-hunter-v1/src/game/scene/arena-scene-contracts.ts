@@ -3,7 +3,6 @@ import type { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicT
 import type { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 
-import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaSnapshot,
@@ -18,7 +17,8 @@ import type {
     ShotAccepted,
     ShotIntent,
     Vec3Tuple
-} from '../types.ts';
+} from '../arena-contracts.ts';
+import type { ArenaLinkState, ArenaPresenceNotice } from '../squad-link.ts';
 import type { ArenaSceneState } from './arena-scene-state.ts';
 
 export interface BabylonArenaProps {

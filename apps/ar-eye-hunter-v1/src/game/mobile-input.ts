@@ -1,66 +1,66 @@
-import type { Vec3Tuple } from './types.ts';
+import type { Vec3Tuple } from './arena-contracts.ts';
 
 export type InputDeviceKind = 'keyboard-mouse' | 'touch' | 'gamepad' | 'gyro-touch';
 
-export type Point2 = Readonly<{
-    x: number;
-    y: number;
-}>;
+export interface Point2 {
+    readonly x: number;
+    readonly y: number;
+}
 
-export type MobileControlSettings = Readonly<{
-    touchSensitivity: number;
-    invertY: boolean;
-    buttonScale: number;
-    gyroEnabled: boolean;
-    hapticsEnabled: boolean;
-}>;
+export interface MobileControlSettings {
+    readonly touchSensitivity: number;
+    readonly invertY: boolean;
+    readonly buttonScale: number;
+    readonly gyroEnabled: boolean;
+    readonly hapticsEnabled: boolean;
+}
 
-export type TouchControlState = Readonly<{
-    movePointerId?: number;
-    lookPointerId?: number;
-    moveOrigin?: Point2;
-    moveCurrent?: Point2;
-    lookLast?: Point2;
-    lookActive: boolean;
-    lastInputMode: InputDeviceKind;
-}>;
+export interface TouchControlState {
+    readonly movePointerId?: number;
+    readonly lookPointerId?: number;
+    readonly moveOrigin?: Point2;
+    readonly moveCurrent?: Point2;
+    readonly lookLast?: Point2;
+    readonly lookActive: boolean;
+    readonly lastInputMode: InputDeviceKind;
+}
 
-export type TouchControlDiagnostics = Readonly<{
-    movePointerId?: number;
-    lookPointerId?: number;
-    moveVector: Vec3Tuple;
-    lookActive: boolean;
-    lastInputMode: InputDeviceKind;
-}>;
+export interface TouchControlDiagnostics {
+    readonly movePointerId?: number;
+    readonly lookPointerId?: number;
+    readonly moveVector: Vec3Tuple;
+    readonly lookActive: boolean;
+    readonly lastInputMode: InputDeviceKind;
+}
 
-export type VirtualStickResult = Readonly<{
-    moveX: number;
-    moveZ: number;
-    knobX: number;
-    knobY: number;
-    magnitude: number;
-    sprint: boolean;
-}>;
+export interface VirtualStickResult {
+    readonly moveX: number;
+    readonly moveZ: number;
+    readonly knobX: number;
+    readonly knobY: number;
+    readonly magnitude: number;
+    readonly sprint: boolean;
+}
 
-export type TouchAimAssistSettings = Readonly<{
-    eyeRadiusPx: number;
-    playerRadiusPx: number;
-}>;
+export interface TouchAimAssistSettings {
+    readonly eyeRadiusPx: number;
+    readonly playerRadiusPx: number;
+}
 
-export type TouchAimCandidate = Readonly<{
-    id: string;
-    kind: 'eye' | 'player';
-    screen: Point2;
-    world: Vec3Tuple;
-    distance: number;
-    blocked: boolean;
-}>;
+export interface TouchAimCandidate {
+    readonly id: string;
+    readonly kind: 'eye' | 'player';
+    readonly screen: Point2;
+    readonly world: Vec3Tuple;
+    readonly distance: number;
+    readonly blocked: boolean;
+}
 
-export type TouchShotIntent = Readonly<{
-    point: Point2;
-    candidates: readonly TouchAimCandidate[];
-    settings?: Partial<TouchAimAssistSettings>;
-}>;
+export interface TouchShotIntent {
+    readonly point: Point2;
+    readonly candidates: readonly TouchAimCandidate[];
+    readonly settings?: Partial<TouchAimAssistSettings>;
+}
 
 export const MOBILE_SETTINGS_STORAGE_KEY = 'ar-eye-hunter.mobile-controls.v1';
 
@@ -121,12 +121,14 @@ export function calculateVirtualStick(
     };
 }
 
-export function updateTouchPointer(
-    state: TouchControlState,
-    role: 'move' | 'look',
-    pointerId: number,
-    point: Point2
-): TouchControlState {
+export interface TouchPointerUpdate {
+    readonly state: TouchControlState;
+    readonly role: 'move' | 'look';
+    readonly pointerId: number;
+    readonly point: Point2;
+}
+
+export function updateTouchPointer({ state, role, pointerId, point }: TouchPointerUpdate): TouchControlState {
     if (role === 'move') {
         const samePointer = state.movePointerId === pointerId;
         return {

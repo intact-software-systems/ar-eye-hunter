@@ -27,6 +27,7 @@ export interface RallarGameEnvelope<T> {
     readonly roomRef: GroupRef;
     readonly matchId?: string;
     readonly senderId: string;
+    readonly senderGenerationId: string;
     readonly seq: number;
     readonly sentAtEpochMs: number;
     readonly directorEpoch: number;
@@ -39,6 +40,7 @@ export interface RallarGameEnvelopeCreateInput<T> {
     readonly roomRef: GroupRef;
     readonly matchId?: string;
     readonly senderId: string;
+    readonly senderGenerationId: string;
     readonly seq: number;
     readonly directorEpoch: number;
     readonly payload: T;
@@ -83,7 +85,10 @@ export interface RallarGameSequenceTracker {
     last<T>(
         envelope:
             | RallarGameEnvelope<T>
-            | Pick<RallarGameEnvelope<T>, 'roomRef' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
+            | Pick<
+                RallarGameEnvelope<T>,
+                'roomRef' | 'matchId' | 'directorEpoch' | 'senderId' | 'senderGenerationId' | 'kind'
+            >
     ): number | undefined;
     reset(): void;
 }
@@ -108,6 +113,7 @@ export function createRallarGameEnvelope<T>(
         roomRef: input.roomRef,
         ...(input.matchId === undefined ? {} : { matchId: input.matchId }),
         senderId: input.senderId,
+        senderGenerationId: input.senderGenerationId,
         seq: input.seq,
         sentAtEpochMs: input.sentAtEpochMs ?? Date.now(),
         directorEpoch: input.directorEpoch,
@@ -131,6 +137,8 @@ export function isRallarGameEnvelope(
         (envelope.matchId === undefined || typeof envelope.matchId === 'string') &&
         typeof envelope.senderId === 'string' &&
         envelope.senderId.length > 0 &&
+        typeof envelope.senderGenerationId === 'string' &&
+        envelope.senderGenerationId.length > 0 &&
         typeof envelope.seq === 'number' &&
         Number.isSafeInteger(envelope.seq) &&
         envelope.seq >= 0 &&
@@ -238,7 +246,10 @@ function rejectByConstraints<T>(
 }
 
 function sequenceKey<T>(
-    envelope: Pick<RallarGameEnvelope<T>, 'roomRef' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
+    envelope: Pick<
+        RallarGameEnvelope<T>,
+        'roomRef' | 'matchId' | 'directorEpoch' | 'senderId' | 'senderGenerationId' | 'kind'
+    >
 ): string {
     return JSON.stringify([
         envelope.roomRef.applicationId,
@@ -247,6 +258,7 @@ function sequenceKey<T>(
         envelope.matchId ?? '',
         envelope.directorEpoch,
         envelope.senderId,
+        envelope.senderGenerationId,
         envelope.kind
     ]);
 }

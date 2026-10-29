@@ -6,9 +6,10 @@ import { arenaMembershipSnapshot, ArenaRuntimeTestHarness, mockMatch, mockRallar
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
 import { isArenaPlayerSession, isArenaSpectator } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-participation.ts';
+import { createInitialLoadoutState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-weapons.ts';
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import { createInitialLoadoutState, createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 const arena = new ArenaRuntimeTestHarness();
 beforeEach(() => arena.reset());
@@ -132,6 +133,7 @@ describe('arena spectator participation', () => {
                     directorEpoch: 1,
                     roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                     senderId: session.sessionId,
+                    senderGenerationId: 'generation-' + (session.sessionId),
                     seq: 1,
                     sentAtEpochMs: Date.now(),
                     payload: { protocol: 'ar-eye-hunter.v1', kind: 'player-pose', pose }
@@ -151,6 +153,7 @@ describe('arena spectator participation', () => {
                     directorEpoch: 1,
                     roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                     senderId: 'peer-1',
+                    senderGenerationId: 'generation-' + ('peer-1'),
                     seq: 2,
                     sentAtEpochMs: Date.now(),
                     payload: { protocol: 'ar-eye-hunter.v1', kind: 'player-pose', pose: { ...pose, sessionId: 'peer-1' } }

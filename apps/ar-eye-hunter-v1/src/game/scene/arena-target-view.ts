@@ -4,7 +4,7 @@ import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import type { Scene } from '@babylonjs/core/scene.js';
-import type { ArenaPickupState, EyeTargetState } from '../types.ts';
+import type { ArenaPickupState, EyeTargetState } from '../arena-contracts.ts';
 import type { PickupAvatar, TargetAvatar } from './arena-scene-contracts.ts';
 import { createEyeBeamWindup } from './arena-scene-effects.ts';
 import { hashString, vector3 } from './arena-scene-geometry.ts';

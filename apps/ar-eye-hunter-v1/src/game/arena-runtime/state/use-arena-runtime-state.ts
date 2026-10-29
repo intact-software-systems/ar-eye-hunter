@@ -20,13 +20,6 @@ import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group
 
 import { isArenaSpectator } from '../arena-participation.ts';
 
-import type { AvatarProfile } from '../../avatarProfile.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type {
-    ArenaLinkState,
-    ArenaPresenceNotice,
-    ArenaPresencePlayerSummary
-} from '../../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaSnapshot,
@@ -35,7 +28,14 @@ import type {
     RemotePlayer,
     RemoteShot,
     RtcLaneStatus
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import type { AvatarProfile } from '../../avatarProfile.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type {
+    ArenaLinkState,
+    ArenaPresenceNotice,
+    ArenaPresencePlayerSummary
+} from '../../squad-link.ts';
 import type {
     ArenaAiStatus,
     ArenaConnection,
