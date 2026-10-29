@@ -151,7 +151,9 @@ export function computeRelicGameViewModel({
     lang,
     revealedEvents
 }: RelicGameViewModelInput): RelicGameViewModel {
-    const currentPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
+    const currentPlayer = snapshot?.players.find((player) =>
+        player.playerId === localPlayerId && player.withdrawnAtEpochMs === undefined
+    );
     const currentRoom = snapshot?.map.find((room) => room.id === currentPlayer?.roomId);
     const moveTargets = snapshot && currentPlayer
         ? legalMoveTargets(snapshot, currentPlayer)

@@ -354,7 +354,7 @@ describe('useRelicHunters auth lifecycle', () => {
             gameId: 'relic-room-1',
             username: 'Keeper',
             kind: 'join-expedition'
-        }, { senderId: keeperSessionId, now: 2 })).state;
+        }, { presentPlayerIds: [keeperSessionId], senderId: keeperSessionId, now: 2 })).state;
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game));
         const link = toRoomEntryUrl(window.location.href, { roomRef: snapshot.group, participation: 'spectator', joinCode: null });
         if (!link.right) {

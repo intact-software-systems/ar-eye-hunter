@@ -156,7 +156,9 @@ async function joinRelicRoom(roomRef: GroupRef, options: RallarJoinRoomOptions):
             }
             if (
                 snapshot && snapshot.phase !== 'finished' &&
-                snapshot.players.some((player) => playerIds.has(player.playerId))
+                snapshot.players.some((player) =>
+                    playerIds.has(player.playerId) && player.withdrawnAtEpochMs === undefined
+                )
             ) {
                 throw new Error('Leave the expedition room before watching another expedition.');
             }

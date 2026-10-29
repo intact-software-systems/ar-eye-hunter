@@ -14,10 +14,13 @@ import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunter
 
 describe('Relic game state storage', () => {
     it('round-trips a joined lobby through JSON without inventing a round start', () => {
-        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), joinCommand('room-1'), {
-            senderId: 'alice-session',
-            now: 2
-        })).state;
+        const game = requireRelicCommandApplied(
+            applyRelicCommand(createRelicGame('room-1', 'room-1', 1), joinCommand('room-1'), {
+                presentPlayerIds: ['alice-session'],
+                senderId: 'alice-session',
+                now: 2
+            })
+        ).state;
         const encoded = encodeRelicGameStateAppData(game);
         const stored = decodeRelicGameStateAppData(JSON.parse(JSON.stringify(encoded)));
         expect(stored.players.map((player) => player.playerId)).toEqual(['alice-session']);

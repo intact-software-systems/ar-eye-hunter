@@ -300,14 +300,16 @@ describe('RelicHuntersRuntime', () => {
         const backend = new RelicRuntimeBackend();
         let game = createRelicGame('room-1', 'room-1', 1);
         const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
-        game = requireRelicCommandApplied(applyRelicCommand(game, { ...command, kind: 'join-expedition' }, {
-            senderId: 'client-1',
-            now: 2
-        })).state;
-        game = requireRelicCommandApplied(applyRelicCommand(game, { ...command, kind: 'start-expedition' }, {
-            senderId: 'client-1',
-            now: backend.timers.nowMs()
-        })).state;
+        game = requireRelicCommandApplied(
+            applyRelicCommand(game, { ...command, kind: 'join-expedition' }, { presentPlayerIds: ['client-1'], senderId: 'client-1', now: 2 })
+        ).state;
+        game = requireRelicCommandApplied(
+            applyRelicCommand(game, { ...command, kind: 'start-expedition' }, {
+                presentPlayerIds: ['client-1'],
+                senderId: 'client-1',
+                now: backend.timers.nowMs()
+            })
+        ).state;
         const snapshot = toPublicRelicSnapshot(game);
         expect(snapshot.phase).toBe('planning');
         backend.fetchSnapshot = async (roomId) => {
@@ -792,7 +794,7 @@ describe('RelicHuntersRuntime', () => {
             gameId: 'room-1',
             username: 'Alice',
             kind: 'join-expedition'
-        }, { senderId: 'alice-session', now: 30 })).state;
+        }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: 30 })).state;
         backend.deliverSnapshot(toPublicRelicSnapshot(game));
         await runtime.getState().watchRoom('room-1');
         expect(admission).not.toHaveBeenCalled();
@@ -803,10 +805,107 @@ describe('RelicHuntersRuntime', () => {
         });
         expect(backend.roomEntry.getState().status).toBe('idle');
         expect(runtime.getState().roomId).toBe('room-1');
-        expect(runtime.getState().error).toContain('Leave the expedition room');
+        expect(runtime.getState().error).toContain('Leave expedition');
         await runtime.getState().leaveRoom();
         await runtime.getState().watchRoom('other-room');
         expect(admission).toHaveBeenCalledWith('other-room', 'spectator');
+    });
+
+    it('keeps an unfinished hunter in their room across create, direct entry and room-link entry', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            username: 'Alice',
+            kind: 'join-expedition'
+        }, { senderId: 'alice-session', now: 30, presentPlayerIds: ['alice-session'] })).state;
+        backend.deliverSnapshot(toPublicRelicSnapshot(game));
+        expect(await runtime.getState().createRoom('open')).toBeUndefined();
+        expect(backend.roomState().currentRoomId).toBe('room-1');
+        await runtime.getState().joinRoom('other-room');
+        expect(backend.roomState().currentRoomId).toBe('room-1');
+        backend.roomEntry.enter({
+            roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'other-room' },
+            joinCode: null,
+            participation: 'preserve'
+        });
+        expect(backend.roomEntry.getState().status).toBe('idle');
+        expect(runtime.getState().snapshot?.players.map((player) => player.playerId)).toEqual(['alice-session']);
+        expect(runtime.getState().error).toContain('Leave expedition');
+    });
+
+    it('keeps committed withdrawal visible when room removal fails and lets room departure retry', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            username: 'Alice',
+            kind: 'join-expedition'
+        }, { senderId: 'alice-session', now: 30, presentPlayerIds: ['alice-session'] })).state;
+        backend.deliverSnapshot(toPublicRelicSnapshot(game));
+        backend.sendRestCommand = async () => ({ ...toPublicRelicSnapshot(game), updatedAtEpochMs: 31, players: [], adminPlayerId: undefined });
+        const leaveRoom = backend.leaveRoom.bind(backend);
+        backend.leaveRoom = async () => {
+            throw new Error('Room departure unavailable');
+        };
+        await runtime.getState().leaveRoom();
+        expect(runtime.getState().roomId).toBe('room-1');
+        expect(runtime.getState().snapshot?.players).toEqual([]);
+        expect(runtime.getState().error).toContain('Room departure unavailable');
+        backend.leaveRoom = leaveRoom;
+        await runtime.getState().leaveRoom();
+        expect(runtime.getState().roomId).toBeUndefined();
+    });
+
+    it('keeps room membership until withdrawal commits even when WebSocket delivery is available', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.wsDelivery = { state: 'acknowledged', reason: undefined };
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            username: 'Alice',
+            kind: 'join-expedition'
+        }, { senderId: 'alice-session', now: 30, presentPlayerIds: ['alice-session'] })).state;
+        backend.deliverSnapshot(toPublicRelicSnapshot(game));
+        const committed = Promise.withResolvers<RelicPublicSnapshot>();
+        backend.sendRestCommand = async (roomId, command) => {
+            backend.commands.push({ transport: 'rest', roomId, command });
+            return await committed.promise;
+        };
+        const leaving = runtime.getState().leaveRoom();
+        await Promise.resolve();
+        expect(backend.roomState().currentRoomId).toBe('room-1');
+        expect(backend.commands.map((entry) => [entry.transport, entry.command.kind])).toEqual([['rest', 'leave-expedition']]);
+        committed.resolve({ ...toPublicRelicSnapshot(game), updatedAtEpochMs: 31, players: [], adminPlayerId: undefined });
+        await leaving;
+        expect(runtime.getState().roomId).toBeUndefined();
+    });
+
+    it('keeps the hunter and room selected when durable withdrawal fails', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('room-1', 'room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            username: 'Alice',
+            kind: 'join-expedition'
+        }, { senderId: 'alice-session', now: 30, presentPlayerIds: ['alice-session'] })).state;
+        backend.deliverSnapshot(toPublicRelicSnapshot(game));
+        backend.sendRestCommand = async () => {
+            throw new Error('Withdrawal outcome unavailable');
+        };
+        await runtime.getState().leaveRoom();
+        expect(runtime.getState().roomId).toBe('room-1');
+        expect(runtime.getState().snapshot?.players.map((player) => player.playerId)).toEqual(['alice-session']);
+        expect(runtime.getState().error).toContain('Withdrawal outcome unavailable');
+        expect(backend.roomState().currentRoomId).toBe('room-1');
     });
 
     it('fences a delayed command after participation changes even when player status returns', async () => {

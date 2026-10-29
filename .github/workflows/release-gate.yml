@@ -248,7 +248,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Run Relic room entry and spectating browser tests
+      - name: Run Relic room entry, spectating and continuity browser tests
         if: ${{ matrix.game == 'relic' }}
         env:
           RELIC_HUNTERS_FULL_STACK: '1'
@@ -257,7 +257,8 @@ jobs:
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
             tests/playwright/relic-hunters/full-stack-http.spec.ts \
-            tests/playwright/relic-hunters/full-stack-spectating.spec.ts --trace=retain-on-failure
+            tests/playwright/relic-hunters/full-stack-spectating.spec.ts \
+            tests/playwright/relic-hunters/full-stack-continuity.spec.ts --trace=retain-on-failure
 
       - name: Upload room journey observations
         if: always()

@@ -240,29 +240,20 @@ function planningSnapshot(): RelicPublicSnapshot {
         gameId: 'room-1',
         username: 'Alice',
         characterId: 'kael-ironstride'
-    }, {
-        senderId: 'alice-session',
-        now: NOW + 1
-    })).state;
+    }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: NOW + 1 })).state;
     state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Bob',
         characterId: 'nyra-vale'
-    }, {
-        senderId: 'bob-session',
-        now: NOW + 2
-    })).state;
+    }, { presentPlayerIds: ['bob-session'], senderId: 'bob-session', now: NOW + 2 })).state;
     state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
-    }, {
-        senderId: 'alice-session',
-        now: NOW + 3
-    })).state;
+    }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: NOW + 3 })).state;
     return toPublicRelicSnapshot(state);
 }
 

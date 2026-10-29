@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
+import { readActiveGroupSessionRole, readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
 
 import { colorForId } from '../color.ts';
 import { shortId } from '../lang.ts';
@@ -19,6 +19,14 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
         return <RelicAuthForm game={game} />;
     }
     const currentRoom = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
+    const hunter = game.snapshot?.players.find((player) =>
+        player.playerId === game.session?.sessionId && player.withdrawnAtEpochMs === undefined
+    );
+    const unfinished = game.participation === 'player' && !!hunter && game.snapshot?.phase !== 'finished';
+    const keeperRole = game.snapshot?.adminPlayerId
+        ? readActiveGroupSessionRole(currentRoom, game.snapshot.adminPlayerId, Date.now())
+        : undefined;
+    const keeperPresent = keeperRole !== undefined && keeperRole !== 'spectator';
     const playerCount =
         currentRoom?.members.filter((member) => member.status === 'active' && member.role !== 'spectator').length ?? 0;
     const full = currentRoom?.group.maxMembers !== null && currentRoom?.group.maxMembers !== undefined &&
@@ -35,7 +43,7 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
             <div className="button-grid">
                 <button
                     type="button"
-                    disabled={!game.diagnostics.middlewareConnected}
+                    disabled={!game.diagnostics.middlewareConnected || unfinished}
                     onClick={() => void game.createRoom()}
                 >
                     New Room
@@ -63,7 +71,29 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                             </button>
                         </>
                     )}
+                    {unfinished && (
+                        <>
+                            <button type="button" onClick={() => void game.leaveExpedition()}>Leave expedition</button>
+                            {game.snapshot?.adminPlayerId !== hunter?.playerId && (
+                                <button
+                                    type="button"
+                                    disabled={keeperPresent}
+                                    onClick={() => void game.takeKeeper()}
+                                >
+                                    Take over as Keeper
+                                </button>
+                            )}
+                            <small>
+                                Leave expedition withdraws this hunter and drops carried relics. Banked results stay
+                                saved.
+                            </small>
+                        </>
+                    )}
                     <button type="button" onClick={() => void game.leaveRoom()}>Leave room</button>
+                    <small>
+                        Leave room removes this account from the room in every tab. Leave expedition keeps room
+                        membership.
+                    </small>
                 </div>
             )}
             <RelicRoomsList game={game} />
@@ -161,7 +191,9 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 
 function RelicRoomsList({ game }: RelicSessionProps) {
     const watchBlocked = game.participation === 'player' && game.snapshot?.phase !== 'finished' &&
-        game.snapshot?.players.some((player) => player.playerId === game.session?.sessionId);
+        game.snapshot?.players.some((player) =>
+            player.playerId === game.session?.sessionId && player.withdrawnAtEpochMs === undefined
+        );
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters') &&
         room.snapshot.members.some((member) =>

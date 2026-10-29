@@ -186,4 +186,220 @@ describe('Relic authoritative save mutations', () => {
             await fixture.storage.close();
         }
     });
+    it('rejects a stale Keeper takeover after presence renews and recomputes authority on retry', async () => {
+        const fixture = await createGameFixture();
+        try {
+            const guest = createTestAuthSession('guest');
+            await connectGameSession(fixture, fixture.owner);
+            await connectGameSession(fixture, guest);
+            const ensure = await prepareGameWrite(fixture, fixture.command, createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs));
+            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, ensure.computed));
+            for (const session of [fixture.owner, guest]) {
+                const joined = await prepareGameWrite(fixture, {
+                    ...fixture.command,
+                    operation: 'command',
+                    requestId: `join-${session.sessionId}`,
+                    actor: { clientId: session.clientId, sessionId: session.sessionId, issuedAtEpochMs: session.issuedAtEpochMs },
+                    move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'join-expedition', username: session.username }
+                }, null);
+                await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, joined.computed));
+            }
+            const presence = await fixture.repository.findPresenceEntry({ ...fixture.ref, sessionId: fixture.owner.sessionId });
+            if (!presence) {
+                throw new Error('Expected the Keeper presence');
+            }
+            fixture.nowEpochMs += 10;
+            await fixture.repository.updatePresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs - 1 }, presence.entry.revision);
+            const takeover = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'take-keeper',
+                actor: { clientId: guest.clientId, sessionId: guest.sessionId, issuedAtEpochMs: guest.issuedAtEpochMs },
+                move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'take-keeper', username: guest.username }
+            }, null);
+            expect(takeover.computed.result.status).toBe('applied');
+            const expired = await fixture.repository.findPresenceEntry({ ...fixture.ref, sessionId: fixture.owner.sessionId });
+            if (!expired) {
+                throw new Error('Expected the retained expired lease');
+            }
+            await fixture.repository.updatePresence({ ...expired.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 }, expired.entry.revision);
+            await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, takeover.computed)))
+                .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+            const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
+            expect(current?.adminPlayerId).toBe(fixture.owner.sessionId);
+            const retryRead = await fixture.service.read(takeover.ingress);
+            const retry = fixture.service.compute({ ...retryRead, attemptCount: 2, traceId: 'takeover-retry' });
+            expect(retry.result).toMatchObject({ status: 'refused', message: 'The current Keeper is still present.' });
+            expect(retry.save).toBeNull();
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
+    it('rejects absence-based takeover when the Keeper presence is recreated before the write', async () => {
+        const fixture = await createJoinedContinuityFixture();
+        try {
+            const presence = await fixture.repository.findPresenceEntry({ ...fixture.ref, sessionId: fixture.owner.sessionId });
+            if (!presence) {
+                throw new Error('Expected Keeper presence');
+            }
+            await fixture.repository.deletePresence({ ...fixture.ref, sessionId: fixture.owner.sessionId }, presence.entry.revision);
+            const takeover = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'take-after-absence',
+                actor: { clientId: fixture.guest.clientId, sessionId: fixture.guest.sessionId, issuedAtEpochMs: fixture.guest.issuedAtEpochMs },
+                move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'take-keeper', username: fixture.guest.username }
+            }, null);
+            expect(takeover.computed.result.status).toBe('applied');
+            await fixture.repository.insertPresence(presence.value);
+            await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, takeover.computed)))
+                .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+            const retryRead = await fixture.service.read(takeover.ingress);
+            expect(fixture.service.compute({ ...retryRead, attemptCount: 2, traceId: 'recreated-presence' }).result)
+                .toMatchObject({ status: 'refused', message: 'The current Keeper is still present.' });
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
+    it('rejects a takeover after an expired Keeper row is replaced with the same revision', async () => {
+        const fixture = await createJoinedContinuityFixture();
+        try {
+            const ref = { ...fixture.ref, sessionId: fixture.owner.sessionId };
+            const presence = await fixture.repository.findPresenceEntry(ref);
+            if (!presence) {
+                throw new Error('Expected Keeper presence');
+            }
+            await fixture.repository.deletePresence(ref, presence.entry.revision);
+            fixture.nowEpochMs += 10;
+            await fixture.repository.insertPresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs - 1 });
+            const takeover = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'take-before-recreation',
+                actor: { clientId: fixture.guest.clientId, sessionId: fixture.guest.sessionId, issuedAtEpochMs: fixture.guest.issuedAtEpochMs },
+                move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'take-keeper', username: fixture.guest.username }
+            }, null);
+            expect(takeover.computed.result.status).toBe('applied');
+            expect(takeover.computed.guard?.presenceRevision).toBe(0);
+            await fixture.repository.deletePresence(ref, 0);
+            await fixture.repository.insertPresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 });
+            await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, takeover.computed)))
+                .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+            const read = await fixture.service.read(takeover.ingress);
+            expect(fixture.service.compute({ ...read, attemptCount: 2, traceId: 'keeper-recreated' }).result)
+                .toMatchObject({ status: 'refused', message: 'The current Keeper is still present.' });
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
+    it('rebases competing takeovers over a committed turn and keeps exactly one new Keeper', async () => {
+        const fixture = await createJoinedContinuityFixture();
+        try {
+            const contender = createTestAuthSession('contender');
+            await connectGameSession(fixture, contender);
+            const joined = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'join-contender',
+                actor: { clientId: contender.clientId, sessionId: contender.sessionId, issuedAtEpochMs: contender.issuedAtEpochMs },
+                move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'join-expedition', username: contender.username }
+            }, null);
+            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, joined.computed));
+            const started = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'start',
+                move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'start-expedition', username: fixture.owner.username }
+            }, null);
+            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, started.computed));
+            const presence = await fixture.repository.findPresenceEntry({ ...fixture.ref, sessionId: fixture.owner.sessionId });
+            if (!presence) {
+                throw new Error('Expected Keeper presence');
+            }
+            fixture.nowEpochMs += 10;
+            await fixture.repository.updatePresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs - 1 }, presence.entry.revision);
+            const candidates = await Promise.all([fixture.guest, contender].map((hunter) =>
+                prepareGameWrite(fixture, {
+                    ...fixture.command,
+                    operation: 'command',
+                    requestId: `take-${hunter.sessionId}`,
+                    actor: { clientId: hunter.clientId, sessionId: hunter.sessionId, issuedAtEpochMs: hunter.issuedAtEpochMs },
+                    move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'take-keeper', username: hunter.username }
+                }, null)
+            ));
+            const turn = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'concurrent-turn',
+                actor: { clientId: fixture.guest.clientId, sessionId: fixture.guest.sessionId, issuedAtEpochMs: fixture.guest.issuedAtEpochMs },
+                move: {
+                    protocolVersion: RELIC_PROTOCOL_VERSION,
+                    gameId: fixture.ref.groupId,
+                    kind: 'submit-action',
+                    username: fixture.guest.username,
+                    action: { kind: 'move', targetRoomId: 'hallway' }
+                }
+            }, null);
+            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, turn.computed));
+            for (const candidate of candidates) {
+                await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, candidate.computed)))
+                    .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+            }
+            const retries = await Promise.all(candidates.map(async (candidate) => {
+                const read = await fixture.service.read(candidate.ingress);
+                const attempt = { ...read, attemptCount: 2, traceId: 'competing-takeover' };
+                const computed = fixture.service.compute(attempt);
+                expect(fixture.service.validate(attempt, computed)).toEqual([]);
+                return computed;
+            }));
+            const outcomes = await Promise.allSettled(
+                retries.map((computed) => fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, computed)))
+            );
+            expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+            const loser = outcomes.findIndex((outcome) => outcome.status === 'rejected');
+            expect(outcomes[loser]).toMatchObject({ status: 'rejected', reason: expect.any(RuntimeStateWriteConflictError) });
+            const finalRead = await fixture.service.read(candidates[loser].ingress);
+            expect(fixture.service.compute({ ...finalRead, attemptCount: 3, traceId: 'loser-reauthorization' }).result)
+                .toMatchObject({ status: 'refused', message: 'The current Keeper is still present.' });
+            const winner = loser === 0 ? contender.sessionId : fixture.guest.sessionId;
+            const current = await fixture.service.readCurrentSnapshot({
+                ...fixture.command,
+                actor: { clientId: fixture.guest.clientId, sessionId: fixture.guest.sessionId, issuedAtEpochMs: fixture.guest.issuedAtEpochMs }
+            }, 'default-qbox-server');
+            expect(current?.adminPlayerId).toBe(winner);
+            expect(current?.submittedPlayerIds).toEqual([fixture.guest.sessionId]);
+            expect(current?.players).toHaveLength(3);
+            expect(current?.phase).toBe('planning');
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
 });
+
+async function createJoinedContinuityFixture() {
+    const fixture = await createGameFixture();
+    const guest = createTestAuthSession('guest');
+    await connectGameSession(fixture, fixture.owner);
+    await connectGameSession(fixture, guest);
+    const initial = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
+    const ensure = await prepareGameWrite(fixture, fixture.command, initial);
+    await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, ensure.computed));
+    for (const hunter of [fixture.owner, guest]) {
+        const joined = await prepareGameWrite(fixture, {
+            ...fixture.command,
+            operation: 'command',
+            requestId: `join-${hunter.sessionId}`,
+            actor: { clientId: hunter.clientId, sessionId: hunter.sessionId, issuedAtEpochMs: hunter.issuedAtEpochMs },
+            move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'join-expedition', username: hunter.username }
+        }, null);
+        await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, joined.computed));
+    }
+    return Object.assign(fixture, { guest });
+}

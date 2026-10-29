@@ -51,50 +51,57 @@ exposed a stale Escape selection after Relic Reset, repaired in merged PR #723. 
 retains the AR Eye WebGL engine across room changes; residual timing investigation belongs to #724.
 The maintainer selected spectating in both games as the next complete product deliverable.
 
-## Current delivery: spectating in both games
+## Current delivery: Relic expedition continuity
 
-Deliver one PR containing a complete Watch → recover → Join as player experience in AR Eye and Relic.
-The two implementation increments below are internal sequencing, not separate product handoffs:
+Spectating in both games is delivered by merged PR #729. The next complete outcome addresses
+[#730](https://github.com/intact-software-systems/ar-eye-hunter/issues/730): remaining hunters can
+start, play, review and finish when another hunter or the Keeper leaves, without resetting the game.
+The maintainer approved the following explicit-leave versus temporary-disconnect policy.
 
-1. Canonical room spectator admission, independent bounded capacity, permissions, directory counts,
-   browser entry/recovery, and atomic promotion through the existing AppInbox mutation owner.
-2. Both games' spectator-safe views, receive and action authorization, and human-clickable journeys
-   proving watching, recovery, denied writes, and promotion into normal play.
+1. Add game-owned withdrawal and Keeper takeover through Relic's existing AppInbox command,
+   deterministic rules, validation, save CAS and committed publication. Verify departure, timeout,
+   takeover, replay and concurrency at the rule and database boundaries.
+2. Connect visible expedition/room controls and recovery to those commands. Prove two-player
+   start/play/review/leave/reconnect journeys, multiple sessions of one principal, and continued play
+   through human-clickable browser tests. These are implementation increments inside one PR.
 
-Use the existing membership lifecycle with a `spectator` role. Owner/admin governance stays explicit:
-those roles must be relinquished or transferred before switching into read-only watching. Participation
-is principal-scoped, so a role change applies to every session of that account in the room. New rooms
-in both games enable 16 spectator seats; other rooms opt in through room configuration. An absent
-spectator policy means watching is disabled. There is no stored-data migration or legacy branch.
-Player capacity and player availability exclude spectators; roster membership and live transport
-still include them. Watch admission uses existing codes, invitations, bans, expiry and business status,
-but does not consume a player seat or join a competitive activity. A failed promotion preserves the
-spectator membership. Promotion obeys current player capacity and formation admission; it must not
-park an already-watching principal as pending. Moderator removal and bans apply to spectators.
-Spectator sessions use the existing temporary-room lifetime policy.
+Explicit Leave expedition withdraws that session's hunter, drops unbanked relics where the hunter
+stood, removes their pending plan and immediately chooses a present successor if they were Keeper.
+A planning round resolves when all remaining active hunters have locked plans. Leaving an empty
+lobby keeps it available; losing the last active hunter during play finishes the expedition while
+preserving already banked results. A withdrawn hunter cannot rejoin a running expedition. Repeated
+withdrawal is harmless. Completed results are immutable to withdrawal.
 
-AR Eye exposes the current public arena through a spectator camera without creating a local player,
-combat prediction or director candidacy. Relic uses its existing public snapshot projection, preserving
-hidden relics and private feedback. Reading an empty expedition while watching cannot create a save,
-start AI work or mutate a revision. Relic refuses in-place Watch for unfinished expedition participants;
-leaving is an explicit existing activity boundary. Keeper succession after departure is independent
-existing game lifecycle work. Both games disable spectator writes locally and reject forged
-commands at the authority and direct-peer receive boundaries. No spectator chat is added. Room
-promotion permits normal AR Eye participation; Relic still requires explicit expedition admission in
-its lobby and respects its four-hunter limit.
+A temporary disconnect preserves the hunter and any locked plan. Missing plans use the existing
+round timeout. Another present expedition hunter may explicitly take over after the Keeper's
+server presence expires. Reconnection restores the same hunter's participation and does not reclaim
+Keeper authority. Fresh server membership and presence decide eligibility; browser state is only a
+presentation hint. A reconnect before a prepared takeover writes must invalidate that observation.
+Concurrent game turns, withdrawal and takeover use the existing save revision and complete AppInbox
+retry, not a new inner retry loop or a domain lock.
 
-Read-only snapshot requests and transport acknowledgments remain possible; arbitrary application
-writes do not. The permission is owned by the exact protocol and validated message shape, never a
-caller-supplied permission flag. Reconnect, account replacement, removal and role changes fence old
-work. Watch links and recent-room return preserve intent through authentication and reload.
+Each session already owns its own Relic hunter. Leaving one must not withdraw a different session of
+the same account. Room roles remain principal-scoped; watching must not silently abandon another
+live session's unfinished expedition. Explicit room departure must complete the game-owned exit
+before membership removal. Leave room remains visibly account-wide; Leave expedition is the
+per-session control that preserves other sessions and room membership. Network loss does not imply withdrawal.
 
-Acceptance includes full-player-room watching with separate spectator capacity; private access and
-concurrent last-seat races; request replay and conflict reauthorization; no spectator avatar, score,
-commands, AI mutation or hidden data; players starting and finishing despite watchers; director loss;
-role changes across sessions; failed and successful promotion; and real browser clicks in both games.
-Run focused policy, mutation, routing and game tests, public API/bundle checks, both game builds,
-black-box recipes, the unweakened Postgres medium-scale gate and a controlled state-write comparison.
-No historical performance exception applies to this change.
+Use the existing roster, relics and Keeper fields. Retain escaped banked-score records with an
+optional withdrawal timestamp: absence means that hunter has not withdrawn. Marked records cannot
+command, take Keeper, or request planning AI. No persisted-data migration, legacy reader, or
+duplicated command implementation is added. Keep Relic decisions out of Rallar room mutations. A narrow
+conditional persistence check reuses canonical presence identities and compares the observed
+revision, row contents and expiry, including absence and same-revision recreation; it
+must not put gameplay policy into SQL or alter heartbeat ownership.
+
+Acceptance includes lobby and review Keeper departure, ordinary hunter departure with a pending
+plan, dropped relic ownership, banked-score preservation, missing-plan timeout, takeover refusal
+while the Keeper is present, competing takeovers, reconnect racing takeover, spectator denial,
+request replay, a concurrent turn, multi-session isolation and browser recovery. Run focused Relic
+rule/database/runtime tests first, then Relic build/server checks, relevant black-box recipes,
+clickable browser journeys, code/structure review and the required release/concurrency gates.
+Independent untouched code stays outside touched-file standards closure; every changed support file
+enters that closure recursively. No affected legacy is retained without an independent requirement.
 
 ## Current foundation
 
@@ -187,11 +194,11 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                         |
-| ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| Current     | Complete spectating in both games: admission, read-only gameplay, recovery, promotion, and clickable acceptance. |
-| Conditional | Keeping groups together, when social or onboarding value justifies it.                                           |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                        |
+| Priority    | Outcomes                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| Current     | Relic expedition continuity: explicit exit, Keeper succession, recovery and continued play without Reset. |
+| Conditional | Keeping groups together, when social or onboarding value justifies it.                                    |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                 |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and

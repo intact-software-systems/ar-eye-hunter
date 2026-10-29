@@ -106,19 +106,13 @@ describe('Relic expedition blueprints', () => {
             blueprintId: 'test-blueprint'
         });
 
-        state = requireRelicCommandApplied(applyRelicCommand(state, join('Alice'), {
-            senderId: 'alice',
-            now: 2
-        })).state;
+        state = requireRelicCommandApplied(applyRelicCommand(state, join('Alice'), { presentPlayerIds: ['alice'], senderId: 'alice', now: 2 })).state;
         expect(state.players[0]).toMatchObject({
             playerId: 'alice',
             roomId: 'entrance'
         });
 
-        state = requireRelicCommandApplied(applyRelicCommand(state, start('Alice'), {
-            senderId: 'alice',
-            now: 3
-        })).state;
+        state = requireRelicCommandApplied(applyRelicCommand(state, start('Alice'), { presentPlayerIds: ['alice'], senderId: 'alice', now: 3 })).state;
         state = submitAndContinue(state, { kind: 'move', targetRoomId: 'hallway' }, 4);
         state = submitAndContinue(state, { kind: 'move', targetRoomId: 'treasure' }, 5);
         state = submitAndContinue(state, { kind: 'search' }, 6);
@@ -200,10 +194,7 @@ function submitAndContinue(
             username: 'Alice',
             action
         },
-        {
-            senderId: 'alice',
-            now: now
-        }
+        { presentPlayerIds: ['alice'], senderId: 'alice', now: now }
     )).state;
 
     return submitted.phase === 'review'
@@ -215,10 +206,7 @@ function submitAndContinue(
                 gameId: 'room-1',
                 username: 'Alice'
             },
-            {
-                senderId: 'alice',
-                now: now + 0.5
-            }
+            { presentPlayerIds: ['alice'], senderId: 'alice', now: now + 0.5 }
         )).state
         : submitted;
 }

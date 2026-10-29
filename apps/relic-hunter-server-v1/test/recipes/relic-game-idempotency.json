@@ -1,5 +1,5 @@
 {
-  "description": "Real Relic HTTP commands: issued identity, URL scope, idempotency, full round progression and escape, reset replay, absent hunters and archived-room fencing. Physical seven-day purge is covered by database-clock integration tests.",
+  "description": "Real Relic HTTP commands: issued identity, URL scope, idempotency, full round progression and escape, reset replay, withdrawal quorum, continuity command replay and authority, absent hunters and archived-room fencing. Physical seven-day purge is covered by database-clock integration tests.",
   "variables": {
     "apiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -179,6 +179,52 @@
       },
       "expect": {
         "status": 204
+      }
+    },
+    {
+      "name": "cannotLeaveAbsentExpedition",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/cannotLeaveAbsentExpedition-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "leave-expedition"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "expedition-unavailable"
+        }
+      }
+    },
+    {
+      "name": "cannotTakeAbsentExpedition",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/cannotTakeAbsentExpedition-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "take-keeper"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "expedition-unavailable"
+        }
       }
     },
     {
@@ -430,6 +476,29 @@
       },
       "expect": {
         "status": 200
+      }
+    },
+    {
+      "name": "absentHunterCannotTakeKeeper",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/absentHunterCannotTakeKeeper-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "take-keeper"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "rule-refused"
+        }
       }
     },
     {
@@ -1070,6 +1139,89 @@
           "submittedPlayerIds": [
             "{aliceSessionId}"
           ]
+        }
+      }
+    },
+    {
+      "name": "withdrawBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/withdrawBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "leave-expedition"
+        },
+        "outputs": {
+          "withdrawalUpdatedAt": "body.updatedAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phase": "review",
+          "players": [
+            {
+              "playerId": "{aliceSessionId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "replayWithdrawBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/withdrawBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "leave-expedition"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "updatedAtEpochMs": "{withdrawalUpdatedAt}",
+          "phase": "review",
+          "players": [
+            {
+              "playerId": "{aliceSessionId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "withdrawnHunterCannotTakeKeeper",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/withdrawnHunterCannotTakeKeeper-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "kind": "take-keeper"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "rule-refused"
         }
       }
     },

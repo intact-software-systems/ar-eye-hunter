@@ -15,7 +15,9 @@ interface RelicRoomEntryDraft {
 
 export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
     const watchBlocked = game.participation === 'player' && game.snapshot?.phase !== 'finished' &&
-        game.snapshot?.players.some((player) => player.playerId === game.session?.sessionId) === true;
+        game.snapshot?.players.some((player) =>
+                player.playerId === game.session?.sessionId && player.withdrawnAtEpochMs === undefined
+            ) === true;
     const owner = game.roomEntry;
     const [entry, setEntry] = useState(owner.getState());
     const [draft, setDraft] = useState<RelicRoomEntryDraft>({ reference: '', code: '', participation: 'preserve' });

@@ -1119,10 +1119,7 @@ function snapshotWithPlayers(
         gameId: 'room-1',
         username: 'Alice',
         characterId: 'kael-ironstride'
-    }, {
-        senderId: 'alice-session',
-        now: 2
-    })).state;
+    }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: 2 })).state;
 
     if (playerCount === 2) {
         state = requireRelicCommandApplied(applyRelicCommand(state, {
@@ -1131,10 +1128,7 @@ function snapshotWithPlayers(
             gameId: 'room-1',
             username: 'Bob',
             characterId: 'nyra-vale'
-        }, {
-            senderId: 'bob-session',
-            now: 3
-        })).state;
+        }, { presentPlayerIds: ['bob-session'], senderId: 'bob-session', now: 3 })).state;
     }
 
     if (phase === 'planning') {
@@ -1143,10 +1137,7 @@ function snapshotWithPlayers(
             kind: 'start-expedition',
             gameId: 'room-1',
             username: 'Alice'
-        }, {
-            senderId: 'alice-session',
-            now: 4
-        })).state;
+        }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: 4 })).state;
     }
 
     return toPublicRelicSnapshot(state);
@@ -1181,19 +1172,13 @@ function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
         gameId: 'room-1',
         username: 'Alice',
         characterId: 'kael-ironstride'
-    }, {
-        senderId: 'alice-session',
-        now: 2
-    })).state;
+    }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: 2 })).state;
     state = requireRelicCommandApplied(applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
         username: 'Alice'
-    }, {
-        senderId: 'alice-session',
-        now: 3
-    })).state;
+    }, { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: 3 })).state;
 
     return toPublicRelicSnapshot(state);
 }
