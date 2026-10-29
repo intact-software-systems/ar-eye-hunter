@@ -24,6 +24,8 @@ interface StagesFixture {
     readonly settlements: ALDeliverySettlement[];
     /** The msgId of each delivery `submit` received, in submission order, with the epoch it was staged in. */
     readonly submitted: { readonly msgId: string; readonly epoch: BrowserDeliverySettlements.Epoch; }[];
+    /** The msgIds whose leg rejects instead of settling its own admission. */
+    readonly rejectedLegs: Set<string>;
 }
 
 interface ConnectFixture {
@@ -36,14 +38,18 @@ function createStagesFixture(): StagesFixture {
     const clock = { atMs: START_MS };
     const settlements: ALDeliverySettlement[] = [];
     const submitted: StagesFixture['submitted'] = [];
+    const rejectedLegs = new Set<string>();
     const stages = new BrowserPublicationStages({
         nowMs: () => clock.atMs,
         submit: async (delivery, epoch) => {
             submitted.push({ msgId: delivery.message.id.msgId, epoch });
+            if (rejectedLegs.has(delivery.message.id.msgId)) {
+                throw new Error('The leg rejected.');
+            }
             return await Promise.resolve();
         }
     });
-    return { clock, stages, feed: new BrowserDeliverySettlements(), settlements, submitted };
+    return { clock, stages, feed: new BrowserDeliverySettlements(), settlements, submitted, rejectedLegs };
 }
 
 /** Opens the connect's epoch on the fixture's feed, closing the previous connect's. */
@@ -134,6 +140,36 @@ describe('BrowserPublicationStages', () => {
         ]);
     });
 
+    it('settles only a rejecting leg failed when its opportunity admitted another, and every leg when none admitted', async () => {
+        const fixture = createStagesFixture();
+        const connect = createConnect(fixture);
+        const admitted = toLiveDelivery(connect, 'entity-1');
+        const rejected = toLiveDelivery(connect, 'entity-2');
+        fixture.rejectedLegs.add(rejected.message.id.msgId);
+        fixture.stages.stage(admitted, connect.epoch);
+        fixture.stages.stage(rejected, connect.epoch);
+
+        await runEnginePass(connect.engine);
+
+        const failed = (delivery: BrowserPublicationStages.LiveDelivery) =>
+            fixture.settlements.filter((settlement) =>
+                settlement.msgId === delivery.message.id.msgId && settlement.kind === 'admission' &&
+                settlement.verdict.kind === 'failed'
+            );
+        expect(failed(admitted)).toEqual([]);
+        expect(failed(rejected)).toEqual([
+            expect.objectContaining({ verdict: { kind: 'failed', detail: 'The leg rejected.' }, trackedReceiptAlgo: 'none' })
+        ]);
+
+        const alone = toLiveDelivery(connect, 'entity-3');
+        fixture.rejectedLegs.add(alone.message.id.msgId);
+        fixture.clock.atMs += LIVE_POLICY.cadenceMs;
+        fixture.stages.stage(alone, connect.epoch);
+        await runEnginePass(connect.engine);
+
+        expect(failed(alone)).toEqual([expect.objectContaining({ verdict: { kind: 'failed', detail: 'The leg rejected.' } })]);
+    });
+
     it('settles a displaced value superseded by the value that replaced it', () => {
         const fixture = createStagesFixture();
         const connect = createConnect(fixture);
@@ -172,6 +208,26 @@ describe('BrowserPublicationStages', () => {
         await runEnginePass(next.engine);
 
         expect(fixture.submitted.map((submission) => submission.msgId)).toEqual([fresh.message.id.msgId]);
+    });
+
+    it('disposes a value staged while its connect\'s epoch closes under that epoch, and never submits it', async () => {
+        const fixture = createStagesFixture();
+        const connect = createConnect(fixture);
+        const first = toLiveDelivery(connect, 'entity-1');
+        const resent = toLiveDelivery(connect, 'entity-2');
+        fixture.stages.stage(first, connect.epoch);
+        // As a handle listener that re-sends on the first value's disposal does, while the epoch is still closing.
+        connect.epoch.onClose(() => fixture.stages.stage(resent, connect.epoch));
+
+        connect.epoch.close();
+        await runEnginePass(connect.engine);
+
+        expect(
+            fixture.settlements
+                .filter((settlement) => settlement.msgId === resent.message.id.msgId)
+                .map((settlement) => settlement.kind === 'admission' ? settlement.verdict : settlement.kind)
+        ).toEqual(['staged', expect.objectContaining({ kind: 'skipped', reason: 'disposed' })]);
+        expect(fixture.submitted).toEqual([]);
     });
 
     it('settles every staged value skipped as disposed at session end, and stages afresh after it', async () => {

@@ -122,6 +122,7 @@ export class ALOutboundPublicationStage<TContext> {
         return { kind: 'staged', displacedMsgId: displaced?.msgId };
     }
 
+    /** No production caller reads it yet: S1-ii's usage report is its consumer, and the tests read it until then. */
     readLane(laneKey: string): ALOutboundPublicationLaneReport | undefined {
         const lane = this.lanes.get(laneKey);
         if (lane === undefined) {

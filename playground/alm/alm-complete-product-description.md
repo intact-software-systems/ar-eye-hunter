@@ -414,8 +414,8 @@ a recorded fallback/repair transition. A transport cannot silently claim an
 unsupported guarantee.
 
 **CURRENT — S3a, the purpose table and carrier capabilities:** A typed channel
-declares `purpose: 'command' | 'notification' | 'live'` (required), and the purpose table
-in `al-contracts`
+declares `purpose: 'command' | 'notification' | 'live'` (required), and the
+purpose table in `al-contracts`
 ([`AL_CHANNEL_SEND_DEFAULTS`](../../packages/shared/al-contracts/resolve-al-channel-send-defaults.ts))
 fixes the channel's send defaults (D52):
 

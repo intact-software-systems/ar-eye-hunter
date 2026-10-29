@@ -30,7 +30,9 @@ const NO_FURTHER_ARRIVAL_WINDOW_MS = 3_000;
 /**
  * D469 with three values retained and two drained per opportunity: send 0 is admitted at once; send 4 displaces send
  * 1, the oldest staged; the second opportunity admits sends 2 and 3, the third opportunity send 4, which is still
- * staged while the sender observes it.
+ * staged while the sender observes it. The cell proves the stage's selection, not carrier history: sends 2 and 3 share
+ * their stream's latest-wins key, so on a backpressured carrier send 3's admission could conflate send 2 (D467), and
+ * the cell assumes an unloaded one.
  */
 export const pacedNewestN: AlmConformanceScenarioDefinition = {
     scenarioId: 'paced-newest-n',

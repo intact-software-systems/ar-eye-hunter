@@ -56,13 +56,12 @@ export function decodeALPublicationPolicy(
             message: 'Expected a publication policy object.'
         }]);
     }
-    const drain = readObject(value, 'drain');
     const policy: ALPublicationPolicy = {
-        cadenceMs: readNumber(value, 'cadenceMs'),
-        retainNewest: readNumber(value, 'retainNewest'),
+        cadenceMs: getNumber(value, 'cadenceMs'),
+        retainNewest: getNumber(value, 'retainNewest'),
         drain: {
-            messages: readNumber(drain, 'messages'),
-            bytes: readNumber(drain, 'bytes')
+            messages: getNumber(value, 'drain', 'messages'),
+            bytes: getNumber(value, 'drain', 'bytes')
         }
     };
     const issues = validateALPublicationPolicy(policy);
@@ -90,14 +89,13 @@ function isWithinLimit(value: number, limit: number): boolean {
     return Number.isSafeInteger(value) && value >= 1 && value <= limit;
 }
 
-function readNumber(source: object, key: string): number {
+function getNumber(source: object, key: string, ...nestedKeys: readonly string[]): number {
     const field = Object.getOwnPropertyDescriptor(source, key)?.value;
-    return typeof field === 'number' ? field : Number.NaN;
-}
-
-function readObject(source: object, key: string): object {
-    const field = Object.getOwnPropertyDescriptor(source, key)?.value;
-    return isObject(field) ? field : {};
+    const [nestedKey, ...deeperKeys] = nestedKeys;
+    if (nestedKey === undefined) {
+        return typeof field === 'number' ? field : Number.NaN;
+    }
+    return isObject(field) ? getNumber(field, nestedKey, ...deeperKeys) : Number.NaN;
 }
 
 function isObject(value: unknown): value is object {

@@ -45,7 +45,7 @@ interface AlmPublicationSendsInput {
     /** The sends after the lead send 0, which the loop names 1 to `burst`. */
     readonly burst: number;
     readonly publication: ALPublicationPolicy;
-    /** Absent, the live channel's own lifetime. */
+    /** The lifetime of sends 1 to `burst`; absent, the live channel's own. The lead send 0 always keeps the channel's. */
     readonly ttlMs?: number;
 }
 
@@ -61,14 +61,15 @@ interface AlmPublicationVerdictInput {
 /**
  * Live sends of one specimen on one resource, so one stream key. Send 0 stages on the idle lane, whose opportunity runs
  * on the session engine's next pass, so the sender waits for its admission, bounded by
- * `PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO`: a send staged before that pass would displace it or share its drain. The
+ * `PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO`: a send staged before that pass would displace it or share its drain. Send 0
+ * keeps the live channel's own lifetime, so a cell's short one never races its admission or arrival. The
  * loop then sends 1 to `burst`: iteration `n` (from 1) names the handle of send
  * `n` and carries `seq` `n`, a number, since a loop writes a string that is only `{loop.iteration}` as the
  * iteration's number. A command's budget is the harness's own: a live send returns once it is staged.
  */
 export function toPublicationSendCommands(sends: AlmPublicationSendsInput): readonly RallarBlackBoxTestCommand[] {
     const { step } = sends;
-    const lead = toLiveSendCommand(sends);
+    const lead = toLiveSendCommand(sends, undefined);
     return [
         lead,
         ...toPublicationVerdictCommands({
@@ -84,7 +85,7 @@ export function toPublicationSendCommands(sends: AlmPublicationSendsInput): read
             count: sends.burst,
             intervalMs: PUBLICATION_SEND_INTERVAL_MS,
             commands: [{
-                ...lead,
+                ...toLiveSendCommand(sends, sends.ttlMs),
                 commandId: toCommandId(step, 'paced-send'),
                 handleId: toLoopIterationSendHandleId(step),
                 payload: { specimen: 'paced', seq: '{loop.iteration}' }
@@ -93,7 +94,10 @@ export function toPublicationSendCommands(sends: AlmPublicationSendsInput): read
     ];
 }
 
-function toLiveSendCommand(sends: AlmPublicationSendsInput): RallarBlackBoxTestMessagesSendCommand {
+function toLiveSendCommand(
+    sends: AlmPublicationSendsInput,
+    ttlMs: number | undefined
+): RallarBlackBoxTestMessagesSendCommand {
     const send = toSendCommand({
         ...sends.step,
         index: 0,
@@ -101,7 +105,7 @@ function toLiveSendCommand(sends: AlmPublicationSendsInput): RallarBlackBoxTestM
         delivery: {
             resourceId: `alm-${sends.step.scenarioKey}`,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
-            ...(sends.ttlMs === undefined ? {} : { ttlMs: sends.ttlMs })
+            ...(ttlMs === undefined ? {} : { ttlMs })
         }
     });
     return { ...send, purpose: 'live', publication: sends.publication };

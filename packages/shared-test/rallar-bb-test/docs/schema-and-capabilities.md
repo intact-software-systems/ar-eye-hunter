@@ -662,9 +662,13 @@ the next before the lane's next opportunity, which admits send 5; the receiver h
 arrival within 3 s. `paced-newest-n` (cadence 500 ms, three retained, a drain of 2) sends 1 to 4 with a 1 500 ms
 `ttlMs`, one cadence past the third opportunity: send 4 is still `staged` when the sender observes it, send 1 ends
 `superseded`, the second opportunity admits sends 2 and 3 and the third send 4; the receiver holds seq 0, then seq 2 and
-3, then seq 4, and no fifth arrival within 3 s. `paced-expiry` (cadence 1 000 ms, one retained, a drain of 8) sends 0
-and 1 with a 100 ms `ttlMs`: send 1 ends `expired` with `failure.kind: 'expired'` and `attempts` 0; the receiver holds
-one arrival and none within the next 1.5 s. The receiver orders its arrivals by reading, right after an arrival count,
+3, then seq 4, and no fifth arrival within 3 s. `paced-expiry` (cadence 1 000 ms, one retained, a drain of 8) sends 1
+with a 100 ms `ttlMs`: send 1 ends `expired` with `failure.kind: 'expired'` and `attempts` 0; the receiver holds one
+arrival and none within the next 1.5 s. Send 0 keeps the live channel's own lifetime in every cell, so a cell's short
+`ttlMs` never races the lead's admission or arrival. The cells prove the stage's selection, not delivered history:
+values of one stream share the latest-wins key, so two values admitted at one opportunity may still be conflated at
+carrier admission or on receipt under backpressure; the drain budget bounds the work per opportunity, it does not
+promise delivered history, and `paced-newest-n` reads its sends 2 and 3 on an unloaded carrier. The receiver orders its arrivals by reading, right after an arrival count,
 that the later specimen is still absent from its history (a `wait` with `absent: true` and `timeoutMs: 0`). The
 observation names no replacement message id, since the delivery lifecycle keeps none; each `superseded` observation's
 `reason` instead contains the stage's own detail (`displaced it before its opportunity`), which a supersedence at

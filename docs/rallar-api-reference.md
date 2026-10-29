@@ -985,11 +985,15 @@ the newest value's `replacementMsgId`. A staged value whose deadline passes
 ends `expired` with no attempt, and a value whose envelope is heavier than
 `drain.bytes` ends `rejected` with
 `failure: { kind: 'refused', reason: 'oversized' }`. A value staged on an idle
-channel is admitted at the session's next engine pass; after that the channel admits at each `cadenceMs` boundary at
-most `drain.messages` values and `drain.bytes` bytes, streams in the order they
-were first staged and each oldest first, and the rest wait for the next
-boundary. A late pass admits once, never a catch-up burst. An admitted value
-continues as any send on its channel's carrier and fallback. When the connect
+channel is admitted at the session's next engine pass; after that the channel
+admits at each `cadenceMs` boundary at most `drain.messages` values and
+`drain.bytes` bytes, streams in the order they were first staged and each
+oldest first, and the rest wait for the next boundary. A late pass admits once,
+never a catch-up burst. An admitted value continues as any send on its
+channel's carrier and fallback. Values of one stream share the latest-wins key,
+so two values admitted at one opportunity may still be conflated at carrier
+admission or on receipt under backpressure: the drain budget bounds the work
+per opportunity, it does not promise delivered history. When the connect
 closes or the session ends, each staged value ends `failed` with
 `failure: { kind: 'skipped', reason: 'disposed' }`. **Limit:** `cancel()` on a
 staged value marks its handle `cancelled`, and the value is still admitted at
@@ -1166,8 +1170,10 @@ fallback carrier, leave the handle `submitted`; the wait resolves on the next
 settlement.
 `isALDeliveryAdmitted(outcome.lifecycle)`
 then reports whether the resolved state is `accepted`, `queued`,
-`transport-accepted`, or `acknowledged`; `staged` is not among them. Surface
-every other outcome to the product as degraded or failed delivery.
+`transport-accepted`, or `acknowledged`. It is false for a healthy `staged`
+live send, which is pending, not degraded: a live caller waits for its own
+terminal state instead. Surface every other outcome to the product as degraded
+or failed delivery.
 
 ### Replies
 

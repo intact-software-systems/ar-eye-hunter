@@ -65,6 +65,7 @@ function expectSends(scenario: AlmConformanceScenario, carrier: AlmConformanceCa
     /** Half the cadence: a stage that held send 0 until its lane's first boundary fails the lead observation. */
     readonly leadBudgetMs: number;
     readonly publication: ALPublicationPolicy;
+    /** The staged sends' lifetime; the lead send keeps the live channel's own. */
     readonly ttlMs?: number;
 }): void {
     const sender = scenario.sender;
@@ -74,14 +75,16 @@ function expectSends(scenario: AlmConformanceScenario, carrier: AlmConformanceCa
         typeId: `alm.conformance.${carrier}.${scenario.scenarioKey}`,
         purpose: 'live',
         publication: sends.publication,
-        resourceId: `alm-${scenario.scenarioKey}`,
-        ...(sends.ttlMs === undefined ? {} : { ttlMs: sends.ttlMs })
+        resourceId: `alm-${scenario.scenarioKey}`
     };
-    expect(findCommand(sender, 'send-0')).toMatchObject({
+    const lead = findCommand(sender, 'send-0');
+    expect(lead).toMatchObject({
         ...live,
         payload: { specimen: 'paced', seq: 0 },
         handleId: `alm-${carrier}-${scenario.scenarioKey}-send-0`
     });
+    // The lead's lifetime must outlast its own admission and arrival, which a cell's short lifetime would race.
+    expect(lead).not.toHaveProperty('ttlMs');
     expect(findCommand(sender, 'observe-transport-accepted-0')).toMatchObject({
         state: ['transport-accepted'],
         timeoutMs: sends.leadBudgetMs
@@ -94,6 +97,7 @@ function expectSends(scenario: AlmConformanceScenario, carrier: AlmConformanceCa
         commands: [
             expect.objectContaining({
                 ...live,
+                ...(sends.ttlMs === undefined ? {} : { ttlMs: sends.ttlMs }),
                 commandId: `${sender.recipeId}-paced-send`,
                 payload: { specimen: 'paced', seq: '{loop.iteration}' },
                 handleId: `alm-${carrier}-${scenario.scenarioKey}-send-{loop.iteration}`

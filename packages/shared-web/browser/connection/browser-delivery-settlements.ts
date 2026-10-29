@@ -1,6 +1,7 @@
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export namespace BrowserDeliverySettlements {
     export interface Carriers {
@@ -26,7 +27,8 @@ export namespace BrowserDeliverySettlements {
         close(): void;
         /**
          * Runs once, synchronously, when the connect's epoch closes and before it fences, so work the connect still
-         * holds settles under it. A listener's error is reported and never interrupts the close.
+         * holds settles under it. A listener's error is reported and never interrupts the close. Subscribed while the
+         * epoch is closing or closed, it runs at once and registers nothing, so work a close listener starts stops too.
          */
         onClose(listener: () => void): RallarUnsubscribe;
     }
@@ -48,12 +50,10 @@ export class BrowserDeliverySettlements {
         relay: BrowserDeliverySettlements.Relay
     ): BrowserDeliverySettlements.Epoch {
         this.close();
-        let open = true;
-        const closeNotifications = new SynchronousNotifications<void>((error) =>
-            console.error('Error closing a Rallar delivery epoch', error)
-        );
+        let state: 'open' | 'closing' | 'closed' = 'open';
+        const closeNotifications = new SynchronousNotifications<void>(reportCloseError);
         const sink: ALDeliverySettlementSink = (event) => {
-            if (!open) {
+            if (state === 'closed') {
                 return;
             }
             observers[event.carrier](event);
@@ -63,16 +63,21 @@ export class BrowserDeliverySettlements {
         };
         const epoch: BrowserDeliverySettlements.Epoch = {
             settlements: { ws: sink, rtc: sink },
-            isOpen: () => open,
+            isOpen: () => state !== 'closed',
             close: () => {
-                if (!open) {
+                if (state !== 'open') {
                     return;
                 }
+                state = 'closing';
                 closeNotifications.publishLatest(undefined);
-                open = false;
+                state = 'closed';
                 closeNotifications.clear();
             },
             onClose: (listener) => {
+                if (state !== 'open') {
+                    runCloseListener(listener);
+                    return () => undefined;
+                }
                 const subscription = closeNotifications.subscribe(listener);
                 return () => subscription.unsubscribe();
             }
@@ -89,4 +94,17 @@ export class BrowserDeliverySettlements {
         this.current?.close();
         this.current = undefined;
     }
+}
+
+function runCloseListener(listener: () => void): void {
+    try {
+        listener();
+    }
+    catch (error) {
+        reportCloseError(toError(error));
+    }
+}
+
+function reportCloseError(error: Error): void {
+    console.error('Error closing a Rallar delivery epoch', error);
 }
