@@ -129,7 +129,7 @@ roomBrowserTest(
 );
 
 roomBrowserTest(
-    'withdraws across shared-session tabs when last-owner room removal is refused',
+    'withdraws across shared-session tabs and preserves withdrawal on room re-entry',
     async ({ page: host }) => {
         await registerRelicHunter(host, 'shared-session');
         await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
@@ -154,13 +154,23 @@ roomBrowserTest(
         try {
             await host.getByRole('button', { name: /Join as/ }).click();
             await committed.promise;
+            const membershipRemoval = other.waitForResponse((result) =>
+                result.request().method() === 'PUT' && result.url().includes('/members/')
+            );
             await other.getByRole('button', { name: 'Leave room', exact: true }).click();
             await expect(other.getByRole('button', { name: 'Leave room', exact: true })).toBeDisabled();
             response.resolve();
+            await expect(host.getByRole('button', { name: 'Leave expedition', exact: true })).toBeVisible();
+            // The concurrent admission has settled; release this tab's shared-session transport before returning.
+            await host.goto('about:blank');
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
-            await expect(host.locator('.lobby-party-row')).toHaveCount(0);
-            await expect(other.locator('.error-panel')).toContainText('Cannot remove or demote the last active owner.');
+            // Leaving disconnects this session; the account remains because it is the room's last owner.
+            expect((await membershipRemoval).status()).toBe(403);
+            // Re-enter from the room link to verify persisted withdrawal independently of either tab's cache.
+            await other.goto(link);
+            await waitForExpeditionScene(other);
             await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
+            await expect(other.locator('.lobby-party-row')).toHaveCount(0);
             await expect(other.getByRole('button', { name: /Join as/ })).toBeEnabled();
         }
         finally {
