@@ -10160,17 +10160,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared/indexeddb-queuebox-computed-write.test.ts#uses the captured release time for a handler-finalized WS_OUTBOX row"
     },
     {
-      "id": "test-structure-coupling-da3c2bb474011a24",
-      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
-      "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar operations maintainers",
-      "rationale": "Reads the materializer's repeated output and record files to prove that a second materialization of the same source is byte-identical, the operator's reproducibility contract; the isolated group scope is asserted independently from the manifest content.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
-    },
-    {
       "id": "test-structure-coupling-c3cb61e482d2cdb2",
       "path": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts",
       "kind": "mock-invocation-count-or-order",
