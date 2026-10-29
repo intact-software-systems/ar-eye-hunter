@@ -54,6 +54,8 @@ describe('group formation metrics recorder', () => {
         expect(toGroupFormationOperationKind('disconnectPresence')).toBe('disconnect');
         expect(toGroupFormationOperationKind('upsertMember')).toBe('membership');
         expect(toGroupFormationOperationKind('setGroupMemberRole')).toBe('membership');
+        expect(toGroupFormationOperationKind('grantGroupPublication')).toBe('membership');
+        expect(toGroupFormationOperationKind('revokeGroupPublication')).toBe('membership');
         expect(toGroupFormationOperationKind('createGroup')).toBe('other');
         expect(toGroupFormationOperationKind('unknown-op')).toBe('other');
     });

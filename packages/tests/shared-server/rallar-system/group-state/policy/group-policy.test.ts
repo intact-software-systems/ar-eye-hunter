@@ -12,12 +12,17 @@ import {
 } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import type { GroupPolicyActor } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import {
+    canChangeGroupPublicationGrant,
+    canHoldGroupPublicationTopics
+} from '@shared-server/rallar-system/group-state/policy/group-publication-grant-policy.ts';
 import { canReadGroupSnapshot, readGroupVisibility } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { denyExhaustedFormationSeries } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
+import type { GroupPublicationTopicGrants } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -637,10 +642,31 @@ describe('group policy helpers', () => {
                     senderSessionId: 'alice-session',
                     preActivationAppData: 'blocked-until-active'
                 })
-            )
+            ),
+            expectCode(canHoldGroupPublicationTopics(topicGrants(65)))
         ]);
 
         expect([...GROUP_POLICY_REASON_CODES].filter((code) => !coveredCodes.has(code))).toEqual([]);
+    });
+
+    it('changes publication grants for active members only and never grants a spectator publish', () => {
+        expect(canChangeGroupPublicationGrant({ target: member('bob'), grantsPublish: true })).toEqual({ allowed: true });
+        expect(canChangeGroupPublicationGrant({ target: member('sam', { role: 'spectator' }), grantsPublish: false }))
+            .toEqual({ allowed: true });
+        expect(expectCode(canChangeGroupPublicationGrant({ target: member('sam', { role: 'spectator' }), grantsPublish: true })))
+            .toBe('forbidden-role');
+        expect(expectCode(canChangeGroupPublicationGrant({ target: undefined, grantsPublish: false }))).toBe('member-not-active');
+        expect(expectCode(canChangeGroupPublicationGrant({ target: member('lee', { status: 'left' }), grantsPublish: false })))
+            .toBe('member-not-active');
+    });
+
+    it('bounds one principal at 64 granted topics with a named capacity limit', () => {
+        expect(canHoldGroupPublicationTopics(topicGrants(64))).toEqual({ allowed: true });
+        expect(canHoldGroupPublicationTopics(topicGrants(65))).toMatchObject({
+            allowed: false,
+            code: 'capacity',
+            details: { limit: 'topics-per-principal', max: 64 }
+        });
     });
 
     it('applies the configured default member cap only when the stored cap is null', () => {
@@ -737,6 +763,12 @@ function actor(principalId: string): GroupPolicyActor {
 }
 
 type SnapshotOptions = Partial<Group> & Partial<Pick<GroupSnapshot, 'members' | 'activeSessions'>>;
+
+function topicGrants(count: number): GroupPublicationTopicGrants {
+    return Object.fromEntries(
+        Array.from({ length: count }, (_, index) => [`room.topic-${index}`, { publish: true, subscribe: false }])
+    );
+}
 
 function snapshot(options: SnapshotOptions = {}): GroupSnapshot {
     const { members: memberOverrides, activeSessions: sessionOverrides, ...groupOverrides } = options;

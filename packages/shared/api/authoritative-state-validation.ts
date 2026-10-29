@@ -204,6 +204,7 @@ const GROUP_EVENT_TYPES = [
     'member-unbanned',
     'member-role-changed',
     'ownership-transferred',
+    'publication-grant-changed',
     'session-connected',
     'session-heartbeat',
     'session-disconnected'

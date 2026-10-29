@@ -221,6 +221,8 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
     banGroupMember: MUTATION_REQUEST_KEYS,
     unbanGroupMember: MUTATION_REQUEST_KEYS,
     setGroupMemberRole: [...MUTATION_REQUEST_KEYS, 'role'],
+    grantGroupPublication: [...MUTATION_REQUEST_KEYS, 'topicId', 'publish', 'subscribe'],
+    revokeGroupPublication: [...MUTATION_REQUEST_KEYS, 'topicId', 'publish', 'subscribe'],
     transferGroupOwnership: [...MUTATION_REQUEST_KEYS, 'newOwnerPrincipalId'],
     upsertMember: [
         ...MUTATION_REQUEST_KEYS,

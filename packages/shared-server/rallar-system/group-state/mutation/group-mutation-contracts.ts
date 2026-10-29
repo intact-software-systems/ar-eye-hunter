@@ -24,6 +24,7 @@ import type {
     GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
+import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import type {
     RuntimeStateGuardedBatchEffect,
@@ -54,6 +55,8 @@ interface GroupMutationCommandBase {
     readonly commandId: string;
     readonly requestId: string | null;
 }
+
+export type GroupPublicationGrantOperation = 'grantGroupPublication' | 'revokeGroupPublication';
 
 export type GroupMutationCommand =
     | (
@@ -310,6 +313,20 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
+            operation: GroupPublicationGrantOperation;
+            targetPrincipalId: string;
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    topicId: RallarWsUserTopicId;
+                    publish: boolean;
+                    subscribe: boolean;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
             operation: 'transferGroupOwnership';
             targetPrincipalId: string;
             input: NullableActorInput;
@@ -438,7 +455,7 @@ export interface GroupMutationRead {
     readonly authorityPresenceSessions: readonly GroupPresenceSession[];
     readonly authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     readonly presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
-    /** The target's publication-grant row, loaded only for the departures the read scope names. */
+    /** The target's publication-grant row, loaded only for the grant commands and departures the read scope names. */
     readonly targetPublicationGrant: RuntimeStateEntryValue<GroupPublicationGrant> | null;
     /** Loaded only for the operations the read scope's policy rule names. */
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;

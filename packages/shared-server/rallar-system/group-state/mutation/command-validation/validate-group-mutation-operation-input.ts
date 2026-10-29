@@ -4,6 +4,7 @@ import {
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { assertGroupRetentionIntent, GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
+import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
@@ -38,6 +39,11 @@ const GROUP_ROLE: GroupInputFieldRule = {
     allowed: ['owner', 'admin', 'member', 'spectator'],
     label: 'Group role'
 };
+const PUBLICATION_GRANT_FIELDS: readonly GroupInputFieldRule[] = [
+    { key: 'topicId', kind: 'string', required: true },
+    { key: 'publish', kind: 'boolean', required: true },
+    { key: 'subscribe', kind: 'boolean', required: true }
+];
 const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly GroupInputFieldRule[]>> = {
     createGroup: [
         { key: 'groupId', kind: 'string', required: true },
@@ -79,6 +85,8 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
     acceptGroupInvite: [{ key: 'inviteToken', kind: 'string' }, { key: 'joinCode', kind: 'string' }],
     createGroupInvite: [{ key: 'invitationExpiresAtEpochMs', kind: 'positive-integer' }],
     setGroupMemberRole: [{ ...GROUP_ROLE, required: true }],
+    grantGroupPublication: PUBLICATION_GRANT_FIELDS,
+    revokeGroupPublication: PUBLICATION_GRANT_FIELDS,
     transferGroupOwnership: [{ key: 'newOwnerPrincipalId', kind: 'string', required: true }],
     upsertMember: [
         GROUP_ROLE,
@@ -112,6 +120,9 @@ export function validateGroupMutationOperationInput(
     if (operation === 'connectGroup') {
         return [...issues, ...validateExpectedLayout(input.expectedLayout)];
     }
+    if (operation === 'grantGroupPublication' || operation === 'revokeGroupPublication') {
+        return [...issues, ...validatePublicationGrantIntent(operation, input)];
+    }
     if (operation === 'createGroup') {
         return [
             ...issues,
@@ -127,6 +138,28 @@ export function validateGroupMutationOperationInput(
         ];
     }
     return issues;
+}
+
+/** D492: the topic is one exact user topic, and the command names at least one permission. */
+function validatePublicationGrantIntent(
+    operation: 'grantGroupPublication' | 'revokeGroupPublication',
+    input: JsonWireObject
+): readonly TypeError[] {
+    const topic = typeof input.topicId === 'string' && input.topicId.length > 0
+        ? validateRallarWsUserTopicId(input.topicId)
+        : null;
+    const topicIssues = topic === null || topic.ok
+        ? []
+        : [
+            new TypeError(
+                `Group ${operation} topicId is invalid: ${topic.issues.map((issue) => issue.message).join('; ')}`
+            )
+        ];
+    const namesNone = input.publish === false && input.subscribe === false;
+    return [
+        ...topicIssues,
+        ...(namesNone ? [new TypeError(`Group ${operation} request must name publish or subscribe`)] : [])
+    ];
 }
 
 function validateRetentionCreationInput(input: JsonWireObject): readonly TypeError[] {

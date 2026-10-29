@@ -4,6 +4,7 @@ import {
 } from '@shared/api/group-director.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
+import { toRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type {
     CreateGroupRequest,
     JoinGroupRequest,
@@ -13,7 +14,7 @@ import type {
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
-import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupPublicationGrantOperation } from './mutation/group-mutation-contracts.ts';
 
 export interface GroupMutationIdentity {
     readonly commandId: string;
@@ -244,6 +245,25 @@ function toRoleCommand(
         targetPrincipalId: requireTargetPrincipalId(descriptor),
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: { role: request.role, ...toGroupMutationActorInput(request) }
+    };
+}
+
+export function toPublicationMutationCommand(
+    descriptor: Extract<GroupMutationDescriptor, { operation: GroupPublicationGrantOperation; }>,
+    randomId: () => string
+): GroupMutationCommand {
+    const request = descriptor.request;
+    return {
+        operation: descriptor.operation,
+        aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+        targetPrincipalId: requireTargetPrincipalId(descriptor),
+        ...toGroupMutationIdentity(request.requestId, randomId),
+        input: {
+            topicId: toRallarWsUserTopicId(request.topicId),
+            publish: request.publish,
+            subscribe: request.subscribe,
+            ...toGroupMutationActorInput(request)
+        }
     };
 }
 

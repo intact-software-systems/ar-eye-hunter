@@ -26,6 +26,8 @@ const commandPolicies = [
     ['GROUP_MEMBER_BAN', ['member-banned'], true],
     ['GROUP_MEMBER_UNBAN', ['member-unbanned'], true],
     ['GROUP_MEMBER_ROLE_SET', ['member-role-changed'], true],
+    ['GROUP_PUBLICATION_GRANT', ['publication-grant-changed'], true],
+    ['GROUP_PUBLICATION_REVOKE', ['publication-grant-changed'], true],
     ['GROUP_OWNERSHIP_TRANSFER', ['ownership-transferred'], true],
     ['GROUP_MEMBER_UPSERT', [
         'member-invited',

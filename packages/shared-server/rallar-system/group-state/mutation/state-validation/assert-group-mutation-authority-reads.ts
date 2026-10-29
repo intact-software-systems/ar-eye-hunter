@@ -36,7 +36,7 @@ export function assertGroupMutationAuthorityReads({
     assertTargetPublicationGrantRead({ read, command, ref, identities });
 }
 
-/** Only a departure reads the target's grant row, and the row it read belongs to that target in this group. */
+/** Only a grant command or a departure reads the target's grant row, and the row belongs to that target in this group. */
 function assertTargetPublicationGrantRead({
     read,
     command,

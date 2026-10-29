@@ -42,7 +42,7 @@ describe('Rallar group documentation', () => {
 
         expect(start).toBeGreaterThan(-1);
         expect(end).toBeGreaterThan(start);
-        expect([...toBacktickedKebabTokens(apiReference.slice(start, end))].sort())
+        expect([...toBacktickedReasonCodeTokens(apiReference.slice(start, end))].sort())
             .toEqual([...GROUP_POLICY_REASON_CODES].sort());
     });
 
@@ -137,8 +137,9 @@ function isResolvedCitation(citation: string): boolean {
     return trackedPaths.some((tracked) => tracked.endsWith(`/${citation}`));
 }
 
-function toBacktickedKebabTokens(section: string): readonly string[] {
-    return [...new Set([...section.matchAll(/`([a-z]+(?:-[a-z]+)+)`/g)].map((match) => match[1]))];
+// `capacity` (D495) is a one-word code, so a backticked lower-case word counts as well as a kebab token.
+function toBacktickedReasonCodeTokens(section: string): readonly string[] {
+    return [...new Set([...section.matchAll(/`([a-z]+(?:-[a-z]+)*)`/g)].map((match) => match[1]))];
 }
 
 function toSection(document: string, heading: string): string {

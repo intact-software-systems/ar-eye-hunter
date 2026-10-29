@@ -222,6 +222,8 @@ function decodeGroupMutationOperation(
         case 'banGroupMember':
         case 'unbanGroupMember':
         case 'setGroupMemberRole':
+        case 'grantGroupPublication':
+        case 'revokeGroupPublication':
         case 'transferGroupOwnership':
         case 'upsertMember':
         case 'connectPresence':

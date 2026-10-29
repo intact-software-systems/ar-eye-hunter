@@ -429,11 +429,15 @@ Formation-lifecycle denials, raised by the policy layer described in
 (the command is not legal from the group's current stage),
 `lifecycle-manager-unavailable` (the policy names managers and the group
 currently resolves none), `formation-attempts-exhausted` (the attempt budget
-bounded this series, so `start` is denied until an explicit `reset`),
+bounded this series, so the start command is denied until an explicit reset),
 `group-admission-closed`, `group-admission-deadline-passed`,
 `group-admission-capacity-reached` (the three admission windows), and
 `group-data-blocked-until-active` (the pre-activation data gate, which denies
 over WS only and reaches no HTTP response).
+
+Publication-grant denials: `capacity` (a grant that would hold a 65th topic for
+one principal; the denial details carry `limit: 'topics-per-principal'` and
+`max: 64`).
 
 REST errors keep two shapes. Read routes answer `{ error }` and may also include
 `code`, `message`, and `details`. Mutation routes, including every policy

@@ -103,6 +103,33 @@ describe('group mutation command validation', () => {
         ).toThrow(/unexpected|key/i);
     });
 
+    it('accepts a publication command naming a user topic and refuses one naming neither permission', () => {
+        const command = {
+            ...createMutationCommand(),
+            operation: 'grantGroupPublication',
+            targetPrincipalId: 'bob',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                topicId: 'room.feed',
+                publish: false,
+                subscribe: true
+            }
+        };
+
+        expect(() => assertGroupMutationCommand(command)).not.toThrow();
+        expect(() => assertGroupMutationCommand({ ...command, operation: 'revokeGroupPublication' })).not.toThrow();
+        expect(() => assertGroupMutationCommand({ ...command, input: { ...command.input, subscribe: false } })).toThrow(
+            /publish or subscribe/
+        );
+        expect(() => assertGroupMutationCommand({ ...command, input: { ...command.input, topicId: 'rallar.feed' } }))
+            .toThrow(/reserved/i);
+        expect(() => assertGroupMutationCommand({ ...command, input: { ...command.input, publish: 'yes' } })).toThrow(
+            /boolean/
+        );
+    });
+
     it('accepts presence commands without lifecycle fields', () => {
         expect(() =>
             assertGroupMutationCommand(

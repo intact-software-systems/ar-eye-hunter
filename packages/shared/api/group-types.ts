@@ -308,6 +308,7 @@ export type GroupEventType =
     | 'member-unbanned'
     | 'member-role-changed'
     | 'ownership-transferred'
+    | 'publication-grant-changed'
     | 'session-connected'
     | 'session-heartbeat'
     | 'session-disconnected';

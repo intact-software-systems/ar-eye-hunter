@@ -160,6 +160,18 @@ export interface SetGroupMemberRoleRequest extends MutationActorInput {
     readonly role: GroupRole;
 }
 
+export interface GrantGroupPublicationRequest extends MutationActorInput {
+    readonly topicId: string;
+    readonly publish: boolean;
+    readonly subscribe: boolean;
+}
+
+export interface RevokeGroupPublicationRequest extends MutationActorInput {
+    readonly topicId: string;
+    readonly publish: boolean;
+    readonly subscribe: boolean;
+}
+
 export interface TransferGroupOwnershipRequest extends MutationActorInput {
     readonly newOwnerPrincipalId: string;
 }

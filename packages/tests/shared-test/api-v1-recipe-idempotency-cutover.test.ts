@@ -79,6 +79,8 @@ const mutationRoutes: readonly MutationRoutePattern[] = [
         `members/${segment}/remove`,
         `members/${segment}/ban`,
         `members/${segment}/unban`,
+        `publication-grants/${segment}/grant`,
+        `publication-grants/${segment}/revoke`,
         'owner/transfer',
         `sessions/${segment}/heartbeat`,
         `sessions/${segment}/disconnect`,

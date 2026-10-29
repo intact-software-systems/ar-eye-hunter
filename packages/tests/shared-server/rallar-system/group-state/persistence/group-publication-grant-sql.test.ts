@@ -147,6 +147,27 @@ describe.each(['memory', 'postgres'] as const)('group publication grant rows (%s
         });
     }, 30_000);
 
+    sqlIt('grant inserts, a second grant updates and a full revoke deletes the row through the write', async () => {
+        await withGrantSql(backend, async (fixture) => {
+            await seedRoomWithBob(fixture);
+            const before = await requireSnapshot(fixture);
+
+            await runMutation(fixture, 'alice', publicationDescriptor('grantGroupPublication', 'publish', 'grant-bob-feed-publish-01'));
+            await runMutation(fixture, 'alice', publicationDescriptor('grantGroupPublication', 'subscribe', 'grant-bob-feed-subscribe-01'));
+            expect((await findGrantRow(fixture, 'bob'))?.value.topics).toEqual({
+                'room.feed': { publish: true, subscribe: true }
+            });
+            await runMutation(fixture, 'alice', publicationDescriptor('revokeGroupPublication', 'both', 'revoke-bob-feed-both-0001'));
+
+            const after = await requireSnapshot(fixture);
+            const events = await fixture.repository.listEvents(REF);
+            expect(await findGrantRow(fixture, 'bob')).toBeUndefined();
+            expect(after.group.snapshotVersion).toBe(before.group.snapshotVersion + 3);
+            expect(after.group.rosterVersion).toBe(before.group.rosterVersion);
+            expect(events.filter((event) => event.eventType === 'publication-grant-changed')).toHaveLength(3);
+        });
+    }, 30_000);
+
     sqlIt('archive keeps the grant row', async () => {
         await withGrantSql(backend, async (fixture) => {
             await seedRoomWithBob(fixture);
@@ -264,6 +285,26 @@ function governDescriptor(
         groupId: REF.groupId,
         targetPrincipalId,
         request: { actorPrincipalId: 'alice', requestId: `${operation}-${targetPrincipalId}-grant-0001` }
+    });
+}
+
+function publicationDescriptor(
+    operation: 'grantGroupPublication' | 'revokeGroupPublication',
+    permissions: 'publish' | 'subscribe' | 'both',
+    requestId: string
+): GroupMutationDescriptor {
+    return mutationDescriptor({
+        operation,
+        scope: REF,
+        groupId: REF.groupId,
+        targetPrincipalId: 'bob',
+        request: {
+            topicId: 'room.feed',
+            publish: permissions !== 'subscribe',
+            subscribe: permissions !== 'publish',
+            actorPrincipalId: 'alice',
+            requestId
+        }
     });
 }
 

@@ -3991,6 +3991,7 @@ components:
         - group-admission-deadline-passed
         - group-admission-capacity-reached
         - group-data-blocked-until-active
+        - capacity
 
     ErrorResponse:
       type: object
@@ -6594,6 +6595,7 @@ components:
             - member-unbanned
             - member-role-changed
             - ownership-transferred
+            - publication-grant-changed
             - session-connected
             - session-heartbeat
             - session-disconnected
