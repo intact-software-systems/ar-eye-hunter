@@ -1614,7 +1614,7 @@ plan as written, and R7 gave retention and the cadence shared owners (D475).
   epoch clock.
 - **The wiring and the proof (D471–D474, R3).** The browser dispatch stages a live delivery on its connect's stage;
   the harness `messages.send` gains `purpose` and `publication`; three smoke cells over the three carriers, withheld
-  from the hosted manifests until S1-ii places them. No game feed moves in Slice 1 (R3).
+  from the hosted manifests until S1-ii placed them in manifest 18. No game feed moves in Slice 1 (R3).
 - **Shared primitives (D475, R7).** `retainNewest` in `packages/shared/cache` and the cadence functions in
   `packages/shared/resilience`, shared with Rallar Motion's buffer and send gate.
 

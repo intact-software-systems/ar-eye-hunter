@@ -95,18 +95,26 @@ and it has no status list.
   `packages/shared/alm` (D8; roadmap F15).
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
-- ALM publication QoS carried from Slice 1's S1-ii (D477–D482): a topic-policy
-  advertisement, so a client learns a topic's effective fanout before sending
-  and the WS server's `unsupported` refusal of a live publication on an
-  `outbox` topic becomes a synchronous refusal at the send; the ingress's
-  static read of proxy rules (`resolveFanouts` reads their declared targets,
-  so it under-refuses when a suppressing rule's `authorize` or `targets`
-  would skip at runtime and over-refuses when a rule publishing to `outbox`
-  would itself have skipped; neither is reachable today); a product consumer
-  for the stage's `readLane`, which only tests read; one owner for the
-  unknown-object field readers that `al-publication-policy.ts` and
-  `al-publication-stage-limits.ts` each keep privately; a ruling on the
-  stage's `superseded` settlement, which carries the replacement's `traceId`
-  where the stage's other settlements carry the value's own; and the hosted
-  timing of the paced cells, where a receiver that resolves its count more
-  than a cadence late goes red.
+- ALM topic-policy advertisement (carried from S1-ii, D482): a client learns
+  a topic's effective fanout before sending, so the WS server's `unsupported`
+  refusal of a live publication on an `outbox` topic becomes a synchronous
+  refusal at the send.
+- The WS ingress's static read of proxy rules (S1-ii, D482): `resolveFanouts`
+  reads their declared targets, so it under-refuses when a suppressing rule's
+  `authorize` or `targets` would skip at runtime and over-refuses when a rule
+  publishing to `outbox` would itself have skipped; neither is reachable today.
+- A product consumer for the publication stage's `readLane` (S1-ii), which
+  only tests read.
+- One owner for the unknown-object field readers that
+  `packages/shared/al-contracts/publication/al-publication-policy.ts` and
+  `al-publication-stage-limits.ts` each keep privately (S1-ii).
+- A ruling on the publication stage's `superseded` settlement, which carries
+  the replacement's `traceId` where the stage's other settlements carry the
+  value's own (S1-ii, Task 2 review).
+- The hosted timing of the paced ALM cells (S1-ii, D481): a receiver that
+  resolves its count more than a cadence late goes red.
+- Future ALM cells on `ws` with `ack: 'none'`: `transport-accepted` is not
+  delivery, so a cell that closes its sender right after a send must hold one
+  cadence (as `paced-capacity` does) or ask for a receipt; a harness-level
+  guard (refuse a `close` within the hold after an unreceipted send) would
+  make the hold unnecessary.
