@@ -312,7 +312,8 @@ describe('spectator admission and promotion', () => {
             recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => now + 1_000,
-            serviceId: 'summary-worker'
+            serviceId: 'summary-worker',
+            senderPeerId: 'ws-server'
         });
         await convergeSummaryForTest({ work, runtime, ref, commandId: 'publish-watch-presence', nowEpochMs: now + 1_000 });
         const snapshot = await requireSnapshot(runtime, 'watch');

@@ -2,21 +2,20 @@
 
 Review date: 2026-09-05
 
-Reviewed source: `a28e61b61` (`main` after PR #521; markers refreshed 2026-09-08, originally
+Reviewed source: `cfcc9a6c7` (`main` after PR #731; markers refreshed 2026-10-29, originally
 written against `02d65ac4a`)
 
-Related documents: [current implementation audit](./alm-static-audit.md),
-[delivery roadmap](./alm-improvement-plan.md),
+Related documents: [delivery roadmap](./alm-improvement-plan.md),
 [persistence and performance QoS plan](./alm-qos-product-plan.md), and
-[PR #521 code assessment](./pr-521-code-assessment.md).
+[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md). The per-slice design
+proposals, the static audit, the assessments and the S2 diagnosis were deleted after Release 8
+completed and are in git history before `cfcc9a6c7`.
 
 Status markers in this document describe the current implementation:
 
 - **CURRENT** — the capability exists end to end.
 - **PARTIAL** — important behavior exists, but the product guarantee is not
   complete or is transport-specific.
-- **PLANNED — release** — the roadmap's release map owns the remainder; the
-  named PR delivers it.
 
 Unmarked normative prose describes the intended complete product. This is a
 product description and completion contract; the roadmap owns sequencing. By
@@ -396,10 +395,12 @@ offering side in the same reconcile pass instead of waiting for the 30 s establi
 keeps the peer's attempt budget, which is not reset, so it counts as an attempt (D98). An old offer applied
 after the new one still waits for that timeout.
 
-**PLANNED — F1, conformance contract:** There is no cross-transport suite or
-public outcome model proving that the same QoS request has the same meaning on
-RTC and WS. F1 adds the conformance lane; every later PR adds its scenario
-family.
+**CURRENT — F1, conformance contract:** The `alm-conformance` lane
+(`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`) runs each scenario family
+under `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/` over `ws`, `rtc` and
+`rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names. It
+runs beside the Release Gate as the non-blocking `.github/workflows/alm-conformance-observation.yml`
+job.
 
 ## QoS negotiation
 
@@ -663,10 +664,15 @@ reporting the replaced message as delivered.
 
 **PARTIAL:** Dedup and latest-wins behavior are implemented and persisted.
 
-**PLANNED — I2a, dedup retention:** The default dedup window is a fixed 60 s
-that ignores the message deadline. A replay of a longer-lived message that
-arrives after 60 s is therefore admitted again. I2a makes the retention at least
-the deadline plus the receipt grace for every durability tier (D85).
+**CURRENT — I2a, dedup retention:** A message-id dedup row is kept until the
+later of the dedup window (60 s by default) and the deadline term: the message
+deadline plus the receipt grace, or the message-owner retention from now if that
+is earlier. The cap bounds only the deadline term, never the window
+(`computeALInboundDedupExpiryMs` in
+`packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts`; the
+default retention is in `packages/shared/alm/ALStoreRetention.ts`), so a replay
+inside its deadline is not admitted twice on any durability tier (D85). A
+semantic-key dedup keeps the window alone.
 
 **CURRENT — R1, shared arbitration proof:** Both admission stores re-read the
 dedup and supersedence observations inside the write transaction and return
@@ -755,13 +761,23 @@ receiving page's channel subscribed, and it was admitted and acknowledged with
 no handler to run. Whether a typed channel replays an arrival that predates its
 subscription is open.
 
-**PLANNED:** `replace-latest` by semantic key and a bounded queue on the
-reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout
-reduction and alternate routes under congestion; routing around one
-backpressured peer; congestion on RTC unicasts; server-side WS backpressure;
-an outbound claim order that rotates across senders or tracks (V1b-ii measured
-the sender-blind claim order and kept it); a count bound on a track's delivered marker,
-which lives for the hour after its snapshot is evicted.
+Supersedence by semantic key is `latest-wins`
+(`packages/shared/al-contracts/normalize-al-qos-policy.ts`), and the realtime
+lane keeps its own `replace-by-key`
+(`packages/shared/webrtc/rtc-data-channel-send-queue.ts`). Each of the
+browser's inbound stores keeps at most 256 delivered markers
+(`AL_INBOUND_MAX_DELIVERED_MARKERS` in
+`packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts`),
+evicting the least recently admitted track's marker unless that track still
+buffers a release; the WS server's stores keep every marker until its expiry.
+**Limit:** the reliable lane has no bounded newest-N queue per key; bounded
+publication pacing is Slice 1 of the
+[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md).
+**Limit:** there is no relay fanout reduction or alternate route under
+congestion, no routing around one backpressured peer, no congestion on RTC
+unicasts, no server-side WS backpressure, and no outbound claim order that
+rotates across senders or tracks (V1b-ii measured the sender-blind claim order
+and kept it).
 
 ## Durability and browser-local storage
 
@@ -815,32 +831,43 @@ and zero non-probe `al-work` IndexedDB operations: a unit pin per direction, and
 the `volatile-default` conformance scenario on both pages of every carrier over a
 reset window, with the durable owners' idle probes (`work-page`, `work-probe`)
 reported beside the zero. The `durable-opt-in` scenario shows the opt-in pays for
-storage; one durable send on a cold runtime still spends 10 `al-admission` and
-15 `al-work` operations, and the storage snapshot's durable figures are
+storage; one durable send spends 10 `al-admission` and
+9 `al-work` operations, and the storage snapshot's durable figures are
 unchanged while the volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
 Web Lock, so it completes within the caller's microtask turn: a burst loop of
 awaited volatile sends yields no task turn until it ends and should yield or
-batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2a's; the
-volatile store's per-session count and byte bound is S3c's (D59).
+batch (R-S3a-7). The durable owner starts lazily: a cold runtime's first volatile send pays only
+its bootstrap probes and the second spends nothing. The volatile store's
+per-session count and byte bound is S3c-ii's (D59).
 
 The tiers are ordered by strength: `volatile` < `local-checkpoint` <
 `local-outbox` < `local-inbox`. When a store cannot honour a channel's tier, the
 send is refused typed `storage-unavailable` or, where the channel allows it,
 degraded to `volatile` with a note on the handle. It is never weakened silently.
 
-**PLANNED — P1, I2a, and I2b, the storage tiers:**
+**CURRENT — P1, I2a, and I2b, the storage tiers:**
 
-- P1 lowers the durable tiers' pinned storage cost without weakening them. Today
-  a durable send on a cold runtime spends 10 `al-admission` and 15 `al-work`
-  operations (10 and 12 warm), and a durable inbound admission spends 8
-  `al-admission`. The levers are taking the Temporal polyfill off the storage
-  hot path and cutting the 11 transactions a warm durable send runs before the
-  carrier sends (D90, D108 to D110).
-- I2a gives every durable tier one owner per session store across tabs. It
-  replaces today's silent memory fallback when IndexedDB is missing with the
-  typed outcome, and adds typed recovery outcomes and one storage-health
-  vocabulary.
-- I2b adds `local-checkpoint` after I2a (D115).
+- P1 pins the durable tiers' storage cost without weakening them
+  (`packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`,
+  `al-indexeddb-transaction-ledger.test.ts`): a durable send spends 10
+  `al-admission` and 9 `al-work` operations, a warm durable send reaches the
+  carrier in 6 IndexedDB transactions, and a durable inbound admission and
+  delivery spends 8 `al-admission`. The IndexedDB queue codec compares on
+  stored epoch-ms mirrors instead of parsing Temporal values on the storage hot
+  path (`packages/shared/queuebox/indexed-db-queue-box-entry.ts`; D90, D108 to
+  D110).
+- I2a gives every durable tier one owner per session store across tabs, the
+  Web Locks claim `toALDurableOwnerLockName`
+  (`packages/shared/alm/storage/al-browser-locks.ts`,
+  `packages/shared-web/browser/al-runtime/browser-al-durable-work-claim.ts`). A
+  missing IndexedDB is the typed `storage-unavailable` cause `missing`
+  (`packages/shared/alm/storage/al-storage-unavailable.ts`), and recovery
+  outcomes and storage health share one vocabulary
+  (`packages/shared/alm/storage/al-storage-event.ts`).
+- I2b provides `local-checkpoint` (`packages/shared/alm/checkpoint/`): admission
+  and dispatch from memory, one checkpoint readwrite per interval (a 1 s target
+  and a 10 s recovery-lag bound by default, `al-checkpoint-default-settings.ts`)
+  and on hide, restored before the first work batch (D115).
 
 The [persistence and performance QoS plan](./alm-qos-product-plan.md) holds the
 contract and its evidence.
@@ -1031,19 +1058,30 @@ identity summary. The sentinel-payload guards
 prove it. Message evidence events keep their payloads as the recipes' assertion
 surface.
 
-**PLANNED — F1 and S1, end-to-end observability:** There is no shared
-lifecycle event stream, IndexedDB cost telemetry, or product-wide payload-safe
-logging contract. F1 adds the AL-owned IndexedDB counter and ALM metrics in the
-lanes, S1 the lifecycle events.
+**CURRENT — F1 and S1, end-to-end observability:** The delivery handle is the
+lifecycle event stream: a `RallarMessageDeliveryListener`
+(`packages/shared-web/browser/messages/rallar-message-contracts.ts`) hears each
+lifecycle state (S1). A connect's diagnostics ports
+(`packages/shared-web/browser/connection/rallar-diagnostics-ports.ts`) carry the
+AL-owned IndexedDB operation observer
+(`packages/shared/persistence/indexed-db-operation-observer.ts`), the outbound
+and inbound runtime diagnostics and the `storage` port; each defaults to a
+pass-through, and the black-box harness fills them for the lanes' ALM metrics
+(F1). The payload-free diagnostics class above is the logging contract
+(I1b-ii).
 
-**PLANNED — I2a, storage health:** In production the storage-reset sink does
-nothing, and no storage-health or recovery event exists. I2a puts the following
-on the public diagnostics sink:
+**CURRENT — I2a, storage health:** The `storage` diagnostics port receives
+each `ALStorageEvent` (`packages/shared/alm/storage/al-storage-event.ts`):
 
-- storage health: `healthy`, `delayed` or `failing`;
+- storage health: `healthy`, `delayed` or `failing`, with the last failure
+  (`packages/shared/alm/storage/al-storage-health.ts`; only a checkpoint store
+  reads `delayed`);
 - the age of the oldest unsaved change;
 - the last saved recovery point;
-- the typed recovery outcomes.
+- the typed recovery outcome, one per durable store per connect
+  (`packages/shared/alm/storage/al-storage-recovery-reporter.ts`);
+- an observed reset, the session's persistence request outcome, and the
+  ordering-track and delivered-marker counts after each eviction pass.
 
 ## Resource and abuse limits
 
@@ -1060,13 +1098,6 @@ The protocol publishes limits for:
 Malformed/oversized protocol input fails before expensive allocation or persistence
 and exposes a stable reason code. Temporary capacity exhaustion has a policy-specific
 bounded defer, coalesce, or capacity outcome without silently evicting reliable work.
-
-Existing input checks provide a 64 KiB payload ceiling and a 128-character
-route-ID limit; they are not yet enforced by every ALM entry path. The initial
-shared boundary will reuse them and add ceilings of 128 KiB per envelope, 256
-elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
-repair window, and 256 messages and 1 MiB per ordering track. The additional
-ceilings are planned requirements, not current guarantees.
 
 **CURRENT — S3c-ii and V1a, the volatile bound:** one session's volatile
 messages are counted against limits of 1 000 messages and 4 MiB of envelopes,
@@ -1129,13 +1160,16 @@ contract and apply to live and persisted envelopes and to control payloads.
 Aggregate per-session budgets (count, bytes, age, active tracks) are current:
 count and bytes since S3, age and active tracks since V1a (D179).
 
-**PLANNED — P1 and I2b, storage budgets:** Each durability tier has a recorded
+**CURRENT — P1 and I2b, storage budgets:** Each durability tier has a recorded
 storage budget (D87):
 
-- no storage operation on the send path for `volatile` and `local-checkpoint`;
-- at most one readwrite transaction per checkpoint, and none while the lane is
-  clean;
-- durable pins that may only fall.
+- no storage operation on the send path for `volatile` and `local-checkpoint`:
+  0 `al-admission` and 0 non-probe `al-work` operations, pinned in
+  `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`;
+- one readwrite transaction per checkpoint, and none while the lane is clean
+  (`packages/tests/shared/alm/checkpoint/al-checkpoint.test.ts`,
+  `al-checkpoint-writer.test.ts`);
+- durable pins stated as exact counts, so a rise fails the pin.
 
 ## Lifecycle and multi-context behavior
 
@@ -1153,16 +1187,20 @@ falls back to both on a commit conflict (D105). A two-tab proof covers the
 durable lane; browsers admit controls in the per-tab memory lane, which never
 took the lock.
 
-**PLANNED — I2a, complete lifecycle outcomes:** Multi-tab claims, quota,
-eviction, blocked upgrades, and restart have no typed outcomes:
-
-- a browser without IndexedDB silently gets memory stores for its durable pairs;
-- login over an existing session leaves the old session's rows until they
-  expire.
-
-I2a adds one durable owner per session store, the typed `storage-unavailable`
-outcome, the recovery outcomes, and one purge across memory, storage, and
-checkpoint.
+**CURRENT — I2a, complete lifecycle outcomes:** One connect per session drains
+its durable work: it holds the Web Locks claim
+(`packages/shared-web/browser/al-runtime/browser-al-durable-work-claim.ts`),
+the session's other connects admit and announce their commits to it, and the
+next connect's claim is granted when it releases
+(`packages/shared/alm/work/al-durable-work-ownership.ts`). A store that cannot
+persist answers the typed `storage-unavailable` with its cause, `missing`,
+`open-failed`, `quota`, `closed`, `evicted`, `transaction-failed` or
+`checkpoint-lag` (`packages/shared/alm/storage/al-storage-unavailable.ts`), and
+each durable store states one recovery outcome per connect, a restart included.
+Logout, and a login that replaces a session, purge that session's rows from
+the scope's ALM databases
+(`packages/shared-web/browser/session/delete-ended-session-al-runtime-entries.ts`);
+a runtime's memory pairs end with it.
 
 ## Public product surface
 
@@ -1187,7 +1225,7 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — I2a and I2b, complete safe surface:** The delivery handle
+**CURRENT — I2a and I2b, complete safe surface:** The delivery handle
 (S1) and the channel purpose (S3a) exist. They are exported by
 `browser/rallar-messages.ts`, the narrow entry point F1 added. A1 added the
 principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
@@ -1199,10 +1237,13 @@ browser the `corrId` send input, the handle's `corrId`, `replyToMsgId` and
 builders' `traceId` option, `newALTraceId` and `decodeALTraceId`, and in the
 browser the `traceId` send input, the handle's `traceId`, `RallarMessage.traceId`
 and an `x-request-id` on every api request. I1b-ii added `toALMessageTrace`
-and `AL_TRACE_ID_HTTP_HEADER`, the `x-request-id` header name. Two parts are absent:
-
-- the channel's storage-unavailable policy (I2a);
-- `local-checkpoint` with its per-store settings (I2b).
+and `AL_TRACE_ID_HTTP_HEADER`, the `x-request-id` header name. I2a added the
+channel's storage-unavailable policy, `onStorageUnavailable: 'refuse' | 'volatile'`
+on `RallarTypedMessageChannelDefinition`
+(`packages/shared-web/browser/messages/rallar-message-contracts.ts`), and I2b the
+`local-checkpoint` durability with the session store's checkpoint interval and
+recovery-lag bound (`checkpointIntervalMs`, `checkpointLagBoundMs`,
+`packages/shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts`).
 
 ## Delivery and compatibility posture
 
@@ -1211,9 +1252,10 @@ two independently verifiable slices detailed. Later stages remain expressed as
 product outcomes until current evidence justifies their implementation shape.
 
 The approved transition is a coordinated clean cutover. Repository consumers
-move with the new surface, obsolete APIs are removed in the same PR, and
-incompatible ALM browser storage is deleted on schema mismatch (roadmap
-decision D3). ALM never falls back to an obsolete API, migrates incompatible
+move with the new surface and obsolete APIs are removed in the same PR. An
+ALM browser database whose stores or schema identity differ is refused with
+`ALStorageSchemaMismatchError` and kept as it is
+(`packages/shared/alm/open-indexed-db-admission-database.ts`), never migrated. ALM never falls back to an obsolete API, migrates incompatible
 records, or keeps a compatibility window (decision D8). Every capability in
 this document is in scope (decision D5); the roadmap's release map owns the
 order, and the two games are changed wherever that proves a capability in a

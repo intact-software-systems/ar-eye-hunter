@@ -1,16 +1,16 @@
 # ALM improvement roadmap
 
 Prepared: 2026-09-05\
-Revised: 2026-09-08 (re-baselined after the first release)\
-Reviewed source: `a28e61b61` (`main` after [PR #521](https://github.com/intact-software-systems/ar-eye-hunter/pull/521))
+Revised: 2026-10-29 (Release 8 complete; the matrix re-stated)\
+Reviewed source: `cfcc9a6c7` (`main` after PR #731)
 
 ## Summary and agreed decisions
 
-This roadmap accompanies the [static audit](alm-static-audit.md), the
-[complete product description](alm-complete-product-description.md), the
-[PR #521 code assessment](pr-521-code-assessment.md), the
-[roadmap assessment](alm-roadmap-assessment.md), and the
-[persistence and performance QoS plan](alm-qos-product-plan.md). The roadmap is the durable design
+This roadmap accompanies the [complete product description](alm-complete-product-description.md),
+the [persistence and performance QoS plan](alm-qos-product-plan.md) and the
+[publication QoS and pub/sub addendum](alm-publication-qos-addendum.md). The per-slice design
+proposals, the static audit, the assessments and the S2 diagnosis were deleted after Release 8
+completed and are in git history before `cfcc9a6c7`. The roadmap is the durable design
 document for ALM; the open pull request is the live delivery status. Only the next two
 implementation slices are concrete here. Later releases stay outcome-shaped until they enter that
 horizon.
@@ -618,7 +618,7 @@ message repair window and stays uncoupled.
 ## Release 1 delivered: PR #521
 
 The first release ended with the bounded admission and QueueBox storage/retry cutover. Its
-assessment lives in [pr-521-code-assessment.md](pr-521-code-assessment.md). What it settled and
+assessment lives in `pr-521-code-assessment.md`. What it settled and
 what it left:
 
 | Commitment                                     | State on `a28e61b61`                                                                                                                                     |
@@ -663,11 +663,13 @@ stall segment is uninstrumented on the server side.
 
 ## Release map
 
-Twenty-two PRs in seven releases. Releases 2 and 3 are serial. Releases 4 to 8 depend on release 3 and
-not on each other; release 4, performance and lifetime, goes first, P1a then P1b (D108), then I2a
-and I2b (D88, D115). Release 2, F2b, S1, F2c and S2 are delivered. S2 split into three PRs, S2a, S2b
-and S2c (D18), and S2c into S2c-i and S2c-ii (D47); each section below names its plan. S3 is planned as three PRs (S3a,
-S3b, S3c; D52–D61); later releases are named by outcome with exit evidence.
+Twenty-two PRs in seven releases, and every row below is delivered. Releases 2 and 3 were serial.
+Releases 4 to 8 depended on release 3 and not on each other; release 4, performance and lifetime,
+went first, P1a then P1b (D108), then I2a and I2b (D88, D115). S2 split into S2a, S2b and S2c (D18),
+S2c into S2c-i and S2c-ii (D47), and S3 into S3a, S3b and S3c (D52–D61). Release 8 completed on
+2026-10-29 with #731. The next horizon is Slice 1 (bounded publication pacing) and Slice 2
+(authorized WS pub/sub) of the [publication QoS and pub/sub addendum](alm-publication-qos-addendum.md),
+designed in a later PR.
 
 | Release       | PR                                                    | Size   | Completion criteria served |
 | ------------- | ----------------------------------------------------- | ------ | -------------------------- |
@@ -839,7 +841,7 @@ the settlement-event union, the structured admission verdict, the evidence shape
 `packages/shared-web/browser/messages/` for the registry, the handle, and the sender, the black-box
 ledger in `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/`, and the
 conformance generator. Plan: `plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md`;
-design: [alm-s1-design-proposal.md](alm-s1-design-proposal.md) (approach C, decisions D9–D16).
+design: `alm-s1-design-proposal.md` (approach C, decisions D9–D16).
 
 **Changes:**
 
@@ -931,8 +933,8 @@ bundle), [alm/outbound](../../packages/shared/alm/outbound/) (the synchronous `s
 settlement), the observation snapshot and `create-alm-conformance-recipes.ts` in
 [rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
 `plans/alm-s2a-delivery-ahead-of-control-implementation-plan.md`; diagnosis:
-[alm-s2-hosted-lifecycle-diagnosis.md](alm-s2-hosted-lifecycle-diagnosis.md); design:
-[alm-s2-design-proposal.md](alm-s2-design-proposal.md) (decisions D18–D31).
+`alm-s2-hosted-lifecycle-diagnosis.md`; design:
+`alm-s2-design-proposal.md` (decisions D18–D31).
 
 **What the diagnosis found:** the hosted `delivery-lifecycle` failures trace to one mechanism, not
 three — the receiver's inbound effect drain is a single serial batch that interleaves
@@ -987,7 +989,7 @@ carrier-partitioned work types, the carrier-tagged control rows), `al-contracts/
 shared control values), and the generator plus two `messages.send` fields in
 [rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
 `plans/alm-s2b-one-identity-implementation-plan.md`; design:
-[alm-s2-design-proposal.md](alm-s2-design-proposal.md) §2.2 (decisions D20, D30).
+`alm-s2-design-proposal.md` §2.2 (decisions D20, D30).
 
 **What the code survey found (2026-09-24):** the two inbound runtimes cannot share one QueueBox work
 type — each re-plans stored rows with its own carrier's planner (only the RTC planner applies room
@@ -1065,7 +1067,7 @@ receipt keys, the pending snapshot's `mode`, the origin's receipt admission),
 `services/ws-queue-box-server/` (ingress admission and the receipt aggregation) and the ws lifecycle
 and ordering-resync recipes in [rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
 `plans/alm-s2c-i-receipt-contract-and-server-path-implementation-plan.md`; design:
-[alm-s2c-design-addendum.md](alm-s2c-design-addendum.md) (D37–D47).
+`alm-s2c-design-addendum.md` (D37–D47).
 
 **Changes:**
 
@@ -1204,7 +1206,7 @@ dead-RTC-peer reconnect race (a maintainer chip).
   `plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md` (the frozen audience
   on both carriers, retry to missing recipients through the tree, logical evidence, the third role
   and three-agent runs, the consumer proof); the code survey's corrections and the settled questions
-  D37–D47 are in [alm-s2c-design-addendum.md](alm-s2c-design-addendum.md). Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
+  D37–D47 are in `alm-s2c-design-addendum.md`. Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
   keys; carrier-tagged control and ACK histories only. The logical audience is frozen at admission
   from the channel's addressed sessions and the identified room snapshot. ACKs carry origin and
   logical recipient; relays forward far ACKs toward the origin; the WS server aggregates broadcast
@@ -1218,7 +1220,7 @@ dead-RTC-peer reconnect race (a maintainer chip).
   `packages/shared/alm/outbound/al-outbound-repair-admission.ts`); S2b owes it a scenario, not code.
 - **S3 Defaults, fallback, volatile path, consumer proofs** — planned as three PRs (S3a purpose and the
   volatile default, S3b fallback within the deadline, S3c consumer proofs and the volatile bound) from
-  [alm-s3-design-proposal.md](alm-s3-design-proposal.md), decisions D52–D61. S3a delivered by PR #597
+  `alm-s3-design-proposal.md`, decisions D52–D61. S3a delivered by PR #597
   (branch `claude/alm-s3-defaults-fallback-volatile`): the purpose table, the receipted volatile default,
   the store lanes and the volatile proof, and each carrier's capability declaration in its composition
   root; its rulings R-S3a-0 to R-S3a-16 are in its plan. A typed channel declares
@@ -1277,7 +1279,7 @@ dead-RTC-peer reconnect race (a maintainer chip).
 
 ### Release 4, P1a: the codec and the send chain
 
-Designed in [alm-p1-design-proposal.md](alm-p1-design-proposal.md) from a code survey of `main` at
+Designed in `alm-p1-design-proposal.md` from a code survey of `main` at
 `c85d99cdd`; decisions D108 to D111. P1 is two serial PRs: P1a, delivered by #627, then P1b below.
 
 - **The codec (D110).** QueueBox's IndexedDB entry codec
@@ -1307,7 +1309,7 @@ bundle are not in P1 (proposal section 8).
 
 ### Release 4, P1b: probes on the engine's cadence
 
-Designed in [alm-p1-design-proposal.md](alm-p1-design-proposal.md) sections 9 to 13 from a code
+Designed in `alm-p1-design-proposal.md` sections 9 to 13 from a code
 survey of `main` at `90d358f7f` and a re-survey of the two sweeps against QueueBox's resilience
 design; decisions D112 to D117. One PR, tasks A to E in order (D116), bound by the maintainer's
 notes: no migration code, avoid duplications, reuse existing repo patterns, use repo guidance.
@@ -1335,7 +1337,7 @@ notes: no migration code, avoid duplications, reuse existing repo patterns, use 
 
 ### Release 4, I2a design (2026-10-01)
 
-Designed in [alm-i2a-design-proposal.md](alm-i2a-design-proposal.md) from a code survey of `main`
+Designed in `alm-i2a-design-proposal.md` from a code survey of `main`
 at `c86ee9519` (P1b merged, #628); the maintainer took its twelve decisions on 2026-10-01 as D119
 to D128.
 
@@ -1363,7 +1365,7 @@ to D128.
 
 ### Release 4, I2b design (2026-10-02)
 
-Designed in [alm-i2b-design-proposal.md](alm-i2b-design-proposal.md) from a code survey of `main`
+Designed in `alm-i2b-design-proposal.md` from a code survey of `main`
 at `5e06c6ab0` (I2a-ii merged, #630); the maintainer took its seven decisions on 2026-10-02 as D129
 to D135. Plan: `plans/active/alm-i2b-local-checkpoint-implementation-plan.md`.
 
@@ -1384,7 +1386,7 @@ to D135. Plan: `plans/active/alm-i2b-local-checkpoint-implementation-plan.md`.
 
 ### Release 5, R1 design (2026-10-03)
 
-Designed in [alm-r1-design-proposal.md](alm-r1-design-proposal.md) from a code survey of `main` at
+Designed in `alm-r1-design-proposal.md` from a code survey of `main` at
 `54adf4d` (I2b merged, #640); the seven decisions are D136 to D142, the recommended option taken on
 each under the maintainer's instruction to plan and execute the next slices. Plan:
 `plans/active/alm-r1-arbitration-and-range-repair-implementation-plan.md`.
@@ -1402,7 +1404,7 @@ each under the maintainer's instruction to plan and execute the next slices. Pla
 
 ### Release 5, R2 design (2026-10-06)
 
-Designed in [alm-r2-design-proposal.md](alm-r2-design-proposal.md) from a code survey of `main` at
+Designed in `alm-r2-design-proposal.md` from a code survey of `main` at
 `97f6686cf` (R1 merged, #641); the seven decisions are D143 to D149, the recommended option taken on
 each under the maintainer's instruction to plan and execute the next slices. Plan:
 `plans/active/alm-r2-membership-fencing-implementation-plan.md`, executed and deleted with the close
@@ -1422,7 +1424,7 @@ each under the maintainer's instruction to plan and execute the next slices. Pla
 
 ### Release 5, R2b design (2026-10-06)
 
-Designed in [alm-r2b-design-proposal.md](alm-r2b-design-proposal.md) from a code survey of `main` at
+Designed in `alm-r2b-design-proposal.md` from a code survey of `main` at
 `e366f60eb` (R2 merged, #642); the six decisions are D150 to D155, the recommended option taken on
 each under the maintainer's instruction to plan and execute the next slices. Plan:
 `plans/active/alm-r2b-server-sequenced-tracks-implementation-plan.md`.
@@ -1439,7 +1441,7 @@ each under the maintainer's instruction to plan and execute the next slices. Pla
 
 ### Release 6, A1 design (2026-10-07)
 
-Designed in [alm-a1-design-proposal.md](alm-a1-design-proposal.md) from a code survey of `main` at
+Designed in `alm-a1-design-proposal.md` from a code survey of `main` at
 `b751caebf` (R2b merged, #643); the eight decisions are D156 to D163, the recommended option taken on
 each under the maintainer's instruction to plan and execute the next slices. Plan:
 `plans/active/alm-a1-audiences-carrier-parity-implementation-plan.md`.
@@ -1457,7 +1459,7 @@ each under the maintainer's instruction to plan and execute the next slices. Pla
 
 ### Release 6, A2a design (2026-10-07)
 
-Designed in [alm-a2a-design-proposal.md](alm-a2a-design-proposal.md) from a code survey of `main` at
+Designed in `alm-a2a-design-proposal.md` from a code survey of `main` at
 `d5db1569d` (A1 merged, #644); the seven decisions are D164 to D170, the recommended option taken on each
 under the maintainer's instruction to plan and execute the next slices. The A2 row splits: A2a is the leader
 ACK and the Relic private event; A2b is exclusive ownership. Plan:
@@ -1472,7 +1474,7 @@ ACK and the Relic private event; A2b is exclusive ownership. Plan:
 
 ### Release 6, A2b design (2026-10-07)
 
-Designed in [alm-a2b-design-proposal.md](alm-a2b-design-proposal.md) from a code survey of `main` at
+Designed in `alm-a2b-design-proposal.md` from a code survey of `main` at
 `94e72f482` (A2a merged, #647); the eight decisions are D171 to D178, the recommended option taken on each
 under the maintainer's instruction to plan and execute the next slices. Plan:
 `plans/active/alm-a2b-exclusive-ownership-implementation-plan.md`.
@@ -1487,7 +1489,7 @@ under the maintainer's instruction to plan and execute the next slices. Plan:
 
 ### Release 7, V1a design (2026-10-08)
 
-Designed in [alm-v1a-design-proposal.md](alm-v1a-design-proposal.md) from a code survey of `main` at
+Designed in `alm-v1a-design-proposal.md` from a code survey of `main` at
 `74f8c0587` (A2b merged, #648); the five decisions are D179 to D183, the recommended option taken on each under
 the maintainer's instruction to plan and execute the next slices. The V1 row splits into V1a (this), V1b, V1c and
 V1d. Plan: `plans/active/alm-v1a-session-budgets-implementation-plan.md`.
@@ -1500,7 +1502,7 @@ V1d. Plan: `plans/active/alm-v1a-session-budgets-implementation-plan.md`.
 
 ### Release 7, V1b-i design (2026-10-08)
 
-Designed in [alm-v1b-i-design-proposal.md](alm-v1b-i-design-proposal.md) from a code survey of `main` at
+Designed in `alm-v1b-i-design-proposal.md` from a code survey of `main` at
 `09a3b431a` (V1a merged, #649); the five decisions are D184 to D188, the recommended option taken on each under
 the maintainer's instruction to plan and execute the next slices. The V1 row's V1b splits into V1b-i (this) and
 V1b-ii. Plan: `plans/active/alm-v1b-i-channel-backpressure-implementation-plan.md`.
@@ -1512,7 +1514,7 @@ V1b-ii. Plan: `plans/active/alm-v1b-i-channel-backpressure-implementation-plan.m
 
 ### Release 7, V1b-ii design (2026-10-08)
 
-Designed in [alm-v1b-ii-design-proposal.md](alm-v1b-ii-design-proposal.md) from a code survey of `main` at
+Designed in `alm-v1b-ii-design-proposal.md` from a code survey of `main` at
 `1db2c29c3` (V1b-i merged, #650) with measurements; the five decisions are D189 to D193, the recommended option
 taken on each under the maintainer's instruction to plan and execute the next slices. Plan:
 `plans/active/alm-v1b-ii-fairness-and-churn-implementation-plan.md`.
@@ -1527,7 +1529,7 @@ taken on each under the maintainer's instruction to plan and execute the next sl
 
 ### Release 7, V1c step 2 design (2026-10-14)
 
-Designed in [alm-v1c-step2-design-proposal.md](alm-v1c-step2-design-proposal.md) from a static performance audit
+Designed in `alm-v1c-step2-design-proposal.md` from a static performance audit
 of `main` at `2d5ffe35f` (V1c step 1 merged, #652) by five read-only audits of the queuebox engine and AppInbox,
 the session-setup handlers, the browser leader-ACK path, the black-box harness and the GitHub Free workflow, plus
 a local all-local 15-agent baseline; the decisions are D194 to D204, the recommended option taken on each under
@@ -1605,18 +1607,21 @@ and the page regime decides a cell in which no durable send ran.
 ## Storage, cutover, reset, and rollback
 
 - **Browser.** One ALM-owned database per application scope and origin, `rallar-al-runtime:${applicationId}:${workspaceId}`, with a schema identity (D120).
-  - **Schema mismatch.** A mismatch at open deletes and recreates the ALM database and reports it to
-    the storage-reset sink. That sink does nothing in production; the black-box harness emits
+  - **Schema mismatch.** Since #652 an open whose stores or schema identity differ is refused with
+    `ALStorageSchemaMismatchError` and the database is kept as it is
+    (`packages/shared/alm/open-indexed-db-admission-database.ts`); D3's delete-on-mismatch is a
+    follow-up in `plans/backlog.md`. An observed recreation by another context reaches the `storage`
+    diagnostics port as a `reset` event, which the black-box harness emits as
     `rallar.browser.alm.storage_reset`.
   - **Stores.** Two stores, admission and work, with bounded indexes.
   - **Durability.** Durability is a channel property, and each channel is routed to exactly one
     backend.
-  - **Tabs.** Cross-tab commit locking stays on Web Locks. I2a adds the per-session durable owner
-    as a second lock name on the same BrowserLocks port: non-owners commit but run no durable work
+  - **Tabs.** Cross-tab commit locking stays on Web Locks. The per-session durable owner (I2a) is
+    a second lock name on the same BrowserLocks port: non-owners commit but run no durable work
     tasks, another tab takes over on release, and a per-scope-and-session BroadcastChannel carries
     the commit wake and the owner's settlement relay (D120–D123).
-  - **Storage failures.** Quota, eviction, the reset's blocked delete, a closed connection and
-    missing storage are typed `storage-unavailable` outcomes (I2a): an admission verdict read as
+  - **Storage failures.** Quota, eviction, a failed open, a closed connection and missing storage are
+    typed `storage-unavailable` outcomes (I2a): an admission verdict read as
     state `failed`, or under `onStorageUnavailable: 'volatile'` a volatile admission with a
     `durabilityDowngrade` note. None of them falls back to memory silently; the `storage` port
     reports reset, recovery, health and persist events (D120–D123).
@@ -1632,7 +1637,8 @@ and the page regime decides a cell in which no durable send ran.
 - **Cutover.** F2, S1, S2, and R2 are incompatible. Each lands contracts, consumers, examples,
   harness, and recipes together, deletes the old path, and lists in the PR body what pending ALM
   work is discarded. Web and API deploy together from `main`.
-- **Rollback.** Revert the merge commit. Browsers reset on the old schema id; server migrations are
+- **Rollback.** Revert the merge commit. A browser database written under another schema id is
+  refused, not reset (see "Schema mismatch"); server migrations are
   additive; a mismatched envelope version is a typed rejection visible in diagnostics.
 - **Measurement.** Every cutover PR records the storage snapshot per message state for the standard
   workload (eight updates, three recipients, 128 B, 4 KiB, and 64 KiB payloads) from the lane's
@@ -1681,43 +1687,43 @@ new capability runs in a real UI with its own conformance recipe.
 
 ## Requirement-to-evidence matrix
 
-Finding identifiers are the audit's; PC numbers are the product description's completion criteria;
+Finding identifiers are the static audit's; PC numbers are the product description's completion criteria;
 Q numbers are the [QoS plan's](alm-qos-product-plan.md) release 4 requirements, stated on
 `bdb3ecd8b`.
-"Release" names where the remaining behavior lands; "State" is on `a28e61b61`.
+"Release" names where the behavior landed; "State" is on `cfcc9a6c7`, read from the tree.
 
 | Requirement                            | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Release               |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| F1 reliable receipts                   | Partial: the default typed send is receipted and volatile (S3a, PR #597); every receipt end settles and `receipt-exhausted` hands `rtc-with-ws-fallback` to WS (S3b, PR #604); the WS unicast receipt, the WS `hop` receipt and the server's own receipts (S3c-i, PR #605); the RTC unicast and the unicast fallback (S3c-ii, PR #606).                                                                                                                                                                                                         | S1, S2, S3            |
-| F2 bounded trusted ingress             | Resolved.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | done                  |
+| F1 reliable receipts                   | Resolved: the default typed send is receipted and volatile (S3a, #597); every receipt end settles and `receipt-exhausted` hands `rtc-with-ws-fallback` to WS (S3b, #604); the WS unicast receipt, the WS `hop` receipt and the server's own receipts (S3c-i, #605); the RTC unicast and the unicast fallback (S3c-ii, #606). `ack: 'receiver'` stays `receiver` (`packages/shared/al-contracts/normalize-al-qos-policy.ts`).                                                                                                                    | S1, S2, S3            |
+| F2 bounded trusted ingress             | Resolved: one decoder, `decodeALMessageValue` (`packages/shared/al-contracts/al-message-persistence-validation.ts`), applies the ceilings of `packages/shared/al-contracts/al-message-resource-limits.ts` to every envelope the WS server, the WS client and the RTC receiver admit (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts`, `ws-queue-box-client-service.ts`, `web-rtc-rx-streamer-service.ts`).                                                                                                        | done                  |
 | F3 room authority                      | Resolved: the frozen audience (S2c) and the roster fence on every room send, both carriers (R2).                                                                                                                                                                                                                                                                                                                                                                                                                                                | S2, R2                |
 | F4 one fallback lifecycle              | Resolved for `rtc-with-ws-fallback` (S3b, PR #604): retryable outcomes hand an RTC leg to WS in the deadline; `ws-then-rtc` keeps admission-time fallback only; a resumed durable message never hands over (D64). A peer-addressed send falls back the same way (S3c-ii).                                                                                                                                                                                                                                                                       | S2, S3                |
 | F5 volatile path                       | Resolved for the bound: volatile default and the memory lanes (S3a); the retention, the per-session bound, `refused/capacity` and the first `overloaded` producer (S3c-ii, PR #606); the age and track bounds, the `capacity` refusal naming its limit and the ledger's usage metric (V1a, #649); channel backpressure as a congestion input with the `congested` refusal and the congestion counters (V1b-i, #650); the own share, the keyed-read promotion of buffered releases and the count bounds on departed-sender state (V1b-ii, #651). | S3, V1                |
-| F6 admission work                      | Partial: exact observation CAS exists; two dequeue owners and whole-store reads remain.                                                                                                                                                                                                                                                                                                                                                                                                                                                         | F2, R1                |
-| F7 durable ownership                   | Partial: outbound canonical; inbound copies; two server consumers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | F2                    |
-| F8 indexed bounded cleanup             | Partial: indexed page reader exists; seven `getAll()` sites and a full-range cleanup scan.                                                                                                                                                                                                                                                                                                                                                                                                                                                      | F2                    |
-| F9 database lifetime                   | Partial: fixed schema; no reset mechanism; multi-tab and quota untested.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | F2, I2a               |
-| F10 scheduling                         | Resolved for wakes and readiness; polling bounds measured in V1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | V1                    |
-| F11 stored envelope copies             | Partial: outbound one copy; inbound copies.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | F2                    |
+| F6 admission work                      | Resolved: one work owner per side on the QueueBox port (`packages/shared/alm/work/al-work-queue-port.ts`, `al-work-handler.ts`; F2, #559), the per-row revision fence (`packages/shared/alm/indexed-db-admission-fence.ts`; F2c, #581) and one durable owner per session across tabs (`packages/shared/alm/work/al-durable-work-ownership.ts`; I2a-ii, #630).                                                                                                                                                                                   | F2, I2a, R1           |
+| F7 durable ownership                   | Resolved: each direction keeps one canonical envelope that its effects reference (`packages/shared/alm/outbound/al-outbound-canonical-message.ts`, `packages/shared/alm/inbound/al-inbound-canonical-message.ts`; F2, #559), drained by the one work owner per side and the one durable owner per session (I2a-ii, #630).                                                                                                                                                                                                                       | F2, I2a               |
+| F8 indexed bounded cleanup             | Resolved: admission snapshots read by key, prefix cursor or the expiry index (`packages/shared/alm/read-indexed-db-admission-snapshot.ts`), and QueueBox reads index ranges bounded by `maxToRead` (`packages/shared/queuebox/indexed-db-queue-box-store.ts`; F2, #559). The unscoped `IndexedDbQueueBox.getAllKeys()` has no ALM caller.                                                                                                                                                                                                       | F2                    |
+| F9 database lifetime                   | Partial: one database per application scope with the schema identity `AL_ADMISSION_SCHEMA_ID` (`packages/shared/alm/open-indexed-db-admission-database.ts`; I2a-i, #629), the cross-tab owner claim (I2a-ii, #630) and typed quota and eviction outcomes (`packages/shared/alm/storage/al-storage-unavailable.ts`). Since #652 a mismatched database is refused with `ALStorageSchemaMismatchError` and kept, not deleted as D3 states (`plans/backlog.md`).                                                                                    | F2, I2a               |
+| F10 scheduling                         | Resolved: wakes and the readiness memory (`packages/shared/alm/work/al-work-readiness-memory.ts`); an idle owner spends four work-page operations over ten idle seconds, pinned in `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts` (P1b, #628).                                                                                                                                                                                                                                                                               | P1, V1                |
+| F11 stored envelope copies             | Resolved: one stored copy per direction; an inbound effect carries an `ALInboundMessageReference` to the canonical inbound row (`packages/shared/alm/inbound/al-inbound-admission-store.ts`; F2, #559).                                                                                                                                                                                                                                                                                                                                         | F2                    |
 | F12 ordering gaps                      | Resolved: bounds, and range repair with paged retransmission and typed exhaustion (R1).                                                                                                                                                                                                                                                                                                                                                                                                                                                         | R1                    |
 | F13 resource histories                 | Resolved for ceilings and the per-session count, byte, age and track budgets (V1a, #649); the 15/30/50 scale evidence (V1c, #652–#694); the 75-minute run (V1d, #698).                                                                                                                                                                                                                                                                                                                                                                          | S3, V1                |
 | F14 shared-key races                   | Resolved: the version fence, proved on memory, IndexedDB and PostgreSQL in one schedule (R1).                                                                                                                                                                                                                                                                                                                                                                                                                                                   | R1                    |
-| F15 affected legacy                    | Resolved for #521's scope; D8 governs the series.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | every PR              |
+| F15 affected legacy                    | Partial: D8 governs the series; `packages/shared/alm/al-runtime-state-stores.ts` still exports `ALInboundRuntimeStateStore` and its two classes, which nothing constructs (`plans/backlog.md`).                                                                                                                                                                                                                                                                                                                                                 | every PR              |
 | F16 incomplete semantics               | Resolved: correlation (I1a), fencing (R2), audiences (A1), the leader ACK (A2a) and exclusive ownership (A2b) delivered.                                                                                                                                                                                                                                                                                                                                                                                                                        | R2, A1, A2, I1a       |
-| F17 lifecycle truth                    | Partial: settlement truthful; handle and disposal outcomes remain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | S1, I2a               |
-| PC1 carrier conformance                | Lane missing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | F1, then every PR     |
-| PC2 all boundaries validated           | Resolved.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | done                  |
-| PC3 honest reliability                 | Open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | S1, S2, S3            |
-| PC4 zero-IndexedDB volatile            | Open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | S3                    |
-| PC5 bounded durable owner              | Partial.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | F2                    |
-| PC6 authorized rooms                   | Partial.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | S2, R2                |
+| F17 lifecycle truth                    | Resolved: the handle states every `ALDeliveryState` (`packages/shared/alm/delivery/al-delivery-lifecycle.ts`; S1, #570); a disposed outbound runtime settles its sends `skipped` with reason `disposed` (`packages/shared/alm/outbound/al-outbound-message-runtime.ts`), an evicted observation ends `unobservable` (`packages/shared-web/browser/messages/browser-rallar-delivery-registry.ts`), and storage failures are typed outcomes (I2a-i, #629).                                                                                        | S1, I2a               |
+| PC1 carrier conformance                | Resolved: `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts` runs the scenarios under `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/` over `ws`, `rtc` and `rtc-with-ws-fallback` as the non-blocking `.github/workflows/alm-conformance-observation.yml` job (F1, #550); every later slice added its family.                                                                                                                                                                                              | F1, then every PR     |
+| PC2 all boundaries validated           | Resolved: the same decoder and ceilings, plus the inbound admission decoder (`packages/shared/alm/inbound/al-inbound-message-admission.ts`), the control decoder `decodeALControlMessage` (`packages/shared/al-contracts/al-control.ts`) and the persisted-envelope decoders on every stored row.                                                                                                                                                                                                                                               | done                  |
+| PC3 honest reliability                 | Resolved: the handle lifecycle (S1, #570), receipted audiences (S2c, #591 and #595), the purpose's receipt and the fallback within the deadline (`packages/shared/alm/delivery/resolve-al-delivery-receipt-algo.ts`, `resolve-al-delivery-fallback-trigger.ts`; S3a to S3c-ii, #597–#606).                                                                                                                                                                                                                                                      | S1, S2, S3            |
+| PC4 zero-IndexedDB volatile            | Resolved: a volatile send and a volatile inbound message spend 0 `al-admission` and 0 non-probe `al-work` operations (S3a, #597), as does a `local-checkpoint` send (I2b, #640), pinned in `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`.                                                                                                                                                                                                                                                                                   | S3, I2b               |
+| PC5 bounded durable owner              | Resolved: one durable owner per session (`packages/shared/alm/work/al-durable-work-ownership.ts`, `packages/shared-web/browser/al-runtime/browser-al-durable-work-claim.ts`; I2a-ii, #630), with bounded work pages and lease recovery (`packages/shared/alm/work/al-work-lease-recovery.ts`; F2, #559).                                                                                                                                                                                                                                        | F2, I2a               |
+| PC6 authorized rooms                   | Resolved: the frozen audience (`packages/shared/al-contracts/al-frozen-multicast-audience.ts`; S2c-ii, #595) and the roster fence on every room send (R2, #642).                                                                                                                                                                                                                                                                                                                                                                                | S2, R2                |
 | PC7 supported target and ACK semantics | Delivered: audiences with carrier parity (A1), the group-leader mode (A2a) and exclusive ownership (A2b).                                                                                                                                                                                                                                                                                                                                                                                                                                       | A1, A2                |
 | PC8 bounded protocol work              | Resolved: the session ledger's four bounds and bounded retention (V1a, #649); backpressure as a congestion input (V1b-i, #650); the own share, promotion and the count bounds (V1b-ii, #651); the 15/30/50 scale runs (V1c, #652–#694); the 75-minute run (V1d, #698).                                                                                                                                                                                                                                                                          | F2, R1, V1            |
 | PC9 one observable identity            | Resolved: trace delivered (I1b-i); the runtime diagnostics, timing and receipts (I1b-ii-a); the harness identity, the payload-free diagnostics class and the server-originated cell (I1b-ii-b); correlation (I1a).                                                                                                                                                                                                                                                                                                                              | S1, S2, I1b-i, I1b-ii |
-| PC10 deterministic lifetime            | Open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | F2, I2a               |
-| Q1 storage budgets per tier            | Measured pins: a durable send on a cold runtime spends 10 `al-admission` and 15 `al-work` operations (10 and 12 warm), a durable inbound admission 8, volatile none (S3a); no budget is recorded and nothing forbids a rise.                                                                                                                                                                                                                                                                                                                    | P1                    |
-| Q2 storage lifetime and recovery       | A missing IndexedDB silently gives the durable pairs memory stores; the reset sink does nothing in production; dedup keeps 60 s whatever the deadline.                                                                                                                                                                                                                                                                                                                                                                                          | I2a                   |
-| Q3 checkpointed durability             | Absent.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | I2b (D89)             |
+| PC10 deterministic lifetime            | Partial: one durable owner per session, typed storage outcomes, one recovery outcome per store per connect (`packages/shared/alm/storage/al-storage-recovery-reporter.ts`), dedup retention covering the deadline (`computeALInboundDedupExpiryMs` in `packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts`; I2a, #629 and #630) and the checkpoint restore (I2b, #640). A mismatched schema is refused and kept, not deleted (F9).                                                                                          | F2, I2a               |
+| Q1 storage budgets per tier            | Resolved: exact pins forbid a rise: a durable send spends 10 `al-admission` and 9 `al-work` operations, a durable inbound admission and delivery 8 `al-admission`, a volatile or `local-checkpoint` send none (`packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`), and a warm durable send reaches the carrier in 6 IndexedDB transactions (`packages/tests/shared/alm/al-indexeddb-transaction-ledger.test.ts`) (P1a, #627; P1b, #628).                                                                                        | P1                    |
+| Q2 storage lifetime and recovery       | Resolved: a missing IndexedDB is the typed `storage-unavailable` cause `missing`, and the channel's `onStorageUnavailable` refuses or downgrades to volatile (`packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts`); reset, recovery and health events reach the `storage` diagnostics port (`packages/shared/alm/storage/al-storage-event.ts`); dedup retention covers the deadline (I2a-i, #629; I2a-ii, #630).                                                                                                          | I2a                   |
+| Q3 checkpointed durability             | Resolved: `local-checkpoint` admits and dispatches from memory and checkpoints in one readwrite per interval and on hide (`packages/shared/alm/checkpoint/`, `packages/shared-web/browser/al-runtime/browser-page-lifecycle-flush.ts`; I2b, #640).                                                                                                                                                                                                                                                                                              | I2b (D89)             |
 
 ## Validation and performance
 
@@ -1760,36 +1766,34 @@ The [QoS plan](alm-qos-product-plan.md#91-layers) names the layer each requireme
 
 Read this roadmap, then the open pull request's Goal, Acceptance, Validation, and Follow-up
 sections, then run `npm run pr:delivery -- status`. The S2 outcome is delivered (S2a, S2b, S2c-i
-and S2c-ii, the last from branch `claude/alm-s2c-ii-frozen-audience` with its plan
-`plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md`); the earlier ticked
-plans (F1, F2, F2b, F2c, S1, S2a, S2b, S2c-i) sit beside it. S3 and #566 are delivered. Release 4 is
+and S2c-ii), and every finished plan file is in git history. S3 and #566 are delivered. Release 4 is
 delivered (P1a #627, P1b, I2a-i, I2a-ii #630, I2b #640 as `54adf4d`). Release 5 R1 is delivered (#641 as
-`a4f55cd`, from [alm-r1-design-proposal.md](alm-r1-design-proposal.md), decisions D136–D142; its plan file
+`a4f55cd`, from `alm-r1-design-proposal.md`, decisions D136–D142; its plan file
 is deleted with the close). Release 5 R2 is delivered (#642 as `0e5fc55`, from
-[alm-r2-design-proposal.md](alm-r2-design-proposal.md), decisions D143–D149; its plan file is deleted
+`alm-r2-design-proposal.md`, decisions D143–D149; its plan file is deleted
 with the close). Release 5 R2b is delivered (#643 as `6651529`, from
-[alm-r2b-design-proposal.md](alm-r2b-design-proposal.md), decisions D150–D155 as amended at its review;
+`alm-r2b-design-proposal.md`, decisions D150–D155 as amended at its review;
 its plan file is deleted with the close), which completes Release 5. Release 6 A1 is delivered (#644 as `6b141bc`, from
-[alm-a1-design-proposal.md](alm-a1-design-proposal.md), decisions D156–D163; its plan file is deleted with the
+`alm-a1-design-proposal.md`, decisions D156–D163; its plan file is deleted with the
 close). Release 6 A2a is delivered (#647 as `d1d10db`, from
-[alm-a2a-design-proposal.md](alm-a2a-design-proposal.md), decisions D164–D170; its plan file is deleted with the
+`alm-a2a-design-proposal.md`, decisions D164–D170; its plan file is deleted with the
 close). Release 6 A2b is delivered (#648 as `3b7db42`, from
-[alm-a2b-design-proposal.md](alm-a2b-design-proposal.md), decisions D171–D178; its plan file is deleted with the
+`alm-a2b-design-proposal.md`, decisions D171–D178; its plan file is deleted with the
 close), and Release 6 is complete. Release 7 V1a is delivered (#649 as `c37bda7`, from
-[alm-v1a-design-proposal.md](alm-v1a-design-proposal.md), decisions D179–D183 with their "As applied" notes; its plan
+`alm-v1a-design-proposal.md`, decisions D179–D183 with their "As applied" notes; its plan
 file is deleted with the close). V1b-i is delivered (#650 as `84472ce`, from
-[alm-v1b-i-design-proposal.md](alm-v1b-i-design-proposal.md), decisions D184–D188 with their "As applied" notes; its plan
+`alm-v1b-i-design-proposal.md`, decisions D184–D188 with their "As applied" notes; its plan
 file is deleted with the close). V1b-ii is delivered (#651 as `53a9267`, from
-[alm-v1b-ii-design-proposal.md](alm-v1b-ii-design-proposal.md), decisions D189–D193 with their "As applied" notes; its plan
+`alm-v1b-ii-design-proposal.md`, decisions D189–D193 with their "As applied" notes; its plan
 file is deleted with the close). V1c step 1 is delivered (#652 as `138bfd0`, the bounded lane service and
 the consumer-proof workload); its workload, complete-workload deadline and native acceptance evidence are defined
-in [alm-v1c-design-proposal.md](alm-v1c-design-proposal.md). V1c step 2a is delivered (#662 as `2c167a7`, decisions D199, D200 and D202 in
-[alm-v1c-step2-design-proposal.md](alm-v1c-step2-design-proposal.md)); step 2b is delivered (#664 as `9f71ea2`: the engine, its fault tolerance, the handler cost, the
+in `alm-v1c-design-proposal.md`. V1c step 2a is delivered (#662 as `2c167a7`, decisions D199, D200 and D202 in
+`alm-v1c-step2-design-proposal.md`); step 2b is delivered (#664 as `9f71ea2`: the engine, its fault tolerance, the handler cost, the
 director-rooted tree and the diagnostic volume, D194–D198, D201, D205, D207, D208; hosted 15 passes through the GitHub
 Free `hetzner-control` mode). Steps 2c through 2g are delivered through #666–#670, step 2h's flush
 consolidation and audience cache through #674 and #675, and formation tails 2 to 6 through #687, #689,
 #690, #691 (as `133df2c`) and #692 (as `ab27df0`). The V1c closure (#694; decisions D412–D435 in
-[alm-v1c-step2-design-proposal.md](alm-v1c-step2-design-proposal.md), D281's comparison in its §1.19)
+`alm-v1c-step2-design-proposal.md`, D281's comparison in its §1.19)
 leaves the AppInbox one RETRY behaviour, deletes the unread rate adjuster, fixes the large-result
 certification and the headless shutdown, records a disposition for every audit item, and deletes the V1c
 and formation-tail plans with the close, so V1c is delivered. The merged #671 retention/evidence changes
@@ -1797,7 +1801,7 @@ are part of the current implementation baseline. Hosted formation time at 50 is 
 (Issue #693), not a gate. Release 7 is complete: V1d is delivered (#698). The local run is 15 agents
 for 75 minutes on three API processes, and its per-class verdict has 162 readings and no failing reading.
 The hosted cohorts, manifests 19, 20 and 21, passed at 15, 30 and 50 agents with every agent resolved.
-Release 8 I1a is delivered from [alm-i1-design-proposal.md](alm-i1-design-proposal.md), decisions
+Release 8 I1a is delivered from `alm-i1-design-proposal.md`, decisions
 D438–D446 with their "As applied" notes: reply correlation on the handle, with Relic planning as its consumer,
 closing F16. Replies travel over WS only; replies over RTC are carried. I1b lands as two pull requests.
 I1b-i is delivered from the same proposal's §6, decisions D447–D453 with their "As applied" notes: a required
@@ -1814,6 +1818,10 @@ boundary, and tests from the repository
 before editing; this roadmap is not a navigation map. When a release completes, move the next two
 slices into the concrete horizon here and leave the rest outcome-shaped. Do not add pull request
 status prose to this document.
+
+Release 8 is complete. The next design is the
+[publication QoS and pub/sub addendum](alm-publication-qos-addendum.md), and decision numbers
+continue from D465.
 
 ## Revision history
 
@@ -1902,54 +1910,54 @@ status prose to this document.
   page; the shared IndexedDB mutation writer gains `transaction.commit()` after a measured 0-of-4
   unload landing rate without it.
 - 2026-10-03 (R1 designed): D136 to D142 recorded from
-  [alm-r1-design-proposal.md](alm-r1-design-proposal.md); the "Release 5, R1 design" section added;
+  `alm-r1-design-proposal.md`; the "Release 5, R1 design" section added;
   the fresh-session paragraph names R1 as the active slice.
 - 2026-10-06 (R1 delivered): #641 as `a4f55cd`; the release map row, the F12 and F14 traceability rows and
   the fresh-session paragraph record it; R2 is the next slice.
 - 2026-10-06 (R2 designed): D143 to D149 recorded from
-  [alm-r2-design-proposal.md](alm-r2-design-proposal.md); the "Release 5, R2 design" section added;
+  `alm-r2-design-proposal.md`; the "Release 5, R2 design" section added;
   the fresh-session paragraph names R2 as the active slice and R2b as the Relic half.
 - 2026-10-06 (R2 delivered): #642 as `0e5fc55`; the release map row and the fresh-session paragraph record
   it; R2b is the next slice.
 - 2026-10-06 (R2b designed): D150 to D155 recorded from
-  [alm-r2b-design-proposal.md](alm-r2b-design-proposal.md); the "Release 5, R2b design" section added;
+  `alm-r2b-design-proposal.md`; the "Release 5, R2b design" section added;
   the fresh-session paragraph names R2b as the active slice.
 - 2026-10-07 (R2b delivered): #643 as `6651529`; the release map gains the R2b row, the consumer row and the
   fresh-session paragraph record it; D151 and D155 amended at the review (the finish enters the round past the
   last; the receiver's track memory matches the sender's head lifetime); Release 6 A1 is next.
 - 2026-10-07 (A1 designed): D156 to D163 recorded from
-  [alm-a1-design-proposal.md](alm-a1-design-proposal.md); the "Release 6, A1 design" section added; the A1
+  `alm-a1-design-proposal.md`; the "Release 6, A1 design" section added; the A1
   outcome row corrected (a client `all` is refused); the fresh-session paragraph names A1 as the active slice.
 - 2026-10-07 (A1 delivered): #644 as `6b141bc`; the release map row, the consumer row, the F16 and PC7 rows and
   the fresh-session paragraph record it; Release 6 A2 is next.
 - 2026-10-07 (A2a designed): D164 to D170 recorded from
-  [alm-a2a-design-proposal.md](alm-a2a-design-proposal.md); the "Release 6, A2a design" section added; the A2
+  `alm-a2a-design-proposal.md`; the "Release 6, A2a design" section added; the A2
   row and the consumer row split into A2a and A2b; the fresh-session paragraph names A2a as the active slice.
 - 2026-10-07 (A2a delivered): #647 as `d1d10db`; the release map row, the consumer row, the F16 and PC7 rows and
   the fresh-session paragraph record it; A2b is next.
 - 2026-10-07 (A2b design): decisions D171–D178 from
-  [alm-a2b-design-proposal.md](alm-a2b-design-proposal.md); the "Release 6, A2b design" section added; the A2
+  `alm-a2b-design-proposal.md`; the "Release 6, A2b design" section added; the A2
   row's claim wording corrected (the admission store, not the ResourceInbox); the consumer row made concrete; the
   fresh-session paragraph names A2b as the active slice.
 - 2026-10-08 (A2b delivered): #648 as `3b7db42`; the release map row, the consumer row, the F16 and PC7 rows, the
   reuse-table row for exclusive claims and the fresh-session paragraph record it; Release 6 is complete; V1 is next.
 - 2026-10-08 (V1a design): decisions D179–D183 from
-  [alm-v1a-design-proposal.md](alm-v1a-design-proposal.md); the "Release 7, V1a design" section added; the V1 row
+  `alm-v1a-design-proposal.md`; the "Release 7, V1a design" section added; the V1 row
   split into V1a–V1d; the F1 scale-manifest text corrected; the fresh-session paragraph names V1a as the active slice.
 - 2026-10-08 (V1a delivered): #649 as `c37bda7`; the V1 map row, the F5/F13/PC8 rows, the D179–D182 "As applied"
   notes, D87's pinned figures and the fresh-session paragraph record it; V1b is next.
 - 2026-10-08 (V1b-i design): decisions D184–D188 from
-  [alm-v1b-i-design-proposal.md](alm-v1b-i-design-proposal.md); the "Release 7, V1b-i design" section added; V1b
+  `alm-v1b-i-design-proposal.md`; the "Release 7, V1b-i design" section added; V1b
   split into V1b-i and V1b-ii in the V1 row; the fresh-session paragraph names V1b-i as the active slice.
 - 2026-10-08 (V1b-i delivered): #650 as `84472ce`; the V1 map row, the F5/PC8 rows, the D184–D187 "As applied"
   notes and the fresh-session paragraph record it; V1b-ii is next.
 - 2026-10-08 (V1b-ii design): decisions D189–D193 from
-  [alm-v1b-ii-design-proposal.md](alm-v1b-ii-design-proposal.md); the "Release 7, V1b-ii design" section added; the V1
+  `alm-v1b-ii-design-proposal.md`; the "Release 7, V1b-ii design" section added; the V1
   row names the three mechanisms; the fresh-session paragraph names V1b-ii as the active slice.
 - 2026-10-09 (V1b-ii delivered): #651 as `53a9267`; the V1 map row, the F5/PC8 rows, the D189–D192 "As applied"
   notes and the fresh-session paragraph record it; V1c is next.
 - 2026-10-14 (V1c step 1 delivered, step 2 design): #652 as `138bfd0`; decisions D194–D204 from
-  [alm-v1c-step2-design-proposal.md](alm-v1c-step2-design-proposal.md); the "Release 7, V1c step 2 design" section
+  `alm-v1c-step2-design-proposal.md`; the "Release 7, V1c step 2 design" section
   added; the V1 row names steps 1, 2a and 2b; the fresh-session paragraph names step 2a as the active slice.
 - 2026-10-15 (V1c step 2a delivered, 2b designed): #662 as `2c167a7`; decisions D205–D208 (D206 withdrawn after a
   probe); the V1 row names steps 2a, 2b and 2c; the fresh-session paragraph names step 2b as the active slice.
@@ -2058,7 +2066,7 @@ status prose to this document.
   PC8, D435 and the fresh-session paragraph record it. Release 8 I1 is next.
 - 2026-10-27 (Release 8 I1 designed): I1 lands as two pull requests (maintainer ruling R1): I1a, reply
   correlation, and I1b, trace propagation and payload-free harness diagnostics. Decisions D438–D446 from three read-only
-  surveys of main at `e1a4efdf2` and the rulings R1–R4, in [alm-i1-design-proposal.md](alm-i1-design-proposal.md): a
+  surveys of main at `e1a4efdf2` and the rulings R1–R4, in `alm-i1-design-proposal.md`: a
   `corrId` derived from the request's `msgId` unless a re-ask passes one; `awaitReply` on the handle with a required
   timeout and four typed outcomes; one reply slot per registry observation; a WS reply matcher that drops wrong
   responders and late replies with payload-free diagnostics; `reply()` on received messages and `newALReplyMessage`
@@ -2118,3 +2126,10 @@ status prose to this document.
   `acknowledgement` under it; `HETZNER_WITHHELD_ALM_SCENARIOS` keeps it out of the hosted manifests, all 70 of which
   the generator's `--check` reports unchanged. The release map, the PC9 row (resolved) and D457's note record it. The
   headless agent budget is 365 KiB. Release 8 is complete.
+- 2026-10-29 (post-Release-8 cleanup, on `cfcc9a6c7`): the delivered per-slice design proposals and
+  the S2c addendum, the static audit, the roadmap and PR #521 assessments, the S2 hosted-lifecycle
+  diagnosis and the six finished S2b to S3c-i plans under `plans/` are deleted, and their links here
+  are plain file names; git history is the archive. The requirement-to-evidence matrix is re-stated
+  on `cfcc9a6c7` from the tree, its remaining Partial items (F9, F15, PC10) and the carried
+  follow-ups are in `plans/backlog.md`, and the next horizon is the publication QoS addendum's Slice 1
+  and Slice 2.
