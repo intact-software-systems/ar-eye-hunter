@@ -7,6 +7,7 @@ import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delive
 
 export type ALDeliveryState =
     | 'submitted'
+    | 'staged'
     | 'rejected'
     | 'pending-authority'
     | 'accepted'
@@ -22,6 +23,7 @@ export type ALDeliveryState =
 /** Every state, in lifecycle order; the harness decoders and the capability prose derive from it. */
 export const AL_DELIVERY_STATES: readonly ALDeliveryState[] = [
     'submitted',
+    'staged',
     'rejected',
     'pending-authority',
     'accepted',
@@ -35,7 +37,7 @@ export const AL_DELIVERY_STATES: readonly ALDeliveryState[] = [
     'unobservable'
 ];
 
-/** The states a wait for admission resolves on: everything the first verdict can produce. */
+/** The states a wait for admission resolves on: everything the first verdict can produce, `staged` for a live send. */
 export const AL_DELIVERY_ADMITTED_STATES: readonly ALDeliveryState[] = AL_DELIVERY_STATES.filter(
     (state) => state !== 'submitted'
 );
@@ -236,7 +238,9 @@ type ALDeliverySettlementStatement =
         replacementMsgId: string;
         detail: string;
     }>
-    | Readonly<{ kind: 'cancelled'; msgId: string; carrier: ALDeliveryCarrier; atMs: number; }>;
+    | Readonly<{ kind: 'cancelled'; msgId: string; carrier: ALDeliveryCarrier; atMs: number; }>
+    /** A live send entered its publication stage: the first verdict, before the stage selects it for admission. */
+    | Readonly<{ kind: 'staged'; msgId: string; carrier: ALDeliveryCarrier; atMs: number; }>;
 
 export type ALDeliverySettlement =
     & ALDeliverySettlementStatement

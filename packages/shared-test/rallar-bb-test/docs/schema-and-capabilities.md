@@ -692,8 +692,8 @@ for the next one. The Hetzner entries select their scenarios by lane family (`tw
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
-`rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
-`acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
+`staged` (a live send waiting in its publication stage), `rejected`, `pending-authority`, `accepted`, `queued`,
+`transport-accepted`, `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,

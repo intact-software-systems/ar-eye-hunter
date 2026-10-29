@@ -71,6 +71,8 @@ export function computeALDeliveryLifecycle(
             return toReasonedLifecycle(previous, 'superseded', settlement.detail);
         case 'cancelled':
             return toReasonedLifecycle(previous, 'cancelled', 'Cancelled by the sender.');
+        case 'staged':
+            return previous.state === 'submitted' ? { ...previous, state: 'staged' } : { ...previous };
     }
 }
 
