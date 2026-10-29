@@ -11,11 +11,11 @@ on:
         type: string
 
       mode:
-        description: 'Comparison or one bounded candidate diagnostic'
+        description: 'Comparison, bounded timeline diagnostic, or ABBA native CPU profiles'
         required: false
         type: choice
         default: comparison
-        options: [comparison, diagnostic]
+        options: [comparison, diagnostic, cpu-profile]
 
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
       CANDIDATE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
       DATABASE_URL: postgres://app:app@localhost:5433/appdb
       COMPOSE_PROJECT_NAME: state-write-comparison
-      MEASUREMENT_OUTPUT: ${{ inputs.mode == 'diagnostic' && format('tmp/perf/state-write-diagnostic/{0}-{1}', github.run_id, github.run_attempt) || 'tmp/perf/state-write-comparison' }}
+      MEASUREMENT_OUTPUT: ${{ inputs.mode == 'diagnostic' && format('tmp/perf/state-write-diagnostic/{0}-{1}', github.run_id, github.run_attempt) || inputs.mode == 'cpu-profile' && format('tmp/perf/state-write-cpu-profile/{0}-{1}', github.run_id, github.run_attempt) || 'tmp/perf/state-write-comparison' }}
       COMPARATOR_FILES: >-
         apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs
         apps/api-v1/scripts/perf/api-v1-state-write-artifact-validation.mjs
@@ -69,7 +69,7 @@ jobs:
           deno-version: v2.x
 
       - name: Resolve the merge base and validate the runner
-        if: env.MEASUREMENT_MODE == 'comparison'
+        if: env.MEASUREMENT_MODE == 'comparison' || env.MEASUREMENT_MODE == 'cpu-profile'
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +110,7 @@ jobs:
           free -b > "$output/host-memory.txt"
 
       - name: Give both sides the candidate's harness
-        if: env.MEASUREMENT_MODE == 'comparison'
+        if: env.MEASUREMENT_MODE == 'comparison' || env.MEASUREMENT_MODE == 'cpu-profile'
         shell: bash
         run: |
           set -euo pipefail
@@ -157,8 +157,8 @@ jobs:
           set -euo pipefail
           node apps/api-v1/scripts/perf/run-api-v1-state-write-measurement.mjs
 
-      - name: Pool and compare with the unchanged comparator
-        if: env.MEASUREMENT_MODE == 'comparison'
+      - name: Validate and pool the order-balanced captures
+        if: env.MEASUREMENT_MODE == 'comparison' || env.MEASUREMENT_MODE == 'cpu-profile'
         shell: bash
         run: |
           set -euo pipefail
@@ -179,6 +179,12 @@ jobs:
             --candidate-out "$output/candidate.json" \
             --manifest-out "$output/pooling-manifest.json" \
             2>&1 | tee "$output/pooling.log"
+      - name: Compare with the unchanged comparator
+        if: env.MEASUREMENT_MODE == 'comparison'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
           node --max-old-space-size=12288 apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs \
             "$output/approved-base.json" "$output/candidate.json" \
             2>&1 | tee "$output/comparison.log"
@@ -199,7 +205,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: state-write-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ env.MEASUREMENT_MODE == 'cpu-profile' && 'state-write-cpu-profile-terminal' || 'state-write-terminal' }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.MEASUREMENT_OUTPUT }}/terminal.json
           if-no-files-found: warn
           retention-days: 14
@@ -210,5 +216,17 @@ jobs:
         with:
           name: state-write-diagnostic-originals-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.MEASUREMENT_OUTPUT }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Retain original CPU diagnostic profiles and captures
+        if: always() && env.MEASUREMENT_MODE == 'cpu-profile' && steps.measurement.outputs.raw-admitted == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: state-write-cpu-profile-originals-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.MEASUREMENT_OUTPUT }}
+            !${{ env.MEASUREMENT_OUTPUT }}/approved-base.json
+            !${{ env.MEASUREMENT_OUTPUT }}/candidate.json
           if-no-files-found: warn
           retention-days: 14

@@ -17,7 +17,7 @@ import { validateStateWriteArtifact } from './compare-api-v1-state-write-results
 /** @typedef {{ stage: string, exitCode: number | null, signal: string | null }} MeasurementFailure */
 /** @typedef {{ path: string, bytes: number, sha256: string }} MeasurementFile */
 /** @typedef {{ commit: string, tree: string, trackedClean: boolean, inputs: MeasurementFile[] }} MeasurementSource */
-/** @typedef {{ mode: 'comparison' | 'diagnostic', output: string, relativeOutput: string, databaseUrl: string, base: string, candidate: string, githubOutput: string }} MeasurementConfiguration */
+/** @typedef {{ mode: 'comparison' | 'diagnostic' | 'cpu-profile', output: string, relativeOutput: string, databaseUrl: string, base: string, candidate: string, githubOutput: string, workflow: { commit: string, ref: string } | null }} MeasurementConfiguration */
 
 const CAPTURE = 'apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs';
 const COMPOSE = 'docker-compose.perf-bench.yml';
@@ -25,6 +25,7 @@ const PROJECT = 'state-write-comparison';
 const CONTAINER = 'rallar-perf-bench-postgres';
 const IMAGE = 'postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171';
 const WORKLOADS = ['uncontended', 'shared', 'hot'];
+const CPU_PROFILE_EVIDENCE = { mode: 'cpu-profile', purpose: 'whole-process-cpu-diagnostic', acceptance: false };
 const TERMINAL_STAGES = ['postflight', 'database-logs', 'cleanup-identity', 'cleanup-inventory', 'cleanup'];
 
 class StateWriteMeasurement {
@@ -65,6 +66,9 @@ class StateWriteMeasurement {
                 await this.capturePosition({ commit: source.commit, source });
             }
             else {
+                if (this.configuration.mode === 'cpu-profile') {
+                    await this.recordCpuAcquisitionSource();
+                }
                 for (
                     const commit of [
                         this.configuration.base,
@@ -174,22 +178,23 @@ class StateWriteMeasurement {
             if (!diagnostic) {
                 await this.readCommand('checkout', 'git', ['checkout', '--detach', position.commit]);
             }
-            if (
-                (await this.readCommand('tracked-clean', 'git', ['status', '--porcelain', '--untracked-files=no']))
-                    .trim() !== ''
-            ) {
-                throw new Error('tracked-state');
-            }
+            await this.requireTrackedClean();
+            const source = this.configuration.mode === 'cpu-profile'
+                ? await this.prepareCpuProfile(position.commit)
+                : position.source;
             await this.requireIdle();
             provisioned = true;
             await this.provisionDatabase(preflight);
             await this.admitOriginalAcquisition(preflight);
             if (
-                position.source !== null && JSON.stringify(position.source) !== JSON.stringify(await this.readSource())
+                source !== null && JSON.stringify(source) !== JSON.stringify(await this.readSource())
             ) {
                 throw new Error('executable-inputs-changed');
             }
             await this.runBenchmark();
+            if (this.configuration.mode === 'cpu-profile') {
+                await this.writeCpuProfileValidity(source);
+            }
         }
         catch {
             this.recordFailure({ stage: 'native-lifecycle', exitCode: null, signal: null });
@@ -208,7 +213,93 @@ class StateWriteMeasurement {
             }
         }
         if (this.primary === null && diagnostic) {
-            await this.validateDiagnostic(position.commit);
+            await this.writeDiagnosticValidity(position.commit);
+        }
+    }
+
+    async requireTrackedClean() {
+        const tracked = await this.readCommand('tracked-clean', 'git', [
+            'status',
+            '--porcelain',
+            '--untracked-files=no'
+        ]);
+        if (tracked.trim() !== '') {
+            throw new Error('tracked-state');
+        }
+    }
+
+    async recordCpuAcquisitionSource() {
+        const source = await this.readSource();
+        if (source.commit !== this.configuration.candidate) {
+            throw new Error('cpu-acquisition-source');
+        }
+        const workflow = this.configuration.workflow;
+        if (workflow === null) {
+            throw new Error('cpu-workflow-source');
+        }
+        const workflowText = await this.readCommand('workflow-source', 'git', [
+            'show',
+            `${workflow.commit}:.github/workflows/api-v1-state-write-pr-measurement.yml`
+        ]);
+        const workflowPath = join(this.configuration.output, 'executing-workflow.yml');
+        await writeFile(workflowPath, workflowText, { flag: 'wx' });
+        await writeFile(
+            join(this.configuration.output, 'acquisition-source.json'),
+            JSON.stringify({
+                ...CPU_PROFILE_EVIDENCE,
+                scope: 'candidate-checkout-and-runner',
+                source,
+                workflow: { ...workflow, file: await readFileInventory(workflowPath) }
+            }) + '\n',
+            { flag: 'wx' }
+        );
+    }
+
+    async prepareCpuProfile(commit) {
+        const directory = join(this.configuration.output, `position-${this.position}-profile`);
+        await mkdir(directory);
+        const source = await this.readSource();
+        if (source.commit !== commit) {
+            throw new Error('cpu-profile-source');
+        }
+        await writeFile(
+            join(directory, 'source.json'),
+            JSON.stringify({ ...CPU_PROFILE_EVIDENCE, scope: 'measured-checkout', source }) + '\n',
+            { flag: 'wx' }
+        );
+        return source;
+    }
+
+    async writeCpuProfileValidity(source) {
+        try {
+            if (source === null || JSON.stringify(source) !== JSON.stringify(await this.readSource())) {
+                throw new Error('cpu-profile-source-changed');
+            }
+            const directory = join(this.configuration.output, `position-${this.position}-profile`);
+            const profilePath = join(directory, `position-${this.position}.cpuprofile`);
+            const profile = toObject(JSON.parse(await readFile(profilePath, 'utf8')));
+            if (validateNativeCpuProfile(profile).length !== 0) {
+                throw new Error('cpu-profile-invalid');
+            }
+            const validity = {
+                ...CPU_PROFILE_EVIDENCE,
+                status: 'complete',
+                nodes: profile.nodes.length,
+                samples: profile.samples.length,
+                startTime: profile.startTime,
+                endTime: profile.endTime,
+                profile: await readFileInventory(profilePath),
+                acquisitionSource: await readFileInventory(join(this.configuration.output, 'acquisition-source.json')),
+                source: await readFileInventory(join(directory, 'source.json')),
+                commandStart: await readFileInventory(join(this.commands, `benchmark-${this.position}-start.json`)),
+                commandTerminal: await readFileInventory(
+                    join(this.commands, `benchmark-${this.position}-terminal.json`)
+                )
+            };
+            await writeFile(join(directory, 'validity.json'), JSON.stringify(validity) + '\n', { flag: 'wx' });
+        }
+        catch {
+            this.recordFailure({ stage: 'cpu-profile-validity', exitCode: null, signal: null });
         }
     }
 
@@ -247,9 +338,6 @@ class StateWriteMeasurement {
             ? `${this.configuration.relativeOutput}/artifacts/state-write.json`
             : `${this.configuration.relativeOutput}/position-${this.position}.json`;
         const args = [
-            'run',
-            'perf:api-v1:state-write',
-            '--',
             '--backend=postgres',
             '--warmup=1',
             diagnostic ? '--runs=3' : '--runs=9',
@@ -259,7 +347,22 @@ class StateWriteMeasurement {
         if (diagnostic) {
             args.push(`--diagnostics-dir=${this.configuration.relativeOutput}/diagnostics`);
         }
-        await this.readCommand('benchmark', 'npm', args);
+        if (this.configuration.mode === 'cpu-profile') {
+            await this.readCommand('benchmark', 'deno', [
+                'run',
+                '--cpu-prof',
+                `--cpu-prof-dir=${join(this.configuration.output, `position-${this.position}-profile`)}`,
+                `--cpu-prof-name=position-${this.position}.cpuprofile`,
+                '-A',
+                '--config',
+                'apps/api-v1/deno.json',
+                'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
+                ...args
+            ]);
+        }
+        else {
+            await this.readCommand('benchmark', 'npm', ['run', 'perf:api-v1:state-write', '--', ...args]);
+        }
     }
 
     async cleanupOwnedProject(preflight) {
@@ -388,15 +491,7 @@ class StateWriteMeasurement {
             }
             const outcome = await closed;
             await recording;
-            await writeFile(
-                join(this.commands, `${name}-terminal.json`),
-                JSON.stringify({ ...outcome, endedAt: new Date().toISOString() }) + '\n',
-                { flag: 'wx' }
-            );
-            if (outcome.exitCode !== 0 || outcome.signal !== null || recordingFailed) {
-                this.recordFailure({ stage, ...outcome });
-                throw new Error('command-failed');
-            }
+            await this.recordCommandOutcome({ name, stage, outcome, recordingFailed });
             return stage === 'benchmark'
                 ? ''
                 : await readFile(stdoutPath, 'utf8').catch((error) =>
@@ -408,6 +503,18 @@ class StateWriteMeasurement {
             await closed;
             await recording;
             this.activeChild = null;
+        }
+    }
+
+    async recordCommandOutcome({ name, stage, outcome, recordingFailed }) {
+        await writeFile(
+            join(this.commands, `${name}-terminal.json`),
+            JSON.stringify({ ...outcome, endedAt: new Date().toISOString() }) + '\n',
+            { flag: 'wx' }
+        );
+        if (outcome.exitCode !== 0 || outcome.signal !== null || recordingFailed) {
+            this.recordFailure({ stage, ...outcome });
+            throw new Error('command-failed');
         }
     }
 
@@ -448,7 +555,7 @@ class StateWriteMeasurement {
         }
     }
 
-    async validateDiagnostic(commit) {
+    async writeDiagnosticValidity(commit) {
         try {
             const artifact = toObject(
                 JSON.parse(await readFile(join(this.configuration.output, 'artifacts/state-write.json'), 'utf8'))
@@ -473,7 +580,11 @@ class StateWriteMeasurement {
         try {
             await writeFile(
                 join(this.configuration.output, 'inventory.json'),
-                JSON.stringify(await readOutputInventory(this.configuration.output)) + '\n',
+                JSON.stringify(
+                    this.configuration.mode === 'cpu-profile'
+                        ? { ...CPU_PROFILE_EVIDENCE, files: await readOutputInventory(this.configuration.output) }
+                        : await readOutputInventory(this.configuration.output)
+                ) + '\n',
                 { flag: 'wx' }
             );
         }
@@ -483,6 +594,7 @@ class StateWriteMeasurement {
         await writeFile(
             join(this.configuration.output, 'terminal.json'),
             JSON.stringify({
+                ...(this.configuration.mode === 'cpu-profile' ? CPU_PROFILE_EVIDENCE : {}),
                 status: this.primary === null ? 'complete' : 'failed',
                 primary: this.primary,
                 secondary: this.secondary,
@@ -496,15 +608,119 @@ class StateWriteMeasurement {
     }
 }
 
+function validateNativeCpuProfile(profile) {
+    const issues = [];
+    if (!Array.isArray(profile.samples) || profile.samples.length === 0) {
+        issues.push('cpu-profile-samples');
+    }
+    if (
+        !Array.isArray(profile.timeDeltas) || profile.timeDeltas.length !== profile.samples?.length ||
+        profile.timeDeltas.some((delta) => !Number.isSafeInteger(delta))
+    ) {
+        issues.push('cpu-profile-deltas');
+    }
+    if (
+        !Number.isSafeInteger(profile.startTime) || !Number.isSafeInteger(profile.endTime) ||
+        profile.startTime < 0 || profile.endTime <= profile.startTime
+    ) {
+        issues.push('cpu-profile-clock');
+    }
+    if (!Array.isArray(profile.nodes) || profile.nodes.length === 0) {
+        return [...issues, 'cpu-profile-nodes'];
+    }
+    const nodes = new Map();
+    for (const node of profile.nodes) {
+        const nodeIssues = validateNativeCpuNode(node);
+        issues.push(...nodeIssues);
+        if (nodeIssues.length !== 0) {
+            continue;
+        }
+        if (nodes.has(node.id)) {
+            issues.push('cpu-profile-duplicate-node');
+        }
+        nodes.set(node.id, node.children ?? []);
+    }
+    issues.push(...validateCpuProfileTree(nodes));
+    if (
+        Array.isArray(profile.samples) &&
+        profile.samples.some((sample) => !Number.isSafeInteger(sample) || !nodes.has(sample))
+    ) {
+        issues.push('cpu-profile-sample-reference');
+    }
+    return issues;
+}
+
+function validateNativeCpuNode(node) {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+        return ['cpu-profile-node'];
+    }
+    const issues = [];
+    if (!Number.isSafeInteger(node.id) || node.id <= 0) {
+        issues.push('cpu-profile-node-id');
+    }
+    if (
+        node.children !== undefined &&
+        (!Array.isArray(node.children) || node.children.some((id) => !Number.isSafeInteger(id)))
+    ) {
+        issues.push('cpu-profile-node-children');
+    }
+    const frame = node.callFrame;
+    if (frame === null || typeof frame !== 'object' || Array.isArray(frame)) {
+        return [...issues, 'cpu-profile-frame'];
+    }
+    if (
+        typeof frame.functionName !== 'string' || typeof frame.scriptId !== 'string' || typeof frame.url !== 'string' ||
+        !Number.isSafeInteger(frame.lineNumber) || frame.lineNumber < -1 ||
+        !Number.isSafeInteger(frame.columnNumber) || frame.columnNumber < -1
+    ) {
+        issues.push('cpu-profile-frame-fields');
+    }
+    return issues;
+}
+
+function validateCpuProfileTree(nodes) {
+    const issues = [];
+    const parents = new Set();
+    for (const children of nodes.values()) {
+        for (const child of children) {
+            if (!nodes.has(child) || parents.has(child)) {
+                issues.push('cpu-profile-child-reference');
+            }
+            parents.add(child);
+        }
+    }
+    const roots = [...nodes.keys()].filter((id) => !parents.has(id));
+    if (roots.length !== 1) {
+        issues.push('cpu-profile-root');
+    }
+    if (issues.length !== 0) {
+        return issues;
+    }
+    const pending = [...roots];
+    const visited = new Set();
+    while (pending.length !== 0) {
+        const id = pending.pop();
+        if (visited.has(id)) {
+            return ['cpu-profile-cycle'];
+        }
+        visited.add(id);
+        for (const child of nodes.get(id)) {
+            pending.push(child);
+        }
+    }
+    return visited.size === nodes.size ? [] : ['cpu-profile-unreachable-node'];
+}
+
 function readConfiguration() {
     const mode = process.env.MEASUREMENT_MODE;
     const run = process.env.GITHUB_RUN_ID;
     const attempt = process.env.GITHUB_RUN_ATTEMPT;
-    const relativeOutput = mode === 'diagnostic'
-        ? `tmp/perf/state-write-diagnostic/${run}-${attempt}`
-        : 'tmp/perf/state-write-comparison';
+    const relativeOutput = mode === 'comparison'
+        ? 'tmp/perf/state-write-comparison'
+        : `tmp/perf/state-write-${mode}/${run}-${attempt}`;
     if (
-        (mode !== 'comparison' && mode !== 'diagnostic') || !/^\d+$/.test(run ?? '') || !/^\d+$/.test(attempt ?? '') ||
+        (mode !== 'comparison' && mode !== 'diagnostic' && mode !== 'cpu-profile') || !/^\d+$/.test(run ?? '') ||
+        !/^\d+$/.test(attempt ?? '') ||
         process.env.MEASUREMENT_OUTPUT !== relativeOutput ||
         process.env.DATABASE_URL !== 'postgres://app:app@localhost:5433/appdb'
     ) {
@@ -513,7 +729,7 @@ function readConfiguration() {
     const base = process.env.BASE_MEASUREMENT_COMMIT ?? '';
     const candidate = process.env.CANDIDATE_COMMIT ?? '';
     if (
-        mode === 'comparison' &&
+        mode !== 'diagnostic' &&
         (!/^[a-f0-9]{40}$/.test(base) || !/^[a-f0-9]{40}$/.test(candidate) || base === candidate)
     ) {
         throw new Error('comparison-source-refused');
@@ -525,8 +741,22 @@ function readConfiguration() {
         databaseUrl: process.env.DATABASE_URL,
         base,
         candidate,
-        githubOutput: process.env.GITHUB_OUTPUT ?? ''
+        githubOutput: process.env.GITHUB_OUTPUT ?? '',
+        workflow: mode === 'cpu-profile' ? readWorkflowIdentity() : null
     };
+}
+
+function readWorkflowIdentity() {
+    const commit = process.env.GITHUB_WORKFLOW_SHA;
+    const ref = process.env.GITHUB_WORKFLOW_REF;
+    if (
+        !/^[a-f0-9]{40}$/.test(commit ?? '') ||
+        typeof ref !== 'string' ||
+        !/^[^/]+\/[^/]+\/\.github\/workflows\/api-v1-state-write-pr-measurement\.yml@.+$/.test(ref)
+    ) {
+        throw new Error('cpu-workflow-identity-refused');
+    }
+    return { commit, ref };
 }
 
 /** @typedef {{ type: string, name: string, source: string, destination: string, driver: string, mode: string, writable: boolean, propagation: string }} PublicFixtureMount */
@@ -718,18 +948,7 @@ async function readDiagnosticPhase(path, ordinal) {
     ) {
         throw new Error('diagnostic-phase');
     }
-    for (const name of ['timing', 'releases', 'boundaries']) {
-        const counts = toObject(footer[name]);
-        if (
-            counts.rejected !== 0 || counts.truncated !== 0 || !Number.isSafeInteger(counts.retained) ||
-            counts.retained < 0 || counts.total !== counts.retained ||
-            !Number.isSafeInteger(counts.unassociated) || counts.unassociated < 0 ||
-            counts.unassociated > counts.retained ||
-            name !== 'boundaries' && counts.retained > 110000
-        ) {
-            throw new Error('diagnostic-capacity');
-        }
-    }
+    requireDiagnosticCapacity(footer);
     const timing = toObject(footer.timing);
     const releases = toObject(footer.releases);
     if (
@@ -749,6 +968,21 @@ async function readDiagnosticPhase(path, ordinal) {
     }
     requireValidReservationObservations(records, footer);
     return { bytes: Buffer.byteLength(text), commands: commands.length, measured: phase.phase === 'measured' };
+}
+
+function requireDiagnosticCapacity(footer) {
+    for (const name of ['timing', 'releases', 'boundaries']) {
+        const counts = toObject(footer[name]);
+        if (
+            counts.rejected !== 0 || counts.truncated !== 0 || !Number.isSafeInteger(counts.retained) ||
+            counts.retained < 0 || counts.total !== counts.retained ||
+            !Number.isSafeInteger(counts.unassociated) || counts.unassociated < 0 ||
+            counts.unassociated > counts.retained ||
+            name !== 'boundaries' && counts.retained > 110000
+        ) {
+            throw new Error('diagnostic-capacity');
+        }
+    }
 }
 
 async function readOutputInventory(directory) {

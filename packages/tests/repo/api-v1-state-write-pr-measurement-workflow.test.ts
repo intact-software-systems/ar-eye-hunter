@@ -1,4 +1,5 @@
 import { load } from 'js-yaml';
+import { createHash } from 'node:crypto';
 import {
     chmodSync,
     copyFileSync,
@@ -6,6 +7,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    realpathSync,
     rmSync,
     symlinkSync,
     writeFileSync
@@ -42,7 +44,7 @@ interface MeasurementWorkflow {
     readonly steps: readonly WorkflowStep[];
 }
 interface MeasurementPolicy {
-    readonly mode: 'comparison' | 'diagnostic';
+    readonly mode: 'comparison' | 'diagnostic' | 'cpu-profile';
     readonly concurrency: string;
     readonly steps: readonly WorkflowStep[];
 }
@@ -66,7 +68,12 @@ const owner = 'apps/api-v1/scripts/perf/run-api-v1-state-write-measurement.mjs';
 describe('hosted state-write admission', { timeout: 20000 }, () => {
     it('defaults manual runs and the supported same-repository label to comparison and isolates unrelated labels and modes', () => {
         const workflow = readWorkflow();
-        expect(workflow.inputs.mode).toMatchObject({ required: false, type: 'choice', default: 'comparison', options: ['comparison', 'diagnostic'] });
+        expect(workflow.inputs.mode).toMatchObject({
+            required: false,
+            type: 'choice',
+            default: 'comparison',
+            options: ['comparison', 'diagnostic', 'cpu-profile']
+        });
         const admit = new Function('github', 'inputs', `return (${workflow.admission});`);
         expect(decodeMeasurementCondition(admit({ event_name: 'workflow_dispatch', event: {} }, { mode: 'diagnostic' }))).toBe(true);
         expect(
@@ -138,6 +145,144 @@ describe('hosted state-write admission', { timeout: 20000 }, () => {
         await expect(runShell(context, fixture, admission!.run)).rejects.toThrow();
         expect(readCalls(fixture).some((call) => call.command === 'npm' && call.args.includes('perf:api-v1:state-write'))).toBe(false);
     });
+});
+
+describe('hosted native CPU profiles', { timeout: 30000 }, () => {
+    it('profiles ABBA with full workloads and pools validated diagnostic evidence without a comparative verdict', async (context) => {
+        const fixture = createFixture(context, 'cpu-profile', '');
+        const policy = evaluateMeasurementPolicy(readWorkflow(), {
+            workflow: 'measurement',
+            ref: 'topic',
+            event_name: 'workflow_dispatch',
+            event: { label: {}, pull_request: {} }
+        }, { ref: 'topic', mode: 'cpu-profile' });
+        expect(policy.steps.some((step) => step.run.includes('resolve-changed-review-range.mjs'))).toBe(true);
+        expect(policy.steps.some((step) => step.run.includes('harness-overlay.patch'))).toBe(true);
+        await runShell(context, fixture, lifecycleShell());
+        expect(readJson(path.join(fixture.output, 'acquisition-source.json'))).toMatchObject({
+            mode: 'cpu-profile',
+            acceptance: false,
+            scope: 'candidate-checkout-and-runner',
+            workflow: { commit: 'd'.repeat(40), ref: 'owner/repo/.github/workflows/api-v1-state-write-pr-measurement.yml@refs/heads/workflow' },
+            source: { commit: candidate, trackedClean: true }
+        });
+        const acquisition = readJson(path.join(fixture.output, 'acquisition-source.json'));
+        expectRecordedFile(decodeJsonRecord(acquisition.workflow).file, path.join(fixture.output, 'executing-workflow.yml'));
+        expect(readCalls(fixture).some((call) => call.command === 'git' && call.args[1] === `${'d'.repeat(40)}:${workflowPath}`)).toBe(true);
+        const profiles = readCalls(fixture).filter((call) => call.command === 'deno' && call.args.includes('--cpu-prof'));
+        expect(profiles).toHaveLength(4);
+        const commits = ['c'.repeat(40), candidate, candidate, 'c'.repeat(40)];
+        for (const [index, profile] of profiles.entries()) {
+            const position = index + 1;
+            expect(profile.args).toEqual([
+                'run',
+                '--cpu-prof',
+                `--cpu-prof-dir=${fixture.output}/position-${position}-profile`,
+                `--cpu-prof-name=position-${position}.cpuprofile`,
+                '-A',
+                '--config',
+                'apps/api-v1/deno.json',
+                'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
+                '--backend=postgres',
+                '--warmup=1',
+                '--runs=9',
+                '--concurrency=10',
+                `--out=tmp/perf/state-write-cpu-profile/12345-2/position-${position}.json`
+            ]);
+            const directory = path.join(fixture.output, `position-${position}-profile`);
+            expect(readJson(path.join(directory, 'source.json'))).toMatchObject({
+                mode: 'cpu-profile',
+                acceptance: false,
+                scope: 'measured-checkout',
+                source: { commit: commits[index], trackedClean: true }
+            });
+            expect(readJson(path.join(directory, 'validity.json'))).toMatchObject({
+                mode: 'cpu-profile',
+                acceptance: false,
+                status: 'complete',
+                samples: 3,
+                profile: { sha256: expect.stringMatching(/^[a-f0-9]{64}$/) },
+                source: { sha256: expect.stringMatching(/^[a-f0-9]{64}$/) },
+                commandStart: { sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }
+            });
+            const validity = readJson(path.join(directory, 'validity.json'));
+            expectRecordedFile(validity.profile, path.join(directory, `position-${position}.cpuprofile`));
+            expectRecordedFile(validity.source, path.join(directory, 'source.json'));
+            expectRecordedFile(validity.acquisitionSource, path.join(fixture.output, 'acquisition-source.json'));
+            expectRecordedFile(validity.commandStart, path.join(fixture.output, `commands/benchmark-${position}-start.json`));
+            expectRecordedFile(validity.commandTerminal, path.join(fixture.output, `commands/benchmark-${position}-terminal.json`));
+            expect(readJson(path.join(fixture.output, `commands/benchmark-${position}-terminal.json`))).toMatchObject({ exitCode: 0, signal: null });
+            expect(readJson(path.join(directory, `position-${position}.cpuprofile`))).toMatchObject({ timeDeltas: [1000, -1, 1001] });
+        }
+        expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ mode: 'cpu-profile', acceptance: false, status: 'complete' });
+        expect(readJson(path.join(fixture.output, 'inventory.json'))).toMatchObject({ mode: 'cpu-profile', acceptance: false, files: expect.any(Array) });
+        expect(readCalls(fixture).filter((call) => call.command === 'docker' && call.args.includes('down'))).toHaveLength(4);
+        const pooling = policy.steps.find((step) => step.run.includes('write-api-v1-state-write-pooled-results.mjs'));
+        expect(pooling).toBeDefined();
+        await runShell(context, fixture, pooling!.run);
+        expect(policy.steps.some((step) => step.run.includes('compare-api-v1-state-write-results.mjs'))).toBe(false);
+        expect(readCalls(fixture).some((call) => call.args.includes('apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs'))).toBe(false);
+    });
+
+    it.for(['GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF'])('requires explicit %s before acquisition', async (key, context) => {
+        const fixture = createFixture(context, 'cpu-profile', '');
+        delete fixture.environment[key];
+        await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
+        expect(existsSync(path.join(fixture.root, 'calls.jsonl'))).toBe(false);
+    });
+
+    it('propagates failed canonical pooling without claiming acceptance or invoking the comparator', async (context) => {
+        const fixture = createFixture(context, 'cpu-profile', 'pool-invalid');
+        await runShell(context, fixture, lifecycleShell());
+        expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ status: 'complete', acceptance: false });
+        const pooling = readWorkflow().steps.find((step) => step.run.includes('write-api-v1-state-write-pooled-results.mjs'));
+        expect(pooling).toBeDefined();
+        await expect(runShell(context, fixture, pooling!.run)).rejects.toThrow();
+        const calls = readCalls(fixture);
+        expect(calls.some((call) => call.args.includes('apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs'))).toBe(true);
+        expect(calls.some((call) => call.args.includes('apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs'))).toBe(false);
+    });
+
+    it.for([
+        'profile-missing',
+        'profile-json',
+        'profile-empty',
+        'profile-duplicate',
+        'profile-reference',
+        'profile-cycle',
+        'profile-deltas',
+        'profile-clock',
+        'profile-frame',
+        'profile-fraction'
+    ])(
+        'retains failed %s evidence and cleans up the owned database',
+        async (failure, context) => {
+            const fixture = createFixture(context, 'cpu-profile', failure);
+            await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
+            expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({
+                status: 'failed',
+                primary: { stage: 'cpu-profile-validity' },
+                rawAcquisitionAdmitted: true
+            });
+            expect(readCalls(fixture).filter((call) => call.command === 'docker' && call.args.includes('down'))).toHaveLength(1);
+            expect(existsSync(path.join(fixture.output, 'position-1-profile/source.json'))).toBe(true);
+        }
+    );
+
+    it.for(['benchmark', 'source-identity', 'acquisition-identity', 'workflow-source', 'profile-existing'])(
+        'refuses %s and preserves process/source failure evidence',
+        async (failure, context) => {
+            const fixture = createFixture(context, 'cpu-profile', failure);
+            if (failure === 'profile-existing') {
+                mkdirSync(path.join(fixture.output, 'position-1-profile'));
+            }
+            await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
+            expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ status: 'failed', mode: 'cpu-profile', acceptance: false });
+            const calls = readCalls(fixture);
+            expect(calls.filter((call) => call.command === 'docker' && call.args.includes('down'))).toHaveLength(failure === 'benchmark' ? 1 : 0);
+            expect(calls.filter((call) => call.command === 'deno' && call.args.includes('--cpu-prof'))).toHaveLength(failure === 'benchmark' ? 1 : 0);
+        }
+    );
 });
 
 describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
@@ -376,6 +521,9 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         const verdict = readWorkflow().steps.find((step) => step.run.includes('write-api-v1-state-write-pooled-results.mjs'));
         expect(verdict).toBeDefined();
         await runShell(context, fixture, verdict!.run);
+        const comparison = readWorkflow().steps.find((step) => step.run.includes('compare-api-v1-state-write-results.mjs'));
+        expect(comparison).toBeDefined();
+        await runShell(context, fixture, comparison!.run);
         expect(
             readCalls(fixture).filter((call) => call.args.includes('apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs')).map((call) => call.args)
         ).toEqual([[
@@ -407,7 +555,7 @@ function evaluateMeasurementPolicy(workflow: MeasurementWorkflow, github: JsonRe
 }
 
 function decodeMeasurementPolicyMode(value: unknown): MeasurementPolicy['mode'] {
-    if (typeof value !== 'string' || value !== 'comparison' && value !== 'diagnostic') {
+    if (typeof value !== 'string' || value !== 'comparison' && value !== 'diagnostic' && value !== 'cpu-profile') {
         throw new Error('Invalid measurement mode at the workflow policy boundary');
     }
     return value;
@@ -428,7 +576,7 @@ function decodeMeasurementCondition(value: unknown): boolean {
 }
 
 function createFixture(context: TestContext, mode: string, failure: string): MeasurementFixture {
-    const root = mkdtempSync(path.join(tmpdir(), 'state-write-hosted-'));
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'state-write-hosted-')));
     context.onTestFinished(() => {
         for (const name of ['benchmark.pid', 'descendant.pid']) {
             try {
@@ -448,7 +596,7 @@ function createFixture(context: TestContext, mode: string, failure: string): Mea
     const artifact = createDefaultStateWritePerformanceArtifact();
     artifact.gitCommit = candidate;
     writeFileSync(path.join(root, 'artifact.json'), JSON.stringify(artifact));
-    const output = mode === 'diagnostic' ? 'tmp/perf/state-write-diagnostic/12345-2' : 'tmp/perf/state-write-comparison';
+    const output = mode === 'comparison' ? 'tmp/perf/state-write-comparison' : `tmp/perf/state-write-${mode}/12345-2`;
     mkdirSync(path.join(root, output), { recursive: true });
     return {
         root,
@@ -462,6 +610,8 @@ function createFixture(context: TestContext, mode: string, failure: string): Mea
             GITHUB_WORKSPACE: root,
             GITHUB_RUN_ID: '12345',
             GITHUB_RUN_ATTEMPT: '2',
+            GITHUB_WORKFLOW_SHA: 'd'.repeat(40),
+            GITHUB_WORKFLOW_REF: 'owner/repo/.github/workflows/api-v1-state-write-pr-measurement.yml@refs/heads/workflow',
             GITHUB_ENV: path.join(root, 'github-env'),
             GITHUB_OUTPUT: path.join(root, 'github-output'),
             RUNNER_ENVIRONMENT: 'github-hosted',
@@ -512,6 +662,11 @@ function readCalls(fixture: MeasurementFixture): readonly CommandCall[] {
         return { command: value.command, args: value.args, benchmarkAlive: value.benchmarkAlive, descendantAlive: value.descendantAlive };
     });
 }
+function expectRecordedFile(value: JsonValue, expectedPath: string): void {
+    const bytes = readFileSync(expectedPath);
+    expect(value).toEqual({ path: expectedPath, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+}
+
 function readJson(file: string): JsonRecord {
     return decodeJsonRecord(JSON.parse(readFileSync(file, 'utf8')));
 }

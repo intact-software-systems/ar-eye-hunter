@@ -22,7 +22,7 @@ appendFileSync(
 if (command === 'node' && args[0]?.endsWith('capture-api-v1-state-write-environment.mjs')) {
     capture();
 }
-else if (command === 'npm' && args.includes('perf:api-v1:state-write')) {
+else if (command === 'npm' && args.includes('perf:api-v1:state-write') || command === 'deno' && args.includes('--cpu-prof')) {
     benchmark();
 }
 else if (command === 'docker') {
@@ -30,7 +30,10 @@ else if (command === 'docker') {
 }
 else if (command === 'git') {
     if (args[0] === 'rev-parse') {
-        console.log(args.includes('HEAD^{tree}') ? 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' : commit);
+        console.log(args.includes('HEAD^{tree}') ? 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' : readCurrentCommit());
+    }
+    else if (args[0] === 'checkout') {
+        writeFileSync(path.join(root, 'current-commit'), args.at(-1));
     }
     else if (args[0] === 'ls-files') {
         console.log(
@@ -43,6 +46,12 @@ else if (command === 'git') {
             (failure === 'comparator' && args.includes('apps/api-v1/scripts/perf/validate-state-write-durable-evidence.mjs')))
     ) {
         process.exit(17);
+    }
+    else if (args[0] === 'show' && args[1]?.endsWith('.github/workflows/api-v1-state-write-pr-measurement.yml')) {
+        if (failure === 'workflow-source') {
+            process.exit(47);
+        }
+        console.log('# executing workflow revision\n' + readFileSync('.github/workflows/api-v1-state-write-pr-measurement.yml', 'utf8'));
     }
     else if (args[0] === 'show') {
         console.log(
@@ -61,6 +70,9 @@ else if (command === 'node' && args[0]?.endsWith('resolve-changed-review-range.m
 else if (command === 'node' && args[0] === '-e') {
     const child = spawnSync(process.env.REAL_NODE, args, { input: readFileSync(0), stdio: ['pipe', 'inherit', 'inherit'] });
     process.exit(child.status ?? 1);
+}
+else if (command === 'node' && args.includes('apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs') && failure === 'pool-invalid') {
+    process.exit(31);
 }
 else if (command === 'nproc') {
     console.log(failure === 'cpu-invalid' ? 'unavailable' : failure === 'cpu' ? 2 : 4);
@@ -186,6 +198,9 @@ function benchmark() {
         const directory = diagnostic.slice(18);
         mkdirSync(directory);
         writeDiagnosticFiles(directory);
+    }
+    if (args.includes('--cpu-prof')) {
+        writeCpuProfile();
     }
     if (failure === 'benchmark' || failure === 'secondary' || inherited) {
         process.exit(19);
@@ -405,4 +420,59 @@ function readDescendantAlive() {
     catch {
         return null;
     }
+}
+
+function readCurrentCommit() {
+    if (failure === 'acquisition-identity') {
+        return 'e'.repeat(40);
+    }
+    try {
+        const current = readFileSync(path.join(root, 'current-commit'), 'utf8');
+        return failure === 'source-identity' ? 'e'.repeat(40) : current;
+    }
+    catch {
+        return commit;
+    }
+}
+
+function writeCpuProfile() {
+    if (failure === 'profile-missing') {
+        return;
+    }
+    const directory = args.find((value) => value.startsWith('--cpu-prof-dir=')).slice(15);
+    const name = args.find((value) => value.startsWith('--cpu-prof-name=')).slice(16);
+    const callFrame = { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 };
+    const profile = {
+        nodes: [{ id: 1, callFrame, children: [2] }, { id: 2, callFrame: { ...callFrame, functionName: 'measuredFunction' } }],
+        startTime: 100,
+        endTime: 2100,
+        samples: [2, 2, 2],
+        timeDeltas: [1000, -1, 1001]
+    };
+    if (failure === 'profile-empty') {
+        profile.samples = [];
+        profile.timeDeltas = [];
+    }
+    if (failure === 'profile-duplicate') {
+        profile.nodes[1].id = 1;
+    }
+    if (failure === 'profile-reference') {
+        profile.samples[0] = 99;
+    }
+    if (failure === 'profile-cycle') {
+        profile.nodes[1].children = [1];
+    }
+    if (failure === 'profile-deltas') {
+        profile.timeDeltas.pop();
+    }
+    if (failure === 'profile-frame') {
+        profile.nodes[1].callFrame.lineNumber = -2;
+    }
+    if (failure === 'profile-fraction') {
+        profile.timeDeltas[0] = 0.5;
+    }
+    if (failure === 'profile-clock') {
+        profile.endTime = profile.startTime;
+    }
+    writeFileSync(path.join(directory, name), failure === 'profile-json' ? '{' : JSON.stringify(profile));
 }
