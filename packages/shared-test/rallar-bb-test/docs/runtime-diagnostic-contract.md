@@ -58,10 +58,10 @@ Use ordinary `assert` commands against `recentDiagnostics`, `diagnostics`, or
 ```json
 {
   "kind": "assert",
-  "commandId": "assert-ws-warning-type",
-  "source": "recentDiagnostics.0.payload.data.typeId",
+  "commandId": "assert-ws-warning-pattern",
+  "source": "recentDiagnostics.0.payload.data.pattern",
   "operator": "equals",
-  "expected": "room.unknown"
+  "expected": "unhandled-ws-message"
 }
 ```
 
@@ -76,17 +76,25 @@ The browser adapter normalizes:
 - WebSocket header warnings and socket errors
 
 The browser Rallar runtime also bridges known live console warnings into
-diagnostics while the runtime is active:
+diagnostics while the runtime is active. It matches the string arguments of a
+`console.warn` call against fixed literals; the first literal any of them
+contains selects the diagnostic:
 
-- `Unhandled WS message: ...` becomes
-  `rallar.browser.ws.unhandled_message`
-- `No callback for typeId ...` becomes
-  `rallar.browser.ws.unhandled_message`
-- RTC data-channel or peer-routing warnings become
-  `rallar.browser.rtc.data_channel_warning`
+| Literal                                                 | `data.pattern`               | Topic                                     |
+| ------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
+| `Unhandled WS message`                                  | `unhandled-ws-message`       | `rallar.browser.ws.unhandled_message`     |
+| `No callback for typeId`                                | `no-callback-for-type-id`    | `rallar.browser.ws.unhandled_message`     |
+| `Received data channel for different data channel name` | `data-channel-name-mismatch` | `rallar.browser.rtc.data_channel_warning` |
+| `does not match peerId`                                 | `peer-id-mismatch`           | `rallar.browser.rtc.data_channel_warning` |
+| `No channel for peer`                                   | `no-channel-for-peer`        | `rallar.browser.rtc.data_channel_warning` |
+| `Ignoring self-connection attempt`                      | `self-connection-attempt`    | `rallar.browser.rtc.data_channel_warning` |
 
-This bridge is intentionally scoped to known WS/RTC warning patterns so the
-runtime does not turn arbitrary console output into test evidence.
+The bridge sends a fixed pattern token and `source: 'console.warn'`
+(`data: { pattern, source }`); it never serializes a console argument, so an
+application payload passed to `console.warn` cannot enter a diagnostic. The
+normalized `message` of a bridged diagnostic is its topic. This bridge is
+intentionally scoped to known WS/RTC warning patterns so the runtime does not
+turn arbitrary console output into test evidence.
 
 ## RTC Lifecycle Diagnostics
 

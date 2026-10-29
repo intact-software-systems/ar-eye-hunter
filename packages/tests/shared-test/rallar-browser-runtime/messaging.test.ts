@@ -207,9 +207,9 @@ it('subscribes before WebSocket sends and preserves message metadata', async () 
         scope: 'room',
         typeId: 'room.manual.message',
         topicId: 'room.manual.message',
-        contextId: 'bb-group',
-        message: { text: 'hello over ws' }
+        contextId: 'bb-group'
     });
+    expect(result).not.toHaveProperty('message');
     expect(facade.records.wsMessageSubscriptions[0]?.[0]).toEqual({
         typeId: 'room.manual.message',
         topicId: 'room.manual.message'
@@ -313,7 +313,9 @@ it('emits typed channel deliveries once per selector, with the roster a room sen
                 typeId: 'alm.conformance',
                 topicId: 'alm',
                 transport: 'ws',
-                payload: { text: 'received over ws' }
+                payload: { text: 'received over ws' },
+                traceId: deliveredOverWs.traceId,
+                corrId: 'ws-message-1'
             }
         }),
         expect.objectContaining({
@@ -327,10 +329,17 @@ it('emits typed channel deliveries once per selector, with the roster a room sen
                 rosterVersion: 4,
                 topicId: 'alm',
                 transport: 'rtc',
-                payload: { text: 'received over ws' }
+                payload: { text: 'received over ws' },
+                traceId: deliveredOverWs.traceId,
+                corrId: 'ws-message-1'
             }
         })
     ]));
+
+    const rtcEvent = events.find((event) => event.topic === 'rallar.browser.messages.rtc.message');
+    const serialized = JSON.stringify(rtcEvent?.data);
+    expect(serialized.startsWith('{"msgId":"ws-message-1","typeId":"alm.conformance","rosterVersion":4,')).toBe(true);
+    expect(serialized.endsWith(`,"traceId":"${deliveredOverWs.traceId}","corrId":"ws-message-1"}`)).toBe(true);
 
     await runtime.close();
     expect(facade.records.typedUnsubscribeCount).toBe(2);

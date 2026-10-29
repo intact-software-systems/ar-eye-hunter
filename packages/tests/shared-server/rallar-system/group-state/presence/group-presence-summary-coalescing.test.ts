@@ -446,6 +446,7 @@ async function createCoalescingFixture(
         recomputeDebounceMs: 0,
         recomputeMaxWaitMs: 0,
         serviceId: 'coalescing-api',
+        senderPeerId: 'ws-server',
         now: () => now,
         timing: timingEvents === undefined ? undefined : (event) => timingEvents.push(event),
         wakeQueue

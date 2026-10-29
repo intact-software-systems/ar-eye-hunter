@@ -1,7 +1,4 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
-import type { BlackBoxExecutionDependencies } from '../execution/black-box-scenario-context.ts';
-import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
-import type { WsInteractionConfig } from './ws-interaction-statuses.ts';
 
 import {
     compareJson,
@@ -9,16 +6,15 @@ import {
     toConfig
 } from '../../json-compare/compare-json-values.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
+import type { BlackBoxExecutionDependencies } from '../execution/black-box-scenario-context.ts';
 import type { LocalWsRequest } from '../execution/local-websocket-session.ts';
 import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
-import {
-    toWaitCountBound,
-    type WaitCountBound
-} from '../expectations/wait-count-bound.ts';
+import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
 import {
     toWsExpectedConnectionName,
     toWsFailureStatus,
-    toWsSuccessStatus
+    toWsSuccessStatus,
+    type WsInteractionConfig
 } from './ws-interaction-statuses.ts';
 
 export interface WsInteractionRequest extends LocalWsRequest {
@@ -53,6 +49,8 @@ export interface WsInteractionResponse {
     readonly message?: unknown;
     readonly messages?: readonly unknown[];
     readonly count?: ApiJsonValue;
+    /** The path whose value identifies one publication, so a count counts publications rather than their retransmitted frames. */
+    readonly countDistinctBy?: string;
     readonly absent?: unknown;
     readonly close?: unknown;
     readonly comparison?: string;
@@ -92,7 +90,7 @@ export interface WsInteractionResult {
     readonly [key: string]: unknown;
 }
 
-function matchesWsValue(expected: unknown, actual: unknown, interaction: WsInteraction): boolean {
+export function matchesWsValue(expected: unknown, actual: unknown, interaction: WsInteraction): boolean {
     return compareJson(
         expected,
         actual,
@@ -104,7 +102,7 @@ function matchesWsValue(expected: unknown, actual: unknown, interaction: WsInter
     ).isEqual;
 }
 
-function matchesWsMessage(expected: unknown, frame: WsMessageObservation, interaction: WsInteraction): boolean {
+export function matchesWsMessage(expected: unknown, frame: WsMessageObservation, interaction: WsInteraction): boolean {
     return matchesWsValue(
         expected,
         toDecodedJsonStringPaths(frame.data, interaction.response?.decodeJsonPaths ?? []),
@@ -112,7 +110,7 @@ function matchesWsMessage(expected: unknown, frame: WsMessageObservation, intera
     );
 }
 
-interface WsWaitWindow {
+export interface WsWaitWindow {
     readonly connectionName: string;
     readonly startedAt: number;
     readonly timeoutMs: number;
@@ -120,7 +118,7 @@ interface WsWaitWindow {
     readonly closeEventCount: number;
 }
 
-function startWsWaitWindow(input: WsWaitInput): WsWaitWindow {
+export function startWsWaitWindow(input: WsWaitInput): WsWaitWindow {
     const connectionName = toWsExpectedConnectionName(input.interaction);
     return {
         connectionName,
@@ -141,67 +139,7 @@ function consumeWsMessages(input: WsWaitInput, connectionName: string, indexes: 
     loss[connectionName] = (loss[connectionName] ?? 0) + indexes.length;
 }
 
-export async function waitForWsMessageCount(input: WsWaitInput): Promise<WsInteractionResult> {
-    const { interaction, config } = input;
-    const window = startWsWaitWindow(input);
-    const bound = toWaitCountBound(interaction.response?.count);
-    const details = { ...input.details, connection: window.connectionName };
-    if (interaction.response?.message === undefined || interaction.response.message === null) {
-        return toWsFailureStatus({
-            config,
-            interaction,
-            result: 'WebSocket count wait expects expect.message to match frames against.',
-            details
-        });
-    }
-    if (bound === undefined) {
-        return toWsFailureStatus({
-            config,
-            interaction,
-            result: 'WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.',
-            details
-        });
-    }
-    if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
-        return toWsFailureStatus({ config, interaction, result: 'WebSocket count duration must be positive', details });
-    }
-    await finishWsObservationWindow(input, window);
-    return completeWsCount(input, window, bound);
-}
-
-function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCountBound): WsInteractionResult {
-    const { interaction, config, context } = input;
-    const messages = context.wsMessages[window.connectionName] ?? [];
-    const matchedCount =
-        messages.filter((message) => matchesWsMessage(interaction.response?.message, message, interaction)).length;
-    const details = {
-        ...input.details,
-        connection: window.connectionName,
-        expectedMessage: interaction.response?.message,
-        expectedCount: interaction.response?.count,
-        matchedCount,
-        observedMessageCount: messages.length,
-        waitedMs: input.context.dependencies.now() - window.startedAt
-    };
-    if (!hasCompleteWsObservations(input, window)) {
-        return toWsFailureStatus({
-            config,
-            interaction,
-            result: 'WebSocket count cannot be established because observations were discarded',
-            details
-        });
-    }
-    return matchedCount >= bound.min && matchedCount <= bound.max
-        ? toWsSuccessStatus(config, interaction, details)
-        : toWsFailureStatus({
-            config,
-            interaction,
-            result: 'WebSocket message count did not match the expectation',
-            details
-        });
-}
-
-function hasCompleteWsObservations(input: WsWaitInput, window: WsWaitWindow): boolean {
+export function hasCompleteWsObservations(input: WsWaitInput, window: WsWaitWindow): boolean {
     const currentLoss = input.context.wsObservationLoss?.[window.connectionName] ?? 0;
     return currentLoss === window.observationLoss && Number.isSafeInteger(currentLoss) &&
         currentLoss < Number.MAX_SAFE_INTEGER &&
@@ -353,64 +291,6 @@ export function waitForWsMessages(input: WsWaitInput): Promise<WsInteractionResu
     });
 }
 
-export function waitForWsClose(input: WsWaitInput): Promise<WsInteractionResult> {
-    const { interaction, config, context, details = {} } = input;
-    const { connectionName, startedAt, timeoutMs } = startWsWaitWindow(input);
-    const expectedClose = interaction.response?.close === true ? {} : interaction.response?.close;
-    if (expectedClose === undefined) {
-        return Promise.resolve(
-            toWsFailureStatus({
-                config,
-                interaction,
-                result: 'WebSocket close expectation is missing. Use expect.close.',
-                details: {
-                    ...details,
-                    connection: connectionName
-                }
-            })
-        );
-    }
-    return new Promise((resolve) => {
-        const interval = setInterval(() => {
-            const closeEvents = context.wsCloseEvents?.[connectionName] ?? [];
-            const index = closeEvents.findIndex((event) => matchesWsValue(expectedClose, event, interaction));
-            if (index >= 0) {
-                clearInterval(interval);
-                const matchedCloseEvent = closeEvents[index];
-                if (interaction.response?.consume) {
-                    closeEvents.splice(index, 1);
-                    const loss = context.wsObservationLoss ??= {};
-                    loss[connectionName] = (loss[connectionName] ?? 0) + 1;
-                }
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedCloseEvent,
-                    consumed: interaction.response?.consume === true,
-                    waitedMs: input.context.dependencies.now() - startedAt
-                }));
-            }
-            else if (input.context.dependencies.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(
-                    toWsFailureStatus({
-                        config,
-                        interaction,
-                        result: 'Expected WebSocket close event was not received',
-                        details: {
-                            ...details,
-                            connection: connectionName,
-                            expectedClose,
-                            closeEvents,
-                            waitedMs: input.context.dependencies.now() - startedAt
-                        }
-                    })
-                );
-            }
-        }, 25);
-    });
-}
-
 function completeWsAbsence(input: WsWaitInput, window: WsWaitWindow): WsInteractionResult {
     const { interaction, config, context, details = {} } = input;
     const { connectionName, startedAt, observationLoss } = window;
@@ -477,7 +357,7 @@ export async function waitForWsMessageAbsence(input: WsWaitInput): Promise<WsInt
     return completeWsAbsence(input, window);
 }
 
-async function finishWsObservationWindow(input: WsWaitInput, window: WsWaitWindow): Promise<void> {
+export async function finishWsObservationWindow(input: WsWaitInput, window: WsWaitWindow): Promise<void> {
     const deadline = window.startedAt + window.timeoutMs;
     let remaining = deadline - input.context.dependencies.now();
     while (remaining > 0) {

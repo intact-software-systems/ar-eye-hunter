@@ -54,6 +54,7 @@ describe('rallar-bb runtime sockets', () => {
                 queued: true
             }
         });
+        expect(JSON.stringify(sendResult.value)).not.toContain('hello');
         expect(sockets[0].sent).toEqual(['{"text":"hello"}']);
         expect(toRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
             data: '{"text":"hello"}'
@@ -296,6 +297,7 @@ describe('rallar-bb runtime sockets', () => {
             connection: 'rallarApi',
             via: 'rallar-signaling-websocket'
         });
+        expect(JSON.stringify(sendResult.value)).not.toContain('hello over signaling');
         expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.sent_via_rallar_signaling')).toBe(true);
     });
 

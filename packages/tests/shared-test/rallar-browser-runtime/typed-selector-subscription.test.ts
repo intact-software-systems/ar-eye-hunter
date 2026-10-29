@@ -4,6 +4,9 @@ import {
     it
 } from 'vitest';
 
+import type { BlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage } from '@shared-web/browser/rallar.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 
 import {
@@ -24,7 +27,7 @@ const COMBINED_TYPE_IDS = [
 
 function toCombinedConfig(
     rallar: Readonly<{ typeId?: string; messageTypeIds?: readonly string[]; }>
-) {
+): BlackBoxRallarConnectionConfig {
     return {
         connection: 'combined',
         actor: 'alice',
@@ -45,7 +48,7 @@ function toCombinedConfig(
     } as const;
 }
 
-function toInboundMessage(transport: 'rtc' | 'ws', typeId: string, phase: string) {
+function toInboundMessage(transport: 'rtc' | 'ws', typeId: string, phase: string): RallarMessage<RallarMessagePayload> {
     const raw = newALUnicastMessage(
         'sender',
         { topicId: TOPIC_ID, contextId: 'room', resourceId: 'resource' },
@@ -115,7 +118,9 @@ it('owns one WS topic selector and one RTC subscription per listed type until re
                 typeId: message.typeId,
                 topicId: TOPIC_ID,
                 transport: message.transport,
-                payload: message.payload
+                payload: message.payload,
+                traceId: message.raw.id.traceId,
+                corrId: message.raw.id.msgId
             });
         }
         if (phase === 'before-health') {

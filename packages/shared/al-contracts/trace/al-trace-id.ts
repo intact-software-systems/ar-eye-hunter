@@ -5,6 +5,9 @@ const AL_TRACE_ID_CHARACTER_CLASS = 'A-Za-z0-9_-';
 
 export const AL_TRACE_ID_PATTERN = new RegExp(`^[${AL_TRACE_ID_CHARACTER_CLASS}]{1,${AL_TRACE_ID_MAX_LENGTH}}$`);
 
+/** The HTTP header that carries a request's trace: the API adopts one in this grammar and echoes it on the response. */
+export const AL_TRACE_ID_HTTP_HEADER = 'x-request-id';
+
 const AL_TRACE_ID_FOREIGN_CHARACTER = new RegExp(`[^${AL_TRACE_ID_CHARACTER_CLASS}]`);
 
 export interface ALTraceIdIssue {

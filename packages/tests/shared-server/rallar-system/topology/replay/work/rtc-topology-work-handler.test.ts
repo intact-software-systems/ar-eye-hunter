@@ -109,7 +109,8 @@ describe('RTC topology APP_OUTBOX work', () => {
             recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => nowEpochMs,
-            serviceId: 'summary-worker'
+            serviceId: 'summary-worker',
+            senderPeerId: 'ws-server'
         });
         const snapshots = new RtcTopologySnapshotRepository(runtime);
         const readGroup = async (groupRef: GroupRef) => await groupRepository.readSnapshot(groupRef);

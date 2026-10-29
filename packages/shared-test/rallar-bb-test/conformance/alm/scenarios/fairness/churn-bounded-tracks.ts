@@ -24,8 +24,8 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
+import { toPauseCommand } from '../../to-pause-command.ts';
 import { toBoundReconnectCommands, toReconnectedArrivalsCommand } from '../volatile-bound/volatile-bound-commands.ts';
-import { toPauseCommand } from './to-pause-command.ts';
 import { toSendLoopCommand } from './to-send-loop-command.ts';
 
 /**

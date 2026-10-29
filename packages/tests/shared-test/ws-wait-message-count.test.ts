@@ -9,9 +9,9 @@ import {
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
+import { waitForWsMessageCount } from '../../shared-test/black-box-runner/ws/wait-for-ws-message-count.ts';
 import {
     waitForWsMessage,
-    waitForWsMessageCount,
     type WsInteraction,
     type WsInteractionResponse,
     type WsWaitContext
@@ -134,6 +134,39 @@ describe('waitForWsMessageCount', () => {
 
         expect(result.status).toBe('FAILURE');
         expect(result.result).toBe('WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.');
+    });
+
+    // A receipted publication is retransmitted to a socket that never acknowledges it, so its frames repeat.
+    it('counts each publication once when its retransmitted frames repeat the countDistinctBy identity', async () => {
+        const first = { id: { msgId: 'status-1' }, payload: { typeId: 'admission.decided' } };
+        const second = { id: { msgId: 'status-2' }, payload: { typeId: 'admission.decided' } };
+        const result = await runCount({
+            expectFields: { message: decided, count: 2, countDistinctBy: 'id.msgId' },
+            payloads: [first, other, first, second, first]
+        });
+
+        expect(result.status).toBe('SUCCESS');
+        expect(result.matchedCount).toBe(2);
+    });
+
+    it('rejects a matched frame that carries no countDistinctBy identity', async () => {
+        const result = await runCount({
+            expectFields: { message: decided, count: 1, countDistinctBy: 'id.msgId' },
+            payloads: [decided]
+        });
+
+        expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('WebSocket count wait found a matched frame without a value at expect.countDistinctBy.');
+    });
+
+    it('rejects a countDistinctBy that is not a path', async () => {
+        const result = await runCount({
+            expectFields: { message: decided, count: 1, countDistinctBy: '' },
+            payloads: [decided]
+        });
+
+        expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('WebSocket count wait expects expect.countDistinctBy to be a non-empty JSON path.');
     });
 
     it('rejects a count object that names no bound', async () => {

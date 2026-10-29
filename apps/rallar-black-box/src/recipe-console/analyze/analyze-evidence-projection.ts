@@ -67,7 +67,12 @@ export function projectAnalyzeEvidenceEntry(
             ? { category: boundedText(entry.category, MAX_METADATA_BYTES) }
             : {}),
         summary: boundedText(entry.summary, MAX_SUMMARY_BYTES),
-        payloadSummary: boundedText(entry.payloadSummary),
+        ...(entry.identitySummary === undefined
+            ? {}
+            : { identitySummary: boundedText(entry.identitySummary) }),
+        ...(entry.detailSummary === undefined
+            ? {}
+            : { detailSummary: boundedText(entry.detailSummary) }),
         ...(entry.failureDetails
             ? { failureDetails: projectFailureDetails(entry.failureDetails, true) }
             : {})
@@ -135,7 +140,8 @@ function projectMinimalEvidenceEntry(
         kind: entry.kind,
         sourceFile: boundedText(entry.sourceFile, 128),
         summary: boundedText(entry.summary, 256),
-        payloadSummary: '',
+        ...(entry.identitySummary === undefined ? {} : { identitySummary: '' }),
+        ...(entry.detailSummary === undefined ? {} : { detailSummary: '' }),
         ...(entry.failureDetails
             ? { failureDetails: projectFailureDetails(entry.failureDetails, false) }
             : {})

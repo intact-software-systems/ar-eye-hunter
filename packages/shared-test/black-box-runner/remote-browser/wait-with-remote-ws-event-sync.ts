@@ -1,14 +1,14 @@
 import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
-import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
+import { waitForWsClose } from '../ws/wait-for-ws-close.ts';
+import { waitForWsMessageCount } from '../ws/wait-for-ws-message-count.ts';
 import {
     toWsExpectedConnectionName,
-    toWsFailureStatus
+    toWsFailureStatus,
+    type WsInteractionConfig
 } from '../ws/ws-interaction-statuses.ts';
 import {
-    waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
-    waitForWsMessageCount,
     waitForWsMessages,
     type WsInteraction,
     type WsInteractionResult,

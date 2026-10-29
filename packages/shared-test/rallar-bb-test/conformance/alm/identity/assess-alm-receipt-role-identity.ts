@@ -1,6 +1,6 @@
-import type { RallarBlackBoxTestRecipe } from '../../rallar-black-box-test-contracts.ts';
-import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
-import { isAlmConformanceRole, type AlmConformanceRole } from './alm-conformance-roles.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
+import { isAlmConformanceRole, type AlmConformanceRole } from '../alm-conformance-roles.ts';
 import { toConnectedSessionIds } from './assess-alm-acknowledged-identity.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 

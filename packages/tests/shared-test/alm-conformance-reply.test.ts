@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALM_REPLY_WAIT_RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/alm/browser-adapter-alm-commands.ts';
+import type { RallarBlackBoxTestMessagesAwaitReplyResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
@@ -51,6 +52,8 @@ interface SenderPage {
     /** Page diagnostics the sender's page stated before its tail runs. */
     readonly pageEvents?: readonly object[];
 }
+
+type RepliedOutcome = Extract<RallarBlackBoxTestMessagesAwaitReplyResultValue, { status: 'replied'; }>;
 
 function findScenario(carrier: AlmConformanceCarrier, scenarioId: ReplyScenarioId): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -98,7 +101,7 @@ function toObservation(handleId: string, carrier: AlmConformanceCarrier): object
     };
 }
 
-function toRepliedOutcome(carrier: AlmConformanceCarrier, scenarioKey: ReplyScenarioId, senderId: string) {
+function toRepliedOutcome(carrier: AlmConformanceCarrier, scenarioKey: ReplyScenarioId, senderId: string): RepliedOutcome {
     return {
         handleId: `alm-${carrier}-${scenarioKey}-send-1`,
         status: 'replied',
@@ -109,7 +112,8 @@ function toRepliedOutcome(carrier: AlmConformanceCarrier, scenarioKey: ReplyScen
             replyToMsgId: 'request-1',
             corrId: 'request-1',
             senderId,
-            typeId: `alm.conformance.${carrier}.${scenarioKey}`
+            typeId: `alm.conformance.${carrier}.${scenarioKey}`,
+            traceId: 'trace-reply-1'
         }
     };
 }
@@ -126,7 +130,9 @@ function createSenderPage(page: SenderPage): RallarBlackBoxBrowserRallarRuntime 
             handleId: String(input.handleId),
             msgId: `request-${String(input.handleId).at(-1)}`,
             carrier: page.carrier,
-            status: 'acknowledged'
+            status: 'acknowledged',
+            traceId: 'trace-request-1',
+            corrId: `request-${String(input.handleId).at(-1)}`
         }),
         // An observe for one state reads it reached; an admission wait reads the request accepted.
         observeDelivery: async (input) => ({

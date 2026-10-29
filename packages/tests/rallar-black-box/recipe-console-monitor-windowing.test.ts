@@ -621,7 +621,7 @@ function diagnosticRow(
         diagnosticTypeId: 'runtime-warning',
         message: `Diagnostic ${index}`,
         summary: `Diagnostic ${index}`,
-        payloadSummary: '{}',
+        identitySummary: 'kind=diagnostic',
         correlatedFailureKeys: []
     };
 }
@@ -644,7 +644,7 @@ function eventRow(index: number): DistributedRunEventRow {
         kind: 'runtime',
         agentId: `agent-${index}`,
         summary: `Event ${index}`,
-        payloadSummary: '{}'
+        identitySummary: 'kind=runtime'
     };
 }
 
@@ -703,7 +703,7 @@ function monitorModel(
             },
             ...patch
         }
-    } as unknown as MonitorWorkspaceModel;
+    } as MonitorWorkspaceModel;
 }
 
 function detailsBySummary(container: HTMLElement, label: string): HTMLDetailsElement {

@@ -5,6 +5,7 @@ import {
     vi
 } from 'vitest';
 
+import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -12,8 +13,12 @@ import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -31,7 +36,28 @@ export interface ClusterInstance {
     readonly server: JsonWebSocketServer;
 }
 
+/** One WS server whose sockets are opened up front, so a test reads exactly what each session was sent. */
+export interface ReceiptServerInstance {
+    readonly service: WsQueueBoxServerService;
+    readonly engine: InboxOutboxEngine;
+    readonly sockets: Readonly<Record<string, SimulatedWebSocket>>;
+}
+
+/** Two instances that share the outbox and the outbound admission state share them as PostgreSQL does. */
+export interface CreateReceiptServerInput {
+    readonly outbox: InMemoryQueueBox;
+    readonly state: ALAdmissionMemoryState;
+    readonly peerIds: readonly string[];
+    readonly recorder: RallarAlmReceiptDiagnosticsRecorder | undefined;
+    readonly nowMs: () => number;
+}
+
+/** The peer id of the server the receipt suites build; a session's ACK names it. */
+export const RECEIPT_SERVER_PEER_ID = 'server';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
+const SESSION_SCOPE_LIFETIME_MS = 60_000;
 const SNAPSHOT_VERSION = 7;
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;
 
@@ -68,11 +94,60 @@ interface CreateClusterInstanceInput {
     readonly engine: InboxOutboxEngine;
 }
 
+/** A clock the test advances by hand; the test's end restores the real one. */
 export function installClock(): ReceiptClock {
     const clock = { nowMs: Date.now() };
     vi.spyOn(Date, 'now').mockImplementation(() => clock.nowMs);
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    });
     return clock;
+}
+
+export function createReceiptOutbox(clock: ReceiptClock): InMemoryQueueBox {
+    return new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
+}
+
+export async function createReceiptServer(input: CreateReceiptServerInput): Promise<ReceiptServerInstance> {
+    const socketServer = new JsonWebSocketServer();
+    const sockets: Record<string, SimulatedWebSocket> = {};
+    for (const peerId of input.peerIds) {
+        const socket = new SimulatedWebSocket(`ws://${peerId}`);
+        await socket.open();
+        socketServer.addConnection(new ConnectionContext({ id: peerId, socket }));
+        sockets[peerId] = socket;
+    }
+    const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
+    const engine = new InboxOutboxEngine();
+    const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
+        outbox: input.outbox,
+        socket: socketServer,
+        name: RECEIPT_SERVER_PEER_ID,
+        queueEngine: engine,
+        forwardsRoomScopedMessages: false,
+        readAuthenticatedConnectionScope: (connection) =>
+            socketServer.connections.get(connection.id) === connection
+                ? { scope: SCOPE, expiresAtEpochMs: input.nowMs() + SESSION_SCOPE_LIFETIME_MS }
+                : undefined,
+        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
+            nowMs: input.nowMs,
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+            outboundBackend: new InMemoryAdmissionBackend(input.state, input.nowMs)
+        }),
+        outboundSettlements: input.recorder?.settlements,
+        targetResolver: {
+            resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
+            resolveBroadcastRecipients: recipients
+        }
+    });
+    onTestFinished(() => service.dispose());
+    return { service, engine, sockets };
+}
+
+export function countCopies(socket: SimulatedWebSocket, msgId: string): number {
+    return socket.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === msgId).length;
 }
 
 /** One server instance of the cluster, fanning room messages out through its own outbox as production does. */
@@ -91,7 +166,7 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>
             server.connections.get(connection.id) === connection
-                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         name: input.name,
         queueEngine: engine,

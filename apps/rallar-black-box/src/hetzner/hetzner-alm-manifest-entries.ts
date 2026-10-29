@@ -7,12 +7,12 @@ import {
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
 import { claimExpiresReclaims } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-expires-reclaims.ts';
 import { claimFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-first-wins.ts';
 import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-refused-on-rtc.ts';
@@ -30,6 +30,7 @@ import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/sce
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
 import { replyUndelivered } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-undelivered.ts';
+import { serverOriginated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/server-originated.ts';
 import { capacityAge } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-age.ts';
 import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
 import type {
@@ -116,7 +117,9 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // The fairness cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
     { scenarioKey: 'own-share-under-inbound', carriers: ownShareUnderInbound.carriers },
     { scenarioKey: 'buffered-track-drains', carriers: bufferedTrackDrains.carriers },
-    { scenarioKey: 'churn-bounded-tracks', carriers: churnBoundedTracks.carriers }
+    { scenarioKey: 'churn-bounded-tracks', carriers: churnBoundedTracks.carriers },
+    // The combined connect carries one selector, the scenario topic's, so no hosted page hears a group-state delta.
+    { scenarioKey: 'server-originated', carriers: serverOriginated.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

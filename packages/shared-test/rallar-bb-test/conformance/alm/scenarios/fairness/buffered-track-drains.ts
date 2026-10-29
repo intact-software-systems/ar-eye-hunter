@@ -12,7 +12,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
-import { toPauseCommand } from './to-pause-command.ts';
+import { toPauseCommand } from '../../to-pause-command.ts';
 import { FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
 
 /**

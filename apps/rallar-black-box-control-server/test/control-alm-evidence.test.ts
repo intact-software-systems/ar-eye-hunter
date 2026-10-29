@@ -355,6 +355,9 @@ function resultEnvelope(
                         ? command.match.equals
                         : undefined;
                     const identity = isJsonRecordValue(payload) ? JSON.stringify(payload) : undefined;
+                    // The fabricated identity is the payload's text, so its trace keeps that text to the trace grammar:
+                    // its characters and its 128-character bound.
+                    const traceId = identity?.replaceAll(/[^A-Za-z0-9_-]/gu, '_').slice(0, 128);
                     return {
                         commandId: command.commandId,
                         kind: command.kind,
@@ -363,7 +366,7 @@ function resultEnvelope(
                         startedAtEpochMs: 1,
                         endedAtEpochMs: 2,
                         durationMs: 1,
-                        value: command.kind === 'messages.send' ? { msgId: identity } : command.kind === 'wait'
+                        value: command.kind === 'messages.send' ? { msgId: identity, traceId, corrId: identity } : command.kind === 'wait'
                             ? {
                                 matched: true,
                                 event: {
@@ -372,7 +375,9 @@ function resultEnvelope(
                                             msgId: wrongIdentity ? 'unrelated' : identity,
                                             transport: isJsonRecordValue(payload) && payload.carrier === 'ws' ? 'ws' : 'rtc',
                                             typeId: isJsonRecordValue(payload) ? `alm.conformance.${payload.carrier}.delivery-lifecycle` : '',
-                                            payload
+                                            payload,
+                                            traceId,
+                                            corrId: identity
                                         }
                                     }
                                 }

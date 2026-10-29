@@ -11,6 +11,7 @@ import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/brows
 import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
@@ -229,7 +230,8 @@ export class BlackBoxRallarTypedChannels {
                 rosterVersion: toRosterStamp(message.raw.targets),
                 topicId: message.topicId,
                 transport: message.transport,
-                payload: message.payload
+                payload: message.payload,
+                ...toALMessageTrace(message.raw)
             }
         });
     }

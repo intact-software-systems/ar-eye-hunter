@@ -336,7 +336,7 @@ function controller(overrides: Partial<AnalyzeWorkspaceController> = {}) {
         requestWindow: vi.fn(),
         retryEvidenceSearch: vi.fn(),
         ...overrides
-    } as unknown as AnalyzeWorkspaceController;
+    } as AnalyzeWorkspaceController;
 }
 
 function entry(
@@ -348,7 +348,7 @@ function entry(
         kind: 'event' as const,
         sourceFile: 'events.jsonl',
         summary: `Evidence ${index + 1}`,
-        payloadSummary: '{}',
+        identitySummary: 'kind=event',
         ...fields
     };
 }

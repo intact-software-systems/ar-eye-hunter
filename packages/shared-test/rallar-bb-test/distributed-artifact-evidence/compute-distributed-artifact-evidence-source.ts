@@ -1,12 +1,12 @@
 import {
+    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
-    DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
-    DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
     MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT,
     type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceEntry,
-    type DistributedArtifactEvidenceIndex
+    type DistributedArtifactEvidenceIndex,
+    type DistributedArtifactEvidenceLimits
 } from '../distributed-artifact-evidence-contracts.ts';
 import { compareEvidenceEntries } from './compare-evidence-entries.ts';
 import { resolveEvidenceLimit, resolveEvidenceTextLimit } from './distributed-artifact-evidence-bounds.ts';
@@ -28,19 +28,32 @@ export function computeDistributedArtifactEvidenceSource(
         monitor: input.monitor,
         parsed: input.parsed,
         sourceFileNames: new Set(input.sourceFileNames),
-        summaryLimit: resolveEvidenceTextLimit(
-            input.limits.summary,
-            DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
-            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
-        ),
-        payloadSummaryLimit: resolveEvidenceTextLimit(
-            input.limits.payloadSummary,
-            DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
-            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
-        )
+        textLimits: resolveEvidenceTextLimits(input.limits)
     });
     const entries = deduplicateEvidenceEntries(rawEntries).sort(compareEvidenceEntries);
     return { entries, rawEntries };
+}
+
+function resolveEvidenceTextLimits(
+    limits: DistributedArtifactEvidenceLimits
+): Omit<DistributedArtifactEvidenceLimits, 'index'> {
+    return {
+        summary: resolveEvidenceTextLimit(
+            limits.summary,
+            DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS.summary,
+            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
+        ),
+        identitySummary: resolveEvidenceTextLimit(
+            limits.identitySummary,
+            DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS.identitySummary,
+            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
+        ),
+        detailSummary: resolveEvidenceTextLimit(
+            limits.detailSummary,
+            DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS.detailSummary,
+            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
+        )
+    };
 }
 
 /**

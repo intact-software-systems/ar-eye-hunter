@@ -135,7 +135,9 @@ export class BlackBoxRallarDeliveryLedger {
             msgId: handle.msgId,
             carrier: send.carrier,
             status: outcome.lifecycle.state,
-            reason: outcome.lifecycle.evidence.reason
+            reason: outcome.lifecycle.evidence.reason,
+            traceId: handle.traceId,
+            corrId: handle.corrId
         };
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
@@ -292,7 +294,9 @@ export class BlackBoxRallarDeliveryLedger {
         return {
             handleId: reply.handleId,
             msgId: handle.msgId,
-            replyToMsgId: requireBlackBoxRallarReplyToMsgId(handle.msgId, handle.replyToMsgId)
+            replyToMsgId: requireBlackBoxRallarReplyToMsgId(handle.msgId, handle.replyToMsgId),
+            traceId: handle.traceId,
+            corrId: handle.corrId
         };
     };
 

@@ -1,17 +1,19 @@
-import type { BlackBoxRallarDocumentFacts } from '../../../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import { isRallarBlackBoxTestMessagesSendCommand } from '../../alm/is-rallar-black-box-test-messages-send-command.ts';
+import type { BlackBoxRallarDocumentFacts } from '../../../../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { isRallarBlackBoxTestMessagesSendCommand } from '../../../alm/is-rallar-black-box-test-messages-send-command.ts';
 import type {
     RallarBlackBoxTestAgentReloadCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestTransportFaultInjectCommand,
     RallarBlackBoxTestWaitCommand
-} from '../../rallar-black-box-test-contracts.ts';
-import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
-import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
-import { isSameJsonValue } from '../../wait/wait-event-match.ts';
-import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from './alm-reload-pair.ts';
+} from '../../../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../../../runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
+import { isSameJsonValue } from '../../../wait/wait-event-match.ts';
+import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from '../alm-reload-pair.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
+import { assessAlmReloadStorage } from './assess-alm-reload-storage.ts';
+import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
 
 const ALM_STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
@@ -71,9 +73,10 @@ export function assessAlmReloadIdentity(
             continue;
         }
         issues.push(...assessReloadCommands(evidence));
+        issues.push(...assessReloadTrace(evidence));
         issues.push(...assessReloadDocuments(evidence));
         issues.push(...assessReloadRetention(evidence));
-        issues.push(...assessReloadStorage(evidence));
+        issues.push(...assessAlmReloadStorage(evidence));
         senderStart = evidence.senderNextIndex;
         receiverStart = evidence.receiverNextIndex;
     }
@@ -170,23 +173,40 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         [...receiverBefore, ...recovery].every((command) =>
             ['http.request', 'rtc.connect', 'health', 'stats', 'wait', 'barrier'].includes(command.kind)
         ) && recovery.every((command) => command.kind !== 'rtc.connect');
-    const absenceValue = resultValue(evidence.receiver, absence);
-    const receives = recovery.filter((command) =>
-        command.kind === 'wait' && command.absent !== true &&
-        command.match.kind === 'message' && command.match.payloadPath === 'data.payload' &&
-        isSameJsonValue(command.match.equals, decodeJsonValue(send.payload))
-    );
+    const absenceValue = toRecordedAlmResultValue(evidence.receiver, absence);
+    const receives = resolveRecoveredReceives(evidence);
     const correctAbsence = receives.length === 1 && absence.match.kind === 'message' &&
         absence.match.payloadPath === 'data.payload' &&
         isSameJsonValue(absence.match.equals, decodeJsonValue(send.payload)) &&
         isJsonRecordValue(absenceValue) && absenceValue.absent === true && absenceValue.matched === false;
-    const reloadValue = resultValue(sender, evidence.reload);
+    const reloadValue = toRecordedAlmResultValue(sender, evidence.reload);
     return linearRoot && originals.length === 1 && hasReloadNativeHolds(evidence) && validPrefix && validSuffix &&
             receiverPreserved &&
             correctAbsence && isJsonRecordValue(reloadValue) && reloadValue.reloading === true &&
             reloadValue.readyTimeoutMs === evidence.reload.readyTimeoutMs
         ? []
         : [`${checkpoint.key}: reload must preserve native holds, one original send, subscriptions and exact phase work.`];
+}
+
+/** The recovered original keeps its generated identity, so it carries the trace its pre-reload send returned. */
+function assessReloadTrace(evidence: ReloadEvidence): readonly string[] {
+    const sent = toAlmJsonPathValue(toRecordedAlmResultValue(evidence.sender, evidence.send), 'traceId');
+    const receives = resolveRecoveredReceives(evidence);
+    const received = toAlmJsonPathValue(
+        toRecordedAlmResultValue(evidence.receiver, receives[0]),
+        'event.payload.data.traceId'
+    );
+    return receives.length === 1 && nonemptyString(sent) && received === sent
+        ? []
+        : [`${evidence.checkpoint.key}: the recovered original must carry the original send's trace.`];
+}
+
+function resolveRecoveredReceives({ recovery, send }: ReloadEvidence): readonly RallarBlackBoxTestWaitCommand[] {
+    return recovery.filter((command): command is RallarBlackBoxTestWaitCommand =>
+        command.kind === 'wait' && command.absent !== true &&
+        command.match.kind === 'message' && command.match.payloadPath === 'data.payload' &&
+        isSameJsonValue(command.match.equals, decodeJsonValue(send.payload))
+    );
 }
 
 /** The suffix only reads: its waits are the reloaded stores' recovery reads on the storage topic. */
@@ -218,15 +238,21 @@ function hasReloadNativeHolds({ send, prefix }: ReloadEvidence): boolean {
 
 function assessReloadDocuments(evidence: ReloadEvidence): readonly string[] {
     const beforeCommands = evidence.prefix.filter((command) => command.kind === 'health');
-    const before = readPath(resultValue(evidence.sender, beforeCommands[0]), ['rallar']);
-    const after = resultValue(evidence.sender, evidence.suffix[0]);
-    const receiverBefore = readPath(resultValue(evidence.receiver, evidence.receiverBefore.at(-1)), ['rallar']);
-    const receiverAfter = readPath(resultValue(evidence.receiver, evidence.recovery.at(-1)), ['rallar']);
-    const beforeDocument = readPath(before, ['document']);
-    const afterDocument = readPath(after, ['document']);
-    const receiverDocument = readPath(receiverBefore, ['document']);
-    const receiverAfterDocument = readPath(receiverAfter, ['document']);
-    const session = readPath(before, ['session']);
+    const before = toAlmJsonPathValue(toRecordedAlmResultValue(evidence.sender, beforeCommands[0]), 'rallar');
+    const after = toRecordedAlmResultValue(evidence.sender, evidence.suffix[0]);
+    const receiverBefore = toAlmJsonPathValue(
+        toRecordedAlmResultValue(evidence.receiver, evidence.receiverBefore.at(-1)),
+        'rallar'
+    );
+    const receiverAfter = toAlmJsonPathValue(
+        toRecordedAlmResultValue(evidence.receiver, evidence.recovery.at(-1)),
+        'rallar'
+    );
+    const beforeDocument = toAlmJsonPathValue(before, 'document');
+    const afterDocument = toAlmJsonPathValue(after, 'document');
+    const receiverDocument = toAlmJsonPathValue(receiverBefore, 'document');
+    const receiverAfterDocument = toAlmJsonPathValue(receiverAfter, 'document');
+    const session = toAlmJsonPathValue(before, 'session');
     const sameSession = isJsonRecordValue(session) && isJsonRecordValue(after) &&
         nonemptyString(session.clientId) && nonemptyString(session.sessionId) &&
         session.clientId === after.clientId && session.sessionId === after.sessionId;
@@ -242,11 +268,11 @@ function assessReloadDocuments(evidence: ReloadEvidence): readonly string[] {
 
 function assessReloadRetention(evidence: ReloadEvidence): readonly string[] {
     const { prefix, suffix, send, sender, checkpoint } = evidence;
-    const sendValue = resultValue(sender, send);
+    const sendValue = toRecordedAlmResultValue(sender, send);
     const retained = prefix.filter((command) => command.kind === 'messages.observe');
     const lost = suffix.filter((command) => command.kind === 'messages.observe');
-    const retainedValue = resultValue(sender, retained[0]);
-    const lostValue = resultValue(sender, lost[0]);
+    const retainedValue = toRecordedAlmResultValue(sender, retained[0]);
+    const lostValue = toRecordedAlmResultValue(sender, lost[0]);
     const originalHandle = nonemptyString(send.handleId) && isJsonRecordValue(sendValue) &&
         sendValue.handleId === send.handleId && sendValue.carrier === send.carrier;
     const held = retained.length === 1 && retained[0].handleId === send.handleId &&
@@ -262,65 +288,6 @@ function assessReloadRetention(evidence: ReloadEvidence): readonly string[] {
     return originalHandle && held && unobservable
         ? []
         : [`${checkpoint.key}: exact original must be durable, unsubmitted and lose its old handle.`];
-}
-
-function assessReloadStorage(evidence: ReloadEvidence): readonly string[] {
-    const { prefix, send, sender, checkpoint } = evidence;
-    const counters = prefix.filter((command) => command.kind === 'storage.counters');
-    const before = resultValue(sender, counters[0]);
-    const held = resultValue(sender, counters[1]);
-    const sameDocument = counters.length === 2 && counters.every((command) => command.reset !== true) &&
-        prefix.indexOf(counters[0]) < prefix.indexOf(send) && prefix.indexOf(counters[1]) > prefix.indexOf(send) &&
-        !prefix.slice(prefix.indexOf(counters[0]) + 1).some((command) => command.kind === 'rtc.connect');
-    const admission = positiveCounterDelta(before, held, ['byOwner', 'al-admission']);
-    const work = positiveCounterDelta(before, held, ['byOwner', 'al-work']);
-    const write = positiveCounterDelta(before, held, ['byKind', 'write']);
-    const recovered = resultValue(sender, evidence.suffix.at(-1));
-    return sameDocument && validStorageCounts(before) && validStorageCounts(held) && validStorageCounts(recovered) &&
-            admission && work && write
-        ? []
-        : [`${checkpoint.key}: original-document storage must advance admission/work owners and atomic writes from its baseline.`];
-}
-
-function validStorageCounts(value: unknown): boolean {
-    if (!isJsonRecordValue(value) || !validCount(value.total) || !isJsonRecordValue(value.byOwner)) {
-        return false;
-    }
-    return validCount(value.byOwner['al-admission']) && validCount(value.byOwner['al-work']) &&
-        isJsonRecordValue(value.byKind) && Object.values(value.byKind).every(validCount);
-}
-
-function validCount(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
-}
-
-function positiveCounterDelta(before: unknown, after: unknown, path: readonly string[]): boolean {
-    const value = readPath(before, path);
-    // Native operation counts omit an unobserved kind; absence of the bucket itself is invalid evidence.
-    const baseline = value === undefined && path[0] === 'byKind' && isJsonRecordValue(readPath(before, ['byKind']))
-        ? 0
-        : value;
-    const held = readPath(after, path);
-    return typeof baseline === 'number' && Number.isFinite(baseline) && baseline >= 0 &&
-        typeof held === 'number' && Number.isFinite(held) && held > baseline;
-}
-
-function resultValue(
-    participant: RecordedAlmConformanceParticipant,
-    command: RallarBlackBoxTestCommand | undefined
-): unknown {
-    return command?.commandId ? participant.results.get(command.commandId)?.value : undefined;
-}
-
-function readPath(value: unknown, path: readonly string[]): unknown {
-    let current = value;
-    for (const field of path) {
-        if (!isJsonRecordValue(current)) {
-            return undefined;
-        }
-        current = current[field];
-    }
-    return current;
 }
 
 function validDocument(value: unknown): value is BlackBoxRallarDocumentFacts {

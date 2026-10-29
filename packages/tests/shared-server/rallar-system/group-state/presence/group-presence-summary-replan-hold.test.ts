@@ -280,7 +280,8 @@ async function readComputedSummary(
         ...window,
         runtimeRepository: seeded.runtime,
         now: () => BASE_EPOCH_MS + 1_000,
-        serviceId: 'summary-worker'
+        serviceId: 'summary-worker',
+        senderPeerId: 'ws-server'
     });
     const read = await readSummaryWork(work, seeded.command, BASE_EPOCH_MS + 1_000);
     const expansion = toSummaryExpansion(seeded.command, read);

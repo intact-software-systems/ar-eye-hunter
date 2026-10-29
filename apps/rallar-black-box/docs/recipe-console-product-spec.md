@@ -85,7 +85,7 @@ and visibly rejects generic black-box-runner artifacts to the preserved Shared
 Test importer. Unknown schema versions and malformed optional evidence remain
 inspectable and can never be presented as a supported bundle; the artifact's
 claimed run outcome remains visible beside the incompatibility warning.
-The existing result payload summary remains available through a collapsed raw-
+A failed result's detail summary remains available through a collapsed raw-
 payload disclosure for source verification.
 
 ### Run comparison and candidate tuning

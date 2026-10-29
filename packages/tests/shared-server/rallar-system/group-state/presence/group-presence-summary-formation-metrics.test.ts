@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import type { GroupPresenceSummaryComputedWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -51,6 +52,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
+            senderPeerId: 'ws-server',
             wakeQueue: () => {
                 wakeCount += 1;
             },
@@ -94,6 +96,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
+            senderPeerId: 'ws-server',
             now: () => BASE_EPOCH_MS + 5_000,
             formationMetrics: (event) => {
                 formationEvents.push(event);
@@ -122,6 +125,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
+            senderPeerId: 'ws-server',
             now: () => BASE_EPOCH_MS + 5_000,
             formationMetrics: (event) => formationEvents.push(event)
         });
@@ -141,7 +145,7 @@ function createComputedWorkWithDownstreamTopics(
     topicIds: readonly string[],
     entry: ResourceEntry,
     replan: 'enqueued' | 'held-by-policy' = 'enqueued'
-) {
+): GroupPresenceSummaryComputedWork {
     return {
         work: decodeCanonicalGroupPresenceSummaryEntry(entry),
         summary: { outcome: 'no-op', summary: { activeSessionIds: [] } },

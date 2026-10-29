@@ -90,7 +90,7 @@ export type DistributedRunEventRow = Readonly<{
     commandId?: string;
     topic?: string;
     summary: string;
-    payloadSummary: string;
+    identitySummary: string;
 }>;
 
 export type DistributedRunRuntimeDiagnosticRow = Readonly<{
@@ -104,7 +104,7 @@ export type DistributedRunRuntimeDiagnosticRow = Readonly<{
     diagnosticTypeId: string;
     message: string;
     summary: string;
-    payloadSummary: string;
+    identitySummary: string;
     connection?: string;
     actor?: string;
     groupId?: string;

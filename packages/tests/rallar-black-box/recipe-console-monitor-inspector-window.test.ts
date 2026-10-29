@@ -457,7 +457,7 @@ function diagnostic(
         diagnosticTypeId: 'test-diagnostic',
         message: eventId,
         summary: eventId,
-        payloadSummary: '{}'
+        identitySummary: 'kind=diagnostic'
     };
 }
 
@@ -481,7 +481,7 @@ function event(eventId: string, commandId: string): DistributedRunEventRow {
         atEpochMs: 4,
         kind: 'message',
         summary: eventId,
-        payloadSummary: '{}'
+        identitySummary: 'kind=message'
     };
 }
 

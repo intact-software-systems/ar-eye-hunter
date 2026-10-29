@@ -151,7 +151,8 @@ describe('group-state delta envelope construction', () => {
             now: () => {
                 throw new Error('compute read the worker clock');
             },
-            serviceId: 'summary-worker'
+            serviceId: 'summary-worker',
+            senderPeerId: 'ws-server'
         });
         const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
 
@@ -230,7 +231,8 @@ function createSummaryWorkService(runtime: GroupBarrierRepository): GroupPresenc
         recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 1_000,
-        serviceId: 'summary-worker'
+        serviceId: 'summary-worker',
+        senderPeerId: 'ws-server'
     });
 }
 

@@ -1,64 +1,40 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import {
-    createRallarAlmReceiptDiagnosticsRecorder,
-    type RallarAlmReceiptDiagnosticsRecorder
-} from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
+import { createRallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import type {
-    QueueBoxPubSubBridge,
-    QueueBoxPubSubMessage
-} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import {
     newALBroadcastMessage,
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import {
-    createInMemoryALAdmissionState,
-    InMemoryAdmissionBackend,
-    type ALAdmissionMemoryState
-} from '@shared/alm/al-admission-backend.ts';
-import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import {
-    createDefaultWsQueueBoxServerService,
-    type WsQueueBoxServerService
-} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import {
-    ConnectionContext,
-    JsonWebSocketServer
-} from '@shared/websocket/json-web-socket-server.ts';
+import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend.ts';
 
-import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import {
+    countCopies,
+    createBridgeBus,
+    createReceiptOutbox,
+    createReceiptServer,
+    installClock,
+    RECEIPT_SERVER_PEER_ID,
+    type ReceiptServerInstance
+} from './ws-queue-box-server-receipt-fixture.ts';
 
-const SERVER_ID = 'server';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 const ROOM = { ...SCOPE, groupId: 'room-1' };
 /** Long enough that the receipt budget (four 2 s windows) ends first. */
 const NOTIFICATION_TTL_MS = 60_000;
 const CLOCK_STEP_MS = 1_000;
 
-interface ServerInstance {
-    readonly service: WsQueueBoxServerService;
-    readonly engine: InboxOutboxEngine;
-    readonly sockets: Readonly<Record<string, SimulatedWebSocket>>;
-}
-
 describe('receipts of the server\'s own room notifications', () => {
     it('sends only to the audience frozen at publish and records who confirmed, then that the rest never did', async () => {
-        const clock = mockClock();
+        const clock = installClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
             nowEpochMs: () => clock.nowMs,
             capacity: 256
         });
-        const outbox = createOutbox(clock);
-        const local = await createInstance({
+        const outbox = createReceiptOutbox(clock);
+        const local = await createReceiptServer({
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -103,13 +79,13 @@ describe('receipts of the server\'s own room notifications', () => {
     });
 
     it('keeps a session that left in the receipt, where it reads unconfirmed, while the retries reach the rest', async () => {
-        const clock = mockClock();
+        const clock = installClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
             nowEpochMs: () => clock.nowMs,
             capacity: 256
         });
-        const outbox = createOutbox(clock);
-        const local = await createInstance({
+        const outbox = createReceiptOutbox(clock);
+        const local = await createReceiptServer({
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -140,13 +116,13 @@ describe('receipts of the server\'s own room notifications', () => {
     it.each(['hop', 'subtree'] as const)(
         'keeps the hop that confirmed a %s receipt across the retries to the rest, which never re-route',
         async (ack) => {
-            const clock = mockClock();
+            const clock = installClock();
             const recorder = createRallarAlmReceiptDiagnosticsRecorder({
                 nowEpochMs: () => clock.nowMs,
                 capacity: 256
             });
-            const outbox = createOutbox(clock);
-            const local = await createInstance({
+            const outbox = createReceiptOutbox(clock);
+            const local = await createReceiptServer({
                 outbox,
                 state: createInMemoryALAdmissionState(outbox),
                 peerIds: ['a', 'b'],
@@ -178,15 +154,15 @@ describe('receipts of the server\'s own room notifications', () => {
     );
 
     it('completes a notification to an empty room at admission: nothing is sent and nothing is recorded', async () => {
-        const clock = mockClock();
+        const clock = installClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
             nowEpochMs: () => clock.nowMs,
             capacity: 256
         });
-        const outbox = createOutbox(clock);
+        const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
-        const local = await createInstance({ outbox, state, peerIds: ['a'], recorder, nowMs: () => clock.nowMs });
-        const remote = await createInstance({ outbox, state, peerIds: ['c'], recorder: undefined, nowMs: () => clock.nowMs });
+        const local = await createReceiptServer({ outbox, state, peerIds: ['a'], recorder, nowMs: () => clock.nowMs });
+        const remote = await createReceiptServer({ outbox, state, peerIds: ['c'], recorder: undefined, nowMs: () => clock.nowMs });
         await joinCluster(local, remote);
 
         const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), { admittedAudience: [], recipientScope: undefined });
@@ -203,12 +179,12 @@ describe('receipts of the server\'s own room notifications', () => {
     });
 
     it('sends a row with no captured audience to every current session, on the publishing instance and on every other one', async () => {
-        const clock = mockClock();
-        const outbox = createOutbox(clock);
+        const clock = installClock();
+        const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
         const nowMs = () => clock.nowMs;
-        const local = await createInstance({ outbox, state, peerIds: ['a', 'b'], recorder: undefined, nowMs });
-        const remote = await createInstance({ outbox, state, peerIds: ['c', 'd'], recorder: undefined, nowMs });
+        const local = await createReceiptServer({ outbox, state, peerIds: ['a', 'b'], recorder: undefined, nowMs });
+        const remote = await createReceiptServer({ outbox, state, peerIds: ['c', 'd'], recorder: undefined, nowMs });
         await joinCluster(local, remote);
 
         await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured'));
@@ -225,18 +201,18 @@ describe('receipts of the server\'s own room notifications', () => {
     });
 
     it('sends the frozen audience only, on the publishing instance and on every other one', async () => {
-        const clock = mockClock();
-        const outbox = createOutbox(clock);
+        const clock = installClock();
+        const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
         const nowMs = () => clock.nowMs;
-        const local = await createInstance({
+        const local = await createReceiptServer({
             outbox,
             state,
             peerIds: ['a', 'b'],
             recorder: undefined,
             nowMs
         });
-        const remote = await createInstance({
+        const remote = await createReceiptServer({
             outbox,
             state,
             peerIds: ['c', 'd'],
@@ -259,96 +235,15 @@ describe('receipts of the server\'s own room notifications', () => {
     });
 });
 
-interface CreateInstanceInput {
-    readonly outbox: InMemoryQueueBox;
-    readonly state: ALAdmissionMemoryState;
-    readonly peerIds: readonly string[];
-    readonly recorder: RallarAlmReceiptDiagnosticsRecorder | undefined;
-    readonly nowMs: () => number;
-}
-
-/** One WS server instance; two of them share the outbox and the outbound admission state, as PostgreSQL does. */
-async function createInstance(input: CreateInstanceInput): Promise<ServerInstance> {
-    const socketServer = new JsonWebSocketServer();
-    const sockets: Record<string, SimulatedWebSocket> = {};
-    for (const peerId of input.peerIds) {
-        const socket = new SimulatedWebSocket(`ws://${peerId}`);
-        await socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: peerId, socket }));
-        sockets[peerId] = socket;
-    }
-    const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
-    const engine = new InboxOutboxEngine();
-    const service = createDefaultWsQueueBoxServerService({
-        inboundVolatileStores: undefined,
-        outbox: input.outbox,
-        socket: socketServer,
-        name: SERVER_ID,
-        queueEngine: engine,
-        forwardsRoomScopedMessages: false,
-        readAuthenticatedConnectionScope: (connection) =>
-            socketServer.connections.get(connection.id) === connection
-                ? { scope: SCOPE, expiresAtEpochMs: input.nowMs() + 60_000 }
-                : undefined,
-        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
-            nowMs: input.nowMs,
-            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-            outboundBackend: new InMemoryAdmissionBackend(input.state, input.nowMs)
-        }),
-        outboundSettlements: input.recorder?.settlements,
-        targetResolver: {
-            resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
-            resolveBroadcastRecipients: recipients
-        }
-    });
-    onTestFinished(() => service.dispose());
-    return { service, engine, sockets };
-}
-
-async function joinCluster(local: ServerInstance, remote: ServerInstance): Promise<void> {
-    const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
-    const bus: QueueBoxPubSubBridge = {
-        subscribe: async (_channel, subscriber) => {
-            subscribers.push(subscriber);
-        },
-        publish: async (_channel, message) => {
-            await Promise.all(subscribers.map(async (subscriber) => await subscriber(message)));
-        }
-    };
-    await installQueueBoxPubSubBridge({
-        wsQBoxServerService: local.service,
-        bridge: bus,
-        channel: 'ws',
-        publisherId: 'local'
-    });
-    await installQueueBoxPubSubBridge({
-        wsQBoxServerService: remote.service,
-        bridge: bus,
-        channel: 'ws',
-        publisherId: 'remote'
-    });
-}
-
-function mockClock(): { nowMs: number; } {
-    const clock = { nowMs: Date.now() };
-    vi.spyOn(Date, 'now').mockImplementation(() => clock.nowMs);
-    vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
-    onTestFinished(() => {
-        vi.restoreAllMocks();
-    });
-    return clock;
-}
-
-function createOutbox(clock: { nowMs: number; }): InMemoryQueueBox {
-    return new InMemoryQueueBox(
-        new Map(),
-        () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)
-    );
+async function joinCluster(local: ReceiptServerInstance, remote: ReceiptServerInstance): Promise<void> {
+    const bus = createBridgeBus();
+    await installQueueBoxPubSubBridge({ wsQBoxServerService: local.service, bridge: bus, channel: 'ws', publisherId: 'local' });
+    await installQueueBoxPubSubBridge({ wsQBoxServerService: remote.service, bridge: bus, channel: 'ws', publisherId: 'remote' });
 }
 
 function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
-        SERVER_ID,
+        RECEIPT_SERVER_PEER_ID,
         newALRoute('room.snapshot', ROOM.groupId, msgId),
         'room',
         'snapshot.v1',
@@ -369,16 +264,12 @@ function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
         {
             ackedMsgId,
             fromPeerId: recipient,
-            toPeerId: SERVER_ID,
-            originPeerId: SERVER_ID,
+            toPeerId: RECEIPT_SERVER_PEER_ID,
+            originPeerId: RECEIPT_SERVER_PEER_ID,
             logicalRecipientPeerId: recipient,
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
         }
     );
-}
-
-function countCopies(socket: SimulatedWebSocket, msgId: string): number {
-    return socket.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === msgId).length;
 }

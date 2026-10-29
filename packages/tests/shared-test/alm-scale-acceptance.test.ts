@@ -276,12 +276,16 @@ function recordTrafficArrivals(runtime: RallarBlackBoxBrowserTestRuntime, scenar
             connection: prefix,
             topic: 'rallar.browser.messages.rtc.message',
             data: {
+                msgId: `${prefix}-arrival-${index}`,
                 typeId: `room.ar-eye-hunter.director.${
                     scenario.role === 'director' && !(scenario.wrongType && index === shotCount - 1) ? 'intent' : 'event'
                 }.v1`,
+                transport: 'rtc',
                 payload: decodeTrafficFixture(
                     JSON.stringify(payload).replaceAll('{auth.sessionId}', scenario.wrongDirector ? 'wrong-director' : 'director-session')
-                )
+                ),
+                traceId: `trace-${prefix}-arrival-${index}`,
+                corrId: `${prefix}-arrival-${index}`
             }
         });
     }
@@ -351,7 +355,13 @@ function createTrafficRuntime(scenario: TrafficScenario): RallarBlackBoxBrowserT
             health: async () => ({ connected: true }),
             readAlmUsage: async () => HEALTHY,
             readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
-            sendMessage: async (command) => ({ handleId: command.handleId, carrier: command.carrier, status: 'acknowledged' }),
+            sendMessage: async (command) => ({
+                handleId: command.handleId,
+                carrier: command.carrier,
+                status: 'acknowledged',
+                traceId: 'trace-scale-send',
+                corrId: String(command.handleId)
+            }),
             observeDelivery: async (command) => {
                 await sleep(scenario.ackDelayMs ?? 0);
                 return createTrafficReceipt(scenario, String(command.handleId));

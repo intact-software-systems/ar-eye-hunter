@@ -168,7 +168,8 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`, `principalId`, `recipientPeer`,
 `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`,
-`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
 `ownership` (`shared`, `exclusive`) and `resourceId` pass unchanged to the product's typed send options of the same
 names; absent, the send is `shared` on a fresh resource id, as a product send is. A recipe that names a
 `resourceId` lets two agents' sends meet on one resource key, which an exclusive claim needs.
@@ -270,7 +271,7 @@ no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
 and optionally `connection`. It waits for the one reply to that request, matched on the reply's `replyToMsgId`, and
 returns a payload-free value: `{ handleId, status, state, corrId }`, with `status` one of `replied`, `timeout`,
 `aborted` and `undelivered`, `state` the request's lifecycle state when the wait ended and `corrId` its correlation;
-`replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId }`. What the reply carried stays in the page.
+`replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId, traceId }`. What the reply carried stays in the page.
 The page ends its wait 250 ms before `timeoutMs`, so a `timeout` is the command's value and never its failure, unlike
 `messages.observe`; the first timeout ends every wait of the request, and a reply arriving after it is dropped with a
 `reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal in any state other
@@ -282,7 +283,8 @@ recorder keeps the last 16 messages of each type the page received, oldest first
 arrival; `index` (from 1) picks one of them. The page replies with `payload` through that message's own `reply()`: a
 WS unicast to the request's sender session under the request's correlation, in its room, on the `command` purpose's
 delivery defaults. `handleId` names the reply's own handle, so `messages.observe` and `messages.receipts` follow its
-delivery. It returns `{ handleId, msgId, replyToMsgId }`. An `index` past the arrivals the page holds fails the command
+delivery. It returns `{ handleId, msgId, replyToMsgId, traceId, corrId }`; the reply inherits the request's trace
+and correlation. An `index` past the arrivals the page holds fails the command
 with `RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED` and sends nothing. The page forgets its arrivals when its
 connection closes.
 
@@ -352,7 +354,8 @@ same three agents, over `ws` and `rtc`, in the full scope. Every room send carri
 roster of its sender's cached room snapshot as `targets.rosterVersion`, beside
 `minSnapshotVersion`; a received message event's `data` states it as `rosterVersion`
 right after `typeId` (absent for a unicast, or for a room send whose sender cached no
-snapshot). The roster moves by the self-service membership route the ensure step
+snapshot); `traceId` and `corrId` are its last two keys, after `payload`, so the serialized prefix a wait matches
+on is unchanged. The roster moves by the self-service membership route the ensure step
 already uses: `leave-roster` writes `{ status: 'left' }` for the page's own principal,
 which advances the group's roster and snapshot versions, and the next scenario's
 `ensure-member` joins it again. The three-agent run starts `recipient-b` only once the
@@ -566,6 +569,23 @@ shows the last outcome per row, not a count of retries, so `fallback-within-dead
 `not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
 three `not-ready` entries).
 
+The `server-originated` cell (`ws`, smoke, two-agent family) proves that a send the server originates carries the trace
+of the request that caused it. Its definition's `messageSelector` `{ topicId: 'group-state.event' }` replaces the
+scenario channel on both connects, so both pages hear the server's group-state deltas. The sender leaves the group and
+rejoins it through the self-service membership route, each request under its own `x-request-id`
+(`alm-ws-server-originated-sender-trace-left`, then `-trace-active`), and asserts that each response echoes it. The
+receiver waits for each delta as a `rallar.browser.ws.message` whose `data.topicId` is `group-state.event` and whose
+envelope trace `data.traceId` and event trace `data.payload.event.traceId` both equal the request's, holds one second
+for its ACK to settle, reads `GET /api/admin/operations/realtime` (the lane's receiver, `bob`, is a platform admin under
+`prod-in-memory`) and asserts with `matchesShape` that `almReceipts.diagnostics.messages` holds an entry with the
+rejoin's trace and `lastSettlementKind` `acknowledgement`. Those entries are process-local, so the cell runs in the
+one-process local lane: hosted manifest 18 withholds it, since its combined connect carries the scenario topic's
+selector. The identity assessment joins the echo, the one receiver wait that names each trace, the delta's `msgId`, and
+the admin entry of the last trace, confirmed by the receiver's own session. The traces are the same in every run, since
+neither a wait's `payloadFields` nor an assert's `expected` resolves placeholders, so an API process that outlives one
+run may still list an earlier run's entry under the trace; the session join, not the recipe assert, scopes the entry to
+the run.
+
 The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
 sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's
 `typeId`, `remaining: 'until-cleared'`, sends one room send with `ack: 'receiver'`, and releases the hold with
@@ -750,7 +770,12 @@ admission-storage polling.
 window, so a scenario that legitimately produced the same message earlier needs
 a distinct `typeId` to say which occurrence it means. A presence claim settles
 as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
-passes only when fewer than `max(count, 1)` messages arrived.
+passes only when fewer than `max(count, 1)` messages arrived. Its result
+lists each matched copy's `msgId`, `traceId`, `corrId` and `transport` as
+`received`, in arrival order and uncapped; its `rallar.bb.messages.received`
+diagnostic carries only `typeId`, `msgId`, `count`, `observed` and `absent`,
+never the copies. A matched copy whose `traceId` is missing or outside the trace
+grammar fails the command as an invalid runtime result.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
@@ -1306,6 +1331,17 @@ WS/RTC runtime diagnostics should use
 the producing `source`, plus the `transport`, connection/group/peer identifiers
 and structured `data`/`error` details a diagnostic concerns. `wait` can match these diagnostics by event fields and payload paths,
 and `assert` can read them through `diagnostics` or `recentDiagnostics`.
+No application payload enters a page-level diagnostic: the console-warning
+bridge sends only a fixed `pattern` token and `source: 'console.warn'` as
+`data`. No `ws.send` result carries a copy of the sent payload: over the Rallar
+signaling socket it is `{ connection, via, rallar, sendObservation }` and its
+`rallar.browser.ws.send_completed` diagnostic omits the payload too; over a raw
+browser WebSocket it is `{ connection, sendObservation }`. Message evidence
+(`kind: "message"` events and wait results) keeps its payloads as the assertion
+surface. The sentinel-payload guard
+`packages/tests/shared-test/rallar-browser-runtime/payload-free-diagnostics.test.ts`
+proves both halves: the page's diagnostics exclude a sentinel payload, and its
+message evidence keeps it.
 
 `assert` is a small browser-agent evidence check. It reads only whitelisted
 runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,

@@ -2,7 +2,6 @@ import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
-import type { RallarBlackBoxTestWsSendCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
 import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import {
@@ -22,7 +21,6 @@ import {
 import { toRallarRemoteBrowserCommandId } from './remote-browser-commands.ts';
 import {
     resolveRemoteWsConfig,
-    toRemoteWsPayload,
     toRemoteWsSendCommand,
     type RemoteWsContext
 } from './remote-ws-connection.ts';
@@ -43,7 +41,6 @@ interface RemoteWsSendInput extends RemoteWsSendTarget {
 }
 
 interface RemoteWsSendObservation {
-    readonly sent: RallarBlackBoxTestWsSendCommand['data'];
     readonly result: ControlResultEnvelope;
     readonly sendStartedAtEpochMs: number;
     readonly sendEndedAtEpochMs: number;
@@ -51,7 +48,6 @@ interface RemoteWsSendObservation {
 
 interface RemoteWsSendDetails {
     readonly sentConnection: string;
-    readonly sent: RallarBlackBoxTestWsSendCommand['data'];
     readonly remote: RallarRemoteBrowserConfig;
     readonly commandId: string;
     readonly result: ApiJsonValue;
@@ -103,7 +99,7 @@ function writeRemoteWsMessage(input: RemoteWsSendInput): Promise<Either<Error, R
             const sendStartedAtEpochMs = context.dependencies.now();
             const ran = await runRallarRemoteBrowserCommand({ remote, fetch, context, command });
             const sendEndedAtEpochMs = context.dependencies.now();
-            return ran.mapRight((result) => ({ sent: command.data, result, sendStartedAtEpochMs, sendEndedAtEpochMs }));
+            return ran.mapRight((result) => ({ result, sendStartedAtEpochMs, sendEndedAtEpochMs }));
         }
     );
 }
@@ -137,7 +133,6 @@ function toRemoteWsSendDetails(input: RemoteWsSendInput, observation: RemoteWsSe
     const remoteResult = toRemoteResultValue(observation.result);
     return {
         sentConnection: toWsConnectionName(input.interaction.request),
-        sent: observation.sent,
         remote: input.remote,
         commandId: input.commandId,
         result: remoteResult,
@@ -161,7 +156,6 @@ function toRemoteWsSendFailure(target: RemoteWsSendTarget, error: Error): WsInte
         details: {
             connection: connectionName,
             remote,
-            sent: toRemoteWsPayload(interaction.request),
             sendResult: { status: 'failed', connection: connectionName, exception: error.message },
             exception: error.message
         }

@@ -98,7 +98,7 @@ describe('distributed recipes monitor', () => {
             failedCount: 1
         });
         expect(monitor.events.map((event) => event.summary)).toEqual(['payload received']);
-        expect(monitor.events[0].payloadSummary).toContain('topic=message.received');
+        expect(monitor.events[0].identitySummary).toContain('topic=message.received');
         expect(monitor.failures.map((failure) => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map((item) => item.label)).toContain('result failed');
     });
@@ -838,6 +838,7 @@ describe('distributed recipes monitor', () => {
                     protocolVersion: 1,
                     runId: 'run-1',
                     agentId: 'agent-b',
+                    commandId: 'start-b',
                     eventId: 'live-warning-diagnostic',
                     atEpochMs: 2_060,
                     payload: {
@@ -849,13 +850,10 @@ describe('distributed recipes monitor', () => {
                             diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
                             topic: 'rallar.browser.ws.unhandled_message',
                             severity: 'warning',
-                            message: 'Unhandled WS message',
+                            message: 'rallar.browser.ws.unhandled_message',
                             transport: 'ws',
                             groupId: 'bb-group',
-                            data: {
-                                distributedRunId: 'dist-1',
-                                messageId: liveMessageId
-                            }
+                            data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
                         }
                     }
                 }

@@ -33,7 +33,8 @@ describe('group presence summary coalesced write', () => {
             recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 10_000,
-            serviceId: 'summary-worker'
+            serviceId: 'summary-worker',
+            senderPeerId: 'ws-server'
         });
         const reads = (await worker.read(
             [commandedWork, second!].map((work) => ({

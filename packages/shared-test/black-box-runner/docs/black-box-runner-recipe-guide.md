@@ -385,7 +385,7 @@ WS `send` results preserve observable send metadata in `actual`:
 - `sendResult.status`
 - `sendResult.readyState` and `sendResult.readyStateName`
 - `sendResult.bufferedAmount`
-- `sendResult.wirePayload`
+- `sendResult.wirePayloadLength`
 - `sendStartedAtEpochMs`, `sendEndedAtEpochMs`, and `sendLatencyMs`
 
 These fields can be extracted with `outputPath` or `outputs`, then compared with
@@ -928,6 +928,17 @@ correlate the matcher to the operation being checked. It does not count frames
 already consumed before the wait. Consumption, observation loss, or a connection
 change during the window prevents the runner from certifying a count. A count
 wait itself leaves observations available for later checks.
+
+On `ws.wait` and `ws.send`, `expect.countDistinctBy` names the path whose value
+identifies one publication, and the count counts distinct values among the
+matching frames instead of the frames. A receiver-receipted server publication,
+such as a group-state delta, is retransmitted to a socket that never
+acknowledges it, and a recipe socket never does, so count such publications with
+`"countDistinctBy": "id.msgId"`. The path is read from the received frame as it
+arrived, before `expect.decodeJsonPaths` decodes anything, and a matching frame
+without a value at that path fails the count. Only a count reads it: strict
+preflight reports `STRICT_EXPECT_IGNORED` for `countDistinctBy` on a step without
+`expect.count` or on an `rtc.*` step.
 
 ## Array Comparison Is Unordered In Every Mode
 

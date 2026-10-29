@@ -467,12 +467,6 @@ export const reviewedBrowserDispositions = Object.freeze([
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 70
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
@@ -506,11 +500,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
         rule: 'boundary.unknown',
         symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toConsoleWarningPart'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',

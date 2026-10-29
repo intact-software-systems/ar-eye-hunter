@@ -284,6 +284,7 @@ Deno.test(
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-group-service',
+                senderPeerId: 'ws-server',
                 now: Date.now
             });
             outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
@@ -568,6 +569,7 @@ Deno.test(
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-summary-fence',
+                senderPeerId: 'ws-server',
                 now: () => nowEpochMs
             });
 

@@ -794,8 +794,9 @@ Result:
 - Normalized browser Rallar runtime bridge events so live Rallar diagnostic
   events can be matched by ordinary `wait` and `assert` commands.
 - Added a scoped browser-console warning bridge for known live WS/RTC warning
-  patterns, including `Unhandled WS message: ...` and RTC data-channel/peer
-  routing warnings.
+  patterns, including `Unhandled WS message` and RTC data-channel/peer routing
+  warnings. It records a fixed pattern token and `source: 'console.warn'`, never
+  the console arguments.
 - Documented the contract in
   `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`.
 

@@ -630,7 +630,7 @@ function hostileEvidenceEntry(id: string): DistributedArtifactEvidenceEntry {
         status: 'failed',
         category: ESCAPED_OVERSIZED_TEXT,
         summary: ESCAPED_OVERSIZED_TEXT,
-        payloadSummary: ESCAPED_OVERSIZED_TEXT,
+        identitySummary: ESCAPED_OVERSIZED_TEXT,
         failureDetails: {
             code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
             name: 'RALLAR_BLACK_BOX_TIMEOUT',

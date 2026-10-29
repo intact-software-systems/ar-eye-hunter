@@ -118,7 +118,7 @@ describe('rallar-bb runtime facade', () => {
                     return {
                         status: 'ok',
                         value: {
-                            sent: command.send
+                            status: 'sent'
                         },
                         nextStatus: context.state().status
                     };
@@ -285,7 +285,7 @@ describe('rallar-bb runtime facade', () => {
                     return {
                         status: 'ok',
                         value: {
-                            sent: command.send
+                            status: 'sent'
                         },
                         nextStatus: context.state().status
                     };

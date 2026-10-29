@@ -100,6 +100,8 @@ export interface GroupPresenceSummaryWorkOptions {
     readonly database?: PSqlSql;
     readonly now: () => number;
     readonly serviceId: string;
+    /** The WS service peer that sends the group-state deltas, the peer their receivers acknowledge. */
+    readonly senderPeerId: string;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationPresenceSummarySink;
     readonly timing?: RallarTimingSink;
@@ -183,6 +185,7 @@ export class GroupPresenceSummaryWork {
         this.now = options.now;
         this.computeOptions = {
             serviceId: options.serviceId,
+            senderPeerId: options.senderPeerId,
             recomputeDebounceMs: options.recomputeDebounceMs,
             recomputeMaxWaitMs: options.recomputeMaxWaitMs,
             minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS

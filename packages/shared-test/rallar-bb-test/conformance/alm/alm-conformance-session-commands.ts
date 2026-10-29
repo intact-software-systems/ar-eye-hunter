@@ -1,8 +1,9 @@
-import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestHttpRequestCommand,
     RallarBlackBoxTestRtcConnectCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
@@ -14,6 +15,7 @@ import {
     toBudgetMs
 } from './alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
+import { toResultAssertion } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
@@ -26,17 +28,24 @@ import {
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
-const OWNER_LEASE_LAPSE_TOPIC = 'rallar.black-box.alm.owner-lease-lapsed';
 
 export type AlmConformanceSelfMembershipStatus = 'active' | 'left';
 
 /** Each names one mutation request of a role in a scenario, so a re-run replays it rather than writing twice. */
-type AlmConformanceEnsureRequest = 'group' | 'member' | 'leave-roster';
+type AlmConformanceEnsureRequest = 'group' | 'member' | 'leave-roster' | 'leave-traced' | 'rejoin-traced';
 
 interface AlmConformanceSelfMembershipWrite {
     readonly commandName: string;
     readonly requestName: AlmConformanceEnsureRequest;
     readonly purpose: string;
+}
+
+interface AlmConformanceSelfMembershipWriteInput {
+    readonly step: AlmConformanceStepInput;
+    readonly status: AlmConformanceSelfMembershipStatus;
+    readonly write: AlmConformanceSelfMembershipWrite;
+    /** The request's own headers; undefined sends none beyond the page's authentication. */
+    readonly headers: Readonly<Record<string, string>> | undefined;
 }
 
 const SELF_MEMBERSHIP_WRITES: Readonly<Record<AlmConformanceSelfMembershipStatus, AlmConformanceSelfMembershipWrite>> =
@@ -52,6 +61,22 @@ const SELF_MEMBERSHIP_WRITES: Readonly<Record<AlmConformanceSelfMembershipStatus
             purpose: 'Leave the group, so its roster version advances.'
         }
     };
+
+/** Their own requests: the scenario's prologue already ensures the member under the untraced one. */
+const TRACED_SELF_MEMBERSHIP_WRITES: Readonly<
+    Record<AlmConformanceSelfMembershipStatus, AlmConformanceSelfMembershipWrite>
+> = {
+    active: {
+        commandName: 'rejoin-traced',
+        requestName: 'rejoin-traced',
+        purpose: 'Rejoin the group under the request trace, so the member delta the server publishes carries it.'
+    },
+    left: {
+        commandName: 'leave-traced',
+        requestName: 'leave-traced',
+        purpose: 'Leave the group under the request trace, so the member delta the server publishes carries it.'
+    }
+};
 
 /** A connect that keeps the auth session its document already holds: no credentials, so it never signs in afresh. */
 export const RESTORED_SESSION_RALLAR = { username: '', password: '', restoreSession: true } as const;
@@ -93,9 +118,37 @@ export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlack
 export function toSelfMembershipCommand(
     step: AlmConformanceStepInput,
     status: AlmConformanceSelfMembershipStatus
-): RallarBlackBoxTestCommand {
+): RallarBlackBoxTestHttpRequestCommand {
+    return toSelfMembershipWriteCommand({ step, status, write: SELF_MEMBERSHIP_WRITES[status], headers: undefined });
+}
+
+/**
+ * {@link toSelfMembershipCommand} under its own request, sent with `x-request-id` so its writes carry `traceId`, and an
+ * assertion that the response echoes it: the browser's `http.request` states no expected response header.
+ */
+export function toTracedSelfMembershipCommands(
+    step: AlmConformanceStepInput,
+    status: AlmConformanceSelfMembershipStatus,
+    traceId: string
+): readonly RallarBlackBoxTestCommand[] {
+    const write = TRACED_SELF_MEMBERSHIP_WRITES[status];
+    return [
+        toSelfMembershipWriteCommand({ step, status, write, headers: { [AL_TRACE_ID_HTTP_HEADER]: traceId } }),
+        toResultAssertion({
+            step,
+            name: `assert-${write.commandName}-echo`,
+            resultName: write.commandName,
+            field: `headers.${AL_TRACE_ID_HTTP_HEADER}`,
+            operator: 'equals',
+            expected: traceId
+        })
+    ];
+}
+
+function toSelfMembershipWriteCommand(
+    { step, status, write, headers }: AlmConformanceSelfMembershipWriteInput
+): RallarBlackBoxTestHttpRequestCommand {
     const group = step.input.group;
-    const write = SELF_MEMBERSHIP_WRITES[status];
     return {
         kind: 'http.request',
         commandId: toCommandId(step, write.commandName),
@@ -109,6 +162,7 @@ export function toSelfMembershipCommand(
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
                 `/requests/${toEnsureRequestId(step, write.requestName)}`,
+            ...(headers === undefined ? {} : { headers }),
             body: {
                 status
             }
@@ -137,6 +191,7 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
             almDiagnostics: true,
             typeId,
             topicId: toScenarioTopicId(step),
+            ...(step.messageSelector === undefined ? {} : { messageSelector: { ...step.messageSelector } }),
             ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
             ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
         },
@@ -168,21 +223,6 @@ function waitsForReadyPeers(step: AlmConformanceStepInput): boolean {
 /** The successor is a second page of the sender's session, so the two are one peer. */
 function toPeerCount(roles: readonly AlmConformanceRole[]): number {
     return roles.filter((role) => role !== 'successor').length;
-}
-
-/**
- * Holds a successor's connect until the closed owner page's last work lease has lapsed. A held claim stays reserved
- * until its lease ends, so a takeover before then finds the row leased and its first batch claims nothing; after it,
- * that batch claims the row. Nothing emits the topic, so the wait only lets the lease run out.
- */
-export function toOwnerLeaseLapseWait(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    return {
-        kind: 'wait',
-        commandId: toCommandId(step, 'owner-lease-lapses'),
-        match: { kind: 'diagnostic', topic: OWNER_LEASE_LAPSE_TOPIC },
-        absent: true,
-        timeoutMs: AL_OUTBOUND_WORK_LEASE_MS + RESPONSE_MARGIN_MS
-    };
 }
 
 export function toStatsCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {

@@ -1,3 +1,6 @@
+import type { RallarBlackBoxTestRecord } from './rallar-black-box-test-contracts.ts';
+import { decodeRecord } from './runtime/decode-runtime-result-values.ts';
+
 export const ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS = 256;
 export const ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS = 64;
 export const ADVANCED_DIAGNOSTIC_HANDOFF_MAX_TEXT_LENGTH = 2_048;
@@ -54,17 +57,17 @@ const DIAGNOSTIC_SIGNAL_FIELDS = [
     'topic',
     'message',
     'summary',
-    'payloadSummary'
+    'identitySummary'
 ] as const;
 
 export function deriveAdvancedDiagnosticHandoffTargets(
     input: unknown
 ): readonly AdvancedDiagnosticHandoffTarget[] {
-    const root = asRecord(input);
-    const failure = asRecord(read(root, 'failure'));
+    const root = decodeHandoffRecord(input);
+    const failure = decodeHandoffRecord(read(root, 'failure'));
     const failureSignals = textSignals(failure, FAILURE_SIGNAL_FIELDS);
-    const failureCode = cleanText(read(failure, 'code'))?.trim().toUpperCase();
-    const failureKey = cleanIdentity(read(failure, 'key'));
+    const failureCode = decodeBoundedText(read(failure, 'code'))?.trim().toUpperCase();
+    const failureKey = decodeIdentity(read(failure, 'key'));
     const correlatedDiagnosticSignals = failureKey
         ? diagnosticSignalsForFailure(read(root, 'diagnostics'), failureKey)
         : [];
@@ -101,7 +104,7 @@ function diagnosticSignalsForFailure(value: unknown, failureKey: string): readon
     const signals: string[] = [];
     const limit = Math.min(value.length, ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS);
     for (let index = 0; index < limit; index += 1) {
-        const diagnostic = asRecord(readIndex(value, index));
+        const diagnostic = decodeHandoffRecord(readIndex(value, index));
         if (!hasCorrelatedFailureKey(read(diagnostic, 'correlatedFailureKeys'), failureKey)) {
             continue;
         }
@@ -119,7 +122,7 @@ function hasCorrelatedFailureKey(value: unknown, failureKey: string): boolean {
         ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS
     );
     for (let index = 0; index < limit; index += 1) {
-        if (cleanIdentity(readIndex(value, index)) === failureKey) {
+        if (decodeIdentity(readIndex(value, index)) === failureKey) {
             return true;
         }
     }
@@ -127,12 +130,12 @@ function hasCorrelatedFailureKey(value: unknown, failureKey: string): boolean {
 }
 
 function textSignals(
-    record: Readonly<Record<string, unknown>>,
+    record: RallarBlackBoxTestRecord,
     fields: readonly string[]
 ): readonly string[] {
     const signals: string[] = [];
     for (const field of fields) {
-        const text = cleanText(read(record, field));
+        const text = decodeBoundedText(read(record, field));
         if (text) {
             signals.push(text.toLowerCase());
         }
@@ -179,7 +182,7 @@ function boundedPatternTest(value: string, pattern: RegExp): boolean {
     return pattern.test(value.slice(0, ADVANCED_DIAGNOSTIC_HANDOFF_MAX_TEXT_LENGTH));
 }
 
-function cleanText(value: unknown): string | undefined {
+function decodeBoundedText(value: unknown): string | undefined {
     if (typeof value !== 'string') {
         return undefined;
     }
@@ -187,7 +190,7 @@ function cleanText(value: unknown): string | undefined {
     return bounded.trim().length > 0 ? bounded : undefined;
 }
 
-function cleanIdentity(value: unknown): string | undefined {
+function decodeIdentity(value: unknown): string | undefined {
     if (typeof value !== 'string' || value.length > ADVANCED_DIAGNOSTIC_HANDOFF_MAX_TEXT_LENGTH) {
         return undefined;
     }
@@ -195,13 +198,17 @@ function cleanIdentity(value: unknown): string | undefined {
     return clean.length > 0 ? clean : undefined;
 }
 
-function asRecord(value: unknown): Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null
-        ? value as Readonly<Record<string, unknown>>
-        : {};
+/** A value whose inspection throws, such as a revoked proxy, is an absent record. */
+function decodeHandoffRecord(value: unknown): RallarBlackBoxTestRecord {
+    try {
+        return decodeRecord(value);
+    }
+    catch {
+        return {};
+    }
 }
 
-function read(record: Readonly<Record<string, unknown>>, key: string): unknown {
+function read(record: RallarBlackBoxTestRecord, key: string): unknown {
     try {
         return record[key];
     }

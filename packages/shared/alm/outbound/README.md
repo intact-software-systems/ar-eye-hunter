@@ -646,6 +646,14 @@ NOTIFY limit and that has no canonical inbound row to point at is refused `faile
 Either way the receipt is the aggregate above, so a recipient the one send did not reach, or that never
 acknowledged, reads unconfirmed and the receipt ends `timed-out` naming it. A `none` topic runs its handlers only.
 
+The server's own state-sync rows never pass the router: they are `WS_OUTBOX` rows with a frozen audience. The
+group-state delta is the production server publication that asks a receipt. It is a room broadcast with
+`ack: 'receiver'` to the group's active sessions, sent under the WS service's peer id because a session's ACK
+names the delta's sender and counts only at that peer, so the server's outbound owner keeps the `receiver` row
+described below and the admin read shows who confirmed it under the request's trace. A client-state event and every
+snapshot page keep `ack: 'none'`: a principal audience names no room to confirm against, and a snapshot page is
+superseded by the next one.
+
 A recipient's ACK reaches the server through the recipient's own socket, which may be on another instance than
 the aggregate (D106). An instance that holds no aggregate for the ACK checks what needs none (the sender is the
 authenticated session, the ACK speaks for itself and is addressed to the origin it names) and relays it once as a

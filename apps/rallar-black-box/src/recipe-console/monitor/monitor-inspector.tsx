@@ -200,7 +200,7 @@ function DiagnosticView({ model, eventId, onSelect }: Readonly<{
                     ['Type', row.diagnosticTypeId],
                     ['Topic', row.topic],
                     ['Observed', toEpochLabel(row.atEpochMs)],
-                    ['Payload', row.payloadSummary]
+                    ['Identity', row.identitySummary]
                 ]}
             />
             <MonitorEvidenceLinksWindow
@@ -245,7 +245,7 @@ function EventView({ model, id }: Readonly<{ model: MonitorWorkspaceModel; id: s
         return <MissingEvidence kind="event" id={id} />;
     }
     return (
-        <EvidenceSection title={row.summary} description={row.payloadSummary}>
+        <EvidenceSection title={row.summary} description={row.identitySummary}>
             <Facts
                 values={[
                     ['Kind', row.kind],

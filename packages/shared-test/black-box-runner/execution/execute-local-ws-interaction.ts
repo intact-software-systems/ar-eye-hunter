@@ -1,14 +1,14 @@
-import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
+import { waitForWsClose } from '../ws/wait-for-ws-close.ts';
+import { waitForWsMessageCount } from '../ws/wait-for-ws-message-count.ts';
 import {
     toWsConnectionName,
     toWsFailureStatus,
-    toWsSuccessStatus
+    toWsSuccessStatus,
+    type WsInteractionConfig
 } from '../ws/ws-interaction-statuses.ts';
 import {
-    waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
-    waitForWsMessageCount,
     waitForWsMessages,
     type WsInteraction,
     type WsInteractionResult,
@@ -25,14 +25,12 @@ import {
 interface WsSendObservation extends LocalWsSocketState {
     readonly status: 'sent' | 'failed';
     readonly connection: string;
-    readonly wirePayload: string;
     readonly wirePayloadLength: number;
     readonly exception?: string;
 }
 
 interface WsSendDetails {
     readonly sentConnection: string;
-    readonly sent: unknown;
     readonly sendResult: WsSendObservation;
     readonly sendStartedAtEpochMs: number;
     readonly sendEndedAtEpochMs: number;
@@ -63,7 +61,6 @@ function sendWsFrame(input: LocalWsInput, ws: WebSocket): WsSendDetails {
     const sendEndedAtEpochMs = input.context.dependencies.now();
     return {
         sentConnection: connectionName,
-        sent: payload,
         sendStartedAtEpochMs,
         sendEndedAtEpochMs,
         sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
@@ -71,7 +68,6 @@ function sendWsFrame(input: LocalWsInput, ws: WebSocket): WsSendDetails {
             status: exception === undefined ? 'sent' : 'failed',
             connection: connectionName,
             ...toWsSocketState(ws),
-            wirePayload,
             wirePayloadLength: wirePayload.length,
             ...(exception === undefined ? {} : { exception })
         }

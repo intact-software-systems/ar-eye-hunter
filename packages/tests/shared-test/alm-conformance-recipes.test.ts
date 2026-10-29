@@ -177,6 +177,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
+        'server-originated',
         'capacity',
         'capacity-age',
         'capacity-tracks',
@@ -338,7 +339,14 @@ describe('alm-conformance recipe family', () => {
 
     it('lets the sender connect only once every declared recipient is ready, so its audience never freezes short', () => {
         const readinessOf = (roles: readonly AlmConformanceRole[], role: AlmConformanceRole) =>
-            toConnectCommand({ input: toConformanceInput('rtc'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role, roles })
+            toConnectCommand({
+                input: toConformanceInput('rtc'),
+                scenarioId: 'delivery-baseline',
+                scenarioKey: 'probe',
+                role,
+                roles,
+                messageSelector: undefined
+            })
                 .readiness?.minReadyPeers;
         const threeRoles = ['sender', 'receiver', 'recipient-b'] as const;
 
@@ -349,7 +357,14 @@ describe('alm-conformance recipe family', () => {
         expect(readinessOf(threeRoles, 'receiver')).toBeUndefined();
         expect(readinessOf(threeRoles, 'recipient-b')).toBeUndefined();
         expect(
-            toConnectCommand({ input: toConformanceInput('ws'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role: 'sender', roles: threeRoles })
+            toConnectCommand({
+                input: toConformanceInput('ws'),
+                scenarioId: 'delivery-baseline',
+                scenarioKey: 'probe',
+                role: 'sender',
+                roles: threeRoles,
+                messageSelector: undefined
+            })
                 .readiness
         ).toBeUndefined();
     });
@@ -360,7 +375,14 @@ describe('alm-conformance recipe family', () => {
 
         for (const role of sameContext) {
             expect(
-                toConnectCommand({ input: toConformanceInput('rtc'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role, roles: sameContext })
+                toConnectCommand({
+                    input: toConformanceInput('rtc'),
+                    scenarioId: 'delivery-baseline',
+                    scenarioKey: 'probe',
+                    role,
+                    roles: sameContext,
+                    messageSelector: undefined
+                })
                     .readiness?.minReadyPeers,
                 role
             ).toBe(1);
@@ -373,7 +395,8 @@ describe('alm-conformance recipe family', () => {
             scenarioId: 'delivery-baseline',
             scenarioKey: 'probe',
             role: 'successor',
-            roles: ['sender', 'receiver', 'successor']
+            roles: ['sender', 'receiver', 'successor'],
+            messageSelector: undefined
         });
 
         expect(connect.commandId).toBe('alm-ws-probe-successor-connect');
@@ -528,7 +551,8 @@ describe('alm-conformance recipe family', () => {
             'deadline-expiry',
             'delivery-baseline',
             'delivery-lifecycle',
-            'durable-opt-in'
+            'durable-opt-in',
+            'server-originated'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { RecordedAlmConformanceParticipant } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
-import { assessAlmReceiptRoleIdentity } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import type { RecordedAlmConformanceParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import { assessAlmReceiptRoleIdentity } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
 import type { RallarBlackBoxTestRecipe, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 interface ReceiptLists {

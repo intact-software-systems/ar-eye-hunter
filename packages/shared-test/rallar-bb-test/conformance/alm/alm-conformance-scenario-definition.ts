@@ -67,6 +67,7 @@ export type AlmConformanceScenarioId =
     | 'reply-timeout-late'
     | 'reply-undelivered'
     | 'server-command'
+    | 'server-originated'
     | 'storage-unavailable'
     | 'unicast-fallback'
     | 'volatile-default'
@@ -75,6 +76,11 @@ export type AlmConformanceScenarioId =
 
 export type AlmConformanceTag = 'smoke' | 'full';
 
+/** A connect's `RallarMessageSelector`, which this Deno-loaded catalog cannot import: the topic its lanes subscribe. */
+export interface AlmConformanceMessageSelector {
+    readonly topicId: string;
+}
+
 export interface AlmConformanceStepInput {
     readonly input: CreateAlmConformanceRecipesInput;
     readonly scenarioId: AlmConformanceScenarioId;
@@ -82,6 +88,8 @@ export interface AlmConformanceStepInput {
     readonly role: AlmConformanceRole;
     /** Every role the scenario declares, which decides how many ready peers each connect waits for. */
     readonly roles: readonly AlmConformanceRole[];
+    /** The definition's selector, which every connect of the scenario carries; undefined subscribes its own channel. */
+    readonly messageSelector: AlmConformanceMessageSelector | undefined;
 }
 
 export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput {
@@ -110,6 +118,11 @@ export interface AlmConformanceScenarioDefinition {
      * when it declares `successor`, `same-principal` exactly when it declares `sibling`.
      */
     readonly laneFamily: AlmConformanceLaneFamily;
+    /**
+     * Absent, each connect subscribes the scenario's own typed channel. Otherwise every connect subscribes its lanes to
+     * this selector instead, so its pages hear the server's own publications on that topic.
+     */
+    readonly messageSelector?: AlmConformanceMessageSelector;
     /** Called once per page of the sender's session: the sender, and the successor a scenario declares. */
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
     /** Called once per recipient role the scenario declares; the step's role tells the recipients apart. */

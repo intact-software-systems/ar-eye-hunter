@@ -1,6 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    AL_MESSAGE_ENVELOPE_VERSION,
+    type ALAckMode,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
@@ -109,7 +113,9 @@ export function computeClientStateSyncEntries(
                 effect.payloadKind === 'snapshot'
                     ? 'clientStateSnapshot'
                     : 'clientStateEvent'
-            ]
+            ],
+            // A principal audience names no room for its receivers to confirm against.
+            ack: 'none'
         })
     );
 }
@@ -131,12 +137,9 @@ export function computeGroupStateSyncEntries(
                 ? AppTopics.groupDirectorySnapshot
                 : AppTopics.groupStateSnapshot
             : AppTopics.groupStateEvent;
-        return toStateSyncEntries({
-            computed,
-            effect,
-            senderId,
-            topicId
-        }).map(({ entry }) => entry);
+        // A delta is a room broadcast its receivers confirm; a snapshot page is superseded by the next one instead.
+        const ack = effect.payloadKind === 'delta-envelope' ? 'receiver' : 'none';
+        return toStateSyncEntries({ computed, effect, senderId, topicId, ack }).map(({ entry }) => entry);
     });
 }
 
@@ -157,19 +160,13 @@ interface ToStateSyncEntryInput {
     readonly effect: ComputedStateSyncEffect;
     readonly senderId: string;
     readonly topicId: string;
+    readonly ack: ALAckMode;
 }
 
 function toStateSyncEntries(input: ToStateSyncEntryInput): readonly StateSyncEntry[] {
-    const { computed, effect, senderId, topicId } = input;
-    const causalIdentity = typeof computed.acceptedCausalRevision === 'number'
-        ? `revision=${computed.acceptedCausalRevision}`
-        : `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`;
-    const messageId = [
-        computed.commandId,
-        effect.effectKind,
-        effect.payloadKind,
-        causalIdentity
-    ].join(':');
+    const { computed, effect, senderId, topicId, ack } = input;
+    const causalIdentity = toStateSyncCausalIdentity(computed.acceptedCausalRevision);
+    const messageId = [computed.commandId, effect.effectKind, effect.payloadKind, causalIdentity].join(':');
     const key = toAppQueueKey({
         topicId,
         resourceId: messageId,
@@ -180,26 +177,9 @@ function toStateSyncEntries(input: ToStateSyncEntryInput): readonly StateSyncEnt
             computed.audience.resourceId
         ])
     });
-    const envelope = materializeStateSyncEnvelope({ key, computed, senderId, messageId });
+    const envelope = toStateSyncEnvelope({ key, computed, senderId, messageId, ack });
     const messages = effect.payloadKind === 'snapshot'
-        ? computeStateSnapshotPages({
-            envelope,
-            scope: computed.audience,
-            revision: causalIdentity,
-            resource: JSON.stringify(effect.payload),
-            groupRecipientPeerIds: effect.effectKind === 'principal-state'
-                ? []
-                : computeGroupSnapshotRecipients(effect.payload, computed.createdAtEpochMs),
-            unicastPeerIds: effect.effectKind === 'principal-state'
-                ? effect.payload.activeSessions.filter((session) =>
-                    isClientSnapshotSessionLive(session, computed.createdAtEpochMs)
-                )
-                    .map((session) => session.sessionId)
-                : []
-        })
-            .fold((issue) => {
-                throw new TypeError(issue.message);
-            }, (pages) => pages)
+        ? computeStateSyncSnapshotPages({ envelope, computed, effect, causalIdentity })
         : [decodePersistedALMessageValue({
             ...envelope,
             // Client revisions are scalar. Group deltas carry their own predecessor/resulting
@@ -212,15 +192,52 @@ function toStateSyncEntries(input: ToStateSyncEntryInput): readonly StateSyncEnt
     return messages.map((message) => ({ message, entry: toStateSyncPageEntry(computed, message) }));
 }
 
+function toStateSyncCausalIdentity(revision: ComputedStateSync['acceptedCausalRevision']): string {
+    return typeof revision === 'number'
+        ? `revision=${revision}`
+        : `group=${revision.groupRevision};presence=${revision.presenceRevision}`;
+}
+
+interface StateSyncSnapshotPagesInput {
+    readonly envelope: StateSnapshotEnvelope;
+    readonly computed: ComputedStateSync;
+    readonly effect: Extract<ComputedStateSyncEffect, { payloadKind: 'snapshot'; }>;
+    readonly causalIdentity: string;
+}
+
+/** The pages of an effect already validated against accepted authority; a refused page set is a broken invariant. */
+function computeStateSyncSnapshotPages(input: StateSyncSnapshotPagesInput): readonly ALMessage[] {
+    const { envelope, computed, effect } = input;
+    return computeStateSnapshotPages({
+        envelope,
+        scope: computed.audience,
+        revision: input.causalIdentity,
+        resource: JSON.stringify(effect.payload),
+        groupRecipientPeerIds: effect.effectKind === 'principal-state'
+            ? []
+            : computeGroupSnapshotRecipients(effect.payload, computed.createdAtEpochMs),
+        unicastPeerIds: effect.effectKind === 'principal-state'
+            ? effect.payload.activeSessions.filter((session) =>
+                isClientSnapshotSessionLive(session, computed.createdAtEpochMs)
+            )
+                .map((session) => session.sessionId)
+            : []
+    })
+        .fold((issue) => {
+            throw new TypeError(issue.message);
+        }, (pages) => pages);
+}
+
 interface StateSyncEnvelopeFacts {
     readonly key: ALMessage['route'];
     readonly computed: ComputedStateSync;
     readonly senderId: string;
     readonly messageId: string;
+    readonly ack: ALAckMode;
 }
 
-function materializeStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnapshotEnvelope {
-    const { key, computed, senderId, messageId } = facts;
+function toStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnapshotEnvelope {
+    const { key, computed, senderId, messageId, ack } = facts;
     return {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
@@ -235,7 +252,7 @@ function materializeStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnaps
         delivery: {
             ownership: 'shared',
             reliability: 'at-least-once',
-            ack: 'none'
+            ack
         },
         audit: {
             createdBy: senderId,

@@ -1,6 +1,7 @@
 import { assert, assertEquals } from '@std/assert';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { RallarBlackBoxTestMessagesReceivedResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
@@ -425,9 +426,22 @@ export class AlmReloadPorts {
             message.deliveredRecipientRoles.includes(role)
         );
         this.admitReceiverInbox(arrived);
-        const count = arrived.length;
-        const passed = command.absent ? count < command.count : count >= command.count;
-        return { status: passed ? 'ok' : 'failed', value: { count } };
+        const observed = arrived.length;
+        const absent = command.absent === true;
+        const passed = absent ? observed < command.count : observed >= command.count;
+        const value: RallarBlackBoxTestMessagesReceivedResultValue = {
+            typeId: command.typeId,
+            ...(command.msgId === undefined ? {} : { msgId: command.msgId }),
+            count: command.count,
+            observed,
+            absent,
+            received: arrived.map((message) => ({
+                msgId: message.msgId,
+                ...toPortMessageTrace(message),
+                transport: message.activeCarrier
+            }))
+        };
+        return { status: passed ? 'ok' : 'failed', value };
     }
 
     /** The receiver admits a local-inbox arrival to IndexedDB on its own timeline: when its page reads the arrival. */
@@ -662,7 +676,8 @@ export class AlmReloadPorts {
                     ? 'The volatile session bound refused the admission.'
                     : rejected
                     ? 'Payload exceeds fixture carrier limit'
-                    : undefined
+                    : undefined,
+                ...toPortMessageTrace(message)
             }
         };
     }
@@ -1191,7 +1206,8 @@ export class AlmReloadPorts {
                         typeId: message.command.typeId,
                         rosterVersion: message.rosterVersion,
                         transport: message.activeCarrier,
-                        payload: message.command.payload
+                        payload: message.command.payload,
+                        ...toPortMessageTrace(message)
                     }
                 }
             });

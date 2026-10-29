@@ -28,14 +28,12 @@ import {
     RESTORED_SESSION_RALLAR,
     toCheckpointStorePrefix,
     toConnectCommand,
-    toOwnerLeaseLapseWait,
     toRecoveryTtlMs,
     toStoreRecoveryWait
 } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from '../../alm-reload-pair.ts';
-
-const CHECKPOINT_INTERVAL_TOPIC = 'rallar.black-box.alm.checkpoint-interval-elapsed';
+import { toOwnerLeaseLapseWait, toPauseCommand } from '../../to-pause-command.ts';
 
 /**
  * A `local-checkpoint` send survives its page through the interval checkpoint: the page holds its carrier, admits one
@@ -89,17 +87,15 @@ function toCheckpointRecoverySenderCommands(sender: AlmConformanceStepInput): re
 
 /**
  * The send path writes nothing, so after the reset before the send, the first admission write is the interval's one
- * checkpoint readwrite. Nothing emits the topic, so the wait only lets the interval run out.
+ * checkpoint readwrite. The pause lets the interval run out.
  */
 function toCheckpointWriteCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        {
-            kind: 'wait',
-            commandId: toCommandId(sender, 'checkpoint-interval-elapses'),
-            match: { kind: 'diagnostic', topic: CHECKPOINT_INTERVAL_TOPIC },
-            absent: true,
-            timeoutMs: AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs + RESPONSE_MARGIN_MS
-        },
+        toPauseCommand(
+            sender,
+            'checkpoint-interval-elapses',
+            AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs + RESPONSE_MARGIN_MS
+        ),
         toStorageCountersCommand(sender, 'storage-counters-checkpointed', false),
         toResultAssertion({
             step: sender,

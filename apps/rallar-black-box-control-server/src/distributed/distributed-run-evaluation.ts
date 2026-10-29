@@ -2,7 +2,7 @@ import {
     isAlmConformanceRole,
     type AlmConformanceRole
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import { assessAlmConformanceIdentity } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
+import { assessAlmConformanceIdentity } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlDistributedRunCommandLink,

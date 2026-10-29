@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { toRallarBrowserEventInput } from '../../shared-test/rallar-bb-test/browser/to-rallar-browser-event-input.ts';
 import {
     createDefaultRallarBlackBoxBrowserTestRuntime,
     createDefaultRallarBlackBoxTestRuntime,
@@ -186,13 +187,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 topic: 'rallar.browser.ws.unhandled_message',
                 transport: 'ws',
                 severity: 'warning',
-                message: 'Unhandled WS message: room.unknown',
-                detail: {
-                    typeId: 'room.unknown',
-                    payload: {
-                        text: 'ignored'
-                    }
-                },
+                detail: { pattern: 'unhandled-ws-message', source: 'console.warn' },
                 source: 'unit-test'
             })
         });
@@ -212,9 +207,9 @@ describe('rallar-bb-test runtime diagnostics', () => {
         const assertResult = await runtime.execute({
             kind: 'assert',
             commandId: 'assert-ws-warning',
-            source: 'recentDiagnostics.0.payload.data.typeId',
+            source: 'recentDiagnostics.0.payload.data.pattern',
             operator: 'equals',
-            expected: 'room.unknown'
+            expected: 'unhandled-ws-message'
         });
 
         expect(waitResult.ok).toBe(true);
@@ -226,14 +221,34 @@ describe('rallar-bb-test runtime diagnostics', () => {
                     topic: 'rallar.browser.ws.unhandled_message',
                     transport: 'ws',
                     severity: 'warning',
-                    message: 'Unhandled WS message: room.unknown',
-                    data: {
-                        typeId: 'room.unknown'
-                    }
+                    message: 'rallar.browser.ws.unhandled_message',
+                    data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
                 }
             }
         });
         expect(assertResult.ok).toBe(true);
+    });
+
+    it('normalizes a bridged console warning with its topic as the message', () => {
+        const input = toRallarBrowserEventInput({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.ws.unhandled_message',
+            connection: 'aliceRtc',
+            transport: 'ws',
+            severity: 'warning',
+            data: { pattern: 'unhandled-ws-message', source: 'console.warn' }
+        });
+
+        expect(input).toMatchObject({
+            kind: 'diagnostic',
+            severity: 'warning',
+            payload: {
+                topic: 'rallar.browser.ws.unhandled_message',
+                message: 'rallar.browser.ws.unhandled_message',
+                data: { pattern: 'unhandled-ws-message', source: 'console.warn' },
+                source: 'browser-rallar-runtime'
+            }
+        });
     });
 
     it('names the producer of a simulated runtime command diagnostic', async () => {

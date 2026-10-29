@@ -2501,6 +2501,125 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined,
         maximumMagnitude: 3
+    }),
+    // A recorded control event payload is untrusted artifact JSON; decodeRecord narrows it before any field is read,
+    // and only key=value identity text leaves the builder.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/distributed-run-observation/to-distributed-run-identity-summary.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toDistributedRunIdentitySummary',
+        maximumMagnitude: 1
+    }),
+    // Keep: the event, diagnostic, failure and progress row builders of one run observation and the helpers they share,
+    // the identity summary among them; a subfolder would only group helpers by role.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/distributed-run-observation',
+        rule: 'layout.directory-density',
+        symbol: 'distributed-run-observation',
+        maximumMagnitude: 21
+    }),
+    // The handoff classifier takes arbitrary monitor evidence by design (its tests feed null, malformed, frozen and
+    // revoked-proxy input): fields and array items are read behind try/catch for hostile getters, then narrowed by
+    // decodeHandoffRecord (a throwing inspection is an absent record), Array.isArray, decodeBoundedText or
+    // decodeIdentity before any pattern runs. The two contract fields are the public untyped input shape.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
+        rule: 'boundary.unknown',
+        symbol: 'deriveAdvancedDiagnosticHandoffTargets',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
+        rule: 'boundary.unknown',
+        symbol: 'diagnosticSignalsForFailure',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hasCorrelatedFailureKey',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
+        rule: 'boundary.unknown',
+        symbol: 'read',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readIndex',
+        maximumMagnitude: 2
+    }),
+    // Walkers that measure the keys, arrays, strings and bytes of any projected value, and one deliberately
+    // hostile model built past its contract to prove the projection bounds it.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-artifact-projection.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hostileAnalyzeModel',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-artifact-projection.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'recursiveKeys',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-artifact-projection.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'maxArrayLength',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-artifact-projection.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'maxUtf8StringBytes',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-artifact-projection.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'serializedBytes',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-artifact-projection.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'oversizedStringPaths',
+        maximumMagnitude: 1
+    }),
+    // Partial render-test doubles: each supplies only the members the component under test reads.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createExecution',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createSelection',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'monitorModel',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'model',
+        maximumMagnitude: 1
     })
 ]);
 

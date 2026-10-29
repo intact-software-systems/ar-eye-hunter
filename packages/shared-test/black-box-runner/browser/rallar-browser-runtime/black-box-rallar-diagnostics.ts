@@ -20,11 +20,44 @@ import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-e
 import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 import { toRtcNativeObservationProjection } from './rtc-native-observation-projection.ts';
 
+export type BlackBoxRallarConsoleWarningPattern =
+    | 'unhandled-ws-message'
+    | 'no-callback-for-type-id'
+    | 'data-channel-name-mismatch'
+    | 'peer-id-mismatch'
+    | 'no-channel-for-peer'
+    | 'self-connection-attempt';
+
+export interface BlackBoxRallarConsoleWarningDiagnostics {
+    readonly pattern: BlackBoxRallarConsoleWarningPattern;
+    readonly source: 'console.warn';
+}
+
 interface ConsoleWarning {
     readonly topic: string;
     readonly transport: BlackBoxRallarTransport | 'ws';
-    readonly message: string;
+    readonly pattern: BlackBoxRallarConsoleWarningPattern;
 }
+
+interface ConsoleWarningRule extends ConsoleWarning {
+    readonly literal: string;
+}
+
+const WS_WARNING = { topic: 'rallar.browser.ws.unhandled_message', transport: 'ws' } as const;
+const RTC_WARNING = { topic: 'rallar.browser.rtc.data_channel_warning', transport: 'realtime' } as const;
+
+const CONSOLE_WARNING_RULES: readonly ConsoleWarningRule[] = [
+    { ...WS_WARNING, literal: 'Unhandled WS message', pattern: 'unhandled-ws-message' },
+    { ...WS_WARNING, literal: 'No callback for typeId', pattern: 'no-callback-for-type-id' },
+    {
+        ...RTC_WARNING,
+        literal: 'Received data channel for different data channel name',
+        pattern: 'data-channel-name-mismatch'
+    },
+    { ...RTC_WARNING, literal: 'does not match peerId', pattern: 'peer-id-mismatch' },
+    { ...RTC_WARNING, literal: 'No channel for peer', pattern: 'no-channel-for-peer' },
+    { ...RTC_WARNING, literal: 'Ignoring self-connection attempt', pattern: 'self-connection-attempt' }
+];
 
 interface RuntimeEventContext extends BlackBoxRallarScopeDiagnostics {
     readonly connection: string;
@@ -103,8 +136,8 @@ export class BlackBoxRallarRuntimeDiagnostics {
         this.emitDiagnostic(config, 'rallar.browser.connect.phase_completed', { phase, ...data });
     };
 
-    emitConsoleWarning = (config: BlackBoxRallarConnectionConfig, args: readonly unknown[]): void => {
-        const warning = toConsoleWarning(args);
+    emitConsoleWarning = (config: BlackBoxRallarConnectionConfig, texts: readonly string[]): void => {
+        const warning = toConsoleWarning(texts);
         if (!warning) {
             return;
         }
@@ -114,7 +147,7 @@ export class BlackBoxRallarRuntimeDiagnostics {
             topic: warning.topic,
             transport: warning.transport,
             severity: 'warning',
-            data: { message: warning.message }
+            data: { pattern: warning.pattern, source: 'console.warn' } satisfies BlackBoxRallarConsoleWarningDiagnostics
         });
     };
 
@@ -206,31 +239,12 @@ function publishBlackBoxRallarStorageDiagnostic(
     });
 }
 
-function toConsoleWarningPart(value: unknown): string {
-    if (typeof value === 'string') {
-        return value;
-    }
-    try {
-        return JSON.stringify(value) ?? String(value);
-    }
-    catch {
-        return String(value);
-    }
+function toConsoleWarning(texts: readonly string[]): ConsoleWarning | undefined {
+    return CONSOLE_WARNING_RULES.find(({ literal }) => texts.some((text) => text.includes(literal)));
 }
 
-function toConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
-    const message = args.map(toConsoleWarningPart).join(' ');
-    if (message.includes('Unhandled WS message') || message.includes('No callback for typeId')) {
-        return { topic: 'rallar.browser.ws.unhandled_message', transport: 'ws', message };
-    }
-    if (
-        message.includes('Received data channel for different data channel name') ||
-        message.includes('does not match peerId') ||
-        message.includes('No channel for peer') || message.includes('Ignoring self-connection attempt')
-    ) {
-        return { topic: 'rallar.browser.rtc.data_channel_warning', transport: 'realtime', message };
-    }
-    return undefined;
+function isConsoleWarningText(value: unknown): value is string {
+    return typeof value === 'string';
 }
 
 interface ConsoleTarget {
@@ -245,7 +259,8 @@ export interface BlackBoxRallarConsoleDiagnostics<TConfig> {
 export interface BlackBoxRallarConsoleDiagnosticsOptions<TConfig> {
     readonly console: ConsoleTarget;
     activeConfig(): TConfig | undefined;
-    onWarning(config: TConfig, args: readonly unknown[]): void;
+    /** Receives the string arguments only: an argument object can carry an application payload. */
+    onWarning(config: TConfig, texts: readonly string[]): void;
     restoreExisting?(): void;
     publishRestore?(restore: (() => void) | undefined): void;
 }
@@ -292,7 +307,7 @@ class ConsoleDiagnosticsPatch<TConfig> implements BlackBoxRallarConsoleDiagnosti
             previousWarn(...args);
             const active = this.options.activeConfig() ?? [...this.configs.values()].at(-1);
             if (active !== undefined) {
-                this.options.onWarning(active, args);
+                this.options.onWarning(active, args.filter(isConsoleWarningText));
             }
         };
         this.restore = () => {

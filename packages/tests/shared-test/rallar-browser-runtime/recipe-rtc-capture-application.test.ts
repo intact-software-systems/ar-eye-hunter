@@ -769,9 +769,9 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
             await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'off' } });
             const result = await page.sendWs({ typeId: 'test', topicId: 'app.capture', payload: { rtcCapture: { status: 'observed', value: 'lookalike' } } });
             expect(JSON.parse(JSON.stringify(result))).toMatchObject({
-                rtcCapture: { status: 'observed', value: facade.rtcCapture() },
-                message: { rtcCapture: { status: 'observed', value: 'lookalike' } }
+                rtcCapture: { status: 'observed', value: facade.rtcCapture() }
             });
+            expect(JSON.stringify(result)).not.toContain('lookalike');
         }
         finally {
             await page.close();

@@ -21,9 +21,15 @@ import {
     decodeAlmMessagesReplayResultValue,
     decodeAlmMessagesReplyResultValue,
     decodeAlmMessagesSendResultValue,
-    decodeAlmStorageCountersResultValue
+    decodeAlmReceivedMessageIdentity,
+    decodeAlmStorageCountersResultValue,
+    toAlmInvalidRuntimeResultError
 } from './decode-alm-runtime-result.ts';
-import type { RallarBlackBoxTestMessagesObserveResultValue } from './rallar-black-box-alm-result-values.ts';
+import type {
+    AlmReceivedMessageIdentity,
+    RallarBlackBoxTestMessagesObserveResultValue,
+    RallarBlackBoxTestMessagesReceivedResultValue
+} from './rallar-black-box-alm-result-values.ts';
 import { resolveAlmControlReferences } from './resolve-alm-control-references.ts';
 import { resolveAlmFaultMatchReferences } from './resolve-alm-fault-match-references.ts';
 import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
@@ -91,7 +97,7 @@ interface AlmReceivedMessageMatch {
     readonly msgId: string | undefined;
 }
 
-interface ObserveAlmMessageCountInput {
+interface ObserveAlmMatchingMessagesInput {
     readonly port: RallarBlackBoxAlmBrowserPort;
     readonly context: RallarBlackBoxTestCommandContext;
     readonly holdFullWindow: boolean;
@@ -105,7 +111,7 @@ interface AlmReceivedOutcomeInput {
     readonly command: Extract<RallarBlackBoxAlmCommandWithId, Readonly<{ kind: 'messages.received'; }>>;
     readonly context: RallarBlackBoxTestCommandContext;
     readonly connection: string;
-    readonly observed: number;
+    readonly received: readonly AlmReceivedMessageIdentity[];
 }
 
 type AlmDeliveryKind = 'messages.observe' | 'messages.cancel' | 'messages.receipts';
@@ -418,7 +424,7 @@ async function countAlmReceivedMessages(
     const connection = input.port.resolveConnection(command, input.context);
     const abort = input.port.commandAbortScope(command, input.context);
     try {
-        const observed = await observeAlmMessageCount({
+        const matched = await observeAlmMatchingMessages({
             port: input.port,
             context: input.context,
             holdFullWindow: command.absent === true,
@@ -430,7 +436,15 @@ async function countAlmReceivedMessages(
             ),
             signal: abort.signal
         });
-        return toAlmReceivedOutcome({ command, context: input.context, connection, observed });
+        const received = matched.map((data) =>
+            decodeAlmReceivedMessageIdentity(data).fold(
+                (field) => {
+                    throw toAlmInvalidRuntimeResultError(`messages.received event.data.${field}`);
+                },
+                (identity) => identity
+            )
+        );
+        return toAlmReceivedOutcome({ command, context: input.context, connection, received });
     }
     catch (caught) {
         return toAlmFailureOutcome({
@@ -452,57 +466,59 @@ async function countAlmReceivedMessages(
  * tick races the abort signal, so a recipe cancellation interrupts the hold instead of always
  * running the full window.
  */
-async function observeAlmMessageCount(input: ObserveAlmMessageCountInput): Promise<number> {
-    let observed = countAlmMatchingMessages(input.context.state().events, input.match);
+async function observeAlmMatchingMessages(
+    input: ObserveAlmMatchingMessagesInput
+): Promise<readonly RallarBlackBoxTestRecord[]> {
+    let matched = resolveAlmMatchingMessages(input.context.state().events, input.match);
     while (input.port.now() < input.deadlineEpochMs) {
-        if (!input.holdFullWindow && observed >= input.count) {
-            return observed;
+        if (!input.holdFullWindow && matched.length >= input.count) {
+            return matched;
         }
         const remainingMs = input.deadlineEpochMs - input.port.now();
         await input.port.withAbort(
             input.port.sleep(Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, remainingMs)),
             input.signal
         );
-        observed = countAlmMatchingMessages(input.context.state().events, input.match);
+        matched = resolveAlmMatchingMessages(input.context.state().events, input.match);
     }
-    return observed;
+    return matched;
 }
 
-function countAlmMatchingMessages(
+/** Each matched inbound event's message `data`, in arrival order. */
+function resolveAlmMatchingMessages(
     events: readonly RallarBlackBoxTestEvent[],
     match: AlmReceivedMessageMatch
-): number {
-    return events.filter((event) => isAlmInboundMessageEvent(event, match)).length;
-}
-
-function isAlmInboundMessageEvent(
-    event: RallarBlackBoxTestEvent,
-    match: AlmReceivedMessageMatch
-): boolean {
-    if (!ALM_INBOUND_MESSAGE_TOPICS.includes(event.topic)) {
-        return false;
-    }
-    if (event.connection !== undefined && event.connection !== match.connection) {
-        return false;
-    }
-    const data = decodeAlmRuntimeRecord(decodeAlmRuntimeRecord(event.payload).data);
-    return toAlmEventStringField(data, 'typeId') === match.typeId &&
-        (match.msgId === undefined || toAlmEventStringField(data, 'msgId') === match.msgId);
+): readonly RallarBlackBoxTestRecord[] {
+    return events.flatMap((event) => {
+        if (
+            !ALM_INBOUND_MESSAGE_TOPICS.includes(event.topic) ||
+            (event.connection !== undefined && event.connection !== match.connection)
+        ) {
+            return [];
+        }
+        const data = decodeAlmRuntimeRecord(decodeAlmRuntimeRecord(event.payload).data);
+        const matches = toAlmEventStringField(data, 'typeId') === match.typeId &&
+            (match.msgId === undefined || toAlmEventStringField(data, 'msgId') === match.msgId);
+        return matches ? [data] : [];
+    });
 }
 
 function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTestCommandOutcome {
     const command = input.command;
     const absent = command.absent === true;
+    const observed = input.received.length;
     const passed = absent
-        ? input.observed < Math.max(command.count, 1)
-        : input.observed >= command.count;
-    const value = {
+        ? observed < Math.max(command.count, 1)
+        : observed >= command.count;
+    const summary = {
         typeId: command.typeId,
         ...(command.msgId === undefined ? {} : { msgId: command.msgId }),
         count: command.count,
-        observed: input.observed,
+        observed,
         absent
     };
+    const value: RallarBlackBoxTestMessagesReceivedResultValue = { ...summary, received: input.received };
+    // The copy list is unbounded, so only the result carries it; the diagnostic stays a fixed-size summary.
     recordAlmDiagnostic({
         context: input.context,
         command,
@@ -510,7 +526,7 @@ function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTes
         topic: 'rallar.bb.messages.received',
         severity: passed ? 'info' : 'error',
         message: undefined,
-        value
+        value: summary
     });
     return passed
         ? { status: 'ok', value, nextStatus: input.context.state().status }
@@ -521,7 +537,7 @@ function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTes
                 code: absent
                     ? ALM_ERROR_CODES.messagesReceivedWhileAbsent
                     : ALM_ERROR_CODES.messagesNotReceived,
-                message: `messages.received observed ${input.observed} ${command.typeId} ` +
+                message: `messages.received observed ${observed} ${command.typeId} ` +
                     `messages against count ${command.count}.`,
                 details: value
             },

@@ -13,6 +13,7 @@ import {
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type {
     RallarBlackBoxTestMessagesCarrier,
@@ -27,6 +28,7 @@ import {
 } from './decode-alm-delivery-failure.ts';
 import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
+    AlmReceivedMessageIdentity,
     RallarBlackBoxTestMessagesAwaitReplyResultValue,
     RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
@@ -113,8 +115,37 @@ export function decodeAlmMessagesSendResultValue(
         ...(msgId === undefined ? {} : { msgId }),
         carrier: requireAlmCarrierField(record, path),
         status: requireAlmDeliveryState(record, path, 'status'),
-        ...(reason === undefined ? {} : { reason })
+        ...(reason === undefined ? {} : { reason }),
+        traceId: requireAlmTraceIdField(record, path),
+        corrId: requireAlmStringField(record, path, 'corrId')
     };
+}
+
+/**
+ * One matched copy's identity, decoded alike from the page's event `data` and from a recorded `received` entry; the
+ * left side names the first unusable field.
+ */
+export function decodeAlmReceivedMessageIdentity(
+    value: unknown
+): Either<keyof AlmReceivedMessageIdentity, AlmReceivedMessageIdentity> {
+    const record = decodeAlmRuntimeRecord(value);
+    const { msgId, corrId } = record;
+    const traceId = decodeALTraceId(record.traceId).foldRight((id) => id);
+    const transport = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.find((candidate) =>
+        candidate === record.transport
+    );
+    if (typeof msgId !== 'string') {
+        return Either.ofLeft('msgId');
+    }
+    if (traceId === undefined) {
+        return Either.ofLeft('traceId');
+    }
+    if (typeof corrId !== 'string') {
+        return Either.ofLeft('corrId');
+    }
+    return transport === undefined
+        ? Either.ofLeft('transport')
+        : Either.ofRight({ msgId, traceId, corrId, transport });
 }
 
 export function decodeAlmMessagesReplayResultValue(value: unknown): RallarBlackBoxTestMessagesReplayResultValue {
@@ -171,11 +202,7 @@ function decodeAlmControlTraceId(record: RallarBlackBoxTestRecord, input: AlmCon
         }
         return undefined;
     }
-    const traceId = decodeALTraceId(record.traceId);
-    if (traceId.left !== undefined) {
-        throw toAlmInvalidRuntimeResultError(`${path}.traceId`);
-    }
-    return traceId.right;
+    return requireAlmTraceIdField(record, path);
 }
 
 function isAlmAdmissionVerdictKind(value: unknown): value is ALDeliveryAdmissionVerdict['kind'] {
@@ -251,7 +278,8 @@ export function decodeAlmMessagesAwaitReplyResultValue(
             replyToMsgId: requireAlmStringField(reply, replyPath, 'replyToMsgId'),
             corrId: requireAlmStringField(reply, replyPath, 'corrId'),
             senderId: requireAlmStringField(reply, replyPath, 'senderId'),
-            typeId: requireAlmStringField(reply, replyPath, 'typeId')
+            typeId: requireAlmStringField(reply, replyPath, 'typeId'),
+            traceId: requireAlmTraceIdField(reply, replyPath)
         }
     };
 }
@@ -262,7 +290,9 @@ export function decodeAlmMessagesReplyResultValue(value: unknown): RallarBlackBo
     return {
         handleId: requireAlmStringField(record, path, 'handleId'),
         msgId: requireAlmStringField(record, path, 'msgId'),
-        replyToMsgId: requireAlmStringField(record, path, 'replyToMsgId')
+        replyToMsgId: requireAlmStringField(record, path, 'replyToMsgId'),
+        traceId: requireAlmTraceIdField(record, path),
+        corrId: requireAlmStringField(record, path, 'corrId')
     };
 }
 
@@ -329,6 +359,15 @@ function requireAlmStringField(
         throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
     }
     return value;
+}
+
+function requireAlmTraceIdField(record: RallarBlackBoxTestRecord, path: string): string {
+    return decodeALTraceId(record.traceId).fold(
+        () => {
+            throw toAlmInvalidRuntimeResultError(`${path}.traceId`);
+        },
+        (traceId) => traceId
+    );
 }
 
 function readAlmOptionalStringField(
@@ -512,7 +551,7 @@ function requireAlmRecordField(
     return value as RallarBlackBoxTestRecord;
 }
 
-function toAlmInvalidRuntimeResultError(field: string): Error {
+export function toAlmInvalidRuntimeResultError(field: string): Error {
     const error = new Error(`The page runtime returned no usable ${field}.`);
     error.name = ALM_INVALID_RUNTIME_RESULT_CODE;
     return error;

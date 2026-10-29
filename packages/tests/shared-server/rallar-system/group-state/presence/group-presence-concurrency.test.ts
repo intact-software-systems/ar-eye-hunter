@@ -359,7 +359,8 @@ describe('group presence concurrency', () => {
                 recomputeMaxWaitMs: 0,
                 runtimeRepository: runtime,
                 now: () => BASE_EPOCH_MS + 3_000,
-                serviceId: 'summary-worker'
+                serviceId: 'summary-worker',
+                senderPeerId: 'ws-server'
             });
             await convergeSummaryForTest({
                 work,

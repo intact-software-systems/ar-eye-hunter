@@ -1,5 +1,5 @@
-import type { RallarBlackBoxTestMessagesSendCommand } from '../../rallar-black-box-test-contracts.ts';
-import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
+import type { RallarBlackBoxTestMessagesSendCommand } from '../../../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 
 export interface AlmAcknowledgedIdentityInput {

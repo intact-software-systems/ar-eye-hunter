@@ -9,6 +9,7 @@ import type {
     DistributedArtifactEvidenceKind
 } from '../distributed-artifact-evidence-contracts.ts';
 import type { DistributedRunMonitor } from '../distributed-run-monitor.ts';
+import { toDistributedRunIdentitySummary } from '../distributed-run-observation/to-distributed-run-identity-summary.ts';
 import { hasDistributedRunReference } from '../has-distributed-run-reference.ts';
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
@@ -113,7 +114,7 @@ function toControlRunResultRow(
         status,
         category: 'command',
         summary: result.error?.message ?? result.result?.error?.message ?? `${kind ?? 'command'} ${status}`,
-        payloadSummary: decodeEvidenceValueSummary(
+        detailSummary: decodeEvidenceValueSummary(
             result.error?.details ?? result.result?.error?.details ?? result.result?.value
         ),
         ...(failureDetails ? { failureDetails } : {})
@@ -148,7 +149,7 @@ function toControlRunEventRow(source: ControlRunEventRowSource): DistributedArti
         category: kind,
         summary: getTextField(evidence, 'message') ?? getTextField(payload, 'message') ??
             `${event.kind}${topic ? ` · ${topic}` : ''}`,
-        payloadSummary: decodeEvidenceValueSummary(event.payload)
+        identitySummary: toDistributedRunIdentitySummary(event.payload)
     };
 }
 

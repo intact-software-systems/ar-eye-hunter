@@ -22,7 +22,7 @@ function toEventEvidenceParts(
         event.commandId,
         event.topic,
         event.summary,
-        event.payloadSummary
+        event.identitySummary
     ];
 }
 
@@ -39,7 +39,7 @@ function toDiagnosticEvidenceParts(
         diagnostic.diagnosticTypeId,
         diagnostic.message,
         diagnostic.summary,
-        diagnostic.payloadSummary,
+        diagnostic.identitySummary,
         diagnostic.groupId,
         diagnostic.roomId,
         diagnostic.laneId,

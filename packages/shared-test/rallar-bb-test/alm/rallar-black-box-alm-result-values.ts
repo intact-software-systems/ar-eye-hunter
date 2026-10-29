@@ -16,6 +16,8 @@ export interface RallarBlackBoxTestMessagesSendResultValue {
     readonly carrier: RallarBlackBoxTestMessagesCarrier;
     readonly status: ALDeliveryState;
     readonly reason?: string;
+    readonly traceId: string;
+    readonly corrId: string;
 }
 
 /** A replay opens no handle of its own: it reports the replayed handle and the verdict of the carrier admission. */
@@ -70,7 +72,9 @@ export type RallarBlackBoxTestMessagesAwaitReplyResultValue =
         status: 'replied';
         state: ALDeliveryState;
         corrId: string;
-        reply: Readonly<{ msgId: string; replyToMsgId: string; corrId: string; senderId: string; typeId: string; }>;
+        reply: Readonly<
+            { msgId: string; replyToMsgId: string; corrId: string; senderId: string; typeId: string; traceId: string; }
+        >;
     }>
     | Readonly<
         { handleId: string; status: 'timeout' | 'aborted' | 'undelivered'; state: ALDeliveryState; corrId: string; }
@@ -81,6 +85,27 @@ export interface RallarBlackBoxTestMessagesReplyResultValue {
     readonly handleId: string;
     readonly msgId: string;
     readonly replyToMsgId: string;
+    readonly traceId: string;
+    readonly corrId: string;
+}
+
+/** One matched inbound copy, read from its typed-channel event `data`. */
+export interface AlmReceivedMessageIdentity {
+    readonly msgId: string;
+    readonly traceId: string;
+    readonly corrId: string;
+    readonly transport: ALDeliveryCarrier;
+}
+
+export interface RallarBlackBoxTestMessagesReceivedResultValue {
+    readonly typeId: string;
+    /** Absent when the count names no single message. */
+    readonly msgId?: string;
+    readonly count: number;
+    readonly observed: number;
+    readonly absent: boolean;
+    /** Every matched copy in arrival order. */
+    readonly received: readonly AlmReceivedMessageIdentity[];
 }
 
 export interface RallarBlackBoxTestStorageCountersResultValue {

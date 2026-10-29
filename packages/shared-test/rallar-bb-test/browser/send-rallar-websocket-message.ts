@@ -53,7 +53,7 @@ export async function sendRallarWebSocketMessage(
         severity: 'info',
         payload: { connection, via, rallar, sendObservation }
     });
-    return { status: 'ok', value: { connection, via, sent: data, rallar, sendObservation } };
+    return { status: 'ok', value: { connection, via, rallar, sendObservation } };
 }
 
 /** A send on a runtime that has not connected yet connects once with the connection the command names and retries. */

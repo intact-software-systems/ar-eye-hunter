@@ -371,18 +371,25 @@ class DeliveryLane {
             kind: 'message',
             topic: 'rallar.browser.ws.message',
             connection: 'receiver',
-            data: { typeId: send.typeId, msgId: 'message-1', payload }
+            data: { typeId: send.typeId, msgId: 'message-1', transport: 'ws', payload, traceId: 'trace-message-1', corrId: 'message-1' }
         });
         if (this.failure === 'duplicate') {
             this.agents.get('receiver')?.receiveRallarBrowserEvent({
                 kind: 'message',
                 topic: 'rallar.browser.ws.message',
                 connection: 'receiver',
-                data: { typeId: send.typeId, msgId: 'message-1', payload }
+                data: { typeId: send.typeId, msgId: 'message-1', transport: 'ws', payload, traceId: 'trace-message-1', corrId: 'message-1' }
             });
         }
         this.delivered.push({ payload });
-        return { handleId: send.handleId, msgId: 'message-1', carrier: send.carrier, status: send.ack === 'all-logical-recipients' ? 'accepted' : 'rejected' };
+        return {
+            handleId: send.handleId,
+            msgId: 'message-1',
+            carrier: send.carrier,
+            status: send.ack === 'all-logical-recipients' ? 'accepted' : 'rejected',
+            traceId: 'trace-message-1',
+            corrId: 'message-1'
+        };
     }
 
     private receipt(handle: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {

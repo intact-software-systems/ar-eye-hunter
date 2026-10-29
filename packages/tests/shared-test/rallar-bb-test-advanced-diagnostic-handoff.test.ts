@@ -5,6 +5,7 @@ import {
     ADVANCED_DIAGNOSTIC_HANDOFF_MAX_TEXT_LENGTH,
     deriveAdvancedDiagnosticHandoffTargets
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import type { ApiJsonObject, ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
 const AUTH_AND_WEBSOCKET = [
     { surface: 'auth', label: 'Auth' },
@@ -12,9 +13,9 @@ const AUTH_AND_WEBSOCKET = [
 ] as const;
 
 function diagnostic(
-    correlatedFailureKeys: unknown,
-    fields: Readonly<Record<string, unknown>>
-): Readonly<Record<string, unknown>> {
+    correlatedFailureKeys: ApiJsonValue,
+    fields: ApiJsonObject
+): ApiJsonObject {
     return { correlatedFailureKeys, ...fields };
 }
 
@@ -136,7 +137,7 @@ describe('advanced diagnostic handoff targets', () => {
     });
 
     it('returns no targets for unrelated, missing, or malformed evidence', () => {
-        const inputs: unknown[] = [
+        const inputs: (ApiJsonValue | undefined)[] = [
             undefined,
             null,
             {},
@@ -155,6 +156,22 @@ describe('advanced diagnostic handoff targets', () => {
             expect(() => deriveAdvancedDiagnosticHandoffTargets(input)).not.toThrow();
             expect(deriveAdvancedDiagnosticHandoffTargets(input)).toEqual([]);
         });
+    });
+
+    it('treats a revoked proxy as absent evidence at the root, the failure and a diagnostic', () => {
+        const revoked = Proxy.revocable({}, {});
+        revoked.revoke();
+        const inputs = [
+            revoked.proxy,
+            { failure: revoked.proxy },
+            { failure: { key: 'selected', code: 'BAD_AUTH' }, diagnostics: [revoked.proxy] }
+        ];
+
+        expect(inputs.map((input) => deriveAdvancedDiagnosticHandoffTargets(input))).toEqual([
+            [],
+            [],
+            AUTH_AND_WEBSOCKET
+        ]);
     });
 
     it('does not mutate evidence or classify generic and uncorrelated phrases', () => {

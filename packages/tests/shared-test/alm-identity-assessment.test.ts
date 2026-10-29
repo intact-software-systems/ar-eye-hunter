@@ -7,14 +7,17 @@ import {
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import { createAlmConformanceRecipes, type AlmConformanceScenario } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
     assessAlmConformanceIdentity,
+    hasAlmIdentityEvidence,
     type AlmConformanceIdentityInput,
     type AlmConformanceIdentityParticipant
-} from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
-import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+} from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestHttpRequestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -498,6 +501,105 @@ describe('ALM recipe identity assessment', () => {
         ).toEqual(['ALM identity assessment requires one distinct agent per role.']);
     });
 
+    it('rejects a receiver trace that differs from the sender trace', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const result = transcript.receiver.results.find((entry) => entry.kind === 'wait' && isJsonRecordValue(entry.value) && entry.value.matched === true)!;
+        const data = recordAt(result.value, 'event', 'payload', 'data');
+        data.traceId = 'trace-other';
+        const sendCommandId = String(data.msgId).slice('original:'.length);
+        expect(assessAlmConformanceIdentity(transcript.input()))
+            .toContain(`${sendCommandId}: receiver envelope does not match the actual generated message.`);
+    });
+
+    it('rejects a send result without a trace', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const sender = transcript.sender;
+        const send = sender.command('messages.send');
+        const { traceId: _traceId, ...untraced } = recordAt(sender.result(send).value);
+        sender.replaceResult({ ...sender.result(send), value: untraced });
+        expect(assessAlmConformanceIdentity(transcript.input())).toContain(`${send.commandId}: generated trace identity is missing or invalid.`);
+    });
+
+    it('proves the fallback cell: the ws arrival in messages.received carries the sender trace', () => {
+        const transcript = new IdentityTranscript('fallback-within-deadline', 'rtc-with-ws-fallback');
+        const send = transcript.sender.command('messages.send');
+        const receiver = transcript.receiver;
+        const count = receiver.commands.find((command) => command.kind === 'messages.received' && command.absent !== true)!;
+        const copy = { msgId: `original:${send.commandId}`, traceId: `trace-${send.commandId}`, corrId: `original:${send.commandId}`, transport: 'ws' };
+        const withCopies = (received: readonly Record<string, string>[]) => {
+            receiver.replaceResult({ ...receiver.result(count), value: { ...recordAt(receiver.result(count).value), received } });
+            return assessAlmConformanceIdentity(transcript.input());
+        };
+        expect(withCopies([copy])).toEqual([]);
+        expect(withCopies([{ ...copy, traceId: 'trace-other' }])).toEqual([`${send.commandId}: a received copy carries another trace.`]);
+        expect(withCopies([])).toEqual([`${send.commandId}: no received copy joins the fallback send.`]);
+    });
+
+    // The local lane assesses exactly the senders this admits, so each kind of evidence must count on its own.
+    it.each(
+        [
+            ['a fallback-marker send', 'fallback-within-deadline', 'rtc-with-ws-fallback'],
+            ['a traced request', 'server-originated', 'ws'],
+            ['pinned receipt roles', 'delivery-baseline', 'ws']
+        ] as const
+    )('counts a sender whose evidence is %s', (_label, scenarioId, carrier) => {
+        expect(hasAlmIdentityEvidence(toGeneratedScenario(scenarioId, carrier).sender)).toBe(true);
+    });
+
+    it('does not count a sender whose plain send pins no receipt roles', () => {
+        const { sender } = toGeneratedScenario('delivery-baseline', 'ws');
+        const { almReceiptRoles: _pinned, ...metadata } = sender.metadata ?? {};
+        expect(hasAlmIdentityEvidence({ ...sender, metadata })).toBe(false);
+    });
+
+    it('raises nothing for a non-fallback identity send whose receiver count lists no copy', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, []))).toEqual([]);
+    });
+
+    it('rejects a received copy on a transport its send cannot arrive on', () => {
+        const transcript = new IdentityTranscript('lifecycle', 'ws');
+        const send = transcript.sender.command('messages.send');
+        const copy = { msgId: `original:${send.commandId}`, traceId: `trace-${send.commandId}`, corrId: `original:${send.commandId}`, transport: 'rtc' };
+        expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, [copy])))
+            .toEqual([`${send.commandId}: a received copy arrived on another transport.`]);
+    });
+
+    it.each(
+        [
+            ['without a received list', undefined],
+            ['listing a copy without its trace', [{ msgId: 'original:any', corrId: 'original:any', transport: 'ws' }]]
+        ] as const
+    )('rejects a receiver count %s', (_label, received) => {
+        const transcript = new IdentityTranscript('lifecycle', 'ws');
+        const send = transcript.sender.command('messages.send');
+        expect(assessAlmConformanceIdentity(withLifecycleCount(transcript, received)))
+            .toContain(`${send.commandId}: a receiver count lists malformed received copies.`);
+    });
+
+    it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('rejects a recovered %s reload original that carries another trace', (carrier) => {
+        const transcript = new IdentityTranscript('reload', carrier);
+        const [checkpoint] = toAlmReloadCheckpoints(transcript.sender.recipe.metadata?.almReloadCheckpoints) ?? [];
+        const recovered = transcript.receiver.results.find((entry) => entry.kind === 'wait' && isJsonRecordValue(entry.value) && entry.value.matched === true)!;
+        recordAt(recovered.value, 'event', 'payload', 'data').traceId = 'trace-other';
+        expect(assessAlmConformanceIdentity(transcript.input()))
+            .toContain(`${checkpoint.key}: the recovered original must carry the original send's trace.`);
+    });
+
+    // The cell's defects are pinned on its assessor (alm-server-originated-identity.test.ts); this joins it to the entry.
+    it('joins the server-originated cell: each traced request reaches the receiver and the admin read confirms it', () => {
+        expect(assessAlmConformanceIdentity(new IdentityTranscript('server-originated').input())).toEqual([]);
+    });
+
+    it('reports the server-originated assessor\'s issue through the entry', () => {
+        const transcript = new IdentityTranscript('server-originated');
+        const request = transcript.sender.command('http.request', 3);
+        const read = transcript.receiver.command('http.request', 2);
+        recordAt(transcript.receiver.result(read).value, 'body', 'almReceipts', 'diagnostics').messages = [];
+        expect(assessAlmConformanceIdentity(transcript.input()))
+            .toEqual([`${request.commandId}: the receiver's admin read lists no receipt of the trace it confirmed.`]);
+    });
+
     it.each(['missing', 'mismatched', 'duplicate'] as const)('rejects %s authored checkpoint contracts', (defect) => {
         const transcript = new IdentityTranscript('reload');
         const input = transcript.input();
@@ -519,8 +621,29 @@ describe('ALM recipe identity assessment', () => {
     });
 });
 
+/** The lifecycle receiver authors no count; this appends one presence count for the first send's typeId. */
+function withLifecycleCount(
+    transcript: IdentityTranscript,
+    received: readonly Readonly<Record<string, string>>[] | undefined
+): AlmConformanceIdentityInput {
+    const [send] = transcript.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand);
+    const count: RallarBlackBoxTestCommand = {
+        kind: 'messages.received',
+        commandId: 'lifecycle-received-count',
+        typeId: send.typeId,
+        count: 1,
+        windowMs: 1_000
+    };
+    transcript.receiver.append(count);
+    transcript.receiver.replaceResult({
+        ...transcript.receiver.result(count),
+        value: { typeId: send.typeId, count: 1, observed: received?.length ?? 0, absent: false, ...(received === undefined ? {} : { received }) }
+    });
+    return transcript.input();
+}
+
 namespace IdentityTranscript {
-    export type Kind = 'lifecycle' | 'reload' | 'combined';
+    export type Kind = 'lifecycle' | 'reload' | 'combined' | 'fallback-within-deadline' | 'server-originated';
 }
 
 class IdentityTranscript {
@@ -627,6 +750,13 @@ class ParticipantTranscript {
     }
 }
 
+const TRANSCRIPT_SCENARIO_IDS: Readonly<Record<Exclude<IdentityTranscript.Kind, 'combined'>, string>> = {
+    lifecycle: 'delivery-lifecycle',
+    reload: 'delivery-reload',
+    'fallback-within-deadline': 'fallback-within-deadline',
+    'server-originated': 'server-originated'
+};
+
 function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier) {
     if (kind === 'combined') {
         const recipes = createAlmConformance2AgentEntry().manifest.recipes;
@@ -637,6 +767,10 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
         }
         return { sender, receiver };
     }
+    return toGeneratedScenario(TRANSCRIPT_SCENARIO_IDS[kind], carrier);
+}
+
+function toGeneratedScenario(scenarioId: string, carrier: AlmConformanceCarrier): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
         carrier,
@@ -644,7 +778,7 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
         senderConnection: 'sender',
         receiverConnection: 'receiver',
         deadlineMs: 18_000
-    }).find((candidate) => candidate.scenarioId === (kind === 'reload' ? 'delivery-reload' : 'delivery-lifecycle'));
+    }).find((candidate) => candidate.scenarioId === scenarioId);
     if (!scenario) {
         throw new Error('Generated identity scenario missing.');
     }
@@ -676,7 +810,13 @@ interface TranscriptValueInput {
 
 function transcriptValue({ command, role, document, sender }: TranscriptValueInput): ApiJsonObject {
     if (isRallarBlackBoxTestMessagesSendCommand(command)) {
-        return { msgId: `original:${command.commandId}`, ...(command.handleId === undefined ? {} : { handleId: command.handleId }), carrier: command.carrier };
+        return {
+            msgId: `original:${command.commandId}`,
+            ...(command.handleId === undefined ? {} : { handleId: command.handleId }),
+            carrier: command.carrier,
+            traceId: `trace-${command.commandId}`,
+            corrId: `original:${command.commandId}`
+        };
     }
     if (command.kind === 'agent.reload') {
         return { reloading: true, ...(command.readyTimeoutMs === undefined ? {} : { readyTimeoutMs: command.readyTimeoutMs }) };
@@ -717,6 +857,22 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
             unconfirmedRecipientPeerIds: []
         };
     }
+    if (command.kind === 'messages.received') {
+        return {
+            typeId: command.typeId,
+            count: command.count,
+            observed: command.absent === true ? 0 : command.count,
+            absent: command.absent === true,
+            received: command.absent === true ? [] : toTranscriptReceivedCopies(command.typeId, sender)
+        };
+    }
+    if (command.kind === 'http.request') {
+        return toTranscriptHttpValue(command, sender);
+    }
+    const tracedDelta = command.kind === 'wait' ? command.match.payloadFields?.['data.traceId'] : undefined;
+    if (typeof tracedDelta === 'string') {
+        return toTranscriptDelta(tracedDelta);
+    }
     if (command.kind === 'wait' && command.absent !== true) {
         const sent = sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) =>
             isSameJsonValue(decodeJsonValue(candidate.payload), command.match.equals)
@@ -733,12 +889,66 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
             event: {
                 kind: 'message',
                 payload: {
-                    data: { msgId: `original:${sent.commandId}`, typeId: sent.typeId, transport: sent.carrier === 'ws' ? 'ws' : 'rtc', payload }
+                    data: {
+                        msgId: `original:${sent.commandId}`,
+                        typeId: sent.typeId,
+                        transport: sent.carrier === 'ws' ? 'ws' : 'rtc',
+                        payload,
+                        traceId: `trace-${sent.commandId}`,
+                        corrId: `original:${sent.commandId}`
+                    }
                 }
             }
         };
     }
     return {};
+}
+
+/** A traced request's response echoes its trace; the admin read lists one receipt per traced sender request. */
+function toTranscriptHttpValue(command: RallarBlackBoxTestHttpRequestCommand, sender: RallarBlackBoxTestRecipe): ApiJsonObject {
+    const traceId = command.request.headers?.['x-request-id'];
+    if (traceId !== undefined) {
+        return { status: 200, headers: { 'x-request-id': traceId }, body: {} };
+    }
+    if (command.request.path !== '/api/admin/operations/realtime') {
+        return {};
+    }
+    const messages = sender.commands.flatMap((sent) => {
+        const sentTrace = sent.kind === 'http.request' ? sent.request.headers?.['x-request-id'] : undefined;
+        return sentTrace === undefined ? [] : [{
+            msgId: `delta:${sentTrace}`,
+            mode: 'receiver',
+            confirmedPeerIds: ['receiver-session'],
+            unconfirmedPeerIds: [],
+            lastSettlementKind: 'acknowledgement',
+            receiptExhausted: false,
+            updatedAtEpochMs: 1,
+            traceId: sentTrace
+        }];
+    });
+    return { status: 200, body: { almReceipts: { processLocal: true, diagnostics: { capacity: 256, messages } } } };
+}
+
+function toTranscriptDelta(traceId: string): ApiJsonObject {
+    return {
+        matched: true,
+        event: {
+            kind: 'message',
+            payload: { data: { msgId: `delta:${traceId}`, topicId: 'group-state.event', traceId, payload: { event: { traceId } } } }
+        }
+    };
+}
+
+/** A fallback cell hands its original to WS, so the receiver's count lists the WS copy. */
+function toTranscriptReceivedCopies(typeId: string, sender: RallarBlackBoxTestRecipe): ApiJsonObject[] {
+    return sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand)
+        .filter((sent) => sent.typeId === typeId)
+        .map((sent) => ({
+            msgId: `original:${sent.commandId}`,
+            traceId: `trace-${sent.commandId}`,
+            corrId: `original:${sent.commandId}`,
+            transport: sent.carrier === 'rtc' ? 'rtc' : 'ws'
+        }));
 }
 
 function transcriptResult<T>(commandId: string, kind: RallarBlackBoxTestCommand['kind'], value: T): RallarBlackBoxTestResult<T> {
