@@ -8,7 +8,6 @@ export interface GroupPublicationTopicPermissions {
     readonly subscribe: boolean;
 }
 
-/** Exact topic ids to the permissions the principal holds on each; a missing topic holds none. */
 export type GroupPublicationTopicGrants = Readonly<Record<string, GroupPublicationTopicPermissions>>;
 
 /** One principal's publication rights in one group: absent means no rights, and an empty row is never stored. */
@@ -42,7 +41,6 @@ export function decodeGroupPublicationGrant(
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as GroupPublicationGrant);
 }
 
-/** Every issue the row has, in key order; an empty list is a valid row. */
 export function validateGroupPublicationGrant(grant: GroupPublicationGrant): readonly RallarValidationIssue[] {
     return decodeGroupPublicationGrant(grant).fold((issues) => issues, () => []);
 }
@@ -62,19 +60,21 @@ function toTopicsIssues(topics: ApiJsonValue, path: string): Issues {
     }
     const entries = Object.entries(topics);
     const max = GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal;
-    if (entries.length === 0 || entries.length > max) {
-        return [issue(path, 'invalid-topic-count', `Publication grants hold 1 to ${max} topics per principal.`)];
-    }
-    return entries.flatMap(([topicId, permissions]) =>
-        toTopicIssues(`${path}[${JSON.stringify(topicId)}]`, topicId, permissions)
-    );
+    return [
+        ...(entries.length === 0 || entries.length > max
+            ? [issue(path, 'invalid-topic-count', `Publication grants hold 1 to ${max} topics per principal.`)]
+            : []),
+        ...entries.flatMap(([topicId, permissions]) =>
+            toTopicIssues(`${path}[${JSON.stringify(topicId)}]`, topicId, permissions)
+        )
+    ];
 }
 
 function toTopicIssues(path: string, topicId: string, permissions: ApiJsonValue): Issues {
-    const topicIssues = validateRallarWsUserTopicId(topicId, path).issues;
-    if (topicIssues.length > 0) {
-        return [...topicIssues];
-    }
+    return [...validateRallarWsUserTopicId(topicId, path).issues, ...toPermissionIssues(path, permissions)];
+}
+
+function toPermissionIssues(path: string, permissions: ApiJsonValue): Issues {
     if (!isJsonObject(permissions)) {
         return [issue(path, 'invalid-permissions', 'Topic permissions must be an object.')];
     }
@@ -102,8 +102,8 @@ function toAuditIssues(audit: ApiJsonValue, path: string): Issues {
             : [issue(`${path}.atEpochMs`, 'invalid-timestamp', 'atEpochMs must be a non-negative integer.')]),
         ...(audit.actor === undefined ? [] : toActorIssues(audit.actor, `${path}.actor`)),
         ...presentKeys(audit, ['reason', 'traceId', 'requestId'])
-            .filter((key) => audit[key] !== null && typeof audit[key] !== 'string')
-            .map((key) => issue(`${path}.${key}`, 'invalid-string', `${key} must be a string or null.`))
+            .filter((key) => audit[key] !== null && !isNonEmptyString(audit[key]))
+            .map((key) => issue(`${path}.${key}`, 'invalid-string', `${key} must be a non-empty string or null.`))
     ];
 }
 
@@ -119,7 +119,6 @@ function toActorIssues(actor: ApiJsonValue, path: string): Issues {
     ];
 }
 
-/** An unknown key and a missing key, each reported once. */
 function toKeyIssues(record: ApiJsonObject, keys: readonly string[], path: string): Issues {
     return [
         ...Object.keys(record).filter((key) => !keys.includes(key)).map((key) =>
@@ -133,7 +132,7 @@ function toKeyIssues(record: ApiJsonObject, keys: readonly string[], path: strin
 
 function toNonEmptyStringIssues(record: ApiJsonObject, keys: readonly string[], path: string): Issues {
     return presentKeys(record, keys)
-        .filter((key) => typeof record[key] !== 'string' || record[key].length === 0)
+        .filter((key) => !isNonEmptyString(record[key]))
         .map((key) => issue(`${path}.${key}`, 'invalid-string', `${key} must be a non-empty string.`));
 }
 
@@ -143,6 +142,10 @@ function presentKeys<Key extends string>(record: ApiJsonObject, keys: readonly K
 
 function issue(path: string, code: string, message: string): RallarValidationIssue {
     return { path, code, message };
+}
+
+function isNonEmptyString(value: ApiJsonValue): boolean {
+    return typeof value === 'string' && value.length > 0;
 }
 
 function isJsonObject(value: unknown): value is ApiJsonObject {

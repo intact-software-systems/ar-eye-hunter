@@ -11,6 +11,7 @@ import {
     readGroupMutation,
     readGroupMutationWithSnapshot
 } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
+import { readSequentialGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-sequential-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
@@ -362,6 +363,31 @@ describe('GroupStateService mutation exact reads', () => {
         ).toEqual([grantSelector('carol')]);
     });
 
+    it('the sequential read loads the target grant row only for a departure', async () => {
+        const { runtime, service } = await createSeededService('grant-sequential');
+        const ref = { ...SCOPE, groupId: 'grant-sequential' };
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
+        const grant = {
+            ...ref,
+            principalId: 'bob',
+            topics: { 'room.feed': { publish: true, subscribe: false } },
+            updated: { atEpochMs: 1_000, actor: { kind: 'principal', principalId: 'owner' }, reason: null, traceId: null, requestId: null }
+        };
+        await runtime.upsert(
+            PUBLICATION_GRANTS_NAMESPACE,
+            groupStatePublicationGrantStorageKey(ref, 'bob'),
+            JSON.stringify(grant),
+            Number.MAX_SAFE_INTEGER
+        );
+        const repository = createTestGroupStateRepository(runtime);
+
+        const leave = await readSequentialGroupMutation({ repository, command: leaveCommand(ref, 'bob'), lifecyclePolicy: null });
+        const join = await readSequentialGroupMutation({ repository, command: joinCommand(ref, 'bob'), lifecyclePolicy: null });
+
+        expect(leave.targetPublicationGrant?.value).toEqual(grant);
+        expect(join.targetPublicationGrant).toBeNull();
+    });
+
     it('keeps an expired batch authority read observational', async () => {
         const { runtime: seeded } = await createSeededService('expiry-replacement');
         if (!(seeded instanceof ExpiryReplacementReadBatchRuntime)) {
@@ -463,6 +489,28 @@ function joinCommand(
             participation: null,
             inviteToken: null,
             joinCode: null,
+            actorPrincipalId: principalId,
+            actorSessionId: null,
+            reason: null
+        }
+    };
+}
+
+function leaveCommand(
+    aggregateRef: Readonly<StateScope & { groupId: string; }>,
+    principalId: string
+): GroupMutationCommand {
+    return {
+        operation: 'upsertMember',
+        aggregateRef,
+        commandId: `leave-${principalId}`,
+        requestId: `leave-${principalId}`,
+        targetPrincipalId: principalId,
+        input: {
+            role: null,
+            status: 'left',
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
             actorPrincipalId: principalId,
             actorSessionId: null,
             reason: null

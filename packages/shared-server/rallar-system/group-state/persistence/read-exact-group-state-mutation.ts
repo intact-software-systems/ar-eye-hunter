@@ -338,65 +338,64 @@ function addAggregateSelectors(input: GroupStateMutationExactReadInput, add: Exa
     }
 }
 
+interface ExactKeySelectorGroup {
+    readonly kind: IdentitySlotKind;
+    readonly namespace: string;
+    readonly identities: readonly string[];
+    readonly keys: readonly string[];
+}
+
 function addIdentitySelectors(
     input: GroupStateMutationExactReadInput,
     identities: ExactReadIdentities,
     add: ExactReadSelectorSink
 ): void {
-    const ref = input.aggregateRef;
-    identities.requestIds.forEach((requestId, index) =>
+    for (const group of toExactKeySelectorGroups(input.aggregateRef, identities)) {
+        addKeySelectors(group, add);
+    }
+}
+
+function toExactKeySelectorGroups(ref: GroupRef, identities: ExactReadIdentities): readonly ExactKeySelectorGroup[] {
+    const { requestIds, memberIds, sessionIds, admissionIds, grantIds } = identities;
+    return [
+        {
+            kind: 'idempotency',
+            namespace: IDEMPOTENT_NAMESPACE,
+            identities: requestIds,
+            keys: requestIds.map((requestId) => groupStateIdempotencyStorageKey(ref, requestId))
+        },
+        {
+            kind: 'member',
+            namespace: MEMBERS_NAMESPACE,
+            identities: memberIds,
+            keys: memberIds.map((principalId) => groupStateMemberStorageKey({ ...ref, principalId }))
+        },
+        {
+            kind: 'presence',
+            namespace: SESSIONS_NAMESPACE,
+            identities: sessionIds,
+            keys: sessionIds.map((sessionId) => groupStatePresenceSessionStorageKey({ ...ref, sessionId }))
+        },
+        {
+            kind: 'admission',
+            namespace: PRESENCE_ADMISSIONS_NAMESPACE,
+            identities: admissionIds,
+            keys: admissionIds.map((principalId) => groupStatePresenceAdmissionStorageKey({ ...ref, principalId }))
+        },
+        {
+            kind: 'grant',
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            identities: grantIds,
+            keys: grantIds.map((principalId) => groupStatePublicationGrantStorageKey(ref, principalId))
+        }
+    ];
+}
+
+function addKeySelectors(group: ExactKeySelectorGroup, add: ExactReadSelectorSink): void {
+    group.identities.forEach((identity, index) =>
         add(
-            {
-                selectorId: `idempotency:${index}`,
-                kind: 'key',
-                namespace: IDEMPOTENT_NAMESPACE,
-                key: groupStateIdempotencyStorageKey(ref, requestId)
-            },
-            { kind: 'idempotency', identity: requestId }
-        )
-    );
-    identities.memberIds.forEach((principalId, index) =>
-        add(
-            {
-                selectorId: `member:${index}`,
-                kind: 'key',
-                namespace: MEMBERS_NAMESPACE,
-                key: groupStateMemberStorageKey({ ...ref, principalId })
-            },
-            { kind: 'member', identity: principalId }
-        )
-    );
-    identities.sessionIds.forEach((sessionId, index) =>
-        add(
-            {
-                selectorId: `presence:${index}`,
-                kind: 'key',
-                namespace: SESSIONS_NAMESPACE,
-                key: groupStatePresenceSessionStorageKey({ ...ref, sessionId })
-            },
-            { kind: 'presence', identity: sessionId }
-        )
-    );
-    identities.admissionIds.forEach((principalId, index) =>
-        add(
-            {
-                selectorId: `admission:${index}`,
-                kind: 'key',
-                namespace: PRESENCE_ADMISSIONS_NAMESPACE,
-                key: groupStatePresenceAdmissionStorageKey({ ...ref, principalId })
-            },
-            { kind: 'admission', identity: principalId }
-        )
-    );
-    identities.grantIds.forEach((principalId, index) =>
-        add(
-            {
-                selectorId: `grant:${index}`,
-                kind: 'key',
-                namespace: PUBLICATION_GRANTS_NAMESPACE,
-                key: groupStatePublicationGrantStorageKey(ref, principalId)
-            },
-            { kind: 'grant', identity: principalId }
+            { selectorId: `${group.kind}:${index}`, kind: 'key', namespace: group.namespace, key: group.keys[index] },
+            { kind: group.kind, identity }
         )
     );
 }

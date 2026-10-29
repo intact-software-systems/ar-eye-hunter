@@ -221,7 +221,7 @@ export function computeGovernedMember(
         facts,
         members: [member],
         eventType,
-        publicationGrantEffects: toDepartureGrantEffects(read, member)
+        publicationGrantEffects: computeDepartureGrantEffects(read, member)
     });
 }
 
@@ -314,12 +314,12 @@ export function computeUpsertMember(
         facts,
         members: [member],
         eventType: groupMemberEventType(member.status),
-        publicationGrantEffects: toDepartureGrantEffects(read, member)
+        publicationGrantEffects: computeDepartureGrantEffects(read, member)
     });
 }
 
 /** A departure deletes the target's grant row in its own batch, so a rejoin never finds it again (D485). */
-function toDepartureGrantEffects(
+function computeDepartureGrantEffects(
     read: GroupMutationRead,
     member: GroupMember
 ): readonly GroupPublicationGrantEffect[] {

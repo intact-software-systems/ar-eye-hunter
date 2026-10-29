@@ -85,4 +85,25 @@ describe('group publication grant contract', () => {
 
         expect(issues.map((issue) => issue.path)).toEqual(['$.topics["feed"]', '$.topics["room.feed"]']);
     });
+
+    it('reports the topic count and every bad entry of an oversized row together', () => {
+        const issues = validateGroupPublicationGrant({
+            ...GRANT,
+            topics: { ...topicsOf(GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal), feed: { publish: true, subscribe: false } }
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual(['$.topics', '$.topics["feed"]']);
+    });
+
+    it('reports a bad topic id and its malformed permissions together', () => {
+        const issues = decodeIssues({ ...GRANT, topics: { feed: { publish: 'yes', subscribe: false } } });
+
+        expect(issues.map((issue) => issue.path)).toEqual(['$.topics["feed"]', '$.topics["feed"].publish']);
+    });
+
+    it('refuses an empty audit string as the persisted member rows do', () => {
+        const issues = decodeIssues({ ...GRANT, updated: { ...GRANT.updated, requestId: '', reason: '' } });
+
+        expect(issues.map((issue) => issue.path)).toEqual(['$.updated.reason', '$.updated.requestId']);
+    });
 });

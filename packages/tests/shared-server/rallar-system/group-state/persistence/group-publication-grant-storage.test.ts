@@ -53,7 +53,7 @@ describe('group publication grant storage', () => {
         ).toEqual(grantFor('carol'));
     });
 
-    it('the put descriptor never expires and carries expectedRevision', () => {
+    it('the update descriptor never expires and carries expectedRevision', () => {
         expect(groupStateUpdatePublicationGrantDescriptor(grantFor('bob'), 3)).toEqual({
             operation: 'update',
             namespace: PUBLICATION_GRANTS_NAMESPACE,

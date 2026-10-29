@@ -51,7 +51,6 @@ export function groupStateDeletePublicationGrantDescriptor(
     };
 }
 
-/** The guarded-batch effect of one grant change, identified by its principal. */
 export function toPublicationGrantBatchEffect(effect: GroupPublicationGrantEffect): RuntimeStateGuardedBatchEffect {
     const effectId = `publication-grant:${effect.value.principalId}`;
     switch (effect.operation) {

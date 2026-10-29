@@ -42,7 +42,6 @@ export function canonicalStoredPublicationGrant(
     return { entry: stored.entry, value };
 }
 
-/** The group's grant rows, decoded and in principal order. */
 export function canonicalStoredPublicationGrants(
     stored: readonly RuntimeStateEntryValue<JsonWireValue>[],
     ref: GroupRef

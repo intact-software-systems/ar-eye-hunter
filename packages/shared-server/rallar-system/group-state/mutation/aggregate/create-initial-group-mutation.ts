@@ -168,6 +168,7 @@ export function computeCreate(
         presenceAdmission: null,
         eventType: 'group-created',
         lifecyclePolicy: resolveCreateGroupLifecyclePolicy(command),
+        publicationGrantEffects: [],
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: computeFormationTimerEntries({
             command,
