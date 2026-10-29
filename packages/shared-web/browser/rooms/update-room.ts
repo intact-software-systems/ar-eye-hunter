@@ -211,6 +211,7 @@ function toUpdateRoomRequest(input: RallarUpdateRoomInput): UpdateStateGroupBody
         ...(input.joinMode === undefined ? {} : { joinMode: input.joinMode }),
         ...(input.directoryListing === undefined ? {} : { directoryListing: input.directoryListing }),
         ...(input.maxMembers === undefined ? {} : { maxMembers: input.maxMembers }),
+        ...(input.maxSpectators === undefined ? {} : { maxSpectators: input.maxSpectators }),
         ...(input.maxSessionsPerMember === undefined
             ? {}
             : { maxSessionsPerMember: input.maxSessionsPerMember }),

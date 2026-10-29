@@ -162,6 +162,8 @@ function createHeartbeatRead(): GroupMutationRead {
     const session = presenceFor('alice', 'alice-session', 'generation-1');
     return {
         ...base,
+        activeMembers: null,
+        activeMemberPrincipalIds: null,
         targetMember: base.actorMember,
         targetMemberEntry: base.actorMemberEntry,
         targetPresence: storedEntry(groupSessionStorageKey('alice-session'), session),

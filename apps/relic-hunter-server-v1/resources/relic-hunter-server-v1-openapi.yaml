@@ -27,14 +27,11 @@ paths:
   /api/relic/games/{gameId}:
     get:
       tags: [Relic Hunters]
-      summary: Read or create a Relic Hunters game snapshot
+      summary: Read an existing Relic Hunters game snapshot
       description: |
-        Ensures an authoritative Relic Hunters game exists for the requested
-        game id and returns the public snapshot. When Relic AI expedition
-        generation is enabled, initial map/relic setup may be generated before
-        the snapshot is persisted. With `RELIC_REST_AUTH_MODE=group-policy`,
-        the caller must be an active group member with full read permission for
-        the matching group id.
+        Reads the existing public expedition for a current authorized room member.
+        Spectators receive the same public view without hidden plans or relics.
+        This read never creates a save, generates AI setup, or changes the game.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -53,20 +50,22 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/RoomUnavailable'
-        '503':
-          description: The durable initialization is pending; retry the read.
+        '204':
+          description: The room has no expedition yet; wait for a player to initialize it.
 
   /api/relic/games/{gameId}/commands/requests/{requestId}:
     post:
       tags: [Relic Hunters]
       summary: Apply an authoritative Relic Hunters command
       description: |
+        Requires active room membership in every authorization mode.
         Applies a gameplay command to the server-owned game state and returns
         the resulting public snapshot. The server derives `gameId` from the path
         and `username` from the authenticated session, overriding those fields if
         they are present in the request body. With
         `RELIC_REST_AUTH_MODE=group-policy`, the caller must have a live active
-        room session that can send room messages.
+        room session that can send room messages. Spectators are denied in every mode.
+        Only join-expedition can create a participant; all other commands require one.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -99,6 +98,39 @@ paths:
         '503':
           description: The durable request is still pending; retry the same request identity.
 
+  /api/relic/games/{gameId}/initialize/requests/{requestId}:
+    post:
+      tags: [Relic Hunters]
+      summary: Initialize a Relic Hunters game
+      description: |
+        Creates an expedition only when no save exists, through an authorized player mutation.
+        Active room membership is required in every authorization mode.
+        Spectators are denied in every authorization mode before AI generation.
+        Existing saves are returned without resetting the expedition.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Public Relic Hunters game snapshot after initialization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelicPublicSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RoomUnavailable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          description: The durable request is still pending; retry the same request identity.
+
   /api/relic/games/{gameId}/reset/requests/{requestId}:
     post:
       tags: [Relic Hunters]
@@ -108,7 +140,7 @@ paths:
         the new public snapshot. When Relic AI expedition generation is enabled,
         reset can generate a fresh expedition setup. With
         `RELIC_REST_AUTH_MODE=group-policy`, the caller must be an active group
-        owner/admin.
+        owner/admin. Spectators are denied in every mode.
       security:
         - bearerAuth: []
           clientIdHeader: []

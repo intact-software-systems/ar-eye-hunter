@@ -66,6 +66,21 @@ describe('room entry through the browser facade and HTTP workflow', () => {
         expect(facade.rooms.current()?.group.groupId).toBe('room-ref');
     });
 
+    it('sends explicit watch and play intent while ordinary recovery leaves participation unchanged', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        respond(() => json(createRoomSnapshot('watched', ['session-1'])));
+        const facade = createRallarFacade();
+        const roomRef = { ...scope, groupId: 'watched' };
+        await facade.rooms.watch({ roomRef, participation: 'player' }, { leaveCurrent: false });
+        await facade.rooms.join(roomRef, { participation: 'player', leaveCurrent: false });
+        await facade.rooms.join(roomRef, { leaveCurrent: false });
+        expect(requests.filter(isAdmission).map((request) => request.body)).toEqual([
+            { participation: 'spectator', actorPrincipalId: 'principal-1', actorSessionId: 'session-1' },
+            { participation: 'player', actorPrincipalId: 'principal-1', actorSessionId: 'session-1' },
+            { actorPrincipalId: 'principal-1', actorSessionId: 'session-1' }
+        ]);
+    });
+
     it.each([503, 429, 400, 409])('applies the HTTP retry policy to status %s', async (status) => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const connected = createRoomSnapshot('selected', ['session-1']);

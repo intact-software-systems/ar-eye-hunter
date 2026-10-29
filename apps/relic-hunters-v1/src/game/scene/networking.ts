@@ -8,6 +8,7 @@ import {
     type RallarRoomRealtimeSendStatus
 } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { readActiveGroupSessionRole } from '@shared/api/group-spectating.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     RallarMotion,
@@ -206,7 +207,8 @@ function applyRelicMotionMessage(
 export function applyRelicMotionPayload(
     { runtime, payload, senderPeerId, receivedAtEpochMs }: RelicMotionMessageInput
 ): boolean {
-    const currentRoomRef = rallar.rooms.state().currentRoomRef;
+    const roomState = rallar.rooms.state();
+    const currentRoomRef = roomState.currentRoomRef;
     if (
         !isRelicMotionPayload(payload) || !currentRoomRef ||
         !isSameGroupRef(payload.roomRef, currentRoomRef) ||
@@ -214,7 +216,11 @@ export function applyRelicMotionPayload(
     ) {
         return false;
     }
-    if (payload.pid === runtime.localPlayerId.value) {
+    const senderRole = readActiveGroupSessionRole(roomState.currentRoom, senderPeerId, Date.now());
+    if (
+        !senderRole || senderRole === 'spectator' || payload.pid !== senderPeerId ||
+        payload.pid === runtime.localPlayerId.value
+    ) {
         return false;
     }
 
@@ -396,12 +402,17 @@ function resolveRelicLocalMotionSample(
     nowEpochMs: number
 ): RelicLocalMotionSample | undefined {
     const snapshot = runtime.snapshot.value;
-    const roomRef = rallar.rooms.state().currentRoomRef;
+    const roomState = rallar.rooms.state();
+    const roomRef = roomState.currentRoomRef;
     const localPlayerId = runtime.localPlayerId.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
+    const localRole = localPlayerId
+        ? readActiveGroupSessionRole(roomState.currentRoom, localPlayerId, nowEpochMs)
+        : undefined;
     if (
         !snapshot || !roomRef || roomRef.groupId !== snapshot.roomId ||
-        !localPlayer || localPlayer.escaped || localPlayer.defeated
+        !localPlayer || localPlayer.escaped || localPlayer.defeated ||
+        !localRole || localRole === 'spectator'
     ) {
         return undefined;
     }

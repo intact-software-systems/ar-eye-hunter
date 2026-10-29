@@ -45,6 +45,7 @@ export function useRallarArena(): ArenaConnection {
         isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
         localAvatarProfileRef: state.localAvatarProfileRef,
         networkGenerationRef: state.networkGenerationRef,
+        spectating: state.spectating,
         roomId: state.roomId,
         session: state.session
     });
@@ -88,6 +89,7 @@ export function useRallarArena(): ArenaConnection {
 
 function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
     return useArenaPresenceLifecycle({
+        spectating: state.spectating,
         connectionState: state.connectionState,
         directorStatus: state.directorStatus,
         isNetworkEnabled: state.isNetworkEnabled,
@@ -180,6 +182,8 @@ function useArenaConnectionLifecycle(
     state: ReturnType<typeof useArenaRuntimeState>
 ) {
     const { connect } = useArenaConnectionSessionLifecycle({
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        setArenaSnapshot: state.setArenaSnapshot,
         nowMs: Date.now,
         clearRoomScopedArenaState: state.clearRoomScopedArenaState,
         bumpNetworkGeneration: state.bumpNetworkGeneration,
@@ -231,6 +235,7 @@ function useArenaMatchLifecycles(
             isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
             networkGenerationRef: state.networkGenerationRef,
             roomId: state.roomId,
+            spectating: state.spectating,
             roomIdRef: state.roomIdRef,
             runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
             setActiveEvent: state.setActiveEvent,
@@ -360,6 +365,7 @@ function toArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection
         authStorageKind: readAuthSessionStorageKind(),
         authGeneration: state.networkGenerationRef.current,
         networkEnabled: state.isNetworkEnabled(),
+        spectating: state.spectating,
         logoutQuiesced: state.connectionState === 'signed-out' &&
             !state.sessionRef.current &&
             !state.roomIdRef.current &&

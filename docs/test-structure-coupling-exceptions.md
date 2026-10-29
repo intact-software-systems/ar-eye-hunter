@@ -86,6 +86,51 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "arena-spectator-controls-send-no-player-effects",
+      "domain": "AR Eye Hunter spectator command isolation",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A spectator cannot advertise director capability, attempt appointment, or publish player presence, input or intent through arena controls.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts#sends no authority or player messages from watcher controls",
+      "coverageRelation": "The rendered runtime adopts spectator membership, then the test invokes director appointment, match start and pose controls and observes each forbidden outbound match port. Remote-state assertions in the role-change test prove ingress fencing without requiring match factory recreation.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ArenaRallarGameMatchHandle reportCapability, appointIfElected, sendPresence, sendInput and sendIntent",
+        "observableEffect": "These ports advertise host eligibility, request director authority or publish player-owned traffic to the multiplayer game.",
+        "requiredConstraint": "No invocation of these five authority or player-identity ports is allowed while the local principal is a spectator, including when its controls are invoked directly.",
+        "failureRationale": "The local spectating flag can remain true even after a peer-visible capability or player message has escaped. Local state alone cannot exclude those forbidden outbound effects."
+      }
+    },
+    {
+      "id": "relic-spectator-recovery-sends-no-game-mutations",
+      "domain": "Relic Hunters spectator recovery and controls",
+      "owner": "Relic Hunters maintainers",
+      "summary": "Restoring a spectator and invoking its expedition controls must not initialize a save, send a game command or reset the expedition.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#restores a spectator without creating a save or sending game commands",
+      "coverageRelation": "The hook restores spectator membership with no existing save, then Join Expedition, Start Expedition and Reset are invoked. The test observes all three game mutation ports in addition to the resulting absent snapshot and zero player count.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Relic browser API initializeRelicGame, sendRelicCommand and resetRelicGame",
+        "observableEffect": "These outbound API ports initiate authoritative save creation, gameplay commands and reset work.",
+        "requiredConstraint": "Spectator bootstrap and controls initiate none of these mutation requests; existing snapshot reads remain allowed.",
+        "failureRationale": "An undefined local snapshot or unchanged player count can coexist with a rejected, pending or completed remote write request. The API-port observations exclude unauthorized work independently of rendered state."
+      }
+    },
+    {
+      "id": "relic-unfinished-participant-watch-admission-blocked",
+      "domain": "Relic Hunters explicit departure before Watch",
+      "owner": "Relic Hunters maintainers",
+      "summary": "An unfinished expedition participant must leave explicitly before Watch can invoke room admission.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#requires explicit departure before an unfinished participant can watch through either entry path",
+      "coverageRelation": "A joined-expedition snapshot is delivered to the runtime. Direct Watch must not reach admission; pending manual entry is cancelled with the current room preserved. After explicit Leave, the same admission port receives the spectator target.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RelicHuntersRuntime.Dependencies.joinRoom",
+        "observableEffect": "Room admission can replace the principal participation role or move its presence, revoking an unfinished participant's ability to advance the expedition.",
+        "requiredConstraint": "Watch does not invoke admission while the current hunter remains enrolled in an unfinished expedition; explicit Leave permits the later Watch admission.",
+        "failureRationale": "The same current room and displayed error could survive an attempted admission or partial failure. Observing the admission port proves the forbidden membership transition was never initiated."
+      }
+    },
+    {
       "id": "alm-outbound-captured-policy-indexeddb-session-settlement",
       "domain": "ALM outbound captured-policy IndexedDB read-session lifetime",
       "owner": "Rallar shared maintainers",
@@ -4889,6 +4934,105 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-6e72e4f321808af7",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "arena-spectator-controls-send-no-player-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The capability port must remain unused: advertising a spectator as a host is a peer-visible authority effect even if local spectator state is unchanged.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts#sends no authority or player messages from watcher controls"
+    },
+    {
+      "id": "test-structure-coupling-05c95a477bb3503c",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "arena-spectator-controls-send-no-player-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The appointment port must remain unused: a spectator control cannot initiate a director authority request, even one eventually refused by the server.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts#sends no authority or player messages from watcher controls"
+    },
+    {
+      "id": "test-structure-coupling-604bacc06f6c81d5",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "arena-spectator-controls-send-no-player-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The presence port must remain unused: a spectator camera pose must not publish a player identity or avatar to peers.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts#sends no authority or player messages from watcher controls"
+    },
+    {
+      "id": "test-structure-coupling-605ae80eb5ce4eba",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "arena-spectator-controls-send-no-player-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The input port must remain unused: spectator controls cannot send player simulation input even when no local simulation state changes.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts#sends no authority or player messages from watcher controls"
+    },
+    {
+      "id": "test-structure-coupling-d60e510def08ba23",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "arena-spectator-controls-send-no-player-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The intent port must remain unused: direct match-start or pose controls cannot publish a gameplay intent for a spectator.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts#sends no authority or player messages from watcher controls"
+    },
+    {
+      "id": "test-structure-coupling-adc9817ec1d9d092",
+      "path": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-spectator-recovery-sends-no-game-mutations",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "The initialization port observation excludes authoritative save creation during spectator recovery; an absent local snapshot alone would not exclude remote initialization work.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#restores a spectator without creating a save or sending game commands"
+    },
+    {
+      "id": "test-structure-coupling-2eb97145a551b11f",
+      "path": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-spectator-recovery-sends-no-game-mutations",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "The command port observation excludes gameplay mutation requests when spectator expedition controls are invoked directly, independently of local player-count readback.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#restores a spectator without creating a save or sending game commands"
+    },
+    {
+      "id": "test-structure-coupling-ab26aadbb718542b",
+      "path": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-spectator-recovery-sends-no-game-mutations",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "The reset port observation excludes destructive expedition reset requests from spectator controls, including requests whose response would not yet update local state.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#restores a spectator without creating a save or sending game commands"
+    },
+    {
+      "id": "test-structure-coupling-d2f555bf7c63ee7d",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-unfinished-participant-watch-admission-blocked",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "The admission absence proves Watch refuses before initiating a principal role transition. The later successful admission after explicit Leave independently proves the allowed boundary.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#requires explicit departure before an unfinished participant can watch through either entry path"
+    },
     {
       "id": "test-structure-coupling-b98be65b2158586a",
       "path": "packages/tests/shared/alm/outbound-admitted-audience.test.ts",

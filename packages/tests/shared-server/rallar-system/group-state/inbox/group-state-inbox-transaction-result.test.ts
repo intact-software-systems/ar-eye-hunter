@@ -66,7 +66,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,' +
     '"onlineMemberCount":0},"event":{"applicationId":"ar-eye-hunter",' +
     '"workspaceId":"default","groupId":"transaction-boundary-room",' +
-    '"eventId":"group-event:2f8b5680a6546f63b2317b276ac0848d905e18850c7cdb86f6279e384c31a74c",' +
+    '"eventId":"group-event:96cc07efc32833ebc37c714b22e6c1f27578f5494e5c9cd1ed0d18ed9c2d8d65",' +
     '"eventType":"group-created","snapshotVersion":1,' +
     '"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
     '"occurredAtEpochMs":1785628800000,"actor":{"kind":"session",' +

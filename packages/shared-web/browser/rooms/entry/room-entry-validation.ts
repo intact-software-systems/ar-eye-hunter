@@ -6,7 +6,10 @@ import type { RallarRoomEntry } from './rallar-room-entry.ts';
 export function decodeRoomEntryDestination(
     value: unknown
 ): Either<RallarRoomEntry.Failure, RallarRoomEntry.Destination> {
-    if (!value || typeof value !== 'object' || !('roomRef' in value) || !('joinCode' in value)) {
+    if (
+        !value || typeof value !== 'object' || !('roomRef' in value) || !('joinCode' in value) ||
+        !('participation' in value)
+    ) {
         return Either.ofLeft(invalidDestination());
     }
     const roomRef = value.roomRef;
@@ -16,13 +19,16 @@ export function decodeRoomEntryDestination(
         !('workspaceId' in roomRef) || typeof roomRef.workspaceId !== 'string' ||
         !('groupId' in roomRef) || typeof roomRef.groupId !== 'string' ||
         !validateRallarGroupRef(roomRef).ok ||
+        (value.participation !== 'player' && value.participation !== 'spectator' &&
+            value.participation !== 'preserve') ||
         (value.joinCode !== null && (typeof value.joinCode !== 'string' || value.joinCode.trim().length === 0))
     ) {
         return Either.ofLeft(invalidDestination());
     }
     return Either.ofRight({
         roomRef: { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId, groupId: roomRef.groupId },
-        joinCode: value.joinCode
+        joinCode: value.joinCode,
+        participation: value.participation
     });
 }
 

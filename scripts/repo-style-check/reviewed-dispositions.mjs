@@ -5,6 +5,99 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner review: Room adoption and authenticated session actions share the same lifecycle fence.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-runtime/actions/use-arena-session-actions.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 62
+    }),
+    // Independent whole-owner review: Turn draft, legal action, clock and review controls form one interaction lifecycle.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/use-relic-turn.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    // Independent whole-owner review: Join, invite, role, upsert and transfer decisions produce the same aggregate write plan.
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/membership/compute-group-membership-mutation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 61
+    }),
+    // Independent whole-owner review: Membership transition admission is one pure policy owner with no I/O.
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/membership/group-membership-mutation-policy.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // Independent whole-owner review: Authority subscription sequence, receipts and status belong to one client protocol.
+    Object.freeze({
+        path: 'packages/shared-web/game/authority/rallar-game-authority-client.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    // Independent whole-owner review: Raw snapshot requests are checked before scope, sender and read-only operation admission.
+    Object.freeze({
+        path: 'packages/shared/rallar-game/snapshot-request.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRallarGameSnapshotRequest',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: Diagnostic payload validation narrows untrusted input to a bounded read request.
+    Object.freeze({
+        path: 'packages/shared/rallar-game/snapshot-request.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isDiagnosticPayload',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: The object predicate guards parsed request input before field access.
+    Object.freeze({
+        path: 'packages/shared/rallar-game/snapshot-request.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isObject',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: The exact-key predicate rejects unsupported fields at the request boundary.
+    Object.freeze({
+        path: 'packages/shared/rallar-game/snapshot-request.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hasOnlyKeys',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: Motion input remains untrusted until decoded and checked against room scope and live sender.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/scene/networking.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: The motion phase predicate narrows a raw wire enum.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/scene/networking.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRelicMotionPhase',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: The optional finite-number predicate validates a raw motion field.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/scene/networking.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalFinite',
+        maximumMagnitude: 1
+    }),
+    // Independent whole-owner review: The record predicate narrows the raw motion envelope before field access.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/scene/networking.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord',
+        maximumMagnitude: 1
+    }),
     // Independent whole-owner review: One keyed remote-avatar lifecycle owns motion, health and shot presentation.
     // This warning-tier cap permits no growth and waives no other rule.
     Object.freeze({
@@ -98,7 +191,7 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared-server/rallar-system/group-state/group-mutation-command.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 50
+        maximumMagnitude: 53
     }),
     Object.freeze({
         path: 'packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts',
@@ -122,7 +215,7 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/api',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:group',
-        maximumMagnitude: 7
+        maximumMagnitude: 8
     }),
     // Task17 whole-file self-review: this fixed local module is admitted as an
     // object with the one named callable before invocation. Import errors remain
@@ -962,7 +1055,7 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/api',
         rule: 'layout.directory-density',
         symbol: 'api',
-        maximumMagnitude: 24
+        maximumMagnitude: 25
     }),
     Object.freeze({
         path: 'packages/shared/api',

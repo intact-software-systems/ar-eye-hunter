@@ -1,4 +1,6 @@
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameEnvelope } from '@shared-web/game/mod.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
 import {
     isArenaAcceptedShotFromSender,
@@ -14,7 +16,13 @@ import {
     resolvePlayerHitIntent,
     toArenaSnapshot
 } from '../../../simulation.ts';
-import { GAME_PROTOCOL, type GameRealtimeMessage, type PickupIntent, type PlayerHitIntent } from '../../../types.ts';
+import {
+    GAME_PROTOCOL,
+    type GameRealtimeMessage,
+    type PickupIntent,
+    type PlayerHitIntent
+} from '../../../types.ts';
+import { isCurrentArenaPlayerSession } from '../../arena-participation.ts';
 import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 
 interface ArenaIntentOwner {
@@ -29,12 +37,15 @@ export async function acceptArenaMatchIntent(
     generation: number,
     envelope: RallarGameEnvelope<GameRealtimeMessage>
 ): Promise<void> {
-    if (!input.isCurrentNetworkGeneration(generation)) {
+    if (
+        !input.isCurrentNetworkGeneration(generation) || !isCurrentArenaPlayerSession(envelope.senderId, input.nowMs())
+    ) {
         return;
     }
     const match = input.arenaMatchRef.current;
     const roomId = input.roomIdRef.current;
-    if (!match || !roomId || envelope.roomId !== roomId) {
+    const roomRef = rallar.rooms.state().currentRoomRef;
+    if (!match || !roomId || !roomRef || !isSameGroupRef(envelope.roomRef, roomRef)) {
         return;
     }
     const owner: ArenaIntentOwner = { input, generation, roomId, match };

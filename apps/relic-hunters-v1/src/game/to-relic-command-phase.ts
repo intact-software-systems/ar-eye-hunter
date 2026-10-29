@@ -1,8 +1,14 @@
 import type {
-    RelicCommandOutcome,
-    RelicHuntersRuntimePhase,
-    RelicRuntimeDiagnostics
+    RelicHuntersRuntimePhase
 } from './relic-hunters-runtime.ts';
+import type { RelicRuntimeDiagnostics } from './relic-runtime-diagnostics.ts';
+
+import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import type { RelicWsCommandDelivery } from './send-relic-ws-command.ts';
+
+export type RelicCommandOutcome =
+    | { readonly transport: 'ws'; readonly delivery: RelicWsCommandDelivery; }
+    | { readonly transport: 'rest'; readonly snapshot: RelicPublicSnapshot | undefined; };
 
 export interface RelicCommandPhase {
     readonly phase: RelicHuntersRuntimePhase;

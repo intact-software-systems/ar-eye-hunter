@@ -5,8 +5,10 @@ import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Scene } from '@babylonjs/core/scene.js';
-import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
 import type { RefObject } from 'react';
+
+import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+
 import {
     calculateArenaMusicLayerState,
     ProceduralArenaAudio,
@@ -45,11 +47,11 @@ import { ArenaSceneState } from './arena-scene-state.ts';
 import {
     applyLook,
     fireLocalShot,
-    resolveTouchShotDirection,
     runFrame,
     syncLocalPlayerFromSnapshot
 } from './arena-scene-step.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
+import { resolveTouchShotDirection } from './arena-shot-aim.ts';
 import { syncTargetAvatars } from './arena-target-view.ts';
 import { setInputKey } from './arena-touch-input.ts';
 import { buildArena, buildLayoutProps } from './arena-world-view.ts';
@@ -183,11 +185,7 @@ export class ArenaSceneRuntime {
         this.engine.stopRenderLoop(this.render);
         this.audio.dispose();
         this.scene.dispose();
-        for (const key of Object.keys(this.canvas.dataset)) {
-            if (key.startsWith('arena')) {
-                delete this.canvas.dataset[key];
-            }
-        }
+        this.canvas.dataset.arenaRuntimeReady = 'false';
     }
 
     pulse(action: MutableButtonAction, durationMs: number): void {
@@ -225,6 +223,9 @@ export class ArenaSceneRuntime {
         this.pointerDownCount += 1;
         unlockArenaAudio(this);
         const props = this.props.current;
+        if (props.spectating) {
+            return;
+        }
         if (event.button === 0) {
             const touch = event.pointerType === 'touch';
             const aim = touch

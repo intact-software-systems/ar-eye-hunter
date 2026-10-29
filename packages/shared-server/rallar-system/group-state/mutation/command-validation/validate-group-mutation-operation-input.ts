@@ -35,7 +35,7 @@ const GROUP_METADATA: GroupInputFieldRule = { key: 'metadata', kind: 'object', l
 const GROUP_ROLE: GroupInputFieldRule = {
     key: 'role',
     kind: 'enum',
-    allowed: ['owner', 'admin', 'member'],
+    allowed: ['owner', 'admin', 'member', 'spectator'],
     label: 'Group role'
 };
 const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly GroupInputFieldRule[]>> = {
@@ -48,6 +48,7 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
         GROUP_JOIN_MODE,
         { key: 'directoryListing', kind: 'enum', allowed: ['listed', 'unlisted'] },
         { key: 'maxMembers', kind: 'positive-integer' },
+        { key: 'maxSpectators', kind: 'nonnegative-integer' },
         { key: 'maxSessionsPerMember', kind: 'positive-integer' },
         GROUP_METADATA
     ],
@@ -60,6 +61,7 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
         GROUP_JOIN_MODE,
         { key: 'directoryListing', kind: 'enum', allowed: ['listed', 'unlisted'] },
         { key: 'maxMembers', kind: 'positive-integer' },
+        { key: 'maxSpectators', kind: 'nonnegative-integer' },
         { key: 'maxSessionsPerMember', kind: 'positive-integer' },
         GROUP_METADATA,
         { key: 'expiresAtEpochMs', kind: 'positive-integer' },
@@ -70,7 +72,10 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
     connectGroup: [{ key: 'expectedFormationEpoch', kind: 'nonnegative-integer', required: true }],
     reconfigureGroup: [{ key: 'landing', kind: 'enum', allowed: ['apply', 'hold'], nullable: true }],
     rotateGroupJoinCode: [{ key: 'joinCode', kind: 'string' }, { key: 'expiresAtEpochMs', kind: 'positive-integer' }],
-    joinGroup: [{ key: 'inviteToken', kind: 'string' }, { key: 'joinCode', kind: 'string' }],
+    joinGroup: [{ key: 'participation', kind: 'enum', allowed: ['player', 'spectator'] }, {
+        key: 'inviteToken',
+        kind: 'string'
+    }, { key: 'joinCode', kind: 'string' }],
     acceptGroupInvite: [{ key: 'inviteToken', kind: 'string' }, { key: 'joinCode', kind: 'string' }],
     createGroupInvite: [{ key: 'invitationExpiresAtEpochMs', kind: 'positive-integer' }],
     setGroupMemberRole: [{ ...GROUP_ROLE, required: true }],
@@ -98,6 +103,12 @@ export function validateGroupMutationOperationInput(
             ? validateGroupDirectoryListingMetadata(input.metadata)
             : [])
     ];
+    if (
+        (operation === 'createGroup' || operation === 'updateGroup') && typeof input.maxSpectators === 'number' &&
+        input.maxSpectators > 64
+    ) {
+        issues.push(new TypeError('Group maxSpectators must be at most 64'));
+    }
     if (operation === 'connectGroup') {
         return [...issues, ...validateExpectedLayout(input.expectedLayout)];
     }

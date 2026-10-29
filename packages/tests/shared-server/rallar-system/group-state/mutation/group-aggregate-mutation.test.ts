@@ -1,8 +1,20 @@
-import type { GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { assertGroupMutationOperationReads } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-operation-reads.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
-import { describe, expect, it } from 'vitest';
-import { createMutationCommand, createMutationFacts, createMutationRead } from '../group-state-concurrency-test-fixtures.ts';
+
+import {
+    createMutationCommand,
+    createMutationFacts,
+    createMutationRead
+} from '../group-state-concurrency-test-fixtures.ts';
+import { createGroupAuthorityRead, transitionCommand } from './group-mutation-test-runtime.ts';
 
 describe('group aggregate mutation computation', () => {
     it('keeps pure mutation computation synchronous, deterministic, and input preserving', () => {
@@ -55,17 +67,102 @@ describe('group aggregate mutation computation', () => {
         expect(() =>
             computeGroupMutation({
                 command: explicitRotate,
-                read,
+                read: { ...read, activeMemberPrincipalIds: null, activeMembers: null },
                 facts: codeFacts
             })
         ).toThrow(/resolved.*join code|explicit|command/i);
         expect(() =>
             computeGroupMutation({
                 command: omittedRotate,
-                read,
+                read: { ...read, activeMemberPrincipalIds: null, activeMembers: null },
                 facts: createMutationFacts()
             })
         ).toThrow(/resolved.*join code|generated|missing/i);
+    });
+});
+
+describe('group mutation roster read contract', () => {
+    const actor = { actorPrincipalId: 'alice', actorSessionId: 'alice-session', reason: null };
+    const identity = { aggregateRef: createMutationCommand().aggregateRef, commandId: 'read', requestId: 'read' };
+    const countOnlyCommands: readonly GroupMutationCommand[] = [
+        createMutationCommand(),
+        { ...identity, operation: 'joinGroup', targetPrincipalId: 'bob', input: { ...actor, participation: null, inviteToken: null, joinCode: null } },
+        { ...identity, operation: 'acceptGroupInvite', targetPrincipalId: 'bob', input: { ...actor, participation: null, inviteToken: null, joinCode: null } },
+        {
+            ...identity,
+            operation: 'upsertMember',
+            targetPrincipalId: 'bob',
+            input: { ...actor, role: null, status: 'active', invitedByPrincipalId: null, invitationExpiresAtEpochMs: null }
+        },
+        { ...identity, operation: 'setGroupMemberRole', targetPrincipalId: 'bob', input: { ...actor, role: 'spectator' } },
+        { ...identity, operation: 'transferGroupOwnership', targetPrincipalId: 'bob', input: actor }
+    ];
+    const electorateCommands: readonly GroupMutationCommand[] = [
+        transitionCommand('activateGroup'),
+        transitionCommand('reconfigureGroup'),
+        transitionCommand('failGroupFormation'),
+        transitionCommand('planGroupLayout'),
+        transitionCommand('connectGroup'),
+        transitionCommand('startGroupFormation'),
+        transitionCommand('resetGroupFormation'),
+        { ...identity, operation: 'pauseGroupTransport', input: actor },
+        { ...identity, operation: 'resumeGroupTransport', input: actor },
+        { ...identity, operation: 'grantGroupAdmission', targetPrincipalId: 'bob', input: actor },
+        { ...identity, operation: 'declineGroupAdmission', targetPrincipalId: 'bob', input: actor }
+    ];
+
+    it.each(countOnlyCommands)('$operation accepts complete member facts without electorate IDs', (command) => {
+        const read = createGroupAuthorityRead({});
+        expect(() =>
+            assertGroupMutationOperationReads({
+                ...read,
+                lifecyclePolicy: command.operation === 'updateGroup' ? null : read.lifecyclePolicy,
+                activeMemberPrincipalIds: null
+            }, command)
+        ).not.toThrow();
+    });
+
+    it.each(electorateCommands)('$operation rejects a missing electorate ID list', (command) => {
+        const read = createGroupAuthorityRead({});
+        expect(() =>
+            assertGroupMutationOperationReads({
+                ...read,
+                activeMemberPrincipalIds: null
+            }, command)
+        ).toThrow(/missing the active member principal ids/);
+    });
+
+    it('validates every count-only member row even without electorate IDs', () => {
+        const read = createMutationRead();
+        const member = read.actorMember;
+        if (member === null || member.status !== 'active') {
+            throw new Error('Expected the active fixture actor');
+        }
+        const command = createMutationCommand();
+        const facts = { ...read, activeMemberPrincipalIds: null };
+        expect(() => assertGroupMutationOperationReads({ ...facts, activeMembers: null }, command)).toThrow();
+        expect(() => assertGroupMutationOperationReads({ ...facts, activeMembers: [member, member] }, command)).toThrow(/duplicate/);
+        expect(() => assertGroupMutationOperationReads({ ...facts, activeMembers: [{ ...member, groupId: 'other-room' }] }, command)).toThrow(/scope|group/i);
+        expect(() => assertGroupMutationOperationReads({ ...facts, activeMembers: [{ ...member, status: 'left', left: member.updated }] }, command)).toThrow(
+            /inactive/
+        );
+        expect(() =>
+            assertGroupMutationOperationReads({
+                ...facts,
+                // @ts-expect-error Malformed JavaScript input must not masquerade as an empty roster.
+                activeMembers: ''
+            }, command)
+        ).toThrow();
+    });
+
+    it('rejects unrelated IDs and preserves electorate identity equality', () => {
+        const read = createGroupAuthorityRead({});
+        expect(() => assertGroupMutationOperationReads({ ...read, lifecyclePolicy: null }, createMutationCommand())).toThrow(
+            /must not carry active member principal ids/
+        );
+        expect(() => assertGroupMutationOperationReads({ ...read, activeMemberPrincipalIds: ['other'] }, transitionCommand('startGroupFormation'))).toThrow(
+            /identities differ/
+        );
     });
 });
 

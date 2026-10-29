@@ -1,3 +1,4 @@
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import '../setup-browser-indexeddb.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -273,7 +274,8 @@ function resetArenaRoomsFixture(): void {
     mockRallar.rooms.state.mockReturnValue({
         rooms: [],
         currentRoomId: 'arena-1',
-        currentRoomRef: arenaRoomRef
+        currentRoomRef: arenaRoomRef,
+        currentRoom: arenaMembershipSnapshot()
     });
     mockRallar.director.status.mockReturnValue({
         role: 'none',
@@ -424,5 +426,18 @@ function emptyArenaMatchStatus(): RallarGameMatchStatus {
         started: true,
         stopped: false,
         updatedAtEpochMs: 1
+    };
+}
+
+export function arenaMembershipSnapshot() {
+    const snapshot = createGroupSnapshotFixture({ ...arenaRoomRef, sessionIds: ['session-1', 'peer-1', 'peer-b', 'target', 'director-session'] });
+    return {
+        ...snapshot,
+        members: snapshot.members.map((member) => ({ ...member, principalId: member.principalId === 'session-1' ? session.clientId : member.principalId })),
+        activeSessions: snapshot.activeSessions.map((presence) => ({
+            ...presence,
+            principalId: presence.sessionId === 'session-1' ? session.clientId : presence.principalId,
+            expiresAtEpochMs: Date.now() + 60_000
+        }))
     };
 }

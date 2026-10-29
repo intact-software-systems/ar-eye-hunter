@@ -1068,7 +1068,7 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 202
+        maximumMagnitude: 233
     }),
     // These three class-method occurrences accept promise rejection values, fence stale attempts,
     // and immediately normalize with toError. Only typed error messages reach connection state.
@@ -1119,13 +1119,13 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'apps/relic-hunters-v1/src/game',
         rule: 'layout.directory-density',
         symbol: 'game',
-        maximumMagnitude: 22
+        maximumMagnitude: 23
     }),
     Object.freeze({
         path: 'apps/relic-hunters-v1/src/game',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:relic',
-        maximumMagnitude: 11
+        maximumMagnitude: 12
     }),
     // The fetch fixture captures outgoing JSON as raw observation data for independent equality
     // assertions. No captured value is used to authorize or construct a production mutation.

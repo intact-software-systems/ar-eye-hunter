@@ -532,6 +532,7 @@ export function validateAuthoritativeGroupSnapshot(
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();
     const activeOwnerIds = new Set<string>();
+    let playerCount = 0;
     for (const item of members) {
         validateGroupMember(item, ref);
         const member = decodeRecord(item, 'GroupSnapshot.member');
@@ -542,6 +543,9 @@ export function validateAuthoritativeGroupSnapshot(
         memberIds.add(member.principalId);
         if (member.status === 'active') {
             activeMemberIds.add(member.principalId);
+            if (member.role !== 'spectator') {
+                playerCount += 1;
+            }
             if (member.role === 'owner') {
                 activeOwnerIds.add(member.principalId);
             }
@@ -598,8 +602,8 @@ export function validateAuthoritativeGroupSnapshot(
     ) {
         fail('GroupSnapshot aggregate counts are inconsistent');
     }
-    if (typeof group.maxMembers === 'number' && group.activeMemberCount > group.maxMembers) {
-        fail('GroupSnapshot activeMemberCount exceeds maxMembers');
+    if (typeof group.maxMembers === 'number' && playerCount > group.maxMembers) {
+        fail('GroupSnapshot player count exceeds maxMembers');
     }
     if (group.status !== 'active' && sessions.length !== 0) {
         fail('GroupSnapshot inactive group has active presence');
@@ -894,7 +898,7 @@ function validateGroupMember(value: WireValue, ref: GroupRef): void {
     exact(member, GROUP_MEMBER_KEYS, 'GroupSnapshot.member');
     sameGroupRef(member, ref, 'GroupSnapshot.member');
     nonEmptyString(member.principalId, 'GroupSnapshot.member.principalId');
-    enumValue(member.role, ['owner', 'admin', 'member'], 'GroupSnapshot.member.role');
+    enumValue(member.role, ['owner', 'admin', 'member', 'spectator'], 'GroupSnapshot.member.role');
     enumValue(
         member.status,
         ['invited', 'pending', 'active', 'left', 'removed', 'banned'],

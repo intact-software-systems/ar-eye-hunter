@@ -17,6 +17,7 @@ import {
     type AiDirectorProposalValue,
     type ArenaEvent
 } from '../../types.ts';
+import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 
 interface GenerateArenaAiDirectorOutputInput extends
@@ -45,7 +46,7 @@ export async function generateArenaAiDirectorOutput(
     const snapshot = input.arenaSnapshotRef.current;
     if (
         !snapshot ||
-        input.isCancelled() ||
+        isCurrentArenaSpectator() || input.isCancelled() ||
         !input.isCurrentNetworkGeneration(input.generation)
     ) {
         input.setAiStatus('unavailable');
@@ -59,7 +60,7 @@ export async function generateArenaAiDirectorOutput(
         const event = await generateAndPersistArenaAiEvent(input, snapshot);
         if (
             !event ||
-            input.isCancelled() ||
+            isCurrentArenaSpectator() || input.isCancelled() ||
             !input.isCurrentNetworkGeneration(input.generation)
         ) {
             return;
@@ -102,7 +103,7 @@ async function generateAndPersistArenaAiEvent(
         createAiDirectorRequest(state, input.roomId)
     );
     if (
-        input.isCancelled() ||
+        isCurrentArenaSpectator() || input.isCancelled() ||
         !input.isCurrentNetworkGeneration(input.generation)
     ) {
         return undefined;

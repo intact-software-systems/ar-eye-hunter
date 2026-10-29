@@ -104,6 +104,10 @@ function assertAggregateOperationInput(
     input: JsonWireObject
 ): void {
     if (operation === 'createGroup' || operation === 'updateGroup') {
+        assertNullableInteger(input, 'maxSpectators');
+        if (typeof input.maxSpectators === 'number' && input.maxSpectators > 64) {
+            throw new TypeError('Group maxSpectators must be at most 64');
+        }
         const metadataIssues = validateGroupDirectoryListingMetadata(input.metadata);
         if (metadataIssues.length > 0) {
             throw metadataIssues[0];
@@ -114,42 +118,10 @@ function assertAggregateOperationInput(
     }
     switch (operation) {
         case 'createGroup':
-            assertNullableString(input, 'slug');
-            requireNonEmptyString(input.displayName, 'Group displayName');
-            assertNullableString(input, 'description');
-            requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-            requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-            assertNullableInteger(input, 'maxMembers', true);
-            assertNullableInteger(input, 'maxSessionsPerMember', true);
-            requireRecord(input.metadata, 'Group metadata');
-            requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
-            assertNullableInteger(input, 'expiresAtEpochMs', true);
-            assertNullableInteger(input, 'purgeAfterEpochMs', true);
-            if (input.lifecyclePolicy !== undefined) {
-                requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
-            }
+            assertCreateGroupInput(input);
             return;
         case 'updateGroup':
-            assertNullableString(input, 'slug');
-            assertNullableString(input, 'displayName');
-            assertNullableString(input, 'description');
-            if (input.kind !== null) {
-                requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-            }
-            if (input.status !== null) {
-                requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
-            }
-            if (input.joinMode !== null) {
-                requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-            }
-            assertNullableInteger(input, 'maxMembers', true);
-            assertNullableInteger(input, 'maxSessionsPerMember', true);
-            if (input.metadata !== null) {
-                requireRecord(input.metadata, 'Group metadata');
-            }
-            assertNullableInteger(input, 'expiresAtEpochMs', true);
-            assertNullableInteger(input, 'emptySinceEpochMs', true);
-            assertNullableInteger(input, 'purgeAfterEpochMs', true);
+            assertUpdateGroupInput(input);
             return;
         case 'appointDirector':
             requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
@@ -163,6 +135,46 @@ function assertAggregateOperationInput(
     }
 }
 
+function assertCreateGroupInput(input: JsonWireObject): void {
+    assertNullableString(input, 'slug');
+    requireNonEmptyString(input.displayName, 'Group displayName');
+    assertNullableString(input, 'description');
+    requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+    requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+    assertNullableInteger(input, 'maxMembers', true);
+    assertNullableInteger(input, 'maxSessionsPerMember', true);
+    requireRecord(input.metadata, 'Group metadata');
+    requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
+    assertNullableInteger(input, 'expiresAtEpochMs', true);
+    assertNullableInteger(input, 'purgeAfterEpochMs', true);
+    if (input.lifecyclePolicy !== undefined) {
+        requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
+    }
+}
+
+function assertUpdateGroupInput(input: JsonWireObject): void {
+    assertNullableString(input, 'slug');
+    assertNullableString(input, 'displayName');
+    assertNullableString(input, 'description');
+    if (input.kind !== null) {
+        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+    }
+    if (input.status !== null) {
+        requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
+    }
+    if (input.joinMode !== null) {
+        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+    }
+    assertNullableInteger(input, 'maxMembers', true);
+    assertNullableInteger(input, 'maxSessionsPerMember', true);
+    if (input.metadata !== null) {
+        requireRecord(input.metadata, 'Group metadata');
+    }
+    assertNullableInteger(input, 'expiresAtEpochMs', true);
+    assertNullableInteger(input, 'emptySinceEpochMs', true);
+    assertNullableInteger(input, 'purgeAfterEpochMs', true);
+}
+
 function assertMembershipOperationInput(
     operation: GroupMutationCommand['operation'],
     input: JsonWireObject
@@ -170,6 +182,9 @@ function assertMembershipOperationInput(
     switch (operation) {
         case 'joinGroup':
         case 'acceptGroupInvite':
+            if (input.participation !== null) {
+                requireOneOf(input.participation, ['player', 'spectator'], 'Group participation');
+            }
             assertNullableString(input, 'inviteToken');
             assertNullableString(input, 'joinCode');
             return;
@@ -177,11 +192,11 @@ function assertMembershipOperationInput(
             assertNullableInteger(input, 'invitationExpiresAtEpochMs', true);
             return;
         case 'setGroupMemberRole':
-            requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
+            requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
             return;
         case 'upsertMember':
             if (input.role !== null) {
-                requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
+                requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
             }
             // 'pending' is deliberately absent: only the admission decision may
             // compute it, never client input (plan decision 5.1).
@@ -325,6 +340,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'joinMode',
         'directoryListing',
         'maxMembers',
+        'maxSpectators',
         'maxSessionsPerMember',
         'metadata',
         'createdByPrincipalId',
@@ -342,6 +358,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'joinMode',
         'directoryListing',
         'maxMembers',
+        'maxSpectators',
         'maxSessionsPerMember',
         'metadata',
         'expiresAtEpochMs',
@@ -367,8 +384,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     ],
     pauseGroupTransport: ACTOR_INPUT_KEYS,
     resumeGroupTransport: ACTOR_INPUT_KEYS,
-    joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
-    acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
+    joinGroup: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode'],
+    acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode'],
     createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],
     revokeGroupInvite: ACTOR_INPUT_KEYS,
     grantGroupAdmission: ACTOR_INPUT_KEYS,

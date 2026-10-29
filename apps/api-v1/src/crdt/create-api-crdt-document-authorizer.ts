@@ -11,7 +11,7 @@ import type {
     CrdtMutationPublicationAuthority,
     CrdtMutationResponseAudience
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import type { GroupMemberStatus, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupMemberStatus, GroupPresenceSession, GroupRef, GroupRole } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import { type ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
@@ -23,6 +23,7 @@ import type {
 export interface ApiCrdtGroupAuthorizationMember {
     readonly principalId: string;
     readonly status: GroupMemberStatus;
+    readonly role: GroupRole;
 }
 
 export interface ApiCrdtGroupAuthorizationSession {
@@ -93,6 +94,13 @@ export function createApiCrdtDocumentAuthorizer(
         if (!responseAudienceMatchesDocument(command.responseAudience, command.document)) {
             return denied();
         }
+        if (command.document.scope === 'room') {
+            return await authorizeRoomDocument(dependencies, {
+                document: command.document,
+                actorPrincipalId: command.actor.principalId,
+                sessionId: session.sessionId
+            }, 'write');
+        }
         return await authorizeDocumentAccess({
             document: command.document,
             actorPrincipalId: command.actor.principalId,
@@ -109,7 +117,7 @@ export function createApiCrdtDocumentAccessAuthorizer(
     return async (input) => {
         const { document, actorPrincipalId, sessionId } = input;
         if (document.scope === 'room') {
-            return await authorizeRoomDocument(dependencies, input);
+            return await authorizeRoomDocument(dependencies, input, 'read');
         }
         if (document.scope === 'principal') {
             if (document.principalId !== actorPrincipalId) {
@@ -142,7 +150,8 @@ export function createApiCrdtDocumentAccessAuthorizer(
 
 async function authorizeRoomDocument(
     dependencies: ApiCrdtDocumentAuthorizerDependencies,
-    input: AuthorizeCrdtDocumentAccessInput
+    input: AuthorizeCrdtDocumentAccessInput,
+    access: 'read' | 'write'
 ): Promise<CrdtMutationAuthorityDecision> {
     const roomRef = input.document.roomRef;
     if (!roomRef) {
@@ -168,7 +177,7 @@ async function authorizeRoomDocument(
     );
     const sessionIsCurrent = activeSession !== undefined &&
         activeSession.expiresAtEpochMs > nowEpochMs;
-    if (member === undefined || !sessionIsCurrent) {
+    if (member === undefined || !sessionIsCurrent || (access === 'write' && member.role === 'spectator')) {
         return denied();
     }
     const activeMembers = new Set(

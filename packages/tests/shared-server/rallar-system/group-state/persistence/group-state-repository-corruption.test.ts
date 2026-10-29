@@ -16,7 +16,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { auditStamp, createMutationCommand, createMutationFacts, memberFor } from '../group-state-concurrency-test-fixtures.ts';
+import { auditStamp, createMutationCommand, createMutationFacts, createMutationRead, memberFor } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
 import { createCorruptionMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
@@ -309,7 +309,7 @@ describe('GroupStateRepository persistence', () => {
         const ref = command.aggregateRef;
         const computed = computeGroupMutation({
             command,
-            read: createCorruptionMutationRead(),
+            read: createMutationRead(),
             facts: createMutationFacts()
         });
         if (computed.outcome !== 'write' || computed.idempotency === null) {
@@ -351,7 +351,7 @@ describe('GroupStateRepository persistence', () => {
         const ref = command.aggregateRef;
         const computed = computeGroupMutation({
             command,
-            read: createCorruptionMutationRead(),
+            read: createMutationRead(),
             facts: createMutationFacts()
         });
         if (computed.outcome !== 'write' || computed.idempotency === null) {

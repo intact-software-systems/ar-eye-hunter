@@ -93,11 +93,12 @@ export function ArenaScene({ arena, presentation, diagnosticsAttributes }: Arena
             roomId={arena.roomId}
             roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
             networkEnabled={arena.networkEnabled}
+            spectating={arena.spectating}
             authority={{
                 roomId: arena.roomId,
                 sessionId: arena.directorStatus.appointment?.sessionId,
                 epoch: arena.directorStatus.appointment?.epoch,
-                local: arena.directorStatus.isDirector,
+                local: !arena.spectating && arena.directorStatus.isDirector,
                 fresh: arena.directorStatus.isFresh && arena.networkEnabled,
                 freshUntilEpochMs: arena.directorStatus.appointment
                     ? (arena.directorStatus.lastHeartbeatAtEpochMs ??
@@ -206,6 +207,12 @@ function toHudRows(
         ).length ?? 0;
     const incomingAttack =
         arena.arenaSnapshot?.attacks.some((attack) => attack.targetSessionId === arena.session?.sessionId) ?? false;
+    if (arena.spectating) {
+        return [['Arena', 'Watching'], ['Wave', wave ? `${wave.number} ${wave.phase}` : 'waiting'], [
+            'Match',
+            toMatchLabel(arena.arenaSnapshot?.match, matchRemainingMs)
+        ], ['Threats', String(hostileEyeCount)]];
+    }
     return [
         ['Arena', arena.connectionState],
         ['Score', String(localCombat.score)],

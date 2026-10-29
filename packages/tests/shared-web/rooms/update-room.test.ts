@@ -32,13 +32,13 @@ it('routes a detail update through the room update owner', async () => {
     roomWorkflowMocks.updateStateGroupDetails.mockResolvedValue(snapshot);
 
     await expect(
-        createRallarFacade().rooms.update({ roomId: 'room-1', displayName: 'Room 1' })
+        createRallarFacade().rooms.update({ roomId: 'room-1', displayName: 'Room 1', maxSpectators: 16 })
     ).resolves.toBe(snapshot);
 
     expect(roomWorkflowMocks.updateStateGroupDetails).toHaveBeenCalledWith(
         {
             groupId: 'room-1',
-            request: { displayName: 'Room 1' },
+            request: { displayName: 'Room 1', maxSpectators: 16 },
             principalId: 'principal-1',
             sessionId: 'session-1',
             scope: { applicationId: 'rallar-server', workspaceId: 'default' },

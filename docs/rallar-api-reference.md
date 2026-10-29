@@ -208,7 +208,7 @@ error is rethrown.
 `input` can be a display name string or an object. It does not leave the
 previous current room, so use it when multi-room membership is intentional.
 Object input can include `groupId`, `displayName`, `description`, `joinMode`,
-`directoryListing`, `maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`,
+`directoryListing`, `maxMembers`, `maxSpectators`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`,
 `purgeAfterEpochMs`, and `lifecyclePolicy`. `joinMode` is one of `open`,
 `invite-only`, or `code`. `lifecyclePolicy` is the sparse `GroupLifecyclePolicyInput`
 described in `docs/rallar-group-formation-architecture.md`; omitting it creates the
@@ -221,12 +221,27 @@ arena, leave the old arena" flows.
 
 `rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`. Pass `joinCode` for code-protected groups. Invite-only membership uses `rooms.acceptInvite(...)`; the `inviteToken` option is reserved for token-verifier invite flows and is not accepted as standalone admission proof. Use `leaveCurrent: false` when the browser should stay in the previous room too.
 
+`rooms.watch(roomIdOrRef, options?)` uses the same admission and presence workflow with
+`participation: 'spectator'`. `rooms.join(..., { participation: 'player' })` explicitly requests
+player admission. Omitted participation preserves an active member's role; a new or reactivated
+membership defaults to player. Failed promotion preserves the active spectator membership.
+
+`maxSpectators` is an integer from 0 through 64 on room creation and update. Zero or absent policy
+disables spectator admission; the reserved metadata field is `rallarSpectatorCapacity`.
+`maxMembers` bounds active players, while canonical membership counts include all active roles.
+Directory entries expose `playerCount`, `onlinePlayerCount`, `spectatorCount`, and `maxSpectators`;
+`isFull` describes player capacity. Owners and admins cannot use Watch to silently drop governance.
+
+`RallarRoomEntry.Destination.participation` is `player`, `spectator`, or `preserve`. Room links
+without this field mean preserve. After admission, stored destinations discard the code and use
+preserve so reload does not undo a later role change.
+
 `rooms.quickJoin(input?)` admits the caller to an eligible existing open room. Selection accepts
 `kind`, `q`, and `includeEmpty`; omitted fields mean any kind, no name filter, and exclude empty.
 The input also accepts scoped operation options and `leaveCurrent`. The result is
 `{ status: 'joined', snapshot }` after presence and current-room switching, or
 `{ status: 'unavailable' }` with the current room preserved. Selection ranks distinct online
-members descending, then group ID ascending, and reuses normal capacity and lifecycle admission.
+players descending, then group ID ascending, and reuses normal capacity and lifecycle admission.
 No room, pending approval request, or application activity participant is created.
 
 The REST command is `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/quick-join/requests/:requestId`.

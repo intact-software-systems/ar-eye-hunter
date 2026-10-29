@@ -25,9 +25,35 @@ describe('Relic command evaluation', () => {
             action: { kind: 'search' }
         }, { senderId: 'alice', now: 20 });
 
-        expect(result.left).toEqual({ code: 'expedition-not-started', message: 'The expedition has not started.' });
+        expect(result.left).toEqual({ code: 'participant-required', message: 'Join the expedition before sending game commands.' });
         expect(result.right).toBeUndefined();
         expect(state).toEqual(before);
+    });
+
+    it('never creates a participant through a forged start command', () => {
+        const result = applyRelicCommand(undefined, {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            kind: 'start-expedition',
+            gameId: 'room-1',
+            username: 'Watcher'
+        }, { senderId: 'watcher', now: 20 });
+        expect(result.left?.code).toBe('participant-required');
+        expect(result.right).toBeUndefined();
+    });
+
+    it('resolves and finishes a solo expedition without counting an unjoined watcher', () => {
+        const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
+        let state = requireRelicCommandApplied(applyRelicCommand(undefined, { ...command, kind: 'join-expedition' }, { senderId: 'alice', now: 1 })).state;
+        state = { ...state, maxRounds: 1 };
+        expect(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { senderId: 'watcher', now: 2 }).left?.code).toBe('participant-required');
+        state = requireRelicCommandApplied(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { senderId: 'alice', now: 3 })).state;
+        state = requireRelicCommandApplied(
+            applyRelicCommand(state, { ...command, kind: 'submit-action', action: { kind: 'search' } }, { senderId: 'alice', now: 4 })
+        ).state;
+        expect(state.phase).toBe('review');
+        expect(state.players.map((player) => player.playerId)).toEqual(['alice']);
+        state = requireRelicCommandApplied(applyRelicCommand(state, { ...command, kind: 'continue-review' }, { senderId: 'alice', now: 5 })).state;
+        expect(state.phase).toBe('finished');
     });
 
     it('returns invalid expedition geometry as a typed construction refusal', () => {
@@ -83,7 +109,7 @@ describe('Relic command evaluation', () => {
             username: 'Bob'
         }, { senderId: 'bob', now: 2 });
 
-        expect(result.left).toMatchObject({ code: 'administrator-required' });
+        expect(result.left).toMatchObject({ code: 'participant-required' });
         expect(result.right).toBeUndefined();
         expect(unassigned).toEqual(before);
     });

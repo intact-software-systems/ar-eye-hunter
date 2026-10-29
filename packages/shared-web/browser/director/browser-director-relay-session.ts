@@ -11,7 +11,9 @@ import type {
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
@@ -38,6 +40,7 @@ export namespace BrowserDirectorRelaySession {
         readonly transport: 'rtc' | 'ws';
         readonly senderId: string;
         readonly envelope: RallarDirectorRelayEnvelope<T>;
+        readonly roomRef: GroupRef | undefined;
     }
 }
 
@@ -190,6 +193,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
                 await this.receive({
                     transport: 'ws',
                     senderId: message.senderId,
+                    roomRef: readALTargetGroupRef(message.raw),
                     envelope: message.payload
                 });
             }
@@ -214,6 +218,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
                         await this.receive({
                             transport: 'rtc',
                             senderId: message.senderId,
+                            roomRef: readALTargetGroupRef(message.raw),
                             envelope: message.payload
                         });
                     }
@@ -225,7 +230,11 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     private async receive(
         input: BrowserDirectorRelaySession.InboundMessage<RallarMessagePayload>
     ): Promise<void> {
-        if (!isDirectorRelayEnvelope(input.envelope, this.topicId)) {
+        const roomRef = this.status().roomRef;
+        if (
+            !roomRef || !input.roomRef || !isSameGroupRef(roomRef, input.roomRef) ||
+            !isDirectorRelayEnvelope(input.envelope, this.topicId)
+        ) {
             return;
         }
         const commandTypeIds = [this.input.config.intentTypeId, this.syncRequestTypeId];

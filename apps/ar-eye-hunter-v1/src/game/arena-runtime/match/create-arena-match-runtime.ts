@@ -12,6 +12,7 @@ import type {
     ArenaSnapshot,
     GameRealtimeMessage
 } from '../../types.ts';
+import { isCurrentArenaPlayerSession } from '../arena-participation.ts';
 import type { ArenaPeerMessageHandlers } from '../messages/use-arena-peer-message-handlers.ts';
 import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
@@ -51,7 +52,10 @@ export function createArenaMatchRuntime(
         onInput: (envelope) => acceptArenaMatchInput(input, generation, envelope),
         onIntent: (envelope) => acceptArenaMatchIntent(input, generation, envelope),
         onEvent: (envelope) => {
-            if (isCurrent()) {
+            if (
+                isCurrent() && (envelope.payload.kind !== 'director-player-state' ||
+                    isCurrentArenaPlayerSession(envelope.payload.pose.sessionId, input.nowMs()))
+            ) {
                 input.acceptDirectorOutput(envelope.payload, isCurrent);
             }
         },
@@ -59,8 +63,14 @@ export function createArenaMatchRuntime(
             if (!isCurrent()) {
                 return;
             }
-            input.arenaSnapshotRef.current = envelope.payload;
-            input.setArenaSnapshot((previous) => isCurrent() ? envelope.payload : previous);
+            const snapshot = {
+                ...envelope.payload,
+                players: envelope.payload.players.filter((player) =>
+                    isCurrentArenaPlayerSession(player.sessionId, input.nowMs())
+                )
+            };
+            input.arenaSnapshotRef.current = snapshot;
+            input.setArenaSnapshot((previous) => isCurrent() ? snapshot : previous);
             const nowEpochMs = input.nowMs();
             input.setActiveEvent((previous) =>
                 isCurrent() ? resolveArenaActiveEvent(previous, envelope.payload.activeEvent, nowEpochMs) : previous

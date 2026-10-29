@@ -113,9 +113,13 @@ Deno.test('group directory lists open groups the caller is not a member of as en
         'kind',
         'lifecycleState',
         'maxMembers',
+        'maxSpectators',
         'memberCount',
         'onlineMemberCount',
-        'peerRttMs'
+        'onlinePlayerCount',
+        'peerRttMs',
+        'playerCount',
+        'spectatorCount'
     ]);
 });
 

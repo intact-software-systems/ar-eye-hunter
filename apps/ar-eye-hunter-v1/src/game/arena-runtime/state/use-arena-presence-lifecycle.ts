@@ -1,7 +1,16 @@
+import {
+    useCallback,
+    useEffect,
+    useMemo
+} from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
+
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { useCallback, useEffect, useMemo } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import {
     deriveArenaLinkState,
@@ -27,6 +36,7 @@ interface ArenaPresenceLifecycleInput {
     readonly roomId: string | undefined;
     readonly rtcLanes: readonly RtcLaneStatus[];
     readonly session: AuthSession | undefined;
+    readonly spectating: boolean;
     readonly setPresenceNotices: Dispatch<SetStateAction<readonly ArenaPresenceNotice[]>>;
     readonly transportDiagnostics: ArenaTransportDiagnostics;
 }
@@ -34,13 +44,7 @@ interface ArenaPresenceLifecycleInput {
 export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
     const {
         connectionState,
-        directorStatus,
         isNetworkEnabled,
-        presenceDirectorLabelRef,
-        presenceInitializedRef,
-        presenceLinkRef,
-        presenceNotices,
-        presencePlayersRef,
         remotePlayers,
         roomId,
         rtcLanes,
@@ -48,7 +52,7 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
         setPresenceNotices,
         transportDiagnostics
     } = input;
-    const linkPlayerCount = (session && roomId ? 1 : 0) + remotePlayers.size;
+    const linkPlayerCount = (session && roomId && !input.spectating ? 1 : 0) + remotePlayers.size;
     const linkState = useMemo(() =>
         deriveArenaLinkState({
             connectionState,
@@ -73,6 +77,29 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
             ),
         [remotePlayers]
     );
+    useArenaPresenceTransitions(input, presencePlayers, linkState);
+    useArenaPresenceExpiry(input);
+
+    const dismissPresenceNotice = useCallback((id: string) => {
+        setPresenceNotices((previous) => previous.filter((notice) => notice.id !== id));
+    }, [setPresenceNotices]);
+
+    return { dismissPresenceNotice, linkState };
+}
+
+function useArenaPresenceTransitions(
+    input: ArenaPresenceLifecycleInput,
+    presencePlayers: readonly ArenaPresencePlayerSummary[],
+    linkState: ArenaLinkState
+): void {
+    const {
+        directorStatus,
+        presenceInitializedRef,
+        presencePlayersRef,
+        presenceLinkRef,
+        presenceDirectorLabelRef,
+        setPresenceNotices
+    } = input;
     const directorNoticeLabel = directorStatus.isDirector
         ? 'you'
         : directorStatus.isFresh
@@ -113,7 +140,10 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
         presencePlayersRef,
         setPresenceNotices
     ]);
+}
 
+function useArenaPresenceExpiry(input: ArenaPresenceLifecycleInput): void {
+    const { presenceNotices, setPresenceNotices } = input;
     useEffect(() => {
         if (presenceNotices.length === 0) {
             return;
@@ -124,10 +154,4 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
         }, 1_000);
         return () => window.clearInterval(interval);
     }, [presenceNotices.length, setPresenceNotices]);
-
-    const dismissPresenceNotice = useCallback((id: string) => {
-        setPresenceNotices((previous) => previous.filter((notice) => notice.id !== id));
-    }, [setPresenceNotices]);
-
-    return { dismissPresenceNotice, linkState };
 }

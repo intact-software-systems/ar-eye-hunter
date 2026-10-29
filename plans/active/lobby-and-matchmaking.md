@@ -47,8 +47,54 @@ Relic code-room sharing failure from #712: preserve the committed creation resul
 previous room fails while the browser cache is expired. The maintainer-selected repeatable browser
 measurements of entry, recovery and repeat play are present through merged
 [PR #722](https://github.com/intact-software-systems/ar-eye-hunter/pull/722). The repeat-play baseline
-exposed a stale Escape selection after Relic Reset. The next increment repairs local turn state
-across accepted expedition resets, including automatic submission when round numbers repeat.
+exposed a stale Escape selection after Relic Reset, repaired in merged PR #723. PR #725
+retains the AR Eye WebGL engine across room changes; residual timing investigation belongs to #724.
+The maintainer selected spectating in both games as the next complete product deliverable.
+
+## Current delivery: spectating in both games
+
+Deliver one PR containing a complete Watch → recover → Join as player experience in AR Eye and Relic.
+The two implementation increments below are internal sequencing, not separate product handoffs:
+
+1. Canonical room spectator admission, independent bounded capacity, permissions, directory counts,
+   browser entry/recovery, and atomic promotion through the existing AppInbox mutation owner.
+2. Both games' spectator-safe views, receive and action authorization, and human-clickable journeys
+   proving watching, recovery, denied writes, and promotion into normal play.
+
+Use the existing membership lifecycle with a `spectator` role. Owner/admin governance stays explicit:
+those roles must be relinquished or transferred before switching into read-only watching. Participation
+is principal-scoped, so a role change applies to every session of that account in the room. New rooms
+in both games enable 16 spectator seats; other rooms opt in through room configuration. An absent
+spectator policy means watching is disabled. There is no stored-data migration or legacy branch.
+Player capacity and player availability exclude spectators; roster membership and live transport
+still include them. Watch admission uses existing codes, invitations, bans, expiry and business status,
+but does not consume a player seat or join a competitive activity. A failed promotion preserves the
+spectator membership. Promotion obeys current player capacity and formation admission; it must not
+park an already-watching principal as pending. Moderator removal and bans apply to spectators.
+Spectator sessions use the existing temporary-room lifetime policy.
+
+AR Eye exposes the current public arena through a spectator camera without creating a local player,
+combat prediction or director candidacy. Relic uses its existing public snapshot projection, preserving
+hidden relics and private feedback. Reading an empty expedition while watching cannot create a save,
+start AI work or mutate a revision. Relic refuses in-place Watch for unfinished expedition participants;
+leaving is an explicit existing activity boundary. Keeper succession after departure is independent
+existing game lifecycle work. Both games disable spectator writes locally and reject forged
+commands at the authority and direct-peer receive boundaries. No spectator chat is added. Room
+promotion permits normal AR Eye participation; Relic still requires explicit expedition admission in
+its lobby and respects its four-hunter limit.
+
+Read-only snapshot requests and transport acknowledgments remain possible; arbitrary application
+writes do not. The permission is owned by the exact protocol and validated message shape, never a
+caller-supplied permission flag. Reconnect, account replacement, removal and role changes fence old
+work. Watch links and recent-room return preserve intent through authentication and reload.
+
+Acceptance includes full-player-room watching with separate spectator capacity; private access and
+concurrent last-seat races; request replay and conflict reauthorization; no spectator avatar, score,
+commands, AI mutation or hidden data; players starting and finishing despite watchers; director loss;
+role changes across sessions; failed and successful promotion; and real browser clicks in both games.
+Run focused policy, mutation, routing and game tests, public API/bundle checks, both game builds,
+black-box recipes, the unweakened Postgres medium-scale gate and a controlled state-write comparison.
+No historical performance exception applies to this change.
 
 ## Current foundation
 
@@ -141,11 +187,11 @@ all-or-none admission decisions before it becomes a platform promise.
 
 ## Delivery priorities
 
-| Priority    | Outcomes                                                                                                                     |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Current     | Repair Relic turn state after accepted Reset; prove repeat play without manually replacing the previous expedition’s action. |
-| Conditional | Spectating (3) and keeping groups together, when social or onboarding value justifies them.                                  |
-| Later       | Scheduled rooms (8) and a separate tournament capability.                                                                    |
+| Priority    | Outcomes                                                                                                         |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| Current     | Complete spectating in both games: admission, read-only gameplay, recovery, promotion, and clickable acceptance. |
+| Conditional | Keeping groups together, when social or onboarding value justifies it.                                           |
+| Later       | Scheduled rooms (8) and a separate tournament capability.                                                        |
 
 Relic validation is a constraint throughout, not a dependency postponed to slice 9. Operator
 reliability work may ship independently where a concrete operational need warrants it. Freshness and

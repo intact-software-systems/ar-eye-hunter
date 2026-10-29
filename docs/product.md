@@ -70,6 +70,25 @@ Join Expedition; AR Eye keeps its director and match lifecycle. The shared
 browser entry owner and a host-sharing example are documented in
 `examples/browser-startup-room/README.md`.
 
+## Watching games
+
+AR Eye Hunter and Relic Hunters offer Watch alongside player entry. New rooms allow 16 spectators
+in addition to player capacity. Existing rooms enable watching only when their owner configures
+spectator capacity. Code protection, invitations, bans, room expiry, and removal apply to watchers.
+Directory counts distinguish players and spectators, so a full player room can still be watched.
+
+Watching creates an active spectator membership and live presence, without a gameplay participant.
+AR Eye provides a spectator camera and the public arena state; Relic shows its existing public
+expedition view. An unfinished expedition participant must explicitly leave before switching to Watch;
+watching does not silently abandon their expedition role. Watchers cannot move, attack, submit turns, start AI work, modify room documents,
+or become the game director. Relic reads do not initialize an absent expedition.
+
+Join as player is an explicit admission attempt. It checks player capacity and the current game's
+entry rules; refusal leaves the watcher in place. Reload and recent-room Return preserve the
+server's current role. Membership roles apply to the account across its sessions. An owner or admin
+must transfer or relinquish governance before switching to read-only watching. Live spectator
+sessions keep temporary rooms active under the normal retention policy.
+
 ## Fit
 
 | Kind of product                              | Fit                         | What to use                                                                                      |

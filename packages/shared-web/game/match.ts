@@ -1,4 +1,7 @@
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import { RALLAR_GAME_SNAPSHOT_REQUEST_TYPE_ID } from '@shared/rallar-game/snapshot-request.ts';
+import { readRallarGameSessionRole } from './match/rallar-game-participation.ts';
+import type { RallarGameSendResult } from './transport/rallar-game-send-result.ts';
 
 import { RallarGameDirectorAppointmentRuntime } from './director/rallar-game-director-appointment-runtime.ts';
 import { RallarGameDirectorRelayRuntime } from './director/rallar-game-director-relay-runtime.ts';
@@ -27,7 +30,7 @@ export function resolveRallarGameTypeIds(
         intent: `${topicId}.intent.v1`,
         event: `${topicId}.event.v1`,
         snapshot: `${topicId}.snapshot.v1`,
-        syncRequest: `${topicId}.sync-request.v1`,
+        syncRequest: RALLAR_GAME_SNAPSHOT_REQUEST_TYPE_ID,
         heartbeat: `${topicId}.heartbeat.v1`,
         ...typeIds
     };
@@ -207,7 +210,7 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
             status: () => this.status.current,
             diagnostics: () => this.diagnostics.read(),
             canAppointDirector: () => this.appointment.eligibility(),
-            reportCapability: (capability) => this.election.reportCapability(capability),
+            reportCapability: (capability) => this.write(() => this.election.reportCapability(capability)),
             election: () => this.election.election(),
             appointIfElected: async () => {
                 const result = await this.appointment.appointIfElected(this.election.election());
@@ -215,15 +218,32 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
                 return result;
             },
             waitForReadyLanes: (options) => this.egress.waitForReadyLanes(options),
-            sendPresence: (presence, options) => this.presenceEgress.send(presence, options),
-            sendInput: (input) => this.egress.sendInput(input),
-            sendIntent: (intent, claim) => this.directorRelay.sendIntent(intent, claim),
-            publishSnapshot: (snapshot, options) => this.egress.publishSnapshot(snapshot, options),
-            publishEvent: (event, options) => this.directorRelay.publishEvent(event, options),
+            sendPresence: (presence, options) => this.write(() => this.presenceEgress.send(presence, options)),
+            sendInput: (input) => this.write(() => this.egress.sendInput(input)),
+            sendIntent: (intent, claim) => this.write(() => this.directorRelay.sendIntent(intent, claim)),
+            publishSnapshot: (snapshot, options) => this.write(() => this.egress.publishSnapshot(snapshot, options)),
+            publishEvent: (event, options) => this.write(() => this.directorRelay.publishEvent(event, options)),
             requestSync: (payload) => this.directorRelay.requestSync(payload),
             onPresence: (handler) => this.routing.onPresence(handler),
             onStatus: (handler) => this.status.onStatus(handler)
         };
+    }
+
+    private write(action: () => Promise<RallarGameSendResult>): Promise<RallarGameSendResult> {
+        if (this.status.isStopped) {
+            return action();
+        }
+        const role = readRallarGameSessionRole(
+            this.config.rallar.rooms.state(),
+            this.readLocalPeerId(),
+            this.readRoomTarget()
+        );
+        if (role === undefined) {
+            return Promise.resolve({ status: 'not-ready', reason: 'Current room participation is not confirmed.' });
+        }
+        return role === 'spectator'
+            ? Promise.resolve({ status: 'skipped', reason: 'Spectators cannot change the game.' })
+            : action();
     }
 
     private readDirectorStatus(): RallarDirectorStatus {

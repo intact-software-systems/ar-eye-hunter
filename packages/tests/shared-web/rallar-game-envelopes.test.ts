@@ -3,11 +3,21 @@ import { RALLAR_GAME_INTENT_SEQUENCE_WINDOW } from '@shared-web/game/rallar-game
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar Game envelopes', () => {
+    it('rejects the same room identifier from a different application or workspace', () => {
+        const roomRef = { applicationId: 'game', workspaceId: 'one', groupId: 'room' };
+        const value = createRallarGameEnvelope({ ...validEnvelope, kind: 'input', roomRef });
+        const tracker = createRallarGameSequenceTracker();
+        expect(tracker.accept(value, { roomRef: { ...roomRef, applicationId: 'another' } }))
+            .toMatchObject({ accepted: false, reason: 'wrong-room' });
+        expect(tracker.accept(value, { roomRef: { ...roomRef, workspaceId: 'two' } }))
+            .toMatchObject({ accepted: false, reason: 'wrong-room' });
+    });
+
     it('creates and identifies protocol-scoped envelopes', () => {
         const envelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
             kind: 'input',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
             seq: 7,
             directorEpoch: 3,
@@ -18,7 +28,7 @@ describe('Rallar Game envelopes', () => {
         expect(envelope).toEqual({
             protocol: 'test.game.v1',
             kind: 'input',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
             seq: 7,
             directorEpoch: 3,
@@ -33,7 +43,7 @@ describe('Rallar Game envelopes', () => {
         const envelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
             kind: 'input',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
             seq: 10,
             directorEpoch: 3,
@@ -50,7 +60,7 @@ describe('Rallar Game envelopes', () => {
         const envelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
             kind: 'input',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
             seq: 10,
             directorEpoch: 3,
@@ -71,7 +81,7 @@ describe('Rallar Game envelopes', () => {
         const envelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
             kind: 'input',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
             seq: 10,
             directorEpoch: 3,
@@ -91,7 +101,7 @@ describe('Rallar Game envelopes', () => {
         const matchAEnvelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
             kind: 'input',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'peer-1',
             seq: 10,
             directorEpoch: 3,
@@ -145,7 +155,7 @@ describe('Rallar Game envelopes', () => {
                 {
                     protocol: 'test.game.v1',
                     kind: 'input',
-                    roomId: 'room-1',
+                    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'peer-1',
                     seq: -1,
                     directorEpoch: 1,
@@ -160,7 +170,7 @@ describe('Rallar Game envelopes', () => {
                 {
                     protocol: 'test.game.v1',
                     kind: 'unknown',
-                    roomId: 'room-1',
+                    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'peer-1',
                     seq: 1,
                     directorEpoch: 1,
@@ -177,7 +187,7 @@ describe('Rallar Game envelopes', () => {
         const envelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
             kind: 'snapshot',
-            roomId: 'room-1',
+            roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
             senderId: 'director-1',
             seq: 10,
             directorEpoch: 4,
@@ -188,7 +198,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'wrong',
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
                 kinds: ['snapshot']
@@ -198,7 +208,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'test.game.v1',
-                roomId: 'room-2',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-2' },
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
                 kinds: ['snapshot']
@@ -208,7 +218,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'test.game.v1',
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-2',
                 minDirectorEpoch: 4,
                 kinds: ['snapshot']
@@ -218,7 +228,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'test.game.v1',
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
                 minDirectorEpoch: 5,
                 kinds: ['snapshot']
@@ -228,7 +238,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'test.game.v1',
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
                 kinds: ['event']
@@ -238,7 +248,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'test.game.v1',
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
                 kinds: ['snapshot']
@@ -247,7 +257,7 @@ describe('Rallar Game envelopes', () => {
         expect(
             tracker.accept(envelope, {
                 protocol: 'test.game.v1',
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
                 kinds: ['snapshot']
@@ -258,7 +268,7 @@ describe('Rallar Game envelopes', () => {
                 { ...envelope, seq: 9 },
                 {
                     protocol: 'test.game.v1',
-                    roomId: 'room-1',
+                    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'director-1',
                     minDirectorEpoch: 4,
                     kinds: ['snapshot']
@@ -275,7 +285,7 @@ describe('Rallar Game envelopes', () => {
                 createRallarGameEnvelope({
                     protocol: 'test.game.v1',
                     kind: 'event',
-                    roomId: 'room-1',
+                    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'director-1',
                     seq: 10,
                     directorEpoch: 4,
@@ -289,7 +299,7 @@ describe('Rallar Game envelopes', () => {
                 createRallarGameEnvelope({
                     protocol: 'test.game.v1',
                     kind: 'event',
-                    roomId: 'room-1',
+                    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                     senderId: 'director-1',
                     seq: 1,
                     directorEpoch: 5,
@@ -377,7 +387,7 @@ describe('Rallar Game envelopes', () => {
 const validEnvelope = {
     protocol: 'test.game.v1',
     kind: 'input',
-    roomId: 'room-1',
+    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
     senderId: 'peer-1',
     seq: 1,
     directorEpoch: 1,

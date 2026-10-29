@@ -317,7 +317,7 @@ function createNativeReceiptEvent(originPeerId: string, roomRef: GroupRef): ALMe
     const envelope = createRallarGameEnvelope({
         protocol: 'native-receipt-game.v1',
         kind: 'event',
-        roomId: roomRef.groupId,
+        roomRef,
         senderId: originPeerId,
         seq: 1,
         directorEpoch: 1,

@@ -46,6 +46,7 @@ function internalJoinCommand(): GroupMutationCommand {
         commandId: 'join-1',
         requestId: 'join-1',
         input: {
+            participation: null,
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,

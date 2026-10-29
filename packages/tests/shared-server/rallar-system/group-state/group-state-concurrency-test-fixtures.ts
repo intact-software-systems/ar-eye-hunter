@@ -85,6 +85,7 @@ export function createMutationCommand(overrides?: GroupMutationFixtureCommand): 
         commandId: 'pure-command',
         requestId: 'pure-command',
         input: {
+            maxSpectators: null,
             slug: null,
             displayName: 'After',
             description: null,
@@ -151,6 +152,7 @@ export function createMutationRead(): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: [actor.member],
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null

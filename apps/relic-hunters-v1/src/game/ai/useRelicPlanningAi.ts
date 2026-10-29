@@ -192,7 +192,7 @@ export function useRelicPlanningAi({
 
     useEffect(() => () => {
         abortRef.current?.abort();
-    }, []);
+    }, [localPlayerId, localPrincipalId, snapshot?.roomId, enabled]);
 
     const ask = useCallback(async () => {
         const currentContext = contextRef.current;

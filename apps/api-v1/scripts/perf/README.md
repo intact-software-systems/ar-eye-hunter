@@ -477,7 +477,7 @@ benchmark's stdout retains its workload summaries, including `sql.serializedResu
 
 ## Hosted bounded diagnostic
 
-Manual dispatch accepts `mode=comparison` (the default) or `mode=diagnostic`. The supported PR label
+Manual dispatch accepts `mode=comparison` (the default), `mode=diagnostic`, or `mode=cpu-profile`. The supported PR label
 continues to select comparison. Concurrency includes the selected mode and label, so an unrelated
 label or a diagnostic cannot cancel a comparison.
 
@@ -510,7 +510,7 @@ A successful workflow is diagnostic evidence; it does not repair a failed compar
 frozen scale acceptance.
 
 `run-api-v1-state-write-measurement.mjs` owns the provisioning, migration, capture, benchmark,
-postflight, database-log and cleanup lifecycle for both modes. Admission requires at least four CPUs,
+postflight, database-log and cleanup lifecycle for all three modes. Admission requires at least four CPUs,
 no pre-existing containers and no existing state-write workload. It provisions only the explicit
 pinned compose fixture under `state-write-comparison`, outside measurement timing. Every command
 retains argv, cwd, UTC start/end, actual child PID and terminal outcome. The owner settles that same
@@ -534,6 +534,52 @@ refusal evidence. Failed or incomplete evidence is retained as failed or incompl
 The existing native image reader and descriptor validator remain authoritative. Linux/GNU-tar
 portability must be established by the actual hosted acquisition; local BSD-tar evidence and fake
 command-port tests do not establish it.
+
+## Hosted native CPU diagnostic
+
+Dispatch `mode=cpu-profile` to collect whole-process native Deno CPU profiles on the hosted Linux
+runner. This mode shares comparison admission, frozen inputs, merge-base resolution, candidate
+performance-harness overlay, fresh owned PostgreSQL, and A-B-B-A source order. Each position runs all
+three workloads with one warmup, nine measured runs and concurrency ten. The native invocation is:
+
+```sh
+deno run --cpu-prof \
+  --cpu-prof-dir=<output>/position-<N>-profile --cpu-prof-name=position-<N>.cpuprofile \
+  -A --config apps/api-v1/deno.json apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 --out=<output>/position-<N>.json
+```
+
+Output lives under `tmp/perf/state-write-cpu-profile/<run>-<attempt>`. Each profile directory is
+created exclusively before acquisition; existing destinations fail. After the Deno child exits
+successfully, the runner validates nonempty nodes and samples, the rooted node graph, sample
+references, timing-array lengths and integer timestamps. Signed native timing deltas are preserved,
+including occasional negative clock jitter. A missing or malformed profile fails the capture while
+retaining available evidence and attempting the same owned cleanup.
+
+`acquisition-source.json` identifies the candidate checkout and runner separately from the workflow
+revision selected by GitHub. Required `GITHUB_WORKFLOW_SHA` and `GITHUB_WORKFLOW_REF` bind that executed
+workflow; its exact Git bytes are retained as `executing-workflow.yml` and hashed. The workflow revision
+may differ from the requested candidate checkout. Each profile's `source.json` separately identifies the measured checkout (including the
+synthetic base with the candidate harness), tree and executable hashes. The runner checks the expected
+commit and unchanged executable inputs. The profile's `validity.json` binds the original profile,
+source records and benchmark command start/terminal records by SHA-256. The existing
+`measurement-commits.txt` and `harness-overlay.patch` retain original base, candidate and overlay
+provenance. Source records, validity, inventory and terminal evidence explicitly label this mode as
+diagnostic and non-acceptance.
+
+The unchanged pooling step validates all four canonical captures, expected sources and environment
+records. CPU mode never invokes the comparative verdict. A complete runner terminal establishes
+acquisition success; pooling must also succeed for the workflow to complete. The separate 14-day
+`state-write-cpu-profile-originals-<run>-<attempt>` artifact retains original profiles, canonical
+captures, pooling manifest/log, source evidence and command streams. Pooled copies are excluded to
+avoid duplicating raw captures. `state-write-cpu-profile-terminal-<run>-<attempt>` retains safe terminal
+evidence even when raw acquisition is refused.
+
+Profiles include warmup, setup, workload execution and evidence generation. There is no native phase
+alignment or per-workload stack attribution, and these are CPU samples, not allocation or heap
+measurements. Profiling overhead makes both raw and pooled timings diagnostic only: they cannot
+satisfy performance acceptance or replace a failed unprofiled comparison. A hotspot that cannot be
+localized from these whole-process samples remains inconclusive.
 
 ## Interpreting Results
 

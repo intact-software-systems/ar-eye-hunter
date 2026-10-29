@@ -2,6 +2,7 @@ import type { StandardMaterial } from '@babylonjs/core/Materials/standardMateria
 import type { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
     ArenaEvent,
@@ -27,6 +28,7 @@ export interface BabylonArenaProps {
     readonly roomId?: string;
     readonly roomReady: boolean;
     readonly networkEnabled: boolean;
+    readonly spectating: boolean;
     readonly authority: ArenaSceneState.Authority;
     readonly linkState: ArenaLinkState;
     readonly presenceNotices: readonly ArenaPresenceNotice[];

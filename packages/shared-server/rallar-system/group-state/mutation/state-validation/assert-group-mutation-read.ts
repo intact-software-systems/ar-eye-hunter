@@ -50,6 +50,7 @@ const GROUP_MUTATION_READ_KEYS = [
     'presenceSummary',
     'lifecyclePolicy',
     'activeMemberPrincipalIds',
+    'activeMembers',
     'connectTriggerLatch',
     'plannedLayoutRow',
     'acceptedLayoutRow'

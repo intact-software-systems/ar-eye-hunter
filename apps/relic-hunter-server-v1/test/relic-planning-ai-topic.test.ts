@@ -99,9 +99,25 @@ function planningRequest(overrides: Partial<JsonWireObject> = {}): JsonWireObjec
 }
 
 describe('the Relic planning AI topic', () => {
+    it('rejects spectators before generation and rechecks before publishing', async () => {
+        const router = createRouterDouble();
+        let allowed = false;
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => allowed });
+        await router.route(planningRequest(), MEMBER_CONTEXT);
+        expect(router.publications).toEqual([]);
+        allowed = true;
+        await router.route(planningRequest(), MEMBER_CONTEXT);
+        expect(router.publications).toHaveLength(1);
+        const changing = createRouterDouble();
+        let checks = 0;
+        installRelicPlanningAiTopic({ websocket: changing.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => ++checks < 3 });
+        await expect(changing.route(planningRequest(), MEMBER_CONTEXT)).rejects.toThrow('current expedition participant');
+        expect(changing.publications).toEqual([]);
+    });
+
     it('defines the planning request as a room command to the server', () => {
         const router = createRouterDouble();
-        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => true });
 
         expect(router.state.topic).toMatchObject({
             topicId: RELIC_TOPICS.aiPlanning,
@@ -114,7 +130,7 @@ describe('the Relic planning AI topic', () => {
 
     it('answers a member\'s request once, to the asking session, with a legal suggestion for its turn', async () => {
         const router = createRouterDouble();
-        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => true });
 
         await router.route(planningRequest(), MEMBER_CONTEXT);
 
@@ -140,7 +156,7 @@ describe('the Relic planning AI topic', () => {
 
     it('answers no request for another schema', async () => {
         const router = createRouterDouble();
-        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => true });
 
         await router.route(planningRequest({ schemaId: 'relic-hunters.expedition-blueprint' }), MEMBER_CONTEXT);
         await router.route(planningRequest({ schemaVersion: '2' }), MEMBER_CONTEXT);
@@ -150,7 +166,7 @@ describe('the Relic planning AI topic', () => {
 
     it('answers no request outside a room', async () => {
         const router = createRouterDouble();
-        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => true });
 
         await router.route(planningRequest(), { ...MEMBER_CONTEXT, roomId: undefined, roomRef: undefined });
 
@@ -159,7 +175,7 @@ describe('the Relic planning AI topic', () => {
 
     it('answers no request whose room belongs to another application or workspace', async () => {
         const router = createRouterDouble();
-        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => true });
 
         await router.route(planningRequest(), { ...MEMBER_CONTEXT, roomRef: { ...REF, workspaceId: 'other-workspace' } });
 
@@ -168,7 +184,7 @@ describe('the Relic planning AI topic', () => {
 
     it('refuses a context it cannot decode and answers nothing', async () => {
         const router = createRouterDouble();
-        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID });
+        installRelicPlanningAiTopic({ websocket: router.port, serverSenderId: SERVER_PEER_ID, canRequestPlanning: async () => true });
 
         await expect(router.route(planningRequest({ context: { schema: 'relic-planning-ai-context-v1' } }), MEMBER_CONTEXT))
             .rejects.toThrow('Relic planning context');

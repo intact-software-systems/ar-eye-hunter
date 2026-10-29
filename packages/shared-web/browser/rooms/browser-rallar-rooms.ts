@@ -126,6 +126,7 @@ export interface BrowserRallarRooms {
     create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     join(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<GroupSnapshot>;
+    watch(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<GroupSnapshot>;
     quickJoin(input?: RallarQuickJoinRoomInput): Promise<QuickJoinGroupResult>;
     enter(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<RallarRoomSession>;
     session(room?: string | GroupRef): RallarRoomSession;
@@ -299,6 +300,7 @@ function createRoomEntryOperations(
     | 'create'
     | 'createAndSwitch'
     | 'join'
+    | 'watch'
     | 'quickJoin'
     | 'enter'
     | 'session'
@@ -306,16 +308,18 @@ function createRoomEntryOperations(
     | 'leave'
     | 'waitForPresence'
 > {
+    const join: BrowserRallarRooms['join'] = async (room, options = {}) =>
+        await joinRoom({
+            ...input.rooms,
+            room,
+            options,
+            createRoomSession: input.createSession
+        });
     return {
         create: async (room) => await createAndJoinRoom({ ...input.rooms, room }),
         createAndSwitch: async (room) => await createAndSwitchRoom({ ...input.rooms, room, leaveRoom }),
-        join: async (room, options = {}) =>
-            await joinRoom({
-                ...input.rooms,
-                room,
-                options,
-                createRoomSession: input.createSession
-            }),
+        join,
+        watch: (room, options = {}) => join(room, { ...options, participation: 'spectator' }),
         quickJoin: async (options = {}) => await quickJoinRoom({ ...input.rooms, options }),
         enter: async (room, options = {}) =>
             await enterRoom({

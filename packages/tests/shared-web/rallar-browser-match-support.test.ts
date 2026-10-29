@@ -1,10 +1,28 @@
-import { createRallarBrowserMatch, type RallarBrowserMatchDependencies } from '@shared-web/game/mod.ts';
-import type { RallarGameMatchConfig, RallarGameMatchHandle, RallarGameMatchStatus } from '@shared-web/game/mod.ts';
+import { createRallarFacade, type RallarDirectorRelayHandle, type RallarDirectorStatus, type RallarWsStatus } from '@shared-web/browser/rallar.ts';
+import {
+    createRallarBrowserMatch,
+    createRallarGameMatch,
+    type RallarGameMatchHandle,
+    type RallarGameMatchStatus,
+    type RallarGameRallarFacade,
+    type RallarGameSendResult
+} from '@shared-web/game/mod.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
+import { createGameRoomStateFixture } from './rallar-game-room-state-fixture.ts';
 
-type Command = Readonly<{ kind: 'move'; x: number; }>;
-type Snapshot = Readonly<{ tick: number; }>;
-type Event = Readonly<{ kind: 'accepted'; }>;
+interface Command {
+    readonly kind: 'move';
+    readonly x: number;
+}
+interface Snapshot {
+    readonly tick: number;
+}
+interface Event {
+    readonly kind: 'accepted';
+}
+
+const roomRef: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
 describe('Rallar browser match support', () => {
     it('creates a browser-director match from the Rallar Game match helper', async () => {
@@ -22,7 +40,7 @@ describe('Rallar browser match support', () => {
             resultId: () => 'result-1'
         });
 
-        await match.start();
+        await expect(match.start()).resolves.toMatchObject({ phase: 'active', protocol: 'example.match.v1' });
 
         expect(createGameMatch).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -30,7 +48,6 @@ describe('Rallar browser match support', () => {
                 topicId: 'room.example.match'
             })
         );
-        expect(game.start).toHaveBeenCalledOnce();
     });
 
     it('submits commands through the intent lane', async () => {
@@ -59,14 +76,17 @@ describe('Rallar browser match support', () => {
             onCommand
         });
         await match.start();
-
-        await match.submitCommand({ kind: 'move', x: 3 });
-
-        expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
-            kind: 'intent',
-            matchId: 'match-1',
-            payload: { kind: 'move', x: 3 }
-        }));
+        try {
+            await match.submitCommand({ kind: 'move', x: 3 });
+            expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
+                kind: 'intent',
+                matchId: 'match-1',
+                payload: { kind: 'move', x: 3 }
+            }));
+        }
+        finally {
+            match.stop();
+        }
     });
 
     it('derives standings with the app-provided comparator', () => {
@@ -209,12 +229,15 @@ describe('Rallar browser match support', () => {
     it('rejects finalization when another session holds the live appointment', () => {
         const rallar = fakeRallarFacade();
         const current = rallar.director.status();
+        if (!current.appointment) {
+            throw new Error('The fixture must appoint the local director before replacing it.');
+        }
         vi.spyOn(rallar.director, 'status').mockReturnValue({
             ...current,
             role: 'client',
             isDirector: false,
             appointment: {
-                ...current.appointment!,
+                ...current.appointment,
                 principalId: 'principal-b',
                 sessionId: 'session-b'
             }
@@ -260,16 +283,17 @@ describe('Rallar browser match support', () => {
 });
 
 function fakeGameMatch(): RallarGameMatchHandle<Command, Command, Snapshot, Event, Command> {
+    const game = createRallarGameMatch<Command, Command, Snapshot, Event, Command>({
+        rallar: fakeRallarFacade(),
+        protocol: 'example.match.v1',
+        topicId: 'room.example.match'
+    });
     const status: RallarGameMatchStatus = {
         phase: 'active',
         protocol: 'example.match.v1',
         topicId: 'room.example.match',
         roomId: 'room-1',
-        roomRef: {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1'
-        },
+        roomRef,
         localPeerId: 'session-a',
         directorPeerId: 'session-a',
         directorEpoch: 4,
@@ -281,122 +305,44 @@ function fakeGameMatch(): RallarGameMatchHandle<Command, Command, Snapshot, Even
         stopped: false,
         updatedAtEpochMs: 1_000
     };
-
     return {
+        ...game,
         start: vi.fn(async () => status),
-        stop: vi.fn(),
         status: vi.fn(() => status),
-        diagnostics: vi.fn(() => ({
-            generatedAtEpochMs: 1_000,
-            phase: 'active',
-            roomId: 'room-1',
-            localPeerId: 'session-a',
-            directorPeerId: 'session-a',
-            directorEpoch: 4,
-            directorIsFresh: true,
-            directorAuthority: 'active',
-            egress: { reliable: 'ready', realtime: 'ready' },
-            recovery: { status: 'idle' },
-            knownPeerIds: [],
-            readyPeerIds: [],
-            notReadyPeerIds: [],
-            capabilityCount: 0,
-            rtcPeerCount: 0,
-            realtimeHealth: [],
-            issues: []
-        })),
-        canAppointDirector: vi.fn(),
-        reportCapability: vi.fn(),
-        election: vi.fn(),
-        appointIfElected: vi.fn(),
-        waitForReadyLanes: vi.fn(),
-        sendInput: vi.fn(),
-        sendPresence: vi.fn(),
-        sendIntent: vi.fn(async () => ({ status: 'sent', transport: 'local' })),
-        publishSnapshot: vi.fn(),
-        publishEvent: vi.fn(),
-        requestSync: vi.fn(),
-        onPresence: vi.fn(() => () => undefined),
-        onStatus: vi.fn(() => () => undefined)
-    } as RallarGameMatchHandle<Command, Command, Snapshot, Event, Command>;
+        sendIntent: vi.fn(async (): Promise<RallarGameSendResult> => ({ status: 'sent', transport: 'local' }))
+    };
 }
 
-function fakeRallarFacade(): RallarGameMatchConfig<Command, Command, Snapshot, Event, Command>['rallar'] {
+function fakeRallarFacade(): RallarGameRallarFacade {
+    const base = createRallarFacade();
+    const roomState = createGameRoomStateFixture(roomRef, [{
+        principalId: 'principal-a',
+        username: 'Ada',
+        role: 'owner',
+        status: 'active',
+        isOwner: true,
+        isOnline: true,
+        sessionIds: ['session-a']
+    }]);
     return {
+        ...base,
         session: () => ({
             clientId: 'principal-a',
             sessionId: 'session-a',
             username: 'Ada',
-            token: 'token',
-            issuedAtEpochMs: 1,
-            expiresAtEpochMs: 10_000
+            accessToken: 'token',
+            expiresAtEpochMs: Date.now() + 60_000
         }),
-        subscriptions: () => ({
-            add() {
-                return this;
-            },
-            unsubscribe() {
-                return undefined;
-            }
-        }),
-        rooms: {
-            state: () => ({
-                rooms: [],
-                currentRoomId: 'room-1',
-                currentRoomRef: {
-                    applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                    groupId: 'room-1'
-                },
-                members: [
-                    {
-                        principalId: 'principal-a',
-                        username: 'Ada',
-                        role: 'owner',
-                        status: 'active',
-                        isOwner: true,
-                        isOnline: true,
-                        sessionIds: ['session-a']
-                    }
-                ]
-            }),
-            onChange: () => () => undefined
-        },
-        people: {
-            state: () => ({ people: [] }),
-            onChange: () => () => undefined
-        },
+        rooms: { ...base.rooms, state: () => roomState, onChange: () => () => undefined },
+        people: { ...base.people, state: () => ({ people: [], clients: [] }), onChange: () => () => undefined },
         director: {
-            status: () => ({
-                roomId: 'room-1',
-                roomRef: {
-                    applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                    groupId: 'room-1'
-                },
-                role: 'director',
-                state: 'fresh',
-                isDirector: true,
-                isFresh: true,
-                appointment: {
-                    version: 1,
-                    mode: 'appointed-spa',
-                    sessionId: 'session-a',
-                    principalId: 'principal-a',
-                    epoch: 4,
-                    appointedAtEpochMs: 1_000,
-                    heartbeatTtlMs: 5_000
-                },
-                active: true,
-                freshness: 'fresh',
-                nowEpochMs: 2_000
-            }),
-            appoint: vi.fn(),
-            resign: vi.fn(),
+            ...base.director,
+            status: fakeDirectorStatus,
             onStatus: () => () => undefined,
-            createRelay: vi.fn()
+            createRelay: fakeDirectorRelay
         },
         rtc: {
+            ...base.rtc,
             status: () => ({
                 sessionId: 'session-a',
                 laneId: 'game-input',
@@ -406,36 +352,62 @@ function fakeRallarFacade(): RallarGameMatchConfig<Command, Command, Snapshot, E
                 readyPeerIds: [],
                 peers: []
             }),
-            onStatus: () => () => undefined,
-            waitForRoomLane: vi.fn()
+            onStatus: () => () => undefined
         },
-        realtime: {
-            sendJson: vi.fn(),
-            onJson: () => () => undefined,
-            health: () => [],
-            room: vi.fn()
-        },
+        realtime: { ...base.realtime, onJson: () => () => undefined },
         messages: {
-            ws: {
-                send: vi.fn(),
-                onMessage: () => () => undefined
-            },
-            rtc: {
-                onMessage: () => () => undefined
-            },
-            room: vi.fn()
+            ...base.messages,
+            ws: { ...base.messages.ws, onMessage: () => () => undefined },
+            rtc: { ...base.messages.rtc, onMessage: () => () => undefined }
         },
-        ws: {
-            status: () => ({
-                connectState: 'connected',
-                readyState: 'open',
-                isOpen: true,
-                reconnecting: false,
-                reconnectEnabled: true,
-                reconnectAttempts: 0,
-                maxReconnectAttempts: 5,
-                reconnectExhausted: false
-            })
-        }
-    } as unknown as RallarGameMatchConfig<Command, Command, Snapshot, Event, Command>['rallar'];
+        ws: { ...base.ws, status: connectedWsStatus }
+    };
+}
+
+function fakeDirectorStatus(): RallarDirectorStatus {
+    return {
+        roomId: 'room-1',
+        roomRef,
+        role: 'director',
+        state: 'fresh',
+        isDirector: true,
+        isFresh: true,
+        appointment: {
+            version: 1,
+            mode: 'appointed-spa',
+            sessionId: 'session-a',
+            principalId: 'principal-a',
+            epoch: 4,
+            appointedAtEpochMs: 1_000,
+            heartbeatTtlMs: 5_000
+        },
+        active: true,
+        freshness: 'fresh',
+        nowEpochMs: 2_000
+    };
+}
+
+function fakeDirectorRelay<TIntent, TOutput, TSnapshot>(): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
+    return {
+        status: fakeDirectorStatus,
+        sendIntent: async () => ({ status: 'sent' }),
+        sendOutput: async () => ({ status: 'sent' }),
+        sendHeartbeat: async () => ({ status: 'sent' }),
+        sendSnapshot: async () => ({ status: 'sent' }),
+        requestSync: async () => ({ status: 'sent' }),
+        stop: () => undefined
+    };
+}
+
+function connectedWsStatus(): RallarWsStatus {
+    return {
+        connectState: 'connected',
+        readyState: 'open',
+        isOpen: true,
+        reconnecting: false,
+        reconnectEnabled: true,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 5,
+        reconnectExhausted: false
+    };
 }

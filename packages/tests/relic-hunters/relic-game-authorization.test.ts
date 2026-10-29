@@ -20,7 +20,7 @@ import {
 } from './relic-game-database-fixture.ts';
 
 describe('Relic current authority', () => {
-    it('allows authenticated mode for an active room, but group-policy mode requires membership', async () => {
+    it('requires active membership for reads and mutations in both authorization modes', async () => {
         const fixture = await createGameFixture();
         try {
             const visitor = createTestAuthSession('visitor');
@@ -36,11 +36,106 @@ describe('Relic current authority', () => {
             const initial = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
             expect((await prepareGameWrite(fixture, command, initial)).computed.result).toMatchObject({ status: 'refused', httpStatus: 403 });
             const authorized = await prepareGameWrite(fixture, { ...command, authorization: 'authenticated' }, initial);
-            expect(authorized.computed.result.status).toBe('initialized');
-            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, authorized.computed));
+            expect(authorized.computed.result).toMatchObject({ status: 'refused', code: 'active-membership-required' });
+            expect(fixture.service.needsInitialState(authorized.read)).toBe(false);
+            expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             await expect(fixture.service.readCurrentSnapshot(command, 'default-qbox-server')).rejects.toMatchObject({ result: { httpStatus: 403 } });
             await expect(fixture.service.readCurrentSnapshot({ ...command, authorization: 'authenticated' }, 'default-qbox-server'))
-                .resolves.toMatchObject({ gameId: fixture.ref.groupId });
+                .rejects.toMatchObject({ result: { httpStatus: 403 } });
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
+    it('refuses spectator initialization, commands and resets in both modes before proposing state', async () => {
+        const fixture = await createGameFixture();
+        try {
+            const initial = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs);
+            for (const authorization of ['authenticated', 'group-policy'] as const) {
+                for (const operation of ['ensure', 'reset', 'command'] as const) {
+                    const command = {
+                        ...fixture.command,
+                        authorization,
+                        operation,
+                        move: operation === 'command'
+                            ? {
+                                protocolVersion: RELIC_PROTOCOL_VERSION,
+                                kind: 'join-expedition' as const,
+                                gameId: fixture.ref.groupId,
+                                username: fixture.owner.username
+                            }
+                            : null
+                    };
+                    const read = await fixture.service.read(fixture.service.capture(captureRelicGameCommand(command), initial, 'default-qbox-server'));
+                    if (!read.group) {
+                        throw new Error('Expected room');
+                    }
+                    const spectator = {
+                        ...read,
+                        group: {
+                            ...read.group,
+                            snapshot: {
+                                ...read.group.snapshot,
+                                members: read.group.snapshot.members.map((member) => ({ ...member, role: 'spectator' as const }))
+                            }
+                        }
+                    };
+                    expect(fixture.service.needsInitialState(spectator)).toBe(false);
+                    const computed = fixture.service.compute({ ...spectator, attemptCount: 2, traceId: 'spectator-retry' });
+                    expect(computed.result).toMatchObject({ status: 'refused', code: 'spectator-read-only' });
+                    expect(computed.save).toBeNull();
+                    expect(computed.outboxWrites).toEqual([]);
+                }
+            }
+            expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
+    it('reads a spectator room without creating a save and rechecks a removed membership', async () => {
+        const fixture = await createGameFixture();
+        try {
+            const visitor = createTestAuthSession('watcher');
+            await new AuthSessionPersistence(fixture.runtime).putSession(visitor);
+            const admitted = await prepareMutation(
+                fixture,
+                mutationDescriptor({
+                    operation: 'upsertMember',
+                    scope: fixture.ref,
+                    groupId: fixture.ref.groupId,
+                    targetPrincipalId: visitor.clientId,
+                    request: { requestId: 'watcher-admit', status: 'active', role: 'spectator', actorPrincipalId: fixture.owner.clientId }
+                })
+            );
+            await commitMutation(fixture, requireMutationWrite(admitted.computed));
+            const command = {
+                ...fixture.command,
+                authorization: 'authenticated' as const,
+                actor: { clientId: visitor.clientId, sessionId: visitor.sessionId, issuedAtEpochMs: visitor.issuedAtEpochMs }
+            };
+            await expect(fixture.service.readCurrentSnapshot(command, 'default-qbox-server')).resolves.toBeNull();
+            expect((await prepareGameWrite(fixture, command, null)).computed.result).toMatchObject({ code: 'spectator-read-only' });
+            const initialized = await prepareGameWrite(fixture, fixture.command, createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs));
+            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, initialized.computed));
+            const snapshot = await fixture.service.readCurrentSnapshot(command, 'default-qbox-server');
+            expect(snapshot?.players).toEqual([]);
+            expect(snapshot).not.toHaveProperty('pendingActions');
+            expect(snapshot?.relics.every((relic) => relic.roomId === '' && relic.value === 0 && relic.name === 'Unknown relic')).toBe(true);
+            const removed = await prepareMutation(
+                fixture,
+                mutationDescriptor({
+                    operation: 'upsertMember',
+                    scope: fixture.ref,
+                    groupId: fixture.ref.groupId,
+                    targetPrincipalId: visitor.clientId,
+                    request: { requestId: 'watcher-remove', status: 'removed', actorPrincipalId: fixture.owner.clientId }
+                })
+            );
+            await commitMutation(fixture, requireMutationWrite(removed.computed));
+            await expect(fixture.service.readCurrentSnapshot(command, 'default-qbox-server')).rejects.toMatchObject({ result: { httpStatus: 403 } });
         }
         finally {
             await fixture.storage.close();

@@ -72,7 +72,11 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         authSession: session,
         assertCurrent: sessionFence.assertCurrent,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(options),
-        intent: { inviteToken: target.options.inviteToken, joinCode: target.options.joinCode }
+        intent: {
+            inviteToken: target.options.inviteToken,
+            joinCode: target.options.joinCode,
+            participation: target.options.participation
+        }
     });
     try {
         await adoptJoinedRoom({

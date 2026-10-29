@@ -1,3 +1,6 @@
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { validateRallarGroupRef } from '@shared/api/rallar-validation.ts';
 import { RallarGameIntentSequences } from './rallar-game-intent-sequences.ts';
 
 export type RallarGameEnvelopeKind =
@@ -21,7 +24,7 @@ type RallarGameEnvelopePayload =
 export interface RallarGameEnvelope<T> {
     readonly protocol: string;
     readonly kind: RallarGameEnvelopeKind;
-    readonly roomId: string;
+    readonly roomRef: GroupRef;
     readonly matchId?: string;
     readonly senderId: string;
     readonly seq: number;
@@ -33,7 +36,7 @@ export interface RallarGameEnvelope<T> {
 export interface RallarGameEnvelopeCreateInput<T> {
     readonly protocol: string;
     readonly kind: RallarGameEnvelopeKind;
-    readonly roomId: string;
+    readonly roomRef: GroupRef;
     readonly matchId?: string;
     readonly senderId: string;
     readonly seq: number;
@@ -54,7 +57,7 @@ export type RallarGameEnvelopeRejectReason =
 
 export interface RallarGameSequenceAcceptConstraints {
     readonly protocol?: string;
-    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
     readonly matchId?: string;
     readonly senderId?: string;
     readonly minDirectorEpoch?: number;
@@ -80,7 +83,7 @@ export interface RallarGameSequenceTracker {
     last<T>(
         envelope:
             | RallarGameEnvelope<T>
-            | Pick<RallarGameEnvelope<T>, 'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
+            | Pick<RallarGameEnvelope<T>, 'roomRef' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
     ): number | undefined;
     reset(): void;
 }
@@ -102,7 +105,7 @@ export function createRallarGameEnvelope<T>(
     return {
         protocol: input.protocol,
         kind: input.kind,
-        roomId: input.roomId,
+        roomRef: input.roomRef,
         ...(input.matchId === undefined ? {} : { matchId: input.matchId }),
         senderId: input.senderId,
         seq: input.seq,
@@ -124,8 +127,7 @@ export function isRallarGameEnvelope(
     return envelope.protocol === protocol &&
         typeof envelope.kind === 'string' &&
         RALLAR_GAME_ENVELOPE_KINDS.has(envelope.kind as RallarGameEnvelopeKind) &&
-        typeof envelope.roomId === 'string' &&
-        envelope.roomId.length > 0 &&
+        validateRallarGroupRef(envelope.roomRef).ok &&
         (envelope.matchId === undefined || typeof envelope.matchId === 'string') &&
         typeof envelope.senderId === 'string' &&
         envelope.senderId.length > 0 &&
@@ -203,7 +205,7 @@ function rejectByConstraints<T>(
         return 'wrong-protocol';
     }
 
-    if (constraints.roomId && envelope.roomId !== constraints.roomId) {
+    if (constraints.roomRef && !isSameGroupRef(envelope.roomRef, constraints.roomRef)) {
         return 'wrong-room';
     }
 
@@ -236,13 +238,15 @@ function rejectByConstraints<T>(
 }
 
 function sequenceKey<T>(
-    envelope: Pick<RallarGameEnvelope<T>, 'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
+    envelope: Pick<RallarGameEnvelope<T>, 'roomRef' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
 ): string {
-    return [
-        envelope.roomId,
+    return JSON.stringify([
+        envelope.roomRef.applicationId,
+        envelope.roomRef.workspaceId,
+        envelope.roomRef.groupId,
         envelope.matchId ?? '',
         envelope.directorEpoch,
         envelope.senderId,
         envelope.kind
-    ].join('\u001f');
+    ]);
 }

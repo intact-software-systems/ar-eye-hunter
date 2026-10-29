@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
@@ -5,7 +11,6 @@ import {
     readGroupMutationWithSnapshot
 } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
@@ -15,7 +20,7 @@ import {
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { describe, expect, it } from 'vitest';
+
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { ReadBatchFakeRuntimeStateRepository } from '../../../runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -47,10 +52,22 @@ describe('GroupStateService mutation exact reads', () => {
                     key: groupStateGroupStorageKey(ref)
                 },
                 {
+                    selectorId: 'members',
+                    kind: 'prefix',
+                    namespace: 'group-state:members',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
                     selectorId: 'presence-summary',
                     kind: 'key',
                     namespace: 'group-state:presence-summaries',
                     key: groupStateGroupStorageKey(ref)
+                },
+                {
+                    selectorId: 'presence-sessions',
+                    kind: 'prefix',
+                    namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
                     selectorId: 'lifecycle-policy',
@@ -130,6 +147,36 @@ describe('GroupStateService mutation exact reads', () => {
         });
     });
 
+    it.each([
+        ['join', 'plain', 'exact'],
+        ['join', 'snapshot', 'exact'],
+        ['update', 'plain', 'exact'],
+        ['update', 'snapshot', 'exact'],
+        ['join', 'plain', 'sequential'],
+        ['join', 'snapshot', 'sequential'],
+        ['update', 'plain', 'sequential'],
+        ['update', 'snapshot', 'sequential']
+    ])('retains complete member facts for %s %s %s reads without electorate IDs', async (kind, result, path) => {
+        const { runtime, service } = await createSeededService('roster');
+        const ref = { ...SCOPE, groupId: 'roster' };
+        await service.updateGroup(SCOPE, ref.groupId, { maxSpectators: 1, actorPrincipalId: 'owner' });
+        await service.upsertMember(SCOPE, ref.groupId, 'watcher', {
+            role: 'spectator',
+            status: 'active',
+            actorPrincipalId: 'owner'
+        });
+        const repository = createTestGroupStateRepository(path === 'exact' ? runtime : cloneRuntime(runtime));
+        const command = kind === 'join' ? joinCommand(ref, 'bob') : updateCommand(ref, 'roster-read');
+        const observed = result === 'snapshot'
+            ? await readGroupMutationWithSnapshot(repository, command, null)
+            : await readGroupMutation(repository, command, null);
+        expect(observed.read.activeMembers?.map(({ principalId, role }) => ({ principalId, role }))).toEqual([
+            { principalId: 'owner', role: 'owner' },
+            { principalId: 'watcher', role: 'spectator' }
+        ]);
+        expect(observed.read.activeMemberPrincipalIds).toBeNull();
+    });
+
     it('batches the known group-config mutation read slots', async () => {
         const { runtime, service } = await createSeededService('config');
         const ref = { ...SCOPE, groupId: 'config' };
@@ -150,10 +197,22 @@ describe('GroupStateService mutation exact reads', () => {
                     key: groupStateGroupStorageKey(ref)
                 },
                 {
+                    selectorId: 'members',
+                    kind: 'prefix',
+                    namespace: 'group-state:members',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
                     selectorId: 'presence-summary',
                     kind: 'key',
                     namespace: 'group-state:presence-summaries',
                     key: groupStateGroupStorageKey(ref)
+                },
+                {
+                    selectorId: 'presence-sessions',
+                    kind: 'prefix',
+                    namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
                     selectorId: 'idempotency:0',
@@ -256,7 +315,10 @@ describe('GroupStateService mutation exact reads', () => {
 
     it('keeps an expired batch authority read observational', async () => {
         const { runtime: seeded } = await createSeededService('expiry-replacement');
-        const runtime = seeded as ExpiryReplacementReadBatchRuntime;
+        if (!(seeded instanceof ExpiryReplacementReadBatchRuntime)) {
+            throw new Error('Expected the expiry replacement runtime');
+        }
+        const runtime = seeded;
         const ref = { ...SCOPE, groupId: 'expiry-replacement' };
         const groupKey = groupStateGroupStorageKey(ref);
         const group = await runtime.findEntry('group-state:groups', groupKey);
@@ -349,6 +411,7 @@ function joinCommand(
         requestId: `join-${principalId}`,
         targetPrincipalId: principalId,
         input: {
+            participation: null,
             inviteToken: null,
             joinCode: null,
             actorPrincipalId: principalId,
@@ -368,6 +431,7 @@ function updateCommand(
         commandId: requestId,
         requestId,
         input: {
+            maxSpectators: null,
             slug: null,
             displayName: null,
             description: null,

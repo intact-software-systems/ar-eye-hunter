@@ -119,6 +119,7 @@ export interface RoomCreateGroupStateFields extends
         | 'directoryListing'
         | 'retention'
         | 'maxMembers'
+        | 'maxSpectators'
         | 'maxSessionsPerMember'
         | 'metadata'
         | 'expiresAtEpochMs'
@@ -127,6 +128,7 @@ export interface RoomCreateGroupStateFields extends
     > {}
 
 export interface RoomJoinGroupStateFields {
+    readonly participation?: 'player' | 'spectator';
     readonly inviteToken?: string;
     readonly joinCode?: string;
 }
@@ -222,6 +224,7 @@ export function toCreateGroupStateRequest(
         ...(room.directoryListing === undefined ? {} : { directoryListing: room.directoryListing }),
         ...(room.retention === undefined ? {} : { retention: room.retention }),
         ...(room.maxMembers === undefined ? {} : { maxMembers: room.maxMembers }),
+        ...(room.maxSpectators === undefined ? {} : { maxSpectators: room.maxSpectators }),
         ...(room.maxSessionsPerMember === undefined
             ? {}
             : { maxSessionsPerMember: room.maxSessionsPerMember }),
@@ -248,6 +251,7 @@ export function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): Jo
     return {
         ...(input.room.inviteToken === undefined ? {} : { inviteToken: input.room.inviteToken }),
         ...(input.room.joinCode === undefined ? {} : { joinCode: input.room.joinCode }),
+        ...(input.room.participation === undefined ? {} : { participation: input.room.participation }),
         ...toActorRequest(input)
     };
 }
@@ -497,6 +501,7 @@ function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody
         ...(request.joinMode === undefined ? {} : { joinMode: request.joinMode }),
         ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
         ...(request.maxMembers === undefined ? {} : { maxMembers: request.maxMembers }),
+        ...(request.maxSpectators === undefined ? {} : { maxSpectators: request.maxSpectators }),
         ...(request.maxSessionsPerMember === undefined
             ? {}
             : { maxSessionsPerMember: request.maxSessionsPerMember }),

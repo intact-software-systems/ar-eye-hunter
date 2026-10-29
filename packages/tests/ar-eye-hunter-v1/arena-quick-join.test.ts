@@ -77,7 +77,7 @@ describe('AR Eye Quick Join action and controls', () => {
             await vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0].onSnapshot?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'snapshot',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'director-1',
                 seq: 1,
                 directorEpoch: 1,
@@ -117,7 +117,7 @@ describe('AR Eye Quick Join action and controls', () => {
             await vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0].onSnapshot?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'snapshot',
-                roomId: 'arena-1',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
                 senderId: 'director-1',
                 seq: 1,
                 directorEpoch: 1,
@@ -151,7 +151,7 @@ describe('AR Eye Quick Join action and controls', () => {
             await vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0].onSnapshot?.(createRallarGameEnvelope({
                 protocol: 'ar-eye-hunter.v1',
                 kind: 'snapshot',
-                roomId: 'selected',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'selected' },
                 senderId: 'director-2',
                 seq: 2,
                 directorEpoch: 2,

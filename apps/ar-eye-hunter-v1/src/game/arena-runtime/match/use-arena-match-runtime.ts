@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
@@ -7,7 +11,12 @@ import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
-import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_FX_LANE_ID, GAME_MOTION_LANE_ID } from '../../types.ts';
+import {
+    GAME_AI_LANE_ID,
+    GAME_COMBAT_LANE_ID,
+    GAME_FX_LANE_ID,
+    GAME_MOTION_LANE_ID
+} from '../../types.ts';
 import type { ArenaConnectionState, DirectorAttemptSource } from '../arena-connection-contracts.ts';
 import type { ArenaPeerShotMessage } from '../messages/use-arena-peer-message-handlers.ts';
 import { createArenaMatchRuntime, type ArenaMatchRuntimeInput } from './create-arena-match-runtime.ts';
@@ -18,6 +27,7 @@ interface ArenaMatchLifecycleInput extends ArenaMatchRuntimeInput {
     readonly connectionState: ArenaConnectionState;
     readonly networkGenerationRef: RefObject<number>;
     readonly roomId: string | undefined;
+    readonly spectating: boolean;
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
         generation?: number
@@ -51,6 +61,7 @@ export function useArenaMatchRuntime(
         input.connectionState,
         input.isCurrentNetworkGeneration,
         input.roomId,
+        input.spectating,
         input.runBestEffortNetworkTask
     ]);
 }

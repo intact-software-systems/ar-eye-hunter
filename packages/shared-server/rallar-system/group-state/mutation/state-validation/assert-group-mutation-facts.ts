@@ -12,6 +12,7 @@ import {
     type GroupMutationFacts,
     type GroupMutationIngressFacts
 } from '../group-mutation-contracts.ts';
+import { assertCommandHash } from './assert-group-mutation-result.ts';
 
 export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
     requireRecord(facts, 'Group mutation facts');
@@ -52,9 +53,7 @@ export function assertGroupMutationIngressFacts(facts: GroupMutationIngressFacts
     }
     requireNonEmptyString(facts.serviceId, 'Group mutation serviceId');
     requireNonEmptyString(facts.eventId, 'Group mutation eventId');
-    if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
-        throw new TypeError('Group mutation commandHash is invalid');
-    }
+    assertCommandHash(facts.commandHash, 'Group mutation commandHash');
     if (!(GROUP_MUTATION_INTERNAL_AUTHORITY_MODES as readonly string[]).includes(facts.internalAuthority)) {
         throw new TypeError('Group mutation internal authority is invalid');
     }

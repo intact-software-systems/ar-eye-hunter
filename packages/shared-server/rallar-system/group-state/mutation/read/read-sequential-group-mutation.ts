@@ -1,4 +1,5 @@
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
+import type { GroupMember } from '@shared/api/group-types.ts';
 
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
@@ -7,7 +8,7 @@ import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
-import { readsGroupActiveMemberPrincipalIds } from './group-mutation-read-scope.ts';
+import { readsGroupActiveMemberPrincipalIds, readsGroupActiveMembers } from './group-mutation-read-scope.ts';
 import {
     readGroupMutationRelatedEntries,
     type SequentialRelatedEntries
@@ -28,8 +29,11 @@ export async function readSequentialGroupMutation({
     // Read after the group entry whose revision anchors the write guard:
     // membership writes bump that revision, so a roster older than the guard
     // could pin a stale electorate the compare-and-set would never catch.
-    const activeMemberPrincipalIds = readsGroupActiveMemberPrincipalIds(command.operation)
-        ? toActiveMemberPrincipalIds(await repository.listMembers(command.aggregateRef))
+    const activeMembers = readsGroupActiveMembers(command.operation)
+        ? (await repository.listMembers(command.aggregateRef)).filter((member) => member.status === 'active')
+        : null;
+    const activeMemberPrincipalIds = readsGroupActiveMemberPrincipalIds(command.operation) && activeMembers !== null
+        ? toActiveMemberPrincipalIds(activeMembers)
         : null;
     const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);
     const related = await readGroupMutationRelatedEntries({
@@ -52,7 +56,8 @@ export async function readSequentialGroupMutation({
         related,
         authorityPresenceSessionEntries,
         lifecyclePolicy,
-        activeMemberPrincipalIds
+        activeMemberPrincipalIds,
+        activeMembers
     });
 }
 
@@ -141,6 +146,7 @@ interface AssembleSequentialGroupMutationReadInput {
     readonly authorityPresenceSessionEntries: GroupMutationRead['authorityPresenceSessionEntries'];
     readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
     readonly activeMemberPrincipalIds: GroupMutationRead['activeMemberPrincipalIds'];
+    readonly activeMembers: GroupMutationRead['activeMembers'];
 }
 
 function assembleSequentialGroupMutationRead({
@@ -149,7 +155,8 @@ function assembleSequentialGroupMutationRead({
     related,
     authorityPresenceSessionEntries,
     lifecyclePolicy,
-    activeMemberPrincipalIds
+    activeMemberPrincipalIds,
+    activeMembers
 }: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
     const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
     const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
@@ -193,6 +200,7 @@ function assembleSequentialGroupMutationRead({
         presenceSummary: presenceSummary ?? null,
         lifecyclePolicy,
         activeMemberPrincipalIds,
+        activeMembers,
         // The layout rows are attached by the service for the commands that
         // consult them; the read layer itself never does.
         connectTriggerLatch: null,
@@ -202,10 +210,10 @@ function assembleSequentialGroupMutationRead({
 }
 
 function toActiveMemberPrincipalIds(
-    members: readonly { principalId: string; status: string; }[]
+    members: readonly GroupMember[]
 ): readonly string[] {
     return members
-        .filter((member) => member.status === 'active')
+        .filter((member) => member.status === 'active' && member.role !== 'spectator')
         .map((member) => member.principalId)
         .sort();
 }

@@ -46,3 +46,36 @@ Deno.test('a Relic REST reset publishes under the x-request-id of its request', 
         assert.deepEqual(new Set(traces), new Set(['trace-relic-rest-reset']));
     });
 });
+
+Deno.test('snapshot GET is observational until an explicit player initialization', async () => {
+    await withPGliteSql(async (database) => {
+        const stack = await createRelicTestStack(database);
+        let proposals = 0;
+        const relicGame = installRelicHunterGame({ ws: { serverPeerId: 'default-qbox-server', defineTopic: () => {}, on: () => {} } }, {
+            mode: 'authenticated',
+            inbox: stack.services.relicGameInboxService,
+            mutations: stack.services.relicGameMutations,
+            createInitialState: async (gameId) => {
+                proposals++;
+                return createRelicGame(gameId, gameId, Date.now());
+            },
+            readSession: (sessionId) => stack.sessions.findBySessionId(sessionId)
+        });
+        const app = initRelicGameRoutes(createTracedApiTestApp(), { relicGame, sessions: stack.sessions });
+        const headers = { authorization: `Bearer ${stack.owner.accessToken}`, 'x-client-id': stack.owner.clientId };
+        const absent = await app.request(`/api/relic/games/${RELIC_TEST_GAME_ID}`, { headers });
+        assert.equal(absent.status, 204);
+        assert.equal(proposals, 0);
+        assert.deepEqual(await readRelicPublicationTraces(database), []);
+        const initialized = await drainRelicTestInbox(
+            stack.reader,
+            Promise.resolve(app.request(`/api/relic/games/${RELIC_TEST_GAME_ID}/initialize/requests/explicit-init`, { method: 'POST', headers }))
+        );
+        assert.equal(initialized.status, 200);
+        assert.equal(proposals, 1);
+        const current = await app.request(`/api/relic/games/${RELIC_TEST_GAME_ID}`, { headers });
+        assert.equal(current.status, 200);
+        assert.equal(proposals, 1);
+        assert.deepEqual(await current.json(), await initialized.json());
+    });
+});

@@ -329,7 +329,7 @@ function validateDeltaMember(
     exact(member, GROUP_MEMBER_KEYS, label);
     sameGroupRef(member, ref, label);
     nonEmptyString(member.principalId, `${label}.principalId`);
-    enumValue(member.role, ['owner', 'admin', 'member'], `${label}.role`);
+    enumValue(member.role, ['owner', 'admin', 'member', 'spectator'], `${label}.role`);
     enumValue(
         member.status,
         ['invited', 'pending', 'active', 'left', 'removed', 'banned'],

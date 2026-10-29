@@ -6,7 +6,9 @@ import type {
     RallarSubscriptionScope,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES, isALDeliveryAdmitted } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -23,6 +25,7 @@ import {
     type RallarGameAuthorityStatusHandler,
     type RallarGameAuthorityTypeIds
 } from '@shared/rallar-game/mod.ts';
+import { readRallarGameSessionRole } from '../match/rallar-game-participation.ts';
 import type {
     RallarGameAuthorityClientConfig,
     RallarGameAuthorityClientHandle,
@@ -232,6 +235,13 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         }
         const room = this.readRoomTarget();
         const senderId = this.readLocalPeerId();
+        const role = readRallarGameSessionRole(this.config.rallar.rooms.state(), senderId, room);
+        if (role === undefined) {
+            return { status: 'not-ready', reason: 'Current room participation is not confirmed.' };
+        }
+        if (role === 'spectator') {
+            return { status: 'skipped', reason: 'Spectators cannot change the game.' };
+        }
         if (!room.roomId || !senderId) {
             this.refreshStatus();
             return notReadyAuthoritySendResult('ws');
@@ -286,6 +296,13 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         }
         const room = this.readRoomTarget();
         const senderId = this.readLocalPeerId();
+        const role = readRallarGameSessionRole(this.config.rallar.rooms.state(), senderId, room);
+        if (role === undefined) {
+            return { status: 'not-ready', reason: 'Current room participation is not confirmed.' };
+        }
+        if (role === 'spectator') {
+            return { status: 'skipped', reason: 'Spectators cannot change the game.' };
+        }
         if (!room.roomId || !senderId) {
             this.refreshStatus();
             return notReadyAuthoritySendResult('rtc');
@@ -338,6 +355,10 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private async acceptCommandResultMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<RallarGameAuthorityCommandResult>>
     ): Promise<void> {
+        if (!this.acceptRoomTarget(message.raw)) {
+            return;
+        }
+
         if (
             !this.acceptEnvelope(message.payload, 'command-result', {
                 senderId: this.config.authority.id
@@ -358,6 +379,10 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private async acceptWsSnapshotMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TSnapshot>>
     ): Promise<void> {
+        if (!this.acceptRoomTarget(message.raw)) {
+            return;
+        }
+
         if (
             !this.acceptEnvelope(message.payload, 'snapshot', {
                 senderId: this.config.authority.id
@@ -374,6 +399,10 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private async acceptEventMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TEvent>>
     ): Promise<void> {
+        if (!this.acceptRoomTarget(message.raw)) {
+            return;
+        }
+
         if (
             !this.acceptEnvelope(message.payload, 'event', {
                 senderId: this.config.authority.id
@@ -390,6 +419,13 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private async acceptRtcSnapshotMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TSnapshot>>
     ): Promise<void> {
+        if (!this.acceptRoomTarget(message.raw)) {
+            return;
+        }
+
+        if (!this.isPlayerSession(message.senderId)) {
+            return;
+        }
         const acceptRepair = this.config.peerAssist?.acceptSnapshotRepair;
         if (!this.config.peerAssist?.snapshotRepair || !acceptRepair) {
             return;
@@ -397,7 +433,10 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         if (!this.acceptEnvelope(message.payload, 'snapshot')) {
             return;
         }
-        if (!await acceptRepair(message.payload, message)) {
+        if (
+            !await acceptRepair(message.payload, message) || this.stopped ||
+            !this.acceptRoomTarget(message.raw) || !this.isPlayerSession(message.senderId)
+        ) {
             return;
         }
         this.lastSnapshotRepairAtEpochMs = Date.now();
@@ -409,7 +448,11 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private async acceptPresenceMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TPresence>>
     ): Promise<void> {
-        if (!this.config.peerAssist?.enabled) {
+        if (!this.acceptRoomTarget(message.raw)) {
+            return;
+        }
+
+        if (!this.config.peerAssist?.enabled || !this.isPlayerSession(message.senderId)) {
             return;
         }
         if (
@@ -422,6 +465,17 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         this.lastPresenceAtEpochMs = message.payload.sentAtEpochMs;
         this.refreshStatus();
         await this.config.onPresence?.(message.payload);
+    }
+
+    private isPlayerSession(sessionId: string): boolean {
+        const role = readRallarGameSessionRole(this.config.rallar.rooms.state(), sessionId, this.readRoomTarget());
+        return role !== undefined && role !== 'spectator';
+    }
+
+    private acceptRoomTarget(message: ALMessage): boolean {
+        const target = readALTargetGroupRef(message);
+        const room = this.readRoomTarget();
+        return target !== undefined && room.roomRef !== undefined && isSameGroupRef(target, room.roomRef);
     }
 
     private acceptEnvelope<T>(

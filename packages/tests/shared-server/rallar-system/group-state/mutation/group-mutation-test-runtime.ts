@@ -113,7 +113,13 @@ export function createGroupAuthorityRead(
     options: GroupAuthorityReadOptions = {}
 ): GroupMutationRead {
     const actorPrincipalId = options.actorPrincipalId ?? 'alice';
-    const actorMember = createGroupAuthorityActorMember(actorPrincipalId);
+    const ref = { ...groupRef('pure-room'), ...groupOverrides };
+    const actorMember = {
+        ...createGroupAuthorityActorMember(actorPrincipalId),
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId
+    };
     return {
         idempotency: null,
         group: storedEntry(groupStorageKey(), createTestGroup({ ...groupRef('pure-room'), ...groupOverrides })),
@@ -138,6 +144,12 @@ export function createGroupAuthorityRead(
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'optimistic'),
+        activeMembers: (options.activeMemberPrincipalIds ?? (options.actorIsMember === false ? [] : [actorPrincipalId])).map((principalId) => ({
+            ...createGroupAuthorityActorMember(principalId),
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId
+        })),
         activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
             (options.actorIsMember === false ? [] : [actorPrincipalId]),
         connectTriggerLatch: null,

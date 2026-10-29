@@ -150,7 +150,8 @@ function assertStoredRoster(
     const activeOwners = activeMembers.filter((member) => member.role === 'owner');
     if (
         input.group.activeMemberCount !== activeMembers.length ||
-        (input.group.maxMembers !== null && activeMembers.length > input.group.maxMembers) ||
+        (input.group.maxMembers !== null &&
+            activeMembers.filter((member) => member.role !== 'spectator').length > input.group.maxMembers) ||
         activeOwners.length !== 1 ||
         activeOwners[0]?.principalId !== input.group.ownerPrincipalId
     ) {

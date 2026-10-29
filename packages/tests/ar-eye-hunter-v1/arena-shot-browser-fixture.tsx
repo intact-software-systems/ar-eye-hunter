@@ -107,6 +107,7 @@ function createFixtureSceneProps({ snapshot, sessionId, onShot, onSnapshot }: Fi
         roomId: snapshot.roomId,
         roomReady: true,
         networkEnabled: true,
+        spectating: false,
         authority: {
             roomId: snapshot.roomId,
             sessionId,

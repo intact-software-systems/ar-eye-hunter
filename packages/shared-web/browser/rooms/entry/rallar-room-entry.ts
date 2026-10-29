@@ -24,12 +24,13 @@ import {
 } from './room-entry-validation.ts';
 
 const ENTRY_FRAGMENT = '#rallar-room?';
-const ENTRY_FIELDS = new Set(['applicationId', 'workspaceId', 'groupId', 'joinCode']);
+const ENTRY_FIELDS = new Set(['applicationId', 'workspaceId', 'groupId', 'joinCode', 'participation']);
 
 export namespace RallarRoomEntry {
     export interface Destination {
         readonly roomRef: GroupRef;
         readonly joinCode: string | null;
+        readonly participation: 'player' | 'spectator' | 'preserve';
     }
 
     export interface Failure {
@@ -190,10 +191,13 @@ export class RallarRoomEntry {
                 admittedRoom: null
             });
         }
-        return decodeScopedDestination({ roomRef, joinCode: null }, this.config.scope).mapRight((destination) => {
-            this.invalidateAttempt();
-            return this.publish(this.saveDestination({ status: 'pending', destination, principalId, failure: null }));
-        });
+        return decodeScopedDestination({ roomRef, joinCode: null, participation: 'preserve' }, this.config.scope)
+            .mapRight((destination) => {
+                this.invalidateAttempt();
+                return this.publish(
+                    this.saveDestination({ status: 'pending', destination, principalId, failure: null })
+                );
+            });
     }
 
     public resume(): Promise<RallarRoomEntry.State> {
@@ -285,12 +289,15 @@ export class RallarRoomEntry {
         try {
             await this.dependencies.rooms.join(attempt.destination.roomRef, {
                 joinCode: attempt.destination.joinCode ?? undefined,
+                participation: attempt.destination.participation === 'preserve'
+                    ? undefined
+                    : attempt.destination.participation,
                 signal: attempt.controller.signal
             });
             if (this.isCurrent(attempt)) {
                 this.publish(this.saveDestination({
                     status: 'entered',
-                    destination: { roomRef: attempt.destination.roomRef, joinCode: null },
+                    destination: { roomRef: attempt.destination.roomRef, joinCode: null, participation: 'preserve' },
                     principalId: attempt.session.clientId,
                     failure: null
                 }));
@@ -302,7 +309,7 @@ export class RallarRoomEntry {
                 const failed: RallarRoomEntry.State = {
                     status: 'failed',
                     destination: failure.admittedRoom
-                        ? { roomRef: failure.admittedRoom, joinCode: null }
+                        ? { roomRef: failure.admittedRoom, joinCode: null, participation: 'preserve' }
                         : attempt.destination,
                     principalId: failure.admittedRoom ? attempt.session.clientId : this.state.principalId,
                     failure
@@ -355,8 +362,10 @@ export class RallarRoomEntry {
             }
             return;
         }
-        const destination =
-            decodeScopedDestination({ roomRef: state.currentRoomRef, joinCode: null }, this.config.scope).right;
+        const destination = decodeScopedDestination(
+            { roomRef: state.currentRoomRef, joinCode: null, participation: 'preserve' },
+            this.config.scope
+        ).right;
         if (!destination) {
             return;
         }
@@ -455,7 +464,8 @@ export function readRoomEntryDestination(
                     workspaceId: fields.get('workspaceId'),
                     groupId: fields.get('groupId')
                 },
-                joinCode: fields.get('joinCode')
+                joinCode: fields.get('joinCode'),
+                participation: fields.get('participation') ?? 'preserve'
             }, scope);
         }
     );
@@ -472,7 +482,8 @@ export function toRoomEntryUrl(
                 const fields = new URLSearchParams({
                     applicationId: validated.roomRef.applicationId,
                     workspaceId: validated.roomRef.workspaceId,
-                    groupId: validated.roomRef.groupId
+                    groupId: validated.roomRef.groupId,
+                    participation: validated.participation
                 });
                 if (validated.joinCode !== null) {
                     fields.set('joinCode', validated.joinCode);
@@ -536,7 +547,9 @@ function toEntryFailure(error: Error, destination: RallarRoomEntry.Destination):
         'joinedRoom' in error && error.joinedRoom && typeof error.joinedRoom === 'object' &&
         'group' in error.joinedRoom
     ) {
-        const admitted = decodeRoomEntryDestination({ roomRef: error.joinedRoom.group, joinCode: null }).right;
+        const admitted =
+            decodeRoomEntryDestination({ roomRef: error.joinedRoom.group, joinCode: null, participation: 'preserve' })
+                .right;
         if (admitted && isSameGroupRef(admitted.roomRef, destination.roomRef)) {
             return {
                 kind: 'partial',

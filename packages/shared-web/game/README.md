@@ -48,3 +48,17 @@ are grouped by the owner that makes each runtime decision:
 5. `match/rallar-game-diagnostics-runtime.ts` reads the completed status,
    election, appointment, readiness, and transport owners to assemble the
    public diagnostics value.
+
+## Spectator authorization
+
+`match/rallar-game-participation.ts` reads the current scoped session role. Match egress and
+appointment exclude spectators; receive routing rejects their gameplay messages before application
+callbacks. Full `GroupRef` identity travels in game envelopes and is checked on WS and RTC input,
+so matching group IDs in different applications or workspaces cannot share authority.
+
+A watcher can request a browser-director snapshot using the reserved
+`rallar.game.snapshot-request.v1` type. `packages/shared/rallar-game/snapshot-request.ts` validates
+the entire relay, sender, scope, and bounded diagnostic payload before the server permits that
+read-only request. An application-selected message type does not grant spectator write permission.
+Server-authoritative clients hydrate through their application's authorized read surface; their
+command and peer-publication paths remain disabled while watching.

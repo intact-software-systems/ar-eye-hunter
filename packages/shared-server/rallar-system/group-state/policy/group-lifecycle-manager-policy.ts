@@ -24,7 +24,13 @@ export function denyUnlessGroupLifecycleManager(
         formationElectorate: input.snapshot.group.formationElectorate,
         formationEpoch: input.snapshot.group.formationEpoch,
         groupKey: toGroupLifecycleElectionKey(input.snapshot.group),
-        activePrincipalIds: new Set(input.activeMemberPrincipalIds),
+        activePrincipalIds: new Set(
+            input.activeMemberPrincipalIds.filter((principalId) =>
+                !input.snapshot.members.some((member) =>
+                    member.principalId === principalId && member.role === 'spectator'
+                )
+            )
+        ),
         rankByPrincipalId: null
     });
     if (managers.length === 0) {

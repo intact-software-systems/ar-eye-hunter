@@ -56,13 +56,10 @@ import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 interface MockWsMessage {
     readonly payload: object;
+    readonly raw: ALMessage;
     readonly senderId: string;
     readonly roomId?: string;
     readonly receivedAtEpochMs: number;
-}
-
-interface MockWsAiMessage extends MockWsMessage {
-    readonly raw: ALMessage;
 }
 
 type PlanningRequestAnswer = (
@@ -76,7 +73,7 @@ const rallarMock = vi.hoisted(() => ({
     connectCalls: 0,
     refreshCalls: 0,
     wsMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
-    wsAiMessageHandler: undefined as ((message: MockWsAiMessage) => void) | undefined,
+    wsAiMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
     roundTransitionHandler: undefined as RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined,
     hunterEventHandler: undefined as RallarTypedPayloadHandler<RelicHunterEvent> | undefined,
     serverPeerId: undefined as string | undefined,
@@ -367,6 +364,7 @@ describe('Relic Hunters browser app', () => {
     });
 
     it('updates the visible expedition when a Rallar WebSocket snapshot event arrives', async () => {
+        rallarMock.serverPeerId = 'default-qbox-server';
         const initial = snapshotWithPlayers(1);
         const updated = snapshotWithPlayers(2);
         writeSession(session());
@@ -377,16 +375,7 @@ describe('Relic Hunters browser app', () => {
         await waitFor(() => rallarMock.wsMessageHandler !== undefined);
 
         await act(async () => {
-            rallarMock.wsMessageHandler?.({
-                payload: {
-                    protocolVersion: RELIC_PROTOCOL_VERSION,
-                    gameId: updated.gameId,
-                    snapshot: updated
-                },
-                senderId: 'bob-session',
-                roomId: 'room-1',
-                receivedAtEpochMs: Date.now()
-            });
+            rallarMock.wsMessageHandler?.(snapshotMessage(updated));
         });
 
         await waitFor(() => container.textContent?.includes('Bob') === true);
@@ -396,6 +385,7 @@ describe('Relic Hunters browser app', () => {
     });
 
     it('cues a phase banner from the room\'s ordered round transition, not from a snapshot that moves the phase', async () => {
+        rallarMock.serverPeerId = 'default-qbox-server';
         writeSession(session());
         rallarMock.roomState = roomState(2);
         stubSnapshotFetch(snapshotWithPlayers(2));
@@ -404,12 +394,7 @@ describe('Relic Hunters browser app', () => {
         await waitFor(() => rallarMock.wsMessageHandler !== undefined && rallarMock.roundTransitionHandler !== undefined);
         const planning = snapshotWithPlayers(2, 'planning');
         await act(async () => {
-            rallarMock.wsMessageHandler?.({
-                payload: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: planning.gameId, snapshot: planning },
-                senderId: 'default-qbox-server',
-                roomId: 'room-1',
-                receivedAtEpochMs: Date.now()
-            });
+            rallarMock.wsMessageHandler?.(snapshotMessage(planning));
         });
         await waitFor(() => container.textContent?.includes('Submit Plan') === true);
         expect(container.querySelector('.phase-banner')).toBeNull();
@@ -950,9 +935,35 @@ function session(): AuthSession {
     };
 }
 
+function snapshotMessage(snapshot: RelicPublicSnapshot): MockWsMessage {
+    const payload = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: snapshot.gameId, snapshot };
+    const raw = newALBroadcastMessage(
+        'default-qbox-server',
+        newALRoute(RELIC_TOPICS.snapshot, snapshot.gameId, snapshot.gameId),
+        'room',
+        RELIC_TYPES.snapshot,
+        payload,
+        {
+            groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: snapshot.roomId }
+        }
+    );
+    return { payload, raw, senderId: 'default-qbox-server', roomId: snapshot.roomId, receivedAtEpochMs: Date.now() };
+}
+
 function roomState(onlineMemberCount: number): RallarRoomState {
     const roomRef = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' };
-    const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: Array.from({ length: onlineMemberCount }, (_, index) => `member-${index}`) });
+    const fixture = createGroupSnapshotFixture({
+        ...roomRef,
+        sessionIds: Array.from({ length: onlineMemberCount }, (_, index) => index === 0 ? session().clientId : `member-${index}`)
+    });
+    const snapshot = {
+        ...fixture,
+        activeSessions: fixture.activeSessions.map((entry, index) => ({
+            ...entry,
+            sessionId: index === 0 ? session().sessionId : entry.sessionId,
+            expiresAtEpochMs: Date.now() + 60_000
+        }))
+    };
     return {
         currentRoomId: 'room-1',
         currentRoomRef: roomRef,
@@ -972,7 +983,15 @@ function roomState(onlineMemberCount: number): RallarRoomState {
                 snapshot
             }
         ],
-        members: []
+        members: snapshot.members.map((member) => ({
+            principalId: member.principalId,
+            username: member.principalId,
+            role: member.role,
+            status: member.status,
+            isOwner: member.role === 'owner',
+            isOnline: true,
+            sessionIds: snapshot.activeSessions.filter((presence) => presence.principalId === member.principalId).map((presence) => presence.sessionId)
+        }))
     };
 }
 

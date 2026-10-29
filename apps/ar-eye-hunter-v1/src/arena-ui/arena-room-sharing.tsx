@@ -31,7 +31,11 @@ export function isCurrentArenaHost(session: AuthSession | undefined, room: Group
 export function ArenaRoomSharing({ snapshot, code, busy, rotate }: ArenaRoomSharingProps) {
     const [copyStatus, setCopyStatus] = useState('');
     const codeMatches = code && isSameGroupRef(code.snapshot.group, snapshot.group);
-    const destination = { roomRef: snapshot.group, joinCode: codeMatches ? code.joinCode : null };
+    const destination = {
+        roomRef: snapshot.group,
+        joinCode: codeMatches ? code.joinCode : null,
+        participation: 'preserve' as const
+    };
     const link = snapshot.group.joinMode === 'code' && !codeMatches
         ? ''
         : toRoomEntryUrl(window.location.href, destination).fold(() => '', (url) => url);

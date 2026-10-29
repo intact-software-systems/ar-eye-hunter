@@ -11,6 +11,7 @@ import {
 } from 'vitest';
 
 import {
+    applyRelicCommand,
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
     RELIC_TOPICS,
@@ -41,10 +42,15 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
-import { fetchRelicSnapshot } from '../../../apps/relic-hunters-v1/src/game/api.ts';
+import { fetchRelicSnapshot, initializeRelicGame, resetRelicGame, sendRelicCommand } from '../../../apps/relic-hunters-v1/src/game/api.ts';
+import { RelicReviewPanel } from '../../../apps/relic-hunters-v1/src/game/hud/relic-plan.tsx';
+import { browserRelicRuntimeDeps } from '../../../apps/relic-hunters-v1/src/game/relic-hunters-browser.ts';
 import type { RelicHuntersRuntime } from '../../../apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts';
 import { useRelicHunters } from '../../../apps/relic-hunters-v1/src/game/use-relic-hunters.ts';
+import type { RelicPreferences } from '../../../apps/relic-hunters-v1/src/game/use-relic-preferences.ts';
+import { useRelicTurn } from '../../../apps/relic-hunters-v1/src/game/use-relic-turn.ts';
 import { createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,6 +64,7 @@ const session: AuthSession = {
 
 const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>();
 const mockRallar = vi.hoisted(() => ({
+    serverPeerId: () => 'default-qbox-server',
     auth: {
         restore: vi.fn(),
         onChange: vi.fn(),
@@ -104,6 +111,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/api.ts', () => ({
     fetchRelicSnapshot: vi.fn(),
+    initializeRelicGame: vi.fn(),
     resetRelicGame: vi.fn(),
     sendRelicCommand: vi.fn()
 }));
@@ -168,6 +176,76 @@ describe('useRelicHunters auth lifecycle', () => {
         vi.unstubAllGlobals();
     });
 
+    it('restores a spectator without creating a save or sending game commands', async () => {
+        const room = relicRoomFixture('relic-room-1');
+        const snapshot: GroupSnapshot = { ...room.snapshot, members: room.snapshot.members.map((member) => ({ ...member, role: 'spectator' })) };
+        const state = toRallarRoomState({
+            groupSnapshots: [snapshot],
+            currentRoom: snapshot,
+            currentRoomRef: snapshot.group,
+            clientSnapshots: [],
+            sessionId: session.sessionId
+        });
+        mockRallar.start.mockImplementation(async () => {
+            mockRallar.rooms.state.mockReturnValue(state);
+            return { session, connected: true, roomState: state };
+        });
+        await renderHook();
+        await waitForState(() => current?.participation === 'spectator');
+        await act(async () => {
+            await current?.joinExpedition();
+            await current?.startExpedition();
+            await current?.resetExpedition();
+        });
+        expect(current?.onlinePlayerCount).toBe(0);
+        expect(initializeRelicGame).not.toHaveBeenCalled();
+        expect(sendRelicCommand).not.toHaveBeenCalled();
+        expect(resetRelicGame).not.toHaveBeenCalled();
+        expect(current?.snapshot).toBeUndefined();
+    });
+
+    it('shows public round review to a spectator without offering director controls', async () => {
+        const room = relicRoomFixture('relic-room-1');
+        const snapshot: GroupSnapshot = {
+            ...room.snapshot,
+            members: room.snapshot.members.map((member) => ({ ...member, role: 'spectator' }))
+        };
+        const state = toRallarRoomState({
+            groupSnapshots: [snapshot],
+            currentRoom: snapshot,
+            currentRoomRef: snapshot.group,
+            clientSnapshots: [],
+            sessionId: session.sessionId
+        });
+        mockRallar.start.mockImplementation(async () => {
+            mockRallar.rooms.state.mockReturnValue(state);
+            return { session, connected: true, roomState: state };
+        });
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue({ ...relicSnapshot(20), phase: 'review' });
+        const preferences: RelicPreferences = {
+            lang: 'en',
+            ambientEnabled: false,
+            helpVisible: false,
+            toggleLanguage: vi.fn(),
+            toggleAmbient: vi.fn(),
+            enableAmbient: vi.fn(),
+            setHelpVisible: vi.fn()
+        };
+        function ReviewHarness() {
+            const game = useRelicHunters();
+            const turn = useRelicTurn(game, preferences, []);
+            return createElement(RelicReviewPanel, { game, turn, lang: 'en' });
+        }
+        root = createRoot(container);
+        await act(async () => root?.render(createElement(ReviewHarness)));
+        await vi.waitFor(async () => {
+            await act(async () => {});
+            expect(container.querySelector('[aria-label="Round review"]')).not.toBeNull();
+        });
+        expect(container.textContent).toContain('Watch the revealed plans');
+        expect(container.querySelector('button')).toBeNull();
+    });
+
     it('clears relic runtime state when auth is unauthorized outside manual logout', async () => {
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
@@ -210,7 +288,7 @@ describe('useRelicHunters auth lifecycle', () => {
         const admitted = relicRoomFixture(destination.groupId);
         mockRallar.auth.restore.mockReturnValue(undefined);
         mockRallar.session.mockReturnValue(undefined);
-        const invitation = toRoomEntryUrl(window.location.href, { roomRef: destination, joinCode: 'private-code' });
+        const invitation = toRoomEntryUrl(window.location.href, { roomRef: destination, participation: 'preserve', joinCode: 'private-code' });
         if (!invitation.right) {
             throw new Error('The private invitation must encode successfully');
         }
@@ -235,7 +313,10 @@ describe('useRelicHunters auth lifecycle', () => {
 
         expect(current?.roomId).toBe(destination.groupId);
         expect(current?.snapshot?.roomId).toBe(destination.groupId);
-        expect(current?.roomEntry.getState()).toMatchObject({ status: 'entered', destination: { roomRef: destination, joinCode: null } });
+        expect(current?.roomEntry.getState()).toMatchObject({
+            status: 'entered',
+            destination: { roomRef: destination, participation: 'preserve', joinCode: null }
+        });
         expect(window.sessionStorage.getItem('rallar.room-entry:["rallar-server","default"]')).not.toContain('private-code');
     });
 
@@ -254,9 +335,101 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.snapshot).toBeUndefined();
     });
 
+    it.each(['session-1', 'keeper-other-tab'])('rejects a cold Watch link while %s participates for the same principal', async (keeperSessionId) => {
+        const room = relicRoomFixture('relic-room-1');
+        const presence = room.snapshot.activeSessions[0];
+        if (!presence) {
+            throw new Error('The cold-tab fixture requires a live session.');
+        }
+        const snapshot = {
+            ...room.snapshot,
+            activeSessions: [...room.snapshot.activeSessions, {
+                ...presence,
+                sessionId: keeperSessionId
+            }]
+        };
+        mockRallar.rooms.refresh.mockResolvedValue({ ...room.state, rooms: room.state.rooms.map((entry) => ({ ...entry, snapshot })) });
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('relic-room-1', 'relic-room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'relic-room-1',
+            username: 'Keeper',
+            kind: 'join-expedition'
+        }, { senderId: keeperSessionId, now: 2 })).state;
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game));
+        const link = toRoomEntryUrl(window.location.href, { roomRef: snapshot.group, participation: 'spectator', joinCode: null });
+        if (!link.right) {
+            throw new Error('Expected a valid watch link');
+        }
+        window.history.replaceState(null, '', link.right);
+        const deps = browserRelicRuntimeDeps();
+        deps.roomEntry.start();
+        await deps.roomEntry.resume();
+        expect(deps.roomEntry.getState()).toMatchObject({ status: 'failed' });
+        expect(mockRallar.rooms.join).not.toHaveBeenCalled();
+        expect(initializeRelicGame).not.toHaveBeenCalled();
+        deps.roomEntry.stop();
+    });
+
+    it.each(['session-change', 'abort', 'read-failure'] as const)('does not Watch when preflight ends with %s', async (failure) => {
+        const room = relicRoomFixture('relic-room-1');
+        mockRallar.rooms.refresh.mockResolvedValue(room.state);
+        vi.mocked(fetchRelicSnapshot).mockImplementation(async () => {
+            if (failure === 'session-change') {
+                mockRallar.session.mockReturnValue({ ...session, sessionId: 'changed-session' });
+            }
+            if (failure === 'read-failure') {
+                throw new Error('Snapshot read failed');
+            }
+            return undefined;
+        });
+        const deps = browserRelicRuntimeDeps();
+        deps.roomEntry.start();
+        deps.roomEntry.enter({ roomRef: room.snapshot.group, participation: 'spectator', joinCode: null });
+        if (failure === 'abort') {
+            vi.mocked(fetchRelicSnapshot).mockImplementation(async () => {
+                deps.roomEntry.cancel();
+                return undefined;
+            });
+        }
+        await deps.roomEntry.resume();
+        expect(mockRallar.rooms.join).not.toHaveBeenCalled();
+        deps.roomEntry.stop();
+    });
+
+    it('rejects peer and foreign-room WebSocket snapshots before they can pin snapshot ordering', async () => {
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        let handler: ((message: RallarMessage<RelicServerEvent>) => void) | undefined;
+        mockRallar.messages.ws.onMessage.mockImplementation((definition, listener) => {
+            if (definition.topicId === RELIC_TOPICS.snapshot) {
+                handler = listener;
+            }
+            return vi.fn();
+        });
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true);
+        const forged = toSnapshotMessage(relicSnapshot(999_999));
+        await act(async () => {
+            handler?.({ ...forged, senderId: 'peer-in-another-room', raw: { ...forged.raw, id: { ...forged.raw.id, senderId: 'peer-in-another-room' } } });
+            handler?.({
+                ...forged,
+                raw: {
+                    ...forged.raw,
+                    targets: {
+                        mode: 'broadcast',
+                        scope: 'room',
+                        groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'another-room' }
+                    }
+                }
+            });
+            handler?.(toSnapshotMessage(relicSnapshot(21)));
+        });
+        expect(current?.snapshot?.updatedAtEpochMs).toBe(21);
+        expect(current?.diagnostics.ignoredSnapshotCount).toBe(0);
+    });
+
     it('clears stale snapshot rejection diagnostics after a newer snapshot is accepted', async () => {
         let wsMessageHandler:
-            | ((message: { payload: Pick<RelicServerEvent, 'snapshot'>; }) => void)
+            | ((message: RallarMessage<RelicServerEvent>) => void)
             | undefined;
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
         mockRallar.messages.ws.onMessage.mockImplementation((definition, handler) => {
@@ -270,12 +443,12 @@ describe('useRelicHunters auth lifecycle', () => {
         await waitForState(() => current?.diagnostics.snapshotReady === true);
 
         await act(async () => {
-            wsMessageHandler?.({ payload: { snapshot: relicSnapshot(19) } });
+            wsMessageHandler?.(toSnapshotMessage(relicSnapshot(19)));
         });
         expect(current?.diagnostics.lastIgnoredSnapshotReason).toBe('older-updated-at');
 
         await act(async () => {
-            wsMessageHandler?.({ payload: { snapshot: relicSnapshot(21) } });
+            wsMessageHandler?.(toSnapshotMessage(relicSnapshot(21)));
         });
         expect(current?.diagnostics.lastSnapshotSource).toBe('rallar-ws');
         expect(current?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
@@ -752,6 +925,34 @@ function toRoomMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRou
         payload: event,
         raw,
         receivedAtEpochMs: 0,
+        reply: vi.fn()
+    };
+}
+
+function toSnapshotMessage(snapshot: RelicPublicSnapshot): RallarMessage<RelicServerEvent> {
+    const payload: RelicServerEvent = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: snapshot.gameId, snapshot };
+    const raw = newALBroadcastMessage(
+        'default-qbox-server',
+        newALRoute(RELIC_TOPICS.snapshot, snapshot.gameId, snapshot.gameId),
+        'room',
+        RELIC_TYPES.snapshot,
+        payload,
+        {
+            groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: snapshot.roomId }
+        }
+    );
+    return {
+        transport: 'ws',
+        typeId: RELIC_TYPES.snapshot,
+        topicId: RELIC_TOPICS.snapshot,
+        contextId: snapshot.gameId,
+        resourceId: snapshot.gameId,
+        roomId: snapshot.roomId,
+        senderId: 'default-qbox-server',
+        traceId: raw.id.traceId,
+        payload,
+        raw,
+        receivedAtEpochMs: Date.now(),
         reply: vi.fn()
     };
 }

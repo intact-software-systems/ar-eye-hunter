@@ -152,6 +152,7 @@ function toCreateOptions(
         ...(input.directoryListing === undefined ? {} : { directoryListing: input.directoryListing }),
         ...(input.retention === undefined ? {} : { retention: input.retention }),
         ...(input.maxMembers === undefined ? {} : { maxMembers: input.maxMembers }),
+        ...(input.maxSpectators === undefined ? {} : { maxSpectators: input.maxSpectators }),
         ...(input.maxSessionsPerMember === undefined
             ? {}
             : { maxSessionsPerMember: input.maxSessionsPerMember }),

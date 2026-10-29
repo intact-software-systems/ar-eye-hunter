@@ -1,5 +1,6 @@
 import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { countGroupPlayers } from '@shared/api/group-spectating.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
 import { canActivateGroupMember, canDecideGroupAdmission } from '../../policy/group-membership-admission-policy.ts';
 import { GroupPolicyDeniedError, type GroupPolicyActor } from '../../policy/group-policy-result.ts';
@@ -41,7 +42,7 @@ export function resolveAdmittedMemberStatus(
     const decision = computeGroupAdmissionDecision({
         admission: policy.admission,
         lifecycleState: group.lifecycleState,
-        activeMemberCount: group.activeMemberCount,
+        activeMemberCount: countGroupPlayers(toPolicySnapshot(input.read, group, input.facts.attemptAtEpochMs)),
         invited: isUnexpiredInvite(input.existing, input.facts.attemptAtEpochMs),
         nowEpochMs: input.facts.attemptAtEpochMs
     });
@@ -147,7 +148,7 @@ export function assertGroupAdmissionWindowsOpen(
     const decision = computeGroupAdmissionDecision({
         admission: policy.admission,
         lifecycleState: read.group.value.lifecycleState,
-        activeMemberCount: read.group.value.activeMemberCount,
+        activeMemberCount: countGroupPlayers(toPolicySnapshot(read, read.group.value, facts.attemptAtEpochMs)),
         invited: true,
         nowEpochMs: facts.attemptAtEpochMs
     });

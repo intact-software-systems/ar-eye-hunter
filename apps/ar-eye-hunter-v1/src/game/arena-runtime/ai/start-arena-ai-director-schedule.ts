@@ -1,4 +1,8 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -11,6 +15,7 @@ import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter
 import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import type { ArenaEvent, ArenaSnapshot } from '../../types.ts';
 import type { ArenaAiStatus, ArenaConnectionState } from '../arena-connection-contracts.ts';
+import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import { generateArenaAiDirectorOutput } from './generate-arena-ai-director-output.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();
@@ -40,6 +45,7 @@ export function startArenaAiDirectorSchedule(
     if (
         input.connectionState !== 'connected' ||
         !input.roomId ||
+        isCurrentArenaSpectator() ||
         !input.directorStatus.isDirector ||
         !input.directorStatus.isFresh
     ) {

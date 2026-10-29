@@ -32,7 +32,6 @@ import {
 import { computeConnectGroupPresence } from '../presence/compute-connect-group-presence.ts';
 import { computeDisconnectGroupPresence } from '../presence/compute-disconnect-group-presence.ts';
 import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-group-presence.ts';
-import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempotency.ts';
 import { assertGroupMutationFacts } from '../state-validation/assert-group-mutation-facts.ts';
 import { assertGroupMutationRead } from '../state-validation/assert-group-mutation-read.ts';
 
@@ -48,11 +47,18 @@ export function computeGroupMutation(input: GroupMutationInput): GroupMutationCo
     assertGroupMutationRead(read, command);
     assertGroupMutationFacts(facts);
     assertGroupMutationAuthority(command, facts);
-    const idempotency = probeGroupMutationIdempotency(command, read, facts.commandHash);
-    if (idempotency.outcome !== 'miss') {
-        return idempotency.outcome === 'replay'
-            ? { ...idempotency, rejectionCode: null }
-            : idempotency;
+    if (read.idempotency !== null) {
+        const record = read.idempotency.value;
+        if (record.receipt.commandId !== command.commandId) {
+            throw new TypeError('Stored group idempotency receipt command differs from command identity');
+        }
+        return record.commandHash === facts.commandHash
+            ? { outcome: 'replay', rejectionCode: null, receipt: record.receipt }
+            : {
+                outcome: 'idempotency-conflict',
+                existingCommandHash: record.commandHash,
+                receivedCommandHash: facts.commandHash
+            };
     }
     if (command.operation !== 'createGroup' && read.group === null) {
         return rejected({

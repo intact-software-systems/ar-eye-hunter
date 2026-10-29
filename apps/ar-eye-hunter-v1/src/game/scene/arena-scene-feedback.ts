@@ -87,6 +87,11 @@ export function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaS
     canvas.dataset.arenaMeshCount = String(runtime.scene.meshes.length);
     canvas.dataset.arenaEffectCount = String(runtime.createdEffectCount);
     canvas.dataset.arenaActiveEffectCount = String(runtime.transientEffects.length);
+    canvas.dataset.arenaMatchId = runtime.arenaState.match?.matchId ?? '';
+    canvas.dataset.arenaSnapshotRevision = String(runtime.arenaState.revision);
+    canvas.dataset.arenaPlayerIds = runtime.arenaState.players.map((player) => player.sessionId).join(',');
+    canvas.dataset.arenaAvatarCount = String(runtime.avatars.size);
+    canvas.dataset.arenaShotSequence = String(runtime.shotSeqRef.current);
     canvas.dataset.arenaTargetCount = String(runtime.targets.size);
     canvas.dataset.arenaPointerDownCount = String(runtime.pointerDownCount);
     canvas.dataset.arenaSize = String(runtime.arenaState.layout.halfSize * 2);

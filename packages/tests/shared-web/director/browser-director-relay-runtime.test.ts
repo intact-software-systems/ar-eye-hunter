@@ -547,6 +547,20 @@ describe('Rallar director relay', () => {
         });
         await facade.connect();
 
+        const foreign = toDirectorCommand('game.intent', { move: 'foreign' });
+        await wsInbox.deliver({
+            ...foreign,
+            id: { ...foreign.id, msgId: 'foreign-workspace-request' },
+            targets: {
+                mode: 'unicast',
+                toPeerId: 'session-1',
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'other-workspace',
+                    groupId: 'room-1'
+                }
+            }
+        });
         await wsInbox.deliver(toDirectorCommand('game.intent', { move: 'left' }));
         relay.stop();
 

@@ -349,11 +349,18 @@ export function applyRelicCommand(
 ): Either<RelicRuleRefusal, RelicApplyCommandResult> {
     const now = evaluation.now;
     const state = previous ?? createRelicGame(command.gameId, command.gameId, now);
+    const existing = state.players.find((player) => player.playerId === evaluation.senderId);
+    if (command.kind !== 'join-expedition' && !existing) {
+        return Either.ofLeft({
+            code: 'participant-required',
+            message: 'Join the expedition before sending game commands.'
+        });
+    }
     const admissionIssues = validatePlayerAdmission(state, evaluation.senderId);
     if (admissionIssues.length > 0) {
         return Either.ofLeft(admissionIssues[0]);
     }
-    const joined = ensurePlayer({
+    const joined = command.kind !== 'join-expedition' && existing ? { state, player: existing } : ensurePlayer({
         state,
         playerId: evaluation.senderId,
         username: command.username,

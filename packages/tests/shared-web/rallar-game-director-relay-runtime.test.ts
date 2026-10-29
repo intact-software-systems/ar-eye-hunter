@@ -3,17 +3,28 @@ import { RallarGameDirectorRelayRuntime } from '@shared-web/game/director/rallar
 import type { RallarGameEnvelope } from '@shared-web/game/envelopes.ts';
 import type { RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/match/rallar-game-match-contracts.ts';
 import { describe, expect, it, vi } from 'vitest';
+import { createGameRoomStateFixture } from './rallar-game-room-state-fixture.ts';
 
 interface Payload {
     readonly value: string;
 }
 describe('RallarGameDirectorRelayRuntime', () => {
-    it('does not read director status when an optional snapshot is absent', async () => {
+    it.each(
+        [
+            { scenario: 'an optional snapshot is absent', initialRole: 'member', nextRole: 'member', value: undefined },
+            { scenario: 'the local session is watching', initialRole: 'spectator', nextRole: 'spectator', value: { value: 'world' } },
+            { scenario: 'the local session becomes a watcher during the read', initialRole: 'member', nextRole: 'spectator', value: { value: 'world' } }
+        ] as const
+    )('does not publish or read director status when $scenario', async ({ initialRole, nextRole, value }) => {
+        let role: 'member' | 'spectator' = initialRole;
         let relayConfig: RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>> | undefined;
         const readFreshDirectorStatus = () => {
             throw new Error('Director status is unavailable without a snapshot');
         };
-        const readSnapshot = vi.fn(async () => undefined);
+        const readSnapshot = vi.fn(async () => {
+            role = nextRole;
+            return value;
+        });
         const createRelay = ((config: RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>) => {
             relayConfig = config;
             return toTestDouble<RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>>({
@@ -23,9 +34,23 @@ describe('RallarGameDirectorRelayRuntime', () => {
         const config = toTestDouble<RallarGameMatchConfig<Payload, Payload, Payload, Payload, Payload>>({
             protocol: 'test.game.v1',
             topicId: 'game.topic',
+            roomId: 'room-1',
             readSnapshot,
             rallar: toTestDouble<RallarGameRallarFacade>({
-                director: toTestDouble<RallarGameRallarFacade['director']>({ createRelay })
+                director: toTestDouble<RallarGameRallarFacade['director']>({ createRelay }),
+                session: () => toTestDouble<NonNullable<ReturnType<RallarGameRallarFacade['session']>>>({ sessionId: 'local' }),
+                rooms: toTestDouble<RallarGameRallarFacade['rooms']>({
+                    state: () =>
+                        createGameRoomStateFixture({ applicationId: 'test', workspaceId: 'default', groupId: 'room-1' }, [{
+                            principalId: 'local',
+                            username: 'local',
+                            role,
+                            status: 'active',
+                            isOwner: false,
+                            isOnline: true,
+                            sessionIds: ['local']
+                        }])
+                })
             })
         });
         const runtime = new RallarGameDirectorRelayRuntime(
@@ -82,13 +107,11 @@ describe('RallarGameDirectorRelayRuntime', () => {
     });
 });
 
-type TestRelay = RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>;
-
 function createPublishingRuntime(
-    sendOutput: TestRelay['sendOutput']
+    sendOutput: RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>['sendOutput']
 ): RallarGameDirectorRelayRuntime<Payload, Payload, Payload, Payload, Payload> {
     const createRelay = (() =>
-        toTestDouble<TestRelay>({
+        toTestDouble<RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>>({
             sendOutput,
             stop: vi.fn()
         })) as RallarGameRallarFacade['director']['createRelay'];
@@ -130,7 +153,7 @@ function createPublishingRuntime(
             createEnvelope: (kind, payload, options) => ({
                 protocol: 'test.game.v1',
                 kind,
-                roomId: 'room-1',
+                roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
                 seq: 1,
                 sentAtEpochMs: 1,

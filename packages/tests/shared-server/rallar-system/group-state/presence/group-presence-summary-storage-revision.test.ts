@@ -195,10 +195,11 @@ function mutationRead(storageRevision: number): GroupMutationRead {
             policy: resolveGroupLifecyclePolicyPreset('optimistic')
         },
         activeMemberPrincipalIds: null,
+        activeMembers: [owner],
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
+    };
 }
 
 function member(principalId: string, role: GroupMember['role']): GroupMember {

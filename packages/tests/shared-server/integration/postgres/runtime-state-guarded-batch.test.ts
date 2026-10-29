@@ -240,7 +240,7 @@ function uniqueResetGroupRef() {
 }
 
 function resetRead(ref: GroupRef) {
-    const initial = createGroupAuthorityRead({ lifecycleState: 'active' });
+    const initial = createGroupAuthorityRead({ ...ref, lifecycleState: 'active' });
     const group = { ...initial.group!.value, ...ref };
     const actorMember = { ...initial.actorMember!, ...ref };
     return {

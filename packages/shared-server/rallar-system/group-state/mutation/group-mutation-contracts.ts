@@ -70,6 +70,7 @@ export type GroupMutationCommand =
                     /** Sparse listing intent; omission uses metadata or the listed default. */
                     directoryListing?: GroupDirectoryListing;
                     maxMembers: number | null;
+                    maxSpectators: number | null;
                     maxSessionsPerMember: number | null;
                     metadata: Readonly<Group['metadata']>;
                     createdByPrincipalId: string;
@@ -95,6 +96,7 @@ export type GroupMutationCommand =
                     /** Sparse listing intent; omission preserves the current stored setting. */
                     directoryListing?: GroupDirectoryListing;
                     maxMembers: number | null;
+                    maxSpectators: number | null;
                     maxSessionsPerMember: number | null;
                     metadata: Readonly<Group['metadata']> | null;
                     expiresAtEpochMs: number | null;
@@ -264,6 +266,7 @@ export type GroupMutationCommand =
             input:
                 & NullableActorInput
                 & Readonly<{
+                    participation: 'player' | 'spectator' | null;
                     inviteToken: string | null;
                     joinCode: string | null;
                 }>;
@@ -444,6 +447,7 @@ export interface GroupMutationRead {
      * transition that records it.
      */
     readonly activeMemberPrincipalIds: readonly string[] | null;
+    readonly activeMembers: readonly GroupMember[] | null;
     /**
      * The stored planned layout row — identity, snapshot and revision — read
      * for commands whose fence or promotion consumes it (activateGroup
@@ -734,15 +738,6 @@ export function isGroupAdmissionPolicyReadOperation(
         isGroupAdmissionDecisionOperation(operation)
     );
 }
-
-export type GroupMutationIdempotencyProbe =
-    | Readonly<{ outcome: 'miss'; }>
-    | Readonly<{ outcome: 'replay'; receipt: GroupMutationReceipt; }>
-    | Readonly<{
-        outcome: 'idempotency-conflict';
-        existingCommandHash: string;
-        receivedCommandHash: string;
-    }>;
 
 export class GroupMutationRejectedError extends Error {
     readonly status = 400;

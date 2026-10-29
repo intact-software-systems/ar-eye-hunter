@@ -106,7 +106,7 @@ interface RelicExpeditionPanelProps {
 function RelicExpeditionPanel({ game, turn, preferences, reset }: RelicExpeditionPanelProps) {
     const planningAi = useRelicPlanningAi({
         snapshot: game.snapshot,
-        localPlayerId: game.session?.sessionId,
+        localPlayerId: game.participation === 'player' ? game.session?.sessionId : undefined,
         localPrincipalId: game.session?.clientId,
         draft: turn.selection.draft,
         lang: preferences.lang,
@@ -117,7 +117,7 @@ function RelicExpeditionPanel({ game, turn, preferences, reset }: RelicExpeditio
         <div id="hud-plan" className="panel stack">
             <RelicPartyControls game={game} turn={turn} preferences={preferences} />
             <div className="button-grid">
-                <button type="button" onClick={() => void reset()}>
+                <button type="button" disabled={game.participation !== 'player'} onClick={() => void reset()}>
                     {preferences.lang === 'no' ? 'Tilbakestill' : 'Reset'}
                 </button>
                 <RelicPreferencesControls preferences={preferences} />
@@ -194,18 +194,19 @@ function RelicPartyChange({ game, dismissed, dismiss, reset }: RelicPartyChangeP
     const snapshot = game.snapshot;
     const summary = game.rooms.find((room) => room.roomId === game.roomId);
     if (
-        !snapshot || !summary || snapshot.phase === 'finished' || snapshot.players.length === 0 ||
-        snapshot.players.length === summary.onlineMemberCount
+        game.participation !== 'player' || !snapshot || !summary || snapshot.phase === 'finished' ||
+        snapshot.players.length === 0 ||
+        snapshot.players.length === game.onlinePlayerCount
     ) {
         return null;
     }
-    const key = `${game.roomId}:${snapshot.players.length}:${summary.onlineMemberCount}`;
+    const key = `${game.roomId}:${snapshot.players.length}:${game.onlinePlayerCount}`;
     return key === dismissed
         ? null
         : (
             <PartyChangePrompt
                 expeditionPlayers={snapshot.players.length}
-                onlinePlayers={summary.onlineMemberCount}
+                onlinePlayers={game.onlinePlayerCount}
                 onReset={reset}
                 onContinue={() => dismiss(key)}
             />

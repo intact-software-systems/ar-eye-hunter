@@ -55,7 +55,7 @@ test('retains labelled rows after failure and refreshes capacity and admission c
     unavailable = true;
     await refresh.click();
     await expect(operations.getByText('Last loaded arenas — refresh to check availability.')).toBeVisible();
-    await expect(operations.getByRole('button', { name: /Previously loaded/ })).toBeVisible();
+    await expect(operations.getByRole('button', { name: /Previously loaded.*Request to join/ })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('retained-directory.png'), fullPage: true });
     unavailable = false;
     entries = [directoryArena('Available', false), directoryArena('At capacity', true)];
@@ -250,6 +250,10 @@ function directoryArena(name: string, isFull: boolean): GroupDirectoryEntry {
         joinMode: 'open',
         memberCount: isFull ? 2 : 1,
         onlineMemberCount: 1,
+        playerCount: 1,
+        onlinePlayerCount: 1,
+        spectatorCount: 0,
+        maxSpectators: 16,
         maxMembers: 2,
         isFull,
         lifecycleState: 'forming',

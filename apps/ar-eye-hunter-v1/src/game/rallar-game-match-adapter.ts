@@ -9,6 +9,7 @@ import {
     type RallarGameRallarFacade
 } from '@shared-web/game/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+
 import {
     GAME_AI_LANE_ID,
     GAME_COMBAT_LANE_ID,
@@ -49,17 +50,17 @@ export type ArenaRallarGameMatchHandle = RallarGameMatchHandle<
     GameRealtimeMessage
 >;
 
-export type ArenaRallarGameMatchConfig = Readonly<{
-    rallar: RallarGameRallarFacade;
-    roomId?: string;
-    readSnapshot: () => ArenaSnapshot | undefined;
-    onPresence?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
-    onInput?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
-    onIntent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
-    onSnapshot?: RallarGameEnvelopeHandler<ArenaSnapshot>;
-    onEvent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
-    onSyncRequest?: RallarGameEnvelopeHandler<unknown>;
-}>;
+export interface ArenaRallarGameMatchConfig {
+    readonly rallar: RallarGameRallarFacade;
+    readonly roomId?: string;
+    readonly readSnapshot: () => ArenaSnapshot | undefined;
+    readonly onPresence?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
+    readonly onInput?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
+    readonly onIntent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
+    readonly onSnapshot?: RallarGameEnvelopeHandler<ArenaSnapshot>;
+    readonly onEvent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
+    readonly onSyncRequest?: RallarGameEnvelopeHandler<object>;
+}
 
 export function createArenaRallarGameMatch(
     config: ArenaRallarGameMatchConfig
@@ -69,8 +70,9 @@ export function createArenaRallarGameMatch(
         protocol: GAME_PROTOCOL,
         topicId: GAME_DIRECTOR_TOPIC_ID,
         roomId: config.roomId,
+        roomRef: config.rallar.rooms.state().currentRoomRef,
         laneIds: ARENA_RALLAR_GAME_LANE_IDS,
-        readCapability: readArenaHostCapability,
+        readCapability: () => readArenaHostCapability(config.rallar),
         readSnapshot: config.readSnapshot,
         autoSnapshotIntervalMs: false,
         onPresence: config.onPresence,
@@ -136,9 +138,15 @@ export function isArenaMatchStartIntentFromSender(
         message.intent.directorSessionId === senderId;
 }
 
-function readArenaHostCapability(): Omit<RallarGameHostCapability, 'peerId' | 'reportedAtEpochMs'> {
+function readArenaHostCapability(
+    rallar: RallarGameRallarFacade
+): Omit<RallarGameHostCapability, 'peerId' | 'reportedAtEpochMs'> {
     return {
-        canHost: true,
+        canHost:
+            rallar.rooms.state().currentRoom?.members.some((member) =>
+                member.principalId === rallar.session()?.clientId && member.status === 'active' &&
+                member.role !== 'spectator'
+            ) ?? false,
         hardwareConcurrency: navigator.hardwareConcurrency,
         isMobile: matchMedia('(pointer: coarse)').matches,
         scoreBias: document.visibilityState === 'visible' ? 20 : -20

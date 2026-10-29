@@ -10,19 +10,30 @@ import {
 import {
     assertAllowed,
     assertGovernance,
-    assertPrincipalAuthority
+    assertPrincipalAuthority,
+    toPolicySnapshot
 } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import { assertGroupAdmissionWindowsOpen, resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
 
+interface ResolveUpsertMemberStatusInput {
+    readonly command: Extract<GroupMutationCommand, { operation: 'upsertMember'; }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly role: GroupMember['role'];
+}
+
 export function resolveUpsertMemberStatus(
-    command: Extract<GroupMutationCommand, { operation: 'upsertMember'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts
+    { command, read, facts, role }: ResolveUpsertMemberStatusInput
 ): GroupMember['status'] {
     const existing = read.targetMember ?? undefined;
-    if (command.input.status !== 'active' || existing?.status === 'active') {
+    if (
+        command.input.status !== 'active' ||
+        (existing?.status === 'active' &&
+            !(existing.role === 'spectator' && command.input.role !== null && command.input.role !== 'spectator')) ||
+        role === 'spectator'
+    ) {
         return command.input.status;
     }
     // Self-activation requests admission; a manager grants it within the same admission windows.
@@ -147,6 +158,7 @@ export function assertUpsertRoleChange(
 interface AssertUpsertActivationAllowedInput {
     readonly command: Extract<GroupMutationCommand, { operation: 'upsertMember'; }>;
     readonly snapshot: GroupSnapshot;
+    readonly role: GroupMember['role'];
     readonly nowEpochMs: number;
     readonly capacity: GroupPolicyCapacityConfig | undefined;
 }
@@ -154,6 +166,7 @@ interface AssertUpsertActivationAllowedInput {
 export function assertUpsertActivationAllowed({
     command,
     snapshot,
+    role,
     nowEpochMs,
     capacity
 }: AssertUpsertActivationAllowedInput): void {
@@ -169,13 +182,41 @@ export function assertUpsertActivationAllowed({
                     sessionId: command.input.actorSessionId ?? undefined
                 },
                 nowEpochMs,
-                capacity
+                capacity,
+                participation: role === 'spectator' ? 'spectator' : 'player'
             })
             : canActivateGroupMember({
                 snapshot,
                 targetPrincipalId: command.targetPrincipalId,
+                role,
                 nowEpochMs,
                 capacity
             })
     );
+}
+
+interface AssertGovernedParticipationChangeInput {
+    readonly command: GroupMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly role: GroupMember['role'];
+}
+
+export function assertGovernedParticipationChange(
+    { command, read, facts, role }: AssertGovernedParticipationChangeInput
+): void {
+    const member = read.targetMember;
+    if (member?.status !== 'active' || (member.role === 'spectator') === (role === 'spectator')) {
+        return;
+    }
+    assertAllowed(canActivateGroupMember({
+        snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
+        targetPrincipalId: member.principalId,
+        role,
+        nowEpochMs: facts.attemptAtEpochMs,
+        capacity: facts.capacity
+    }));
+    if (member.role === 'spectator' && role !== 'spectator') {
+        assertGroupAdmissionWindowsOpen(read, facts);
+    }
 }

@@ -85,6 +85,7 @@ export interface RallarCreateRoomInput extends
         | 'directoryListing'
         | 'retention'
         | 'maxMembers'
+        | 'maxSpectators'
         | 'maxSessionsPerMember'
         | 'metadata'
         | 'expiresAtEpochMs'
@@ -111,6 +112,7 @@ export interface RallarUpdateRoomInput extends
         | 'joinMode'
         | 'directoryListing'
         | 'maxMembers'
+        | 'maxSpectators'
         | 'maxSessionsPerMember'
         | 'metadata'
         | 'expiresAtEpochMs'
@@ -141,6 +143,8 @@ export interface RallarSetRoomMemberRoleInput {
 }
 
 export interface RallarJoinRoomOptions extends RallarScopedOperationOptions {
+    /** Omit to recover existing membership without changing participation. */
+    readonly participation?: 'player' | 'spectator';
     readonly roomRef?: GroupRef;
     readonly leaveCurrent?: boolean;
     readonly inviteToken?: string;

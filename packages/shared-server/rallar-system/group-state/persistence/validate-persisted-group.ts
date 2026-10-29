@@ -245,7 +245,7 @@ export function validateStoredMember(
     assertRequiredKeys(value, STORED_MEMBER_KEYS, `${label} value`);
     validateScopedRecord(value, ref, label);
     requireNonEmptyString(value.principalId, `${label} principalId`);
-    requireOneOf(value.role, ['owner', 'admin', 'member'], `${label} role`);
+    requireOneOf(value.role, ['owner', 'admin', 'member', 'spectator'], `${label} role`);
     requireOneOf(
         value.status,
         ['invited', 'pending', 'active', 'left', 'removed', 'banned'],

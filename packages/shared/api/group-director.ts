@@ -127,6 +127,13 @@ export function isRallarGroupDirectorSessionActive(
         return false;
     }
 
+    if (
+        !snapshot.members.some((member) =>
+            member.principalId === appointment.principalId && member.status === 'active' && member.role !== 'spectator'
+        )
+    ) {
+        return false;
+    }
     return snapshot.activeSessions.some((session) =>
         session.sessionId === appointment.sessionId &&
         session.principalId === appointment.principalId
@@ -184,7 +191,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
         session.principalId === localPrincipalId &&
         session.sessionId === localPeerId
     );
-    if (member.status !== 'active' || !localSessionActive) {
+    if (member.status !== 'active' || member.role === 'spectator' || !localSessionActive) {
         return {
             allowed: false,
             status: 'not-authorized',

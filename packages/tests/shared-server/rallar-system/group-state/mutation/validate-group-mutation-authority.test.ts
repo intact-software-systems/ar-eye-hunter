@@ -31,6 +31,7 @@ function updateCommand(): Extract<GroupMutationCommand, { operation: 'updateGrou
         commandId: 'command-1',
         requestId: 'request-1',
         input: {
+            maxSpectators: null,
             slug: null,
             displayName: 'Updated group',
             description: null,

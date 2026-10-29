@@ -16,6 +16,7 @@ import {
     type RallarServerAiWebSocketPort
 } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
 import type { RallarServerAi } from '@shared-server/rallar-ai/rallar-server-ai-contracts.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import {
     createRallarAiMockProvider,
@@ -27,11 +28,12 @@ import {
 export interface InstallRelicPlanningAiTopicInput {
     readonly websocket: RallarServerAiWebSocketPort;
     readonly serverSenderId: string;
+    readonly canRequestPlanning: (sessionId: string, gameId: string) => Promise<boolean>;
 }
 
 export function installRelicPlanningAiTopic(input: InstallRelicPlanningAiTopicInput): () => boolean {
     return installRallarServerAiWebSocketTopic({
-        websocket: toRelicRoomAiWebSocketPort(input.websocket),
+        websocket: toRelicRoomAiWebSocketPort(input),
         serverAi: createRelicPlanningServerAi(),
         config: {
             requestTopicId: RELIC_TOPICS.aiPlanning,
@@ -66,16 +68,40 @@ export function createRelicPlanningServerAi(): RallarServerAi {
 }
 
 /** The topic admits a request only in a Relic room: its GroupRef must be the Relic scope's ref for its room id. */
-function toRelicRoomAiWebSocketPort(port: RallarServerAiWebSocketPort): RallarServerAiWebSocketPort {
+function toRelicRoomAiWebSocketPort(input: InstallRelicPlanningAiTopicInput): RallarServerAiWebSocketPort {
+    const port = input.websocket;
     return {
         defineTopic: (definition) =>
             port.defineTopic({
                 ...definition,
                 authorize: async (message, context) =>
-                    isRelicRoomContext(context) && await definition.authorize(message, context)
+                    isRelicRoomContext(context) && context.roomId !== undefined &&
+                    await input.canRequestPlanning(context.senderId, context.roomId) &&
+                    await definition.authorize(message, context)
             }),
-        on: (selector, handler) => port.on(selector, handler),
-        publish: (input) => port.publish(input)
+        on: (selector, handler) =>
+            port.on(selector, async (message, context) => {
+                if (
+                    isRelicRoomContext(context) && context.roomId &&
+                    await input.canRequestPlanning(context.senderId, context.roomId)
+                ) {
+                    await handler(message, context);
+                }
+            }),
+        publish: async (publication) => {
+            const roomRef = readALTargetGroupRef(publication.message);
+            const targets = publication.message.targets;
+            if (
+                !roomRef || targets?.mode !== 'unicast' ||
+                !await input.canRequestPlanning(targets.toPeerId, roomRef.groupId)
+            ) {
+                throw new RallarAiError(
+                    'unauthorized',
+                    'Only a current expedition participant can receive planning advice.'
+                );
+            }
+            return await port.publish(publication);
+        }
     };
 }
 

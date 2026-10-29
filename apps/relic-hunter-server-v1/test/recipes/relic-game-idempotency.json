@@ -166,12 +166,28 @@
       }
     },
     {
-      "name": "initializeExpedition",
+      "name": "readEmptyExpeditionWithoutInitialization",
       "type": "http",
       "connection": "api",
       "request": {
         "method": "GET",
         "path": "/api/relic/games/{gameId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "initializeExpedition",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/initialize/requests/initialize-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -374,6 +390,23 @@
         "body": {
           "code": "room-unavailable"
         }
+      }
+    },
+    {
+      "name": "admitBobToRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/rallar-server/workspaces/default/groups/{gameId}/join/requests/admit-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200
       }
     },
     {

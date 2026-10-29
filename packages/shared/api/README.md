@@ -42,6 +42,13 @@ validation.
    projects a published topology snapshot into the per-session overlay with
    `server` provenance.
 
+7. [Group participation](./group-spectating.ts) owns separate player and spectator
+   counts and spectator-capacity metadata. Its
+   [readActiveGroupSessionRole](./group-spectating.ts#readActiveGroupSessionRole)
+   resolves a session role only from an active, unexpired group and session with
+   active membership; browser game authority uses this reader rather than cached
+   member session identifiers.
+
 ## Boundaries
 
 Contracts here are runtime-agnostic: no DOM, no HTTP server, no Postgres.

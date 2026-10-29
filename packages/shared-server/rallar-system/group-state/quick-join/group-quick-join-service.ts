@@ -171,6 +171,7 @@ function toSelectedJoinCommand(
         commandId: `quick-join:${facts.commandHash}`,
         requestId: command.requestId,
         input: {
+            participation: 'player',
             inviteToken: null,
             joinCode: null,
             actorPrincipalId: command.actorPrincipalId,

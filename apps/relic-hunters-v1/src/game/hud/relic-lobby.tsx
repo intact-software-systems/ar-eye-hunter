@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
 
 import { colorForId } from '../color.ts';
 import { shortId } from '../lang.ts';
@@ -17,6 +18,11 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
     if (!game.session || game.connectionState === 'signed-out') {
         return <RelicAuthForm game={game} />;
     }
+    const currentRoom = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
+    const playerCount =
+        currentRoom?.members.filter((member) => member.status === 'active' && member.role !== 'spectator').length ?? 0;
+    const full = currentRoom?.group.maxMembers !== null && currentRoom?.group.maxMembers !== undefined &&
+        playerCount >= currentRoom.group.maxMembers;
     return (
         <div id="hud-rooms" className="panel stack">
             <div className="profile-row">
@@ -42,6 +48,24 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                 Your account reference<input value={game.session.clientId} readOnly />
             </label>
             <RelicRoomHosting game={game} />
+            {game.roomId && (
+                <div className="button-grid">
+                    {game.participation === 'spectator' && (
+                        <>
+                            <strong>Watching</strong>
+                            <button
+                                type="button"
+                                disabled={full || !!game.snapshot &&
+                                        (game.snapshot.phase !== 'lobby' || game.snapshot.players.length >= 4)}
+                                onClick={() => void game.joinAsPlayer()}
+                            >
+                                Join as player
+                            </button>
+                        </>
+                    )}
+                    <button type="button" onClick={() => void game.leaveRoom()}>Leave room</button>
+                </div>
+            )}
             <RelicRoomsList game={game} />
         </div>
     );
@@ -136,6 +160,8 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 }
 
 function RelicRoomsList({ game }: RelicSessionProps) {
+    const watchBlocked = game.participation === 'player' && game.snapshot?.phase !== 'finished' &&
+        game.snapshot?.players.some((player) => player.playerId === game.session?.sessionId);
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters') &&
         room.snapshot.members.some((member) =>
@@ -149,14 +175,28 @@ function RelicRoomsList({ game }: RelicSessionProps) {
         ...rooms.map((room) => ({
             roomId: room.roomId,
             name: room.name,
-            onlineMemberCount: room.onlineMemberCount,
-            full: false
+            onlinePlayerCount:
+                room.snapshot.members.filter((member) =>
+                    member.status === 'active' && member.role !== 'spectator' &&
+                    room.snapshot.activeSessions.some((presence) => presence.principalId === member.principalId)
+                ).length,
+            full: false,
+            maxSpectators: readGroupSpectatorCapacity(room.snapshot.group.metadata),
+            spectatorCount:
+                room.snapshot.members.filter((member) => member.status === 'active' && member.role === 'spectator')
+                    .length,
+            canWatch: !room.snapshot.members.some((member) =>
+                member.principalId === game.session?.clientId && (member.role === 'owner' || member.role === 'admin')
+            )
         })),
         ...publicRooms.map((entry) => ({
             roomId: entry.groupRef.groupId,
             name: entry.displayName,
-            onlineMemberCount: entry.onlineMemberCount,
-            full: entry.isFull
+            onlinePlayerCount: entry.onlinePlayerCount,
+            full: entry.isFull,
+            maxSpectators: entry.maxSpectators,
+            spectatorCount: entry.spectatorCount,
+            canWatch: true
         }))
     ];
     return (
@@ -172,21 +212,37 @@ function RelicRoomsList({ game }: RelicSessionProps) {
                 <p>No public expeditions found.</p>
             )}
             {rows.map((room) => (
-                <button
-                    type="button"
-                    key={room.roomId}
-                    data-room-id={room.roomId}
-                    disabled={room.full || !game.diagnostics.middlewareConnected}
-                    className={room.roomId === game.roomId ? 'room-row active' : 'room-row'}
-                    onClick={() => {
-                        if (room.roomId !== game.roomId) {
-                            void game.joinRoom(room.roomId);
-                        }
-                    }}
-                >
-                    <span>{room.name}</span>
-                    <small>{room.onlineMemberCount} online{room.full && ' · Full'}</small>
-                </button>
+                <div key={room.roomId}>
+                    <button
+                        type="button"
+                        key={room.roomId}
+                        data-room-id={room.roomId}
+                        disabled={room.full || !game.diagnostics.middlewareConnected}
+                        className={room.roomId === game.roomId ? 'room-row active' : 'room-row'}
+                        onClick={() => {
+                            if (room.roomId !== game.roomId) {
+                                void game.joinRoom(room.roomId);
+                            }
+                        }}
+                    >
+                        <span>{room.name}</span>
+                        <small>
+                            {room.onlinePlayerCount} {room.onlinePlayerCount === 1 ? 'player' : 'players'} ·{' '}
+                            {room.spectatorCount} watching{room.full && ' · Full'}
+                        </small>
+                    </button>
+                    {!watchBlocked && room.canWatch && room.maxSpectators > 0 && (
+                        <button
+                            type="button"
+                            aria-label={`Watch ${room.name}`}
+                            disabled={room.spectatorCount >= room.maxSpectators ||
+                                !game.diagnostics.middlewareConnected}
+                            onClick={() => void game.watchRoom(room.roomId)}
+                        >
+                            Watch
+                        </button>
+                    )}
+                </div>
             ))}
         </div>
     );

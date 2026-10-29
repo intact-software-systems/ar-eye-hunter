@@ -38,6 +38,7 @@ export async function createGameFixture(gameId = 'expedition-1') {
                 displayName: 'Expedition',
                 kind: 'room',
                 joinMode: 'open',
+                maxSpectators: 16,
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
                 retention: { mode: 'temporary', reconnectGraceMs: 600_000 }

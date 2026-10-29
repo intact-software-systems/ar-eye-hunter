@@ -1,5 +1,5 @@
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { GroupEventType, GroupMember } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupMember } from '@shared/api/group-types.ts';
 
 import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
 import {
@@ -20,6 +20,7 @@ import { auditStamp, noOp, requireGroup } from '../group-mutation-result.ts';
 import { computeGroupMembershipWrite } from '../write/compute-group-membership-write.ts';
 import { resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
 import {
+    assertGovernedParticipationChange,
     assertUpsertActivationAllowed,
     assertUpsertAuthority,
     assertUpsertRoleChange,
@@ -55,6 +56,7 @@ export function computeJoin(
             },
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
+            participation: command.input.participation ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
             joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
             expectedJoinCodeVerifier: stored.value.joinMode === 'code' ? (joinCodeMetadata?.verifier ?? '') : undefined,
@@ -62,34 +64,31 @@ export function computeJoin(
         })
     );
     const existing = read.targetMember ?? undefined;
-    if (existing?.status === 'active') {
+    const role = command.input.participation === 'spectator'
+        ? 'spectator'
+        : command.input.participation === 'player' && existing?.role === 'spectator'
+        ? 'member'
+        : existing?.status === 'active'
+        ? existing.role
+        : 'member';
+    if (existing?.status === 'active' && existing.role === role) {
         return noOp(command, read, facts);
     }
-    const status = resolveAdmittedMemberStatus({ read, facts, existing });
+    const status = role === 'spectator' ? 'active' : resolveAdmittedMemberStatus({ read, facts, existing });
+    if (existing?.status === 'active' && status === 'pending') {
+        throw new GroupMutationRejectedError('Player promotion requires admission approval.');
+    }
     if (existing?.status === 'pending' && status === 'pending') {
         return noOp(command, read, facts);
     }
     const audit = auditStamp(command, facts, command.targetPrincipalId);
-    const member: GroupMember = {
-        ...command.aggregateRef,
-        principalId: command.targetPrincipalId,
-        role: existing?.role ?? 'member',
-        updated: audit,
-        left: null,
-        removed: null,
-        banned: null,
-        invitedByPrincipalId: existing?.invitedByPrincipalId ?? null,
-        invitationExpiresAtEpochMs: existing?.invitationExpiresAtEpochMs ?? null,
-        ...(status === 'active'
-            ? { status, joined: existing?.joined ?? audit }
-            : { status, joined: null })
-    };
+    const member = createJoinedGroupMember({ command, existing, role, status, audit });
     return computeGroupMembershipWrite({
         command,
         read,
         facts,
         members: [member],
-        eventType: groupMemberEventType(status)
+        eventType: existing?.status === 'active' ? 'member-role-changed' : groupMemberEventType(status)
     });
 }
 
@@ -100,7 +99,7 @@ export function computeInvite(
 ): GroupMutationComputed {
     requireGroup(read, command.aggregateRef);
     assertGovernance({ command, read, facts, action: 'invite' });
-    const existing = findTargetMember(read);
+    const existing = read.targetMember ?? undefined;
     if (existing?.status === 'active') {
         return noOp(command, read, facts);
     }
@@ -138,7 +137,7 @@ export function computeRevokeInvite(
 ): GroupMutationComputed {
     requireGroup(read, command.aggregateRef);
     assertGovernance({ command, read, facts, action: 'remove' });
-    const existing = findTargetMember(read);
+    const existing = read.targetMember ?? undefined;
     if (existing?.status !== 'invited') {
         return noOp(command, read, facts);
     }
@@ -169,7 +168,7 @@ export function computeGovernedMember(
     requireGroup(read, command.aggregateRef);
     const action = governanceActionFor(command);
     assertGovernance({ command, read, facts, action });
-    const existing = findTargetMember(read);
+    const existing = read.targetMember ?? undefined;
     if (!existing && command.operation === 'unbanGroupMember') {
         return noOp(command, read, facts);
     }
@@ -192,6 +191,7 @@ export function computeGovernedMember(
     };
     const status = governedMemberStatus(command, base);
     const role = governedMemberRole(command, read, base);
+    assertGovernedParticipationChange({ command, read, facts, role });
     if (base.status === status && base.role === role) {
         return noOp(command, read, facts);
     }
@@ -222,7 +222,7 @@ export function computeTransfer(
     requireGroup(read, command.aggregateRef);
     assertGovernance({ command, read, facts, action: 'transfer-ownership' });
     const actor = read.actorMember ?? undefined;
-    const target = findTargetMember(read);
+    const target = read.targetMember ?? undefined;
     if (!actor || actor.status !== 'active' || actor.role !== 'owner') {
         throw new GroupMutationRejectedError('Only an active owner can transfer ownership.');
     }
@@ -232,6 +232,7 @@ export function computeTransfer(
     if (actor.principalId === target.principalId) {
         return noOp(command, read, facts);
     }
+    assertGovernedParticipationChange({ command, read, facts, role: 'owner' });
     const audit = auditStamp(command, facts, actor.principalId);
     return computeGroupMembershipWrite({
         command,
@@ -255,15 +256,19 @@ export function computeUpsertMember(
     assertUpsertAuthority({ command, read, facts, isSelf });
     assertUpsertRoleChange(command, read, isSelf);
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+    const existing = read.targetMember ?? undefined;
+    const role = command.input.role ??
+        (command.input.status === 'active' && existing?.status !== 'active' && existing?.role === 'spectator'
+            ? 'member'
+            : existing?.role ?? 'member');
     assertUpsertActivationAllowed({
         command,
         snapshot,
+        role,
         nowEpochMs: facts.attemptAtEpochMs,
         capacity: facts.capacity
     });
-    const existing = findTargetMember(read);
-    const status = resolveUpsertMemberStatus(command, read, facts);
-    const role = command.input.role ?? existing?.role ?? 'member';
+    const status = resolveUpsertMemberStatus({ command, read, facts, role });
     const invitedByPrincipalId = command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;
     const invitationExpiresAtEpochMs = command.input.invitationExpiresAtEpochMs ??
         existing?.invitationExpiresAtEpochMs ?? null;
@@ -300,6 +305,29 @@ export function computeUpsertMember(
     });
 }
 
-function findTargetMember(read: GroupMutationRead): GroupMember | undefined {
-    return read.targetMember ?? undefined;
+interface CreateJoinedGroupMemberInput {
+    readonly command: Extract<GroupMutationCommand, { operation: 'joinGroup' | 'acceptGroupInvite'; }>;
+    readonly existing: GroupMember | undefined;
+    readonly role: GroupMember['role'];
+    readonly status: 'active' | 'pending';
+    readonly audit: AuditStamp;
+}
+
+function createJoinedGroupMember(
+    { command, existing, role, status, audit }: CreateJoinedGroupMemberInput
+): GroupMember {
+    return {
+        ...command.aggregateRef,
+        principalId: command.targetPrincipalId,
+        role,
+        updated: audit,
+        left: null,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: existing?.invitedByPrincipalId ?? null,
+        invitationExpiresAtEpochMs: existing?.invitationExpiresAtEpochMs ?? null,
+        ...(status === 'active'
+            ? { status, joined: existing?.joined ?? audit }
+            : { status, joined: null })
+    };
 }

@@ -123,6 +123,7 @@ function groupIn(lifecycleState: GroupLifecycleState): Group {
     return createTestGroup({
         ...groupRef('pure-room'),
         ownerPrincipalId: 'alice',
+        activeMemberCount: 2,
         lifecycleState,
         formationEpoch: lifecycleState === 'forming' ? 0 : 1,
         created: audit('alice'),
@@ -166,6 +167,7 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         presenceSummary: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
+        activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
@@ -177,6 +179,8 @@ function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         ...baseRead(lifecycleState),
         actorMember: null,
         actorMemberEntry: null,
+        activeMemberPrincipalIds: null,
+        activeMembers: [member('alice', 'owner'), member('bob', 'member')],
         lifecyclePolicy: {
             status: 'present',
             policy: resolveGroupLifecyclePolicyPreset('optimistic')
@@ -201,6 +205,7 @@ function joinCommand(): GroupMutationCommand {
         requestId: 'safety-join',
         targetPrincipalId: 'carol',
         input: {
+            participation: null,
             inviteToken: null,
             joinCode: null,
             actorPrincipalId: 'carol',

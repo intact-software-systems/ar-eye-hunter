@@ -1,0 +1,570 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": "spectating-{runId}",
+    "workspaceId": "spectating-{runId}",
+    "groupId": "watch-{runId}",
+    "clientPassword": {
+      "env": "RALLAR_BB_JOINADM_PASSWORD",
+      "default": "api-v1-joinadm-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-spectating-register-founder-{runId}",
+        "body": {
+          "username": "spectating-founder-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "founder client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-spectating-login-founder-{runId}",
+        "body": {
+          "username": "spectating-founder-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "founderClientId": "body.clientId",
+          "founderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "founderSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFounderAuthHeader",
+      "type": "set",
+      "output": "founderAuthHeader",
+      "secret": true,
+      "redactAs": "founderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.founderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerProbe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-spectating-register-probe-{runId}",
+        "body": {
+          "username": "spectating-probe-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "storm probe client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginProbe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-spectating-login-probe-{runId}",
+        "body": {
+          "username": "spectating-probe-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "probeClientId": "body.clientId",
+          "probeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "probeSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveProbeAuthHeader",
+      "type": "set",
+      "output": "probeAuthHeader",
+      "secret": true,
+      "redactAs": "probeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.probeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerObserver",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-spectating-register-observer-{runId}",
+        "body": {
+          "username": "spectating-observer-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "observer client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginObserver",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-spectating-login-observer-{runId}",
+        "body": {
+          "username": "spectating-observer-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "observerClientId": "body.clientId",
+          "observerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "observerSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveObserverAuthHeader",
+      "type": "set",
+      "output": "observerAuthHeader",
+      "secret": true,
+      "redactAs": "observerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.observerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-spectating-watch-create-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Spectating",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{founderClientId}",
+          "maxMembers": 1,
+          "maxSpectators": 1
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "watchFullPlayerRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-watch-probe-{runId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {
+          "participation": "spectator"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{probeClientId}",
+              "role": "spectator",
+              "status": "active"
+            }
+          ],
+          "memberCount": 2,
+          "causalRevision": {
+            "groupRevision": 2,
+            "presenceRevision": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "replayWatch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-watch-probe-{runId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {
+          "participation": "spectator"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{probeClientId}",
+              "role": "spectator",
+              "status": "active"
+            }
+          ],
+          "memberCount": 2,
+          "causalRevision": {
+            "groupRevision": 2,
+            "presenceRevision": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "recoverWatcher",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-recover-probe-{runId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{probeClientId}",
+              "role": "spectator",
+              "status": "active"
+            }
+          ],
+          "memberCount": 2
+        }
+      }
+    },
+    {
+      "name": "roleCannotBypassPlayerCap",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}/role/requests/bb-spectating-role-full-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-full",
+          "status": 403,
+          "denial": {
+            "code": "group-full",
+            "message": "Player capacity has been reached."
+          }
+        }
+      }
+    },
+    {
+      "name": "fullPlayerPromotionDenied",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-play-full-{runId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {
+          "participation": "player"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-full",
+          "status": 403,
+          "denial": {
+            "code": "group-full",
+            "message": "Player capacity has been reached."
+          }
+        }
+      }
+    },
+    {
+      "name": "ownerCannotSwitchToWatcher",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-owner-watch-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "participation": "spectator"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "denial": {
+            "code": "forbidden-role",
+            "message": "Transfer ownership or demote before watching."
+          }
+        }
+      }
+    },
+    {
+      "name": "failedPromotionRetainsWatcher",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{probeClientId}",
+              "role": "spectator",
+              "status": "active"
+            }
+          ],
+          "memberCount": 2
+        }
+      }
+    },
+    {
+      "name": "directorySeparatesCounts",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory?includeEmpty=true",
+        "headers": {
+          "Authorization": "{observerAuthHeader}",
+          "x-client-id": "{observerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "groupRef": {
+                "groupId": "{groupId}"
+              },
+              "memberCount": 2,
+              "playerCount": 1,
+              "onlinePlayerCount": 0,
+              "spectatorCount": 1,
+              "maxSpectators": 1,
+              "isFull": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "expandPlayerCapacity",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/bb-spectating-expand-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "maxMembers": 2
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "promoteExplicitly",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-promote-{runId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {
+          "participation": "player"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{probeClientId}",
+              "role": "member",
+              "status": "active"
+            }
+          ],
+          "memberCount": 2
+        }
+      }
+    },
+    {
+      "name": "watchAgain",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-spectating-watch-again-{runId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {
+          "participation": "spectator"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{probeClientId}",
+              "role": "spectator",
+              "status": "active"
+            }
+          ],
+          "memberCount": 2
+        }
+      }
+    }
+  ],
+  "description": "Independent player/spectator capacity, role recovery, failed promotion, governed bypass denial, promotion and directory counts viewed by a nonmember through authenticated HTTP."
+}

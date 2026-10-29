@@ -126,6 +126,7 @@ export function toArenaDiagnosticsAttributes(
                 arena.rtcLanes.reduce((sum, lane) => sum + lane.readyPeers, 0)
         ),
         'data-arena-http-status': `${arena.httpDiagnostics.apiConfig.status}/${arena.httpDiagnostics.ice.status}`,
+        'data-arena-participation': arena.spectating ? 'spectator' : 'player',
         'data-arena-network-enabled': arena.networkEnabled ? 'true' : 'false'
     };
 }
