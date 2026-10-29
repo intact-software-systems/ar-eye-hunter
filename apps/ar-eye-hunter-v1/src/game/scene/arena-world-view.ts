@@ -12,7 +12,7 @@ import type {
     ArenaLayoutProp,
     ArenaLayoutSpec,
     Vec3Tuple
-} from '../types.ts';
+} from '../arena-contracts.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
 
 const MATRIX_SIGNS = [

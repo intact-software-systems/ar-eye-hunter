@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import { useCallback } from 'react';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -14,7 +14,7 @@ import {
     type GameRealtimeMessage,
     type RemotePlayer,
     type RemoteShot
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
 import { isCurrentArenaPlayerSession } from '../arena-participation.ts';
 import { toValidatedPlayerPose } from '../state/to-validated-player-pose.ts';
 import { acceptArenaDirectorShot } from './arena-director-peer-message.ts';

@@ -13,7 +13,7 @@ import {
     createAiDirectorMockProvider,
     createAiDirectorRequest,
     validateAiDirectorProposalValue
-} from '../aiDirector.ts';
+} from '../ai-director.ts';
 import { createInitialArenaState, toArenaSnapshot } from '../simulation.ts';
 import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from './arena-browser-ai-config.ts';
 import {

@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import '../setup-browser-indexeddb.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { act, createElement } from 'react';
@@ -12,6 +11,7 @@ import {
     it,
     vi
 } from 'vitest';
+import '../setup-browser-indexeddb.ts';
 
 import {
     applyRelicCommand,
@@ -879,6 +879,7 @@ function refusedHunterEvent(playerId: string): RelicHunterEvent {
         principalId: session.clientId,
         playerId,
         kind: 'command-refused',
+        completedGameId: null,
         command: 'continue-review',
         text: 'There is no review to continue.'
     };

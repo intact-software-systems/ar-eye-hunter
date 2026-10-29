@@ -1,17 +1,18 @@
-import {
-    useCallback,
-    useEffect,
-    useMemo
-} from 'react';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo
+} from 'react';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
+import type { RemotePlayer, RtcLaneStatus } from '../../arena-contracts.ts';
 import {
     deriveArenaLinkState,
     deriveArenaPresenceNotices,
@@ -19,8 +20,7 @@ import {
     type ArenaLinkState,
     type ArenaPresenceNotice,
     type ArenaPresencePlayerSummary
-} from '../../squadLink.ts';
-import type { RemotePlayer, RtcLaneStatus } from '../../types.ts';
+} from '../../squad-link.ts';
 import type { ArenaConnectionState, ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';
 
 interface ArenaPresenceLifecycleInput {
@@ -73,7 +73,7 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
         () =>
             toPresencePlayerSummaries(
                 remotePlayers,
-                (player) => (player as RemotePlayer).pose.username
+                (player) => player.pose.username
             ),
         [remotePlayers]
     );

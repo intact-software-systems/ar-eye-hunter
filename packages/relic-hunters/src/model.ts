@@ -1,4 +1,5 @@
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { isRallarGameRematch, type RallarGameRematch } from '@shared/rallar-game/rematch.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
@@ -15,6 +16,8 @@ export type RelicRoomKind =
 
 export type RelicActionKind = 'move' | 'search' | 'steal' | 'escape';
 
+export const RELIC_EXPEDITION_CAPACITY = 4;
+
 export const RELIC_GAME_PHASES = ['lobby', 'planning', 'review', 'finished'] as const;
 
 export type RelicGamePhase = (typeof RELIC_GAME_PHASES)[number];
@@ -25,13 +28,13 @@ export type RelicExpeditionSetupSource =
     | 'rallar-ai'
     | 'mock';
 
-export type RelicExpeditionSetupMetadata = Readonly<{
-    schemaVersion: 1;
-    source: RelicExpeditionSetupSource;
-    seed?: string;
-    theme?: string;
-    blueprintId?: string;
-}>;
+export interface RelicExpeditionSetupMetadata {
+    readonly schemaVersion: 1;
+    readonly source: RelicExpeditionSetupSource;
+    readonly seed?: string;
+    readonly theme?: string;
+    readonly blueprintId?: string;
+}
 
 export type RelicPublicSetupMetadata = Omit<RelicExpeditionSetupMetadata, 'seed' | 'blueprintId'>;
 
@@ -94,37 +97,37 @@ export type RelicAnimationCueType =
     | 'room_collapse'
     | 'heart_relic_victory';
 
-export type RelicAnimationCue = Readonly<{
-    type: RelicAnimationCueType;
-    roomId?: string;
-    fromRoomId?: string;
-    playerId?: string;
-    targetPlayerId?: string;
-    relicId?: string;
-    durationMs?: number;
-    intensity?: 'low' | 'medium' | 'high';
-}>;
+export interface RelicAnimationCue {
+    readonly type: RelicAnimationCueType;
+    readonly roomId?: string;
+    readonly fromRoomId?: string;
+    readonly playerId?: string;
+    readonly targetPlayerId?: string;
+    readonly relicId?: string;
+    readonly durationMs?: number;
+    readonly intensity?: 'low' | 'medium' | 'high';
+}
 
-export type RelicRoom = Readonly<{
-    id: string;
-    name: string;
-    kind: RelicRoomKind;
-    x: number;
-    z: number;
-    neighbors: readonly string[];
-    collapsed?: boolean;
-    unstable?: boolean;
-}>;
+export interface RelicRoom {
+    readonly id: string;
+    readonly name: string;
+    readonly kind: RelicRoomKind;
+    readonly x: number;
+    readonly z: number;
+    readonly neighbors: readonly string[];
+    readonly collapsed?: boolean;
+    readonly unstable?: boolean;
+}
 
-export type RelicDefinition = Readonly<{
-    id: string;
-    name: string;
-    value: number;
-    roomId: string;
-    foundBy?: string;
-    carriedBy?: string;
-    escapedBy?: string;
-}>;
+export interface RelicDefinition {
+    readonly id: string;
+    readonly name: string;
+    readonly value: number;
+    readonly roomId: string;
+    readonly foundBy?: string;
+    readonly carriedBy?: string;
+    readonly escapedBy?: string;
+}
 
 export type RelicRoomInvestigationResult = 'empty' | 'relic-found';
 
@@ -137,103 +140,135 @@ export type RelicRoomInvestigationEffect =
     | 'monster-trace'
     | 'exit-route';
 
-export type RelicRoomInvestigation = Readonly<{
-    roomId: string;
-    searchedByPlayerId: string;
-    searchedByUsername: string;
-    searchedAtRound: number;
-    searchedAtEpochMs: number;
-    result: RelicRoomInvestigationResult;
-    summary: string;
-    hint: string;
-    effect: RelicRoomInvestigationEffect;
-    danger?: string;
-    revealedRoomId?: string;
-    relicId?: string;
-}>;
+export interface RelicRoomInvestigation {
+    readonly roomId: string;
+    readonly searchedByPlayerId: string;
+    readonly searchedByUsername: string;
+    readonly searchedAtRound: number;
+    readonly searchedAtEpochMs: number;
+    readonly result: RelicRoomInvestigationResult;
+    readonly summary: string;
+    readonly hint: string;
+    readonly effect: RelicRoomInvestigationEffect;
+    readonly danger?: string;
+    readonly revealedRoomId?: string;
+    readonly relicId?: string;
+}
 
-export type RelicPlayer = Readonly<{
-    playerId: string;
-    username: string;
-    characterId: RelicCharacterId;
-    roomId: string;
-    health: number;
-    escaped: boolean;
-    defeated: boolean;
-    score: number;
-    relicIds: readonly string[];
+export interface RelicPlayer {
+    readonly playerId: string;
+    readonly username: string;
+    readonly characterId: RelicCharacterId;
+    readonly roomId: string;
+    readonly health: number;
+    readonly escaped: boolean;
+    readonly defeated: boolean;
+    readonly score: number;
+    readonly relicIds: readonly string[];
     /** Present only when a withdrawn escaped hunter remains as banked-score history. */
-    withdrawnAtEpochMs?: number;
-}>;
+    readonly withdrawnAtEpochMs?: number;
+}
 
-export type RelicActionInput = Readonly<{
-    kind: RelicActionKind;
-    targetRoomId?: string;
-    targetPlayerId?: string;
-}>;
+export interface RelicActionInput {
+    readonly kind: RelicActionKind;
+    readonly targetRoomId?: string;
+    readonly targetPlayerId?: string;
+}
 
-export type RelicPendingAction = Readonly<{
-    playerId: string;
-    username: string;
-    action: RelicActionInput;
-    submittedAtEpochMs: number;
-}>;
+export interface RelicPendingAction {
+    readonly playerId: string;
+    readonly username: string;
+    readonly action: RelicActionInput;
+    readonly submittedAtEpochMs: number;
+}
 
-export type RelicEvent = Readonly<{
-    id: string;
-    round: number;
-    type: RelicEventType;
-    message: string;
-    animationCue?: RelicAnimationCue;
-    tone?: 'neutral' | 'success' | 'danger' | 'mystery';
-    createdAtEpochMs: number;
-}>;
+export interface RelicEvent {
+    readonly id: string;
+    readonly round: number;
+    readonly type: RelicEventType;
+    readonly message: string;
+    readonly animationCue?: RelicAnimationCue;
+    readonly tone?: 'neutral' | 'success' | 'danger' | 'mystery';
+    readonly createdAtEpochMs: number;
+}
 
-export type RelicGameState = Readonly<{
-    protocolVersion: typeof RELIC_PROTOCOL_VERSION;
-    gameId: string;
-    roomId: string;
-    phase: RelicGamePhase;
-    round: number;
-    maxRounds: number;
-    createdAtEpochMs: number;
-    updatedAtEpochMs: number;
-    adminPlayerId?: string;
-    roundTimeLimitMs: number;
-    roundStartedAtEpochMs?: number;
-    map: readonly RelicRoom[];
-    relics: readonly RelicDefinition[];
-    roomInvestigations: readonly RelicRoomInvestigation[];
-    players: readonly RelicPlayer[];
-    pendingActions: readonly RelicPendingAction[];
-    events: readonly RelicEvent[];
-    winnerIds: readonly string[];
-    setup?: RelicExpeditionSetupMetadata;
-}>;
+export interface RelicGameState {
+    readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+    readonly gameId: string;
+    readonly roomId: string;
+    readonly phase: RelicGamePhase;
+    readonly round: number;
+    readonly maxRounds: number;
+    readonly createdAtEpochMs: number;
+    readonly updatedAtEpochMs: number;
+    readonly adminPlayerId?: string;
+    readonly roundTimeLimitMs: number;
+    readonly roundStartedAtEpochMs?: number;
+    readonly map: readonly RelicRoom[];
+    readonly relics: readonly RelicDefinition[];
+    readonly roomInvestigations: readonly RelicRoomInvestigation[];
+    readonly players: readonly RelicPlayer[];
+    readonly pendingActions: readonly RelicPendingAction[];
+    readonly events: readonly RelicEvent[];
+    readonly winnerIds: readonly string[];
+    readonly setup?: RelicExpeditionSetupMetadata;
+    /** Accepted preparation exists only while this completed expedition awaits another game. */
+    readonly rematch?: RelicRematch;
+}
 
-export type RelicPublicSnapshot = Readonly<{
-    protocolVersion: typeof RELIC_PROTOCOL_VERSION;
-    gameId: string;
-    roomId: string;
-    phase: RelicGamePhase;
-    round: number;
-    maxRounds: number;
-    createdAtEpochMs: number;
-    updatedAtEpochMs: number;
-    adminPlayerId?: string;
-    roundTimeLimitMs: number;
-    roundStartedAtEpochMs?: number;
-    map: readonly RelicRoom[];
-    relics: readonly RelicDefinition[];
-    roomInvestigations: readonly RelicRoomInvestigation[];
-    players: readonly RelicPlayer[];
-    submittedPlayerIds: readonly string[];
-    events: readonly RelicEvent[];
-    winnerIds: readonly string[];
-    setup?: RelicPublicSetupMetadata;
-}>;
+export interface RelicPublicSnapshot {
+    readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+    readonly gameId: string;
+    readonly roomId: string;
+    readonly phase: RelicGamePhase;
+    readonly round: number;
+    readonly maxRounds: number;
+    readonly createdAtEpochMs: number;
+    readonly updatedAtEpochMs: number;
+    readonly adminPlayerId?: string;
+    readonly roundTimeLimitMs: number;
+    readonly roundStartedAtEpochMs?: number;
+    readonly map: readonly RelicRoom[];
+    readonly relics: readonly RelicDefinition[];
+    readonly roomInvestigations: readonly RelicRoomInvestigation[];
+    readonly players: readonly RelicPlayer[];
+    readonly submittedPlayerIds: readonly string[];
+    readonly events: readonly RelicEvent[];
+    readonly winnerIds: readonly string[];
+    readonly setup?: RelicPublicSetupMetadata;
+    readonly rematch?: RelicRematch;
+}
+
+export interface RelicRematchHunter {
+    readonly playerId: string;
+    readonly username: string;
+    readonly characterId: RelicCharacterId;
+}
+
+export interface RelicRematch {
+    readonly preparation: RallarGameRematch;
+    readonly hunters: readonly RelicRematchHunter[];
+    readonly roundTimeLimitMs: number;
+}
+
+export type RelicRematchCommand =
+    & Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        gameId: string;
+        username: string;
+        completedGameId: string;
+        settingsKey: string;
+    }>
+    & (
+        | Readonly<
+            { kind: 'set-rematch-ready'; ready: boolean; characterId: RelicCharacterId; participationKey: string; }
+        >
+        | Readonly<{ kind: 'start-rematch'; }>
+        | Readonly<{ kind: 'set-rematch-round-limit'; timeLimitMs: number; }>
+    );
 
 export type RelicCommand =
+    | RelicRematchCommand
     | Readonly<{
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         kind: 'join-expedition';
@@ -293,11 +328,11 @@ export type RelicCommand =
         timeLimitMs: number;
     }>;
 
-export type RelicServerEvent = Readonly<{
-    protocolVersion: typeof RELIC_PROTOCOL_VERSION;
-    gameId: string;
-    snapshot: RelicPublicSnapshot;
-}>;
+export interface RelicServerEvent {
+    readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+    readonly gameId: string;
+    readonly snapshot: RelicPublicSnapshot;
+}
 
 export type RelicRoundTransition = 'round-started' | 'round-resolved' | 'review-continued' | 'finished';
 
@@ -339,6 +374,7 @@ export type RelicHunterEvent =
         principalId: string;
         playerId: string;
         kind: 'command-refused';
+        completedGameId: string | null;
         command: RelicCommand['kind'];
         text: string;
     }>;
@@ -379,7 +415,8 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
         events: state.events.slice(-48),
         winnerIds: state.winnerIds,
-        setup: toPublicSetup(state.setup)
+        setup: toPublicSetup(state.setup),
+        ...(state.rematch === undefined ? {} : { rematch: state.rematch })
     };
 }
 
@@ -433,6 +470,15 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
     }
 
     switch (value.kind) {
+        case 'set-rematch-ready':
+            return isRematchCommandIdentity(value) && typeof value.ready === 'boolean' &&
+                typeof value.participationKey === 'string' && value.participationKey.length > 0 &&
+                isRelicCharacterId(value.characterId);
+        case 'start-rematch':
+            return isRematchCommandIdentity(value);
+        case 'set-rematch-round-limit':
+            return isRematchCommandIdentity(value) && typeof value.timeLimitMs === 'number' &&
+                [60_000, 180_000, 300_000].includes(value.timeLimitMs);
         case 'join-expedition':
             return value.characterId === undefined || isRelicCharacterId(value.characterId);
         case 'start-expedition':
@@ -469,11 +515,15 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         Array.isArray(value.relics) && value.relics.every(isRelicDefinition) &&
         Array.isArray(value.roomInvestigations) &&
         value.roomInvestigations.every(isRelicRoomInvestigation) &&
-        Array.isArray(value.players) && value.players.every(isRelicPlayer) &&
+        Array.isArray(value.players) && value.players.length <= RELIC_EXPEDITION_CAPACITY &&
+        value.players.every(isRelicPlayer) &&
         Array.isArray(value.submittedPlayerIds) && value.submittedPlayerIds.every(isString) &&
         Array.isArray(value.events) && value.events.every(isRelicEvent) &&
         Array.isArray(value.winnerIds) && value.winnerIds.every(isString) &&
-        (value.setup === undefined || isRelicPublicSetupMetadata(value.setup));
+        (value.setup === undefined || isRelicPublicSetupMetadata(value.setup)) &&
+        (value.rematch === undefined || value.phase === 'finished' &&
+                isRelicRematch(value.rematch) && value.rematch.preparation.completedGameId ===
+                    toRelicRoundTrackKey({ gameId: value.gameId, createdAtEpochMs: value.createdAtEpochMs }));
 }
 
 export function decodeRelicSnapshotPayload(value: unknown): Either<TypeError, RelicPublicSnapshot> {
@@ -507,7 +557,9 @@ export function isRelicHunterEvent(value: unknown): value is RelicHunterEvent {
     if (value.kind === 'action-recorded') {
         return isFiniteNumber(value.round) && isRelicActionInput(value.action);
     }
-    return value.kind === 'command-refused' && isRelicCommandKind(value.command) && typeof value.text === 'string';
+    return value.kind === 'command-refused' && isRelicCommandKind(value.command) && typeof value.text === 'string' &&
+        (value.completedGameId === null ||
+            typeof value.completedGameId === 'string' && value.completedGameId.length > 0);
 }
 
 /** As a command's action is read: its kind decides the rest, which the rules validate. */
@@ -525,7 +577,10 @@ function isRelicCommandKind(value: unknown): value is RelicCommand['kind'] {
         'force-resolve-round',
         'pickup-relic',
         'continue-review',
-        'set-round-limit'
+        'set-round-limit',
+        'set-rematch-ready',
+        'start-rematch',
+        'set-rematch-round-limit'
     ]);
 }
 
@@ -726,4 +781,25 @@ function isOneOf<T extends string>(value: unknown, options: readonly T[]): value
 
 function isRecord(value: unknown): value is ApiJsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isRematchCommandIdentity(value: ApiJsonObject): boolean {
+    return typeof value.completedGameId === 'string' && value.completedGameId.length > 0 &&
+        typeof value.settingsKey === 'string' && value.settingsKey.length > 0;
+}
+
+function isRelicRematch(value: unknown): value is RelicRematch {
+    if (
+        !isRecord(value) || Object.keys(value).length !== 3 ||
+        !isRallarGameRematch(value.preparation, RELIC_EXPEDITION_CAPACITY) ||
+        !Array.isArray(value.hunters) || value.hunters.length !== value.preparation.players.length ||
+        typeof value.roundTimeLimitMs !== 'number' || ![60_000, 180_000, 300_000].includes(value.roundTimeLimitMs)
+    ) {
+        return false;
+    }
+    const players = value.preparation.players;
+    return value.hunters.every((hunter, index) =>
+        isRecord(hunter) && Object.keys(hunter).length === 3 && typeof hunter.username === 'string' &&
+        isRelicCharacterId(hunter.characterId) && hunter.playerId === players[index].sessionId
+    );
 }

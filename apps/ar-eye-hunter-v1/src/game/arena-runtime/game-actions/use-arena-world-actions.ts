@@ -1,15 +1,16 @@
-import { useCallback } from 'react';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import { useCallback } from 'react';
+import { createArenaRematch, type ArenaRematchCommand } from '../../arena-rematch.ts';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import { ARENA_EVENT_HEADLINE_MS, PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import {
     GAME_PROTOCOL,
     type ArenaEvent,
@@ -19,7 +20,10 @@ import {
     type ArenaSnapshot,
     type MatchStartIntent,
     type PickupIntent
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import { ARENA_EVENT_HEADLINE_MS } from '../../arena-events.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import { PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
@@ -42,7 +46,15 @@ interface ArenaWorldActionsInput extends Pick<ArenaMatchDelivery, 'publishMatchL
 
 export function useArenaWorldActions(
     input: ArenaWorldActionsInput
-): Pick<ArenaConnection, 'sendPickupIntent' | 'startArenaMatch' | 'publishArenaSnapshot'> {
+): Pick<
+    ArenaConnection,
+    | 'sendPickupIntent'
+    | 'startArenaMatch'
+    | 'publishArenaSnapshot'
+    | 'setRematchReady'
+    | 'startRematch'
+    | 'setRematchDuration'
+> {
     const sendPickupIntent = useCallback((intent: PickupIntent) => sendArenaPickupIntent(input, intent), [
         input.isNetworkEnabled,
         input.isCurrentNetworkGeneration,
@@ -66,7 +78,14 @@ export function useArenaWorldActions(
             input.scheduleReliableArenaSnapshot
         ]
     );
-    return { sendPickupIntent, startArenaMatch, publishArenaSnapshot };
+    return {
+        sendPickupIntent,
+        startArenaMatch,
+        publishArenaSnapshot,
+        setRematchReady: (ready) => sendArenaRematchCommand(input, { kind: 'ready', ready }),
+        startRematch: () => sendArenaRematchCommand(input, { kind: 'start' }),
+        setRematchDuration: (durationMs) => sendArenaRematchCommand(input, { kind: 'settings', durationMs })
+    };
 }
 
 /** The intent claims its pickup, so a pickup another session claimed first comes back `held-by-other`. */
@@ -121,6 +140,47 @@ async function startArenaMatchFromIntent(
         sentAtEpochMs: nowEpochMs
     };
     await match.sendIntent({ protocol: GAME_PROTOCOL, kind: 'match-start-intent', intent });
+}
+
+type ArenaRematchDraft =
+    | Readonly<{ kind: 'ready'; ready: boolean; }>
+    | Readonly<{ kind: 'start'; }>
+    | Readonly<{ kind: 'settings'; durationMs: ArenaMatchDurationMs; }>;
+
+async function sendArenaRematchCommand(input: ArenaWorldActionsInput, draft: ArenaRematchDraft): Promise<void> {
+    const session = input.sessionRef.current;
+    const match = input.arenaMatchRef.current;
+    const completed = input.arenaSnapshotRef.current?.match;
+    if (
+        !session || !match?.status().directorIsFresh || !input.isNetworkEnabled() || isCurrentArenaSpectator() ||
+        completed?.status !== 'complete'
+    ) {
+        return;
+    }
+    const rematch = completed.rematch ?? createArenaRematch(completed).right;
+    if (!rematch) {
+        return;
+    }
+    const participant = readRallarGameParticipants(rallar.rooms.state().currentRoom, input.nowMs()).find((entry) =>
+        entry.sessionId === session.sessionId
+    );
+    if (!participant) {
+        return;
+    }
+    const identity = {
+        sessionId: session.sessionId,
+        completedGameId: rematch.preparation.completedGameId,
+        settingsKey: rematch.preparation.settingsKey
+    };
+    const command: ArenaRematchCommand = draft.kind === 'ready'
+        ? { ...draft, ...identity, participationKey: participant.participationKey }
+        : { ...draft, ...identity };
+    const delivery = await match.sendIntent({ protocol: GAME_PROTOCOL, kind: 'match-rematch-intent', command });
+    if (delivery.status !== 'sent') {
+        throw new Error(
+            delivery.reason ?? `Rematch delivery ${delivery.status}. Confirm again after the director is ready.`
+        );
+    }
 }
 
 function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: ArenaSnapshot): void {

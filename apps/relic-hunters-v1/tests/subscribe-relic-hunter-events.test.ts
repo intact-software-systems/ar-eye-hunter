@@ -37,6 +37,7 @@ const REFUSED: RelicHunterEvent = {
     principalId: 'client-1',
     playerId: 'session-1',
     kind: 'command-refused',
+    completedGameId: null,
     command: 'force-resolve-round',
     text: 'Round timer has not expired.'
 };
@@ -105,7 +106,14 @@ describe('the Relic hunter channel', () => {
     });
 });
 
-function createFacadeDouble() {
+interface FacadeDouble {
+    readonly facade: RelicHunterEventFacade;
+    readonly roomDefinitions: RallarRoomMessageChannelDefinition[];
+    deliver(payload: RelicHunterEvent, message: RallarMessage<RelicHunterEvent>): Promise<void>;
+    subscribed(): boolean;
+}
+
+function createFacadeDouble(): FacadeDouble {
     const roomDefinitions: RallarRoomMessageChannelDefinition[] = [];
     const handlers: RallarTypedPayloadHandler<RelicHunterEvent>[] = [];
     function room<T>(definition: RallarRoomMessageChannelDefinition): RallarTypedMessageChannel<T> {

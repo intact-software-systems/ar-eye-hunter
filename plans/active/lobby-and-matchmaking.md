@@ -92,8 +92,7 @@ semantics and does not withdraw another session's hunter.
 
 The next-game candidates are the completed game's participants, plus eligible players who explicitly
 opt into its next game. Being a room member alone is not Relic expedition participation. Newcomers may
-opt in through the same visible flow and then become part of readiness. This cohort definition is a
-builder proposal: it avoids making an unrelated room visitor block the existing group's next game.
+opt in through the same visible flow and then become part of readiness. This cohort avoids making an unrelated room visitor block the existing group's next game.
 
 The leader must also opt in. Start requires at least one ready participant and every candidate who
 still has valid player membership and live server presence to be ready. A disconnected candidate stays
@@ -144,7 +143,7 @@ controls must not bypass the completed-game rematch guard.
 Relic retains visible read -> compute -> validate -> write(transaction, computed), one attempt per
 AppInbox delivery, optimistic save revision and outer QueueBox retry. Start reads fresh issued-session,
 membership, leader and candidate presence authority; its first conditional guard must fence the bounded
-presence observations that determined which candidates were eligible, including expired/absent
+presence and issued-authentication observations that determined which candidates were eligible, including expired/absent
 observations and recreation. A conflicting reconnect, departure, confirmation or authority change
 forces a complete reread/recompute rather than a stale start. No domain lock or handler retry loop.
 
@@ -154,6 +153,17 @@ state. A missing or stale authority snapshot produces resynchronization/waiting,
 local cached votes. Preserve the current authority-generation checks and test stale former-director
 messages. This slice does not promise durable recovery after every arena authority and replica has
 been lost; it preserves the current arena persistence contract.
+
+The real reload journey exposed a shared browser sender-sequence collision. Browser game envelopes
+now require the current admitted presence generation; receivers check it before sequence admission
+and include it in their sequence key. One facade-owned counter survives match-handle recreation.
+Explicit room entry on reload admits the new browser heartbeat generation; heartbeat recovery alone
+does not rotate it. Delayed former-generation packets cannot advance the current sequence window.
+
+Standards closure keeps arena match, targets, player movement, weapons, events and math in direct
+owners, with `arena-contracts.ts` as the app contract boundary. Relic admission, search, rematch,
+command draft/delivery and feedback have explicit owners; simulation and runtime retain their own
+state-transition lifecycles. No old-path re-export, old snapshot defaulting or migration is retained.
 
 The accepted next-game transition consumes preparation and creates the new activity once, with only
 the eligible consenting participants. Relic preserves their selected characters through canonical
@@ -180,15 +190,89 @@ change before replacing it.
 
 ### Implementation horizon and validation
 
-Only two implementation increments are concrete, both inside the same PR:
+Only two implementation increments are concrete, both inside the same PR. The design above is approved.
+Execution is inline with test-driven development and a fresh whole-branch review before handoff.
 
-1. Add the canonical preparation decisions and integrate them with both existing game authority paths.
-   Write failing semantic rule/authority tests first; prove readiness, cancellation, role/session
-   isolation, stale game identity, replay, concurrent start, departure/reconnect races and succession.
-2. Connect results/preparation controls and recovery in both apps. Extend the existing two-player
-   repeat-play journeys through visible Play again and leader Start controls into actual second-game
-   play. Include waiting for the other player, cancellation, an existing spectator, refused start,
-   leader departure, reconnect and a late old-game response. Verify the same room and accepted roster.
+**Goal:** coordinated results-to-second-game participation in both existing rooms.
+**Architecture:** share pure readiness decisions; retain the Relic AppInbox and AR Eye director as
+stateful authorities. UI consumes accepted snapshots and sends generation-bound commands.
+**Tech stack:** existing TypeScript, React, Vitest, Playwright, Deno and PostgreSQL; no new dependency.
+**Spec:** the current delivery design immediately above.
+
+**Global constraints:** no legacy path, migration code, duplicate algorithm or external dependency.
+Keep session identity distinct from membership; results remain visible until accepted start.
+
+**Review focus:** test the following at the owning boundary: a stale confirmation after settings
+change; a recreated presence row between read and commit; two simultaneous leader starts; a withdrawn
+or watching participant reconnecting; and an old response arriving after room/account replacement.
+
+#### Task 1: accepted preparation and one authoritative next game
+
+**Files and ownership:**
+
+- Add `packages/shared/rallar-game/rematch.ts` and mirrored
+  `packages/tests/shared/rallar-game-rematch.test.ts` for pure preparation, confirmation and start
+  eligibility. Direct imports keep the policy owner visible.
+- Integrate Relic contracts/rules in `packages/relic-hunters/src/model.ts` and `rules.ts`, durable
+  decoding in `server/relic-game-move.ts` and `server/decode-relic-game-state-app-data.ts`, and fresh
+  presence observations plus conditional guards in `server/relic-game-mutation-service.ts`.
+  Extend `packages/tests/relic-hunters/relic-game-mutation.test.ts` and add semantic rematch rule
+  coverage beside the existing continuity tests. Reuse initial proposal capture and player admission.
+- Integrate AR Eye accepted match state in `apps/ar-eye-hunter-v1/src/game/arena-contracts.ts`,
+  `simulation.ts`, the existing match intent handler and state acceptance runtime. Extend
+  `packages/tests/ar-eye-hunter-v1/simulation.test.ts` and the current match/runtime tests.
+
+**Interfaces:** `RallarGameRematch` holds `completedGameId`, `settingsKey`, and a bounded ordered
+roster of unconfirmed sessions or `{ sessionId, ready: true, participationKey }` confirmations. The captured membership identity changes after role/leave/rejoin, while transport reconnects preserve consent. `createRallarGameRematch` creates unconfirmed candidates;
+`setRallarGameRematchReady` validates the game/settings identity, eligible actor and capacity before
+an idempotent assignment. `changeRallarGameRematchSettings` clears confirmations on an actual settings
+change. `evaluateRallarGameRematchStart` consumes current eligible session IDs, the authenticated actor
+and current leader, and returns a typed refusal or the consenting session IDs. `isRallarGameRematch`
+validates the whole replicated shape. App-owned translations supply all authority observations.
+
+- [x] Write and run failing shared policy tests: the leader cannot start while Bob waits; cancellation
+      blocks again; an expired/non-player candidate is excluded; a same-session reconnect restores its
+      consent; a new session has none; visitors do not silently join; stale identities/settings are refused.
+- [x] Implement the pure shared decisions and run
+      `npx vitest run packages/tests/shared/rallar-game-rematch.test.ts`; expect all tests passing.
+- [x] Write failing Relic tests through `applyRelicCommand` and the real AppInbox/save boundary:
+      finished results remain unchanged while preparing, settings invalidate readiness, only Keeper starts,
+      a fresh expedition retains only consenting hunters and their characters, duplicate start creates one
+      game, stale requests cannot reset it, and concurrent presence replacement forces reread/recompute.
+- [x] Extend the current Relic command path and canonical player construction. Preserve
+      read -> compute -> validate -> write, outer retry, fresh authorization and insert-only outbox.
+      Run `npx vitest run packages/tests/relic-hunters`; expect all tests passing, then the affected live
+      PostgreSQL race/replay cases against an isolated migrated database.
+- [x] Write failing AR Eye authority tests: current director plus all eligible confirmations required,
+      old director/game/settings rejected, second match has a fresh scoring baseline for consenting players,
+      and replacement director uses accepted preparation. Integrate through existing match intents/snapshots.
+- [x] Run focused AR Eye/shared game tests and package typechecks; expect zero failures. Commit the
+      coherent authoritative paths with their tests. Record any changed interface here before its UI use.
+
+#### Task 2: both clickable results-to-repeat-play journeys
+
+**Files and ownership:** AR Eye results controls belong in
+`apps/ar-eye-hunter-v1/src/arena-ui/match-winner-overlay.tsx`, connected through the existing arena
+runtime and `app.tsx`. Relic results controls belong in `src/game/hud/relic-score.tsx`, connected
+through `relic-hunters-runtime.ts` and its view model. Existing start/reset controls must use the
+completed-game guard. Extend `tests/playwright/ar-eye-hunter/quick-join.spec.ts` and
+`tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts` rather than duplicating journeys.
+
+**Interfaces:** consume accepted `RallarGameRematch` in snapshots; send readiness/settings/start
+commands bound to the completed game through each existing authority runtime. Pending, refusal and
+uncertain requests remain runtime state and never become accepted votes in browser storage.
+
+- [x] Write failing browser/runtime tests through visible Play again, withdraw and leader Start
+      controls. Verify waiting, cancellation, spectators, a refused early start, reconnect and leader
+      succession, then accepted second-game actions by both players in the original room.
+- [x] Add controls and runtime actions using the current HUD and notification/concurrency primitives.
+      Fence old room/account responses; leave results and errors visible until authority accepts start.
+- [x] Run both app test commands and
+      `npm --workspace ar-eye-hunter-v1 run build` plus
+      `npm --workspace relic-hunters-v1 run build`; expect zero test/build failures. Run both existing
+      game-room Playwright configurations for the affected journeys; expect actual second-game play.
+- [ ] Run the required mutation/load/performance and delivery gates below, review changed files and
+      whole-branch behavior, publish the complete feature and evidence in the same PR, then wait for merge.
 
 Run focused shared/game/runtime tests, affected package typechecks, both app builds and native Relic
 server checks. Extend game-owned HTTP/OpenAPI and black-box contracts if command behavior changes.

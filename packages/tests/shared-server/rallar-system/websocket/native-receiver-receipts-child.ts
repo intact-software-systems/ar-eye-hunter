@@ -319,6 +319,7 @@ function createNativeReceiptEvent(originPeerId: string, roomRef: GroupRef): ALMe
         kind: 'event',
         roomRef,
         senderId: originPeerId,
+        senderGenerationId: 'generation-' + originPeerId,
         seq: 1,
         directorEpoch: 1,
         payload: { kind: 'match-started', roomRef }

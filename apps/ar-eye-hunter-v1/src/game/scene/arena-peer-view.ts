@@ -5,13 +5,13 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import type { Scene } from '@babylonjs/core/scene.js';
-import { avatarAccentForPalette } from '../avatarProfile.ts';
 import type {
     PlayerArenaState,
     PlayerPose,
     RemotePlayer,
     RemoteShot
-} from '../types.ts';
+} from '../arena-contracts.ts';
+import { avatarAccentForPalette } from '../avatarProfile.ts';
 import type { RemoteAvatar } from './arena-scene-contracts.ts';
 import { createImpact, createTracer } from './arena-scene-effects.ts';
 import { clamp, vector3 } from './arena-scene-geometry.ts';

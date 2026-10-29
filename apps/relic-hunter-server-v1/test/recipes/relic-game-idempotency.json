@@ -1,5 +1,5 @@
 {
-  "description": "Real Relic HTTP commands: issued identity, URL scope, idempotency, full round progression and escape, reset replay, withdrawal quorum, continuity command replay and authority, absent hunters and archived-room fencing. Physical seven-day purge is covered by database-clock integration tests.",
+  "description": "Real Relic HTTP commands: issued identity, URL scope, idempotency, full round progression and escape, leader-started rematch readiness and exact replay, withdrawal quorum, continuity command replay and authority, absent hunters and archived-room fencing. Physical seven-day purge is covered by database-clock integration tests.",
   "variables": {
     "apiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -1003,7 +1003,7 @@
       }
     },
     {
-      "name": "resetFinishedGame",
+      "name": "finishedResetCannotBypassConsent",
       "type": "http",
       "connection": "api",
       "request": {
@@ -1012,17 +1012,369 @@
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "captureCompletedGameId",
+      "type": "set",
+      "output": "completedGameId",
+      "transform": {
+        "concat": [
+          "{gameId}",
+          ":",
+          {
+            "path": "outputs.initialCreatedAt"
+          }
+        ]
+      }
+    },
+    {
+      "name": "connectRematchalice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/rallar-server/workspaces/default/groups/{gameId}/sessions/{aliceSessionId}/requests/rematch-presence-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "rematch-alice-{runId}",
+          "connectionGenerationId": "rematch-connection-alice-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectRematchbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/rallar-server/workspaces/default/groups/{gameId}/sessions/{bobSessionId}/requests/rematch-presence-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "rematch-bob-{runId}",
+          "connectionGenerationId": "rematch-connection-bob-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "readRematchMemberships",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/rallar-server/workspaces/default/groups/{gameId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
         },
         "outputs": {
-          "resetCreatedAt": "body.createdAtEpochMs"
+          "rematchMembers": "body.members"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "selectRematchMemberalice",
+      "type": "set",
+      "output": "aliceMember",
+      "transform": {
+        "if": {
+          "condition": {
+            "equals": [
+              {
+                "path": "outputs.rematchMembers.0.principalId"
+              },
+              "{aliceClientId}"
+            ]
+          },
+          "then": {
+            "path": "outputs.rematchMembers.0"
+          },
+          "else": {
+            "path": "outputs.rematchMembers.1"
+          }
+        }
+      }
+    },
+    {
+      "name": "captureParticipationalice",
+      "type": "set",
+      "output": "aliceParticipationKey",
+      "transform": {
+        "jsonStringify": [
+          {
+            "path": "outputs.aliceMember.applicationId"
+          },
+          {
+            "path": "outputs.aliceMember.workspaceId"
+          },
+          {
+            "path": "outputs.aliceMember.groupId"
+          },
+          {
+            "path": "outputs.aliceMember.principalId"
+          },
+          {
+            "path": "outputs.aliceMember.role"
+          },
+          {
+            "path": "outputs.aliceMember.updated.atEpochMs"
+          },
+          {
+            "path": "outputs.aliceMember.updated.requestId"
+          },
+          {
+            "path": "outputs.aliceMember.updated.traceId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "selectRematchMemberbob",
+      "type": "set",
+      "output": "bobMember",
+      "transform": {
+        "if": {
+          "condition": {
+            "equals": [
+              {
+                "path": "outputs.rematchMembers.0.principalId"
+              },
+              "{bobClientId}"
+            ]
+          },
+          "then": {
+            "path": "outputs.rematchMembers.0"
+          },
+          "else": {
+            "path": "outputs.rematchMembers.1"
+          }
+        }
+      }
+    },
+    {
+      "name": "captureParticipationbob",
+      "type": "set",
+      "output": "bobParticipationKey",
+      "transform": {
+        "jsonStringify": [
+          {
+            "path": "outputs.bobMember.applicationId"
+          },
+          {
+            "path": "outputs.bobMember.workspaceId"
+          },
+          {
+            "path": "outputs.bobMember.groupId"
+          },
+          {
+            "path": "outputs.bobMember.principalId"
+          },
+          {
+            "path": "outputs.bobMember.role"
+          },
+          {
+            "path": "outputs.bobMember.updated.atEpochMs"
+          },
+          {
+            "path": "outputs.bobMember.updated.requestId"
+          },
+          {
+            "path": "outputs.bobMember.updated.traceId"
+          }
+        ]
+      }
+    },
+    {
+      "type": "include",
+      "include": {
+        "path": "../../../../packages/shared-test/black-box-runner/tests/app-inbox/command-replay.json",
+        "nameSuffix": "readyAgainAlice",
+        "variables": {
+          "commandPath": "/api/relic/games/{gameId}/commands/requests/readyAgainAlice-{runId}",
+          "commandHeaders": {
+            "Authorization": "{aliceAuthHeader}",
+            "x-client-id": "{aliceClientId}"
+          },
+          "commandBody": {
+            "protocolVersion": 1,
+            "completedGameId": "{completedGameId}",
+            "settingsKey": "round-limit:60000:0",
+            "kind": "set-rematch-ready",
+            "ready": true,
+            "characterId": "kael-ironstride",
+            "participationKey": "{aliceParticipationKey}"
+          },
+          "changedCommandBody": {
+            "protocolVersion": 1,
+            "completedGameId": "{completedGameId}",
+            "settingsKey": "round-limit:60000:0",
+            "kind": "set-rematch-ready",
+            "ready": false,
+            "characterId": "kael-ironstride",
+            "participationKey": "{aliceParticipationKey}"
+          },
+          "expectedCommandBody": {
+            "phase": "finished"
+          }
+        }
+      }
+    },
+    {
+      "name": "cannotStartBeforeBobReady",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/cannotStartBeforeBobReady-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "completedGameId": "{completedGameId}",
+          "settingsKey": "round-limit:60000:0",
+          "kind": "start-rematch"
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "readyAgainBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/readyAgainBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "completedGameId": "{completedGameId}",
+          "settingsKey": "round-limit:60000:0",
+          "kind": "set-rematch-ready",
+          "ready": true,
+          "characterId": "nyra-vale",
+          "participationKey": "{bobParticipationKey}"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "phase": "lobby",
-          "players": []
+          "phase": "finished"
         }
+      }
+    },
+    {
+      "name": "nonKeeperCannotStartRematch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/nonKeeperCannotStartRematch-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "completedGameId": "{completedGameId}",
+          "settingsKey": "round-limit:60000:0",
+          "kind": "start-rematch"
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "type": "include",
+      "include": {
+        "path": "../../../../packages/shared-test/black-box-runner/tests/app-inbox/command-replay.json",
+        "nameSuffix": "startRematch",
+        "variables": {
+          "commandPath": "/api/relic/games/{gameId}/commands/requests/startRematch-{runId}",
+          "commandHeaders": {
+            "Authorization": "{aliceAuthHeader}",
+            "x-client-id": "{aliceClientId}"
+          },
+          "commandBody": {
+            "protocolVersion": 1,
+            "completedGameId": "{completedGameId}",
+            "settingsKey": "round-limit:60000:0",
+            "kind": "start-rematch"
+          },
+          "changedCommandBody": {
+            "protocolVersion": 1,
+            "completedGameId": "{completedGameId}",
+            "settingsKey": "different-settings",
+            "kind": "start-rematch"
+          },
+          "expectedCommandBody": {
+            "phase": "planning",
+            "round": 1,
+            "players": [
+              {
+                "playerId": "{aliceSessionId}",
+                "score": 0
+              },
+              {
+                "playerId": "{bobSessionId}",
+                "score": 0
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "staleReadyCannotAffectSecondGame",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/relic/games/{gameId}/commands/requests/staleReadyCannotAffectSecondGame-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "protocolVersion": 1,
+          "completedGameId": "{completedGameId}",
+          "settingsKey": "round-limit:60000:0",
+          "kind": "set-rematch-ready",
+          "ready": true,
+          "characterId": "kael-ironstride",
+          "participationKey": "{aliceParticipationKey}"
+        }
+      },
+      "expect": {
+        "status": 409
       }
     },
     {
@@ -1040,78 +1392,10 @@
       "expect": {
         "status": 200,
         "body": {
-          "createdAtEpochMs": "{resetCreatedAt}",
-          "players": [],
-          "phase": "lobby"
+          "phase": "planning",
+          "round": 1,
+          "createdAtEpochMs": "{replayedAppCommand.createdAtEpochMs}"
         }
-      }
-    },
-    {
-      "name": "rejoinAlice",
-      "type": "http",
-      "connection": "api",
-      "request": {
-        "method": "POST",
-        "path": "/api/relic/games/{gameId}/commands/requests/rejoinAlice-{runId}",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "protocolVersion": 1,
-          "kind": "join-expedition",
-          "gameId": "body-room-must-not-win",
-          "username": "untrusted-body-name",
-          "characterId": "kael-ironstride"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "rejoinBob",
-      "type": "http",
-      "connection": "api",
-      "request": {
-        "method": "POST",
-        "path": "/api/relic/games/{gameId}/commands/requests/rejoinBob-{runId}",
-        "headers": {
-          "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
-        },
-        "body": {
-          "protocolVersion": 1,
-          "kind": "join-expedition",
-          "gameId": "body-room-must-not-win",
-          "username": "untrusted-body-name",
-          "characterId": "nyra-vale"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "restartWithBothHunters",
-      "type": "http",
-      "connection": "api",
-      "request": {
-        "method": "POST",
-        "path": "/api/relic/games/{gameId}/commands/requests/restartWithBothHunters-{runId}",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "protocolVersion": 1,
-          "kind": "start-expedition",
-          "gameId": "body-room-must-not-win",
-          "username": "untrusted-body-name"
-        }
-      },
-      "expect": {
-        "status": 200
       }
     },
     {

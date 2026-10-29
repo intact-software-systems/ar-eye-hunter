@@ -5,7 +5,7 @@ import {
     resetTouchPointer,
     updateTouchPointer,
     type Point2
-} from '../mobileInput.ts';
+} from '../mobile-input.ts';
 import type { MutableButtonAction, MutableInputState } from './arena-scene-contracts.ts';
 import { createScanPulse } from './arena-scene-effects.ts';
 import { triggerHaptic, unlockArenaAudio } from './arena-scene-feedback.ts';
@@ -68,12 +68,12 @@ export class ArenaTouchInput {
         }
         unlockArenaAudio(runtime);
         safeSetPointerCapture(event.currentTarget, event.pointerId);
-        runtime.touchState = updateTouchPointer(
-            runtime.touchState,
-            'move',
-            event.pointerId,
-            this.pointFromPointer(event)
-        );
+        runtime.touchState = updateTouchPointer({
+            state: runtime.touchState,
+            role: 'move',
+            pointerId: event.pointerId,
+            point: this.pointFromPointer(event)
+        });
         this.updateMoveStick(runtime);
     };
 
@@ -83,12 +83,12 @@ export class ArenaTouchInput {
             return;
         }
         event.preventDefault();
-        runtime.touchState = updateTouchPointer(
-            runtime.touchState,
-            'move',
-            event.pointerId,
-            this.pointFromPointer(event)
-        );
+        runtime.touchState = updateTouchPointer({
+            state: runtime.touchState,
+            role: 'move',
+            pointerId: event.pointerId,
+            point: this.pointFromPointer(event)
+        });
         this.updateMoveStick(runtime);
     };
 
@@ -115,12 +115,12 @@ export class ArenaTouchInput {
         }
         unlockArenaAudio(runtime);
         safeSetPointerCapture(event.currentTarget, event.pointerId);
-        runtime.touchState = updateTouchPointer(
-            runtime.touchState,
-            'look',
-            event.pointerId,
-            this.pointFromPointer(event)
-        );
+        runtime.touchState = updateTouchPointer({
+            state: runtime.touchState,
+            role: 'look',
+            pointerId: event.pointerId,
+            point: this.pointFromPointer(event)
+        });
         runtime.inputDevice = runtime.mobileSettings.gyroEnabled ? 'gyro-touch' : 'touch';
         runtime.mobileControlsEnabled = true;
     };
@@ -140,7 +140,12 @@ export class ArenaTouchInput {
             );
             applyLook(runtime, delta.yawDelta, delta.pitchDelta);
         }
-        runtime.touchState = updateTouchPointer(runtime.touchState, 'look', event.pointerId, point);
+        runtime.touchState = updateTouchPointer({
+            state: runtime.touchState,
+            role: 'look',
+            pointerId: event.pointerId,
+            point: point
+        });
         event.preventDefault();
     };
 

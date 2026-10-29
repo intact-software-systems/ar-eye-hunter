@@ -6,17 +6,18 @@ import {
     type RallarAiJsonSchema
 } from '@shared/rallar-ai/mod.ts';
 
-import { ARENA_LAYOUT_SCHEMA_ID, ARENA_LAYOUT_SCHEMA_VERSION, validateArenaLayoutSpec } from './arenaLayout.ts';
-import { arenaRevisionKey, type ArenaSimulationState } from './simulation.ts';
 import {
     type AiDirectorProposal,
     type AiDirectorProposalValue,
     type ArenaEvent,
     type ArenaEventKind,
     type ArenaLayoutSpec,
+    type ArenaSimulationState,
     type ArenaSnapshot,
     type TargetRarity
-} from './types.ts';
+} from './arena-contracts.ts';
+import { ARENA_LAYOUT_SCHEMA_ID, ARENA_LAYOUT_SCHEMA_VERSION, validateArenaLayoutSpec } from './arena-layout.ts';
+import { arenaRevisionKey } from './simulation.ts';
 
 export const AI_DIRECTOR_SCHEMA_ID = 'ar-eye-hunter.ai-director-event';
 export const AI_DIRECTOR_SCHEMA_VERSION = '1';
@@ -194,21 +195,21 @@ export function validateAiArenaLayoutProposal(value: unknown): AiLayoutValidatio
         : { ok: false, reason: validation.reason, layout: validation.layout };
 }
 
-export type AiDirectorContext = Readonly<{
-    roomId?: string;
-    revision: number;
-    activeEventKind?: ArenaEventKind;
-    waveNumber: number;
-    wavePhase: ArenaSimulationState['wave']['phase'];
-    targetCount: number;
-    hostileCount: number;
-    bountyCount: number;
-    targets: readonly Readonly<{
+export interface AiDirectorContext {
+    readonly roomId?: string;
+    readonly revision: number;
+    readonly activeEventKind?: ArenaEventKind;
+    readonly waveNumber: number;
+    readonly wavePhase: ArenaSimulationState['wave']['phase'];
+    readonly targetCount: number;
+    readonly hostileCount: number;
+    readonly bountyCount: number;
+    readonly targets: readonly Readonly<{
         id: string;
         rarity: TargetRarity;
         health: number;
     }>[];
-}>;
+}
 
 export function buildAiDirectorContext(
     state: ArenaSimulationState,
@@ -284,10 +285,10 @@ export function validateAiDirectorProposalValue(
     if (targetId && !snapshot.targets.some((target) => target.id === targetId)) {
         return { ok: false, reason: 'AI proposal target id is not in the arena.' };
     }
-    const durationMs = clampNumber(event['durationMs'], 2_500, 16_000, 8_000);
-    const radius = clampNumber(event['radius'], 1, 12, undefined);
-    const intensity = clampNumber(event['intensity'], 0.25, 4, 1);
-    const scoreBonus = clampNumber(event['scoreBonus'], 25, 500, undefined);
+    const durationMs = clampNumber({ value: event['durationMs'], min: 2_500, max: 16_000, fallback: 8_000 });
+    const radius = clampNumber({ value: event['radius'], min: 1, max: 12, fallback: undefined });
+    const intensity = clampNumber({ value: event['intensity'], min: 0.25, max: 4, fallback: 1 });
+    const scoreBonus = clampNumber({ value: event['scoreBonus'], min: 25, max: 500, fallback: undefined });
     const rarity = typeof event['rarity'] === 'string' &&
             ALLOWED_RARITIES.includes(event['rarity'] as TargetRarity)
         ? event['rarity'] as TargetRarity
@@ -379,12 +380,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function clampNumber(
-    value: unknown,
-    min: number,
-    max: number,
-    fallback: number | undefined
-): number | undefined {
+interface AiProposalNumber {
+    readonly value: unknown;
+    readonly min: number;
+    readonly max: number;
+    readonly fallback: number | undefined;
+}
+function clampNumber({ value, min, max, fallback }: AiProposalNumber): number | undefined {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         return fallback;
     }

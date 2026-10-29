@@ -226,7 +226,7 @@ function ArenaMatchControls({ arena, matchRemainingMs }: Pick<ArenaOperationsPro
                         key={duration}
                         disabled={arena.spectating || !arena.directorStatus.isDirector ||
                             !arena.directorStatus.isFresh ||
-                            match?.status === 'active'}
+                            match !== undefined}
                         onClick={() => void arena.startArenaMatch(duration)}
                     >
                         {duration / 60_000}m

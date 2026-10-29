@@ -20,8 +20,8 @@ import {
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
 
 import { useArenaPresentation } from '../../../apps/ar-eye-hunter-v1/src/arena-ui/arena-presentation.tsx';
+import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 const arena = new ArenaRuntimeTestHarness();
 beforeEach(() => arena.reset());
@@ -86,6 +86,7 @@ async function receiveSnapshot(snapshot: ArenaSnapshot): Promise<void> {
             kind: 'snapshot',
             roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
             senderId: 'director',
+            senderGenerationId: 'generation-' + ('director'),
             seq: 1,
             directorEpoch: 1,
             sentAtEpochMs: snapshot.sentAtEpochMs,
@@ -101,6 +102,7 @@ function activeSnapshot(revision: number, now: number): ArenaSnapshot {
         match: {
             matchId: 'match-1',
             status: 'active',
+            enrollment: 'open',
             durationMs: 60_000,
             directorSessionId: 'director',
             startedAtEpochMs: now,

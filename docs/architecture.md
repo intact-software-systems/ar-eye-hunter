@@ -177,6 +177,18 @@ envelope remains logical command in `data`, captured ingress in `authority` and
 actor session in `senderId`, decoded and result-bound without conversion. REST commands and resets carry request IDs; replay returns the durable outcome
 followed by a fresh authorized snapshot read, so a prior response cannot resurrect a reset or deletion.
 
+Same-room rematches share pure preparation/readiness policy in `packages/shared/rallar-game/rematch.ts`.
+Relic binds readiness to the completed expedition, selected settings and exact membership identity.
+Its first group CAS also compares the bounded candidate presence and issued-authentication rows,
+including absent/expired observations, before save/outbox completion. A conflicting reconnect or
+revocation causes the existing AppInbox retry to reread and recompute. The next expedition proposal
+is captured once; exact readiness/start replay cannot generate or save another game.
+
+AR Eye retains director authority and replicated preparation. Shared browser game envelopes carry the
+server-admitted sender presence generation, checked before receiver sequence admission. Counters
+belong to the browser facade, so recreating a match handle cannot reuse sequence numbers; a new
+admitted generation starts a separate receive window and fences delayed old-browser messages.
+
 ## Data, CRDT, Motion, and Game stay separate
 
 These are different authorities, not different transports for the same fact.

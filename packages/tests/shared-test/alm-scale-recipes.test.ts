@@ -9,7 +9,7 @@ import type {
     ArenaMatchPlayerBaseline,
     ArenaMatchState,
     GameRealtimeMessage
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
@@ -44,6 +44,7 @@ function createExpectedMatch(): ArenaMatchState {
     return {
         matchId: 'match:scale-room:1802088000000:60000',
         status: 'active',
+        enrollment: 'open',
         durationMs: 60_000,
         directorSessionId: '{auth.sessionId}',
         startedAtEpochMs: 1_802_088_000_000,

@@ -4,6 +4,7 @@ import type { RelicPreferences } from '../use-relic-preferences.ts';
 import type { RelicTurn } from '../use-relic-turn.ts';
 import { SceneMinimapOverlay } from './relic-map.tsx';
 import { RoomActionNudge } from './relic-plan.tsx';
+import { RelicRematchControls } from './relic-rematch-controls.tsx';
 import { VictoryPanel } from './relic-score.tsx';
 
 interface RelicOverlaysProps {
@@ -124,7 +125,11 @@ export function RelicOverlays({ game, turn, preferences, playback }: RelicOverla
                     <span>The castle answers…</span>
                 </div>
             )}
-            {game.snapshot?.phase === 'finished' && <VictoryPanel snapshot={game.snapshot} />}
+            {game.snapshot?.phase === 'finished' && (
+                <VictoryPanel snapshot={game.snapshot}>
+                    <RelicRematchControls game={game} />
+                </VictoryPanel>
+            )}
             {remaining !== null && remaining > 0 && remaining <= 10_000 && turn.planning &&
                 !turn.viewModel.turnStatus.isLocked && (
                 <div className="round-countdown-overlay" role="status" aria-live="assertive">

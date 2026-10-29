@@ -9,10 +9,14 @@ import {
     type RallarGameEnvelopeKind,
     type RallarGameSequenceTracker
 } from '../envelopes.ts';
-import type { RallarGameEnvelopeHandler, RallarGameMatchConfig } from './rallar-game-match-contracts.ts';
+import type {
+    RallarGameEnvelopeHandler,
+    RallarGameMatchConfig,
+    RallarGameRallarFacade
+} from './rallar-game-match-contracts.ts';
 import type { RallarGameMatchEgressRuntime } from './rallar-game-match-egress-runtime.ts';
 import type { RallarGameMatchStatusRuntime } from './rallar-game-match-status-runtime.ts';
-import { readRallarGameSessionRole } from './rallar-game-participation.ts';
+import { readRallarGameSessionGeneration, readRallarGameSessionRole } from './rallar-game-participation.ts';
 
 export namespace RallarGameMatchRoutingRuntime {
     export interface Input<TInput, TIntent, TSnapshot, TEvent, TPresence> {
@@ -28,7 +32,9 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
     private readonly input: RallarGameMatchRoutingRuntime.Input<TInput, TIntent, TSnapshot, TEvent, TPresence>;
     private readonly sequenceTracker: RallarGameSequenceTracker = createRallarGameSequenceTracker();
     private readonly presenceHandlers = new Set<RallarGameEnvelopeHandler<TPresence>>();
-    private nextSequence = 1;
+    // The facade survives match-handle recreation. A reload gets a newly admitted presence
+    // generation, while every handle in this browser shares one monotonic sender counter.
+    private static readonly senderSequences = new WeakMap<RallarGameRallarFacade, number>();
 
     constructor(
         input: RallarGameMatchRoutingRuntime.Input<TInput, TIntent, TSnapshot, TEvent, TPresence>
@@ -55,13 +61,24 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
             throw new Error('Cannot create Rallar Game envelope without a local session.');
         }
 
+        const senderGenerationId = readRallarGameSessionGeneration(
+            this.input.config.rallar.rooms.state(),
+            senderId,
+            room
+        );
+        if (!senderGenerationId) {
+            throw new Error('Cannot create Rallar Game envelope without admitted room presence.');
+        }
+        const seq = (RallarGameMatchRoutingRuntime.senderSequences.get(this.input.config.rallar) ?? 0) + 1;
+        RallarGameMatchRoutingRuntime.senderSequences.set(this.input.config.rallar, seq);
         return createRallarGameEnvelope({
             protocol: this.input.config.protocol,
             kind,
             roomRef,
             matchId: this.input.config.matchId,
             senderId,
-            seq: this.nextSequence++,
+            senderGenerationId,
+            seq,
             directorEpoch: options.directorEpoch,
             sentAtEpochMs: options.sentAtEpochMs,
             payload
@@ -83,6 +100,14 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
             this.input.readRoomTarget()
         );
         if (role === undefined || (role === 'spectator' && kind !== 'sync-request')) {
+            return false;
+        }
+        const generation = readRallarGameSessionGeneration(
+            this.input.config.rallar.rooms.state(),
+            envelope.senderId,
+            this.input.readRoomTarget()
+        );
+        if (!generation || envelope.senderGenerationId !== generation) {
             return false;
         }
         const status = this.input.status.current;

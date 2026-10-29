@@ -7,7 +7,7 @@ import {
     createDefaultArenaAudioSettings,
     normalizeArenaAudioSettings,
     shouldPlayArenaAudioVoice
-} from '../../../apps/ar-eye-hunter-v1/src/game/arenaAudio.ts';
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-audio.ts';
 
 describe('AR Eye Hunter arena audio', () => {
     it('keeps defaults audible but restrained', () => {

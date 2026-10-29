@@ -5,21 +5,17 @@ import {
     type SetStateAction
 } from 'react';
 
-import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { BabylonArena } from '../game/babylon-arena.tsx';
-import { colorForId } from '../game/color.ts';
-import {
-    createInitialCombatState,
-    createInitialLoadoutState,
-    createInitialVitalsState,
-    getWeaponStats
-} from '../game/simulation.ts';
 import type {
     ArenaMatchState,
     PlayerCombatState,
     PlayerLoadoutState,
     PlayerVitalsState
-} from '../game/types.ts';
+} from '../game/arena-contracts.ts';
+import { createInitialCombatState, createInitialVitalsState } from '../game/arena-player-state.ts';
+import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
+import { createInitialLoadoutState, getWeaponStats } from '../game/arena-weapons.ts';
+import { BabylonArena } from '../game/babylon-arena.tsx';
+import { colorForId } from '../game/color.ts';
 import { SquadLinkChip } from './squad-link-chip.tsx';
 import { toDirectorLabel, toMatchLabel } from './to-arena-labels.ts';
 
@@ -38,7 +34,6 @@ interface ArenaPresentation {
     readonly localColor: string;
     readonly matchRemainingMs: number;
     readonly winnerMatch: ArenaMatchState | undefined;
-    readonly setDismissedMatchId: Dispatch<SetStateAction<string | undefined>>;
 }
 
 export interface ArenaPresentationProps {
@@ -58,14 +53,12 @@ export function useArenaPresentation(arena: ArenaConnection, nowMs: () => number
     const [localCombat, setLocalCombat] = useState(createInitialCombatState);
     const [localVitals, setLocalVitals] = useState(createInitialVitalsState);
     const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
-    const [dismissedMatchId, setDismissedMatchId] = useState<string | undefined>();
     const [clock, setClock] = useState<ArenaPresentationClock>(() => ({ matchId: undefined, nowEpochMs: nowMs() }));
     const match = arena.arenaSnapshot?.match;
     useEffect(() => {
-        if (match?.status !== 'active') {
+        if (!match) {
             return;
         }
-        setDismissedMatchId(undefined);
         const interval = window.setInterval(() => setClock({ matchId: match.matchId, nowEpochMs: nowMs() }), 500);
         return () => window.clearInterval(interval);
     }, [match?.status, match?.matchId, nowMs]);
@@ -79,8 +72,7 @@ export function useArenaPresentation(arena: ArenaConnection, nowMs: () => number
         setLocalLoadout,
         localColor: colorForId(arena.session?.sessionId ?? 'local'),
         matchRemainingMs: match?.status === 'active' ? Math.max(0, match.endsAtEpochMs - clockNow) : 0,
-        winnerMatch: match?.status === 'complete' && dismissedMatchId !== match.matchId ? match : undefined,
-        setDismissedMatchId
+        winnerMatch: match?.status === 'complete' ? match : undefined
     };
 }
 

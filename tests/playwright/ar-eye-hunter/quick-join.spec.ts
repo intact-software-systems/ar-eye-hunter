@@ -133,12 +133,35 @@ roomBrowserTest(
         );
         await bob.screenshot({ path: testInfo.outputPath('quick-join-results.png'), fullPage: true });
         await roomBrowserTest.step('room-journey:repeat-play', async () => {
-            await aliceResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
-            await bobResults.getByRole('button', { name: 'Continue infinite chaos' }).click();
+            const startAgain = aliceResults.getByRole('button', { name: 'Start next match', exact: true });
+            await expect(startAgain).toBeDisabled();
+            await aliceResults.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(startAgain).toBeDisabled();
+            await bobResults.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(startAgain).toBeEnabled();
+            await bob.reload();
+            await expect(bobResults).toBeVisible({ timeout: 20_000 });
+            await expect(bobResults.getByRole('button', { name: 'Cancel ready', exact: true })).toBeEnabled();
+            await bobResults.getByRole('button', { name: 'Cancel ready', exact: true }).click();
+            await expect(startAgain).toBeDisabled();
+            await bobResults.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(startAgain).toBeEnabled();
+            await expect(bobResults).toBeVisible();
+            await startAgain.click();
             await expect(aliceResults).toBeHidden();
             await expect(bobResults).toBeHidden();
-            await aliceOperations.getByRole('button', { name: '1m', exact: true }).click();
+            const openOperations = bob.getByRole('button', { name: 'Ops', exact: true });
+            if (await openOperations.isVisible()) {
+                await openOperations.click();
+            }
             await assertRunningMatch(aliceOperations, bobOperations);
+            const canvas = bob.getByLabel('AR Eye Hunter gameplay canvas');
+            const shotsBefore = Number(await canvas.getAttribute('data-arena-shot-sequence'));
+            await canvas.click({ position: { x: 400, y: 200 } });
+            await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence')))
+                .toBeGreaterThan(shotsBefore);
+            await bob.keyboard.press('Escape');
+            await bob.screenshot({ path: testInfo.outputPath('quick-join-second-match.png'), fullPage: true });
             await expect(aliceOperations.getByLabel('Account reference', { exact: true })).toHaveValue('alice');
             await expect(bobOperations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
             await expect(aliceOperations.locator('.room-row.active')).toHaveAttribute(

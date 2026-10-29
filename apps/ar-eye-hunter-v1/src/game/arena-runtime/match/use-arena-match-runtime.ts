@@ -1,22 +1,22 @@
-import { useEffect } from 'react';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import { useEffect } from 'react';
 
-import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
-import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
 import {
     GAME_AI_LANE_ID,
     GAME_COMBAT_LANE_ID,
     GAME_FX_LANE_ID,
     GAME_MOTION_LANE_ID
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
 import type { ArenaConnectionState, DirectorAttemptSource } from '../arena-connection-contracts.ts';
 import type { ArenaPeerShotMessage } from '../messages/use-arena-peer-message-handlers.ts';
 import { createArenaMatchRuntime, type ArenaMatchRuntimeInput } from './create-arena-match-runtime.ts';

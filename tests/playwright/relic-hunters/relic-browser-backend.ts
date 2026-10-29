@@ -463,6 +463,7 @@ function toHunterRefusalFrame(command: RelicCommand, text: string): string {
         principalId: session.clientId,
         playerId: session.sessionId,
         kind: 'command-refused',
+        completedGameId: null,
         command: command.kind,
         text
     };

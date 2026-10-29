@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
 import type { RefObject } from 'react';
+import { useEffect } from 'react';
 
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarAiJsonProvider } from '@shared/rallar-ai/mod.ts';
 
+import type { ArenaSnapshot } from '../../arena-contracts.ts';
 import {
     createAvatarProfileMockProvider,
     createAvatarProfileRequest,
@@ -15,7 +16,6 @@ import {
 } from '../../avatarProfile.ts';
 import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
 import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
-import type { ArenaSnapshot } from '../../types.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();

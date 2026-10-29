@@ -5,6 +5,7 @@ import {
     type RelicCommand,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
+import { hasRelicRematchParticipation } from '@relic-hunters/src/relic-rematch.ts';
 import type { RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
@@ -77,7 +78,11 @@ export class RelicExpeditionParticipation {
             return undefined;
         }
         const latest = await this.dependencies.fetchSnapshot(roomId);
-        if (!isCurrent() || !hasUnfinishedRelicParticipation(latest, session.sessionId)) {
+        if (
+            !isCurrent() ||
+            !(hasUnfinishedRelicParticipation(latest, session.sessionId) ||
+                hasRelicRematchParticipation(latest, session.sessionId))
+        ) {
             return latest;
         }
         const snapshot = await this.dependencies.sendRestCommand({
@@ -93,9 +98,8 @@ export class RelicExpeditionParticipation {
         });
         if (
             !snapshot ||
-            snapshot.players.some((player) =>
-                player.playerId === session.sessionId && player.withdrawnAtEpochMs === undefined
-            )
+            hasUnfinishedRelicParticipation(snapshot, session.sessionId) ||
+            hasRelicRematchParticipation(snapshot, session.sessionId)
         ) {
             throw new Error('Withdrawal has not been confirmed. Stay in the room and try again.');
         }

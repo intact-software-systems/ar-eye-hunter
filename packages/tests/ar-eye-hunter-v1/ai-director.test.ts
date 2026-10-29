@@ -7,9 +7,9 @@ import {
     materializeAiArenaEvent,
     validateAiArenaLayoutProposal,
     validateAiDirectorProposalValue
-} from '../../../apps/ar-eye-hunter-v1/src/game/aiDirector.ts';
+} from '../../../apps/ar-eye-hunter-v1/src/game/ai-director.ts';
+import type { AiDirectorProposalValue } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { AiDirectorProposalValue } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter AI director', () => {
     it('validates and clamps live chaos proposals', () => {

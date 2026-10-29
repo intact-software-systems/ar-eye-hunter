@@ -1,5 +1,149 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Reviewed deterministic scalar/vector arithmetic owner; all exports have direct consumers.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-math.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 12
+    }),
+    // Reviewed target spawn, shot and mutation computation owner; no transport or lifecycle decisions.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-targets.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 81
+    }),
+    // Room entry and current participation controls remain cohesive; unrelated panel navigation moved to its owner.
+    Object.freeze({
+        path: 'apps/relic-hunters-v1/src/game/hud/relic-lobby.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    // Independent review: Relic wire contracts, exact validation and public redaction form one boundary.
+    Object.freeze({
+        path: 'packages/relic-hunters/src/model.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 57
+    }),
+    // Independent review: constants, schema predicates and redaction serve the same Relic wire contract.
+    Object.freeze({
+        path: 'packages/relic-hunters/src/model.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 12
+    }),
+    // AI proposal input remains untrusted until the bounded schema and numeric validators produce domain values.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/ai-director.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateAiArenaLayoutProposal'
+    }),
+    // AI proposal input remains untrusted until the bounded schema and numeric validators produce domain values.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/ai-director.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateAiDirectorProposalValue'
+    }),
+    // AI proposal input remains untrusted until the bounded schema and numeric validators produce domain values.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/ai-director.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+    // AI proposal input remains untrusted until the bounded schema and numeric validators produce domain values.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/ai-director.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Stored audio volume is untrusted; clampVolume checks finite numeric input before returning bounded gain.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-audio.ts',
+        rule: 'boundary.unknown',
+        symbol: 'clampVolume'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateArenaLayoutSpec'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertArenaLayoutSpec'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readTheme'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readProps'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readSigns'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPickupAnchors'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readVec3Array'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPropKind'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readString'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readHex'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toFiniteNumber'
+    }),
+    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+
     // One RTC carrier owner keeps admission protection, control-handoff translation
     // and route/native guards together. The explicit quota-clock admission guard
     // stays at that boundary. The separation review accepts this exact score;

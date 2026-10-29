@@ -1080,6 +1080,8 @@ label {
 }
 
 .match-winner__panel {
+    max-height: calc(100dvh - 44px);
+    overflow-y: auto;
     width: min(520px, calc(100vw - 32px));
     border: 1px solid rgba(0, 229, 255, 0.58);
     border-radius: 8px;

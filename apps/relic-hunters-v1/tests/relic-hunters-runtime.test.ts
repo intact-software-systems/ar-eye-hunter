@@ -249,6 +249,26 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().error).toBeUndefined();
     });
 
+    it('shows a rematch refusal while results remain and ignores it after the next expedition starts', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const finished = { ...relicSnapshot('room-1', 21), phase: 'finished' as const };
+        backend.deliverSnapshot(finished);
+        const refusal = {
+            ...refusedPlan(),
+            command: 'set-rematch-ready' as const,
+            completedGameId: `room-1:${finished.createdAtEpochMs}`,
+            text: 'Your room membership changed. Confirm again.'
+        };
+        backend.deliverHunterEvent(refusal);
+        expect(runtime.getState().error).toBe(refusal.text);
+        expect(runtime.getState().snapshot?.phase).toBe('finished');
+        backend.deliverSnapshot({ ...finished, createdAtEpochMs: finished.createdAtEpochMs + 1, updatedAtEpochMs: 22, phase: 'planning' });
+        backend.deliverHunterEvent(refusal);
+        expect(runtime.getState().error).toBeUndefined();
+    });
+
     it('clears obsolete rule feedback when another live tab records a plan before the finale', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = createRuntime(backend);
@@ -773,6 +793,32 @@ describe('RelicHuntersRuntime', () => {
         oldLogin.reject(new Error('Obsolete login failed'));
         await pending;
         expect(runtime.getState()).toMatchObject({ connectionState: 'ready', session, error: undefined });
+    });
+
+    it('binds Play again commands to the displayed completed expedition and settings', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.wsDelivery = { state: 'acknowledged', reason: undefined };
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const finished = { ...relicSnapshot('room-1', 21), phase: 'finished' as const };
+        backend.deliverSnapshot(finished);
+        await runtime.getState().setRematchReady(true, 'kael-ironstride');
+        await runtime.getState().startRematch();
+        await runtime.getState().setRematchRoundLimit(180_000);
+        expect(backend.commands.map((entry) => entry.command)).toEqual([
+            expect.objectContaining({
+                kind: 'set-rematch-ready',
+                ready: true,
+                characterId: 'kael-ironstride',
+                completedGameId: `room-1:${finished.createdAtEpochMs}`,
+                settingsKey: `round-limit:${finished.roundTimeLimitMs}:0`
+            }),
+            expect.objectContaining({ kind: 'start-rematch', completedGameId: `room-1:${finished.createdAtEpochMs}` }),
+            expect.objectContaining({ kind: 'set-rematch-round-limit', timeLimitMs: 180_000 })
+        ]);
+        backend.deliverSnapshot({ ...finished, phase: 'planning', updatedAtEpochMs: finished.updatedAtEpochMs + 1 });
+        await runtime.getState().setRematchReady(false, 'kael-ironstride');
+        expect(backend.commands).toHaveLength(3);
     });
 
     it('sends gameplay over WS and records the receipt without a second REST attempt', async () => {
@@ -1547,6 +1593,7 @@ function refusedPlan(): RelicHunterEvent {
         principalId: 'alice-client',
         playerId: 'alice-session',
         kind: 'command-refused',
+        completedGameId: null,
         command: 'submit-action',
         text: 'Review the revealed actions before planning the next turn.'
     };

@@ -1,7 +1,7 @@
 import { isALDeliveryTerminalState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
+import type { ArenaMatchState } from '../game/arena-contracts.ts';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import type { ArenaMatchState } from '../game/types.ts';
 
 export function toDirectorLabel(
     status: ArenaConnection['directorStatus']

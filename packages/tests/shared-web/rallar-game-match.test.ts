@@ -60,6 +60,60 @@ const roomRef: GroupRef = {
 };
 
 describe('Rallar Game match', () => {
+    it('accepts a reconnected sender and rejects delayed messages from its previous presence generation', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
+        const accepted: number[] = [];
+        const match = createMatch(fake, {
+            onPresence: (message) => {
+                accepted.push(message.seq);
+            }
+        });
+        await match.start();
+        const previous = envelope({ kind: 'presence', senderId: 'peer-b', seq: 500, payload: { x: 1 } });
+        await fake.emitRealtime('game-input', 'peer-b', previous);
+        const state = fake.rallar.rooms.state();
+        if (!state.currentRoom) {
+            throw new Error('Expected current room fixture.');
+        }
+        const currentRoom = {
+            ...state.currentRoom,
+            activeSessions: state.currentRoom.activeSessions.map((session) =>
+                session.sessionId === 'peer-b' ? { ...session, generationId: 'reconnected-peer-b' } : session
+            )
+        };
+        fake.rallar.rooms.state = () => ({ ...state, currentRoom });
+        const current = { ...previous, senderGenerationId: 'reconnected-peer-b', seq: 1 };
+        await fake.emitRealtime('game-input', 'peer-b', current);
+        await fake.emitRealtime('game-input', 'peer-b', { ...previous, seq: 9999 });
+        await fake.emitRealtime('game-input', 'peer-b', current);
+        expect(accepted).toEqual([500, 1]);
+        match.stop();
+    });
+
+    it('keeps sender sequences increasing when the same browser recreates its match handle', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
+        const accepted: RallarGameEnvelope<Input>[] = [];
+        const first = createMatch(fake, {
+            onInput: (message) => {
+                accepted.push(message);
+            }
+        });
+        await first.start();
+        await first.sendInput({ x: 1 });
+        first.stop();
+        const second = createMatch(fake, {
+            onInput: (message) => {
+                accepted.push(message);
+            }
+        });
+        await second.start();
+        await second.sendInput({ x: 2 });
+        expect(accepted).toHaveLength(2);
+        expect(accepted[1].seq).toBeGreaterThan(accepted[0].seq);
+        expect(accepted[1]).toMatchObject({ senderGenerationId: 'generation-peer-a' });
+        second.stop();
+    });
+
     it('keeps spectator synchronization while refusing gameplay and host authority', async () => {
         const fake = createFakeRallar({ localRole: 'spectator', directorPeerId: 'peer-b', directorIsFresh: true });
         const match = createMatch(fake);
@@ -947,6 +1001,7 @@ function envelope<T>(input: TestEnvelopeInput<T>): RallarGameEnvelope<T> {
         roomRef,
         matchId,
         senderId,
+        senderGenerationId: `generation-${senderId}`,
         seq,
         directorEpoch: 1,
         sentAtEpochMs: 1_000 + seq,

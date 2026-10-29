@@ -1,10 +1,24 @@
-import { useMemo } from 'react';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import { useMemo } from 'react';
+import { applyArenaRematchCommand, type ArenaRematchCommand } from '../../arena-rematch.ts';
 
+import {
+    GAME_PROTOCOL,
+    type ArenaEvent,
+    type ArenaSimulationState,
+    type ArenaSnapshot,
+    type EyeAttackAccepted,
+    type MatchStartIntent,
+    type PickupAccepted,
+    type PlayerHitAccepted
+} from '../../arena-contracts.ts';
+import { startArenaMatch } from '../../arena-match.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
     applyEyeAttackAccepted,
@@ -12,19 +26,8 @@ import {
     applyPlayerHitAccepted,
     createInitialArenaState,
     hydrateArenaSnapshot,
-    startArenaMatch,
-    toArenaSnapshot,
-    type ArenaSimulationState
+    toArenaSnapshot
 } from '../../simulation.ts';
-import {
-    GAME_PROTOCOL,
-    type ArenaEvent,
-    type ArenaSnapshot,
-    type EyeAttackAccepted,
-    type MatchStartIntent,
-    type PickupAccepted,
-    type PlayerHitAccepted
-} from '../../types.ts';
 import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
 import { resolveArenaActiveEvent } from './resolve-arena-active-event.ts';
 
@@ -32,12 +35,15 @@ export interface ArenaStateAcceptance {
     readonly acceptPlayerHit: (accepted: PlayerHitAccepted, isCurrent: () => boolean) => void;
     readonly acceptPickup: (accepted: PickupAccepted, isCurrent: () => boolean) => void;
     readonly acceptEyeAttack: (accepted: EyeAttackAccepted, isCurrent: () => boolean) => void;
+    readonly acceptRematchIntent: (command: ArenaRematchCommand, isCurrent: () => boolean) => Promise<void>;
     readonly acceptMatchStartIntent: (intent: MatchStartIntent, isCurrent: () => boolean) => Promise<void>;
 }
 
 interface ArenaStateAcceptanceInput extends Pick<ArenaMatchDelivery, 'publishMatchLifecycleOutput'> {
     readonly nowMs: () => number;
-    readonly arenaMatchRef: RefObject<Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot'> | undefined>;
+    readonly arenaMatchRef: RefObject<
+        Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot' | 'status'> | undefined
+    >;
     readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
     readonly roomIdRef: RefObject<string | undefined>;
     readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
@@ -71,6 +77,7 @@ export function useArenaStateAcceptance(input: ArenaStateAcceptanceInput): Arena
                 apply: (state) => applyEyeAttackAccepted(state, accepted)
             });
         },
+        acceptRematchIntent: (command, isCurrent) => acceptArenaRematch(input, command, isCurrent),
         acceptMatchStartIntent: (intent: MatchStartIntent, isCurrent: () => boolean) =>
             acceptArenaMatchStart(input, intent, isCurrent)
     }), [
@@ -146,7 +153,7 @@ async function acceptArenaMatchStart(
     const roomId = input.roomIdRef.current;
     const match = input.arenaMatchRef.current;
     if (
-        !isCurrent() || !roomId || !match ||
+        !isCurrent() || !roomId || !match || previous?.match?.status === 'complete' ||
         (previous?.roomId !== undefined && previous.roomId !== roomId)
     ) {
         return;
@@ -170,6 +177,55 @@ async function acceptArenaMatchStart(
     });
     if (isCurrentOwner()) {
         await match.publishSnapshot(snapshot, { reliable: false });
+    }
+}
+
+async function acceptArenaRematch(
+    input: ArenaStateAcceptanceInput,
+    command: ArenaRematchCommand,
+    isCurrent: () => boolean
+): Promise<void> {
+    const previous = input.arenaSnapshotRef.current;
+    const roomId = input.roomIdRef.current;
+    const match = input.arenaMatchRef.current;
+    if (!isCurrent() || !previous || !roomId || !match || previous.roomId !== roomId) {
+        return;
+    }
+    const nowEpochMs = input.nowMs();
+    const result = applyArenaRematchCommand(hydrateArenaSnapshot(previous), command, {
+        nowEpochMs,
+        leaderSessionId: match.status().directorPeerId,
+        participants: readRallarGameParticipants(rallar.rooms.state().currentRoom, nowEpochMs)
+    });
+    if (result.left) {
+        await match.publishEvent({
+            protocol: GAME_PROTOCOL,
+            kind: 'director-rematch-refused',
+            sessionId: command.sessionId,
+            completedGameId: command.completedGameId,
+            message: result.left.message
+        });
+        return;
+    }
+    const accepted = result.right;
+    if (!accepted) {
+        return;
+    }
+    const isCurrentOwner = () =>
+        isCurrent() && input.arenaMatchRef.current === match && input.roomIdRef.current === roomId;
+    const snapshot = toArenaSnapshot(accepted.state, roomId, nowEpochMs);
+    input.arenaSnapshotRef.current = snapshot;
+    input.setArenaSnapshot((current) => isCurrentOwner() ? snapshot : current);
+    if (accepted.acceptedMatch) {
+        publishAcceptedArenaEvents(input, snapshot, isCurrentOwner);
+        await input.publishMatchLifecycleOutput(match, {
+            protocol: GAME_PROTOCOL,
+            kind: 'director-match-started',
+            accepted: accepted.acceptedMatch
+        });
+    }
+    if (isCurrentOwner()) {
+        await match.publishSnapshot(snapshot, { reliable: true });
     }
 }
 

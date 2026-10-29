@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import '../setup-browser-indexeddb.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import '../setup-browser-indexeddb.ts';
 
 import {
     applyRelicCommand,
@@ -1056,6 +1056,7 @@ const REFUSED: RelicHunterEvent = {
     principalId: 'client-1',
     playerId: 'alice-session',
     kind: 'command-refused',
+    completedGameId: null,
     command: 'force-resolve-round',
     text: 'Round timer has not expired.'
 };

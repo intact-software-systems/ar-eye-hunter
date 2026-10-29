@@ -1,27 +1,27 @@
-import {
-    useCallback,
-    useEffect,
-    useRef
-} from 'react';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useRef
+} from 'react';
 
-import { rallar } from '@shared-web/browser/rallar.ts';
 import type {
     RallarCreateRoomInput,
     RallarDirectorStatus,
     RallarRoomSummary
 } from '@shared-web/browser/rallar.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
-import { GAME_ROOM_NAME } from '../../types.ts';
+import { GAME_ROOM_NAME } from '../../arena-contracts.ts';
 import type {
     ArenaConnection,
     ArenaConnectionState,

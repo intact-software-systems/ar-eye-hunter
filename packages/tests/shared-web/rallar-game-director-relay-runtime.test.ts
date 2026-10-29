@@ -155,6 +155,7 @@ function createPublishingRuntime(
                 kind,
                 roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
                 senderId: 'director-1',
+                senderGenerationId: 'generation-director-1',
                 seq: 1,
                 sentAtEpochMs: 1,
                 directorEpoch: options.directorEpoch,

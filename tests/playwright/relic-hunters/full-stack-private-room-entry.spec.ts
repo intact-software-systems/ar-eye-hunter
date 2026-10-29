@@ -348,10 +348,35 @@ roomBrowserTest(
         await host.screenshot({ path: testInfo.outputPath('relic-host-finale.png'), fullPage: true });
         await guest.screenshot({ path: testInfo.outputPath('relic-guest-finale.png'), fullPage: true });
         await roomBrowserTest.step('room-journey:repeat-play', async () => {
-            await host.getByRole('button', { name: 'Reset', exact: true }).click();
+            const startAgain = host.getByRole('button', { name: 'Start next expedition', exact: true });
+            await expect(startAgain).toBeDisabled();
+            await host.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(startAgain).toBeDisabled();
+            await guest.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(startAgain).toBeEnabled();
+            await guest.reload();
+            await expect(guest.locator('.victory-panel')).toBeVisible();
+            await expect(guest.getByRole('button', { name: 'Cancel ready', exact: true })).toBeEnabled();
+            await guest.getByRole('button', { name: 'Cancel ready', exact: true }).click();
+            await expect(startAgain).toBeDisabled();
+            await guest.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(startAgain).toBeEnabled();
+            await expect(host.locator('.final-score-row')).toHaveCount(2);
+            await expect(guest.locator('.victory-panel')).toBeVisible();
+            await startAgain.click();
             await expect(host.locator('.victory-panel')).toBeHidden();
             await expect(guest.locator('.victory-panel')).toBeHidden();
-            await playPrivateExpedition(host, guest);
+            for (const hunter of [host, guest]) {
+                await expect(hunter.locator('.turn-plan-status .panel-label')).toHaveText('Round 1');
+                await hunter.locator('.action-picker').getByRole('button', { name: /^Search/ }).click();
+            }
+            await submitBothPlans(host, guest);
+            await expect(host.locator('.turn-plan-status .panel-label')).toHaveText('Round 2', {
+                timeout: automaticReviewTransitionTimeoutMs
+            });
+            await expect(guest.locator('.turn-plan-status .panel-label')).toHaveText('Round 2', {
+                timeout: automaticReviewTransitionTimeoutMs
+            });
             await expect(host.locator('.profile-row strong')).toHaveText(hostUsername);
             await expect(guest.locator('.profile-row strong')).toHaveText(guestUsername);
             await expect(link).toHaveValue(roomLink);

@@ -1,15 +1,15 @@
-import type { ArenaLinkTone } from './squadLink.ts';
-import type { WeaponKind } from './types.ts';
+import type { WeaponKind } from './arena-contracts.ts';
+import type { ArenaLinkTone } from './squad-link.ts';
 
-export type ArenaAudioSettings = Readonly<{
-    masterVolume: number;
-    musicVolume: number;
-    sfxVolume: number;
-    eyeDroneVolume: number;
-    muted: boolean;
-    reducedIntensity: boolean;
-    autoStartOnGesture: boolean;
-}>;
+export interface ArenaAudioSettings {
+    readonly masterVolume: number;
+    readonly musicVolume: number;
+    readonly sfxVolume: number;
+    readonly eyeDroneVolume: number;
+    readonly muted: boolean;
+    readonly reducedIntensity: boolean;
+    readonly autoStartOnGesture: boolean;
+}
 
 export type ArenaAudioEvent =
     | Readonly<{ kind: 'shot'; weaponKind: WeaponKind; }>
@@ -30,43 +30,43 @@ export type ArenaAudioEvent =
     }>
     | Readonly<{ kind: 'eye-drone'; threatCount: number; distanceFactor?: number; }>;
 
-export type ArenaAudioEffectiveLevels = Readonly<{
-    music: number;
-    shot: number;
-    eyeDrone: number;
-}>;
+export interface ArenaAudioEffectiveLevels {
+    readonly music: number;
+    readonly shot: number;
+    readonly eyeDrone: number;
+}
 
-export type ArenaMusicInput = Readonly<{
-    matchStatus: 'infinite' | 'active' | 'complete';
-    matchRemainingRatio: number;
-    wavePhase: 'warmup' | 'active' | 'reward';
-    waveNumber: number;
-    hostileCount: number;
-    incomingAttack: boolean;
-    healthRatio: number;
-    linkTone: ArenaLinkTone;
-    reducedIntensity: boolean;
-}>;
+export interface ArenaMusicInput {
+    readonly matchStatus: 'infinite' | 'active' | 'complete';
+    readonly matchRemainingRatio: number;
+    readonly wavePhase: 'warmup' | 'active' | 'reward';
+    readonly waveNumber: number;
+    readonly hostileCount: number;
+    readonly incomingAttack: boolean;
+    readonly healthRatio: number;
+    readonly linkTone: ArenaLinkTone;
+    readonly reducedIntensity: boolean;
+}
 
-export type ArenaMusicLayerState = Readonly<{
-    baseHum: number;
-    pulseBass: number;
-    threatDrone: number;
-    matchClock: number;
-    lowHealth: number;
-    rewardShimmer: number;
-    linkStatic: number;
-    intensity: number;
-}>;
+export interface ArenaMusicLayerState {
+    readonly baseHum: number;
+    readonly pulseBass: number;
+    readonly threatDrone: number;
+    readonly matchClock: number;
+    readonly lowHealth: number;
+    readonly rewardShimmer: number;
+    readonly linkStatic: number;
+    readonly intensity: number;
+}
 
-export type ArenaAudioDiagnostics = Readonly<{
-    unlocked: boolean;
-    contextState: AudioContextState | 'unavailable';
-    muted: boolean;
-    activeVoices: number;
-    musicLayer: string;
-    musicIntensity: number;
-}>;
+export interface ArenaAudioDiagnostics {
+    readonly unlocked: boolean;
+    readonly contextState: AudioContextState | 'unavailable';
+    readonly muted: boolean;
+    readonly activeVoices: number;
+    readonly musicLayer: string;
+    readonly musicIntensity: number;
+}
 
 export const ARENA_AUDIO_STORAGE_KEY = 'ar-eye-hunter.audio.v2';
 
@@ -221,6 +221,19 @@ export function calculateArenaMusicLayerState(
         ))
     };
 }
+const ARENA_MUSIC_TONES: Readonly<Record<ArenaMusicLayerKey, ArenaLoopingTone['tones']>> = {
+    baseHum: [
+        [55, -9, 'sine'],
+        [82.4, 7, 'sine'],
+        [110, 3, 'sine']
+    ],
+    pulseBass: [[38, -2, 'triangle']],
+    threatDrone: [[72, 5, 'sawtooth']],
+    matchClock: [[184, 0, 'square']],
+    lowHealth: [[222, -12, 'sine']],
+    rewardShimmer: [[660, 9, 'triangle']],
+    linkStatic: [[48, 0, 'square']]
+};
 
 export class ProceduralArenaAudio {
     private context?: AudioContext;
@@ -348,17 +361,14 @@ export class ProceduralArenaAudio {
             ARENA_MUSIC_LAYER_KEYS.map((key) => [key, context.createGain()])
         ) as Record<ArenaMusicLayerKey, GainNode>;
         this.musicLayerGains = layers;
-        createLoopingTone(context, layers.baseHum, [
-            [55, -9, 'sine'],
-            [82.4, 7, 'sine'],
-            [110, 3, 'sine']
-        ], this.musicOscillators);
-        createLoopingTone(context, layers.pulseBass, [[38, -2, 'triangle']], this.musicOscillators);
-        createLoopingTone(context, layers.threatDrone, [[72, 5, 'sawtooth']], this.musicOscillators);
-        createLoopingTone(context, layers.matchClock, [[184, 0, 'square']], this.musicOscillators);
-        createLoopingTone(context, layers.lowHealth, [[222, -12, 'sine']], this.musicOscillators);
-        createLoopingTone(context, layers.rewardShimmer, [[660, 9, 'triangle']], this.musicOscillators);
-        createLoopingTone(context, layers.linkStatic, [[48, 0, 'square']], this.musicOscillators);
+        for (const key of ARENA_MUSIC_LAYER_KEYS) {
+            createLoopingTone({
+                context,
+                destination: layers[key],
+                tones: ARENA_MUSIC_TONES[key],
+                registry: this.musicOscillators
+            });
+        }
         for (const gain of Object.values(layers)) {
             gain.gain.value = 0;
             gain.connect(musicGain);
@@ -495,12 +505,14 @@ function readDominantMusicLayer(state: ArenaMusicLayerState): string {
     return state[strongest] > 0 ? strongest : 'silent';
 }
 
-function createLoopingTone(
-    context: AudioContext,
-    destination: GainNode,
-    tones: readonly (readonly [number, number, OscillatorType])[],
-    registry: OscillatorNode[]
-): void {
+interface ArenaLoopingTone {
+    readonly context: AudioContext;
+    readonly destination: GainNode;
+    readonly tones: readonly (readonly [number, number, OscillatorType])[];
+    readonly registry: OscillatorNode[];
+}
+
+function createLoopingTone({ context, destination, tones, registry }: ArenaLoopingTone): void {
     for (const [frequency, detune, type] of tones) {
         const oscillator = context.createOscillator();
         oscillator.type = type;
@@ -512,14 +524,16 @@ function createLoopingTone(
     }
 }
 
+interface ArenaUiPulseTone {
+    readonly frequency: number;
+    readonly gain: number;
+    readonly duration: number;
+    readonly type: OscillatorType;
+}
+
 function readUiPulseTone(
     kind: Exclude<ArenaAudioEvent['kind'], 'shot' | 'eye-drone'>
-): Readonly<{
-    frequency: number;
-    gain: number;
-    duration: number;
-    type: OscillatorType;
-}> {
+): ArenaUiPulseTone {
     switch (kind) {
         case 'damage':
         case 'low-health-warning':

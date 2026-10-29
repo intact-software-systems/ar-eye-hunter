@@ -156,6 +156,7 @@ function useArenaMessageHandlers(
     });
     const acceptDirectorOutput = useArenaDirectorMessageHandler({
         nowMs: Date.now,
+        setError: state.setError,
         acceptEyeAttack: stateAcceptance.acceptEyeAttack,
         acceptPickup: stateAcceptance.acceptPickup,
         acceptPlayerHit: stateAcceptance.acceptPlayerHit,
@@ -224,6 +225,7 @@ function useArenaMatchLifecycles(
             acceptDirectorOutput: messages.acceptDirectorOutput,
             acceptPeerShot: messages.acceptPeerShot,
             acceptMatchStartIntent: messages.acceptMatchStartIntent,
+            acceptRematchIntent: messages.acceptRematchIntent,
             acceptMotionMessage: messages.acceptMotionMessage,
             acceptPickup: messages.acceptPickup,
             acceptPlayerHit: messages.acceptPlayerHit,

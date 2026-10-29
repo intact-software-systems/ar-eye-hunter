@@ -89,6 +89,18 @@ server's current role. Membership roles apply to the account across its sessions
 must transfer or relinquish governance before switching to read-only watching. Live spectator
 sessions keep temporary rooms active under the normal retention policy.
 
+## Playing again together
+
+After completed results, players in AR Eye and Relic can confirm Play again, cancel that confirmation,
+and see who is ready or away. The current director or Keeper starts explicitly after every remaining
+present candidate confirms, including the leader. Spectators do not block readiness; newcomers must
+opt in. Settings changes clear confirmations. Reload preserves the same session's accepted readiness;
+changed membership or a different session requires a fresh confirmation.
+
+The next game stays in the same room and includes only eligible consenting players. Relic retains
+their characters and resets expedition progress; AR Eye starts fresh score baselines. Finished results
+remain visible until accepted start. Reset and the old start controls cannot bypass this consent flow.
+
 ## Fit
 
 | Kind of product                              | Fit                         | What to use                                                                                      |

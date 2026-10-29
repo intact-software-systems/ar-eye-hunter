@@ -11,7 +11,7 @@ import {
     normalizeArenaAudioSettings,
     saveArenaAudioSettings,
     type ArenaAudioSettings
-} from '../arenaAudio.ts';
+} from '../arena-audio.ts';
 import {
     createDefaultMobileControlSettings,
     loadMobileControlSettings,
@@ -19,7 +19,7 @@ import {
     normalizeMobileControlSettings,
     saveMobileControlSettings,
     type MobileControlSettings
-} from '../mobileInput.ts';
+} from '../mobile-input.ts';
 import type { MutableButtonAction } from './arena-scene-contracts.ts';
 import { forceUnlockArenaAudio } from './arena-scene-feedback.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
