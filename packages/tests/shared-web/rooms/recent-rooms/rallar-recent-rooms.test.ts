@@ -271,6 +271,26 @@ describe('recent room navigation history', () => {
         unsubscribe();
     });
 
+    it('records an admitted room when history restarts before its pending visit is saved', async () => {
+        const browser = createBrowser();
+        const barrier = Promise.withResolvers<void>();
+        const opened = Promise.withResolvers<void>();
+        browser.nextOpen = barrier.promise;
+        browser.onOpen = () => opened.resolve();
+        const history = browser.createHistory();
+        const starting = history.start();
+        await opened.promise;
+        browser.entry.enter({ roomRef: { ...SCOPE, groupId: 'room-a' }, joinCode: null, participation: 'preserve' });
+        await browser.entry.resume();
+        const stopping = history.stop();
+        const restarting = history.start();
+        barrier.resolve();
+        await Promise.all([starting, stopping, restarting]);
+        await history.whenIdle();
+
+        expect(history.getState().rooms.map((visit) => visit.roomRef.groupId)).toEqual(['room-a']);
+    });
+
     it('records ordinary room adoption during a reentrant loading notification', async () => {
         const browser = createBrowser();
         const history = browser.createHistory();

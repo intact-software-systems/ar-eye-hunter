@@ -197,7 +197,6 @@ export class RallarRecentRooms {
         ) {
             return;
         }
-        this.lastEntry = entry;
         const generation = this.generation;
         const visit: RallarRecentRooms.Visit = { roomRef, visitedAtEpochMs: this.dependencies.now() };
         void this.enqueue(generation, async () => {
@@ -205,6 +204,9 @@ export class RallarRecentRooms {
                 return;
             }
             await this.updateHistory(generation, { kind: 'visit', visit });
+            if (this.isCurrent(generation, principalId) && this.state.status === 'ready') {
+                this.lastEntry = entry;
+            }
         });
     }
 
