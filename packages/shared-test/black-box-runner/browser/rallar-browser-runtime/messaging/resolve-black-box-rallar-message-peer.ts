@@ -1,7 +1,10 @@
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { BlackBoxRallarMessageSendInput } from '../black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarMessageSendInput,
+    BlackBoxRallarRecipientPeer
+} from '../black-box-rallar-operation-contracts.ts';
 
 export interface ResolveBlackBoxRallarMessagePeerInput {
     readonly toPeer: NonNullable<BlackBoxRallarMessageSendInput['toPeer']>;
@@ -13,7 +16,7 @@ export interface ResolveBlackBoxRallarMessagePeerInput {
 }
 
 export interface ResolveBlackBoxRallarRecipientPeerInput {
-    readonly recipientPeer: NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>;
+    readonly recipientPeer: BlackBoxRallarRecipientPeer;
     readonly ownSessionId: string | undefined;
     readonly ownPrincipalId: string | undefined;
     /** Undefined while the page holds no snapshot of the room. */

@@ -229,6 +229,28 @@ describe('ALM conformance hosted lane families', () => {
             .toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
     });
 
+    it('runs every cell whose sender closes after all the others, so no reconnect lands among the ordinary cells', () => {
+        const closingSenders = new Set(ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            createAlmConformanceRecipes({
+                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                carrier,
+                typeId: 'alm.conformance',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000
+            }).filter((scenario) => scenario.sender.commands.some((command) => command.kind === 'close'))
+                .map((scenario) => scenario.scenarioKey)
+        ));
+        // A cell that gains a sender close joins this list and the ordering below.
+        expect([...closingSenders]).toEqual(['capacity', 'capacity-tracks', 'paced-capacity', 'churn-bounded-tracks']);
+
+        const cells = toStartedCells(createAlmConformance2AgentEntry());
+        const isClosing = (cell: string) => [...closingSenders].some((key) => cell.endsWith(`-${key}`));
+        const firstClosing = cells.findIndex(isClosing);
+        expect(firstClosing).toBeGreaterThan(0);
+        expect(cells.slice(firstClosing).every(isClosing)).toBe(true);
+    });
+
     // A same-context scenario needs two pages of one browser context, which no hosted agent has.
     it('leaves the same-context family out of every hosted entry', () => {
         const hosted = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()].flatMap(toStartedCells);

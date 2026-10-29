@@ -1,6 +1,8 @@
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
+import type { BlackBoxRallarRecipientPeer } from '../../../../../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestLoopCommand,
@@ -47,9 +49,6 @@ export const STAGE_DISPLACED: AlmPublicationFact = ['reason', 'displaced it befo
 /** One field of an observation and the value it must hold: equal to it, or containing it. */
 export type AlmPublicationFact = readonly [field: string, expected: string | number, operator?: 'contains'];
 
-/** The one session a send lists, by lane role; undefined, the send addresses its room. */
-export type AlmPublicationRecipientPeer = RallarBlackBoxTestMessagesSendCommand['recipientPeer'];
-
 /** `one`: every loop send on the lead's stream; `one-per-send`: each iteration on a resource of its own. */
 export type AlmPublicationLoopStreams = 'one' | 'one-per-send';
 
@@ -70,7 +69,7 @@ interface AlmPublicationSendInput {
     readonly ttlMs: number;
     /** Undefined on the lead's stream; otherwise the suffix of a resource of its own. */
     readonly stream: string | undefined;
-    readonly recipientPeer: AlmPublicationRecipientPeer;
+    readonly recipientPeer: BlackBoxRallarRecipientPeer | undefined;
 }
 
 interface AlmPublicationLiveSend {
@@ -80,7 +79,7 @@ interface AlmPublicationLiveSend {
     /** Undefined keeps the live channel's own lifetime. */
     readonly ttlMs: number | undefined;
     readonly resourceId: string;
-    readonly recipientPeer: AlmPublicationRecipientPeer;
+    readonly recipientPeer: BlackBoxRallarRecipientPeer | undefined;
 }
 
 interface AlmPublicationVerdictInput {
@@ -109,7 +108,7 @@ export function toPublicationTtlMs(opportunity: number): number {
 export function toPublicationLeadCommands(
     step: AlmConformanceStepInput,
     publication: ALPublicationPolicy,
-    recipientPeer: AlmPublicationRecipientPeer
+    recipientPeer: BlackBoxRallarRecipientPeer | undefined
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toLiveSendCommand({

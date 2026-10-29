@@ -7,7 +7,8 @@ import type {
     BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendInput,
-    BlackBoxRallarMessageSnapshotFloor
+    BlackBoxRallarMessageSnapshotFloor,
+    BlackBoxRallarRecipientPeer
 } from '../black-box-rallar-operation-contracts.ts';
 import {
     decodeBlackBoxCommandNumber,
@@ -55,7 +56,7 @@ const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['t
     'server',
     'receiver'
 ];
-const MESSAGE_RECIPIENT_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>[] = [
+const MESSAGE_RECIPIENT_PEER_ROLES: readonly BlackBoxRallarRecipientPeer[] = [
     'receiver',
     'recipient-b'
 ];

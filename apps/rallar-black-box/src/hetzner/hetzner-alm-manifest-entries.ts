@@ -5,10 +5,7 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import type {
-    AlmConformanceLaneFamily,
-    AlmConformanceScenarioId
-} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
@@ -129,9 +126,6 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'paced-isolation-lists', carriers: pacedIsolationLists.carriers }
 ];
 
-/** The cells whose sender closes and reconnects with lowered limits, the volatile bound's or the publication stage's. */
-const RECONNECTING_ALM_SCENARIO_IDS: readonly AlmConformanceScenarioId[] = ['capacity', 'paced-capacity'];
-
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
     const scenarios = toAlmConformanceScenariosForAllCarriers('two-agent');
 
@@ -220,10 +214,10 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
         }).filter((scenario) => !isHetznerWithheldAlmScenario(scenario.scenarioKey, carrier))
     ).filter((scenario) => HOSTED_ALM_LANE_FAMILIES[family].includes(scenario.laneFamily));
-    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a
-    // capacity block closes and reconnects its sender under lowered limits, so nothing but another such block follows it.
+    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a block
+    // whose sender closes reconnects it under its own limits, so nothing but another such block follows it.
     const isReconnecting = (scenario: AlmConformanceScenario) =>
-        RECONNECTING_ALM_SCENARIO_IDS.includes(scenario.scenarioId);
+        scenario.sender.commands.some((command) => command.kind === 'close');
     const isHoisted = (scenario: AlmConformanceScenario) =>
         scenario.scenarioId === 'delivery-reload' || isReconnecting(scenario);
     return [

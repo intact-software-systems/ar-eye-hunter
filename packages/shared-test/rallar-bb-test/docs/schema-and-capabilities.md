@@ -649,59 +649,68 @@ memory store to the cap and the cell sends nothing durable, so the IndexedDB sto
 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
 
 The paced cells prove the live channel's publication stage over every carrier, in the smoke scope, on the two agents
-(D469, D472, D477–D479), before the congestion and fairness cells. Each sender opens `purpose: 'live'` with its own
-`publication` at a cadence of 2 000 ms and sends one specimen `{ specimen: 'paced', seq }`, on the `resourceId`
-`alm-<scenarioKey>` unless a cell names a stream of its own. The cadence is set by CI evidence (main run 40875760473,
-`ws`): the lead send's admission took 244 ms there and a loop of five sends 305 ms, so a 500 ms cadence let the loop
-straddle the second opportunity. Send 0 stages on the idle lane and the sender observes it `transport-accepted` within
-half the cadence, before any other send stages: the idle lane's opportunity runs on the session engine's next pass,
-which a send staged 10 ms later can precede, and a stage that held send 0 until the lane's first boundary would miss
-that budget, so the observation proves the idle lane admits at once. A `loop` with `intervalMs: 10` then sends 1 to its
-count; iteration `n` (`{loop.iteration}`, from 1) names the handle of send `n` and carries `seq` `n` as a number, since
-a loop writes a string that is only that placeholder as the iteration's number. Every send after the lead states a
-`ttlMs` one cadence past the opportunity that carries it, since the live channel's own 1 000 ms would expire it before
-its first. `paced-latest` (one value retained, a drain of 8 messages) sends 1 to 5: sends 1 to 4 end `superseded` with
-`attempts` 0, each displaced by the next before the lane's next opportunity, which admits send 5; the receiver holds
-seq 0, then seq 5, and no third arrival within 4 s. `paced-newest-n` (three retained, a drain of 2) sends 1 to 4: send 4
-is still `staged` when the sender observes it, send 1 ends `superseded`, the second opportunity admits sends 2 and 3 and
-the third send 4; the receiver holds seq 0, then seq 2 and 3, then seq 4, and no fifth arrival within 4 s.
-`paced-expiry` (one retained, a drain of 8) sends 1 with a 100 ms `ttlMs`: send 1 ends `expired` with
-`failure.kind: 'expired'` and `attempts` 0; the receiver holds one arrival and none within the next 4 s.
+(D469, D472, D477–D479) and, for `paced-isolation-lists`, on the three, before the congestion and fairness cells. Each
+sender opens `purpose: 'live'` with its own `publication` at a cadence of 2 000 ms and sends one specimen `{ specimen:
+'paced', seq }`, on the `resourceId` `alm-<scenarioKey>` unless a cell names a stream of its own. The cadence is set by
+CI evidence (main run 40875760473, `ws`): the lead send's admission took 244 ms there and a loop of five sends 305 ms,
+so a 500 ms cadence let the loop straddle the second opportunity. Send 0 stages on the idle lane and the sender observes
+it `transport-accepted` within half the cadence, before any other send stages: the idle lane's opportunity runs on the
+session engine's next pass, which a send staged 10 ms later can precede, and a stage that held send 0 until the lane's
+first boundary would miss that budget, so the observation proves the idle lane admits at once. A `loop` with
+`intervalMs: 10` then sends 1 to its count; iteration `n` (`{loop.iteration}`, from 1) names the handle of send `n` and
+carries `seq` `n` as a number, since a loop writes a string that is only that placeholder as the iteration's number.
+Every send after the lead states a `ttlMs` one cadence past the opportunity that carries it, since the live channel's
+own 1 000 ms would expire it before its first; send 0 keeps the live channel's own lifetime in every cell, so a cell's
+short `ttlMs` never races the lead's admission or arrival.
+
+`paced-latest` (one value retained, a drain of 8 messages) sends 1 to 5: sends 1 to 4 end `superseded` with `attempts`
+0, each displaced by the next before the lane's next opportunity, which admits send 5; the receiver holds seq 0, then
+seq 5, and no third arrival within 4 s. `paced-newest-n` (three retained, a drain of 2) sends 1 to 4: send 4 is still
+`staged` when the sender observes it, send 1 ends `superseded`, the second opportunity admits sends 2 and 3 and the
+third send 4; the receiver holds seq 0, then seq 2 and 3, then seq 4, and no fifth arrival within 4 s. `paced-expiry`
+(one retained, a drain of 8) sends 1 with a 100 ms `ttlMs`: send 1 ends `expired` with `failure.kind: 'expired'` and
+`attempts` 0; the receiver holds one arrival and none within the next 4 s.
+
 `paced-capacity` closes the sender and reconnects it with `rallar.almPublicationLimits` `{ maxStreams: 64,
-maxStagedValues: 2, maxStagedBytes: 4194304 }` (the stage's constants but the value count), sends 1 to 3 each on a
+maxStagedValues: 2, maxStagedBytes: 4194304 }` (the stage's constants but the value count) and sends 1 to 3 each on a
 stream of its own (`alm-paced-capacity-{loop.iteration}`): send 3 ends `rejected` with `failure.kind: 'refused'`,
 `failure.reason: 'capacity'`, `failure.limit: 'staged-values'` and `attempts` 0, and the next opportunity admits sends 1
-and 2; the sender holds one cadence, so the restoring close never drops a frame its socket took, and reconnects without
-the field. Its receiver's first count also owns one RTC readiness budget.
+and 2. The sender then holds one cadence, so the restoring close never drops a frame its socket took, and reconnects
+without the field; its receiver's first count also owns one RTC readiness budget. `paced-cancel` (two retained, a drain
+of 8) sends 1 and 2 on one stream and cancels send 1 with `messages.cancel` before the next opportunity: send 1 ends
+`cancelled` with `attempts` 0, and the receiver holds seq 0, then seq 2, and no third arrival.
+
 `paced-fairness` (two retained, a drain of 1 message) sends 1 and 2 on the lead's stream and send 3 on
 `alm-paced-fairness-b`, as single sends: the lane's cursor starts each opportunity at the stream after the one it
 served, so the receiver holds seq 1, then seq 3, then seq 2, where a selection that always started at the first stream
-would deliver seq 2 before seq 3. `paced-cancel` (two retained, a drain of 8) sends 1 and 2 on one stream and cancels
-send 1 with `messages.cancel` before the next opportunity: send 1 ends `cancelled` with `attempts` 0, and the receiver
-holds seq 0, then seq 2, and no third arrival. `paced-isolation-resources` (one retained, a drain of 8) sends 1 and 2 on
-two resources of the one channel (`alm-paced-isolation-resources-{loop.iteration}`): neither displaces the other, both
-end `transport-accepted`, and the receiver holds seq 0, then seq 1 and 2, and no fourth arrival. `paced-isolation-lists`
-(three agents; one retained, a drain of 8) proves a fixed list is part of the stream: the receiver appoints itself the
-room's director and the sender waits until its own snapshot reads the director active, so `recipientPeer: 'receiver'`
-names the leader among the two sessions of other principals (and `recipient-b` the one beside it). Send 0 lists the
-receiver; send 1 lists the receiver and send 2, on the same resource, lists `recipient-b`, so had the lists shared a
-stream send 2 would have displaced send 1: both end `transport-accepted`, the receiver holds seq 0, then seq 1, and no
-third arrival, and `recipient-b` holds seq 2 alone. The receiver resigns after its window. Send 0 keeps the live
-channel's own lifetime in every cell, so a cell's short `ttlMs` never races the lead's admission or arrival. The cells
-prove the stage's selection, not delivered history: values of one stream share the latest-wins key, so two values
-admitted at one opportunity may still be conflated at carrier admission or on receipt under backpressure; the drain
-budget bounds the work per opportunity, it does not promise delivered history, and `paced-newest-n` reads its sends 2
-and 3 on an unloaded carrier. Each receiver count spans the sender's send budget, the opportunity that carries the
-count's last arrival, and one cadence more. The receiver orders its arrivals by reading, right after an arrival count,
-that the later specimen is still absent: a `wait` with `absent: true` whose `timeoutFrom` is the arrival it awaited
-right before (`{resultCache.<arrived-seq-n>.value.event.atEpochMs}`) and whose `timeoutMs` is half the cadence (D481's
-bounded window). A window of one cadence opened at the read's start went red on every cell and carrier of the local
-lane, since it spans the next opportunity's arrival; a receiver that reads late checks the window against its history
-at once, so it has until that arrival to resolve its count. The observation names no replacement
-message id, since the delivery lifecycle keeps none; each `superseded` observation's `reason` instead contains the
-stage's own detail (`displaced it before its opportunity`), which a supersedence at carrier admission does not carry.
-Hosted manifest 18 carries every two-agent paced cell (D481), and manifest 22 withholds `paced-isolation-lists` until a hosted run proves the paced send shape on three agents; `paced-capacity` reconnects its sender, so it runs after
-the `capacity` blocks, at the end. The cells live in `conformance/alm/scenarios/publication/`.
+would deliver seq 2 before seq 3. `paced-isolation-resources` (one retained, a drain of 8) sends 1 and 2 on two
+resources of the one channel (`alm-paced-isolation-resources-{loop.iteration}`): neither displaces the other, both end
+`transport-accepted`, and the receiver holds seq 0, then seq 1 and 2, and no fourth arrival.
+
+`paced-isolation-lists` (three agents; one retained, a drain of 8) proves a fixed list is part of the stream. The
+receiver appoints itself the room's director and the sender waits until its own snapshot reads the director active, so
+`recipientPeer: 'receiver'` names the leader among the two sessions of other principals (and `recipient-b` the one
+beside it). Send 0 lists the receiver; send 1 lists the receiver and send 2, on the same resource, lists `recipient-b`,
+so had the lists shared a stream send 2 would have displaced send 1: both end `transport-accepted`, the receiver holds
+seq 0, then seq 1, and no third arrival, and `recipient-b` holds seq 2 alone. The receiver resigns after its window.
+
+The cells prove the stage's selection, not delivered history: values of one stream share the latest-wins key, so two
+values admitted at one opportunity may still be conflated at carrier admission or on receipt under backpressure; the
+drain budget bounds the work per opportunity, it does not promise delivered history, and `paced-newest-n` reads its
+sends 2 and 3 on an unloaded carrier. Each receiver count spans the sender's send budget, the opportunity that carries
+the count's last arrival, and one cadence more. The receiver orders its arrivals by reading, right after an arrival
+count, that the later specimen is still absent: a `wait` with `absent: true` whose `timeoutFrom` is the arrival it
+awaited right before (`{resultCache.<arrived-seq-n>.value.event.atEpochMs}`) and whose `timeoutMs` is half the cadence
+(D481's bounded window). A window of one cadence opened at the read's start went red on every cell and carrier of the
+local lane, since it spans the next opportunity's arrival; a receiver that reads late checks the window against its
+history at once, so it has until that arrival to resolve its count. The observation names no replacement message id,
+since the delivery lifecycle keeps none; each `superseded` observation's `reason` instead contains the stage's own
+detail (`displaced it before its opportunity`), which a supersedence at carrier admission does not carry.
+
+Hosted manifest 18 carries every two-agent paced cell (D481). A cell whose sender closes reconnects it, so
+`paced-capacity` runs with the `capacity` blocks, after every other cell. Manifest 22 withholds `paced-isolation-lists`
+until a hosted run proves the paced send shape on three agents. The cells live in
+`conformance/alm/scenarios/publication/`.
 
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
 R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the addressing:
