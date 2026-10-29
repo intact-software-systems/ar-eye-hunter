@@ -330,7 +330,11 @@ export class RallarServerWsRouter {
         return this.resolveFanoutRejection(message, definition);
     }
 
-    /** A live publication never enters an outbox (D482): the browser cannot know the topic's fanout, the server refuses. */
+    /**
+     * A live publication never enters an outbox (D482): the browser cannot know the topic's fanout, the server refuses.
+     * Like the reserved, unknown and oversized refusals it runs in `decodeIngress`, before authorization, so an
+     * unauthorised sender's live publication on an outbox topic is told `unsupported`.
+     */
     private resolveFanoutRejection(
         message: ALMessage,
         definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined

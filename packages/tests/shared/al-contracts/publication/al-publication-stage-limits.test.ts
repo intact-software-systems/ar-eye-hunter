@@ -7,6 +7,8 @@ import {
 
 const VALID = { maxStreams: 2, maxStagedValues: 3, maxStagedBytes: 4_096 };
 
+const PATH = '$.stage.limits';
+
 describe('AL_PUBLICATION_STAGE_LIMITS (D477)', () => {
     it('names the volatile ledger\'s figures and stays frozen for every session that shares it', () => {
         expect(AL_PUBLICATION_STAGE_LIMITS).toEqual({
@@ -20,43 +22,44 @@ describe('AL_PUBLICATION_STAGE_LIMITS (D477)', () => {
 
 describe('decodeALPublicationStageLimits (D477)', () => {
     it('returns limits whose three fields are positive safe integers', () => {
-        const decoded = decodeALPublicationStageLimits(VALID);
+        const decoded = decodeALPublicationStageLimits(VALID, PATH);
 
         expect(decoded.left).toBeUndefined();
         expect(decoded.right).toEqual(VALID);
     });
 
-    it('names a missing field at its path', () => {
+    it('names a missing field at its path under the path the caller gives', () => {
         const missing = { maxStreams: VALID.maxStreams, maxStagedValues: VALID.maxStagedValues };
 
-        expect(decodeALPublicationStageLimits(missing).left).toEqual([{
-            path: '$.almPublicationLimits.maxStagedBytes',
+        expect(decodeALPublicationStageLimits(missing, PATH).left).toEqual([{
+            path: `${PATH}.maxStagedBytes`,
             code: 'invalid-max-staged-bytes',
             message: 'Expected a positive safe integer.'
         }]);
     });
 
     it('returns every field that is not a positive safe integer', () => {
-        const decoded = decodeALPublicationStageLimits({ maxStreams: 1.5, maxStagedValues: 0, maxStagedBytes: '4096' });
+        const invalid = { maxStreams: 1.5, maxStagedValues: 0, maxStagedBytes: '4096' };
+        const decoded = decodeALPublicationStageLimits(invalid, PATH);
 
         expect(decoded.left?.map((issue) => [issue.path, issue.code])).toEqual([
-            ['$.almPublicationLimits.maxStreams', 'invalid-max-streams'],
-            ['$.almPublicationLimits.maxStagedValues', 'invalid-max-staged-values'],
-            ['$.almPublicationLimits.maxStagedBytes', 'invalid-max-staged-bytes']
+            [`${PATH}.maxStreams`, 'invalid-max-streams'],
+            [`${PATH}.maxStagedValues`, 'invalid-max-staged-values'],
+            [`${PATH}.maxStagedBytes`, 'invalid-max-staged-bytes']
         ]);
     });
 
     it('refuses a field the limits do not name', () => {
-        expect(decodeALPublicationStageLimits({ ...VALID, maxStagedAgeMs: 1_000 }).left).toEqual([{
-            path: '$.almPublicationLimits.maxStagedAgeMs',
+        expect(decodeALPublicationStageLimits({ ...VALID, maxStagedAgeMs: 1_000 }, PATH).left).toEqual([{
+            path: `${PATH}.maxStagedAgeMs`,
             code: 'unknown-field',
             message: 'Expected only maxStreams, maxStagedValues and maxStagedBytes.'
         }]);
     });
 
     it.each([null, [], 'limits', 64])('refuses %j as a limits object', (value) => {
-        expect(decodeALPublicationStageLimits(value).left).toEqual([{
-            path: '$.almPublicationLimits',
+        expect(decodeALPublicationStageLimits(value, PATH).left).toEqual([{
+            path: PATH,
             code: 'invalid-publication-limits',
             message: 'Expected a publication stage limits object.'
         }]);

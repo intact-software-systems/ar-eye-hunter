@@ -27,6 +27,7 @@ import {
 } from '../al-outbound-message-runtime.ts';
 import {
     ALOutboundPublicationLedger,
+    toIdleALOutboundPublicationLedgerReport,
     type ALOutboundPublicationLedgerReport
 } from './al-outbound-publication-ledger.ts';
 import type { ALOutboundStagedPublication } from './al-outbound-staged-publication.ts';
@@ -54,7 +55,7 @@ export interface ALOutboundPublicationStageReport extends ALOutboundPublicationL
 export function toIdleALOutboundPublicationStageReport(
     limits: ALPublicationStageLimits
 ): ALOutboundPublicationStageReport {
-    return { lanes: 0, ...new ALOutboundPublicationLedger(limits).readReport() };
+    return { lanes: 0, ...toIdleALOutboundPublicationLedgerReport(limits) };
 }
 
 /** One value's outcome on the stage, with a capacity refusal's limit, as its `publication-staging` event states it. */
@@ -162,9 +163,9 @@ export class ALOutboundPublicationStage<TContext> {
             return refusal;
         }
         this.lanes.set(laneKey, lane);
+        this.writeStream(lane, publication.streamKey, retained);
         this.recordOutcome(publication, publication.stagedAtMs, { outcome: 'staged' });
         this.input.settle(toStagedSettlement(publication));
-        this.writeStream(lane, publication.streamKey, retained);
         this.settleSuperseded(
             displaced.map((value) => ({ displaced: value, replacement: publication })),
             publication.stagedAtMs,

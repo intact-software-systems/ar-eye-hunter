@@ -118,3 +118,13 @@ and it has no status list.
   cadence (as `paced-capacity` does) or ask for a receipt; a harness-level
   guard (refuse a `close` within the hold after an unreceipted send) would
   make the hold unnecessary.
+- Close the cancel-during-admission gap for every send (S1-ii, branch review
+  M2): `writeCapturedMessage` consults the registry's lifecycle before
+  `writeCarrierOutboxAdmission` and skips the admission of a send already
+  terminal, so a cancel that lands while the carrier is admitting the value
+  stops that admission instead of reading `cancelled` while the carrier sends.
+- Run the publication stage's due lanes independently on one engine pass
+  (S1-ii, branch review M3): `runDueOpportunities` awaits each due lane's
+  `submit` in turn, so run the due lanes' submits concurrently or stop
+  awaiting `submit` inside the opportunity, and one slow carrier admission no
+  longer delays sibling lanes' boundaries.

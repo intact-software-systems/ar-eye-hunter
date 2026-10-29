@@ -17,8 +17,6 @@ export const AL_PUBLICATION_STAGE_LIMITS: ALPublicationStageLimits = Object.free
     maxStagedBytes: 4 * 1024 * 1024
 });
 
-const LIMITS_PATH = '$.almPublicationLimits';
-
 const LIMIT_FIELDS = ['maxStreams', 'maxStagedValues', 'maxStagedBytes'] as const;
 
 const LIMIT_FIELD_CODES: Readonly<Record<keyof ALPublicationStageLimits, string>> = {
@@ -27,12 +25,14 @@ const LIMIT_FIELD_CODES: Readonly<Record<keyof ALPublicationStageLimits, string>
     maxStagedBytes: 'invalid-max-staged-bytes'
 };
 
+/** Every issue names its field under `path`, the place the caller read the limits from. */
 export function decodeALPublicationStageLimits(
-    value: unknown
+    value: unknown,
+    path: string
 ): Either<readonly RallarValidationIssue[], ALPublicationStageLimits> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return Either.ofLeft([{
-            path: LIMITS_PATH,
+            path,
             code: 'invalid-publication-limits',
             message: 'Expected a publication stage limits object.'
         }]);
@@ -42,25 +42,25 @@ export function decodeALPublicationStageLimits(
         maxStagedValues: getNumber(value, 'maxStagedValues'),
         maxStagedBytes: getNumber(value, 'maxStagedBytes')
     };
-    const issues = [...validateLimitFields(limits), ...validateKnownFields(value)];
+    const issues = [...validateLimitFields(limits, path), ...validateKnownFields(value, path)];
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(limits);
 }
 
-function validateLimitFields(limits: ALPublicationStageLimits): readonly RallarValidationIssue[] {
+function validateLimitFields(limits: ALPublicationStageLimits, path: string): readonly RallarValidationIssue[] {
     return LIMIT_FIELDS.flatMap((field) =>
         isPositiveSafeInteger(limits[field])
             ? []
             : [{
-                path: `${LIMITS_PATH}.${field}`,
+                path: `${path}.${field}`,
                 code: LIMIT_FIELD_CODES[field],
                 message: 'Expected a positive safe integer.'
             }]
     );
 }
 
-function validateKnownFields(value: object): readonly RallarValidationIssue[] {
+function validateKnownFields(value: object, path: string): readonly RallarValidationIssue[] {
     return Object.keys(value).filter((field) => !Object.hasOwn(LIMIT_FIELD_CODES, field)).map((field) => ({
-        path: `${LIMITS_PATH}.${field}`,
+        path: `${path}.${field}`,
         code: 'unknown-field',
         message: 'Expected only maxStreams, maxStagedValues and maxStagedBytes.'
     }));

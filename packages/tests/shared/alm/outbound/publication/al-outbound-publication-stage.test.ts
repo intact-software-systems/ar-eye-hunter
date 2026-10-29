@@ -8,7 +8,11 @@ import {
 } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
+import { toIdleALOutboundPublicationLedgerReport } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';
+import {
+    ALOutboundPublicationStage,
+    toIdleALOutboundPublicationStageReport
+} from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALOutboundStagedPublication } from '@shared/alm/outbound/publication/al-outbound-staged-publication.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
@@ -25,6 +29,8 @@ interface StageFixture {
     /** The contexts of each `submit` call, in call order. */
     readonly submitted: string[][];
     readonly settlements: ALDeliverySettlement[];
+    /** Called in order after the fixture records each settlement, synchronously inside the call that settled it. */
+    readonly settlementListeners: ((settlement: ALDeliverySettlement) => void)[];
     readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     readonly reportTaskFailure: ReturnType<typeof vi.fn>;
 }
@@ -43,6 +49,7 @@ function createStageFixture(options?: StageFixtureOptions): StageFixture {
     const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.atMs, random: () => 0.5, reportTaskFailure });
     const submitted: string[][] = [];
     const settlements: ALDeliverySettlement[] = [];
+    const settlementListeners: ((settlement: ALDeliverySettlement) => void)[] = [];
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const stage = new ALOutboundPublicationStage<string>({
         taskId: TASK_ID,
@@ -52,10 +59,13 @@ function createStageFixture(options?: StageFixtureOptions): StageFixture {
         submit: options?.submit ?? (async (selected) => {
             submitted.push(selected.map((publication) => publication.context));
         }),
-        settle: (settlement) => settlements.push(settlement),
+        settle: (settlement) => {
+            settlements.push(settlement);
+            settlementListeners.forEach((listener) => listener(settlement));
+        },
         diagnostics: (event) => diagnostics.push(event)
     });
-    return { clock, engine, stage, submitted, settlements, diagnostics, reportTaskFailure };
+    return { clock, engine, stage, submitted, settlements, settlementListeners, diagnostics, reportTaskFailure };
 }
 
 function createLiveMessage(topicId: string, resourceId: string, expiresAtMs: number): ALMessage {
@@ -373,6 +383,31 @@ describe('ALOutboundPublicationStage', () => {
         const refused = stageValue(fixture, 'v2', { resourceId: 'entity-2', bytes: LATEST_POLICY.drain.bytes + 1 });
 
         expect(refused).toMatchObject({ kind: 'refused', reason: 'oversized' });
+    });
+
+    it('keeps the value a staged-settlement listener stages on the same stream from inside that settlement', async () => {
+        const fixture = createStageFixture();
+        let reentered = false;
+        let reentrantMsgId: string | undefined;
+        fixture.settlementListeners.push((settlement) => {
+            if (settlement.kind === 'staged' && !reentered) {
+                reentered = true;
+                reentrantMsgId = stageValue(fixture, 'reentrant').msgId;
+            }
+        });
+
+        const outer = stageValue(fixture, 'outer');
+
+        expect(fixture.settlements.map((settlement) => [settlement.kind, settlement.msgId])).toEqual([
+            ['staged', outer.msgId],
+            ['staged', reentrantMsgId],
+            ['superseded', outer.msgId]
+        ]);
+        expect(fixture.stage.readReport()).toMatchObject({ streams: 1, staged: 1, stagedBytes: VALUE_BYTES });
+
+        await runEnginePass(fixture.engine);
+
+        expect(fixture.submitted).toEqual([['reentrant']]);
     });
 
     it('reports its totals, limits and every outcome it settled across a stage, displace, expire and opportunity', async () => {
@@ -722,5 +757,25 @@ describe('ALOutboundPublicationStage', () => {
             expect.objectContaining({ msgId: heavy.msgId, traceId: heavy.traceId, outcome: 'refused' })
         ]);
         expect(stagingDiagnosticsOf(fixture.diagnostics)[4]).not.toHaveProperty('limit');
+    });
+});
+
+describe('toIdleALOutboundPublicationStageReport', () => {
+    const limits: ALPublicationStageLimits = { maxStreams: 3, maxStagedValues: 5, maxStagedBytes: 7 };
+
+    it('reports a ledger that holds nothing and settled nothing under the given limits', () => {
+        expect(toIdleALOutboundPublicationLedgerReport(limits)).toEqual({
+            streams: 0,
+            staged: 0,
+            stagedBytes: 0,
+            limits,
+            counters: { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 }
+        });
+    });
+
+    it('reports what a stage under the same limits reads before it stages anything', () => {
+        const fixture = createStageFixture({ limits });
+
+        expect(toIdleALOutboundPublicationStageReport(limits)).toEqual(fixture.stage.readReport());
     });
 });

@@ -170,6 +170,8 @@ and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`,
 `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`,
 `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
+`recipientPeer` (`receiver`, `recipient-b`) is a fixed audience of one by lane role; the `leader-ack` scenarios'
+`leader-outside-list` cell below states how the page resolves both roles.
 `purpose` (`command`, `notification`, `live`) is the purpose of the typed channel the page opens for the send; absent,
 a send that names `toPeer` opens a `command` channel and any other a `notification` one. `publication`
 (`{ cadenceMs, retainNewest, drain: { messages, bytes } }`, each a positive integer within the product's
@@ -430,7 +432,9 @@ polling the API for it is harness load, not evidence.
   `recipientPeer: 'recipient-b'` alone, a list that leaves the leader out; the server
   NACKs the send `no-leader` as above, and neither recipient receives it. The page
   resolves `recipient-b` to the one other live session of another principal that is
-  not the room's leader.
+  not the room's leader. Both roles read the room's other live sessions of another
+  principal: `receiver` is the one such session, or the room's leader when there are
+  several, and `recipient-b` the one beside the leader.
 
 The hosted manifest 22 withholds the leader cells too, so it stays as recorded.
 

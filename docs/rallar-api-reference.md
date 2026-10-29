@@ -1010,7 +1010,9 @@ bound it would pass: `streams`, `staged-values` or `staged-bytes`, beside the
 volatile bound's `admissions`, `bytes`, `age` and `tracks`. `cancel()` on a
 staged value removes it before its boundary: the handle ends `cancelled` with
 no attempt, and the value never reaches a carrier. A value its boundary already
-admitted is cancelled on its carrier, as any send is. A live send whose
+admitted is cancelled on its carrier, as any send is. A cancel that lands
+while the carrier is admitting the value does not stop that admission; the
+handle reads `cancelled` and the carrier still sends. A live send whose
 `publication` differs from the channel's current one reconfigures that channel
 at once: each stream keeps its newest values up to the new `retainNewest`, the
 displaced ending `superseded`; a staged value heavier than the new

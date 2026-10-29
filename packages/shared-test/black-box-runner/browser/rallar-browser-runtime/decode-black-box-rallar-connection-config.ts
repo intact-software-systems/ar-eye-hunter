@@ -249,7 +249,7 @@ function decodeAlmPublicationLimits(value: unknown): ALPublicationStageLimits | 
     if (value === undefined) {
         return undefined;
     }
-    return decodeALPublicationStageLimits(value).fold(
+    return decodeALPublicationStageLimits(value, '$.almPublicationLimits').fold(
         (issues) => {
             throw new TypeError(issues.map((issue) => `${issue.path}: ${issue.message}`).join(' '));
         },

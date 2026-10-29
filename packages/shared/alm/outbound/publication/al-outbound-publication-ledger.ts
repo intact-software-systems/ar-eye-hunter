@@ -31,6 +31,25 @@ interface ALOutboundPublicationTotals {
     readonly stagedBytes: number;
 }
 
+const IDLE_TOTALS: ALOutboundPublicationTotals = { streams: 0, staged: 0, stagedBytes: 0 };
+
+const IDLE_COUNTERS: ALOutboundPublicationCounters = {
+    staged: 0,
+    superseded: 0,
+    expired: 0,
+    refused: 0,
+    cancelled: 0,
+    admitted: 0,
+    deferred: 0
+};
+
+/** What a ledger under `limits` reports before it holds or settled anything. */
+export function toIdleALOutboundPublicationLedgerReport(
+    limits: ALPublicationStageLimits
+): ALOutboundPublicationLedgerReport {
+    return { ...IDLE_TOTALS, limits, counters: IDLE_COUNTERS };
+}
+
 export namespace ALOutboundPublicationLedger {
     export interface Value {
         readonly bytes: number;
@@ -56,16 +75,8 @@ export namespace ALOutboundPublicationLedger {
  */
 export class ALOutboundPublicationLedger {
     private readonly limits: ALPublicationStageLimits;
-    private totals: ALOutboundPublicationTotals = { streams: 0, staged: 0, stagedBytes: 0 };
-    private counters: ALOutboundPublicationCounters = {
-        staged: 0,
-        superseded: 0,
-        expired: 0,
-        refused: 0,
-        cancelled: 0,
-        admitted: 0,
-        deferred: 0
-    };
+    private totals: ALOutboundPublicationTotals = IDLE_TOTALS;
+    private counters: ALOutboundPublicationCounters = IDLE_COUNTERS;
 
     constructor(limits: ALPublicationStageLimits) {
         this.limits = limits;
