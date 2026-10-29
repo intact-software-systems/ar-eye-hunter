@@ -25,8 +25,7 @@ and it has no status list.
   Slice 1 of `playground/alm/alm-publication-qos-addendum.md`, whose newest-N
   retention per stream key is that demand.
 - Five shared-mechanism consolidations the V1c audit ranked (D278) and the
-  V1c closure recorded, not selected (D420, D421 and D423–D426 in
-  `playground/alm/alm-v1c-step2-design-proposal.md`), measured on `ab27df0a9`:
+  V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history), measured on `ab27df0a9`:
   the AL checkpoint writer and the reconnect hydrator keep their own trailing
   flush timers beside `ThrottledFlush`; about 11 serialized promise chains have
   no shared primitive; three linked abort scope and abortable wait copies sit
@@ -101,8 +100,5 @@ and it has no status list.
   `PersistentALInboundRuntimeStateStore`, which nothing constructs; the
   persistent one's `readAllValues` is the last whole-store read under
   `packages/shared/alm` (D8; roadmap F15).
-- ALM congestion beyond V1b: relay fanout reduction and alternate routes under
-  congestion, routing around one backpressured peer, congestion on RTC
-  unicasts, server-side WS backpressure, and an outbound claim order that
-  rotates across senders or tracks (V1b-ii measured the sender-blind order and
-  kept it).
+- ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
+  peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.

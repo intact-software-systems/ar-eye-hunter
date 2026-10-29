@@ -665,8 +665,9 @@ reporting the replaced message as delivered.
 **PARTIAL:** Dedup and latest-wins behavior are implemented and persisted.
 
 **CURRENT — I2a, dedup retention:** A message-id dedup row is kept until the
-later of the dedup window (60 s by default) and the message deadline plus the
-receipt grace, capped by the message-owner retention
+later of the dedup window (60 s by default) and the deadline term: the message
+deadline plus the receipt grace, or the message-owner retention from now if that
+is earlier. The cap bounds only the deadline term, never the window
 (`computeALInboundDedupExpiryMs` in
 `packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts`; the
 default retention is in `packages/shared/alm/ALStoreRetention.ts`), so a replay

@@ -52,7 +52,9 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   - Recovery reuses the lane bootstrap.
   - No second queue, persistence layer, scheduler or coordination primitive is written (D8).
 - **No legacy, no migration code** (D3, D8). A persisted-shape change bumps
-  `AL_ADMISSION_SCHEMA_ID`, and incompatible browser storage is deleted on mismatch and reported.
+  `AL_ADMISSION_SCHEMA_ID`. Since #652 an open of incompatible browser storage is refused with
+  `ALStorageSchemaMismatchError` and its rows are kept; D3's deletion waits on the maintainer's
+  ruling named in `plans/backlog.md`.
   Web and API deploy together.
 - **Evidence before optimization.** Every performance claim here is labelled _measured_, _proven
   from code_ or _needs measurement_. No optimization lands without before-and-after pins and
