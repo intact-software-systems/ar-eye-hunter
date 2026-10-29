@@ -5460,6 +5460,9 @@ components:
         expiresAtEpochMs:
           type: integer
           format: int64
+          description: |
+            Epoch milliseconds until which the configuration stays usable. The response
+            always advertises at least 30 seconds of validity at the time it is produced.
 
     IceServer:
       type: object

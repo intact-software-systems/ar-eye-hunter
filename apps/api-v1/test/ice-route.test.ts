@@ -25,7 +25,7 @@ Deno.test('ICE route applies resolved authentication and request-rate policy', a
         requireApiAuthSession: () => Promise.resolve(session),
         configuration: {
             mode: 'local',
-            cacheTtlMs: 1_000,
+            cacheTtlMs: 60_000,
             rateLimit: { windowMs: 60_000, requests: 1 }
         },
         nowEpochMs: () => 300_000
@@ -37,7 +37,7 @@ Deno.test('ICE route applies resolved authentication and request-rate policy', a
     assert.equal(first.status, 200);
     assert.deepEqual(await first.json(), {
         iceServers: [],
-        expiresAtEpochMs: 301_000
+        expiresAtEpochMs: 360_000
     });
     assert.equal(second.status, 429);
 });
@@ -49,7 +49,7 @@ Deno.test('Metered ICE route caches one provider response for the resolved lifet
         requireApiAuthSession: () => Promise.resolve(testSession()),
         configuration: {
             mode: 'metered',
-            cacheTtlMs: 1_000,
+            cacheTtlMs: 60_000,
             rateLimit: { windowMs: 60_000, requests: 2 },
             appName: 'rallar-test',
             apiKey: 'secret-not-logged',
@@ -70,7 +70,67 @@ Deno.test('Metered ICE route caches one provider response for the resolved lifet
     assert.equal(providerCalls, 1);
     assert.deepEqual(await second.json(), {
         iceServers: [{ urls: ['turn:example.test'] }],
-        expiresAtEpochMs: 301_000
+        expiresAtEpochMs: 360_000
+    });
+});
+
+Deno.test('ICE route advertises at least 30 seconds of validity near the end of the cache window', async () => {
+    await withMutableClock(300_000, async (clock) => {
+        const app = new Hono();
+        registerIceRoutes(app, {
+            requireApiAuthSession: () => Promise.resolve(testSession()),
+            configuration: {
+                mode: 'local',
+                cacheTtlMs: 300_000,
+                rateLimit: { windowMs: 60_000, requests: 10 }
+            },
+            nowEpochMs: () => clock.nowEpochMs
+        });
+
+        const first = await app.request('/api/webrtc/ice');
+        clock.nowEpochMs = 600_000 - 178;
+        const nearExpiry = await app.request('/api/webrtc/ice');
+
+        assert.deepEqual(await first.json(), { iceServers: [], expiresAtEpochMs: 600_000 });
+        assert.deepEqual(await nearExpiry.json(), {
+            iceServers: [],
+            expiresAtEpochMs: 600_000 - 178 + 30_000
+        });
+    });
+});
+
+Deno.test('ICE route refreshes the provider only after the cache window really ends', async () => {
+    await withMutableClock(300_000, async (clock) => {
+        const app = new Hono();
+        let providerCalls = 0;
+        registerIceRoutes(app, {
+            requireApiAuthSession: () => Promise.resolve(testSession()),
+            configuration: {
+                mode: 'metered',
+                cacheTtlMs: 300_000,
+                rateLimit: { windowMs: 60_000, requests: 10 },
+                appName: 'rallar-test',
+                apiKey: 'secret-not-logged',
+                region: 'eu'
+            },
+            nowEpochMs: () => clock.nowEpochMs,
+            readMeteredIceCandidates: () => {
+                providerCalls += 1;
+                return Promise.resolve(Response.json([{ urls: ['turn:example.test'] }]));
+            }
+        });
+
+        await app.request('/api/webrtc/ice');
+        clock.nowEpochMs = 600_000 - 178;
+        const nearExpiry = await app.request('/api/webrtc/ice');
+        const providerCallsNearExpiry = providerCalls;
+        clock.nowEpochMs = 600_000 + 1;
+        const afterExpiry = await app.request('/api/webrtc/ice');
+
+        assert.equal(providerCallsNearExpiry, 1);
+        assert.equal((await nearExpiry.json()).expiresAtEpochMs, 600_000 - 178 + 30_000);
+        assert.equal(providerCalls, 2);
+        assert.equal((await afterExpiry.json()).expiresAtEpochMs, 600_000 + 1 + 300_000);
     });
 });
 
@@ -134,6 +194,21 @@ Deno.test('canonical default ICE budget preserves authentication, client isolati
         }
     });
 });
+
+async function withMutableClock(
+    startEpochMs: number,
+    run: (clock: { nowEpochMs: number; }) => Promise<void>
+): Promise<void> {
+    const clock = { nowEpochMs: startEpochMs };
+    const originalNow = Date.now;
+    Date.now = () => clock.nowEpochMs;
+    try {
+        await run(clock);
+    }
+    finally {
+        Date.now = originalNow;
+    }
+}
 
 function readFixtureConfiguration(requests?: string) {
     const resource = (name: string) => new URL(`../resources/configuration/${name}-config.json`, import.meta.url);
