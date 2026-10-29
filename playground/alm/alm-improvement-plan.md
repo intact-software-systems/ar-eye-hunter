@@ -1,7 +1,7 @@
 # ALM improvement roadmap
 
 Prepared: 2026-09-05\
-Revised: 2026-10-29 (Release 9 Slice 1 designed; S1-i delivered)\
+Revised: 2026-10-29 (Release 9 Slice 1 complete; S1-ii delivered)\
 Reviewed source: `cfcc9a6c7` (`main` after PR #731)
 
 ## Summary and agreed decisions
@@ -500,6 +500,13 @@ question.
 | D473 | **R3 and R4, proof and split.** S1-i: D466–D472, unit tests at every owner, the public API snapshots and budgets, the three smoke cells. S1-ii: per-key and per-session byte and key bounds with `refused`/`capacity` naming the limit, fair selection across streams and groups, `cancel` and reconfiguration on the stage, stream-key isolation cells (two groups, two entities, two fixed audiences), the WS live-only fanout refusal (a live send to a topic declared `outbox` is refused typed), staging metrics on `readUsage`/`stats.rallar.alm`, the `examples/room-live-channel/README.md` example, a visible Recipe Console flow pinned by Playwright, and the hosted manifest placement. No game feed moves in Slice 1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | D474 | **Validation.** Focused: `packages/tests/shared/alm/outbound/publication/**`, `packages/tests/shared/al-contracts/**` for the policy and key, `packages/tests/shared-web/messages/**`, `packages/tests/shared-test/**` for the decoder, recipes and pins, the Deno `deno task check` of api-v1 (shared types reach it). Gates: `test:unit`, `typecheck`, `typecheck:tests`, the public API snapshots and `check:browser-bundles` (a crossed `rallar.ts` budget is raised to the next KiB with the figure recorded), `check-changed-repo-style`, the ALM smoke lane locally over the three carriers, the Branch Release Gate. No api-v1 mutation path changes, so no medium-scale or state-write gate is selected. **As applied (S1-i):** the gates ran per task, as the pull request records, and the Branch Release Gate runs at handoff.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | D475 | **R7, shared primitives.** Retention and the cadence have shared owners. `retainNewest(values, limit)` (`packages/shared/cache/retain-newest.ts`) keeps the newest `limit` values and returns the displaced ones oldest first, for the publication stage and the motion buffer (`packages/shared/rallar-motion/buffer.ts`). `computeCadenceBoundaryAtMs`, `computeNextCadenceAtMs` and `isCadenceDue` (`packages/shared/resilience/cadence.ts`) give one cadence after the last, the next opportunity with no catch-up burst (the boundary or now, whichever is later; now when there was no last) and whether a boundary is due, for the stage and the motion send gate (`packages/shared/rallar-motion/send-gate.ts`). The ALM-private `computeALPublicationRetention` and `computeALPublicationNextOpportunityAtMs` are deleted, and the backlog's bounded-FIFO line (D118) is closed (2026-10-29).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| D476 | **R8, the shared key stays.** Every value of a stream keeps the stream's latest-wins supersedence key: replaceable state means a stale sample is never delivered after a newer one, and conflation of co-selected siblings under backpressure is the intended degraded behaviour; the drain budget bounds work per opportunity and promises no delivered history. No code change; the S1-ii cells assert the stage's selection, never carrier history. **As applied (S1-ii):** no code change. A `superseded` observation's `reason` contains the stage's own detail (`displaced it before its opportunity`), which a supersedence at carrier admission does not carry, and `paced-newest-n` reads its two co-selected sends on an unloaded carrier.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| D477 | **R9, the stage ledger.** `ALPublicationStageLimits { maxStreams, maxStagedValues, maxStagedBytes }` and `ALPublicationStageLimit = 'streams' \| 'staged-values' \| 'staged-bytes'`. The stage takes `limits` at construction and counts across its lanes; `stage()` applies retention first (a displaced value frees its count and bytes) and refuses a value that would still pass a limit as `{ kind: 'refused', reason: 'capacity', limit, detail }`, settled on the handle as `rejected` with `failure.limit`; the per-stream byte bound is `retainNewest × drain.bytes` by construction. `ALDeliveryAdmissionVerdict.refused.limit` and `ALDeliveryFailure.limit` widen to `ALVolatileSessionLimit \| ALPublicationStageLimit`, and the harness limit map grows with them. **As applied (S1-ii):** `ALPublicationStageLimits` 64 / 1 000 / 4 MiB per session (`AL_PUBLICATION_STAGE_LIMITS`), checked after retention would displace (streams, then values, then bytes); the `capacity` refusal names the limit on `failure.limit`; the limit union on the admission verdict and the delivery failure is widened; `readReport()` keeps the cumulative counters; `readPublicationStageLimits` sits beside `readVolatileSessionLimits`. `paced-capacity` reconnects with `maxStagedValues: 2` and pauses one cadence before restoring the limits (ws `transport-accepted` is not delivery). Budget raise: `rallar.ts` 276 → 277 KiB at 276.21.      |
+| D478 | **R10, fair selection.** Each lane keeps a cursor: an opportunity starts at the stream after the last one it served, still oldest-first within a stream and under the drain budget, and the cursor advances past the last stream served; lanes stay independent (each channel has its own cadence and budget), so groups never share a budget. `computeALPublicationSelection` takes `startIndex` and returns `nextStartIndex`. **As applied (S1-ii):** a per-lane cursor (`computeALPublicationSelection` `startIndex` → `nextStartIndex`); removing a stream before the cursor moves the cursor with it. `paced-fairness` is one lead and three single sends: the arrival order 0, 1, 3, 2 proves the cursor, where a selection that always started at the first stream would deliver 0, 1, 2, 3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| D479 | **Cancellation and reconfiguration.** The registry's cancel reaches the stages before the carriers: `BrowserPublicationStages.cancel(msgId)` removes a staged value from its stream and settles it `cancelled` under its epoch; a value already admitted is its carriers' to cancel (`cancelOutbox`). A later live send on an existing lane with a different policy reconfigures the lane at once: it adopts the new policy, each stream is re-trimmed to the new `retainNewest` (displaced values settle `superseded`), a staged value heavier than the new `drain.bytes` settles `refused`/`oversized`, and the next boundary becomes the earlier of the scheduled one and `last + newCadence`; no deadline is renewed. **As applied (S1-ii):** cancel reaches the stage before the carriers and settles `cancelled` under the epoch, and a value the stage held skips the carriers, since it reached none; reconfiguration on a changed policy = re-trim per stream (`superseded`), oversized `refused`, next boundary = min(scheduled, last + new cadence), no second dispatch. Oversized values leave before the re-trim, and a refused send still reconfigures its lane. The stages are page-wide, built by the delivery composition, which subscribes the session-end stop, and each staged delivery carries its own leg writer (`StagedDelivery.writeLeg`). Budget raise: headless agent 368 → 369 KiB at 368.54.                               |
+| D480 | **R11, the visible flow and the staging diagnostic.** The stage writes one payload-free `publication-staging` diagnostic per staged value's outcome (`{ kind, laneKey, msgId, traceId, atMs, outcome, limit? }`) beside `publication-opportunity`; both carry a readable message in the harness's diagnostic rows. The Analyze view needs no new rendering: `recipe-console-publication.spec.ts` loads a synthetic paced artifact through the analyze fixture. `readUsage().publication` and `stats.rallar.alm.publication` report the stage's holdings, limits and cumulative counters. **As applied (S1-ii):** a `publication-staging` diagnostic per settled value (staged, superseded, refused with its limit, cancelled, expired; a value still staged when the stage stops settles `skipped`/`disposed` with no event); one exported `ALPublicationStagingOutcome` union; `rallar.messages.readUsage().publication` and harness `stats.rallar.alm.publication` projected from the stage report — the field is required, so stats blocks recorded before S1-ii no longer decode and the observation skips them (the schema compatibility guide records the break); connect field `rallar.almPublicationLimits`; the diagnostics→events bridge renders the Recipe Console's row texts and the console's artifact builder writes the real event shape. Budget raises: headless 369 → 370 KiB at 369.20; `rallar.ts` 277 → 278 KiB at 277.001.        |
+| D481 | **R12, hosted placement.** The three S1-i cells enter manifest 18 (the withheld lines deleted, the pins updated, the manifests regenerated), and their `not-yet` absence reads get a bounded window instead of an immediate read, the same on the local lane. One hosted dispatch of manifest 18 from the pull request branch is guidance, not a gate; a hosted red is diagnosed from the artifact, never widened blindly. `paced-isolation-resources` (two-agent) enters 18 and `paced-isolation-lists` (three-agent) is withheld from 22 until a hosted run proves the loop-send shape there. **As applied (S1-ii):** cadences 2 000 ms with a half-cadence lead budget (main's ALM observation at `86800bff2` straddled a 500 ms cadence: lead admit 244 ms + loop 305 ms); `paced-expiry` keeps its 100 ms TTL; the `not-yet` window is half a cadence anchored on the preceding arrival's `atEpochMs` (an absent wait fails on history, so a window opened after the count always holds the next arrival); every send after the lead carries a `ttlMs` of one cadence past its opportunity (the live channel's 1 000 ms lifetime would expire before a 2 000 ms boundary); the identity assessor counts a loop's children in a combined recipe; `paced-isolation-lists` runs with the harness's `receiver` resolving to the room's leader beside `recipient-b`; manifest 18 carries the three S1-i cells and the four two-agent cells.             |
+| D482 | **R13, the WS live-only refusal.** A general rule at the WS server's ingress, not a live flag: a best-effort, volatile, latest-wins publication on a topic whose effective fanout is `outbox` is refused in `resolveIngressRejection` with rejection code `unsupported` and the new NACK reason `unsupported` (in `ALNackReason`, the control codec, `resolveALOutboundRelayRejection` as an always-terminal relay rejection, `ALDeliveryRelayRejection.reason` and the harness decoder); the server never enqueues it. A live handle keeps `transport-accepted` and names `evidence.relayRejection.reason 'unsupported'`; a topic-policy advertisement that would make the refusal synchronous is a later outcome. Proven at the router and the WS client (no client topic has an `outbox` fanout, so no lane cell). **As applied (S1-ii):** the registry owns the effective fanout (`resolveRallarServerWsTopicFanout`, a private rule resolver, `resolveFanouts` over both ingress paths with the proxy rules' targets read statically); the router resolves the topic fanout once and names the server-unicast decision once; NACK reason `unsupported`, terminal; no outbox row for a refused message. The static read under-refuses when a suppressing rule's `authorize`/`targets` would skip at runtime and over-refuses when a rule publishing to `outbox` would itself have skipped; neither is reachable in the product today.               |
 
 ### Standing direction
 
@@ -674,13 +681,13 @@ stall segment is uninstrumented on the server side.
 
 ## Release map
 
-Twenty-four PRs in eight releases, and every row below but S1-ii is delivered. Releases 2 and 3 were serial.
+Twenty-four PRs in eight releases, and every row below is delivered. Releases 2 and 3 were serial.
 Releases 4 to 8 depended on release 3 and not on each other; release 4, performance and lifetime,
 went first, P1a then P1b (D108), then I2a and I2b (D88, D115). S2 split into S2a, S2b and S2c (D18),
 S2c into S2c-i and S2c-ii (D47), and S3 into S3a, S3b and S3c (D52–D61). Release 8 completed on
 2026-10-29 with #731. Release 9 is Slice 1 (bounded publication pacing) and Slice 2 (authorized WS
-pub/sub) of the [publication QoS and pub/sub addendum](alm-publication-qos-addendum.md); Slice 1 lands as
-S1-i and S1-ii (D473), and Slice 2 is designed in a later PR.
+pub/sub) of the [publication QoS and pub/sub addendum](alm-publication-qos-addendum.md); Slice 1 landed as
+S1-i and S1-ii (D473) and is complete, and Slice 2 is designed in a later PR.
 
 | Release           | PR                                                    | Size   | Completion criteria served |
 | ----------------- | ----------------------------------------------------- | ------ | -------------------------- |
@@ -707,7 +714,7 @@ S1-i and S1-ii (D473), and Slice 2 is designed in a later PR.
 | 8 Integration     | I1b-ii-a Trace on the runtime                         | medium | 9                          |
 | 8 Integration     | I1b-ii-b Message identity, payload-free diagnostics   | medium | 9                          |
 | 9 Publication QoS | S1-i The paced lane                                   | medium | 4, 8                       |
-| 9 Publication QoS | S1-ii Bounds, fairness, consumer proof                | medium | 4, 8                       |
+| 9 Publication QoS | S1-ii Bounds, fairness, cancel, consumer proof        | medium | 4, 8                       |
 
 ### Release 2, F1: conformance lane and messaging entry point
 
@@ -1587,12 +1594,13 @@ with the V1c closure (#694); its durable outcome is in the proposal's §1.14–�
 
 ### Release 9, Slice 1 design (2026-10-29)
 
-Designed in `alm-qos-slice-1-design-proposal.md` from three read-only surveys of `main` at `cfcc9a6c7` (the send
+Designed in the Slice 1 design proposal from three read-only surveys of `main` at `cfcc9a6c7` (the send
 path and QoS vocabulary; scheduling, timers and bounded collections; typed channels, consumers, the conformance
 lane and the harness); the decisions are D465 to D474, under the maintainer's rulings R1–R5 of 2026-10-29, each
-taken on its recommended option. Slice 1 lands as two pull requests (R4): S1-i, the paced lane, and S1-ii, its
-bounds, fairness, consumer proof and hosted placement. R6 approved the S1-i plan as written, and R7 gave retention
-and the cadence shared owners (D475).
+taken on its recommended option. The proposal is deleted with S1-ii's close: its §1–§6 are in git history at
+`86800bff2` (#734), and its §7, S1-ii's design, is D476–D482 here. Slice 1 lands as two pull requests (R4):
+S1-i, the paced lane, and S1-ii, its bounds, fairness, consumer proof and hosted placement. R6 approved the S1-i
+plan as written, and R7 gave retention and the cadence shared owners (D475).
 
 - **The home (D465, R1).** Pacing is a stage in the ALM outbound lifecycle before per-envelope admission; a staged
   value keeps the identity and deadline minted at construction and enters today's carrier admission unchanged.
@@ -1609,6 +1617,32 @@ and the cadence shared owners (D475).
   from the hosted manifests until S1-ii places them. No game feed moves in Slice 1 (R3).
 - **Shared primitives (D475, R7).** `retainNewest` in `packages/shared/cache` and the cadence functions in
   `packages/shared/resilience`, shared with Rallar Motion's buffer and send gate.
+
+S1-ii was designed on 2026-10-29 after #734 merged, from two read-only surveys of `main` at `86800bff2` (the WS
+server's path for client room sends and the NACK channel; the ledger pattern, the metrics surfaces and the stage as
+landed; the Recipe Console flows, the examples and the hosted manifests); the decisions are D476 to D482, under the
+maintainer's rulings R8–R13 of 2026-10-29, each taken on its recommended option, and R14 approved the seven-task
+plan as written.
+
+- **The shared key stays (D476, R8).** A stream's values keep its latest-wins key; the drain budget bounds work per
+  opportunity and promises no delivered history, so the cells assert the stage's selection.
+- **Bounds (D477, R9).** One ledger per session's stage counts streams, staged values and staged bytes across its
+  lanes (64 / 1 000 / 4 MiB) after retention, and refuses a value that would pass a limit `capacity` naming it.
+- **Fairness, cancellation, reconfiguration (D478, D479, R10).** A per-lane cursor starts each opportunity at the
+  stream after the last one served; lanes stay independent. A cancel settles a staged value `cancelled` on the
+  stage before any carrier, and a changed policy re-trims, refuses the oversized and moves the next boundary
+  earlier, never later.
+- **The visible flow and the metrics (D480, R11).** A payload-free `publication-staging` diagnostic per value's
+  outcome; `readUsage().publication` and `stats.rallar.alm.publication`; the Recipe Console's Analyze view shows a
+  paced cell's rows, pinned by `recipe-console-publication.spec.ts`; `examples/room-live-channel/README.md` is the
+  example, linked from the examples index and the example map.
+- **The cells and hosted placement (D481, R12).** `paced-capacity`, `paced-fairness`, `paced-cancel`,
+  `paced-isolation-resources` and `paced-isolation-lists` beside the S1-i cells at a 2 000 ms cadence, over the
+  three carriers; manifest 18 carries the seven two-agent paced cells, and `paced-isolation-lists` is withheld
+  from 22. One isolation cell separates two resources of one channel and the other two fixed recipients; two
+  groups are two streams by the stream key, which S1-i pins on the key, with no cell of their own.
+- **The WS live-only refusal (D482, R13).** The WS server refuses a volatile best-effort latest-wins publication on
+  a topic whose effective fanout is `outbox` at ingress, `unsupported` and terminal, and never enqueues it.
 
 ## Conformance lane
 
@@ -1851,11 +1885,14 @@ runtime diagnostics, the runner's compared `x-request-id` and the harness raw co
 from the same §6.h, decisions D460–D464 with their "As applied" notes: the harness send, reply and received
 identity, the payload-free diagnostics class, receiver-receipted group-state deltas and the server-originated cell.
 It resolves PC9, and Release 8 is complete.
-Release 9 Slice 1 lands as two pull requests (R4). S1-i is delivered from `alm-qos-slice-1-design-proposal.md`,
+Release 9 Slice 1 lands as two pull requests (R4). S1-i is delivered from the Slice 1 design proposal,
 decisions D465–D475 with their "As applied" notes: the `live` channel purpose and its publication policy, the
 `staged` handle state, the publication stage on the session's queue engine, the shared retention and cadence
-primitives, and three smoke cells over the three carriers. S1-ii, the bounds, fairness, cancellation and
-consumer proof, is next.
+primitives, and three smoke cells over the three carriers. S1-ii is delivered from the same proposal's §7,
+decisions D476–D482 with their "As applied" notes: the stage ledger and its `capacity` refusal, fair selection,
+cancellation and reconfiguration on the stage, the staging diagnostic and the usage report, the WS ingress refusal
+of a volatile best-effort publication on an `outbox` topic, five more cells, hosted manifest 18, the example and
+the Recipe Console flow. The proposal is deleted with that close and is in git history. Slice 1 is complete.
 Recover the current owner, entry, dataflow, failure
 boundary, and tests from the repository
 before editing; this roadmap is not a navigation map. When a release completes, move the next two
@@ -1863,8 +1900,9 @@ slices into the concrete horizon here and leave the rest outcome-shaped. Do not 
 status prose to this document.
 
 Release 8 is complete. Release 9 is the
-[publication QoS and pub/sub addendum](alm-publication-qos-addendum.md): Slice 1's S1-i is delivered, S1-ii
-is next, then Slice 2. Decision numbers continue from D476.
+[publication QoS and pub/sub addendum](alm-publication-qos-addendum.md): Slice 1 is complete (S1-i and
+S1-ii), and Slice 2, authorized WS pub/sub, is next, designed in its own pull request. Decision numbers
+continue from D483.
 
 ## Revision history
 
@@ -2177,7 +2215,7 @@ is next, then Slice 2. Decision numbers continue from D476.
   follow-ups are in `plans/backlog.md`, and the next horizon is the publication QoS addendum's Slice 1
   and Slice 2.
 - 2026-10-29 (Release 9 S1-i delivered): the paced lane, decisions D465–D474 from
-  `alm-qos-slice-1-design-proposal.md` with "As applied" notes, and D475, under the maintainer's rulings R1–R7 of
+  the Slice 1 design proposal with "As applied" notes, and D475, under the maintainer's rulings R1–R7 of
   2026-10-29. Slice 1 lands as two pull requests (R4), and the S1-i plan was approved as written (R6). A typed
   channel declared `purpose: 'live'` names a `publication` policy (`cadenceMs`, `retainNewest`, `drain`) and each
   of its sends a `resourceId`. `ALOutboundPublicationStage` stages those sends before admission on the session's
@@ -2189,3 +2227,17 @@ is next, then Slice 2. Decision numbers continue from D476.
   pass over the three carriers and are withheld from the hosted manifests. The release map gains Release 9's S1-i
   and S1-ii rows ("Twenty-four PRs"), and the Release 9, Slice 1 design section and the fresh-session paragraph
   record it. The `browser/rallar.ts` budget is 276 KiB and the headless agent budget 368 KiB. S1-ii is next.
+- 2026-10-29 (Release 9 S1-ii delivered): the bounds, fairness, cancellation, the WS live-only refusal, the
+  metrics and the consumer proof, decisions D476–D482 with "As applied" notes, under the maintainer's rulings
+  R8–R14 of 2026-10-29. The publication stage counts streams, staged values and staged bytes per session
+  (`AL_PUBLICATION_STAGE_LIMITS`, 64 / 1 000 / 4 MiB) and refuses `capacity` naming the limit; each lane serves
+  its streams from a rotating cursor; `cancel()` settles a staged value `cancelled` on the stage, and a changed
+  policy reconfigures the lane at once. The WS server refuses a volatile best-effort latest-wins publication on a
+  topic whose effective fanout is `outbox` at ingress, NACK reason `unsupported`. Each value's outcome is a
+  `publication-staging` diagnostic, and `readUsage().publication` and `stats.rallar.alm.publication` report the
+  stage. The cells `paced-capacity`, `paced-fairness`, `paced-cancel`, `paced-isolation-resources` and
+  `paced-isolation-lists` join the S1-i cells at a 2 000 ms cadence; manifest 18 carries the seven two-agent
+  paced cells. `examples/room-live-channel/README.md` and the Recipe Console's publication flow are the consumer
+  proof. The Slice 1 design proposal is deleted, and the roadmap names it without its file name; git history
+  is the archive. The `browser/rallar.ts` budget is 278 KiB and the headless agent budget 370 KiB. Slice 1 is
+  complete, and Slice 2 is next.

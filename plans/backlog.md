@@ -95,3 +95,18 @@ and it has no status list.
   `packages/shared/alm` (D8; roadmap F15).
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
+- ALM publication QoS carried from Slice 1's S1-ii (D477–D482): a topic-policy
+  advertisement, so a client learns a topic's effective fanout before sending
+  and the WS server's `unsupported` refusal of a live publication on an
+  `outbox` topic becomes a synchronous refusal at the send; the ingress's
+  static read of proxy rules (`resolveFanouts` reads their declared targets,
+  so it under-refuses when a suppressing rule's `authorize` or `targets`
+  would skip at runtime and over-refuses when a rule publishing to `outbox`
+  would itself have skipped; neither is reachable today); a product consumer
+  for the stage's `readLane`, which only tests read; one owner for the
+  unknown-object field readers that `al-publication-policy.ts` and
+  `al-publication-stage-limits.ts` each keep privately; a ruling on the
+  stage's `superseded` settlement, which carries the replacement's `traceId`
+  where the stage's other settlements carry the value's own; and the hosted
+  timing of the paced cells, where a receiver that resolves its count more
+  than a cadence late goes red.

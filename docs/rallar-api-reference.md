@@ -776,7 +776,8 @@ the total and the own pool both at their bounds. It throws while the session is 
 connected, before `connect` and again after `disconnect`, so a poll guards it
 with `rallar.isConnected()`. The report is a `RallarMessagesUsage`: beside the
 ledger it states `repliesHeld`, the retained deliveries that hold a matched reply, and
-`replyWaitsOpen`, the `awaitReply` waits in flight (see Replies below).
+`replyWaitsOpen`, the `awaitReply` waits in flight (see Replies below), and
+`publication`, the live channels' staging (see the `live` channel below).
 
 ```ts
 if (rallar.isConnected()) {
@@ -987,17 +988,54 @@ ends `expired` with no attempt, and a value whose envelope is heavier than
 `failure: { kind: 'refused', reason: 'oversized' }`. A value staged on an idle
 channel is admitted at the session's next engine pass; after that the channel
 admits at each `cadenceMs` boundary at most `drain.messages` values and
-`drain.bytes` bytes, streams in the order they were first staged and each
-oldest first, and the rest wait for the next boundary. A late pass admits once,
-never a catch-up burst. An admitted value continues as any send on its
+`drain.bytes` bytes, each stream oldest first, and the rest wait for the next
+boundary. Each boundary starts at the stream after the last one the previous
+boundary served, so one busy stream never starves its siblings; two live
+channels never share a budget. A late pass admits once, never a catch-up
+burst. An admitted value continues as any send on its
 channel's carrier and fallback. Values of one stream share the latest-wins key,
 so two values admitted at one opportunity may still be conflated at carrier
 admission or on receipt under backpressure: the drain budget bounds the work
 per opportunity, it does not promise delivered history. When the connect
 closes or the session ends, each staged value ends `failed` with
-`failure: { kind: 'skipped', reason: 'disposed' }`. **Limit:** `cancel()` on a
-staged value marks its handle `cancelled`, and the value is still admitted at
-its opportunity.
+`failure: { kind: 'skipped', reason: 'disposed' }`.
+
+The session holds at most 64 streams, 1 000 staged values and 4 MiB of staged
+envelopes across its live channels (`AL_PUBLICATION_STAGE_LIMITS`), counted
+after the value's own stream drops what it displaces, so a value that displaces
+the oldest of its stream frees that value's share first. A value that would still
+pass one ends `rejected` with
+`failure: { kind: 'refused', reason: 'capacity', limit }`, `limit` naming the
+bound it would pass: `streams`, `staged-values` or `staged-bytes`, beside the
+volatile bound's `admissions`, `bytes`, `age` and `tracks`. `cancel()` on a
+staged value removes it before its boundary: the handle ends `cancelled` with
+no attempt, and the value never reaches a carrier. A value its boundary already
+admitted is cancelled on its carrier, as any send is. A live send whose
+`publication` differs from the channel's current one reconfigures that channel
+at once: each stream keeps its newest values up to the new `retainNewest`, the
+displaced ending `superseded`; a staged value heavier than the new
+`drain.bytes` ends `rejected` `oversized`; and the next boundary moves to the
+earlier of the scheduled one and one new cadence after the last, never a
+second admission at once. No staged value's deadline is renewed.
+
+The WS server refuses a volatile, best-effort, latest-wins publication, which
+every live send is, on a topic whose effective fanout is `outbox` (the topic's
+own, or a matching proxy rule's) at ingress: the rejection code is
+`unsupported`, the NACK reason is `unsupported`, and the refusal is terminal;
+the server enqueues nothing. A live handle asks no receipt, so it keeps
+`transport-accepted` and the refusal is evidence only:
+`evidence.relayRejection` reads `{ relay: 'trusted-server', reason: 'unsupported' }`.
+The refusal hands nothing to a fallback carrier. The browser cannot refuse
+earlier, since it does not know a topic's fanout; no product topic a client
+sends on has an `outbox` fanout.
+
+`rallar.messages.readUsage().publication` reads the session's stage: `lanes`
+(its live channels), `streams`, `staged` and `stagedBytes` held now, `limits`
+(`maxStreams`, `maxStagedValues`, `maxStagedBytes`) and `counters`, cumulative
+over the connect: `staged`, `superseded`, `expired`, `refused`, `cancelled`,
+`admitted` (values its boundaries handed to a carrier) and `deferred` (values a
+boundary left for a later one, counted at each boundary that left them). A
+connect that staged no live value reads zeros under the same limits.
 
 `durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
 send is admitted and dispatched from memory and spends no storage operation on

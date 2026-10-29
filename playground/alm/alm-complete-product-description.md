@@ -458,14 +458,46 @@ stream that already holds `retainNewest` values displaces the oldest, which
 settles `superseded`; a
 value whose deadline passes staged settles `expired` with no attempt; a value
 heavier than `drain.bytes` is refused `oversized`. At each cadence boundary of
-its lane an opportunity admits at most the drain budget, streams in their
-first-staged order and each oldest first, through today's carrier admission;
-a late engine pass runs one opportunity, never a catch-up burst (D468–D470).
-The stage runs as one task on the connect's queue engine, stops when the
-connect's settlement epoch closes, and settles what it holds
-`skipped`/`disposed`. **Limit:** `cancel()` on a staged value records
-`cancelled` on its handle, and the stage still admits the value at its
-opportunity (D471).
+its lane an opportunity admits at most the drain budget, each stream oldest
+first, through today's carrier admission; a late engine pass runs one
+opportunity, never a catch-up burst (D468–D470). The stage runs as one task on
+the connect's queue engine, stops when the connect's settlement epoch closes,
+and settles what it holds `skipped`/`disposed`.
+
+**CURRENT — S1-ii, bounds, fairness, cancellation and the WS refusal:** one
+ledger per connect's stage counts its streams, staged values and staged bytes
+across its lanes against `AL_PUBLICATION_STAGE_LIMITS` (64 streams, 1 000
+values, 4 MiB per session,
+[`al-publication-stage-limits.ts`](../../packages/shared/al-contracts/publication/al-publication-stage-limits.ts)),
+read after retention would displace; a value that would still pass a limit is
+refused `capacity` with the `limit` it would pass (`streams`, `staged-values`
+or `staged-bytes`) and ends `rejected` with no attempt (D477). Each lane keeps a
+cursor, so an opportunity starts at the stream after the last one it served and
+no stream starves its siblings under the drain budget; lanes stay independent,
+each with its own cadence and budget (D478). `cancel()` on a staged value
+removes it from its stream and settles it `cancelled` on the stage, before any
+carrier; a value an opportunity already selected is its carrier's to cancel. A
+live send whose policy differs from its lane's reconfigures the lane at once:
+each stream is re-trimmed to the new `retainNewest` (the displaced settle
+`superseded`), a staged value heavier than the new `drain.bytes` settles
+`refused`/`oversized`, and the next boundary moves to the earlier of the
+scheduled one and the last opportunity plus the new cadence, never a second
+dispatch (D479). Each value's outcome on the stage (`staged`, `superseded`,
+`expired`, `refused` with its limit, `cancelled`) is one payload-free
+`publication-staging` diagnostic beside each opportunity's
+`publication-opportunity`, and `rallar.messages.readUsage().publication`
+reports the stage's lanes, streams, staged values and bytes, its limits and
+its cumulative counters, recorded by the black-box `stats` command as
+`stats.rallar.alm.publication` (D480). The WS server refuses a volatile,
+best-effort, latest-wins publication on a topic whose effective fanout is
+`outbox` (the topic's own, or a matching proxy rule's) at ingress with code
+`unsupported` and the NACK reason `unsupported`, terminal, and never enqueues
+it; a live handle keeps `transport-accepted` and names the refusal in
+`evidence.relayRejection` (D482). **Limit:** the browser cannot refuse that
+send earlier, since it does not know a topic's effective fanout. The ingress
+reads proxy rules from their declarations, so it under- or over-refuses when a
+rule would skip at runtime; the product declares no proxy rule and no client
+topic with an `outbox` fanout, so neither case is reachable today.
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile
@@ -801,11 +833,10 @@ browser's inbound stores keeps at most 256 delivered markers
 evicting the least recently admitted track's marker unless that track still
 buffers a release; the WS server's stores keep every marker until its expiry.
 **Limit:** the reliable lane has no bounded newest-N queue per key. A `live`
-channel's sends are paced before admission by the publication stage (S1-i,
-above), its newest N values per stream bounded by its policy; per-key and
-per-session bounds, fair selection across streams and groups, and cancellation
-on the stage are Slice 1's S1-ii in the
-[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md).
+channel's sends are paced before admission by the publication stage (S1-i and
+S1-ii, above): its newest N values per stream bounded by its policy, the
+session's streams, values and bytes by the stage's limits, and its streams
+served in turn.
 **Limit:** there is no relay fanout reduction or alternate route under
 congestion, no routing around one backpressured peer, no congestion on RTC
 unicasts, no server-side WS backpressure, and no outbound claim order that

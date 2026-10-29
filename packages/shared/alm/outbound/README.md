@@ -1010,7 +1010,12 @@ value ([`ALOutboundStagedPublication`](./publication/al-outbound-staged-publicat
 `traceId` and deadline of the message the sender built.
 
 `stage()` refuses a value heavier than `drain.bytes` as `oversized` and settles nothing, so the caller settles the
-refusal; otherwise it settles `staged` at once, and a value that pushes its stream past `retainNewest` displaces the
+refusal. [`ALOutboundPublicationLedger`](./publication/al-outbound-publication-ledger.ts) counts the streams, staged
+values and staged bytes of every lane against the stage's `ALPublicationStageLimits` (the composition root passes
+`AL_PUBLICATION_STAGE_LIMITS`, 64 / 1 000 / 4 MiB) and reads the stream as retention would leave it, so a value that
+displaces its stream's oldest frees that value's share; a value that would still pass a limit, checked streams, then
+values, then bytes, is refused `capacity` with that `limit` and settles nothing either (D477). Otherwise it settles
+`staged` at once, and a value that pushes its stream past `retainNewest` displaces the
 stream's oldest, which settles `superseded` with the new value's `msgId` as `replacementMsgId`; the stage appends
 the value and keeps the newest `retainNewest` with [`retainNewest`](../../cache/retain-newest.ts), the primitive the
 motion buffer's per-entity window shares. Staging on an idle lane
@@ -1019,8 +1024,9 @@ opens an opportunity at once and wakes the engine; on a scheduled lane the value
 The stage registers one task, at most one runnable at a time, on the session's `InboxOutboxEngine`; its `isWork`
 is "a lane is due" on the injected `Clock`. Each due lane runs one opportunity:
 [`computeALPublicationSelection`](./publication/compute-al-publication-selection.ts) settles the values whose
-deadline passed `expired`, then takes the streams in order, each oldest first, until the next value would pass
-`drain.messages` or `drain.bytes`; the rest wait. The selection goes to the caller's `submit` port; a `submit`
+deadline passed `expired`, then takes the streams from the lane's cursor (`startIndex`), each oldest first, until the
+next value would pass `drain.messages` or `drain.bytes`; the rest wait, and the lane's cursor moves to the returned
+`nextStartIndex`, the stream after the last one served (D478). The selection goes to the caller's `submit` port; a `submit`
 that throws settles each selected value `admission` `failed` with its message, and the opportunity writes one
 payload-free `publication-opportunity` diagnostic (`laneKey`, `atMs`, `selected`, `deferred`, `expired`,
 `bytes`). The next boundary is one cadence after the opportunity
@@ -1030,9 +1036,20 @@ scheduled for one more boundary, so a value staged within the cadence still wait
 lanes ran, the task calls `wakeAt` with the earliest next opportunity, or with `undefined` once every lane is idle.
 `dispose()` leaves the engine and settles every staged value `skipped`/`disposed`.
 
+`cancel(msgId)` removes a value the stage still holds and settles it `cancelled`, returning whether it held one; a
+value an opportunity selected is its carrier's to cancel. A `stage()` whose policy differs from its lane's
+reconfigures the lane first
+([`computeALPublicationReconfiguration`](./publication/compute-al-publication-reconfiguration.ts)): values heavier than
+the new `drain.bytes` leave and settle `refused`/`oversized`, each stream is re-trimmed to the new `retainNewest`
+(the displaced settle `superseded`), and the next opportunity becomes the earlier of the scheduled one and one new
+cadence after the last, never a second dispatch (D479). Each value's outcome (`staged`, `superseded`, `expired`,
+`refused` with a capacity refusal's `limit`, `cancelled`) writes one payload-free `publication-staging` diagnostic
+(`laneKey`, `msgId`, `traceId`, `atMs`, `outcome`, `limit`) and counts in the ledger; `readReport()` returns the
+stage's `lanes`, the ledger's holdings and limits, and its cumulative counters, with `admitted` and `deferred` from
+the opportunities (D480). A value still staged at `dispose()` settles `skipped`/`disposed` with no event.
+
 The stage never sends and never admits: what `submit` hands to a carrier enters today's admission unchanged, so the
-frozen audience, fallback, supersedence and receipts apply to it as to any send. Fairness across streams and groups,
-byte and key bounds, cancellation and reconfiguration of a staged lane are S1-ii (D473).
+frozen audience, fallback, supersedence and receipts apply to it as to any send.
 
 ## Read and failure boundaries
 
