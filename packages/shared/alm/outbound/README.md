@@ -705,6 +705,12 @@ that reason, so a receipted send reads `rejected` and a receipt-less one names i
 D175; the exclusive claim itself is [the inbound README's](../inbound/README.md)). Unlike the pre-admission refusals
 it refuses the whole send whatever the receipt, and it ends the receipt as `resync-required` does: a claim the server
 retained on a conflict has its `admitted` receipt before its replay drops it.
+A volatile best-effort latest-wins publication
+([`isALVolatileBestEffortPublication`](../../al-contracts/publication/is-al-volatile-best-effort-publication.ts)) on a
+topic whose effective fanout is `outbox` -- the topic's own, or a matching proxy rule's -- is refused at the router's
+ingress with an `unsupported` NACK and never enqueued (D482): the browser cannot know a topic's fanout, so the server
+refuses. The origin states it as a trusted-server `relay-rejected` with that reason whatever the receipt; a live
+handle tracks none, so it keeps `transport-accepted` and names the refusal in `relayRejection` alone.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
@@ -1218,7 +1224,7 @@ in memory like a cancellation: a durable RTC message resumed after a reload is n
 [`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At
 admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and
 `refused/unsupported` hands the send to the fallback carrier at once, while `refused/no-leader`
-hands nothing over (D165), nor does a trusted-server `held-by-other` relay rejection (D175); an RTC
+hands nothing over (D165), nor does a trusted-server `held-by-other` or `unsupported` relay rejection (D175, D482); an RTC
 room fanout in a carrier gap reads `no-route` there (D96). After
 admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3) consecutive `not-ready` RTC attempts across the
 message's send-prepared rows (reset by a `sent` attempt or an acknowledgement),

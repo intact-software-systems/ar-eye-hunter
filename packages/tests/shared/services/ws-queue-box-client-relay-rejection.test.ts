@@ -302,6 +302,79 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
+    it('states the server refusing a live publication on an outbox topic unsupported; the receipt-less handle stays transport-accepted with the rejection as evidence (D482)', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'unsupported',
+            rejectionCode: 'unsupported',
+            logMessage: 'Rejected a volatile best-effort publication on an outbox WS topic: room.pose',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const live = livePublication('live-on-outbox');
+        expect((await origin.service.enqueueOutboxIfAbsent(live)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(live, 'a');
+
+        expect(refused.left?.code).toBe('unsupported');
+        expect(readSentNacks(fixture.sockets.a)).toHaveLength(1);
+        await relayFrames(fixture.sockets.a, origin);
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected')).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'live-on-outbox',
+            carrier: 'ws',
+            lane: 'durable',
+            atMs: expect.any(Number),
+            relayRejection: { relay: 'trusted-server', reason: 'unsupported' },
+            detail: 'The server relay refused the message: unsupported.',
+            traceId: 'trace-ws-queue-box-client-relay-rejection'
+        }]);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'live-on-outbox')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('live-on-outbox', 'none'));
+        expect(lifecycle.state).toBe('transport-accepted');
+        expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'unsupported' });
+    });
+
+    it('ends the hop receipt of a live publication the server refused unsupported: the row is gone and the handle reads rejected (D482)', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'unsupported',
+            rejectionCode: 'unsupported',
+            logMessage: 'Rejected a volatile best-effort publication on an outbox WS topic: room.pose',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const base = livePublication('live-hop-on-outbox');
+        const live: ALMessage = { ...base, qos: { ...base.qos, ack: { algo: 'hop' } } };
+        expect((await origin.service.enqueueOutboxIfAbsent(live)).trackedReceiptAlgo).toBe('hop');
+
+        await fixture.server.acceptIncomingMessage(live, 'a');
+        await relayFrames(fixture.sockets.a, origin);
+
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'live-hop-on-outbox' })
+        ).toBeUndefined();
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'live-hop-on-outbox')
+            .reduce(
+                computeALDeliveryLifecycle,
+                createInitialALDeliveryLifecycle({
+                    msgId: 'live-hop-on-outbox',
+                    typeId: 'pose.v1',
+                    ackMode: 'none',
+                    receiptAlgo: 'hop',
+                    expiresAtMs: undefined,
+                    submittedAtMs: 0
+                })
+            );
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'unsupported' }
+        });
+    });
+
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
     // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
     it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {
@@ -445,6 +518,19 @@ function roomUnicast(msgId: string, toPeerId: string): ALMessage {
         constraints: { expiresAtMs: Date.now() + 30_000 },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         payload: { typeId: 'command.v1', contentType: 'application/json', resource: '{}' }
+    };
+}
+
+/** A live channel's send: a best-effort, receipt-less, volatile, latest-wins room broadcast. */
+function livePublication(msgId: string): ALMessage {
+    return {
+        id: { v: 4, msgId, ts: Date.now(), senderId: 'a', traceId: 'trace-ws-queue-box-client-relay-rejection' },
+        route: { topicId: 'room.pose', resourceId: 'entity-1', contextId: ROOM.groupId },
+        targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        delivery: { reliability: 'best-effort', ack: 'none' },
+        qos: { durability: { algo: 'volatile' }, supersedence: { algo: 'latest-wins' } },
+        payload: { typeId: 'pose.v1', contentType: 'application/json', resource: '{}' }
     };
 }
 

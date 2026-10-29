@@ -5,6 +5,7 @@ import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { isALUnicastAddressedTo } from '@shared/al-contracts/is-al-unicast-addressed-to.ts';
+import { isALVolatileBestEffortPublication } from '@shared/al-contracts/publication/is-al-volatile-best-effort-publication.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
@@ -203,7 +204,7 @@ export class RallarServerWsRouter {
         if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
             await this.publishToFanout({
                 message,
-                fanout: ingress.definition?.fanout ?? this.defaultFanout,
+                fanout: this.resolveTopicFanout(ingress.definition),
                 audience: { current: audience, admittedPeerIds: toClientDeliveryPeerIds(message, admittedPeerIds) },
                 inboundScope,
                 origin: 'admitted',
@@ -326,7 +327,27 @@ export class RallarServerWsRouter {
                 logMessage: `Rejected oversized Rallar server WS payload: ${message.route.topicId}`
             };
         }
-        return undefined;
+        return this.resolveFanoutRejection(message);
+    }
+
+    /** A live publication never enters an outbox (D482): the browser cannot know the topic's fanout, the server refuses. */
+    private resolveFanoutRejection(message: ALMessage): RallarServerWsRouter.Rejection | undefined {
+        if (!isALVolatileBestEffortPublication(message)) {
+            return undefined;
+        }
+        const fanouts = this.registry.resolveFanouts({
+            message,
+            defaultFanout: this.defaultFanout,
+            publishesTopicFanout: !isALUnicastAddressedTo(message, this.serverPeerId)
+        });
+        return fanouts.includes('outbox')
+            ? {
+                code: 'unsupported',
+                reason: 'unsupported',
+                logMessage:
+                    `Rejected a volatile best-effort publication on an outbox WS topic: ${message.route.topicId}`
+            }
+            : undefined;
     }
 
     private async authorizeTopicMessage(
@@ -389,8 +410,14 @@ export class RallarServerWsRouter {
             roomRef: readRallarServerWsRoomRef(message),
             senderId: message.id.senderId,
             authenticatedScope: inboundScope ?? undefined,
-            proxy: this.toMessageProxy(definition?.fanout ?? this.defaultFanout, inboundScope)
+            proxy: this.toMessageProxy(this.resolveTopicFanout(definition), inboundScope)
         };
+    }
+
+    private resolveTopicFanout(
+        definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined
+    ): RallarServerWsFanout {
+        return definition?.fanout ?? this.defaultFanout;
     }
 
     private toMessageProxy(

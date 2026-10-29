@@ -5,7 +5,7 @@ import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admi
 
 /**
  * A NACK that refuses the whole send rather than one receipt: a relay's `resync-required` and the trusted
- * server's `held-by-other` whatever the receipt, and before any receipt row exists a `membership-fenced`
+ * server's `held-by-other` or `unsupported` whatever the receipt, and before any receipt row exists a `membership-fenced`
  * refusal or the trusted server's `unauthorized` or `no-leader` one. A claim the server retained on a
  * conflict may already have its `admitted` receipt when the replay drops it (D175).
  * Only the trusted server speaks without being a peer the send owes, so only its rejection waives that check.
@@ -17,7 +17,7 @@ export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): A
     const nack = read.parsed.payload;
     const beforeReceipt = read.sent !== undefined && read.pending === undefined;
     if (read.source === 'trusted-server') {
-        return nack.reason === 'resync-required' || nack.reason === 'held-by-other' ||
+        return isTrustedServerSendRefusal(nack.reason) ||
                 (beforeReceipt && isTrustedServerAdmissionRefusal(nack.reason))
             ? { relay: 'trusted-server', reason: nack.reason }
             : undefined;
@@ -25,6 +25,12 @@ export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): A
     return nack.reason === 'resync-required' || (beforeReceipt && nack.reason === 'membership-fenced')
         ? { relay: 'peer', peerId: nack.fromPeerId, reason: nack.reason }
         : undefined;
+}
+
+function isTrustedServerSendRefusal(
+    reason: ALNackReason
+): reason is 'resync-required' | 'held-by-other' | 'unsupported' {
+    return reason === 'resync-required' || reason === 'held-by-other' || reason === 'unsupported';
 }
 
 function isTrustedServerAdmissionRefusal(

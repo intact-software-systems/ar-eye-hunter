@@ -30,6 +30,13 @@ export interface DispatchRallarServerWsProxyRulesInput {
     ) => Promise<RallarServerWsPublishResult>;
 }
 
+export interface ResolveRallarServerWsFanoutsInput {
+    readonly message: ALMessage;
+    readonly defaultFanout: RallarServerWsFanout;
+    /** False for a message the router ends at its handlers: a unicast addressed to the server (D57). */
+    readonly publishesTopicFanout: boolean;
+}
+
 export class RallarServerWsTopicRegistry {
     private readonly definitions: RallarServerWsTopicDefinition<JsonWireValue>[] = [];
     private readonly handlers = new Map<string, RegisteredHandler>();
@@ -111,6 +118,21 @@ export class RallarServerWsTopicRegistry {
             definition.topicId === message.route.topicId &&
             (definition.typeId === undefined || definition.typeId === message.payload.typeId)
         );
+    }
+
+    /**
+     * The fanouts the router publishes an admitted message on, read from the declarations: each matching proxy
+     * rule's own or the topic's, then the topic's unless a matching rule suppresses it. A rule's `authorize`,
+     * `transform` and `targets` are per-message application decisions this reading does not run.
+     */
+    resolveFanouts(input: ResolveRallarServerWsFanoutsInput): readonly RallarServerWsFanout[] {
+        const topicFanout = this.find(input.message)?.fanout ?? input.defaultFanout;
+        const rules = [...this.proxyRules.values()]
+            .filter((rule) => matchesRallarServerWsSelector(rule.from, input.message));
+        const ruleFanouts = rules.map((rule) => rule.fanout ?? topicFanout);
+        return input.publishesTopicFanout && !rules.some((rule) => rule.suppressDefaultFanout === true)
+            ? [...ruleFanouts, topicFanout]
+            : ruleFanouts;
     }
 
     async dispatchHandlers(

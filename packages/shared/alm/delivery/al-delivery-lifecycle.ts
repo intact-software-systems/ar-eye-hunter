@@ -305,12 +305,19 @@ export interface ALDeliveryReceiptEvidence {
  * a message the origin holds no receipt row for (`unauthorized`, `no-leader` for a `group-leader` send whose room
  * has no active leader inside the audience it names, or `held-by-other` for an exclusive send on a resource another
  * session holds), and a trusted server or a peer one whose sender is no longer a member of the roster it was stamped
- * with (`membership-fenced`). A trusted server relay is not named.
+ * with (`membership-fenced`). A trusted server refuses a volatile best-effort latest-wins publication on a topic whose
+ * fanout is `outbox` as `unsupported` (D482). A trusted server relay is not named.
  */
 export type ALDeliveryRelayRejection =
     | Readonly<{
         relay: 'trusted-server';
-        reason: 'resync-required' | 'unauthorized' | 'membership-fenced' | 'no-leader' | 'held-by-other';
+        reason:
+            | 'resync-required'
+            | 'unauthorized'
+            | 'membership-fenced'
+            | 'no-leader'
+            | 'held-by-other'
+            | 'unsupported';
     }>
     | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required' | 'membership-fenced'; }>;
 
