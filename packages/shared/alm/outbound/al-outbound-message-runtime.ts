@@ -399,6 +399,18 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         /** What that storage read cost: the page read the batch behind a "due now" answer then reuses. */
         durationMs: number;
     }>
+    | Readonly<{
+        kind: 'publication-opportunity';
+        /** The live channel the opportunity ran for: `topicId/typeId`. */
+        laneKey: string;
+        atMs: number;
+        selected: number;
+        /** The values still staged after it, waiting for the lane's next opportunity. */
+        deferred: number;
+        expired: number;
+        /** The envelope bytes of the selected values. */
+        bytes: number;
+    }>
     | ALOutboundCongestionDiagnostic;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
