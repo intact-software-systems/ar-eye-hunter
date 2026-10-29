@@ -161,8 +161,6 @@ roomBrowserTest(
             await expect(other.getByRole('button', { name: 'Leave room', exact: true })).toBeDisabled();
             response.resolve();
             await expect(host.getByRole('button', { name: 'Leave expedition', exact: true })).toBeVisible();
-            // The concurrent admission has settled; release this tab's shared-session transport before returning.
-            await host.goto('about:blank');
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
             // Leaving disconnects this session; the account remains because it is the room's last owner.
             expect((await membershipRemoval).status()).toBe(403);
