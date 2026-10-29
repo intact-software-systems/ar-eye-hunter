@@ -18,6 +18,10 @@ import {
     type BlackBoxRallarCommandRecord,
     type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
+import {
+    decodeBlackBoxRallarMessageChannel,
+    type BlackBoxRallarMessageChannel
+} from './decode-black-box-rallar-message-channel.ts';
 
 type MessageSendIdentity = Pick<
     BlackBoxRallarMessageSendInput,
@@ -30,6 +34,9 @@ type MessageSendOptions = Pick<
 >;
 
 type MessageSendAudience = Pick<BlackBoxRallarMessageSendInput, 'toPeer' | 'principalId' | 'recipientPeer'>;
+
+/** Everything an ordinary send names but the channel it opens. */
+type MessageSendFields = Omit<BlackBoxRallarMessageSendInput, keyof BlackBoxRallarMessageChannel>;
 
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'principal'];
@@ -58,6 +65,8 @@ const REPLAY_REFUSED_FIELDS = [
     'typeId',
     'topicId',
     'payload',
+    'purpose',
+    'publication',
     'roomRef',
     'scope',
     'principalId',
@@ -113,6 +122,15 @@ function decodeReplaySend(
 function decodeOrdinarySend(
     value: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
+    return decodeBlackBoxRallarMessageChannel(value).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (channel) => decodeMessageSendFields(value).mapRight((fields) => ({ ...fields, ...channel }))
+    );
+}
+
+function decodeMessageSendFields(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendFields> {
     const payload = value.payload;
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });

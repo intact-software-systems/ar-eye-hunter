@@ -285,6 +285,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-reload-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -557,6 +558,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-reload-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -841,6 +843,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-reload-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1264,6 +1267,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-deadline-expiry-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1359,6 +1363,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-baseline-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1543,6 +1548,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-lifecycle-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1651,6 +1657,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-lifecycle-send-3",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1720,6 +1727,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-lifecycle-send-4",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1896,6 +1904,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-durable-opt-in-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2071,6 +2080,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-storage-unavailable-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2164,6 +2174,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-storage-unavailable-send-3",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2251,6 +2262,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-ordering-resync-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2296,6 +2308,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-ordering-resync-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2375,6 +2388,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-ws-unicast-receipt-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2492,6 +2506,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-server-command-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2790,6 +2805,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-deadline-expiry-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -2890,6 +2906,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-baseline-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3084,6 +3101,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-lifecycle-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3197,6 +3215,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-lifecycle-send-3",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3271,6 +3290,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-lifecycle-send-4",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3452,6 +3472,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-durable-opt-in-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3637,6 +3658,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-storage-unavailable-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3735,6 +3757,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-storage-unavailable-send-3",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3827,6 +3850,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ordering-resync-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3877,6 +3901,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ordering-resync-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -3953,6 +3978,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-not-yet-in-sync-expires-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -4044,6 +4070,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ws-unicast-receipt-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -4361,6 +4388,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-deadline-expiry-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -4473,6 +4501,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-baseline-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -4679,6 +4708,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -4816,6 +4846,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-3",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -4890,6 +4921,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-4",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5083,6 +5115,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-durable-opt-in-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5268,6 +5301,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5366,6 +5400,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-3",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5458,6 +5493,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5508,6 +5544,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5776,6 +5813,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -5878,6 +5916,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-fallback-within-deadline-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6004,6 +6043,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6110,6 +6150,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6201,6 +6242,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ws-unicast-receipt-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6335,6 +6377,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-unicast-fallback-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6565,6 +6608,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-capacity-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6611,6 +6655,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-capacity-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -6949,6 +6994,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-capacity-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -7000,6 +7046,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-capacity-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -7343,6 +7390,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-capacity-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -7394,6 +7442,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-capacity-send-2",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",

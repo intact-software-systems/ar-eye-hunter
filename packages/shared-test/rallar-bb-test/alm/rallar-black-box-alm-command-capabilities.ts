@@ -10,6 +10,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Send ALM Message',
         description:
             'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status. ' +
+            'purpose (command, notification, live) names the typed channel the page opens; absent, a toPeer send ' +
+            'opens a command channel and any other a notification one. publication { cadenceMs, retainNewest, ' +
+            'drain: { messages, bytes } } is a live channel\'s pacing, required with purpose live and refused with ' +
+            'any other; a live send names resourceId, its stream, and returns once staged. ' +
             'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
             'send time. qos: { ack: { algo } } passes a QoS ack algorithm request (none, hop, subtree, receiver) to ' +
             'the product as given. durability (volatile, local-checkpoint, local-outbox, local-inbox) declares the ' +

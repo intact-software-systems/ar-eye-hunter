@@ -146,7 +146,8 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
                 rtcCapture: { status: 'unavailable', reason: 'absent' },
                 canFallback: strategy === 'rtc-with-ws-fallback',
                 payloadIssues: [],
-                onStorageUnavailable: 'refuse'
+                onStorageUnavailable: 'refuse',
+                publication: undefined
             });
             return handle;
         },

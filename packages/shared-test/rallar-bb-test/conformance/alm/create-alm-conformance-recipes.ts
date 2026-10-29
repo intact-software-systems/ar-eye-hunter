@@ -67,6 +67,9 @@ import { fencedRejection } from './scenarios/membership-fence/fenced-rejection.t
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
+import { pacedExpiry } from './scenarios/publication/paced-expiry.ts';
+import { pacedLatest } from './scenarios/publication/paced-latest.ts';
+import { pacedNewestN } from './scenarios/publication/paced-newest-n.ts';
 import { orderingGapRepair } from './scenarios/range-repair/ordering-gap-repair.ts';
 import { repairExhausted } from './scenarios/range-repair/repair-exhausted.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
@@ -166,6 +169,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     replyCorrelated,
     replyTimeoutLate,
     replyUndelivered,
+    pacedLatest,
+    pacedNewestN,
+    pacedExpiry,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,

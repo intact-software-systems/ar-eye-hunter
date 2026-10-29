@@ -20,11 +20,13 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -72,6 +74,8 @@ interface ReceivedChatMessage {
 interface ChatMessage {
     readonly text: string;
 }
+
+const LIVE_PUBLICATION: ALPublicationPolicy = { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
 
 installFakeBroadcastChannelPerTest();
 
@@ -556,6 +560,102 @@ describe('Rallar typed message channel', () => {
                 ]
             })
         );
+    });
+
+    it('refuses a live channel without a publication, a publication on another purpose and a live durability other than volatile', () => {
+        const facade = createFacade();
+        const define = (definition: object) => () => facade.messages.channel(definition as Parameters<typeof facade.messages.channel>[0]);
+        const refusing = (path: string, code: string) => expect.objectContaining({ issues: [expect.objectContaining({ path, code })] });
+
+        expect(define({ typeId: 'arena.pose.v1', purpose: 'live' })).toThrow(refusing('$.publication', 'missing-publication'));
+        expect(define({ typeId: 'room.command.v1', purpose: 'command', publication: LIVE_PUBLICATION }))
+            .toThrow(refusing('$.publication', 'unsupported'));
+        expect(define({ typeId: 'room.notice.v1', purpose: 'notification', publication: LIVE_PUBLICATION }))
+            .toThrow(refusing('$.publication', 'unsupported'));
+        expect(define({ typeId: 'arena.pose.v1', purpose: 'live', publication: LIVE_PUBLICATION, durability: 'local-outbox' }))
+            .toThrow(refusing('$.durability', 'invalid-durability'));
+        expect(define({ typeId: 'arena.pose.v1', purpose: 'live', publication: { ...LIVE_PUBLICATION, cadenceMs: 0 } }))
+            .toThrow(refusing('$.publication.cadenceMs', 'invalid-cadence-ms'));
+        expect(define({ typeId: 'arena.pose.v1', purpose: 'live', publication: LIVE_PUBLICATION })).not.toThrow();
+        expect(define({ typeId: 'arena.pose.v1', purpose: 'live', publication: LIVE_PUBLICATION, durability: 'volatile' }))
+            .not.toThrow();
+    });
+
+    it('refuses a live send that asks for reliability, a receipt, ordering, a claim or storage, or names no resource', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.arena',
+            typeId: 'arena.pose.v1',
+            roomId: 'room-1',
+            purpose: 'live',
+            publication: LIVE_PUBLICATION
+        });
+        const unsupported = (path: string) => expect.objectContaining({ path, code: 'unsupported' });
+
+        await expect(channel.send({ text: 'pose' }, { resourceId: 'entity-1', reliability: 'at-least-once' })).rejects
+            .toMatchObject({ name: 'RallarValidationError', issues: [unsupported('$.reliability')] });
+        await expect(channel.sendWs({ text: 'pose' }, {
+            resourceId: 'entity-1',
+            ack: 'receiver',
+            seq: 1,
+            orderingKey: 'arena-order',
+            ownership: 'exclusive',
+            qos: {
+                delivery: { algo: 'at-least-once' },
+                ack: { algo: 'receiver' },
+                supersedence: { algo: 'latest-wins' },
+                durability: { algo: 'local-outbox' }
+            }
+        })).rejects.toMatchObject({
+            issues: [
+                unsupported('$.qos.delivery'),
+                unsupported('$.ack'),
+                unsupported('$.qos.ack'),
+                unsupported('$.seq'),
+                unsupported('$.orderingKey'),
+                unsupported('$.ownership'),
+                unsupported('$.qos.supersedence'),
+                unsupported('$.qos.durability')
+            ]
+        });
+        await expect(channel.sendRtc({ text: 'pose' })).rejects.toMatchObject({
+            issues: [expect.objectContaining({ path: '$.resourceId', code: 'missing-resource-id' })]
+        });
+    });
+
+    it('stages a live room send and admits it at its lane\'s opportunity on the connect\'s queue engine', async () => {
+        const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+        const engine = new InboxOutboxEngine({ nowEpochMs: () => Date.now(), random: () => 0.5, reportTaskFailure: () => undefined });
+        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine } });
+        const admitted: ALMessage[] = [];
+        vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mockImplementation(async (message) => {
+            admitted.push(message);
+            return await Promise.resolve({
+                verdict: { kind: 'admitted' as const, durable: false, queuedAttempts: 1 },
+                message,
+                entries: [],
+                trackedReceiptAlgo: 'none' as const
+            });
+        });
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.arena',
+            typeId: 'arena.pose.v1',
+            roomId: 'room-1',
+            purpose: 'live',
+            publication: LIVE_PUBLICATION
+        });
+
+        // The facade's delivery clock is the page's own; a deadline no runner stall reaches keeps the value staged.
+        const handle = await channel.sendRtc({ text: 'pose' }, { resourceId: 'entity-1', ttlMs: 60_000 });
+        expect(handle.lifecycle().state).toBe('staged');
+        expect(admitted).toEqual([]);
+
+        await engine.executeOnce();
+        await engine.stop();
+
+        expect(admitted.map((message) => message.id.msgId)).toEqual([handle.msgId]);
+        expect(handle.lifecycle().state).toBe('queued');
     });
 
     it('refuses a durable send storage cannot hold unless the channel chose to send it without storage', async () => {

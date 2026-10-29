@@ -1,3 +1,4 @@
+import { computeCadenceBoundaryAtMs, isCadenceDue } from '../resilience/cadence.ts';
 import { distanceRallarMotionVec3, distanceRallarMotionWrappedVec3 } from './math.ts';
 import type {
     RallarMotionSendGate,
@@ -13,7 +14,7 @@ export function shouldSendRallarMotionSample(
     nextAllowedEpochMs: number,
     cadenceMs: number
 ): boolean {
-    return cadenceMs <= 0 || nowEpochMs >= nextAllowedEpochMs;
+    return isCadenceDue({ boundaryAtMs: nextAllowedEpochMs, cadenceMs, nowMs: nowEpochMs });
 }
 
 export function shouldSendRallarMotionUpdate(
@@ -23,7 +24,7 @@ export function shouldSendRallarMotionUpdate(
         return {
             shouldSend: true,
             reason: 'initial',
-            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input)
+            nextAllowedEpochMs: computeSentNextAllowedEpochMs(input)
         };
     }
 
@@ -35,41 +36,27 @@ export function shouldSendRallarMotionUpdate(
         return {
             shouldSend: true,
             reason: 'force',
-            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input)
+            nextAllowedEpochMs: computeSentNextAllowedEpochMs(input)
         };
     }
 
     const movementReason = movementReasonFor(input);
     if (movementReason) {
-        const cadenceMs = normalizedCadence(input);
-        const nextAllowedEpochMs = input.lastSentAtEpochMs + cadenceMs;
-        return {
-            shouldSend: shouldSendRallarMotionSample(
-                input.nowEpochMs,
-                nextAllowedEpochMs,
-                cadenceMs
-            ),
-            reason: input.nowEpochMs >= nextAllowedEpochMs
-                ? movementReason
-                : 'waiting',
-            nextAllowedEpochMs
-        };
+        return decideMovementSend(input, input.lastSentAtEpochMs, movementReason);
     }
 
     const idleCadenceMs = Math.max(0, input.idleCadenceMs ?? 0);
     if (idleCadenceMs > 0) {
-        const nextAllowedEpochMs = input.lastSentAtEpochMs + idleCadenceMs;
-        return {
-            shouldSend: input.nowEpochMs >= nextAllowedEpochMs,
-            reason: input.nowEpochMs >= nextAllowedEpochMs ? 'idle' : 'waiting',
-            nextAllowedEpochMs
-        };
+        return decideIdleSend(input, input.lastSentAtEpochMs, idleCadenceMs);
     }
 
     return {
         shouldSend: false,
         reason: 'waiting',
-        nextAllowedEpochMs: input.lastSentAtEpochMs + normalizedCadence(input)
+        nextAllowedEpochMs: computeCadenceBoundaryAtMs({
+            lastAtMs: input.lastSentAtEpochMs,
+            cadenceMs: normalizedCadence(input)
+        })
     };
 }
 
@@ -136,6 +123,31 @@ function movementReasonFor(
     }
 
     return undefined;
+}
+
+function decideMovementSend(
+    input: RallarMotionSendUpdateInput,
+    lastSentAtEpochMs: number,
+    movementReason: Exclude<RallarMotionSendUpdateReason, 'initial' | 'force' | 'idle' | 'waiting'>
+): RallarMotionSendUpdateDecision {
+    const cadenceMs = normalizedCadence(input);
+    const nextAllowedEpochMs = computeCadenceBoundaryAtMs({ lastAtMs: lastSentAtEpochMs, cadenceMs });
+    const due = isCadenceDue({ boundaryAtMs: nextAllowedEpochMs, cadenceMs, nowMs: input.nowEpochMs });
+    return { shouldSend: due, reason: due ? movementReason : 'waiting', nextAllowedEpochMs };
+}
+
+function decideIdleSend(
+    input: RallarMotionSendUpdateInput,
+    lastSentAtEpochMs: number,
+    idleCadenceMs: number
+): RallarMotionSendUpdateDecision {
+    const nextAllowedEpochMs = computeCadenceBoundaryAtMs({ lastAtMs: lastSentAtEpochMs, cadenceMs: idleCadenceMs });
+    const due = isCadenceDue({ boundaryAtMs: nextAllowedEpochMs, cadenceMs: idleCadenceMs, nowMs: input.nowEpochMs });
+    return { shouldSend: due, reason: due ? 'idle' : 'waiting', nextAllowedEpochMs };
+}
+
+function computeSentNextAllowedEpochMs(input: RallarMotionSendUpdateInput): number {
+    return computeCadenceBoundaryAtMs({ lastAtMs: input.nowEpochMs, cadenceMs: normalizedCadence(input) });
 }
 
 function normalizedCadence(input: RallarMotionSendGateOptions): number {

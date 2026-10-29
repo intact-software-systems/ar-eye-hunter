@@ -166,10 +166,18 @@ browser-only: the in-process runner adapter refuses them with the
 that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
-and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`, `principalId`, `recipientPeer`,
-`reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`,
-`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
+`recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`,
+`orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
+`purpose` (`command`, `notification`, `live`) is the purpose of the typed channel the page opens for the send; absent,
+a send that names `toPeer` opens a `command` channel and any other a `notification` one. `publication`
+(`{ cadenceMs, retainNewest, drain: { messages, bytes } }`, each a positive integer within the product's
+`AL_PUBLICATION_POLICY_LIMITS`) is the live channel's pacing (D466, D472): it is required with `purpose: 'live'` and
+refused with any other purpose, by the page and, for its limits, by the control validator. A live send stages in the
+page's publication stage, so its first state is `staged` and the command returns then, before any carrier admission;
+the product refuses a live send that names no `resourceId` (its stream), or asks for `reliability: 'at-least-once'`,
+an `ack` other than `none`, `seq`, `orderingKey` or `ownership: 'exclusive'`, before a handle opens.
 `ownership` (`shared`, `exclusive`) and `resourceId` pass unchanged to the product's typed send options of the same
 names; absent, the send is `shared` on a fresh resource id, as a product send is. A recipe that names a
 `resourceId` lets two agents' sends meet on one resource key, which an exclusive claim needs.
@@ -224,7 +232,7 @@ logical algorithm.
 
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
-nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
+nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `purpose`, `publication`, `roomRef`,
 `scope`, `principalId`, `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
 `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`
 are each refused beside it, by the control validator and by
@@ -640,6 +648,33 @@ the sum of every store that stated a count since the receiver's last `close`, wh
 memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
 
+The paced cells prove the live channel's publication stage over every carrier, in the smoke scope, on the two agents
+(D469, D472), before the congestion and fairness cells. Each sender opens `purpose: 'live'` with its own `publication`
+and sends one specimen `{ specimen: 'paced', seq }` on one `resourceId` (`alm-<scenarioKey>`). Send 0 stages on the idle
+lane and the sender observes it `transport-accepted` within half the cell's cadence, before any other send stages: the
+idle lane's opportunity runs on the session engine's next pass, which a send staged 10 ms later can precede (seen on
+`ws`, where send 1 then displaced send 0), and a stage that held send 0 until the lane's first boundary would miss that
+budget, so the observation proves the idle lane admits at once. A `loop` with `intervalMs: 10` then sends 1 to its
+count; iteration `n` (`{loop.iteration}`, from 1) names the handle of send `n` and carries `seq` `n` as a number, since
+a loop writes a string that is only that placeholder as the iteration's number. `paced-latest` (cadence 500 ms, one
+value retained, a drain of 8 messages) sends 1 to 5: sends 1 to 4 end `superseded` with `attempts` 0, each displaced by
+the next before the lane's next opportunity, which admits send 5; the receiver holds seq 0, then seq 5, and no third
+arrival within 3 s. `paced-newest-n` (cadence 500 ms, three retained, a drain of 2) sends 1 to 4 with a 1 500 ms
+`ttlMs`, one cadence past the third opportunity: send 4 is still `staged` when the sender observes it, send 1 ends
+`superseded`, the second opportunity admits sends 2 and 3 and the third send 4; the receiver holds seq 0, then seq 2 and
+3, then seq 4, and no fifth arrival within 3 s. `paced-expiry` (cadence 1 000 ms, one retained, a drain of 8) sends 1
+with a 100 ms `ttlMs`: send 1 ends `expired` with `failure.kind: 'expired'` and `attempts` 0; the receiver holds one
+arrival and none within the next 1.5 s. Send 0 keeps the live channel's own lifetime in every cell, so a cell's short
+`ttlMs` never races the lead's admission or arrival. The cells prove the stage's selection, not delivered history:
+values of one stream share the latest-wins key, so two values admitted at one opportunity may still be conflated at
+carrier admission or on receipt under backpressure; the drain budget bounds the work per opportunity, it does not
+promise delivered history, and `paced-newest-n` reads its sends 2 and 3 on an unloaded carrier. The receiver orders its arrivals by reading, right after an arrival count,
+that the later specimen is still absent from its history (a `wait` with `absent: true` and `timeoutMs: 0`). The
+observation names no replacement message id, since the delivery lifecycle keeps none; each `superseded` observation's
+`reason` instead contains the stage's own detail (`displaced it before its opportunity`), which a supersedence at
+carrier admission does not carry. Hosted manifest 18 withholds the three until S1-ii places them. The cells live in
+`conformance/alm/scenarios/publication/`.
+
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
 R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the addressing:
 on two agents a room send yields the same receipt, so the addressing is pinned by unit tests. `ws-unicast-receipt` (a
@@ -692,8 +727,8 @@ for the next one. The Hetzner entries select their scenarios by lane family (`tw
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
-`rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
-`acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
+`staged` (a live send waiting in its publication stage), `rejected`, `pending-authority`, `accepted`, `queued`,
+`transport-accepted`, `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,

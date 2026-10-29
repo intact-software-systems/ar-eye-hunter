@@ -8,6 +8,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type WebRtcConnectionService
@@ -106,9 +107,14 @@ function createStorageAvailabilityDouble(
         });
 }
 
+// A real engine a test built (to drive with `executeOnce` on its own clock) passes through as it is, for the
+// reason the storage availability does.
 function createQboxEngineDouble(
     override: Partial<RallarBrowserMiddleware['qboxEngine']> = {}
 ): RallarBrowserMiddleware['qboxEngine'] {
+    if (override instanceof InboxOutboxEngine) {
+        return override;
+    }
     return toServiceTestDouble<RallarBrowserMiddleware['qboxEngine']>({
         wake: vi.fn(),
         stop: vi.fn<RallarBrowserMiddleware['qboxEngine']['stop']>(() => Promise.resolve()),

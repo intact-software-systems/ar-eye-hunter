@@ -1,3 +1,4 @@
+import { retainNewest } from '../cache/retain-newest.ts';
 import { classifyRallarMotionDiscontinuity } from './discontinuity.ts';
 import { deadReckonRallarMotion, interpolateRallarMotion, interpolateRallarMotionHermite } from './interpolation.ts';
 import { sanitizeRallarMotionNonNegative } from './math.ts';
@@ -46,7 +47,7 @@ export const DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS: Required<
     interpolationMode: 'linear'
 };
 
-export function createRallarMotionBuffer<TMetadata = unknown>(
+export function createRallarMotionBuffer<TMetadata>(
     options: RallarMotionBufferOptions = {}
 ): RallarMotionBuffer<TMetadata> {
     const resolved = normalizeRallarMotionBufferOptions(options);
@@ -86,7 +87,10 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
             }
 
             const beforeTrim = track.samples.length;
-            trimTrackToMaxSamples(track, resolved.maxSamplesPerEntity);
+            const { retained: newestSamples, displaced } = retainNewest(track.samples, resolved.maxSamplesPerEntity);
+            if (displaced.length > 0) {
+                track.samples = [...newestSamples];
+            }
             const retained = track.samples.includes(sample);
             const droppedSampleCount = beforeTrim - track.samples.length;
 
@@ -248,13 +252,7 @@ function normalizeRallarMotionBufferOptions(
             options.maxExtrapolationMs,
             DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxExtrapolationMs
         ),
-        maxSamplesPerEntity: Math.max(
-            1,
-            Math.floor(
-                options.maxSamplesPerEntity ??
-                    DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSamplesPerEntity
-            )
-        ),
+        maxSamplesPerEntity: resolveMaxSamplesPerEntity(options.maxSamplesPerEntity),
         maxSampleAgeMs: sanitizeRallarMotionNonNegative(
             options.maxSampleAgeMs,
             DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSampleAgeMs
@@ -301,13 +299,12 @@ function isDiscontinuous<TMetadata>(
         .discontinuous;
 }
 
-function trimTrackToMaxSamples<TMetadata>(
-    track: EntityMotionTrack<TMetadata>,
-    maxSamplesPerEntity: number
-): void {
-    while (track.samples.length > maxSamplesPerEntity) {
-        track.samples.shift();
+function resolveMaxSamplesPerEntity(value: number | undefined): number {
+    const requested = value ?? DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSamplesPerEntity;
+    if (!Number.isFinite(requested)) {
+        return Number.MAX_SAFE_INTEGER;
     }
+    return Math.min(Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(requested)));
 }
 
 function compareRallarMotionSamples<TMetadata>(

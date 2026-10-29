@@ -25,7 +25,7 @@ interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
 interface AlmConformancePayloadWaitInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    readonly payload: Readonly<Record<string, string>>;
+    readonly payload: Readonly<Record<string, string | number>>;
     readonly absent: boolean;
 }
 

@@ -5,14 +5,16 @@ import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import {
     AL_CHANNEL_PURPOSES,
     AL_CHANNEL_SEND_DEFAULTS,
+    AL_LIVE_CHANNEL_TTL_MS,
     resolveALChannelSendDefaults
 } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 describe('the channel purpose table (D2, D52)', () => {
-    it('makes both purposes at-least-once, receipted, volatile and 30 s', () => {
-        expect(AL_CHANNEL_PURPOSES).toEqual(['command', 'notification']);
+    it('makes command and notification at-least-once, receipted, volatile and 30 s; live best-effort, unacknowledged, volatile and 1 s', () => {
+        expect(AL_CHANNEL_PURPOSES).toEqual(['command', 'notification', 'live']);
+        expect(AL_LIVE_CHANNEL_TTL_MS).toBe(1_000);
         expect(AL_CHANNEL_SEND_DEFAULTS).toEqual({
             command: {
                 reliability: 'at-least-once',
@@ -25,8 +27,28 @@ describe('the channel purpose table (D2, D52)', () => {
                 ack: 'all-logical-recipients',
                 ttlMs: 30_000,
                 durability: 'volatile'
+            },
+            live: {
+                reliability: 'best-effort',
+                ack: 'none',
+                ttlMs: AL_LIVE_CHANNEL_TTL_MS,
+                durability: 'volatile'
             }
         });
+    });
+
+    it('keeps a live channel unacknowledged with or without a logical audience', () => {
+        for (const hasLogicalAudience of [true, false]) {
+            expect(
+                resolveALChannelSendDefaults({ purpose: 'live', durability: undefined, hasLogicalAudience })
+            )
+                .toEqual({
+                    reliability: 'best-effort',
+                    ack: 'none',
+                    ttlMs: 1_000,
+                    durability: 'volatile'
+                });
+        }
     });
 
     it('keeps the channel declared durability and drops the receipt where no logical audience exists', () => {
@@ -58,7 +80,7 @@ describe('the channel purpose table (D2, D52)', () => {
             });
     });
 
-    it.each(AL_CHANNEL_PURPOSES)(
+    it.each(AL_CHANNEL_PURPOSES.filter((purpose) => purpose !== 'live'))(
         'normalizes a %s default to receiver with a 2 s ACK timeout and three receipt retries',
         (purpose) => {
             const defaults = resolveALChannelSendDefaults({

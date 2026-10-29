@@ -568,7 +568,8 @@ function createDispatchHarness(
                 message,
                 canFallback,
                 payloadIssues: [],
-                onStorageUnavailable: 'refuse'
+                onStorageUnavailable: 'refuse',
+                publication: undefined
             });
             return handle;
         }

@@ -148,7 +148,7 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, the reply and the server-originated cells where they run', () => {
+    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, the reply and the server-originated cells where they run, and the paced cells everywhere', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
         // bound, congestion and fairness cells keep manifest 18 as recorded.
@@ -170,7 +170,9 @@ describe('ALM conformance hosted lane families', () => {
             'alm-ws-reply-timeout-late',
             'alm-ws-reply-undelivered',
             // The combined connect's one selector is the scenario topic's, so no hosted page hears a group-state delta.
-            'alm-ws-server-originated'
+            'alm-ws-server-originated',
+            // The paced cells are placed by S1-ii.
+            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => ['paced-latest', 'paced-newest-n', 'paced-expiry'].map((key) => `alm-${carrier}-${key}`))
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 

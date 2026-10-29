@@ -90,7 +90,8 @@ function createFallbackFixture(
                 message,
                 canFallback,
                 payloadIssues: [],
-                onStorageUnavailable: 'refuse'
+                onStorageUnavailable: 'refuse',
+                publication: undefined
             });
             await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
             return handle;

@@ -4,6 +4,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import {
     resolveALChannelSendDefaults,
     type ALChannelPurpose
@@ -14,6 +15,8 @@ export interface BrowserTypedChannelPolicy {
     readonly purpose: ALChannelPurpose;
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
+    /** Defined exactly on a `live` channel: the policy its sends are staged under. */
+    readonly publication: ALPublicationPolicy | undefined;
 }
 
 export interface BrowserMessageSendDefaults {

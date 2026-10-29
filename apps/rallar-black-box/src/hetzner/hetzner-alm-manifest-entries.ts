@@ -26,6 +26,9 @@ import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scen
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
+import { pacedExpiry } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-expiry.ts';
+import { pacedLatest } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-latest.ts';
+import { pacedNewestN } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-newest-n.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -119,7 +122,11 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'buffered-track-drains', carriers: bufferedTrackDrains.carriers },
     { scenarioKey: 'churn-bounded-tracks', carriers: churnBoundedTracks.carriers },
     // The combined connect carries one selector, the scenario topic's, so no hosted page hears a group-state delta.
-    { scenarioKey: 'server-originated', carriers: serverOriginated.carriers }
+    { scenarioKey: 'server-originated', carriers: serverOriginated.carriers },
+    // The paced cells' lane evidence is local; placed by S1-ii, so manifest 18 stays as recorded until then.
+    { scenarioKey: 'paced-latest', carriers: pacedLatest.carriers },
+    { scenarioKey: 'paced-newest-n', carriers: pacedNewestN.carriers },
+    { scenarioKey: 'paced-expiry', carriers: pacedExpiry.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

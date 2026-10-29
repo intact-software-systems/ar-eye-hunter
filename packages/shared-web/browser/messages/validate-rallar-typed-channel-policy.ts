@@ -1,4 +1,5 @@
 import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
+import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { AL_CHANNEL_PURPOSES } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
@@ -10,6 +11,7 @@ export interface RallarTypedChannelPolicyInput {
     readonly durability?: string;
     readonly onStorageUnavailable?: string;
     readonly recovery?: unknown;
+    readonly publication?: unknown;
 }
 
 const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
@@ -23,26 +25,18 @@ export function validateRallarTypedChannelPolicy(
         issues.push({
             path: '$.purpose',
             code: 'unsupported',
-            message: 'A realtime channel belongs to rallar.realtime; a typed channel is a command or a notification.'
+            message:
+                'A realtime channel belongs to rallar.realtime; a typed channel is a command, a notification or a live channel.'
         });
     }
     else if (!AL_CHANNEL_PURPOSES.some((candidate) => candidate === definition.purpose)) {
         issues.push({
             path: '$.purpose',
             code: 'invalid-purpose',
-            message: 'Purpose must be command or notification.'
+            message: 'Purpose must be command, notification or live.'
         });
     }
-    if (
-        definition.durability !== undefined &&
-        !AL_DURABILITY_ALGOS.some((candidate) => candidate === definition.durability)
-    ) {
-        issues.push({
-            path: '$.durability',
-            code: 'invalid-durability',
-            message: 'Durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
-        });
-    }
+    issues.push(...validateRallarChannelDurability(definition));
     if (
         definition.onStorageUnavailable !== undefined &&
         !RALLAR_STORAGE_UNAVAILABLE_POLICIES.some((candidate) => candidate === definition.onStorageUnavailable)
@@ -54,7 +48,26 @@ export function validateRallarTypedChannelPolicy(
         });
     }
     issues.push(...validateRallarChannelRecovery(definition.recovery));
+    issues.push(...validateRallarChannelPublication(definition));
     return issues;
+}
+
+/** A live channel's values never wait in storage, so it declares no durability but `volatile` (D466). */
+function validateRallarChannelDurability(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
+    const { durability } = definition;
+    if (durability === undefined) {
+        return [];
+    }
+    if (!AL_DURABILITY_ALGOS.some((candidate) => candidate === durability)) {
+        return [{
+            path: '$.durability',
+            code: 'invalid-durability',
+            message: 'Durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
+        }];
+    }
+    return definition.purpose === 'live' && durability !== 'volatile'
+        ? [{ path: '$.durability', code: 'invalid-durability', message: 'A live channel is volatile.' }]
+        : [];
 }
 
 /** Absent is valid: the channel declares no owner. Stated, it must be callable. */
@@ -73,4 +86,21 @@ function validateRallarChannelRecovery(recovery: unknown): readonly RallarValida
         code: 'invalid-recovery',
         message: 'recovery.onResyncRequired must be a function.'
     }];
+}
+
+/** Only a live channel paces its sends, and it always declares how (D466). */
+function validateRallarChannelPublication(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
+    if (definition.purpose !== 'live') {
+        return definition.publication === undefined
+            ? []
+            : [{ path: '$.publication', code: 'unsupported', message: 'Only a live channel declares a publication.' }];
+    }
+    if (definition.publication === undefined) {
+        return [{
+            path: '$.publication',
+            code: 'missing-publication',
+            message: 'A live channel declares its publication: cadenceMs, retainNewest and drain.'
+        }];
+    }
+    return decodeALPublicationPolicy(definition.publication).left ?? [];
 }

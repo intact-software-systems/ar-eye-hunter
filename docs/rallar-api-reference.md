@@ -836,8 +836,9 @@ an arrival that predates its subscription is an open question of this release.
 `qos: { congestion: { algo, opts: { priority } } }`: `algo` is `'drop-low'`
 (the default), `'reject'` or `'defer'`, and the priority defaults to 5 for an
 at-least-once send and 0 otherwise. A lane send defaults to at-least-once, and
-a typed channel send is at-least-once under either purpose; either is
-best-effort only when it names `reliability: 'best-effort'`. The policy
+a typed channel send is at-least-once under `command` and `notification`;
+either is best-effort only when it names `reliability: 'best-effort'`. A `live`
+channel send is always best-effort. The policy
 applies only while the carrier reads congestion when it plans the session's own
 data: `overloaded`, the session refusing its next send at its count or byte
 limit (above), on every
@@ -943,7 +944,8 @@ await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.roomRef });
 
 `purpose` is required: `command` asks the addressed receiver, `notification`
 the room's frozen audience; both are at-least-once, receipted, volatile and
-30 s by default, and every send option overrides its default.
+30 s by default, and every send option overrides its default. `live` carries
+replaceable values, each the newest of its stream, paced before admission.
 `durability: 'local-outbox'` or `'local-inbox'` opts the channel into browser
 storage. When storage cannot hold a durable send, the handle reads `failed`
 with `failure: { kind: 'storage-unavailable', cause }`; a channel defined with
@@ -957,6 +959,45 @@ and a `best-effort` send ask for no receipt unless the send states `ack`; a
 `unsupported`, since `world` names no logical audience (see Message Audiences
 below). `recovery` names the channel's owner of
 resynchronization (see Ordering, Repair And Resynchronization below).
+
+A `live` channel declares a required `publication` policy,
+`{ cadenceMs, retainNewest, drain: { messages, bytes } }`: every field is a
+positive safe integer within `AL_PUBLICATION_POLICY_LIMITS` (a cadence of at
+most 60 000 ms, `retainNewest` and `drain.messages` at most 64, `drain.bytes`
+at most 4 MiB), and no field has a default. `publication` on a `command` or
+`notification` channel is refused `$.publication` `unsupported`, a live channel
+without it `missing-publication`, and a live channel with a durability other
+than `volatile` `$.durability` `invalid-durability`. A live send is
+best-effort, asks no receipt, is volatile and lives 1 s
+(`AL_LIVE_CHANNEL_TTL_MS`), which `ttlMs` overrides. It names the `resourceId`
+of the stream it publishes, and a send without one is refused `$.resourceId`
+`missing-resource-id`. A live send that asks `reliability: 'at-least-once'` or
+an at-least-once `qos.delivery`, an `ack` or `qos.ack` other than `none`, `seq`,
+`orderingKey`, `ownership: 'exclusive'`, a `qos.supersedence` or a durability
+other than `volatile` is refused `unsupported` at that path, thrown before a
+handle opens. The channel stamps `latest-wins` supersedence keyed by the send's
+stream: its sender, audience, room, topic, context, type and `resourceId`.
+
+A live send is staged, not sent: its handle reads `staged`, and the session
+paces each live channel by its policy. A stream keeps its newest `retainNewest`
+staged values; a newer one displaces the oldest, which ends `superseded` with
+the newest value's `replacementMsgId`. A staged value whose deadline passes
+ends `expired` with no attempt, and a value whose envelope is heavier than
+`drain.bytes` ends `rejected` with
+`failure: { kind: 'refused', reason: 'oversized' }`. A value staged on an idle
+channel is admitted at the session's next engine pass; after that the channel
+admits at each `cadenceMs` boundary at most `drain.messages` values and
+`drain.bytes` bytes, streams in the order they were first staged and each
+oldest first, and the rest wait for the next boundary. A late pass admits once,
+never a catch-up burst. An admitted value continues as any send on its
+channel's carrier and fallback. Values of one stream share the latest-wins key,
+so two values admitted at one opportunity may still be conflated at carrier
+admission or on receipt under backpressure: the drain budget bounds the work
+per opportunity, it does not promise delivered history. When the connect
+closes or the session ends, each staged value ends `failed` with
+`failure: { kind: 'skipped', reason: 'disposed' }`. **Limit:** `cancel()` on a
+staged value marks its handle `cancelled`, and the value is still admitted at
+its opportunity.
 
 `durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
 send is admitted and dispatched from memory and spends no storage operation on
@@ -1123,13 +1164,16 @@ if (!isALDeliveryAdmitted(outcome.lifecycle)) {
 lifecycle reaches one of `options.until` or any terminal state (or times out
 or aborts per `options.timeoutMs`/`options.signal`). `AL_DELIVERY_ADMITTED_STATES`
 is every state past `submitted`, so a `wait(...)` using it resolves as soon as
-the lifecycle leaves `submitted`. A `pending` verdict, and an unroutable or
-refused first leg that the strategy hands to its fallback carrier, leave the
-handle `submitted`; the wait resolves on the next settlement.
+the lifecycle leaves `submitted`, at `staged` for a live send. A `pending`
+verdict, and an unroutable or refused first leg that the strategy hands to its
+fallback carrier, leave the handle `submitted`; the wait resolves on the next
+settlement.
 `isALDeliveryAdmitted(outcome.lifecycle)`
 then reports whether the resolved state is `accepted`, `queued`,
-`transport-accepted`, or `acknowledged`. Surface every other outcome to the
-product as degraded or failed delivery.
+`transport-accepted`, or `acknowledged`. It is false for a healthy `staged`
+live send, which is pending, not degraded: a live caller waits for its own
+terminal state instead. Surface every other outcome to the product as degraded
+or failed delivery.
 
 ### Replies
 

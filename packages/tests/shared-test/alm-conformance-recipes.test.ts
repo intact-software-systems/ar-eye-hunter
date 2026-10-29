@@ -182,6 +182,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity-age',
         'capacity-tracks',
         ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws,
+        'paced-latest',
+        'paced-newest-n',
+        'paced-expiry',
         'backpressure-deferred',
         'own-share-under-inbound',
         'buffered-track-drains'
@@ -205,6 +208,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
+        'paced-latest',
+        'paced-newest-n',
+        'paced-expiry',
         'backpressure-refused',
         'backpressure-deferred',
         'own-share-under-inbound',
@@ -236,6 +242,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity-age',
         'capacity-tracks',
         ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
+        'paced-latest',
+        'paced-newest-n',
+        'paced-expiry',
         'backpressure-hands-over'
     ]
 } as const;
@@ -473,7 +482,10 @@ describe('alm-conformance recipe family', () => {
                 const fairnessWindow =
                     /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-1)$/
                         .test(command.commandId ?? '');
-                if (durableOptInReceived1 || capacityReceived1 || fairnessWindow) {
+                // The paced cells' absence windows open at their last expected arrival; pinned in
+                // alm-conformance-publication-scenarios.
+                const pacedAbsence = command.absent === true && /-paced-[a-z-]+-receiver-received-\d+$/.test(command.commandId ?? '');
+                if (durableOptInReceived1 || capacityReceived1 || fairnessWindow || pacedAbsence) {
                     continue;
                 }
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
@@ -552,7 +564,10 @@ describe('alm-conformance recipe family', () => {
             'delivery-baseline',
             'delivery-lifecycle',
             'durable-opt-in',
-            'server-originated'
+            'server-originated',
+            'paced-latest',
+            'paced-newest-n',
+            'paced-expiry'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
@@ -605,6 +620,10 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             ['full'],
+            // The paced cells, after the volatile bound cells.
+            ['smoke', 'full'],
+            ['smoke', 'full'],
+            ['smoke', 'full'],
             ['full'],
             ['full'],
             ['full'],

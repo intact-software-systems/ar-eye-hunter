@@ -622,6 +622,45 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a live channel\'s purpose and publication and refuses an unknown purpose or a policy the product refuses', () => {
+        const publication = { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
+        const send = (fields: RallarBlackBoxTestRecord) => ({
+            kind: 'messages.send',
+            commandId: 'send-live',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            resourceId: 'pose-1',
+            ...fields
+        });
+        const live = send({ purpose: 'live', publication });
+        const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-live', live));
+        expect(schemaResult.ok, schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(live).ok).toBe(true);
+        for (
+            const [fields, message] of [
+                [{ purpose: 'stream' }, 'messages.send.purpose must be one of command, notification, live.'],
+                [
+                    { purpose: 'live', publication: { ...publication, cadenceMs: 0 } },
+                    'messages.send.publication.cadenceMs: Expected a positive safe integer of at most 60000.'
+                ],
+                [
+                    { purpose: 'live', publication: { ...publication, drain: { messages: 65, bytes: 1 } } },
+                    'messages.send.publication.drain.messages: Expected a positive safe integer of at most 64.'
+                ],
+                [{ purpose: 'live', publication: 'fast' }, 'messages.send.publication: Expected a publication policy object.']
+            ] as const
+        ) {
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-live', send(fields))).ok, message)
+                .toBe(false);
+            const refused = validateRallarBlackBoxTestCommand(send(fields));
+            expect(refused.ok, message).toBe(false);
+            if (!refused.ok) {
+                expect(refused.messages).toContain(message);
+            }
+        }
+    });
+
     it('accepts a raw messages.control and refuses a typeId outside the control vocabulary or a fallback carrier', () => {
         const valid = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('raw-control', RAW_CONTROL_COMMAND));
         expect(valid.ok, formatJsonSchemaValidationErrors(valid.errors)).toBe(true);

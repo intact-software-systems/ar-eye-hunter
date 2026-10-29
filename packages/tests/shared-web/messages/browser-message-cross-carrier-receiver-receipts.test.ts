@@ -554,7 +554,8 @@ function createReceiptLoopOrigin(
         message,
         canFallback: true,
         payloadIssues: [],
-        onStorageUnavailable: 'refuse'
+        onStorageUnavailable: 'refuse',
+        publication: undefined
     };
     return { ...owners, dispatch, delivery, handle: owners.registry.open(delivery.message, 'rtc'), rtcAdmissions };
 }

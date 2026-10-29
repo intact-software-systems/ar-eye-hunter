@@ -24,6 +24,8 @@ import type {
     ALOwnershipAlgo,
     ALQosPolicyRequest
 } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
@@ -312,6 +314,10 @@ export interface BlackBoxRallarMessageSendInput {
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly payload: RallarMessagePayload;
+    /** Absent, a send to a `toPeer` opens a `command` channel and any other a `notification` one. */
+    readonly purpose: ALChannelPurpose | undefined;
+    /** Stated exactly when `purpose` is `live`: the pacing the live channel declares. */
+    readonly publication: ALPublicationPolicy | undefined;
     readonly roomRef: BlackBoxRallarRoomRef | undefined;
     readonly scope: 'room' | 'world' | 'principal' | undefined;
     /** With scope `principal`: the principal whose live sessions in the room the send reaches. */

@@ -2,16 +2,19 @@ import type { ALAckMode } from './al-contract.ts';
 import type { ALDurabilityAlgo } from './al-policy.ts';
 
 /** What a typed channel carries; the purpose fixes the channel's send defaults (D2, D52). */
-export type ALChannelPurpose = 'command' | 'notification';
+export type ALChannelPurpose = 'command' | 'notification' | 'live';
 
-export const AL_CHANNEL_PURPOSES: readonly ALChannelPurpose[] = ['command', 'notification'];
+export const AL_CHANNEL_PURPOSES: readonly ALChannelPurpose[] = ['command', 'notification', 'live'];
+
+/** A live value older than this is stale for its audience; the channel's send default, not a policy field (D466). */
+export const AL_LIVE_CHANNEL_TTL_MS = 1_000;
 
 /**
  * The envelope fields a purpose decides. The 2 s ACK timeout and the three receipt retries of the
  * roadmap's table are the at-least-once normalization defaults these fields select.
  */
 export interface ALChannelSendDefaults {
-    readonly reliability: 'at-least-once';
+    readonly reliability: 'best-effort' | 'at-least-once';
     readonly ack: ALAckMode;
     readonly ttlMs: number;
     readonly durability: ALDurabilityAlgo;
@@ -29,6 +32,12 @@ export const AL_CHANNEL_SEND_DEFAULTS: Readonly<Record<ALChannelPurpose, ALChann
         reliability: 'at-least-once',
         ack: 'all-logical-recipients',
         ttlMs: 30_000,
+        durability: 'volatile'
+    },
+    live: {
+        reliability: 'best-effort',
+        ack: 'none',
+        ttlMs: AL_LIVE_CHANNEL_TTL_MS,
         durability: 'volatile'
     }
 };

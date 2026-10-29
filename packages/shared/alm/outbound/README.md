@@ -990,6 +990,40 @@ member ran, and the runtime wakes the owner for the members that landed before i
 multicast manager applies its circuit breaker once per group and its rate limiter once per group of the session's own
 sends; a control hand-off answers an inbound message its admission already bounded and spends no quota.
 
+## The publication stage
+
+[`ALOutboundPublicationStage`](./publication/al-outbound-publication-stage.ts) paces the replaceable values of
+`live` channels before admission (D469, D470). It owns one lane per channel route (`toALPublicationLaneKey`,
+`topicId/typeId`), each with the channel's `ALPublicationPolicy`, its streams (`toALPublicationStreamKey`, in
+first-staged order, each holding at most `retainNewest` values oldest first) and its next opportunity. A staged
+value ([`ALOutboundStagedPublication`](./publication/al-outbound-staged-publication.ts)) keeps the `msgId`,
+`traceId` and deadline of the message the sender built.
+
+`stage()` refuses a value heavier than `drain.bytes` as `oversized` and settles nothing, so the caller settles the
+refusal; otherwise it settles `staged` at once, and a value that pushes its stream past `retainNewest` displaces the
+stream's oldest, which settles `superseded` with the new value's `msgId` as `replacementMsgId`; the stage appends
+the value and keeps the newest `retainNewest` with [`retainNewest`](../../cache/retain-newest.ts), the primitive the
+motion buffer's per-entity window shares. Staging on an idle lane
+opens an opportunity at once and wakes the engine; on a scheduled lane the value waits for that lane's boundary.
+
+The stage registers one task, at most one runnable at a time, on the session's `InboxOutboxEngine`; its `isWork`
+is "a lane is due" on the injected `Clock`. Each due lane runs one opportunity:
+[`computeALPublicationSelection`](./publication/compute-al-publication-selection.ts) settles the values whose
+deadline passed `expired`, then takes the streams in order, each oldest first, until the next value would pass
+`drain.messages` or `drain.bytes`; the rest wait. The selection goes to the caller's `submit` port; a `submit`
+that throws settles each selected value `admission` `failed` with its message, and the opportunity writes one
+payload-free `publication-opportunity` diagnostic (`laneKey`, `atMs`, `selected`, `deferred`, `expired`,
+`bytes`). The next boundary is one cadence after the opportunity
+([`computeNextCadenceAtMs`](../../resilience/cadence.ts), whose boundary the motion send gate shares through `computeCadenceBoundaryAtMs`), so a lane the
+engine reaches late runs one bounded opportunity, never a catch-up burst. A lane its opportunity emptied stays
+scheduled for one more boundary, so a value staged within the cadence still waits, and then goes idle. After the due
+lanes ran, the task calls `wakeAt` with the earliest next opportunity, or with `undefined` once every lane is idle.
+`dispose()` leaves the engine and settles every staged value `skipped`/`disposed`.
+
+The stage never sends and never admits: what `submit` hands to a carrier enters today's admission unchanged, so the
+frozen audience, fallback, supersedence and receipts apply to it as to any send. Fairness across streams and groups,
+byte and key bounds, cancellation and reconfiguration of a staged lane are S1-ii (D473).
+
 ## Read and failure boundaries
 
 [`al-outbound-admission-validation.ts`](./admission/al-outbound-admission-validation.ts)

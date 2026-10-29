@@ -29,6 +29,7 @@ export function toCapabilityDelivery(lifecycle: ALDeliveryLifecycle): Capability
     const reason = lifecycle.evidence.reason;
     switch (evidence) {
         case 'submitted':
+        case 'staged':
         case 'pending-authority':
         case 'accepted':
         case 'queued':

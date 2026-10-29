@@ -500,6 +500,22 @@ after a missed opportunity; isolation across groups/entities/audiences; no
 loss of commands; identical identity/deadline under allowed fallback. An
 example and a visible browser flow demonstrate the chosen QoS.
 
+As applied (S1-i): a typed channel declared `purpose: 'live'` carries the
+policy, `publication: { cadenceMs, retainNewest, drain: { messages, bytes } }`,
+with no product default for any field. Each live send names the `resourceId` of
+its stream, reads `staged` first, and is paced by `ALOutboundPublicationStage`
+(`packages/shared/alm/outbound/publication/`) as one task on the session's
+QueueBox engine, scheduled with `wakeAt`, so there is no second loop. Newest-N
+retention is `retainNewest` (`packages/shared/cache`) and the cadence
+`computeNextCadenceAtMs` (`packages/shared/resilience`), both shared with Rallar
+Motion. Unit pins and the `paced-latest`, `paced-newest-n` and `paced-expiry`
+cells over `ws`, `rtc` and `rtc-with-ws-fallback` prove displacement under N=1
+and N>1, the drain budget, expiry before dispatch, no burst after a late wake
+and the typed refusal of incompatible policies; stream-key isolation is pinned
+on the key. Aggregate count and byte bounds, fair selection, cancellation on the
+stage, the isolation cells, the example and the visible browser flow are S1-ii.
+Decisions D465–D475 are in the roadmap.
+
 ### Slice 2: authorized WS pub/sub
 
 Deliver exact group/topic publication grants, authenticated grant management,

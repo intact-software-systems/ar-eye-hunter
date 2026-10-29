@@ -4931,6 +4931,36 @@ moved or changed test.
         "requiredConstraint": "An aborted ask neither falls back to the local companion nor publishes a proposal.",
         "failureRationale": "A local fallback that ran would only surface as a proposal sent after the cancel; the absent local call is the direct witness that the abort is not treated as a fallback reason."
       }
+    },
+    {
+      "id": "alm-publication-stage-hands-earliest-opportunity-to-engine",
+      "domain": "ALM outbound publication stage scheduling",
+      "owner": "Rallar shared maintainers",
+      "summary": "After each pass the publication stage hands the session engine the earliest next opportunity of its lanes, and clears its readiness once every lane is idle, so an idle stage costs the engine no pacing work (D470).",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#wakes the engine at the earliest next opportunity and not at all once every lane is idle",
+      "coverageRelation": "The test stages on a 100 ms and a 300 ms lane on a real engine driven by executeOnce, runs the passes at the start, at +100 and at +300, and reads the readiness the stage handed the engine after each pass: +100, then +300, then none.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "InboxOutboxEngine wakeAt(taskId, readyAtMs) for the al-outbound-publication-stage task",
+        "observableEffect": "The engine schedules its next pass at the readiness the stage last handed it, or falls back to its idle ceiling once that readiness is cleared.",
+        "requiredConstraint": "The last wakeAt of each pass names the minimum next opportunity over the stage's lanes, and undefined once no lane is scheduled.",
+        "failureRationale": "The engine keeps task readiness privately, and readLane already reports the right next opportunity per lane, so only the last readiness handed to the port shows a stage that computed its schedule but stalled a lane until the idle ceiling or kept an idle engine waking."
+      }
+    },
+    {
+      "id": "alm-publication-stage-absorbs-submit-failure",
+      "domain": "ALM outbound publication stage failure ownership",
+      "owner": "Rallar shared maintainers",
+      "summary": "A submit port that rejects settles each value of that opportunity as an admission failure and is never rethrown into the session engine as a task failure.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#settles each selected value failed when submit throws and keeps the engine task healthy",
+      "coverageRelation": "The test stages one value against a submit that rejects, runs a real engine pass, reads the admission failed settlement of that value, and observes the engine's task failure reporter.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InboxOutboxEngine.Dependencies reportTaskFailure for the al-outbound-publication-stage task",
+        "observableEffect": "A rejected runnable is reported once as an owned task failure, which production logs as a failed queue task.",
+        "requiredConstraint": "No task failure is reported for an opportunity whose submit rejected, because the stage already settled each selected value.",
+        "failureRationale": "A stage that settled each value and then rethrew would still produce the expected admission failed settlement; only the absent reporter call shows the failure stayed with the stage."
+      }
     }
   ],
   "entries": [
@@ -10444,6 +10474,50 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "`expect(rallarMock.localGenerateJson).not.toHaveBeenCalled();` pins that a cancelled planning ask does not run the local provider as a fallback.",
       "semanticCoverage": "packages/tests/relic-hunters/relic-web-app.browser.test.ts#publishes nothing and runs no local companion for an ask cancelled while it awaits the server"
+    },
+    {
+      "id": "test-structure-coupling-b3d695449faa93b8",
+      "path": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-publication-stage-hands-earliest-opportunity-to-engine",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "After the first pass both lanes are scheduled, and the readiness handed to the engine must be the fast lane's +100 boundary rather than the slow lane's +300.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#wakes the engine at the earliest next opportunity and not at all once every lane is idle"
+    },
+    {
+      "id": "test-structure-coupling-321bd9c31532c1a1",
+      "path": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-publication-stage-hands-earliest-opportunity-to-engine",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "Once the fast lane's emptied boundary leaves it idle, the readiness must move to the slow lane's +300 boundary instead of staying at the passed +100 or clearing.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#wakes the engine at the earliest next opportunity and not at all once every lane is idle"
+    },
+    {
+      "id": "test-structure-coupling-f58bc82482f5bb2a",
+      "path": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-publication-stage-hands-earliest-opportunity-to-engine",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "With every lane idle the stage must clear its engine readiness with undefined, the D470 rule that an idle stage asks the engine for no pacing work.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#wakes the engine at the earliest next opportunity and not at all once every lane is idle"
+    },
+    {
+      "id": "test-structure-coupling-43b0cad5b4b1283b",
+      "path": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-publication-stage-absorbs-submit-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent task failure report is the witness that the rejected submit stayed with the stage after it settled the value failed.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#settles each selected value failed when submit throws and keeps the engine task healthy"
     }
   ]
 }

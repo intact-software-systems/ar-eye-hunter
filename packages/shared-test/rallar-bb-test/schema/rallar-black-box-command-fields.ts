@@ -1,4 +1,5 @@
 import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
+import { AL_CHANNEL_PURPOSES } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
     INDEXED_DB_OPERATION_KINDS,
     INDEXED_DB_OPERATION_OWNERS
@@ -104,6 +105,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
         optional: [
             'connection',
             'topicId',
+            'purpose',
+            'publication',
             'roomRef',
             'scope',
             'principalId',
@@ -269,7 +272,9 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     messagesReplay: { required: ['handleId', 'carrier'], optional: [] },
     messagesSnapshotFloor: { required: [], optional: ['absolute', 'aboveCurrentBy'] },
     messagesQos: { required: ['ack'], optional: [] },
-    messagesQosAck: { required: ['algo'], optional: [] }
+    messagesQosAck: { required: ['algo'], optional: [] },
+    messagesPublication: { required: ['cadenceMs', 'retainNewest', 'drain'], optional: [] },
+    messagesPublicationDrain: { required: ['messages', 'bytes'], optional: [] }
 } as const satisfies Readonly<Record<string, RallarBlackBoxCommandFieldSet>>;
 
 type RallarBlackBoxCommandObjectFields = typeof RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS;
@@ -302,6 +307,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     formationCommand: ['plan', 'connect', 'activate', 'reconfigure', 'pause', 'resume', 'reset', 'start'],
     httpResponseBody: ['none', 'text', 'json'],
     messagesCarrier: ['ws', 'rtc', 'rtc-with-ws-fallback'],
+    messagesPurpose: AL_CHANNEL_PURPOSES,
     messagesScope: ['room', 'world', 'principal'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
