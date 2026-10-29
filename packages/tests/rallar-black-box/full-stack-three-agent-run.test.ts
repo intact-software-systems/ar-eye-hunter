@@ -31,10 +31,11 @@ function toScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]) {
 }
 
 describe('three-agent ALM run', () => {
-    it('selects exactly the receipted-audience, membership fence, leader, claim and reply-first-wins scenarios for the three-agent family on every carrier', () => {
+    it('selects exactly the paced list-isolation, receipted-audience, membership fence, leader, claim and reply-first-wins scenarios for the three-agent family on every carrier', () => {
         const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
         const expectedKeys = {
             ws: [
+                'paced-isolation-lists',
                 'aggregated-receipt',
                 'missing-recipient-retry',
                 'frozen-audience-membership',
@@ -49,6 +50,7 @@ describe('three-agent ALM run', () => {
                 'reply-first-wins'
             ],
             rtc: [
+                'paced-isolation-lists',
                 ...rtcScenarioKeys,
                 'fenced-delivery',
                 'fenced-catch-up',
@@ -56,7 +58,7 @@ describe('three-agent ALM run', () => {
                 'no-leader-refused',
                 'claim-refused-on-rtc'
             ],
-            'rtc-with-ws-fallback': [...rtcScenarioKeys, 'leader-confirms', 'claim-first-wins']
+            'rtc-with-ws-fallback': ['paced-isolation-lists', ...rtcScenarioKeys, 'leader-confirms', 'claim-first-wins']
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const threeAgent = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'three-agent');

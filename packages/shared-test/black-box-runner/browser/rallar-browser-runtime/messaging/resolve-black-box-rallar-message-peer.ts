@@ -1,7 +1,10 @@
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { BlackBoxRallarMessageSendInput } from '../black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarMessageSendInput,
+    BlackBoxRallarRecipientPeer
+} from '../black-box-rallar-operation-contracts.ts';
 
 export interface ResolveBlackBoxRallarMessagePeerInput {
     readonly toPeer: NonNullable<BlackBoxRallarMessageSendInput['toPeer']>;
@@ -13,7 +16,7 @@ export interface ResolveBlackBoxRallarMessagePeerInput {
 }
 
 export interface ResolveBlackBoxRallarRecipientPeerInput {
-    readonly recipientPeer: NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>;
+    readonly recipientPeer: BlackBoxRallarRecipientPeer;
     readonly ownSessionId: string | undefined;
     readonly ownPrincipalId: string | undefined;
     /** Undefined while the page holds no snapshot of the room. */
@@ -47,8 +50,9 @@ export function resolveBlackBoxRallarMessagePeer(
 
 /**
  * A room that holds a second session of the sender's principal tells the receiver apart by principal: `receiver` is
- * the one other live session whose principal is not the sender's. A room of three principals tells `recipient-b`
- * apart by the room's leader, the role the receiver takes there: it is the one such session that is not the leader.
+ * the one other live session whose principal is not the sender's. A room of three principals tells its two recipients
+ * apart by the room's leader, the role the receiver takes there: `receiver` is the leader, `recipient-b` the one such
+ * session beside it.
  */
 export function resolveBlackBoxRallarRecipientPeer(
     input: ResolveBlackBoxRallarRecipientPeerInput
@@ -56,16 +60,41 @@ export function resolveBlackBoxRallarRecipientPeer(
     if (input.roomSessions === undefined) {
         return Either.ofLeft('the page holds no snapshot of the room');
     }
-    const besideLeader = input.recipientPeer === 'recipient-b';
-    const recipients = toOtherLiveSessions(input.roomSessions, input).filter((session) =>
-        session.principalId !== input.ownPrincipalId && !(besideLeader && session.sessionId === input.leaderSessionId)
+    const others = toOtherLiveSessions(input.roomSessions, input).filter((session) =>
+        session.principalId !== input.ownPrincipalId
     );
+    return input.recipientPeer === 'receiver'
+        ? resolveReceiver(others, input.leaderSessionId)
+        : resolveBesideLeader(others, input.leaderSessionId);
+}
+
+function resolveReceiver(
+    others: readonly GroupPresenceSession[],
+    leaderSessionId: string | undefined
+): Either<string, string> {
+    const [receiver] = others;
+    if (others.length === 1 && receiver !== undefined) {
+        return Either.ofRight(receiver.sessionId);
+    }
+    const leader = others.find((session) => session.sessionId === leaderSessionId);
+    if (leader !== undefined) {
+        return Either.ofRight(leader.sessionId);
+    }
+    const count = `the room holds ${others.length} other live sessions of another principal, not exactly one`;
+    const noLeader = leaderSessionId === undefined ? 'the room names no leader' : 'its leader is none of them';
+    return Either.ofLeft(others.length === 0 ? count : `${count}, and ${noLeader}`);
+}
+
+function resolveBesideLeader(
+    others: readonly GroupPresenceSession[],
+    leaderSessionId: string | undefined
+): Either<string, string> {
+    const recipients = others.filter((session) => session.sessionId !== leaderSessionId);
     const [recipient] = recipients;
     return recipients.length === 1 && recipient !== undefined
         ? Either.ofRight(recipient.sessionId)
         : Either.ofLeft(
-            `the room holds ${recipients.length} other live sessions of another principal` +
-                `${besideLeader ? ' beside its leader' : ''}, not exactly one`
+            `the room holds ${recipients.length} other live sessions of another principal beside its leader, not exactly one`
         );
 }
 

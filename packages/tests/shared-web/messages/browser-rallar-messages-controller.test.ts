@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import {
     ALVolatileSessionBudget,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -14,6 +16,8 @@ import {
 } from './rallar-facade-test-runtime.ts';
 
 const LIMITS: ALVolatileSessionLimits = { maxAdmissions: 2, maxBytes: 1_024, maxAgeMs: 300_000, maxTracks: 4 };
+const STAGE_LIMITS: ALPublicationStageLimits = { maxStreams: 4, maxStagedValues: 8, maxStagedBytes: 65_536 };
+const NO_PUBLICATION_COUNTERS = { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 };
 const NOT_CONNECTED = 'Rallar is not connected. Call rallar.connect() first.';
 
 const mocks = getRallarFacadeMocks();
@@ -27,7 +31,14 @@ describe('rallar.messages.readUsage', () => {
     beforeEach(() => {
         resetRallarFacadeTestRuntime();
         budget = new ALVolatileSessionBudget(LIMITS);
-        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({ middleware: { volatileBudget: budget } });
+        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({
+            middleware: {
+                volatileBudget: budget,
+                publicationStageLimits: STAGE_LIMITS,
+                // Never started: a staged value waits for an engine pass no test runs.
+                qboxEngine: new InboxOutboxEngine({ nowEpochMs: Date.now, random: () => 0.5, reportTaskFailure: () => undefined })
+            }
+        });
     });
 
     it('throws the not-connected error before the session connects, and again after it disconnects', async () => {
@@ -56,7 +67,8 @@ describe('rallar.messages.readUsage', () => {
             limits: LIMITS,
             overloaded: false,
             repliesHeld: 0,
-            replyWaitsOpen: 0
+            replyWaitsOpen: 0,
+            publication: expect.any(Object)
         });
         expect(report.usage.oldestAgeMs).toBeGreaterThanOrEqual(1_000);
         expect(report.usage.oldestAgeMs).toBeLessThan(31_000);
@@ -106,7 +118,8 @@ describe('rallar.messages.readUsage', () => {
             limits: LIMITS,
             overloaded: false,
             repliesHeld: 0,
-            replyWaitsOpen: 0
+            replyWaitsOpen: 0,
+            publication: expect.any(Object)
         });
     });
 
@@ -122,5 +135,37 @@ describe('rallar.messages.readUsage', () => {
         stop.abort();
         expect((await pending).status).toBe('aborted');
         expect(facade.messages.readUsage()).toMatchObject({ repliesHeld: 0, replyWaitsOpen: 0 });
+    });
+
+    it('reads the publication stage beside the ledger: nothing with the connect\'s limits before a live send, then what it staged', async () => {
+        const facade = createRallarTestFacade();
+        await facade.connect();
+
+        expect(facade.messages.readUsage().publication).toEqual({
+            lanes: 0,
+            streams: 0,
+            staged: 0,
+            stagedBytes: 0,
+            limits: STAGE_LIMITS,
+            counters: NO_PUBLICATION_COUNTERS
+        });
+
+        const channel = facade.messages.channel<{ readonly x: number; }>({
+            topicId: 'app.pose',
+            typeId: 'app.pose.v1',
+            purpose: 'live',
+            publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
+        });
+        await channel.sendWs({ x: 1 }, { scope: 'world', resourceId: 'entity-1', ttlMs: 60_000 });
+
+        const staged = facade.messages.readUsage().publication;
+        expect(staged).toMatchObject({
+            lanes: 1,
+            streams: 1,
+            staged: 1,
+            limits: STAGE_LIMITS,
+            counters: { ...NO_PUBLICATION_COUNTERS, staged: 1 }
+        });
+        expect(staged.stagedBytes).toBeGreaterThan(0);
     });
 });

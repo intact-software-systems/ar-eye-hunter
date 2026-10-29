@@ -106,7 +106,9 @@ describe('the lane role a messages.send lists as its fixed audience', () => {
 
         expect(withoutRoster.left).toBe('the page holds no snapshot of the room');
         expect(onlyTheSibling.left).toBe('the room holds 0 other live sessions of another principal, not exactly one');
-        expect(twoOthers.left).toBe('the room holds 2 other live sessions of another principal, not exactly one');
+        expect(twoOthers.left).toBe(
+            'the room holds 2 other live sessions of another principal, not exactly one, and the room names no leader'
+        );
     });
 
     it('names recipient-b as the one other live session of another principal that is not the room\'s leader', () => {
@@ -121,7 +123,31 @@ describe('the lane role a messages.send lists as its fixed audience', () => {
             .toBe('recipient-b-session');
         expect(resolveBlackBoxRallarRecipientPeer({ ...recipientB, leaderSessionId: undefined }).left)
             .toBe('the room holds 2 other live sessions of another principal beside its leader, not exactly one');
-        expect(resolveBlackBoxRallarRecipientPeer({ ...input, roomSessions, leaderSessionId: 'receiver-session' }).left)
-            .toBe('the room holds 2 other live sessions of another principal, not exactly one');
+    });
+
+    it('names the receiver as the room\'s leader among several sessions of other principals, the role it takes there', () => {
+        const roomSessions = [
+            toRoomRosterSession('sender-session', { principalId: 'alice' }),
+            toRoomRosterSession('receiver-session', { principalId: 'bob' }),
+            toRoomRosterSession('recipient-b-session', { principalId: 'carol' })
+        ];
+
+        expect(resolveBlackBoxRallarRecipientPeer({ ...input, roomSessions, leaderSessionId: 'receiver-session' }).right)
+            .toBe('receiver-session');
+        expect(resolveBlackBoxRallarRecipientPeer({ ...input, roomSessions, leaderSessionId: undefined }).left).toBe(
+            'the room holds 2 other live sessions of another principal, not exactly one, and the room names no leader'
+        );
+        // The sender's own session leads, so no other session of another principal answers as the leader.
+        expect(resolveBlackBoxRallarRecipientPeer({ ...input, roomSessions, leaderSessionId: 'sender-session' }).left).toBe(
+            'the room holds 2 other live sessions of another principal, not exactly one, and its leader is none of them'
+        );
+        // With one such session the leader plays no part: the exact-one rule names it.
+        expect(
+            resolveBlackBoxRallarRecipientPeer({
+                ...input,
+                roomSessions: roomSessions.slice(0, 2),
+                leaderSessionId: 'sender-session'
+            }).right
+        ).toBe('receiver-session');
     });
 });

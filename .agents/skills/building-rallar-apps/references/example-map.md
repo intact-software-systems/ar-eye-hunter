@@ -7,6 +7,7 @@ capability. Then inspect its focused tests and current public implementation.
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Initial browser boot and rooms  | `examples/browser-startup-room`                                                                            |
 | Reliable/fallback room messages | `examples/room-message-channel`                                                                            |
+| Paced, replaceable live values  | `examples/room-live-channel`                                                                               |
 | Low-latency room data           | `examples/room-realtime-channel`                                                                           |
 | Browser director                | `examples/director-relay`, `apps/ar-eye-hunter-v1`                                                         |
 | Motion presentation             | `examples/motion-smoothing`, `apps/relic-hunters-v1/src/game/scene/networking.ts`                          |

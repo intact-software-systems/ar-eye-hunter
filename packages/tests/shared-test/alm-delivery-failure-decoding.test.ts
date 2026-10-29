@@ -25,6 +25,9 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
         [
             { kind: 'refused', reason: 'capacity' },
             { kind: 'refused', reason: 'capacity', limit: 'tracks' },
+            { kind: 'refused', reason: 'capacity', limit: 'streams' },
+            { kind: 'refused', reason: 'capacity', limit: 'staged-values' },
+            { kind: 'refused', reason: 'capacity', limit: 'staged-bytes' },
             { kind: 'refused', reason: 'congested' },
             {
                 kind: 'relay-rejected',

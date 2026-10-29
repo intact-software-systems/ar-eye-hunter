@@ -39,6 +39,7 @@ import {
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import type { BlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
 import type { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
+import type { BlackBoxRallarPublicationLimits } from './black-box-rallar-publication-limits.ts';
 import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 import { configureBlackBoxRallarConnection } from './configure-black-box-rallar-connection.ts';
 
@@ -71,6 +72,7 @@ export namespace BlackBoxRallarConnectOperation {
         readonly typedChannels: BlackBoxRallarTypedChannels;
         readonly subscriptions: BlackBoxRallarConnectionSubscriptions;
         readonly volatileLimits: BlackBoxRallarVolatileLimits;
+        readonly publicationLimits: BlackBoxRallarPublicationLimits;
     }
 }
 
@@ -195,6 +197,7 @@ export class BlackBoxRallarConnectOperation {
             rallar: this.#input.rallar,
             diagnostics,
             volatileLimits: this.#input.volatileLimits,
+            publicationLimits: this.#input.publicationLimits,
             connectionState: this.#input.connectionState,
             config
         });

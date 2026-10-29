@@ -1,7 +1,8 @@
 # ALM publication QoS and pub/sub addendum
 
-Prepared: 2026-10-09. Status: proposed extension, not implemented behavior or
-an adopted change to `docs/product.md`.
+Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing) is
+implemented and recorded as applied in §7; the later slices remain a proposed
+extension, not implemented behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -512,9 +513,33 @@ Motion. Unit pins and the `paced-latest`, `paced-newest-n` and `paced-expiry`
 cells over `ws`, `rtc` and `rtc-with-ws-fallback` prove displacement under N=1
 and N>1, the drain budget, expiry before dispatch, no burst after a late wake
 and the typed refusal of incompatible policies; stream-key isolation is pinned
-on the key. Aggregate count and byte bounds, fair selection, cancellation on the
-stage, the isolation cells, the example and the visible browser flow are S1-ii.
-Decisions D465–D475 are in the roadmap.
+on the key. Decisions D465–D475 are in the roadmap. S1-ii delivered the rest of
+the slice: aggregate count and byte bounds, fair selection, cancellation on the
+stage, the isolation cells, the example and the visible browser flow, as
+applied below.
+
+As applied (S1-ii): the stage counts its streams, staged values and staged
+bytes per session against `AL_PUBLICATION_STAGE_LIMITS` (64, 1 000 and 4 MiB)
+after retention, and refuses a value that would pass one `capacity` naming the
+limit. Each lane serves its streams from a rotating cursor, and lanes stay
+independent. `cancel()` settles a staged value `cancelled` on the stage before
+any carrier, and a send with a changed policy reconfigures its lane at once:
+re-trimmed streams, oversized values refused, the next boundary moved earlier
+and never a second dispatch. Each value's outcome is a payload-free
+`publication-staging` diagnostic, and `rallar.messages.readUsage().publication`
+and the harness's `stats.rallar.alm.publication` report the stage. The WS
+server refuses a volatile best-effort latest-wins publication on a topic whose
+effective fanout is `outbox` at ingress with the NACK reason `unsupported`,
+terminal, since the browser cannot know a topic's fanout. The cells
+`paced-capacity`, `paced-fairness`, `paced-cancel`, `paced-isolation-resources`
+(two resources of one channel) and `paced-isolation-lists` (two fixed
+recipients, three agents) join the S1-i cells at a 2 000 ms cadence over the
+three carriers; hosted manifest 18 carries the seven two-agent cells, and
+`paced-isolation-lists` is withheld from the three-agent manifest 22.
+`examples/room-live-channel/README.md` is the example, and the Recipe Console's
+Analyze view shows a paced cell's rows, pinned by
+`tests/playwright/rallar-black-box/recipe-console-publication.spec.ts`.
+Decisions D476–D482 are in the roadmap, and Slice 1 is complete.
 
 ### Slice 2: authorized WS pub/sub
 

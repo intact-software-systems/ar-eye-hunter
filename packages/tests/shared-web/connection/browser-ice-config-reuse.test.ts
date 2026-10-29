@@ -29,6 +29,7 @@ const options = {
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' } as const,
     qosProvider: undefined,
     readVolatileSessionLimits: undefined,
+    readPublicationStageLimits: undefined,
     deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},

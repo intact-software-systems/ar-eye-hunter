@@ -9,6 +9,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 export interface RallarRtcMessageLane {
@@ -27,10 +28,14 @@ export interface RallarWsMessageLane {
     ): RallarUnsubscribe;
 }
 
-/** The volatile ledger beside the matched replies this page's retained deliveries hold and its reply waits in flight. */
+/**
+ * The volatile ledger beside the matched replies this page's retained deliveries hold, its reply waits in flight, and
+ * the connect's publication stage: what its live channels hold against the stage's limits and what it settled.
+ */
 export interface RallarMessagesUsage extends ALVolatileSessionReport {
     readonly repliesHeld: number;
     readonly replyWaitsOpen: number;
+    readonly publication: ALOutboundPublicationStageReport;
 }
 
 export interface RallarMessagesOperations {

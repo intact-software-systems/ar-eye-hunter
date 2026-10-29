@@ -13,6 +13,7 @@ import {
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import * as BrowserRuntimeComposition from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -61,6 +62,7 @@ it.each([1700000000000.25, 1700000001234.5])('reports injected document generati
     const runtime = createBlackBoxRallarRuntime({
         facade: facade.rallar,
         volatileLimits: new BlackBoxRallarVolatileLimits(),
+        publicationLimits: new BlackBoxRallarPublicationLimits(),
         targetWindow,
         clock: {
             now: () => 12_345
@@ -95,6 +97,7 @@ it('fresh authored reconnect overrides configured credentials and restores the s
         createBlackBoxRallarRuntime({
             facade: facade.rallar,
             volatileLimits: new BlackBoxRallarVolatileLimits(),
+            publicationLimits: new BlackBoxRallarPublicationLimits(),
             targetWindow: {},
             clock: { now: Date.now },
             delay: async () => undefined,

@@ -152,13 +152,20 @@ describe('Hetzner ALM conformance catalog', () => {
                 'ordering-resync',
                 'ws-unicast-receipt',
                 'server-command',
+                'paced-latest',
+                'paced-newest-n',
+                'paced-expiry',
+                'paced-fairness',
+                'paced-cancel',
+                'paced-isolation-resources',
                 'not-yet-in-sync',
                 'cross-carrier-duplicate',
                 'fallback-within-deadline',
                 'receipt-exhausted-fallback',
                 'no-fallback-after-deadline',
                 'unicast-fallback',
-                'capacity'
+                'capacity',
+                'paced-capacity'
             ]
         });
 
@@ -188,8 +195,8 @@ describe('Hetzner ALM conformance catalog', () => {
 
         const rtcConnects = toHetznerManifestCommands(entry!.manifest)
             .filter((command): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        // Two prologues, three reload reconnects, and the capacity sender's lowered and restored connect per carrier.
-        expect(rtcConnects).toHaveLength(11);
+        // Two prologues, three reload reconnects, and each capacity sender's lowered and restored connect per carrier.
+        expect(rtcConnects).toHaveLength(17);
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
 

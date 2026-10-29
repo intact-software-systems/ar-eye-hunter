@@ -1,6 +1,8 @@
 import { beforeEach, expect, it } from 'vitest';
 
 import type { RallarMessagesUsage } from '@shared-web/browser/rallar-messages.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -13,7 +15,8 @@ const REPORT: RallarMessagesUsage = {
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false,
     repliesHeld: 3,
-    replyWaitsOpen: 1
+    replyWaitsOpen: 1,
+    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
 };
 
 const CONNECTION = {

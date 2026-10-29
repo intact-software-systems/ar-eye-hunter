@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
@@ -60,7 +62,8 @@ const SENDER_REPORT = toReport({
     orderingTracks: 4,
     deliveredMarkers: 4,
     repliesHeld: 0,
-    replyWaitsOpen: 0
+    replyWaitsOpen: 0,
+    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
 });
 const RECEIVER_REPORT = toReport({
     usage: { admissions: 30, bytes: 1_200, oldestAgeMs: 900, tracks: 0 },
@@ -70,7 +73,8 @@ const RECEIVER_REPORT = toReport({
     orderingTracks: 256,
     deliveredMarkers: 256,
     repliesHeld: 0,
-    replyWaitsOpen: 0
+    replyWaitsOpen: 0,
+    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
 });
 const LATER_SENDER_REPORT = toReport({
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
@@ -80,7 +84,8 @@ const LATER_SENDER_REPORT = toReport({
     orderingTracks: 0,
     deliveredMarkers: 0,
     repliesHeld: 0,
-    replyWaitsOpen: 0
+    replyWaitsOpen: 0,
+    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
 });
 
 describe('the ALM observation ledger readings', () => {

@@ -28,12 +28,14 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
+import type { BrowserPublicationStages } from './publication/browser-publication-stages.ts';
 
 export namespace BrowserRallarMessagesController {
     export interface Input {
         readonly creation: BrowserRallarMessageSender.Creation;
         readonly deliveries: BrowserRallarDeliveryRegistry;
         readonly sessionDeliveries: BrowserSessionDeliveries;
+        readonly publicationStages: BrowserPublicationStages;
         readonly nowMs: () => number;
         readonly wsInbox: BrowserWebSocketInbox;
         /** Where `channel(...)` registers a definition's recovery owner, for the resync recovery to find. */
@@ -83,10 +85,14 @@ export class BrowserRallarMessagesController {
         this.operations = this.createOperations(
             inputValidator,
             input.recoveryOwners,
-            () => ({
-                ...input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs()),
-                ...input.deliveries.getReplyCounts()
-            })
+            () => {
+                const context = input.requireMiddleware();
+                return {
+                    ...context.middleware.volatileBudget.readReport(input.nowMs()),
+                    ...input.deliveries.getReplyCounts(),
+                    publication: input.publicationStages.readReport(context)
+                };
+            }
         );
         this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
     }
@@ -141,6 +147,7 @@ function createMessageSender(
         dispatch: new BrowserRallarMessageDispatch({
             deliveries: input.deliveries,
             sessionDeliveries: input.sessionDeliveries,
+            publicationStages: input.publicationStages,
             nowMs: input.nowMs
         }),
         sessionDeliveries: input.sessionDeliveries,

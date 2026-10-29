@@ -139,8 +139,11 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
 
 function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
     const { send, prefix, suffix, sender, receiverBefore, recovery, absence, checkpoint } = evidence;
-    const allCommands = sender.participant.recipe.commands;
-    const linearRoot = allCommands.every((command) =>
+    // A paced cell's loop repeats one send template, so its children count beside the root's own commands.
+    const allCommands = sender.participant.recipe.commands.flatMap((command) =>
+        command.kind === 'loop' ? command.commands : [command]
+    );
+    const noNestedComposites = allCommands.every((command) =>
         !['recipe.run', 'recipe.load', 'loop', 'parallel'].includes(command.kind)
     );
     const originals = allCommands.filter((command) =>
@@ -180,7 +183,8 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         isSameJsonValue(absence.match.equals, decodeJsonValue(send.payload)) &&
         isJsonRecordValue(absenceValue) && absenceValue.absent === true && absenceValue.matched === false;
     const reloadValue = toRecordedAlmResultValue(sender, evidence.reload);
-    return linearRoot && originals.length === 1 && hasReloadNativeHolds(evidence) && validPrefix && validSuffix &&
+    return noNestedComposites && originals.length === 1 && hasReloadNativeHolds(evidence) && validPrefix &&
+            validSuffix &&
             receiverPreserved &&
             correctAbsence && isJsonRecordValue(reloadValue) && reloadValue.reloading === true &&
             reloadValue.readyTimeoutMs === evidence.reload.readyTimeoutMs

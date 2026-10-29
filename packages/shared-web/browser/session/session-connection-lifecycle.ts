@@ -18,6 +18,7 @@ import {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -52,6 +53,7 @@ export namespace BrowserSessionConnectionLifecycle {
     export interface Input {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
+        readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
         readonly connectionRuntime: RallarConnectionRuntimePort;
@@ -124,6 +126,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             ...toMiddlewareOptions(input),
             qosProvider: this.input.qosProvider,
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
+            readPublicationStageLimits: this.input.readPublicationStageLimits,
             deliverySettlements: this.input.sessionDeliveries.observers,
             onResyncRequired: (resync: ALInboundResyncRequired) => this.input.onResyncRequired(resync, storage)
         };
@@ -249,7 +252,11 @@ function toMiddlewareOptions(
     input: RallarSessionConnectionInput
 ): Omit<
     MiddlewareInitOptions,
-    'deliverySettlements' | 'qosProvider' | 'readVolatileSessionLimits' | 'onResyncRequired'
+    | 'deliverySettlements'
+    | 'qosProvider'
+    | 'readVolatileSessionLimits'
+    | 'readPublicationStageLimits'
+    | 'onResyncRequired'
 > {
     return {
         ...toRallarOperationOptions(input.operationOptions),

@@ -14,6 +14,7 @@ import {
     toConnectedTargetRejection
 } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import type { BlackBoxRallarPublicationLimits } from './black-box-rallar-publication-limits.ts';
 import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 import { configureBlackBoxRallarConnection } from './configure-black-box-rallar-connection.ts';
 
@@ -25,6 +26,7 @@ export namespace BlackBoxRallarCrdtLiveConnection {
         readonly connectionState: BlackBoxRallarConnectionState;
         readonly authentication: BlackBoxRallarAuthentication;
         readonly volatileLimits: BlackBoxRallarVolatileLimits;
+        readonly publicationLimits: BlackBoxRallarPublicationLimits;
     }
 }
 
@@ -70,6 +72,7 @@ export class BlackBoxRallarCrdtLiveConnection {
             rallar,
             diagnostics,
             volatileLimits: this.#input.volatileLimits,
+            publicationLimits: this.#input.publicationLimits,
             connectionState: this.#input.connectionState,
             config
         });

@@ -1,3 +1,6 @@
+import type { ALPublicationStagingOutcome } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+
+import { decodeCount } from '../alm/decode-al-volatile-session-report.ts';
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxRuntimeDiagnosticPayload } from '../diagnostics.ts';
 import type {
@@ -5,7 +8,7 @@ import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
-import { decodeFiniteNumber, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
+import { decodeFiniteNumber, decodeNonBlankText, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
     computeDistributedRunCorrelatedFailureKeys,
     type DistributedRunMonitorFailureIndex
@@ -18,6 +21,14 @@ import type {
 import { toDistributedRunIdentitySummary } from './to-distributed-run-identity-summary.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
+/** Every staging outcome, so an outcome the stage adds is a type error here until the rows can read it. */
+const STAGING_OUTCOMES: Readonly<Record<ALPublicationStagingOutcome, true>> = {
+    staged: true,
+    superseded: true,
+    expired: true,
+    refused: true,
+    cancelled: true
+};
 
 export function toDistributedRunRuntimeDiagnosticRows(
     events: readonly ControlEventSnapshot[]
@@ -49,6 +60,7 @@ function toDistributedRunRuntimeDiagnosticRow(
     const transport = toDiagnosticTransport(decodeFirstNonBlankText(payload.transport, runtimeEvent.transport));
     const severity = toDiagnosticSeverity(decodeFirstNonBlankText(payload.severity, runtimeEvent.severity), event.kind);
     const message = decodeFirstNonBlankText(
+        toPublicationDiagnosticMessage(data),
         payload.message,
         runtimeEvent.message,
         payload.reason,
@@ -80,6 +92,39 @@ function toDistributedRunRuntimeDiagnosticRow(
         identitySummary,
         ...toDiagnosticContextFields(payload, runtimeEvent, data)
     };
+}
+
+/**
+ * The readable message of a page's publication diagnostic (D480). Its data is the stage's payload-free event, which
+ * carries no message of its own, so the row would otherwise read only its topic. Undefined for data of any other
+ * kind, and for a publication event missing a fact the message names.
+ */
+function toPublicationDiagnosticMessage(data: RallarBlackBoxTestRecord): string | undefined {
+    const laneKey = decodeNonBlankText(data.laneKey);
+    if (laneKey === undefined) {
+        return undefined;
+    }
+    if (data.kind === 'publication-staging') {
+        return toStagingMessage(laneKey, data);
+    }
+    return data.kind === 'publication-opportunity' ? toOpportunityMessage(laneKey, data) : undefined;
+}
+
+function toStagingMessage(laneKey: string, data: RallarBlackBoxTestRecord): string | undefined {
+    const outcome = decodeNonBlankText(data.outcome);
+    const msgId = decodeNonBlankText(data.msgId);
+    return outcome !== undefined && Object.hasOwn(STAGING_OUTCOMES, outcome) && msgId !== undefined
+        ? `Publication ${outcome} on ${laneKey}. ${msgId}`
+        : undefined;
+}
+
+function toOpportunityMessage(laneKey: string, data: RallarBlackBoxTestRecord): string | undefined {
+    const selected = decodeCount(data.selected);
+    const deferred = decodeCount(data.deferred);
+    const expired = decodeCount(data.expired);
+    return selected === undefined || deferred === undefined || expired === undefined
+        ? undefined
+        : `Publication opportunity on ${laneKey}: ${selected} selected, ${deferred} deferred, ${expired} expired.`;
 }
 
 function toDiagnosticContextFields(

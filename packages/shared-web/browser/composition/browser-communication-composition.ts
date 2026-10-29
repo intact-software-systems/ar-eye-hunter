@@ -7,6 +7,7 @@ import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages
 import { BrowserRallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resync-recovery.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import type { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -75,6 +76,7 @@ export interface CreateBrowserResyncRecoveryCompositionInput {
 export interface CreateBrowserMessagingCompositionInput {
     readonly deliveries: BrowserRallarDeliveryRegistry;
     readonly sessionDeliveries: BrowserSessionDeliveries;
+    readonly publicationStages: BrowserPublicationStages;
     readonly nowMs: () => number;
     readonly wsInbox: BrowserWebSocketInbox;
     readonly recoveryOwners: BrowserChannelRecoveryOwners;
@@ -119,6 +121,7 @@ export function createBrowserMessagingComposition(
         wsInbox: input.wsInbox,
         deliveries: input.deliveries,
         sessionDeliveries: input.sessionDeliveries,
+        publicationStages: input.publicationStages,
         nowMs: input.nowMs,
         recoveryOwners: input.recoveryOwners,
         connect: input.session.acquireConnection,

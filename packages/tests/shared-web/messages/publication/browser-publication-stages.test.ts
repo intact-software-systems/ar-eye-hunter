@@ -4,7 +4,12 @@ import { toBrowserPublicationDelivery } from '@shared-web/browser/messages/publi
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
-import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import {
+    createInitialALDeliveryLifecycle,
+    type ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -36,24 +41,42 @@ interface ConnectFixture {
 
 function createStagesFixture(): StagesFixture {
     const clock = { atMs: START_MS };
-    const settlements: ALDeliverySettlement[] = [];
-    const submitted: StagesFixture['submitted'] = [];
-    const rejectedLegs = new Set<string>();
-    const stages = new BrowserPublicationStages({
-        nowMs: () => clock.atMs,
-        submit: async (delivery, epoch) => {
-            submitted.push({ msgId: delivery.message.id.msgId, epoch });
-            if (rejectedLegs.has(delivery.message.id.msgId)) {
+    const stages = new BrowserPublicationStages({ nowMs: () => clock.atMs });
+    return {
+        clock,
+        stages,
+        feed: new BrowserDeliverySettlements(),
+        settlements: [],
+        submitted: [],
+        rejectedLegs: new Set<string>()
+    };
+}
+
+/** Stages the delivery with a leg that records its submission, and rejects for a msgId in `rejectedLegs`. */
+function stageDelivery(
+    fixture: StagesFixture,
+    delivery: BrowserPublicationStages.LiveDelivery,
+    epoch: BrowserDeliverySettlements.Epoch
+): void {
+    const msgId = delivery.message.id.msgId;
+    fixture.stages.stage({
+        delivery,
+        epoch,
+        writeLeg: async () => {
+            fixture.submitted.push({ msgId, epoch });
+            if (fixture.rejectedLegs.has(msgId)) {
                 throw new Error('The leg rejected.');
             }
             return await Promise.resolve();
         }
     });
-    return { clock, stages, feed: new BrowserDeliverySettlements(), settlements, submitted, rejectedLegs };
 }
 
 /** Opens the connect's epoch on the fixture's feed, closing the previous connect's. */
-function createConnect(fixture: StagesFixture): ConnectFixture {
+function createConnect(
+    fixture: StagesFixture,
+    publicationStageLimits: Partial<ALPublicationStageLimits> = {}
+): ConnectFixture {
     const engine = new InboxOutboxEngine({
         nowEpochMs: () => fixture.clock.atMs,
         random: () => 0.5,
@@ -63,7 +86,7 @@ function createConnect(fixture: StagesFixture): ConnectFixture {
         fixture.settlements.push(settlement);
     };
     return {
-        context: createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine } }),
+        context: createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine, publicationStageLimits } }),
         engine,
         epoch: fixture.feed.open({ ws: record, rtc: record, holds: () => true }, { relaySettlement: () => {} })
     };
@@ -117,8 +140,8 @@ describe('BrowserPublicationStages', () => {
         const first = toLiveDelivery(connect, 'entity-1');
         const second = toLiveDelivery(connect, 'entity-2');
 
-        fixture.stages.stage(first, connect.epoch);
-        fixture.stages.stage(second, connect.epoch);
+        stageDelivery(fixture, first, connect.epoch);
+        stageDelivery(fixture, second, connect.epoch);
 
         expect(fixture.stages.readLane(connect.context, LANE_KEY)).toEqual({
             laneKey: LANE_KEY,
@@ -146,8 +169,8 @@ describe('BrowserPublicationStages', () => {
         const admitted = toLiveDelivery(connect, 'entity-1');
         const rejected = toLiveDelivery(connect, 'entity-2');
         fixture.rejectedLegs.add(rejected.message.id.msgId);
-        fixture.stages.stage(admitted, connect.epoch);
-        fixture.stages.stage(rejected, connect.epoch);
+        stageDelivery(fixture, admitted, connect.epoch);
+        stageDelivery(fixture, rejected, connect.epoch);
 
         await runEnginePass(connect.engine);
 
@@ -164,7 +187,7 @@ describe('BrowserPublicationStages', () => {
         const alone = toLiveDelivery(connect, 'entity-3');
         fixture.rejectedLegs.add(alone.message.id.msgId);
         fixture.clock.atMs += LIVE_POLICY.cadenceMs;
-        fixture.stages.stage(alone, connect.epoch);
+        stageDelivery(fixture, alone, connect.epoch);
         await runEnginePass(connect.engine);
 
         expect(failed(alone)).toEqual([expect.objectContaining({ verdict: { kind: 'failed', detail: 'The leg rejected.' } })]);
@@ -176,8 +199,8 @@ describe('BrowserPublicationStages', () => {
         const first = toLiveDelivery(connect, 'entity-1');
         const second = toLiveDelivery(connect, 'entity-1');
 
-        fixture.stages.stage(first, connect.epoch);
-        fixture.stages.stage(second, connect.epoch);
+        stageDelivery(fixture, first, connect.epoch);
+        stageDelivery(fixture, second, connect.epoch);
 
         expect(fixture.settlements).toContainEqual(expect.objectContaining({
             kind: 'superseded',
@@ -190,7 +213,7 @@ describe('BrowserPublicationStages', () => {
         const fixture = createStagesFixture();
         const replaced = createConnect(fixture);
         const stranded = toLiveDelivery(replaced, 'entity-1');
-        fixture.stages.stage(stranded, replaced.epoch);
+        stageDelivery(fixture, stranded, replaced.epoch);
 
         const next = createConnect(fixture);
         await replaced.engine.stop();
@@ -204,7 +227,7 @@ describe('BrowserPublicationStages', () => {
         expect(fixture.stages.readLane(replaced.context, LANE_KEY)).toBeUndefined();
 
         const fresh = toLiveDelivery(next, 'entity-1');
-        fixture.stages.stage(fresh, next.epoch);
+        stageDelivery(fixture, fresh, next.epoch);
         await runEnginePass(next.engine);
 
         expect(fixture.submitted.map((submission) => submission.msgId)).toEqual([fresh.message.id.msgId]);
@@ -215,9 +238,9 @@ describe('BrowserPublicationStages', () => {
         const connect = createConnect(fixture);
         const first = toLiveDelivery(connect, 'entity-1');
         const resent = toLiveDelivery(connect, 'entity-2');
-        fixture.stages.stage(first, connect.epoch);
+        stageDelivery(fixture, first, connect.epoch);
         // As a handle listener that re-sends on the first value's disposal does, while the epoch is still closing.
-        connect.epoch.onClose(() => fixture.stages.stage(resent, connect.epoch));
+        connect.epoch.onClose(() => stageDelivery(fixture, resent, connect.epoch));
 
         connect.epoch.close();
         await runEnginePass(connect.engine);
@@ -236,7 +259,7 @@ describe('BrowserPublicationStages', () => {
         const ended = toLiveDelivery(connect, 'entity-1');
         const later = toLiveDelivery(connect, 'entity-1');
 
-        fixture.stages.stage(ended, connect.epoch);
+        stageDelivery(fixture, ended, connect.epoch);
         fixture.stages.stopStage();
 
         expect(fixture.settlements.at(-1)).toMatchObject({
@@ -250,7 +273,7 @@ describe('BrowserPublicationStages', () => {
         await runEnginePass(connect.engine);
         expect(fixture.submitted).toEqual([]);
 
-        fixture.stages.stage(later, connect.epoch);
+        stageDelivery(fixture, later, connect.epoch);
         await runEnginePass(connect.engine);
         expect(fixture.submitted.map((submission) => submission.msgId)).toEqual([later.message.id.msgId]);
     });
@@ -260,7 +283,7 @@ describe('BrowserPublicationStages', () => {
         const connect = createConnect(fixture);
         const heavy = toLiveDelivery(connect, 'entity-1', { ...LIVE_POLICY, drain: { messages: 8, bytes: 64 } });
 
-        fixture.stages.stage(heavy, connect.epoch);
+        stageDelivery(fixture, heavy, connect.epoch);
 
         expect(fixture.settlements).toEqual([
             expect.objectContaining({
@@ -273,5 +296,73 @@ describe('BrowserPublicationStages', () => {
             })
         ]);
         expect(fixture.stages.readLane(connect.context, LANE_KEY)).toBeUndefined();
+    });
+
+    it('refuses a delivery past its connect\'s staged-values limit, and its handle reads rejected with that limit', () => {
+        const fixture = createStagesFixture();
+        const connect = createConnect(fixture, { maxStagedValues: 2 });
+        const refused = toLiveDelivery(connect, 'entity-3');
+        const deliveries = [toLiveDelivery(connect, 'entity-1'), toLiveDelivery(connect, 'entity-2'), refused];
+
+        deliveries.forEach((delivery) => stageDelivery(fixture, delivery, connect.epoch));
+
+        const refusal = fixture.settlements.filter((settlement) => settlement.msgId === refused.message.id.msgId);
+        expect(refusal).toEqual([
+            expect.objectContaining({
+                kind: 'admission',
+                verdict: {
+                    kind: 'refused',
+                    reason: 'capacity',
+                    limit: 'staged-values',
+                    detail: 'Staging the value would hold 3 values, past the stage\'s limit of 2.'
+                },
+                trackedReceiptAlgo: 'none'
+            })
+        ]);
+        const handle = refusal.reduce(
+            computeALDeliveryLifecycle,
+            createInitialALDeliveryLifecycle({
+                msgId: refused.message.id.msgId,
+                typeId: 'arena.pose.v1',
+                ackMode: 'none',
+                receiptAlgo: 'none',
+                expiresAtMs: START_MS + 1_000,
+                submittedAtMs: START_MS
+            })
+        );
+        expect(handle.state).toBe('rejected');
+        expect(handle.evidence.failure).toEqual({ kind: 'refused', reason: 'capacity', limit: 'staged-values' });
+        expect(fixture.stages.readLane(connect.context, LANE_KEY)).toMatchObject({ staged: 2, streams: 2 });
+    });
+
+    it('cancels a value its connect\'s stage holds under its epoch, and never submits it', async () => {
+        const fixture = createStagesFixture();
+        const connect = createConnect(fixture);
+        const cancelled = toLiveDelivery(connect, 'entity-1');
+        stageDelivery(fixture, cancelled, connect.epoch);
+
+        expect(fixture.stages.cancel(cancelled.message.id.msgId)).toBe(true);
+        await runEnginePass(connect.engine);
+
+        expect(fixture.settlements.map((settlement) => [settlement.kind, settlement.msgId])).toEqual([
+            ['staged', cancelled.message.id.msgId],
+            ['cancelled', cancelled.message.id.msgId]
+        ]);
+        expect(fixture.submitted).toEqual([]);
+        expect(fixture.stages.readLane(connect.context, LANE_KEY)).toMatchObject({ staged: 0, streams: 0 });
+    });
+
+    it('answers a cancel false when no stage holds the value, including one its stopped stage held', () => {
+        const fixture = createStagesFixture();
+
+        expect(fixture.stages.cancel('unknown-msg')).toBe(false);
+
+        const connect = createConnect(fixture);
+        const stopped = toLiveDelivery(connect, 'entity-1');
+        stageDelivery(fixture, stopped, connect.epoch);
+        fixture.stages.stopStage();
+
+        expect(fixture.stages.cancel(stopped.message.id.msgId)).toBe(false);
+        expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['staged', 'admission']);
     });
 });

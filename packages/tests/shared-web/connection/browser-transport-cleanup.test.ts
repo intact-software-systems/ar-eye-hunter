@@ -19,6 +19,7 @@ import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-s
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { toALDurableOwnerLockName, type ALBrowserLockOptions } from '@shared/alm/storage/al-browser-locks.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -156,6 +157,7 @@ describe('Browser transport cleanup', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             connectionRuntime: runtime,
@@ -209,6 +211,7 @@ describe('Browser transport cleanup', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             connectionRuntime: runtime,
@@ -260,6 +263,7 @@ describe('Browser transport cleanup', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             connectionRuntime: runtime,
@@ -312,6 +316,7 @@ describe('Browser transport cleanup', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             connectionRuntime: runtime,
@@ -372,6 +377,7 @@ describe('Browser transport cleanup', () => {
             rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
             onResyncRequired: () => {}
@@ -453,6 +459,7 @@ describe('Browser transport cleanup', () => {
         const sessionController = createRallarSessionController({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
             connectionRuntime: runtime,
@@ -512,6 +519,7 @@ describe('Browser transport cleanup', () => {
         const sessionController = createRallarSessionController({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
             connectionRuntime: runtime,
@@ -555,17 +563,19 @@ describe('Browser transport cleanup', () => {
     });
 });
 
-describe('the session volatile limits seam', () => {
-    it('hands the composition\'s limit reader to the session\'s middleware initialisation', async () => {
+describe('the session limit seams', () => {
+    it('hands the composition\'s limit readers to the session\'s middleware initialisation', async () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const readVolatileSessionLimits = () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 });
+        const readPublicationStageLimits = () => ({ ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 });
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits,
+            readPublicationStageLimits,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
@@ -576,8 +586,9 @@ describe('the session volatile limits seam', () => {
 
         await connection.connect(toConnectionInput(middleware.session));
 
-        expect(mocks.initialiseMiddleware.mock.calls.at(-1)?.[2].readVolatileSessionLimits)
-            .toBe(readVolatileSessionLimits);
+        const initOptions = mocks.initialiseMiddleware.mock.calls.at(-1)?.[2];
+        expect(initOptions?.readVolatileSessionLimits).toBe(readVolatileSessionLimits);
+        expect(initOptions?.readPublicationStageLimits).toBe(readPublicationStageLimits);
     });
 });
 
@@ -718,6 +729,7 @@ function toInitOptions(): BrowserTransportInitOptions {
         rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
+        readPublicationStageLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         onResyncRequired: () => {}

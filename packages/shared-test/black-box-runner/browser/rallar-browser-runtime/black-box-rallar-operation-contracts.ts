@@ -25,6 +25,7 @@ import type {
     ALQosPolicyRequest
 } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type {
     ALDeliveryAdmissionVerdict,
@@ -129,6 +130,8 @@ export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcC
     readonly logoutOnClose?: boolean;
     /** Harness-only: lowers the volatile bound of the session this connect initialises. */
     readonly almVolatileLimits?: ALVolatileSessionLimits;
+    /** Harness-only: lowers the publication stage limits of the session this connect initialises (D477). */
+    readonly almPublicationLimits?: ALPublicationStageLimits;
     /** Harness recording only; omission records ALM events. */
     readonly almDiagnostics?: boolean;
     /**
@@ -307,6 +310,12 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly rtcStatus: RallarRtcStatus;
 }
 
+/**
+ * A fixed audience of one by lane role, among the room's other live sessions of another principal: `receiver` is the
+ * one such session, or the room's leader when there are several, and `recipient-b` the one beside the leader.
+ */
+export type BlackBoxRallarRecipientPeer = 'receiver' | 'recipient-b';
+
 export interface BlackBoxRallarMessageSendInput {
     readonly timeoutMs: number;
     readonly connection: string;
@@ -323,7 +332,7 @@ export interface BlackBoxRallarMessageSendInput {
     /** With scope `principal`: the principal whose live sessions in the room the send reaches. */
     readonly principalId: string | undefined;
     /** Absent, the send names no fixed audience. */
-    readonly recipientPeer: 'receiver' | 'recipient-b' | undefined;
+    readonly recipientPeer: BlackBoxRallarRecipientPeer | undefined;
     /** Absent, the send is `shared`. */
     readonly ownership: ALOwnershipAlgo | undefined;
     /** Absent, the product mints a fresh resource per send. */

@@ -95,3 +95,44 @@ and it has no status list.
   `packages/shared/alm` (D8; roadmap F15).
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
+- ALM topic-policy advertisement (carried from S1-ii, D482): a client learns
+  a topic's effective fanout before sending, so the WS server's `unsupported`
+  refusal of a live publication on an `outbox` topic becomes a synchronous
+  refusal at the send.
+- The WS ingress's static read of proxy rules (S1-ii, D482): `resolveFanouts`
+  reads their declared targets, so it under-refuses when a suppressing rule's
+  `authorize` or `targets` would skip at runtime and over-refuses when a rule
+  publishing to `outbox` would itself have skipped; neither is reachable today.
+- A product consumer for the publication stage's `readLane` (S1-ii), which
+  only tests read.
+- One owner for the unknown-object field readers that
+  `packages/shared/al-contracts/publication/al-publication-policy.ts` and
+  `al-publication-stage-limits.ts` each keep privately (S1-ii).
+- A ruling on the publication stage's `superseded` settlement, which carries
+  the replacement's `traceId` where the stage's other settlements carry the
+  value's own (S1-ii, Task 2 review).
+- The hosted timing of the paced ALM cells (S1-ii, D481): a receiver that
+  resolves its count more than a cadence late goes red.
+- Future ALM cells on `ws` with `ack: 'none'`: `transport-accepted` is not
+  delivery, so a cell that closes its sender right after a send must hold one
+  cadence (as `paced-capacity` does) or ask for a receipt; a harness-level
+  guard (refuse a `close` within the hold after an unreceipted send) would
+  make the hold unnecessary.
+- Close the cancel-during-admission gap for every send (S1-ii, branch review
+  M2): `writeCapturedMessage` consults the registry's lifecycle before
+  `writeCarrierOutboxAdmission` and skips the admission of a send already
+  terminal, so a cancel that lands while the carrier is admitting the value
+  stops that admission instead of reading `cancelled` while the carrier sends.
+- Run the publication stage's due lanes independently on one engine pass
+  (S1-ii, branch review M3): `runDueOpportunities` awaits each due lane's
+  `submit` in turn, so run the due lanes' submits concurrently or stop
+  awaiting `submit` inside the opportunity, and one slow carrier admission no
+  longer delays sibling lanes' boundaries.
+- The control server's ALM reload fixture records a hop-ACK diagnostic for
+  every rtc send, including `ack: 'none'` and live sends
+  (`apps/rallar-black-box-control-server/test/support/alm-reload-ports.ts`,
+  `deliver`); make it depend on the send's receipt mode (S1-ii, Task 8
+  review N3).
+- The same fixture carries no `stats.rallar.alm` / `readUsage().publication`
+  projection; add it, from the real stage's `readReport`, when a hosted recipe
+  reads it (S1-ii, Task 8 deviation 1).

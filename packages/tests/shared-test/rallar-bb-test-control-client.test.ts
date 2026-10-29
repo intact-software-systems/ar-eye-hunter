@@ -4,6 +4,7 @@ import {
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { createBlackBoxBrowserRallarRuntimeDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { readIndexedDbRequest, waitForIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { IDBFactory } from 'fake-indexeddb';
@@ -273,10 +274,15 @@ describe('shared rallar black-box control client', () => {
             }
         );
         const volatileLimits = new BlackBoxRallarVolatileLimits();
+        const publicationLimits = new BlackBoxRallarPublicationLimits();
         const targetWindow: EventTarget & BlackBoxRallarRuntimeInstallationTarget = new EventTarget();
         const page = createBlackBoxRallarRuntime({
-            facade: createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: volatileLimits.get }),
+            facade: createBlackBoxBrowserRallarRuntimeDependency({
+                readVolatileSessionLimits: volatileLimits.get,
+                readPublicationStageLimits: publicationLimits.get
+            }),
             volatileLimits,
+            publicationLimits,
             targetWindow,
             clock: { now: Date.now },
             readDocument: () => ({ timeOrigin: 1, origin: 'https://test.invalid' }),

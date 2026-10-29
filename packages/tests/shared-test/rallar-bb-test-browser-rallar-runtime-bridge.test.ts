@@ -193,6 +193,41 @@ describe('browser Rallar runtime bridge', () => {
         ]);
     });
 
+    it('decodes the lane-only publication limits of a connect, keeping the defaults when it names none and refusing any other shape with the decoder\'s issues', async () => {
+        const forwarded: BlackBoxRallarConnectionConfig[] = [];
+        vi.stubGlobal('window', {
+            __blackBoxRallar: {
+                connect: async (config: BlackBoxRallarConnectionConfig) => {
+                    forwarded.push(config);
+                    return config;
+                }
+            }
+        });
+        const bridge = createSpaBrowserRallarRuntime();
+        const input = { connection: 'alice', rallar: { apiBaseUrl: 'https://api.example.test' } };
+        const lowered = { maxStreams: 4, maxStagedValues: 2, maxStagedBytes: 8_192 };
+
+        await bridge.connect(input);
+        await bridge.connect({ ...input, rallar: { ...input.rallar, almPublicationLimits: lowered } });
+        await expect(bridge.connect({ ...input, rallar: { ...input.rallar, almPublicationLimits: { ...lowered, maxWindowMs: 1 } } }))
+            .rejects.toThrow(
+                new TypeError(
+                    '$.almPublicationLimits.maxWindowMs: Expected only maxStreams, maxStagedValues and maxStagedBytes.'
+                )
+            );
+        await expect(bridge.connect({ ...input, rallar: { ...input.rallar, almPublicationLimits: { maxStreams: 0, maxStagedValues: 2 } } }))
+            .rejects.toThrow(
+                new TypeError(
+                    '$.almPublicationLimits.maxStreams: Expected a positive safe integer. ' +
+                        '$.almPublicationLimits.maxStagedBytes: Expected a positive safe integer.'
+                )
+            );
+        await expect(bridge.connect({ ...input, rallar: { ...input.rallar, almPublicationLimits: 'small' } }))
+            .rejects.toThrow(new TypeError('$.almPublicationLimits: Expected a publication stage limits object.'));
+        // Only the well-formed limits reached the native runtime; a connect naming none leaves the product defaults.
+        expect(forwarded.map((config) => config.rallar.almPublicationLimits)).toEqual([undefined, lowered]);
+    });
+
     it('installs and restores the SPA browser event bridge', async () => {
         const previousEmitter = vi.fn();
         const fakeWindow: {

@@ -2,6 +2,10 @@ import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
+import {
+    AL_PUBLICATION_STAGE_LIMITS,
+    type ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -99,8 +103,12 @@ describe('browser runtime construction', () => {
             );
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
+        const { BlackBoxRallarPublicationLimits } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
+        );
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
-            readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get
+            readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get,
+            readPublicationStageLimits: new BlackBoxRallarPublicationLimits().get
         });
         await blackBox.connect();
         await blackBox.disconnect();
@@ -123,8 +131,12 @@ describe('browser runtime construction', () => {
             read.push(options.readVolatileSessionLimits?.());
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
+        const { BlackBoxRallarPublicationLimits } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
+        );
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
-            readVolatileSessionLimits: volatileLimits.get
+            readVolatileSessionLimits: volatileLimits.get,
+            readPublicationStageLimits: new BlackBoxRallarPublicationLimits().get
         });
         const config = { connection: 'sender', rallar: { apiBaseUrl: 'https://api.example.test' } };
 
@@ -142,6 +154,39 @@ describe('browser runtime construction', () => {
             { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 },
             AL_VOLATILE_SESSION_LIMITS
         ]);
+    });
+
+    it('hands the black-box session a publication-limits read port that the connect sets before it initialises', async () => {
+        const { createBlackBoxBrowserRallarRuntimeDependency } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts'
+        );
+        const { BlackBoxRallarVolatileLimits } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
+        );
+        const { BlackBoxRallarPublicationLimits } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
+        );
+        const publicationLimits = new BlackBoxRallarPublicationLimits();
+        const read: (ALPublicationStageLimits | undefined)[] = [];
+        runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            read.push(options.readPublicationStageLimits?.());
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+        });
+        const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
+            readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get,
+            readPublicationStageLimits: publicationLimits.get
+        });
+        const config = { connection: 'sender', rallar: { apiBaseUrl: 'https://api.example.test' } };
+        const lowered = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
+
+        publicationLimits.set({ ...config, rallar: { ...config.rallar, almPublicationLimits: lowered } });
+        await blackBox.connect();
+        await blackBox.disconnect();
+        publicationLimits.set(config);
+        await blackBox.connect();
+        await blackBox.disconnect();
+
+        expect(read).toEqual([lowered, AL_PUBLICATION_STAGE_LIMITS]);
     });
 
     it('shares one bounded session observation owner across facades', async () => {

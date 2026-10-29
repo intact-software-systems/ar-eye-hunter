@@ -16,6 +16,7 @@ import {
     type BlackBoxBrowserRallarRuntimeDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarConnectionRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-runtime.ts';
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
@@ -99,7 +100,11 @@ export function createCaptureApplicationRuntime(
 ): CaptureApplicationRuntime {
     const events: BlackBoxRallarEvent[] = [];
     const volatileLimits = new BlackBoxRallarVolatileLimits();
-    const facade = createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: volatileLimits.get });
+    const publicationLimits = new BlackBoxRallarPublicationLimits();
+    const facade = createBlackBoxBrowserRallarRuntimeDependency({
+        readVolatileSessionLimits: volatileLimits.get,
+        readPublicationStageLimits: publicationLimits.get
+    });
     const targetWindow: BlackBoxRallarRuntimeInstallationTarget = {
         __blackBoxRallarEmit: (event) => {
             events.push(event);
@@ -108,6 +113,7 @@ export function createCaptureApplicationRuntime(
     const page = createBlackBoxRallarRuntime({
         facade,
         volatileLimits,
+        publicationLimits,
         targetWindow,
         clock: { now: Date.now },
         readDocument,

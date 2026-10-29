@@ -160,6 +160,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
@@ -220,6 +221,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
@@ -246,6 +248,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
@@ -288,6 +291,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
@@ -348,6 +352,7 @@ describe('immutable RTC capture on browser connections', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime: new BrowserFacadeRuntimeState(transport),
@@ -395,6 +400,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
@@ -434,6 +440,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
@@ -484,6 +491,7 @@ describe('immutable RTC capture on browser connections', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime,

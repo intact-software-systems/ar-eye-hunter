@@ -110,7 +110,9 @@ describe('ALM conformance combined recipe', () => {
             .find((selection) => selection.role === 'sender')!.recipe!;
         const connects = sender.commands.filter((
             command
-        ): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect' && command.commandId?.includes('-capacity-sender-') === true);
+        ): command is RallarBlackBoxTestRtcConnectCommand =>
+            command.kind === 'rtc.connect' && /^alm-(ws|rtc|rtc-with-ws-fallback)-capacity-sender-/.test(command.commandId ?? '')
+        );
 
         expect(connects.map((command) => [command.commandId, command.rallar?.almVolatileLimits]))
             .toEqual(
@@ -120,6 +122,27 @@ describe('ALM conformance combined recipe', () => {
                         maxBytes: 36_000
                     }],
                     [`alm-${carrier}-capacity-sender-connect-restored`, undefined]
+                ])
+            );
+        expect(connects.every((command) => command.readiness?.minReadyPeers === 1)).toBe(true);
+    });
+
+    it('keeps the paced capacity sender\'s lowered publication limits through the combined connect, then restores them', () => {
+        const sender = createAlmConformance2AgentEntry().manifest.recipes
+            .find((selection) => selection.role === 'sender')!.recipe!;
+        const connects = sender.commands.filter((
+            command
+        ): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect' && command.commandId?.includes('-paced-capacity-sender-') === true);
+
+        expect(connects.map((command) => [command.commandId, command.rallar?.almPublicationLimits]))
+            .toEqual(
+                ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) => [
+                    [`alm-${carrier}-paced-capacity-sender-connect-lowered`, {
+                        maxStreams: 64,
+                        maxStagedValues: 2,
+                        maxStagedBytes: 4_194_304
+                    }],
+                    [`alm-${carrier}-paced-capacity-sender-connect-restored`, undefined]
                 ])
             );
         expect(connects.every((command) => command.readiness?.minReadyPeers === 1)).toBe(true);
@@ -148,7 +171,7 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, the reply and the server-originated cells where they run, and the paced cells everywhere', () => {
+    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
         // bound, congestion and fairness cells keep manifest 18 as recorded.
@@ -170,9 +193,7 @@ describe('ALM conformance hosted lane families', () => {
             'alm-ws-reply-timeout-late',
             'alm-ws-reply-undelivered',
             // The combined connect's one selector is the scenario topic's, so no hosted page hears a group-state delta.
-            'alm-ws-server-originated',
-            // The paced cells are placed by S1-ii.
-            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => ['paced-latest', 'paced-newest-n', 'paced-expiry'].map((key) => `alm-${carrier}-${key}`))
+            'alm-ws-server-originated'
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 
@@ -185,7 +206,7 @@ describe('ALM conformance hosted lane families', () => {
         ]);
     });
 
-    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader, claim and reply cells wherever they run', () => {
+    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader, claim, reply and paced list-isolation cells wherever they run', () => {
         const withheld = [
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.flatMap((carrier) => ['fenced-delivery', 'fenced-catch-up'].map((key) => `alm-${carrier}-${key}`)),
             'alm-ws-fenced-rejection',
@@ -197,13 +218,37 @@ describe('ALM conformance hosted lane families', () => {
             'alm-rtc-with-ws-fallback-claim-first-wins',
             'alm-ws-claim-expires-reclaims',
             'alm-rtc-claim-refused-on-rtc',
-            'alm-ws-reply-first-wins'
+            'alm-ws-reply-first-wins',
+            // A hosted run proves the paced send shape on three agents first (D481).
+            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-paced-isolation-lists`)
         ];
         const defined = toFamilyCells(['three-agent']);
 
         expect(defined).toEqual(expect.arrayContaining(withheld));
         expect(new Set(toStartedCells(createAlmConformance3AgentEntry())))
             .toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
+    });
+
+    it('runs every cell whose sender closes after all the others, so no reconnect lands among the ordinary cells', () => {
+        const closingSenders = new Set(ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            createAlmConformanceRecipes({
+                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                carrier,
+                typeId: 'alm.conformance',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000
+            }).filter((scenario) => scenario.sender.commands.some((command) => command.kind === 'close'))
+                .map((scenario) => scenario.scenarioKey)
+        ));
+        // A cell that gains a sender close joins this list and the ordering below.
+        expect([...closingSenders]).toEqual(['capacity', 'capacity-tracks', 'paced-capacity', 'churn-bounded-tracks']);
+
+        const cells = toStartedCells(createAlmConformance2AgentEntry());
+        const isClosing = (cell: string) => [...closingSenders].some((key) => cell.endsWith(`-${key}`));
+        const firstClosing = cells.findIndex(isClosing);
+        expect(firstClosing).toBeGreaterThan(0);
+        expect(cells.slice(firstClosing).every(isClosing)).toBe(true);
     });
 
     // A same-context scenario needs two pages of one browser context, which no hosted agent has.

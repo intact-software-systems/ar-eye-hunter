@@ -185,6 +185,11 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
+        'paced-capacity',
+        'paced-fairness',
+        'paced-cancel',
+        'paced-isolation-resources',
+        'paced-isolation-lists',
         'backpressure-deferred',
         'own-share-under-inbound',
         'buffered-track-drains'
@@ -211,6 +216,11 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
+        'paced-capacity',
+        'paced-fairness',
+        'paced-cancel',
+        'paced-isolation-resources',
+        'paced-isolation-lists',
         'backpressure-refused',
         'backpressure-deferred',
         'own-share-under-inbound',
@@ -245,6 +255,11 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
+        'paced-capacity',
+        'paced-fairness',
+        'paced-cancel',
+        'paced-isolation-resources',
+        'paced-isolation-lists',
         'backpressure-hands-over'
     ]
 } as const;
@@ -287,7 +302,11 @@ describe('alm-conformance recipe family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual([
-                    ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]),
+                    // The paced list-isolation cell sits among the paced cells, the one of them with a second recipient.
+                    ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) =>
+                        (key === 'paced-isolation-lists' ? ['sender', 'receiver', 'recipient-b'] : ['sender', 'receiver'])
+                            .map((role) => `alm-${carrier}-${key}-${role}`)
+                    ),
                     ...[...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier], ...MEMBERSHIP_FENCE_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
@@ -305,7 +324,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience, membership fence, leader, claim and reply-first-wins scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience, membership fence, leader, claim, reply-first-wins and paced-isolation-lists scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
         const threeAgentIds = [
             'receipted-audience',
             'fenced-delivery',
@@ -317,7 +336,8 @@ describe('alm-conformance recipe family', () => {
             'claim-first-wins',
             'claim-expires-reclaims',
             'claim-refused-on-rtc',
-            'reply-first-wins'
+            'reply-first-wins',
+            'paced-isolation-lists'
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -482,10 +502,10 @@ describe('alm-conformance recipe family', () => {
                 const fairnessWindow =
                     /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-1)$/
                         .test(command.commandId ?? '');
-                // The paced cells' absence windows open at their last expected arrival; pinned in
-                // alm-conformance-publication-scenarios.
-                const pacedAbsence = command.absent === true && /-paced-[a-z-]+-receiver-received-\d+$/.test(command.commandId ?? '');
-                if (durableOptInReceived1 || capacityReceived1 || fairnessWindow || pacedAbsence) {
+                // The paced cells' windows span their opportunities and open their absence at the last expected
+                // arrival; pinned in alm-conformance-publication-scenarios.
+                const pacedWindow = /-paced-[a-z-]+-receiver-received-\d+$/.test(command.commandId ?? '');
+                if (durableOptInReceived1 || capacityReceived1 || fairnessWindow || pacedWindow) {
                     continue;
                 }
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
@@ -567,7 +587,12 @@ describe('alm-conformance recipe family', () => {
             'server-originated',
             'paced-latest',
             'paced-newest-n',
-            'paced-expiry'
+            'paced-expiry',
+            'paced-capacity',
+            'paced-fairness',
+            'paced-cancel',
+            'paced-isolation-resources',
+            'paced-isolation-lists'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
@@ -621,6 +646,11 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             // The paced cells, after the volatile bound cells.
+            ['smoke', 'full'],
+            ['smoke', 'full'],
+            ['smoke', 'full'],
+            ['smoke', 'full'],
+            ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],

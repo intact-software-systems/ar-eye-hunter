@@ -4,6 +4,7 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import type { RallarRtcDiagnostics } from '@shared-web/browser/rtc-diagnostics/rallar-rtc-diagnostics-contracts.ts';
 
@@ -120,7 +121,8 @@ export function resetFacade(): void {
 }
 
 export async function loadRuntime(
-    volatileLimits = new BlackBoxRallarVolatileLimits()
+    volatileLimits = new BlackBoxRallarVolatileLimits(),
+    publicationLimits = new BlackBoxRallarPublicationLimits()
 ): Promise<BlackBoxRallarRuntime> {
     const target: BlackBoxRallarRuntimeInstallationTarget = {
         __blackBoxRallarEmit: (event) => {
@@ -130,6 +132,7 @@ export async function loadRuntime(
     return createBlackBoxRallarRuntime({
         facade: facade.rallar,
         volatileLimits,
+        publicationLimits,
         targetWindow: target,
         clock: { now: Date.now },
         readDocument: () => ({ timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }),

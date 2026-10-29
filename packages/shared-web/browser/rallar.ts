@@ -287,6 +287,10 @@ export type {
     ALPublicationDrainBudget,
     ALPublicationPolicy
 } from '@shared/al-contracts/publication/al-publication-policy.ts';
+export type {
+    ALPublicationStageLimit,
+    ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 export type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 export type {
     ALDeliveryFailure,
@@ -305,6 +309,8 @@ export type {
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
+export type { ALOutboundPublicationCounters } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';
+export type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 export type {
     ALStorageEvent,
     ALStorageHealthState,

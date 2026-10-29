@@ -170,6 +170,8 @@ and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`,
 `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`,
 `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
+`recipientPeer` (`receiver`, `recipient-b`) is a fixed audience of one by lane role; the `leader-ack` scenarios'
+`leader-outside-list` cell below states how the page resolves both roles.
 `purpose` (`command`, `notification`, `live`) is the purpose of the typed channel the page opens for the send; absent,
 a send that names `toPeer` opens a `command` channel and any other a `notification` one. `publication`
 (`{ cadenceMs, retainNewest, drain: { messages, bytes } }`, each a positive integer within the product's
@@ -430,7 +432,9 @@ polling the API for it is harness load, not evidence.
   `recipientPeer: 'recipient-b'` alone, a list that leaves the leader out; the server
   NACKs the send `no-leader` as above, and neither recipient receives it. The page
   resolves `recipient-b` to the one other live session of another principal that is
-  not the room's leader.
+  not the room's leader. Both roles read the room's other live sessions of another
+  principal: `receiver` is the one such session, or the room's leader when there are
+  several, and `recipient-b` the one beside the leader.
 
 The hosted manifest 22 withholds the leader cells too, so it stays as recorded.
 
@@ -649,30 +653,67 @@ memory store to the cap and the cell sends nothing durable, so the IndexedDB sto
 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
 
 The paced cells prove the live channel's publication stage over every carrier, in the smoke scope, on the two agents
-(D469, D472), before the congestion and fairness cells. Each sender opens `purpose: 'live'` with its own `publication`
-and sends one specimen `{ specimen: 'paced', seq }` on one `resourceId` (`alm-<scenarioKey>`). Send 0 stages on the idle
-lane and the sender observes it `transport-accepted` within half the cell's cadence, before any other send stages: the
-idle lane's opportunity runs on the session engine's next pass, which a send staged 10 ms later can precede (seen on
-`ws`, where send 1 then displaced send 0), and a stage that held send 0 until the lane's first boundary would miss that
-budget, so the observation proves the idle lane admits at once. A `loop` with `intervalMs: 10` then sends 1 to its
-count; iteration `n` (`{loop.iteration}`, from 1) names the handle of send `n` and carries `seq` `n` as a number, since
-a loop writes a string that is only that placeholder as the iteration's number. `paced-latest` (cadence 500 ms, one
-value retained, a drain of 8 messages) sends 1 to 5: sends 1 to 4 end `superseded` with `attempts` 0, each displaced by
-the next before the lane's next opportunity, which admits send 5; the receiver holds seq 0, then seq 5, and no third
-arrival within 3 s. `paced-newest-n` (cadence 500 ms, three retained, a drain of 2) sends 1 to 4 with a 1 500 ms
-`ttlMs`, one cadence past the third opportunity: send 4 is still `staged` when the sender observes it, send 1 ends
-`superseded`, the second opportunity admits sends 2 and 3 and the third send 4; the receiver holds seq 0, then seq 2 and
-3, then seq 4, and no fifth arrival within 3 s. `paced-expiry` (cadence 1 000 ms, one retained, a drain of 8) sends 1
-with a 100 ms `ttlMs`: send 1 ends `expired` with `failure.kind: 'expired'` and `attempts` 0; the receiver holds one
-arrival and none within the next 1.5 s. Send 0 keeps the live channel's own lifetime in every cell, so a cell's short
-`ttlMs` never races the lead's admission or arrival. The cells prove the stage's selection, not delivered history:
-values of one stream share the latest-wins key, so two values admitted at one opportunity may still be conflated at
-carrier admission or on receipt under backpressure; the drain budget bounds the work per opportunity, it does not
-promise delivered history, and `paced-newest-n` reads its sends 2 and 3 on an unloaded carrier. The receiver orders its arrivals by reading, right after an arrival count,
-that the later specimen is still absent from its history (a `wait` with `absent: true` and `timeoutMs: 0`). The
-observation names no replacement message id, since the delivery lifecycle keeps none; each `superseded` observation's
-`reason` instead contains the stage's own detail (`displaced it before its opportunity`), which a supersedence at
-carrier admission does not carry. Hosted manifest 18 withholds the three until S1-ii places them. The cells live in
+(D469, D472, D477–D479) and, for `paced-isolation-lists`, on the three, before the congestion and fairness cells. Each
+sender opens `purpose: 'live'` with its own `publication` at a cadence of 2 000 ms and sends one specimen `{ specimen:
+'paced', seq }`, on the `resourceId` `alm-<scenarioKey>` unless a cell names a stream of its own. The cadence is set by
+CI evidence (main run 40875760473, `ws`): the lead send's admission took 244 ms there and a loop of five sends 305 ms,
+so a 500 ms cadence let the loop straddle the second opportunity. Send 0 stages on the idle lane and the sender observes
+it `transport-accepted` within half the cadence, before any other send stages: the idle lane's opportunity runs on the
+session engine's next pass, which a send staged 10 ms later can precede, and a stage that held send 0 until the lane's
+first boundary would miss that budget, so the observation proves the idle lane admits at once. A `loop` with
+`intervalMs: 10` then sends 1 to its count; iteration `n` (`{loop.iteration}`, from 1) names the handle of send `n` and
+carries `seq` `n` as a number, since a loop writes a string that is only that placeholder as the iteration's number.
+Every send after the lead states a `ttlMs` one cadence past the opportunity that carries it, since the live channel's
+own 1 000 ms would expire it before its first; send 0 keeps the live channel's own lifetime in every cell, so a cell's
+short `ttlMs` never races the lead's admission or arrival.
+
+`paced-latest` (one value retained, a drain of 8 messages) sends 1 to 5: sends 1 to 4 end `superseded` with `attempts`
+0, each displaced by the next before the lane's next opportunity, which admits send 5; the receiver holds seq 0, then
+seq 5, and no third arrival within 4 s. `paced-newest-n` (three retained, a drain of 2) sends 1 to 4: send 4 is still
+`staged` when the sender observes it, send 1 ends `superseded`, the second opportunity admits sends 2 and 3 and the
+third send 4; the receiver holds seq 0, then seq 2 and 3, then seq 4, and no fifth arrival within 4 s. `paced-expiry`
+(one retained, a drain of 8) sends 1 with a 100 ms `ttlMs`: send 1 ends `expired` with `failure.kind: 'expired'` and
+`attempts` 0; the receiver holds one arrival and none within the next 4 s.
+
+`paced-capacity` closes the sender and reconnects it with `rallar.almPublicationLimits` `{ maxStreams: 64,
+maxStagedValues: 2, maxStagedBytes: 4194304 }` (the stage's constants but the value count) and sends 1 to 3 each on a
+stream of its own (`alm-paced-capacity-{loop.iteration}`): send 3 ends `rejected` with `failure.kind: 'refused'`,
+`failure.reason: 'capacity'`, `failure.limit: 'staged-values'` and `attempts` 0, and the next opportunity admits sends 1
+and 2. The sender then holds one cadence, so the restoring close never drops a frame its socket took, and reconnects
+without the field; its receiver's first count also owns one RTC readiness budget. `paced-cancel` (two retained, a drain
+of 8) sends 1 and 2 on one stream and cancels send 1 with `messages.cancel` before the next opportunity: send 1 ends
+`cancelled` with `attempts` 0, and the receiver holds seq 0, then seq 2, and no third arrival.
+
+`paced-fairness` (two retained, a drain of 1 message) sends 1 and 2 on the lead's stream and send 3 on
+`alm-paced-fairness-b`, as single sends: the lane's cursor starts each opportunity at the stream after the one it
+served, so the receiver holds seq 1, then seq 3, then seq 2, where a selection that always started at the first stream
+would deliver seq 2 before seq 3. `paced-isolation-resources` (one retained, a drain of 8) sends 1 and 2 on two
+resources of the one channel (`alm-paced-isolation-resources-{loop.iteration}`): neither displaces the other, both end
+`transport-accepted`, and the receiver holds seq 0, then seq 1 and 2, and no fourth arrival.
+
+`paced-isolation-lists` (three agents; one retained, a drain of 8) proves a fixed list is part of the stream. The
+receiver appoints itself the room's director and the sender waits until its own snapshot reads the director active, so
+`recipientPeer: 'receiver'` names the leader among the two sessions of other principals (and `recipient-b` the one
+beside it). Send 0 lists the receiver; send 1 lists the receiver and send 2, on the same resource, lists `recipient-b`,
+so had the lists shared a stream send 2 would have displaced send 1: both end `transport-accepted`, the receiver holds
+seq 0, then seq 1, and no third arrival, and `recipient-b` holds seq 2 alone. The receiver resigns after its window.
+
+The cells prove the stage's selection, not delivered history: values of one stream share the latest-wins key, so two
+values admitted at one opportunity may still be conflated at carrier admission or on receipt under backpressure; the
+drain budget bounds the work per opportunity, it does not promise delivered history, and `paced-newest-n` reads its
+sends 2 and 3 on an unloaded carrier. Each receiver count spans the sender's send budget, the opportunity that carries
+the count's last arrival, and one cadence more. The receiver orders its arrivals by reading, right after an arrival
+count, that the later specimen is still absent: a `wait` with `absent: true` whose `timeoutFrom` is the arrival it
+awaited right before (`{resultCache.<arrived-seq-n>.value.event.atEpochMs}`) and whose `timeoutMs` is half the cadence
+(D481's bounded window). A window of one cadence opened at the read's start went red on every cell and carrier of the
+local lane, since it spans the next opportunity's arrival; a receiver that reads late checks the window against its
+history at once, so it has until that arrival to resolve its count. The observation names no replacement message id,
+since the delivery lifecycle keeps none; each `superseded` observation's `reason` instead contains the stage's own
+detail (`displaced it before its opportunity`), which a supersedence at carrier admission does not carry.
+
+Hosted manifest 18 carries every two-agent paced cell (D481). A cell whose sender closes reconnects it, so
+`paced-capacity` runs with the `capacity` blocks, after every other cell. Manifest 22 withholds `paced-isolation-lists`
+until a hosted run proves the paced send shape on three agents. The cells live in
 `conformance/alm/scenarios/publication/`.
 
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
@@ -940,6 +981,22 @@ initialises. It is a harness capability, never a `rallar.connect` option. A faca
 bound its session read, and a connect that names the field on a live facade has no effect until its next session, so a
 recipe closes the connection before a connect that names the field, and closes and reconnects without it to restore
 the constants (`AL_VOLATILE_SESSION_LIMITS`).
+
+### The lane-only `rallar.almPublicationLimits` connect field
+
+`rtc.connect.rallar.almPublicationLimits` names `maxStreams`, `maxStagedValues` and `maxStagedBytes`, each a positive
+safe integer, and nothing else. It lowers the publication stage limits (D477) of the session this connect initialises
+the way `almVolatileLimits` lowers the volatile bound: the page holds the value and the browser session reads it once,
+when it initialises, so a recipe closes the connection before a connect that names the field. A connect that names
+none initialises its session with the product defaults (`AL_PUBLICATION_STAGE_LIMITS`: 64 streams, 1 000 values,
+4 MiB), so closing and reconnecting without it restores them. Every value must name all three fields; any other shape
+fails the connect with each issue `decodeALPublicationStageLimits` names, as `path: message` joined by a space, for
+example `$.almPublicationLimits.maxWindowMs: Expected only maxStreams, maxStagedValues and maxStagedBytes.` or
+`$.almPublicationLimits.maxStagedBytes: Expected a positive safe integer.`; a value that is not an object fails with
+`$.almPublicationLimits: Expected a publication stage limits object.` Like `almVolatileLimits` it is validated in the
+page only and is a harness capability, never a `rallar.connect` option. A value it refuses at capacity settles its
+handle `rejected` with `failure.reason` `capacity` and `failure.limit` naming the limit, and writes a `refused`
+`publication-staging` diagnostic (`runtime-diagnostic-contract.md`).
 
 ### The lane-only `rallar.recoveryOwner` connect field
 
@@ -1262,10 +1319,19 @@ A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
 own: { admissions, bytes }, inbound: { admissions, bytes },
 limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
-orderingTracks }`. All but the last are read at the command from
-`rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
+repliesHeld, replyWaitsOpen, publication, orderingTracks, deliveredMarkers }`. All but the last two are read at the
+command from `rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
 two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
+`publication` is the connect's publication stage report (D480): `{ lanes, streams, staged, stagedBytes,
+limits: { maxStreams, maxStagedValues, maxStagedBytes }, counters: { staged, superseded, expired, refused,
+cancelled, admitted, deferred } }`. `lanes` counts the lanes the connect has opened, one per live channel route
+it staged on (an emptied lane stays open until the stage stops); `streams`, `staged` and `stagedBytes` are what the
+stage holds now; `limits` are the session's stage limits, lowered by `rallar.almPublicationLimits`; each counter is cumulative over the
+connect, one per value the stage settled that way, with `admitted` the values its opportunities handed to a carrier
+and `deferred` the values each opportunity left for a later one, summed over the opportunities. A connect that
+staged no live value yet reports zeros with its limits. An `assert` reads it as
+`latestStats.rallar.alm.publication.counters.refused`.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

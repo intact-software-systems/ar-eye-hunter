@@ -38,7 +38,8 @@ export type ALNackReason =
     | 'not-yet-in-sync'
     | 'membership-fenced'
     | 'no-leader'
-    | 'held-by-other';
+    | 'held-by-other'
+    | 'unsupported';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
 export interface ALAckPayload {

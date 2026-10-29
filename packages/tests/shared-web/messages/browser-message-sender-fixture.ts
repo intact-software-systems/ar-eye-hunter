@@ -1,10 +1,14 @@
-import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
+import {
+    BROWSER_DELIVERY_RETENTION,
+    createBrowserDeliveryCancel
+} from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -26,18 +30,29 @@ interface BrowserMessageSenderFixture {
     replaceTransport(): void;
 }
 
+/**
+ * Without `givenRegistry`, the fixture builds one whose cancel takes the composition's route: the stages, then the
+ * carriers. As the composition does, it stops the stages at session end.
+ */
 export function createBrowserMessageSenderFixture(
     maxPayloadBytes = 64 * 1024,
-    registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} }),
+    givenRegistry?: BrowserRallarDeliveryRegistry,
     middleware = createDefaultApiMiddlewareTestDouble()
 ): BrowserMessageSenderFixture {
     let activeMiddleware = middleware;
+    const publicationStages = new BrowserPublicationStages({ nowMs: Date.now });
+    const registry = givenRegistry ?? new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        ...BROWSER_DELIVERY_RETENTION,
+        cancel: createBrowserDeliveryCancel({ publicationStages, readMiddleware: () => activeMiddleware })
+    });
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(registry, {
         deliverySettlements: feed,
         readMiddleware: () => activeMiddleware,
         readRtcCaptureReceipt: () => undefined
     }, () => activeMiddleware.session);
+    sessionDeliveries.onSessionEnd(() => publicationStages.stopStage());
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -52,7 +67,12 @@ export function createBrowserMessageSenderFixture(
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries: registry,
-        dispatch: new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now }),
+        dispatch: new BrowserRallarMessageDispatch({
+            deliveries: registry,
+            sessionDeliveries,
+            publicationStages,
+            nowMs: Date.now
+        }),
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => maxPayloadBytes }),
         connect,
         requireSession: () => middleware.session,

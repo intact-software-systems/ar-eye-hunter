@@ -8,7 +8,8 @@ import type {
     RallarBlackBoxTestFaultInjectCommand,
     RallarBlackBoxTestMessagesReplayCommand,
     RallarBlackBoxTestMessagesSendCommand,
-    RallarBlackBoxTestRuntime
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntimeEventInput
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -25,6 +26,7 @@ import {
     type ALDeliveryLifecycle,
     type ALDeliveryReceiptEvidence,
     type ALDeliveryRelayRejection,
+    type ALDeliverySettlement,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
@@ -33,6 +35,13 @@ import {
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+
+import { AlmReloadLiveArrivals } from './alm-reload-live-arrivals.ts';
+import {
+    AlmReloadPublicationLane,
+    decodeAlmReloadPublicationLimits,
+    toAlmReloadLiveCommand
+} from './alm-reload-publication-lane.ts';
 
 type MessagesPortKind =
     | 'messages.send'
@@ -204,10 +213,18 @@ export class AlmReloadPorts {
     private readonly replacesDocument: boolean;
     private readonly participants: readonly AlmReloadParticipant[];
     private readonly receiverBarrierFaults = new Map<string, readonly RallarBlackBoxTestFaultInjectCommand[]>();
+    private readonly publicationLane: AlmReloadPublicationLane;
+    private readonly liveArrivals = new AlmReloadLiveArrivals();
 
     constructor(replacesDocument: boolean, participants: readonly AlmReloadParticipant[]) {
         this.participants = [...participants];
         this.replacesDocument = replacesDocument;
+        this.publicationLane = new AlmReloadPublicationLane({
+            clock: { nowMs: () => this.now, setNowMs: (nowMs) => this.now = nowMs },
+            submit: (msgIds) => msgIds.forEach((msgId) => this.routeAdmitted(this.findMessage(msgId))),
+            settle: (settlement) => this.settleStaged(settlement),
+            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event)
+        });
         this.receiver = this.createRuntime('receiver');
         this.recipientB = this.createRuntime('recipient-b');
         this.sender = this.createRuntime('sender');
@@ -236,7 +253,6 @@ export class AlmReloadPorts {
     finishAbsence(): void {
         assert(this.absence);
         assertEquals(this.absence.duration, 17_000, 'the authored absence window is unchanged');
-        this.now += this.absence.duration;
         this.absence.release();
         this.absence = undefined;
     }
@@ -257,6 +273,7 @@ export class AlmReloadPorts {
             message.checkpoint = 'lost';
         }
         this.checkpointHealth = 'healthy';
+        this.publicationLane.close();
         this.sender = this.createRuntime('sender');
     }
 
@@ -265,7 +282,7 @@ export class AlmReloadPorts {
             now: () => this.now,
             sleep: async (duration) => {
                 if (!this.holdNextSleep) {
-                    this.now += duration;
+                    await this.publicationLane.advanceTo(this.now + duration, () => false);
                     this.settleCheckpoints();
                     return;
                 }
@@ -274,6 +291,8 @@ export class AlmReloadPorts {
                 this.absence = { duration, release: pending.resolve };
                 this.entered.resolve();
                 await pending.promise;
+                // The page returns from its absence with every lane opportunity due meanwhile run at its own time.
+                await this.publicationLane.advanceTo(this.now + duration, () => false);
             },
             commandExecutor: (command) => this.executePort(role, command)
         });
@@ -295,6 +314,11 @@ export class AlmReloadPorts {
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
+                if (role === 'sender') {
+                    const limits = decodeAlmReloadPublicationLimits(command.rallar?.almPublicationLimits);
+                    assert(limits.right, limits.left);
+                    this.publicationLane.connect(limits.right);
+                }
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
                 return { status: 'ok', value: { document, ...session } };
@@ -311,6 +335,9 @@ export class AlmReloadPorts {
             case 'messages.received':
                 return this.executeMessagesPort(role, command);
             case 'close':
+                if (role === 'sender') {
+                    this.publicationLane.close();
+                }
                 return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
                 return this.releaseBarrier(role, command.barrierId);
@@ -334,15 +361,20 @@ export class AlmReloadPorts {
         return { status: 'ok', value: { barrierId, outcome: 'released', arrivedAgentIds: [role] } };
     }
 
-    private executeMessagesPort(
+    /** Every message port first runs the lane opportunities due by now, as the page's engine would have. */
+    private async executeMessagesPort(
         role: PortRole,
         command: PortCommand<MessagesPortKind>
-    ): RallarBlackBoxTestCommandOutcome {
+    ): Promise<RallarBlackBoxTestCommandOutcome> {
+        await this.publicationLane.runDueOpportunities();
         switch (command.kind) {
             case 'messages.send':
-                return 'replayOnCarrier' in command ? this.replay(command) : this.send(command);
+                if ('replayOnCarrier' in command) {
+                    return this.replay(command);
+                }
+                return command.purpose === 'live' ? this.stageLive(command) : this.send(command);
             case 'messages.observe':
-                return this.observe(command);
+                return await this.observe(command);
             case 'messages.cancel':
                 return this.cancel(command);
             case 'messages.receipts':
@@ -352,30 +384,33 @@ export class AlmReloadPorts {
         }
     }
 
-    private observe(command: PortCommand<'messages.observe'>): RallarBlackBoxTestCommandOutcome {
+    private async observe(command: PortCommand<'messages.observe'>): Promise<RallarBlackBoxTestCommandOutcome> {
         const message = this.handles.get(command.handleId);
         if (message === undefined) {
             return { status: 'ok', value: toPortDeliveryObservation(command.handleId, message) };
         }
-        let lifecycle = this.readDeliveryLifecycle(message);
-        if (!isALDeliveryTerminal(lifecycle) && !command.state.includes(lifecycle.state)) {
+        const reached = (): boolean => {
+            const lifecycle = this.readDeliveryLifecycle(message);
+            return isALDeliveryTerminal(lifecycle) || command.state.includes(lifecycle.state);
+        };
+        if (!reached()) {
             assert(command.timeoutMs !== undefined, 'an external observation has an authored timeout');
             const budgetMs = Math.min(command.timeoutMs, Math.max(0, (command.deadlineEpochMs ?? Infinity) - this.now));
-            this.now += Math.min(budgetMs, Math.max(0, (lifecycle.expiresAtMs ?? Infinity) - this.now));
+            const expiresAtMs = this.readDeliveryLifecycle(message).expiresAtMs ?? Infinity;
+            await this.publicationLane.advanceTo(
+                this.now + Math.min(budgetMs, Math.max(0, expiresAtMs - this.now)),
+                reached
+            );
             this.settleCheckpoints();
-            lifecycle = this.readDeliveryLifecycle(message);
         }
-        return {
-            status: isALDeliveryTerminal(lifecycle) || command.state.includes(lifecycle.state) ? 'ok' : 'failed',
-            value: toPortDeliveryObservation(command.handleId, message)
-        };
+        return { status: reached() ? 'ok' : 'failed', value: toPortDeliveryObservation(command.handleId, message) };
     }
 
     private cancel(command: PortCommand<'messages.cancel'>): RallarBlackBoxTestCommandOutcome {
         const message = this.handles.get(command.handleId);
         assert(message);
-        const lifecycle = this.readDeliveryLifecycle(message);
-        if (!message.submitted && !isALDeliveryTerminal(lifecycle)) {
+        const terminal = isALDeliveryTerminal(this.readDeliveryLifecycle(message));
+        if (!terminal && !this.publicationLane.cancel(message.msgId) && !message.submitted) {
             message.state = 'cancelled';
         }
         return {
@@ -420,10 +455,11 @@ export class AlmReloadPorts {
     }
 
     private readReceived(role: PortRole, command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
+        this.liveArrivals.read(role, command.typeId, command.absent === true ? undefined : command.count);
         // A command addressed to the server reaches no member of the room; a buffered one has not reached its channel.
         const arrived = this.messages.filter((message) =>
             message.command.typeId === command.typeId && message.submitted && !message.buffered &&
-            message.deliveredRecipientRoles.includes(role)
+            message.deliveredRecipientRoles.includes(role) && !this.liveArrivals.isUnread(role, message.msgId)
         );
         this.admitReceiverInbox(arrived);
         const observed = arrived.length;
@@ -682,6 +718,49 @@ export class AlmReloadPorts {
         };
     }
 
+    /**
+     * A live send meets the first hop's verdicts as any send does; otherwise it stages on the sender's lane, which hands
+     * it to the fixture carrier at the lane's opportunity.
+     */
+    private stageLive(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
+        const live = toAlmReloadLiveCommand(command);
+        const { message } = this.createSendAdmission(live, toAlmReloadAdmissionPayload(live.payload));
+        assert(live.handleId);
+        message.state = 'submitted';
+        this.messages.push(message);
+        this.handles.set(live.handleId, message);
+        const recipients = this.participants.filter(({ role }) => message.recipientRoles.includes(role));
+        const recipientPeerIds = live.recipientPeer === undefined
+            ? undefined
+            : recipients.map(({ sessionId }) => sessionId);
+        const trace = toPortMessageTrace(message);
+        if (!this.routeAtFirstHop(message)) {
+            const { msgId, activeCarrier: carrier } = message;
+            this.publicationLane.stage({ command: live, msgId, traceId: trace.traceId, carrier, recipientPeerIds });
+        }
+        const status = message.failure?.kind === 'refused' ? 'rejected' : 'accepted';
+        const { handleId } = live;
+        return {
+            status: 'ok',
+            value: { msgId: message.msgId, handleId, carrier: live.carrier, status, reason: message.reason, ...trace }
+        };
+    }
+
+    /** The stage's settlements land on the handle's lifecycle as the browser's delivery registry lands them. */
+    private settleStaged(settlement: ALDeliverySettlement): void {
+        const message = this.findMessage(settlement.msgId);
+        const lifecycle = computeALDeliveryLifecycle(toPortDeliveryLifecycle(message), settlement);
+        message.state = lifecycle.state;
+        message.failure = lifecycle.evidence.failure;
+        message.reason = lifecycle.evidence.reason;
+    }
+
+    private findMessage(msgId: string): PortMessage {
+        const message = this.messages.find((candidate) => candidate.msgId === msgId);
+        assert(message, `no send of this run returned ${msgId}`);
+        return message;
+    }
+
     /** Derive admission from the current page and room facts before publishing any fixture effects. */
     private createSendAdmission(
         command: RallarBlackBoxTestMessagesSendCommand,
@@ -748,24 +827,38 @@ export class AlmReloadPorts {
         const handedOver = isJsonRecordValue(command.payload)
             ? HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)]
             : undefined;
+        if (this.routeAtFirstHop(message)) {
+            return;
+        }
+        if (isJsonRecordValue(command.payload) && command.payload.seq === 300) {
+            this.refuseGappedSend(message);
+        }
+        else if (handedOver !== undefined) {
+            this.handOver(message, handedOver);
+        }
+        else if (!rejected) {
+            this.routeAdmitted(message);
+        }
+    }
+
+    /**
+     * The first hop's verdicts that keep a send from the room's carriers: it refuses a fenced sender, holds a send above
+     * its snapshot floor, and keeps a command addressed to the server. False when none applies.
+     */
+    private routeAtFirstHop(message: PortMessage): boolean {
         if (this.group.left.has('sender')) {
             this.refuseFenced(message);
         }
         else if (message.floor !== undefined && message.floor > this.group.snapshotVersion) {
             this.refuseNotYetInSync(message);
         }
-        else if (isJsonRecordValue(command.payload) && command.payload.seq === 300) {
-            this.refuseGappedSend(message);
-        }
-        else if (handedOver !== undefined) {
-            this.handOver(message, handedOver);
-        }
-        else if (command.toPeer === 'server') {
+        else if (message.command.toPeer === 'server') {
             this.acknowledgeByServer(message);
         }
-        else if (!rejected) {
-            this.routeAdmitted(message);
+        else {
+            return false;
         }
+        return true;
     }
 
     /** A held frame stays with its page; an ordered frame behind a held one is buffered at the receiver; the rest deliver. */
@@ -1196,24 +1289,35 @@ export class AlmReloadPorts {
         const deliveredRecipientRoles = message.recipientRoles.filter((role) => !this.group.left.has(role));
         for (const role of deliveredRecipientRoles) {
             const recipient = role === 'receiver' ? this.receiver : this.recipientB;
-            recipient.recordEvent({
-                kind: 'message',
-                connection: 'almConformanceReceiver',
-                topic: 'typed',
-                payload: {
-                    data: {
-                        msgId: message.msgId,
-                        typeId: message.command.typeId,
-                        rosterVersion: message.rosterVersion,
-                        transport: message.activeCarrier,
-                        payload: message.command.payload,
-                        ...toPortMessageTrace(message)
-                    }
-                }
-            });
+            const record = (): void => recipient.recordEvent(toReceiverMessageEvent(message));
+            if (message.command.purpose === 'live') {
+                this.liveArrivals.hold({ role, typeId: message.command.typeId, msgId: message.msgId, record });
+            }
+            else {
+                record();
+            }
         }
         message.deliveredRecipientRoles = deliveredRecipientRoles;
     }
+}
+
+/** The arrival as the recipient's page records it, with the roster its room target carried. */
+function toReceiverMessageEvent(message: PortMessage): RallarBlackBoxTestRuntimeEventInput {
+    return {
+        kind: 'message',
+        connection: 'almConformanceReceiver',
+        topic: 'typed',
+        payload: {
+            data: {
+                msgId: message.msgId,
+                typeId: message.command.typeId,
+                rosterVersion: message.rosterVersion,
+                transport: message.activeCarrier,
+                payload: message.command.payload,
+                ...toPortMessageTrace(message)
+            }
+        }
+    };
 }
 
 /** A page's AL outbound diagnostic, typed as the runtime states it so the double keeps the production shape. */

@@ -31,6 +31,7 @@ import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -559,7 +560,12 @@ function createChannel(input: ChannelInput): ChannelFixture {
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries,
-        dispatch: new BrowserRallarMessageDispatch({ deliveries, sessionDeliveries, nowMs: Date.now }),
+        dispatch: new BrowserRallarMessageDispatch({
+            deliveries,
+            sessionDeliveries,
+            publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
+            nowMs: Date.now
+        }),
         inputValidator,
         connect: async () => context,
         requireSession: () => context.session,

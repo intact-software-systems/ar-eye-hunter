@@ -26,9 +26,7 @@ import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scen
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
-import { pacedExpiry } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-expiry.ts';
-import { pacedLatest } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-latest.ts';
-import { pacedNewestN } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-newest-n.ts';
+import { pacedIsolationLists } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-isolation-lists.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -123,10 +121,9 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'churn-bounded-tracks', carriers: churnBoundedTracks.carriers },
     // The combined connect carries one selector, the scenario topic's, so no hosted page hears a group-state delta.
     { scenarioKey: 'server-originated', carriers: serverOriginated.carriers },
-    // The paced cells' lane evidence is local; placed by S1-ii, so manifest 18 stays as recorded until then.
-    { scenarioKey: 'paced-latest', carriers: pacedLatest.carriers },
-    { scenarioKey: 'paced-newest-n', carriers: pacedNewestN.carriers },
-    { scenarioKey: 'paced-expiry', carriers: pacedExpiry.carriers }
+    // The paced list-isolation cell waits until a hosted run proves the paced send shape on three agents (D481);
+    // manifest 22 stays as recorded.
+    { scenarioKey: 'paced-isolation-lists', carriers: pacedIsolationLists.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
@@ -217,14 +214,16 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
         }).filter((scenario) => !isHetznerWithheldAlmScenario(scenario.scenarioKey, carrier))
     ).filter((scenario) => HOSTED_ALM_LANE_FAMILIES[family].includes(scenario.laneFamily));
-    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a
-    // capacity block closes and reconnects its sender, so nothing but another capacity block follows it.
+    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a block
+    // whose sender closes reconnects it under its own limits, so nothing but another such block follows it.
+    const isReconnecting = (scenario: AlmConformanceScenario) =>
+        scenario.sender.commands.some((command) => command.kind === 'close');
     const isHoisted = (scenario: AlmConformanceScenario) =>
-        scenario.scenarioId === 'delivery-reload' || scenario.scenarioId === 'capacity';
+        scenario.scenarioId === 'delivery-reload' || isReconnecting(scenario);
     return [
         ...scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload'),
         ...scenarios.filter((scenario) => !isHoisted(scenario)),
-        ...scenarios.filter((scenario) => scenario.scenarioId === 'capacity')
+        ...scenarios.filter(isReconnecting)
     ];
 }
 

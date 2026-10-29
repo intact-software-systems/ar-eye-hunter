@@ -12,6 +12,9 @@ surfaces. They are documentation examples, not standalone apps.
   `room.realtime<T>(...)` for low-latency room-scoped RTC traffic.
 - [Room Message Channel](./room-message-channel/README.md): use
   `room.message<T>(...)` for typed room messages with RTC and WS options.
+- [Room Live Channel](./room-live-channel/README.md): use
+  `rallar.messages.room<T>({ purpose: 'live', ... })` for paced, replaceable
+  values where only the newest of each stream matters.
 - [Director Relay](./director-relay/README.md): route client intents and
   director outputs through the current room director appointment.
 - [Media Calls](./media-calls/README.md): start targeted data/media calls,
