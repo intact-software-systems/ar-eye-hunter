@@ -1,6 +1,6 @@
 import type { RallarRemoteStream } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import { toError } from '@shared/resilience/to-error.ts';
+import { AsyncNotifications } from '@shared/cache/async-notifications.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
@@ -26,11 +26,7 @@ export namespace BrowserRemoteMediaStreamRuntime {
 }
 
 export class BrowserRemoteMediaStreamRuntime {
-    private readonly listeners = new Set<
-        (
-            remote: RallarRemoteStream
-        ) => void | Promise<void>
-    >();
+    private readonly notifications = new AsyncNotifications<RallarRemoteStream>();
     private callbackRegistered = false;
     private readonly input: BrowserRemoteMediaStreamRuntime.Input;
 
@@ -41,18 +37,18 @@ export class BrowserRemoteMediaStreamRuntime {
     public onRemoteStream(
         listener: (remote: RallarRemoteStream) => void | Promise<void>
     ): RallarUnsubscribe {
-        this.listeners.add(listener);
+        const subscription = this.notifications.subscribe(listener);
         this.attach();
         return () => {
-            this.listeners.delete(listener);
-            if (this.listeners.size === 0) {
+            subscription.unsubscribe();
+            if (this.notifications.size === 0) {
                 this.detach();
             }
         };
     }
 
     public attach(): void {
-        if (this.callbackRegistered || this.listeners.size === 0) {
+        if (this.callbackRegistered || this.notifications.size === 0) {
             return;
         }
         const context = this.input.readMiddleware();
@@ -62,7 +58,9 @@ export class BrowserRemoteMediaStreamRuntime {
         context.middleware.rtcRxStreamer.onRemoteStreamDo(
             RALLAR_REMOTE_STREAM_CALLBACK_ID,
             async (peerId, stream, event) => {
-                await this.notifyListeners({ peerId, stream, event });
+                await this.notifications.publishConcurrent({ peerId, stream, event }, (error) => {
+                    console.error('Error notifying Rallar remote stream listener', error);
+                });
             }
         );
         this.callbackRegistered = true;
@@ -81,19 +79,5 @@ export class BrowserRemoteMediaStreamRuntime {
     public stopForDisconnect(context?: BrowserRemoteMediaStreamRuntime.Connection): void {
         this.detach(context);
         this.callbackRegistered = false;
-    }
-
-    private async notifyListeners(remote: RallarRemoteStream): Promise<void> {
-        await Promise.all([...this.listeners].map(async (listener) => {
-            try {
-                await listener(remote);
-            }
-            catch (error) {
-                console.error(
-                    'Error notifying Rallar remote stream listener',
-                    toError(error)
-                );
-            }
-        }));
     }
 }

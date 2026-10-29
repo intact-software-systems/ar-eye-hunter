@@ -26,7 +26,6 @@ import {
     type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarAuthState,
     RallarMessage,
@@ -44,6 +43,7 @@ import {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
 import { fetchRelicSnapshot, initializeRelicGame, resetRelicGame, sendRelicCommand } from '../../../apps/relic-hunters-v1/src/game/api.ts';
 import { RelicReviewPanel } from '../../../apps/relic-hunters-v1/src/game/hud/relic-plan.tsx';
@@ -154,7 +154,7 @@ describe('useRelicHunters auth lifecycle', () => {
             mockRallar.rooms.state.mockReturnValue(room.state);
             return { session, connected: true, roomState: room.state };
         });
-        mockRallar.subscriptions.mockImplementation(() => new BrowserRallarSubscriptionScope());
+        mockRallar.subscriptions.mockImplementation(() => new SubscriptionScope());
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],

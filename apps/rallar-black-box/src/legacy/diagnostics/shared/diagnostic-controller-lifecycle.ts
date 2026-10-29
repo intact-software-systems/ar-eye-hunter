@@ -1,5 +1,5 @@
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 export namespace DiagnosticControllerLifecycle {
     export type Observation = 'observed' | 'timeout' | 'aborted';
     export interface WaitInput {
@@ -13,7 +13,7 @@ export namespace DiagnosticControllerLifecycle {
 /** Owns only this diagnostic component's acquisitions, never the shared Rallar transport. */
 export class DiagnosticControllerLifecycle {
     private controller = new AbortController();
-    private resources = new BrowserRallarSubscriptionScope();
+    private resources = new SubscriptionScope();
 
     public get signal(): AbortSignal {
         return this.controller.signal;
@@ -26,7 +26,7 @@ export class DiagnosticControllerLifecycle {
     public activate(): void {
         if (this.controller.signal.aborted) {
             this.controller = new AbortController();
-            this.resources = new BrowserRallarSubscriptionScope();
+            this.resources = new SubscriptionScope();
         }
     }
 
@@ -43,7 +43,7 @@ export class DiagnosticControllerLifecycle {
             return 'aborted';
         }
         return await new Promise<DiagnosticControllerLifecycle.Observation>((resolve) => {
-            const owned = new BrowserRallarSubscriptionScope();
+            const owned = new SubscriptionScope();
             owned.add(() => resolve('aborted'));
             const interval = window.setInterval(() => {
                 if (input.hasObserved()) {

@@ -1,6 +1,5 @@
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
@@ -17,7 +16,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 describe('browser Rallar message subscriptions', () => {
     it('cleans subscription scopes once and immediately cleans late additions', () => {
         const calls: string[] = [];
-        const subscriptions = new BrowserRallarSubscriptionScope();
+        const subscriptions = createRallarFacade().subscriptions();
         subscriptions.add(() => calls.push('first'));
         subscriptions.add(undefined);
         subscriptions.add(() => calls.push('second'));
@@ -71,6 +70,50 @@ describe('browser Rallar message subscriptions', () => {
 
         expect(unsubscribe).toEqual(expect.any(Function));
         unsubscribe();
+    });
+
+    it.each(['ws', 'rtc'] as const)('preserves renewed %s delivery after stale selector cleanup', async (transport) => {
+        const fixture = createSubscriptionsFixture();
+        const received: string[] = [];
+        const listener = (message: RallarMessage): void => {
+            received.push(message.raw.id.msgId);
+        };
+        const stale = fixture.subscriptions.subscribe(transport, 'app.ask.v1', listener);
+        stale();
+        const current = fixture.subscriptions.subscribe(transport, 'app.ask.v1', listener);
+        stale();
+        const message = toWsMessage('renewed', undefined);
+        if (transport === 'ws') {
+            await fixture.deliver(message);
+        }
+        else {
+            await fixture.deliverRtc(message);
+        }
+        expect(received).toEqual(['renewed']);
+        current();
+    });
+
+    it.each(['ws', 'rtc'] as const)('fences renewed %s listeners within a retained selector', async (transport) => {
+        const fixture = createSubscriptionsFixture();
+        const received: string[] = [];
+        const listener = (message: RallarMessage): void => {
+            received.push(message.raw.id.msgId);
+        };
+        const retained = fixture.subscriptions.subscribe(transport, 'app.ask.v1', () => {});
+        const stale = fixture.subscriptions.subscribe(transport, 'app.ask.v1', listener);
+        stale();
+        const current = fixture.subscriptions.subscribe(transport, 'app.ask.v1', listener);
+        stale();
+        const message = toWsMessage('renewed', undefined);
+        if (transport === 'ws') {
+            await fixture.deliver(message);
+        }
+        else {
+            await fixture.deliverRtc(message);
+        }
+        expect(received).toEqual(['renewed']);
+        current();
+        retained();
     });
 
     it('delivers a WS message with a reply that sends through the messaging reply path', async () => {
@@ -148,10 +191,13 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const sendReply = vi.fn<RallarMessageReplySender>(async (request) => await Promise.resolve(registry.open(request, 'ws')));
     const middleware = createDefaultApiMiddlewareTestDouble();
-    const rtcCallbacks: Parameters<typeof middleware.middleware.rtcRxStreamer.onInboxMessageDo>[1][] = [];
-    vi.mocked(middleware.middleware.rtcRxStreamer.onInboxMessageDo).mockImplementation((_typeId, callback) => {
-        rtcCallbacks.push(callback);
+    const rtcCallbacks = new Map<string, Parameters<typeof middleware.middleware.rtcRxStreamer.onInboxMessageDo>[1]>();
+    vi.mocked(middleware.middleware.rtcRxStreamer.onInboxMessageDo).mockImplementation((typeId, callback) => {
+        rtcCallbacks.set(typeId, callback);
         return middleware.middleware.rtcRxStreamer;
+    });
+    vi.mocked(middleware.middleware.rtcRxStreamer.removeInboxMessageCallback).mockImplementation((typeId) => {
+        return rtcCallbacks.delete(typeId);
     });
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const subscriptions = new BrowserRallarMessageSubscriptions({
@@ -170,7 +216,7 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
             }
         },
         deliverRtc: async (message) => {
-            for (const callback of rtcCallbacks) {
+            for (const callback of rtcCallbacks.values()) {
                 await callback.onMessage(message, toResourceEntry(message.payload.typeId, {}));
             }
         }

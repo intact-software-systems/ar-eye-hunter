@@ -1,4 +1,5 @@
 import { toError } from '../../resilience/to-error.ts';
+import { notifyConcurrentListeners } from '../async-notifications.ts';
 import type { Unsubscribe } from '../RepositoryInterfaces.ts';
 
 export namespace QueuedNotifications {
@@ -39,7 +40,7 @@ export class QueuedNotifications<T extends { readonly type: string; }> {
             return;
         }
         this.queue = this.queue.then(async () => {
-            await Promise.all(listeners.map((listener) => this.notify(listener, event)));
+            await notifyConcurrentListeners(listeners, event, (error) => this.reportObserverError(error, event));
         });
     }
 
@@ -72,28 +73,17 @@ export class QueuedNotifications<T extends { readonly type: string; }> {
         };
     }
 
-    private async notify(listener: QueuedNotifications.Listener<T>, event: T): Promise<void> {
+    private async reportObserverError(error: Error, event: T): Promise<void> {
         try {
-            await listener(event);
+            if (this.onObserverError) {
+                await this.onObserverError(error, event);
+            }
+            else {
+                console.error('Error notifying queued observer', error);
+            }
         }
-        catch (error) {
-            try {
-                const normalized = toError(error);
-                if (this.onObserverError) {
-                    await this.onObserverError(normalized, event);
-                }
-                else {
-                    console.error('Error notifying queued observer', normalized);
-                }
-            }
-            catch (reportError) {
-                try {
-                    console.error('Error reporting queued observer failure', toError(reportError));
-                }
-                catch {
-                    // Diagnostics cannot reject delivery of an already committed event.
-                }
-            }
+        catch (reportError) {
+            console.error('Error reporting queued observer failure', toError(reportError));
         }
     }
 }

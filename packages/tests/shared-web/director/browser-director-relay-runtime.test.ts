@@ -763,6 +763,39 @@ describe('Rallar director relay', () => {
         });
     });
 
+    it('clears relay timers even when a message subscription cleanup throws', async () => {
+        vi.useFakeTimers();
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const subscribe = facade.messages.ws.onMessage.bind(facade.messages.ws);
+        vi.spyOn(facade.messages.ws, 'onMessage').mockImplementation((selector, listener) => {
+            const unsubscribe = subscribe(selector, listener);
+            return () => {
+                unsubscribe();
+                throw new Error('message cleanup failed');
+            };
+        });
+        const timersBefore = vi.getTimerCount();
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 1_000,
+            snapshotIntervalMs: 2_000,
+            readSnapshot: () => ({ ok: true })
+        });
+        try {
+            expect(vi.getTimerCount()).toBe(timersBefore + 2);
+            expect(() => relay.stop()).toThrow(AggregateError);
+            expect(vi.getTimerCount()).toBe(timersBefore);
+            expect(() => relay.stop()).not.toThrow();
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('stops director relay heartbeats when auth logs out', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(Date.now());

@@ -10,6 +10,22 @@ const roomRef = {
 };
 
 describe('RTC group-snapshot refresh', () => {
+    it('reports a synchronous read failure and permits a subsequent recovery attempt', async () => {
+        let fail = true;
+        const refresh = new RtcGroupSnapshotRefresh({
+            refreshGroupSnapshot: () => {
+                if (fail) {
+                    throw new Error('read failed before returning a promise');
+                }
+                return Promise.resolve();
+            }
+        });
+        const acceptance = { kind: 'not-admitted' as const, reason: 'not-yet-in-sync' };
+        await expect(refresh.afterInboundAdmission(roomMessage(6), acceptance)).resolves.toBe(false);
+        fail = false;
+        await expect(refresh.afterInboundAdmission(roomMessage(6), acceptance)).resolves.toBe(true);
+    });
+
     it('requests authoritative refresh through the message snapshot floor', async () => {
         const refreshGroupSnapshot = vi.fn(async () => undefined);
         const refresh = new RtcGroupSnapshotRefresh({

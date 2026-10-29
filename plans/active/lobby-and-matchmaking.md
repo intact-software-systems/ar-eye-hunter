@@ -52,6 +52,37 @@ retains the AR Eye WebGL engine across room changes; residual timing investigati
 Spectating and Relic expedition continuity are delivered. The next selected outcome is coordinated
 repeat play with the same people.
 
+## Approved shared-browser consolidation
+
+Before completing the current delivery, consolidate the reviewed shared-browser mechanisms using
+existing shared owners where semantics match. Keep sender sequence lifetime and game/room authority
+with their existing domain owners. No external dependency, compatibility alias, or migration path.
+
+The implementation reuses `SynchronousNotifications` for match and authority-client status,
+`AsyncNotifications` for awaited presence and realtime/media/state/message delivery, and the shared
+concurrent delivery function for queued cache notifications. Sequential presence still uses the live
+audience and propagates the first failure; concurrent delivery captures the audience, waits for every
+observer, and isolates observer failures. Subscription registrations fence stale cleanup, including
+selector replacement in the browser message owner.
+
+`SubscriptionScope` now owns browser-independent teardown directly under shared resilience. Owners
+finish their timers, state, and storage shutdown even when a subscription cleanup reports a failure.
+Snapshot refresh reuses `SingleFlight` while retaining owner-lifetime cancellation. RTC subscription
+sets stay local because their entries own per-subscriber options and native callback attachment;
+they already reuse notification delivery. Sender sequence lifetime stays with the game routing owner.
+
+The remaining two acceptance increments are:
+
+1. Complete final shared/browser regression checks, both games' clickable repeat-play journeys,
+   application builds, public API and browser bundle-boundary checks, and full touched-file review.
+2. Publish the reviewed revision and obtain fresh functional and controlled performance evidence.
+   The queued notifier is in the state-write benchmark dependency graph, so the earlier performance
+   pass cannot validate this runtime. Run the selected distributed gate only with approval covering
+   the actual candidate it deploys.
+
+Review every changed human-authored file in full, including recursively modified support files;
+independent untouched code stays outside closure. The PR remains the delivery record.
+
 ## Current delivery design: play again together
 
 The maintainer selected a same-room Play again together flow in both games and explicit

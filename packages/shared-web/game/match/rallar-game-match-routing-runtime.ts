@@ -1,5 +1,6 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRealtimeMessage } from '@shared-web/browser/rallar.ts';
+import { AsyncNotifications } from '@shared/cache/async-notifications.ts';
 import type { RallarGameDirectorRelayRuntime } from '../director/rallar-game-director-relay-runtime.ts';
 import {
     createRallarGameEnvelope,
@@ -31,7 +32,7 @@ export namespace RallarGameMatchRoutingRuntime {
 export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     private readonly input: RallarGameMatchRoutingRuntime.Input<TInput, TIntent, TSnapshot, TEvent, TPresence>;
     private readonly sequenceTracker: RallarGameSequenceTracker = createRallarGameSequenceTracker();
-    private readonly presenceHandlers = new Set<RallarGameEnvelopeHandler<TPresence>>();
+    private readonly presenceNotifications = new AsyncNotifications<RallarGameEnvelope<TPresence>>();
     // The facade survives match-handle recreation. A reload gets a newly admitted presence
     // generation, while every handle in this browser shares one monotonic sender counter.
     private static readonly senderSequences = new WeakMap<RallarGameRallarFacade, number>();
@@ -220,8 +221,7 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
     }
 
     onPresence(handler: RallarGameEnvelopeHandler<TPresence>): () => void {
-        this.presenceHandlers.add(handler);
-        return () => this.presenceHandlers.delete(handler);
+        return this.presenceNotifications.subscribe(handler).unsubscribe;
     }
 
     private async handleRealtimePresence(
@@ -239,8 +239,6 @@ export class RallarGameMatchRoutingRuntime<TInput, TIntent, TSnapshot, TEvent, T
         }
 
         await this.input.config.onPresence?.(envelope);
-        for (const handler of this.presenceHandlers) {
-            await handler(envelope);
-        }
+        await this.presenceNotifications.publishSequential(envelope);
     }
 }

@@ -94,6 +94,40 @@ describe('direct Rallar operations', () => {
         expect(result.unsubscribe).toBeUndefined();
     });
 
+    it('removes the abort listener even when message subscription cleanup throws', async () => {
+        const controller = new AbortController();
+        const removed = vi.spyOn(controller.signal, 'removeEventListener');
+        const facade = createDirectTestFacade({
+            start: async () => ({ session, connected: true }),
+            rooms: { current: () => snapshot, list: () => [], create: unsupportedOperation, join: async () => snapshot },
+            messages: {
+                ws: {
+                    send: unsupportedOperation,
+                    onMessage: () => () => {
+                        throw new Error('message cleanup failed');
+                    }
+                }
+            }
+        });
+        const result = await runDirectRallarWsSubscribe({
+            context: {
+                providerMode: 'browser-rallar',
+                apiBaseUrl: 'http://localhost',
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                roomId: 'bb-group',
+                authSession: session
+            },
+            selector: { topicId: 'room.test', typeId: 'test' },
+            handler: () => {},
+            signal: controller.signal,
+            readFacade: async () => facade
+        });
+        expect(result.status).toBe('completed');
+        expect(() => result.unsubscribe?.()).toThrow(AggregateError);
+        expect(removed).toHaveBeenCalledWith('abort', result.unsubscribe);
+    });
+
     it('preserves a non-Error rejection as the existing error projection', async () => {
         const result = await runDirectRallarStatusCheck({
             providerMode: 'browser-rallar',

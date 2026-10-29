@@ -19,7 +19,6 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type {
     RallarAuthChangeListener,
@@ -40,6 +39,7 @@ import type {
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
 import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
@@ -1381,7 +1381,7 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
         return { session: this.session, connected: !!this.session, roomState: this.state };
     }
     public subscriptions() {
-        return new BrowserRallarSubscriptionScope();
+        return new SubscriptionScope();
     }
     public async login() {
         if (!this.session) {
