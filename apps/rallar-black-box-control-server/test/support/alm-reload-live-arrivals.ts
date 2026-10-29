@@ -9,8 +9,10 @@ export interface AlmReloadLiveArrival {
 /**
  * The live arrivals a recipient page has not read yet. The reload test runs a sender segment to its end before the
  * receiver's, so the receiver page reads each paced arrival on its own timeline: a count read takes the arrivals of its
- * type in delivery order until it holds its count, and an absence read takes all of them. A `not-yet` wait between two
- * reads therefore sees only what the earlier read took, as a receiver reading live would between two opportunities.
+ * type in delivery order until it holds its count, and an absence read takes all of them. Out-of-order and extra
+ * arrivals still fail the cells' reads here, but two values carried at one opportunity do not fail a `not-yet` window:
+ * the real stage's selection, the sender's `publication-opportunity` counts and the hosted run carry that. A wait for a
+ * seq's arrival resolves only after a count read took it, which the paced receiver recipes always issue first.
  */
 export class AlmReloadLiveArrivals {
     private readonly unread = new Map<string, AlmReloadLiveArrival[]>();

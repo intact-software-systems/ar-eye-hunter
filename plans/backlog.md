@@ -128,3 +128,11 @@ and it has no status list.
   `submit` in turn, so run the due lanes' submits concurrently or stop
   awaiting `submit` inside the opportunity, and one slow carrier admission no
   longer delays sibling lanes' boundaries.
+- The control server's ALM reload fixture records a hop-ACK diagnostic for
+  every rtc send, including `ack: 'none'` and live sends
+  (`apps/rallar-black-box-control-server/test/support/alm-reload-ports.ts`,
+  `deliver`); make it depend on the send's receipt mode (S1-ii, Task 8
+  review N3).
+- The same fixture carries no `stats.rallar.alm` / `readUsage().publication`
+  projection; add it, from the real stage's `readReport`, when a hosted recipe
+  reads it (S1-ii, Task 8 deviation 1).

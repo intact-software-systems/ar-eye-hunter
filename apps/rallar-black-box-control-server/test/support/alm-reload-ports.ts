@@ -220,7 +220,7 @@ export class AlmReloadPorts {
         this.participants = [...participants];
         this.replacesDocument = replacesDocument;
         this.publicationLane = new AlmReloadPublicationLane({
-            nowMs: () => this.now,
+            clock: { nowMs: () => this.now, setNowMs: (nowMs) => this.now = nowMs },
             submit: (msgIds) => msgIds.forEach((msgId) => this.routeAdmitted(this.findMessage(msgId))),
             settle: (settlement) => this.settleStaged(settlement),
             diagnostics: (event) => recordOutboundDiagnostic(this.sender, event)
@@ -253,7 +253,6 @@ export class AlmReloadPorts {
     finishAbsence(): void {
         assert(this.absence);
         assertEquals(this.absence.duration, 17_000, 'the authored absence window is unchanged');
-        this.now += this.absence.duration;
         this.absence.release();
         this.absence = undefined;
     }
@@ -283,7 +282,7 @@ export class AlmReloadPorts {
             now: () => this.now,
             sleep: async (duration) => {
                 if (!this.holdNextSleep) {
-                    await this.advanceClock(this.now + duration, () => false);
+                    await this.publicationLane.advanceTo(this.now + duration, () => false);
                     this.settleCheckpoints();
                     return;
                 }
@@ -292,6 +291,8 @@ export class AlmReloadPorts {
                 this.absence = { duration, release: pending.resolve };
                 this.entered.resolve();
                 await pending.promise;
+                // The page returns from its absence with every lane opportunity due meanwhile run at its own time.
+                await this.publicationLane.advanceTo(this.now + duration, () => false);
             },
             commandExecutor: (command) => this.executePort(role, command)
         });
@@ -396,28 +397,13 @@ export class AlmReloadPorts {
             assert(command.timeoutMs !== undefined, 'an external observation has an authored timeout');
             const budgetMs = Math.min(command.timeoutMs, Math.max(0, (command.deadlineEpochMs ?? Infinity) - this.now));
             const expiresAtMs = this.readDeliveryLifecycle(message).expiresAtMs ?? Infinity;
-            await this.advanceClock(this.now + Math.min(budgetMs, Math.max(0, expiresAtMs - this.now)), reached);
+            await this.publicationLane.advanceTo(
+                this.now + Math.min(budgetMs, Math.max(0, expiresAtMs - this.now)),
+                reached
+            );
             this.settleCheckpoints();
         }
         return { status: reached() ? 'ok' : 'failed', value: toPortDeliveryObservation(command.handleId, message) };
-    }
-
-    /**
-     * Moves the shared clock to `targetMs`, running each lane opportunity at its own due time on the way, and stops early
-     * once `reached` holds.
-     */
-    private async advanceClock(targetMs: number, reached: () => boolean): Promise<void> {
-        await this.publicationLane.runDueOpportunities();
-        while (!reached()) {
-            const nextMs = this.publicationLane.readNextOpportunityAtMs();
-            if (nextMs === undefined || nextMs > targetMs) {
-                this.now = Math.max(this.now, targetMs);
-                return;
-            }
-            assert(nextMs > this.now, `the lane did not run its opportunity due at ${nextMs}`);
-            this.now = nextMs;
-            await this.publicationLane.runDueOpportunities();
-        }
     }
 
     private cancel(command: PortCommand<'messages.cancel'>): RallarBlackBoxTestCommandOutcome {
@@ -732,7 +718,10 @@ export class AlmReloadPorts {
         };
     }
 
-    /** A live send stages on the sender's lane, which hands it to the fixture carrier at the lane's opportunity. */
+    /**
+     * A live send meets the first hop's verdicts as any send does; otherwise it stages on the sender's lane, which hands
+     * it to the fixture carrier at the lane's opportunity.
+     */
     private stageLive(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
         const live = toAlmReloadLiveCommand(command);
         const { message } = this.createSendAdmission(live, toAlmReloadAdmissionPayload(live.payload));
@@ -741,27 +730,19 @@ export class AlmReloadPorts {
         this.messages.push(message);
         this.handles.set(live.handleId, message);
         const recipients = this.participants.filter(({ role }) => message.recipientRoles.includes(role));
-        this.publicationLane.stage({
-            command: live,
-            msgId: message.msgId,
-            traceId: toPortMessageTrace(message).traceId,
-            carrier: message.activeCarrier,
-            recipientPeerIds: live.recipientPeer === undefined
-                ? undefined
-                : recipients.map(({ sessionId }) => sessionId)
-        });
-        const { msgId, failure, reason } = message;
-        const status = failure?.kind === 'refused' ? 'rejected' : 'accepted';
+        const recipientPeerIds = live.recipientPeer === undefined
+            ? undefined
+            : recipients.map(({ sessionId }) => sessionId);
+        const trace = toPortMessageTrace(message);
+        if (!this.routeAtFirstHop(message)) {
+            const { msgId, activeCarrier: carrier } = message;
+            this.publicationLane.stage({ command: live, msgId, traceId: trace.traceId, carrier, recipientPeerIds });
+        }
+        const status = message.failure?.kind === 'refused' ? 'rejected' : 'accepted';
+        const { handleId } = live;
         return {
             status: 'ok',
-            value: {
-                msgId,
-                handleId: live.handleId,
-                carrier: live.carrier,
-                status,
-                reason,
-                ...toPortMessageTrace(message)
-            }
+            value: { msgId: message.msgId, handleId, carrier: live.carrier, status, reason: message.reason, ...trace }
         };
     }
 
@@ -846,24 +827,38 @@ export class AlmReloadPorts {
         const handedOver = isJsonRecordValue(command.payload)
             ? HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)]
             : undefined;
+        if (this.routeAtFirstHop(message)) {
+            return;
+        }
+        if (isJsonRecordValue(command.payload) && command.payload.seq === 300) {
+            this.refuseGappedSend(message);
+        }
+        else if (handedOver !== undefined) {
+            this.handOver(message, handedOver);
+        }
+        else if (!rejected) {
+            this.routeAdmitted(message);
+        }
+    }
+
+    /**
+     * The first hop's verdicts that keep a send from the room's carriers: it refuses a fenced sender, holds a send above
+     * its snapshot floor, and keeps a command addressed to the server. False when none applies.
+     */
+    private routeAtFirstHop(message: PortMessage): boolean {
         if (this.group.left.has('sender')) {
             this.refuseFenced(message);
         }
         else if (message.floor !== undefined && message.floor > this.group.snapshotVersion) {
             this.refuseNotYetInSync(message);
         }
-        else if (isJsonRecordValue(command.payload) && command.payload.seq === 300) {
-            this.refuseGappedSend(message);
-        }
-        else if (handedOver !== undefined) {
-            this.handOver(message, handedOver);
-        }
-        else if (command.toPeer === 'server') {
+        else if (message.command.toPeer === 'server') {
             this.acknowledgeByServer(message);
         }
-        else if (!rejected) {
-            this.routeAdmitted(message);
+        else {
+            return false;
         }
+        return true;
     }
 
     /** A held frame stays with its page; an ordered frame behind a held one is buffered at the receiver; the rest deliver. */

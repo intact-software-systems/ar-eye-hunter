@@ -17,6 +17,7 @@ import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/de
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 const PUBLICATION_STAGE_TASK_ID = 'al-outbound-publication-stage';
@@ -24,9 +25,14 @@ const PUBLICATION_STAGE_TASK_ID = 'al-outbound-publication-stage';
 /** The room the fixture's live sends name; only its stream identity matters to the stage. */
 const FIXTURE_ROOM = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'alm-reload-room' } as const;
 
-export interface AlmReloadPublicationLaneInput {
-    /** The fixture's clock: the stage stamps and schedules by it, and each engine pass reads it. */
+export interface AlmReloadFixtureClock {
     readonly nowMs: () => number;
+    readonly setNowMs: (nowMs: number) => void;
+}
+
+export interface AlmReloadPublicationLaneInput {
+    /** The fixture's clock: the stage stamps and schedules by it, each engine pass reads it, and `advanceTo` moves it. */
+    readonly clock: AlmReloadFixtureClock;
     /** The fixture carrier: it settles each value an opportunity selected, the way the fixture settles a send. */
     readonly submit: (msgIds: readonly string[]) => void;
     readonly settle: ALDeliverySettlementSink;
@@ -100,7 +106,7 @@ export class AlmReloadPublicationLane {
     /** The stage refuses a value it cannot hold, and the refusal is the value's admission verdict. */
     stage(send: AlmReloadLiveSend): void {
         const current = this.current ?? this.startStage();
-        const msg = toLiveMessage(send, this.input.nowMs());
+        const msg = toLiveMessage(send, this.input.clock.nowMs());
         current.laneKeys.add(toALPublicationLaneKey(msg));
         const policy = send.command.publication;
         assert(policy, 'a live send names its publication');
@@ -117,7 +123,7 @@ export class AlmReloadPublicationLane {
                 msgId: send.msgId,
                 traceId: send.traceId,
                 carrier: send.carrier,
-                atMs: this.input.nowMs(),
+                atMs: this.input.clock.nowMs(),
                 verdict: result,
                 trackedReceiptAlgo: 'none'
             });
@@ -129,7 +135,26 @@ export class AlmReloadPublicationLane {
         return this.current?.stage.cancel(msgId) ?? false;
     }
 
-    readNextOpportunityAtMs(): number | undefined {
+    /**
+     * Moves the fixture's clock to `targetMs`, running each lane opportunity at its own due time on the way, and stops
+     * early once `reached` holds.
+     */
+    async advanceTo(targetMs: number, reached: () => boolean): Promise<void> {
+        const { clock } = this.input;
+        await this.runDueOpportunities();
+        while (!reached()) {
+            const nextMs = this.readNextOpportunityAtMs();
+            if (nextMs === undefined || nextMs > targetMs) {
+                clock.setNowMs(Math.max(clock.nowMs(), targetMs));
+                return;
+            }
+            assert(nextMs > clock.nowMs(), `the lane did not run its opportunity due at ${nextMs}`);
+            clock.setNowMs(nextMs);
+            await this.runDueOpportunities();
+        }
+    }
+
+    private readNextOpportunityAtMs(): number | undefined {
         const current = this.current;
         if (current === undefined) {
             return undefined;
@@ -147,8 +172,10 @@ export class AlmReloadPublicationLane {
             return;
         }
         await current.engine.executeOnce();
-        await current.engine.stop();
-        const [failure] = this.failures.splice(0);
+        const stopFailure = await current.engine.stop().then(() => undefined, toError);
+        // A runnable's failure reaches both `reportTaskFailure` and `stop`: drained here, it is thrown once.
+        const [reported] = this.failures.splice(0);
+        const failure = stopFailure ?? reported;
         if (failure !== undefined) {
             throw failure;
         }
@@ -156,7 +183,7 @@ export class AlmReloadPublicationLane {
 
     private startStage(): AlmReloadConnectStage {
         const engine = new InboxOutboxEngine({
-            nowEpochMs: this.input.nowMs,
+            nowEpochMs: this.input.clock.nowMs,
             random: () => 0,
             reportTaskFailure: (_taskId, error) => {
                 this.failures.push(error);
@@ -166,7 +193,7 @@ export class AlmReloadPublicationLane {
         const stage = new ALOutboundPublicationStage<string>({
             taskId: PUBLICATION_STAGE_TASK_ID,
             queueEngine: engine,
-            clock: { nowMs: this.input.nowMs },
+            clock: { nowMs: this.input.clock.nowMs },
             submit: (selected) => Promise.resolve(this.input.submit(selected.map(({ context }) => context))),
             settle: this.input.settle,
             diagnostics: this.input.diagnostics,
