@@ -709,7 +709,11 @@ A volatile best-effort latest-wins publication
 ([`isALVolatileBestEffortPublication`](../../al-contracts/publication/is-al-volatile-best-effort-publication.ts)) on a
 topic whose effective fanout is `outbox` -- the topic's own, or a matching proxy rule's -- is refused at the router's
 ingress with an `unsupported` NACK and never enqueued (D482): the browser cannot know a topic's fanout, so the server
-refuses. The origin states it as a trusted-server `relay-rejected` with that reason whatever the receipt; a live
+refuses. Proxy rules are read from their declarations, since running a rule's `authorize` at ingress would break the
+pure pre-admission check: a suppressing rule whose `authorize` or `targets` skips it at runtime leaves the topic's
+`outbox` fanout published and the publication enqueued (under-refusal), and a rule that publishes to `outbox` refuses
+the publication even when it would itself have skipped (over-refusal). Neither is reachable in the product today, which
+declares no proxy rule and no client topic with an `outbox` fanout. The origin states it as a trusted-server `relay-rejected` with that reason whatever the receipt; a live
 handle tracks none, so it keeps `transport-accepted` and names the refusal in `relayRejection` alone.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that

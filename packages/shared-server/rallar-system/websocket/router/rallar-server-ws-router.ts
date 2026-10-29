@@ -51,7 +51,7 @@ import type {
     RallarServerWsTopicDefinition
 } from './rallar-server-ws-router-contracts.ts';
 import { readRallarServerWsStatus, type RallarServerWsStatus } from './rallar-server-ws-status.ts';
-import { RallarServerWsTopicRegistry } from './rallar-server-ws-topic-registry.ts';
+import { RallarServerWsTopicRegistry, resolveRallarServerWsTopicFanout } from './rallar-server-ws-topic-registry.ts';
 
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
@@ -193,18 +193,18 @@ export class RallarServerWsRouter {
         }
         const { ingress, message: serverMessage, context, audience } = admitted.right!;
         await this.registry.dispatchHandlers(serverMessage, context);
+        const topicFanout = resolveRallarServerWsTopicFanout(ingress.definition, this.defaultFanout);
         const suppressDefaultFanout = await this.registry.dispatchProxyRules({
             message: serverMessage,
             context,
-            defaultFanout: this.defaultFanout,
+            topicFanout,
             publish: async (targetMessage, fanout) =>
                 await this.publishToFanout({ message: targetMessage, fanout, inboundScope, origin: 'proxy' })
         });
-        // A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied).
-        if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
+        if (!suppressDefaultFanout && this.publishesTopicFanout(message)) {
             await this.publishToFanout({
                 message,
-                fanout: this.resolveTopicFanout(ingress.definition),
+                fanout: topicFanout,
                 audience: { current: audience, admittedPeerIds: toClientDeliveryPeerIds(message, admittedPeerIds) },
                 inboundScope,
                 origin: 'admitted',
@@ -327,18 +327,21 @@ export class RallarServerWsRouter {
                 logMessage: `Rejected oversized Rallar server WS payload: ${message.route.topicId}`
             };
         }
-        return this.resolveFanoutRejection(message);
+        return this.resolveFanoutRejection(message, definition);
     }
 
     /** A live publication never enters an outbox (D482): the browser cannot know the topic's fanout, the server refuses. */
-    private resolveFanoutRejection(message: ALMessage): RallarServerWsRouter.Rejection | undefined {
+    private resolveFanoutRejection(
+        message: ALMessage,
+        definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined
+    ): RallarServerWsRouter.Rejection | undefined {
         if (!isALVolatileBestEffortPublication(message)) {
             return undefined;
         }
         const fanouts = this.registry.resolveFanouts({
             message,
-            defaultFanout: this.defaultFanout,
-            publishesTopicFanout: !isALUnicastAddressedTo(message, this.serverPeerId)
+            topicFanout: resolveRallarServerWsTopicFanout(definition, this.defaultFanout),
+            publishesTopicFanout: this.publishesTopicFanout(message)
         });
         return fanouts.includes('outbox')
             ? {
@@ -410,14 +413,13 @@ export class RallarServerWsRouter {
             roomRef: readRallarServerWsRoomRef(message),
             senderId: message.id.senderId,
             authenticatedScope: inboundScope ?? undefined,
-            proxy: this.toMessageProxy(this.resolveTopicFanout(definition), inboundScope)
+            proxy: this.toMessageProxy(resolveRallarServerWsTopicFanout(definition, this.defaultFanout), inboundScope)
         };
     }
 
-    private resolveTopicFanout(
-        definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined
-    ): RallarServerWsFanout {
-        return definition?.fanout ?? this.defaultFanout;
+    /** A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied). */
+    private publishesTopicFanout(message: ALMessage): boolean {
+        return !isALUnicastAddressedTo(message, this.serverPeerId);
     }
 
     private toMessageProxy(

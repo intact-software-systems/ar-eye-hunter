@@ -23,7 +23,7 @@ interface RegisteredHandler {
 export interface DispatchRallarServerWsProxyRulesInput {
     readonly message: RallarServerWsMessage<JsonWireValue>;
     readonly context: RallarServerWsMessageContext;
-    readonly defaultFanout: RallarServerWsFanout;
+    readonly topicFanout: RallarServerWsFanout;
     readonly publish: (
         message: ALMessage,
         fanout: RallarServerWsFanout
@@ -32,7 +32,7 @@ export interface DispatchRallarServerWsProxyRulesInput {
 
 export interface ResolveRallarServerWsFanoutsInput {
     readonly message: ALMessage;
-    readonly defaultFanout: RallarServerWsFanout;
+    readonly topicFanout: RallarServerWsFanout;
     /** False for a message the router ends at its handlers: a unicast addressed to the server (D57). */
     readonly publishesTopicFanout: boolean;
 }
@@ -122,16 +122,18 @@ export class RallarServerWsTopicRegistry {
 
     /**
      * The fanouts the router publishes an admitted message on, read from the declarations: each matching proxy
-     * rule's own or the topic's, then the topic's unless a matching rule suppresses it. A rule's `authorize`,
-     * `transform` and `targets` are per-message application decisions this reading does not run.
+     * rule's own or the topic's, then the topic's unless a matching rule suppresses it. Running a rule's
+     * `authorize`, `transform` or `targets` here would put application code inside the pure pre-admission check, so
+     * the read is static: a suppressing rule whose `authorize` or `targets` skips it at runtime still leaves the
+     * topic's fanout published (under-refusal), and a rule publishing to `outbox` counts even when it would itself
+     * have skipped (over-refusal). Neither case is reachable in the product today.
      */
     resolveFanouts(input: ResolveRallarServerWsFanoutsInput): readonly RallarServerWsFanout[] {
-        const topicFanout = this.find(input.message)?.fanout ?? input.defaultFanout;
         const rules = [...this.proxyRules.values()]
             .filter((rule) => matchesRallarServerWsSelector(rule.from, input.message));
-        const ruleFanouts = rules.map((rule) => rule.fanout ?? topicFanout);
+        const ruleFanouts = rules.map((rule) => resolveRallarServerWsRuleFanout(rule, input.topicFanout));
         return input.publishesTopicFanout && !rules.some((rule) => rule.suppressDefaultFanout === true)
-            ? [...ruleFanouts, topicFanout]
+            ? [...ruleFanouts, input.topicFanout]
             : ruleFanouts;
     }
 
@@ -184,7 +186,7 @@ export class RallarServerWsTopicRegistry {
         this.requireDeliveryTime(input.message.raw);
         await input.publish(
             { ...transformed, targets },
-            rule.fanout ?? input.context.definition?.fanout ?? input.defaultFanout
+            resolveRallarServerWsRuleFanout(rule, input.topicFanout)
         );
         return suppressDefaultFanout || (rule.suppressDefaultFanout ?? false);
     }
@@ -195,6 +197,21 @@ export class RallarServerWsTopicRegistry {
             throw new NonRetryableException('Inbound message expired before its next application action');
         }
     }
+}
+
+/** The fanout a topic's declaration gives its messages, else the router's default. */
+export function resolveRallarServerWsTopicFanout(
+    definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined,
+    defaultFanout: RallarServerWsFanout
+): RallarServerWsFanout {
+    return definition?.fanout ?? defaultFanout;
+}
+
+function resolveRallarServerWsRuleFanout(
+    rule: RallarServerWsProxyRule<JsonWireValue>,
+    topicFanout: RallarServerWsFanout
+): RallarServerWsFanout {
+    return rule.fanout ?? topicFanout;
 }
 
 function toTypedMessage<T extends RallarServerWsPayload>(
