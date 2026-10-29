@@ -43,6 +43,8 @@ export interface ControlSnapshotPersistenceInput {
     readonly timingSink: RallarTimingSink | undefined;
 }
 
+export type ControlSnapshotRestoreStatus = 'restored' | 'absent' | 'disabled';
+
 interface WriteControlSnapshotFileInput {
     readonly path: string;
     readonly tempPath: string;
@@ -72,10 +74,13 @@ export class ControlSnapshotPersistence {
         );
     }
 
-    async restore(): Promise<void> {
-        if (this.input.storageDir) {
-            await restoreSnapshotFile(toSnapshotPath(this.input.storageDir), this.input.controlService);
+    async restore(): Promise<Either<Error, ControlSnapshotRestoreStatus>> {
+        if (!this.input.storageDir) {
+            return Either.ofRight('disabled');
         }
+        const restored = await restoreSnapshotFile(toSnapshotPath(this.input.storageDir), this.input.controlService);
+        restored.foldLeft((error) => console.warn(error.message));
+        return restored;
     }
 
     persist(): void {
@@ -165,22 +170,31 @@ function* toSnapshotFilePieces(snapshot: ControlServerSnapshot, savedAtEpochMs: 
 async function restoreSnapshotFile(
     path: string,
     controlService: ControlSnapshotPersistenceInput['controlService']
-): Promise<void> {
+): Promise<Either<Error, ControlSnapshotRestoreStatus>> {
     try {
-        decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(
-            (issue) => console.warn(`Could not restore control snapshot from ${path}: ${issue}`),
+        await Deno.lstat(path);
+    }
+    catch (error) {
+        if (error instanceof Deno.errors.NotFound) {
+            return Either.ofRight('absent');
+        }
+        return Either.ofLeft(new Error(`Could not restore control snapshot from ${path}: ${toError(error).message}`));
+    }
+    try {
+        return decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(
+            (issue) =>
+                Either.ofLeft<Error, ControlSnapshotRestoreStatus>(
+                    new Error(`Could not restore control snapshot from ${path}: ${issue}`)
+                ),
             (snapshot) => {
                 controlService.restoreSnapshot(snapshot);
                 console.log(`Restored Rallar black-box control snapshot from ${path}`);
+                return Either.ofRight<Error, ControlSnapshotRestoreStatus>('restored');
             }
         );
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
-            return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Could not restore control snapshot from ${path}: ${message}`);
+        return Either.ofLeft(new Error(`Could not restore control snapshot from ${path}: ${toError(error).message}`));
     }
 }
 
