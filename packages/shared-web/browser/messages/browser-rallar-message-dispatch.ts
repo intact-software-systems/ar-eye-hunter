@@ -32,7 +32,7 @@ import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
-import { BrowserPublicationStages, type BrowserPublicationRequest } from './publication/browser-publication-stages.ts';
+import type { BrowserPublicationRequest, BrowserPublicationStages } from './publication/browser-publication-stages.ts';
 import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
 
 /** What the strategy does after one carrier leg: hand the send to the fallback carrier, stop, or expire it. */
@@ -72,6 +72,8 @@ export namespace BrowserRallarMessageDispatch {
     export interface Input {
         readonly deliveries: BrowserRallarDeliveryRegistry;
         readonly sessionDeliveries: BrowserSessionDeliveries;
+        /** Built before `deliveries`, whose cancel reaches them before the carriers (D479). */
+        readonly publicationStages: BrowserPublicationStages;
         readonly nowMs: () => number;
     }
 }
@@ -82,16 +84,11 @@ export namespace BrowserRallarMessageDispatch {
  */
 export class BrowserRallarMessageDispatch {
     private readonly input: BrowserRallarMessageDispatch.Input;
-    private readonly publicationStages: BrowserPublicationStages;
 
     constructor(input: BrowserRallarMessageDispatch.Input) {
         this.input = input;
-        this.publicationStages = new BrowserPublicationStages({
-            nowMs: input.nowMs,
-            submit: async (delivery, epoch) => await this.submitStaged(delivery, epoch)
-        });
         // Never unsubscribed: the dispatch lives as long as its facade, and a page holds one.
-        input.sessionDeliveries.onSessionEnd(() => this.publicationStages.stopStage());
+        input.sessionDeliveries.onSessionEnd(() => input.publicationStages.stopStage());
     }
 
     /** A send its admission refuses settles at once; a live one is staged, and its leg waits for its opportunity. */
@@ -105,18 +102,15 @@ export class BrowserRallarMessageDispatch {
         const refusal = this.readAdmissionRefusal(delivery);
         const { publication } = delivery;
         if (refusal === undefined && publication !== undefined) {
-            this.publicationStages.stage({ ...delivery, publication }, epoch);
+            // A staged send's first leg: its admission refusal is read here, and the connect's close stops its stage.
+            this.input.publicationStages.stage({
+                delivery: { ...delivery, publication },
+                epoch,
+                writeLeg: async () => await this.writeLeg(delivery, epoch, undefined)
+            });
             return;
         }
         void this.writeLeg(delivery, epoch, refusal);
-    }
-
-    /** A staged send's first leg: `send` already read its admission refusal, and the connect's close stops its stage. */
-    private async submitStaged(
-        delivery: BrowserRallarMessageDispatch.Delivery,
-        epoch: BrowserDeliverySettlements.Epoch
-    ): Promise<void> {
-        await this.writeLeg(delivery, epoch, undefined);
     }
 
     private verifyCapture(delivery: BrowserRallarMessageDispatch.Delivery): void {

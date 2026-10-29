@@ -32,12 +32,12 @@ export namespace BrowserPublicationStages {
     export interface StagedDelivery {
         readonly delivery: LiveDelivery;
         readonly epoch: BrowserDeliverySettlements.Epoch;
+        /** Writes the delivery's carrier leg once an opportunity selects it; it states its own failure as a settlement. */
+        readonly writeLeg: () => Promise<void>;
     }
 
     export interface Input {
         readonly nowMs: () => number;
-        /** Writes one selected delivery's carrier leg; it states its own failure as a settlement. */
-        readonly submit: (delivery: LiveDelivery, epoch: BrowserDeliverySettlements.Epoch) => Promise<void>;
     }
 }
 
@@ -49,7 +49,8 @@ interface BrowserConnectPublicationStage {
 /**
  * Owns the connected session's one publication stage, on its connect's queue engine (D471). The stage settles
  * under its connect's epoch and stops when that epoch closes, which is the first step of the connect's shutdown,
- * or when the session ends, whichever comes first.
+ * or when the session ends, whichever comes first. The delivery registry's cancel reaches it before the carriers
+ * (D479), so it is built before the registry and each staged delivery carries its own leg writer.
  */
 export class BrowserPublicationStages {
     private readonly input: BrowserPublicationStages.Input;
@@ -59,12 +60,17 @@ export class BrowserPublicationStages {
         this.input = input;
     }
 
-    stage(delivery: BrowserPublicationStages.LiveDelivery, epoch: BrowserDeliverySettlements.Epoch): void {
-        if (this.current?.context === delivery.context) {
-            this.stageOn(this.current.stage, delivery, epoch);
+    stage(staged: BrowserPublicationStages.StagedDelivery): void {
+        if (this.current?.context === staged.delivery.context) {
+            this.stageOn(this.current.stage, staged);
             return;
         }
-        this.startStage(delivery, epoch);
+        this.startStage(staged);
+    }
+
+    /** Settles a value the current stage holds `cancelled` under its epoch; false when no stage holds it. */
+    cancel(msgId: string): boolean {
+        return this.current?.stage.cancel(msgId) ?? false;
     }
 
     /** No production caller reads it yet: S1-ii's usage report is its consumer, and the tests read it until then. */
@@ -83,9 +89,9 @@ export class BrowserPublicationStages {
      * A delivery of another connect stops the current stage first: one connect holds staged values at a time. The new
      * stage watches its epoch once it holds the delivery, so an epoch already closing stops it at once, under that epoch.
      */
-    private startStage(delivery: BrowserPublicationStages.LiveDelivery, epoch: BrowserDeliverySettlements.Epoch): void {
+    private startStage(staged: BrowserPublicationStages.StagedDelivery): void {
         this.stopStage();
-        const { context } = delivery;
+        const { delivery: { context }, epoch } = staged;
         const stage = new ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery>({
             taskId: PUBLICATION_STAGE_TASK_ID,
             queueEngine: context.middleware.qboxEngine,
@@ -96,7 +102,7 @@ export class BrowserPublicationStages {
             limits: context.middleware.publicationStageLimits
         });
         this.current = { context, stage };
-        this.stageOn(stage, delivery, epoch);
+        this.stageOn(stage, staged);
         epoch.onClose(() => this.stopStageOf(stage));
     }
 
@@ -108,16 +114,16 @@ export class BrowserPublicationStages {
 
     private stageOn(
         stage: ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery>,
-        delivery: BrowserPublicationStages.LiveDelivery,
-        epoch: BrowserDeliverySettlements.Epoch
+        staged: BrowserPublicationStages.StagedDelivery
     ): void {
+        const { delivery, epoch } = staged;
         const { message, carrier } = delivery;
         const result = stage.stage({
             msg: message,
             carrier,
             policy: delivery.publication.policy,
             bytes: computeALMessageEnvelopeBytes(message).right ?? AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
-            context: { delivery, epoch }
+            context: staged
         });
         if (result.kind === 'refused') {
             this.settleAdmission(delivery, epoch, result);
@@ -131,9 +137,7 @@ export class BrowserPublicationStages {
     private async submit(
         selected: readonly ALOutboundStagedPublication<BrowserPublicationStages.StagedDelivery>[]
     ): Promise<void> {
-        const outcomes = await Promise.allSettled(
-            selected.map(({ context }) => this.input.submit(context.delivery, context.epoch))
-        );
+        const outcomes = await Promise.allSettled(selected.map(({ context }) => context.writeLeg()));
         const failures = selected.flatMap(({ context }, index) => {
             const outcome = outcomes[index];
             return outcome?.status === 'rejected' ? [{ context, error: toError(outcome.reason) }] : [];

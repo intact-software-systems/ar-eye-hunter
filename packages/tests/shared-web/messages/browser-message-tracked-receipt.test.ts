@@ -12,6 +12,7 @@ import { BrowserDeliverySettlements } from '@shared-web/browser/connection/brows
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
@@ -554,7 +555,12 @@ function createDispatchHarness(
     }, () => middleware.session);
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
-    const dispatch = new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now });
+    const dispatch = new BrowserRallarMessageDispatch({
+        deliveries: registry,
+        sessionDeliveries,
+        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
+        nowMs: Date.now
+    });
     const canFallback = admits.ws !== undefined && admits.rtc !== undefined;
     return {
         registry,

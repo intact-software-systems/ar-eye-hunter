@@ -164,7 +164,7 @@ function createBrowserSessionMessaging(
     state: BrowserStateComposition,
     delivery: typeof browserDeliveryComposition
 ): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
-    const { nowMs, deliveries, sessionDeliveries } = delivery;
+    const { nowMs, publicationStages, deliveries, sessionDeliveries } = delivery;
     const recovery = createBrowserResyncRecoveryComposition({ nowMs });
     const session = createBrowserSessionCoreComposition({
         foundation,
@@ -184,6 +184,7 @@ function createBrowserSessionMessaging(
         wsInbox: stateEvents.wsInbox,
         deliveries,
         sessionDeliveries,
+        publicationStages,
         nowMs,
         recoveryOwners: recovery.recoveryOwners,
         state,

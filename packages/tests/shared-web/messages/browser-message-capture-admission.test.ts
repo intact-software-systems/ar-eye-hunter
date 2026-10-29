@@ -9,6 +9,7 @@ import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import {
     newALBroadcastMessage,
@@ -72,6 +73,7 @@ describe('required capture at final message admission', () => {
             const dispatch = new BrowserRallarMessageDispatch({
                 deliveries,
                 sessionDeliveries,
+                publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
                 nowMs: () => {
                     if (phase === 'clock') {
                         replace();
@@ -131,6 +133,7 @@ describe('required capture at final message admission', () => {
         const dispatch = new BrowserRallarMessageDispatch({
             deliveries,
             sessionDeliveries,
+            publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
             nowMs: () => {
                 if (!clockFailed) {
                     clockFailed = true;
@@ -224,7 +227,12 @@ describe('required capture at final message admission', () => {
             }, () => owner.session);
             sessionDeliveries.beginSession(context.session);
             feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
-            const dispatch = new BrowserRallarMessageDispatch({ deliveries, sessionDeliveries, nowMs: () => 1 });
+            const dispatch = new BrowserRallarMessageDispatch({
+                deliveries,
+                sessionDeliveries,
+                publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
+                nowMs: () => 1
+            });
             const message = newALMulticastMessage(
                 context.session.sessionId,
                 { topicId: 'app.capture', contextId: 'room', resourceId: 'congested' },

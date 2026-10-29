@@ -29,6 +29,10 @@ import {
     type ALOutboundPublicationLedgerReport
 } from './al-outbound-publication-ledger.ts';
 import type { ALOutboundStagedPublication } from './al-outbound-staged-publication.ts';
+import {
+    computeALPublicationReconfiguration,
+    isSameALPublicationPolicy
+} from './compute-al-publication-reconfiguration.ts';
 import { computeALPublicationSelection } from './compute-al-publication-selection.ts';
 
 export interface ALOutboundPublicationLaneReport {
@@ -50,11 +54,15 @@ const DISPOSED_VERDICT: ALDeliveryAdmissionVerdict = {
     detail: 'The publication stage is disposed.'
 };
 
-/** One live channel's staged values: `streams` keeps first-staged order, and each stream holds its values oldest first. */
+/**
+ * One live channel's staged values: `streams` keeps first-staged order, and each stream holds its values oldest
+ * first. `cursor` is the index in `streams` of the stream the next opportunity serves first (D478).
+ */
 interface ALOutboundPublicationLane<TContext> {
     readonly laneKey: string;
-    readonly policy: ALPublicationPolicy;
+    policy: ALPublicationPolicy;
     readonly streams: Map<string, readonly ALOutboundStagedPublication<TContext>[]>;
+    cursor: number;
     lastOpportunityAtMs: number | undefined;
     nextOpportunityAtMs: number | undefined;
 }
@@ -122,6 +130,7 @@ export class ALOutboundPublicationStage<TContext> {
         this.assertStageOpen();
         const laneKey = toALPublicationLaneKey(input.msg);
         const lane = this.lanes.get(laneKey) ?? createIdleLane<TContext>(laneKey, input.policy);
+        this.reconfigureLane(lane, input.policy);
         const publication = toStagedPublication(input, laneKey, this.input.clock.nowMs());
         const previous = lane.streams.get(publication.streamKey) ?? [];
         const { retained, displaced } = retainNewest([...previous, publication], lane.policy.retainNewest);
@@ -138,7 +147,7 @@ export class ALOutboundPublicationStage<TContext> {
         this.input.settle(toStagedSettlement(publication));
         this.ledger.count('staged', 1);
         this.writeStream(lane, publication.streamKey, retained);
-        this.settleSuperseded(displaced, publication);
+        this.settleSuperseded(displaced, publication, publication.stagedAtMs);
         if (lane.nextOpportunityAtMs === undefined) {
             this.scheduleLane(lane, publication.stagedAtMs);
             this.input.queueEngine.wake();
@@ -162,6 +171,26 @@ export class ALOutboundPublicationStage<TContext> {
         };
     }
 
+    /** Settles a value the stage still holds `cancelled`; a value an opportunity selected is its carrier's to cancel. */
+    cancel(msgId: string): boolean {
+        const found = findStagedPublication(this.lanes.values(), msgId);
+        if (found === undefined) {
+            return false;
+        }
+        const { lane, publication } = found;
+        const stream = lane.streams.get(publication.streamKey) ?? [];
+        this.writeStream(lane, publication.streamKey, stream.filter((value) => value.msgId !== msgId));
+        this.ledger.count('cancelled', 1);
+        this.input.settle({
+            kind: 'cancelled',
+            msgId,
+            carrier: publication.carrier,
+            atMs: this.input.clock.nowMs(),
+            traceId: publication.traceId
+        });
+        return true;
+    }
+
     readReport(): ALOutboundPublicationStageReport {
         return { lanes: this.lanes.size, ...this.ledger.readReport() };
     }
@@ -181,23 +210,64 @@ export class ALOutboundPublicationStage<TContext> {
         staged.forEach((publication) => this.settleAdmission(publication, atMs, DISPOSED_VERDICT));
     }
 
-    /** The one write of a stream's values, so the ledger's totals are always the streams' contents. */
+    /**
+     * The one write of a stream's values, so the ledger's totals are always the streams' contents. Removing a stream
+     * before the cursor moves the cursor with it, so it still names the stream it named.
+     */
     private writeStream(
         lane: ALOutboundPublicationLane<TContext>,
         streamKey: string,
         values: readonly ALOutboundStagedPublication<TContext>[]
     ): void {
         this.ledger.recordStreamChange({ previous: lane.streams.get(streamKey) ?? [], next: values });
-        if (values.length === 0) {
-            lane.streams.delete(streamKey);
+        if (values.length > 0) {
+            lane.streams.set(streamKey, values);
             return;
         }
-        lane.streams.set(streamKey, values);
+        const index = [...lane.streams.keys()].indexOf(streamKey);
+        if (index !== -1 && index < lane.cursor) {
+            lane.cursor -= 1;
+        }
+        lane.streams.delete(streamKey);
+    }
+
+    /** A send whose policy differs from its lane's reconfigures the lane before its value is staged (D479). */
+    private reconfigureLane(lane: ALOutboundPublicationLane<TContext>, policy: ALPublicationPolicy): void {
+        if (isSameALPublicationPolicy(lane.policy, policy)) {
+            return;
+        }
+        const atMs = this.input.clock.nowMs();
+        const streamKeys = [...lane.streams.keys()];
+        const reconfiguration = computeALPublicationReconfiguration({
+            streams: [...lane.streams.values()],
+            policy,
+            lastOpportunityAtMs: lane.lastOpportunityAtMs,
+            nextOpportunityAtMs: lane.nextOpportunityAtMs,
+            nowMs: atMs
+        });
+        lane.policy = policy;
+        lane.nextOpportunityAtMs = reconfiguration.nextOpportunityAtMs;
+        streamKeys.forEach((streamKey, index) =>
+            this.writeStream(lane, streamKey, reconfiguration.remaining[index] ?? [])
+        );
+        reconfiguration.superseded.forEach(({ displaced, replacement }) =>
+            this.settleSuperseded([displaced], replacement, atMs)
+        );
+        this.ledger.count('refused', reconfiguration.oversized.length);
+        reconfiguration.oversized.forEach((publication) =>
+            this.settleAdmission(publication, atMs, {
+                kind: 'refused',
+                reason: 'oversized',
+                detail: toOversizedDetail(publication.bytes, policy.drain.bytes)
+            })
+        );
+        this.wakeAtNextOpportunity();
     }
 
     private settleSuperseded(
         displaced: readonly ALOutboundStagedPublication<TContext>[],
-        publication: ALOutboundStagedPublication<TContext>
+        replacement: ALOutboundStagedPublication<TContext>,
+        atMs: number
     ): void {
         this.ledger.count('superseded', displaced.length);
         displaced.forEach((value) =>
@@ -205,10 +275,10 @@ export class ALOutboundPublicationStage<TContext> {
                 kind: 'superseded',
                 msgId: value.msgId,
                 carrier: value.carrier,
-                atMs: publication.stagedAtMs,
-                replacementMsgId: publication.msgId,
+                atMs,
+                replacementMsgId: replacement.msgId,
                 detail: 'A newer live value of the stream displaced it before its opportunity.',
-                traceId: publication.traceId
+                traceId: replacement.traceId
             })
         );
     }
@@ -235,6 +305,10 @@ export class ALOutboundPublicationStage<TContext> {
         if (this.disposed) {
             return;
         }
+        this.wakeAtNextOpportunity();
+    }
+
+    private wakeAtNextOpportunity(): void {
         const nextOpportunities = [...this.lanes.values()].flatMap((lane) => lane.nextOpportunityAtMs ?? []);
         this.input.queueEngine.wakeAt(
             this.input.taskId,
@@ -253,8 +327,10 @@ export class ALOutboundPublicationStage<TContext> {
         const selection = computeALPublicationSelection({
             streams: [...lane.streams.values()],
             drain: lane.policy.drain,
-            nowMs: atMs
+            nowMs: atMs,
+            startIndex: lane.cursor
         });
+        lane.cursor = selection.nextStartIndex;
         streamKeys.forEach((streamKey, index) => this.writeStream(lane, streamKey, selection.remaining[index] ?? []));
         selection.expired.forEach((publication) => this.settleExpired(publication, atMs));
         const deferred = selection.remaining.reduce((count, stream) => count + stream.length, 0);
@@ -329,7 +405,14 @@ export class ALOutboundPublicationStage<TContext> {
 }
 
 function createIdleLane<TContext>(laneKey: string, policy: ALPublicationPolicy): ALOutboundPublicationLane<TContext> {
-    return { laneKey, policy, streams: new Map(), lastOpportunityAtMs: undefined, nextOpportunityAtMs: undefined };
+    return {
+        laneKey,
+        policy,
+        streams: new Map(),
+        cursor: 0,
+        lastOpportunityAtMs: undefined,
+        nextOpportunityAtMs: undefined
+    };
 }
 
 function isLaneDue<TContext>(lane: ALOutboundPublicationLane<TContext>, nowMs: number): boolean {
@@ -346,10 +429,27 @@ function resolveStageRefusal<TContext>(
         return {
             kind: 'refused',
             reason: 'oversized',
-            detail: `A live value of ${publication.bytes} bytes exceeds the drain budget of ${lane.policy.drain.bytes}.`
+            detail: toOversizedDetail(publication.bytes, lane.policy.drain.bytes)
         };
     }
     return ledgerRefusal === undefined ? undefined : { kind: 'refused', reason: 'capacity', ...ledgerRefusal };
+}
+
+function toOversizedDetail(bytes: number, drainBytes: number): string {
+    return `A live value of ${bytes} bytes exceeds the drain budget of ${drainBytes}.`;
+}
+
+function findStagedPublication<TContext>(
+    lanes: Iterable<ALOutboundPublicationLane<TContext>>,
+    msgId: string
+): { lane: ALOutboundPublicationLane<TContext>; publication: ALOutboundStagedPublication<TContext>; } | undefined {
+    for (const lane of lanes) {
+        const publication = [...lane.streams.values()].flat().find((value) => value.msgId === msgId);
+        if (publication !== undefined) {
+            return { lane, publication };
+        }
+    }
+    return undefined;
 }
 
 /** A message without a deadline never expires on the stage, as admission reads it. */

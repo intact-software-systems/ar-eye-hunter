@@ -2,6 +2,7 @@ import { BrowserDeliverySettlements } from '@shared-web/browser/connection/brows
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -66,6 +67,7 @@ function createFallbackFixture(
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,
+        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
         nowMs: Date.now
     });
     return {

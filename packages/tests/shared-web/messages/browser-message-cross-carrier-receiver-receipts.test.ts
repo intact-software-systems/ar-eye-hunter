@@ -15,6 +15,7 @@ import { BrowserDeliverySettlements } from '@shared-web/browser/connection/brows
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     newALMulticastMessage,
@@ -544,7 +545,12 @@ function createReceiptLoopOrigin(
     }, () => middleware.session);
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
-    const dispatch = new BrowserRallarMessageDispatch({ deliveries: owners.registry, sessionDeliveries, nowMs: Date.now });
+    const dispatch = new BrowserRallarMessageDispatch({
+        deliveries: owners.registry,
+        sessionDeliveries,
+        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
+        nowMs: Date.now
+    });
     const message = createReceiptLoopMessage(expectation);
     const delivery: BrowserRallarMessageDispatch.Delivery = {
         requestedConfiguration: undefined,

@@ -322,7 +322,9 @@ describe('ALOutboundPublicationStage', () => {
     });
 
     it('stages a value on a full stage when retention displaces the oldest of its stream', () => {
-        const fixture = createStageFixture({ limits: { maxStagedValues: 2, maxStagedBytes: 2 * VALUE_BYTES } });
+        const fixture = createStageFixture({
+            limits: { maxStreams: 2, maxStagedValues: 2, maxStagedBytes: 2 * VALUE_BYTES }
+        });
         const first = stageValue(fixture, 'v1', { resourceId: 'entity-1' });
         stageValue(fixture, 'v2', { resourceId: 'entity-2' });
 
@@ -358,7 +360,7 @@ describe('ALOutboundPublicationStage', () => {
         expect(fixture.stage.readReport()).toMatchObject({ streams: 1, staged: 1, counters: { staged: 1, refused: 1 } });
     });
 
-    it('refuses an oversized value oversized before it reads the stage\'s limits', () => {
+    it('refuses a value heavier than the drain budget before it reads the stage\'s limits', () => {
         const fixture = createStageFixture({ limits: { maxStreams: 1 } });
         stageValue(fixture, 'v1', { resourceId: 'entity-1' });
 
@@ -454,6 +456,12 @@ describe('ALOutboundPublicationStage', () => {
             verdict: { kind: 'failed', detail: 'leg write failed' },
             trackedReceiptAlgo: 'none'
         });
+        expect(fixture.stage.readReport()).toMatchObject({
+            streams: 0,
+            staged: 0,
+            stagedBytes: 0,
+            counters: { admitted: 1 }
+        });
         expect(fixture.reportTaskFailure).not.toHaveBeenCalled();
     });
 
@@ -500,5 +508,158 @@ describe('ALOutboundPublicationStage', () => {
         ]);
         expect(fixture.stage.readReport()).toMatchObject({ lanes: 0, streams: 0, staged: 0, stagedBytes: 0 });
         expect(() => stageValue(fixture, 'v3')).toThrow('The publication stage is disposed.');
+    });
+
+    it('serves the streams of a lane in turn when its drain takes one value per opportunity', async () => {
+        const fixture = createStageFixture();
+        const policy: ALPublicationPolicy = { cadenceMs: 100, retainNewest: 2, drain: { messages: 1, bytes: 65_536 } };
+        ['a1', 'a2'].forEach((context) => stageValue(fixture, context, { resourceId: 'entity-a', policy }));
+        ['b1', 'b2'].forEach((context) => stageValue(fixture, context, { resourceId: 'entity-b', policy }));
+
+        for (const opportunity of [0, 1, 2, 3]) {
+            fixture.clock.atMs = START_MS + opportunity * policy.cadenceMs;
+            await runEnginePass(fixture.engine);
+        }
+
+        expect(fixture.submitted).toEqual([['a1'], ['b1'], ['a2'], ['b2']]);
+    });
+
+    it('keeps its turn on the next stream when the stream it served empties', async () => {
+        const fixture = createStageFixture();
+        const policy: ALPublicationPolicy = { cadenceMs: 100, retainNewest: 2, drain: { messages: 1, bytes: 65_536 } };
+        stageValue(fixture, 'a1', { resourceId: 'entity-a', policy });
+        ['b1', 'b2'].forEach((context) => stageValue(fixture, context, { resourceId: 'entity-b', policy }));
+        ['c1', 'c2'].forEach((context) => stageValue(fixture, context, { resourceId: 'entity-c', policy }));
+
+        for (const opportunity of [0, 1, 2, 3, 4]) {
+            fixture.clock.atMs = START_MS + opportunity * policy.cadenceMs;
+            await runEnginePass(fixture.engine);
+        }
+
+        expect(fixture.submitted).toEqual([['a1'], ['b1'], ['c1'], ['b2'], ['c2']]);
+    });
+
+    it('cancels a staged value: it settles cancelled, is never submitted, and is counted', async () => {
+        const fixture = createStageFixture();
+        const staged = stageValue(fixture, 'v1');
+
+        expect(fixture.stage.cancel(staged.msgId)).toBe(true);
+        expect(fixture.stage.cancel(staged.msgId)).toBe(false);
+        await runEnginePass(fixture.engine);
+
+        expect(fixture.submitted).toEqual([]);
+        expect(fixture.settlements).toEqual([
+            expect.objectContaining({ kind: 'staged', msgId: staged.msgId }),
+            expect.objectContaining({ kind: 'cancelled', msgId: staged.msgId, carrier: 'rtc', atMs: START_MS })
+        ]);
+        expect(fixture.stage.readReport()).toMatchObject({
+            streams: 0,
+            staged: 0,
+            stagedBytes: 0,
+            counters: { staged: 1, cancelled: 1, admitted: 0 }
+        });
+    });
+
+    it('answers a cancel of a value it does not hold, or one an opportunity already selected, false', async () => {
+        let releaseSubmit: () => void = () => undefined;
+        const submitHeld = new Promise<void>((resolve) => {
+            releaseSubmit = resolve;
+        });
+        const submitted: string[][] = [];
+        const fixture = createStageFixture({
+            submit: async (selected) => {
+                submitted.push(selected.map((publication) => publication.context));
+                await submitHeld;
+            }
+        });
+        expect(fixture.stage.cancel('unknown-msg')).toBe(false);
+        const staged = stageValue(fixture, 'v1');
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(submitted).toEqual([['v1']]));
+
+        expect(fixture.stage.cancel(staged.msgId)).toBe(false);
+        releaseSubmit();
+        await pass;
+        await fixture.engine.stop();
+
+        expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['staged']);
+        expect(fixture.stage.readReport().counters).toMatchObject({ cancelled: 0, admitted: 1 });
+    });
+
+    it('supersedes the oldest values of each stream by its newest when a send shrinks the lane\'s retention', () => {
+        const fixture = createStageFixture();
+        const wide: ALPublicationPolicy = { ...LATEST_POLICY, retainNewest: 3 };
+        const [first, second, third] = ['v1', 'v2', 'v3'].map((context) => stageValue(fixture, context, { policy: wide }));
+
+        stageValue(fixture, 'w1', { resourceId: 'entity-2', policy: LATEST_POLICY });
+
+        const superseded = fixture.settlements.filter((settlement) => settlement.kind === 'superseded');
+        expect(superseded.map((settlement) => [settlement.msgId, settlement.replacementMsgId])).toEqual([
+            [first?.msgId, third?.msgId],
+            [second?.msgId, third?.msgId]
+        ]);
+        expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({
+            policy: LATEST_POLICY,
+            staged: 2,
+            streams: 2
+        });
+        expect(fixture.stage.readReport().counters).toMatchObject({ staged: 4, superseded: 2 });
+    });
+
+    it('keeps every staged value when a send grows the lane\'s retention', () => {
+        const fixture = createStageFixture();
+        const wide: ALPublicationPolicy = { ...LATEST_POLICY, retainNewest: 3 };
+        stageValue(fixture, 'v1');
+
+        const grown = stageValue(fixture, 'v2', { policy: wide });
+
+        expect(grown).toMatchObject({ kind: 'staged', displacedMsgId: undefined });
+        expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['staged', 'staged']);
+        expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({ policy: wide, staged: 2, streams: 1 });
+    });
+
+    it('refuses a staged value heavier than the lane\'s new drain budget oversized', () => {
+        const fixture = createStageFixture();
+        const narrow: ALPublicationPolicy = { ...LATEST_POLICY, drain: { messages: 8, bytes: 200 } };
+        const heavy = stageValue(fixture, 'heavy', { bytes: 500 });
+
+        stageValue(fixture, 'light', { resourceId: 'entity-2', policy: narrow });
+
+        expect(fixture.settlements.filter((settlement) => settlement.msgId === heavy.msgId)).toEqual([
+            expect.objectContaining({ kind: 'staged' }),
+            expect.objectContaining({
+                kind: 'admission',
+                atMs: START_MS,
+                verdict: {
+                    kind: 'refused',
+                    reason: 'oversized',
+                    detail: 'A live value of 500 bytes exceeds the drain budget of 200.'
+                },
+                trackedReceiptAlgo: 'none'
+            })
+        ]);
+        expect(fixture.stage.readReport()).toMatchObject({ staged: 1, stagedBytes: VALUE_BYTES, counters: { refused: 1 } });
+    });
+
+    it('moves the next boundary earlier when a send shrinks the cadence, and runs one opportunity there', async () => {
+        const fixture = createStageFixture();
+        const slow: ALPublicationPolicy = { ...LATEST_POLICY, cadenceMs: 500 };
+        const fast: ALPublicationPolicy = { ...LATEST_POLICY, cadenceMs: 200 };
+        stageValue(fixture, 'v1', { policy: slow });
+        await runEnginePass(fixture.engine);
+        fixture.clock.atMs = START_MS + 100;
+        stageValue(fixture, 'v2', { policy: slow });
+
+        fixture.clock.atMs = START_MS + 150;
+        stageValue(fixture, 'v3', { policy: fast });
+
+        expect(fixture.stage.readLane('arena/arena.pose.v1')?.nextOpportunityAtMs).toBe(START_MS + 200);
+        fixture.clock.atMs = START_MS + 200;
+        await runEnginePass(fixture.engine);
+        fixture.clock.atMs = START_MS + 500;
+        await runEnginePass(fixture.engine);
+
+        expect(fixture.submitted).toEqual([['v1'], ['v3']]);
+        expect(opportunitiesOf(fixture.diagnostics)).toHaveLength(2);
     });
 });
