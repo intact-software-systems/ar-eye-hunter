@@ -792,7 +792,7 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
     await expect(runtime.sendMessage({ ...send, handleId: 'h-list', recipientPeer: 'receiver' }))
         .rejects.toThrow(
             `${prefix}: messages.send.recipientPeer receiver names no peer: the room holds 2 other live sessions of ` +
-                'another principal, not exactly one.'
+                'another principal, not exactly one, and the room names no leader.'
         );
     await expect(runtime.sendMessage({ ...send, handleId: 'h-role', recipientPeer: 'sibling' }))
         .rejects.toThrow('messages.send.recipientPeer must be receiver or recipient-b.');
@@ -806,7 +806,7 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
     expect(facade.records.typedSends).toEqual([]);
 });
 
-it('lists recipient-b by its role as the one other session of another principal that is not the room\'s leader', async () => {
+it('lists recipient-b by its role as the one other session of another principal that is not the room\'s leader, and the receiver as the leader', async () => {
     const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     facade.behavior.getRoomSessions.mockReturnValue([
@@ -820,6 +820,9 @@ it('lists recipient-b by its role as the one other session of another principal 
 
     expect(facade.records.typedSends.map(([, options]) => [options?.ack, options?.recipientPeerIds]))
         .toEqual([['group-leader', ['carol-session']]]);
+    // The receiver is the leader there, so the same room lists it beside recipient-b.
+    await runtime.sendMessage({ ...send, handleId: 'h-leader', recipientPeer: 'receiver' });
+    expect(facade.records.typedSends.at(-1)?.[1]?.recipientPeerIds).toEqual(['bob-session']);
     facade.behavior.getRoomLeaderSessionId.mockReturnValue(undefined);
     await expect(runtime.sendMessage({ ...send, handleId: 'h-no-leader', recipientPeer: 'recipient-b' }))
         .rejects.toThrow(

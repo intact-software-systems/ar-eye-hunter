@@ -4,28 +4,26 @@ import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import {
     NEVER_ATTEMPTED,
+    PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
     STAGE_DISPLACED,
+    toPublicationSendCommands,
+    toPublicationTtlMs,
+    toPublicationVerdictCommands
+} from './publication-commands.ts';
+import {
     toArrivalCountCommand,
     toNoFurtherArrivalCommand,
-    toPublicationSendCommands,
-    toPublicationVerdictCommands,
-    toSeqArrivalWait
-} from './publication-commands.ts';
+    toSeqArrivalWait,
+    toSeqNotYetWait
+} from './publication-receiver-commands.ts';
 
 const PACED_NEWEST_N_PUBLICATION: ALPublicationPolicy = {
-    cadenceMs: 500,
+    cadenceMs: PUBLICATION_CADENCE_MS,
     retainNewest: 3,
     drain: { messages: 2, bytes: PUBLICATION_DRAIN_BYTES }
 };
 const LAST_SEND = 4;
-/**
- * The last send waits for the third opportunity, two cadences after the first. The live channel's own 1 000 ms
- * lifetime would leave it only its staging lead over that opportunity, so a late engine pass would expire it; one more
- * cadence keeps the cell about selection, not about the lifetime.
- */
-const PACED_NEWEST_N_TTL_MS = 1_500;
-const NO_FURTHER_ARRIVAL_WINDOW_MS = 3_000;
 
 /**
  * D469 with three values retained and two drained per opportunity: send 0 is admitted at once; send 4 displaces send
@@ -46,7 +44,8 @@ export const pacedNewestN: AlmConformanceScenarioDefinition = {
             step: sender,
             burst: LAST_SEND,
             publication: PACED_NEWEST_N_PUBLICATION,
-            ttlMs: PACED_NEWEST_N_TTL_MS
+            ttlMs: toPublicationTtlMs(2),
+            streams: 'one'
         }),
         ...toPublicationVerdictCommands({ step: sender, index: LAST_SEND, state: 'staged', facts: [] }),
         ...toPublicationVerdictCommands({
@@ -60,15 +59,15 @@ export const pacedNewestN: AlmConformanceScenarioDefinition = {
         )
     ],
     toRecipientCommands: (receiver) => [
-        toArrivalCountCommand(receiver, 1),
-        toSeqArrivalWait(receiver, 0, 'arrived'),
-        toSeqArrivalWait(receiver, 2, 'not-yet'),
-        toArrivalCountCommand(receiver, 3),
-        toSeqArrivalWait(receiver, 2, 'arrived'),
-        toSeqArrivalWait(receiver, 3, 'arrived'),
-        toSeqArrivalWait(receiver, LAST_SEND, 'not-yet'),
-        toArrivalCountCommand(receiver, 4),
-        toSeqArrivalWait(receiver, LAST_SEND, 'arrived'),
-        toNoFurtherArrivalCommand(receiver, 5, NO_FURTHER_ARRIVAL_WINDOW_MS)
+        toArrivalCountCommand(receiver, 1, 0),
+        toSeqArrivalWait(receiver, 0),
+        toSeqNotYetWait(receiver, 2, 0),
+        toArrivalCountCommand(receiver, 3, 1),
+        toSeqArrivalWait(receiver, 2),
+        toSeqArrivalWait(receiver, 3),
+        toSeqNotYetWait(receiver, LAST_SEND, 3),
+        toArrivalCountCommand(receiver, 4, 2),
+        toSeqArrivalWait(receiver, LAST_SEND),
+        toNoFurtherArrivalCommand(receiver, 5)
     ]
 };

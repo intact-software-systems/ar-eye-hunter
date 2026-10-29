@@ -383,8 +383,8 @@ export type RallarBlackBoxTestMessagesSendCommand =
         principalId?: string;
         /**
          * A fixed audience of one inside the room, by lane role, resolved by the page at send time among the room's other
-         * live sessions whose principal is not the sender's: `receiver` is the one such session, `recipient-b` the one
-         * that is not the room's leader. Absent, the send names no list.
+         * live sessions whose principal is not the sender's: `receiver` is the one such session, or the room's leader when
+         * there are several, and `recipient-b` the one that is not the leader. Absent, the send names no list.
          */
         recipientPeer?: 'receiver' | 'recipient-b';
         /** `exclusive` claims the send's resource for the sending session; absent, the send is `shared`. */

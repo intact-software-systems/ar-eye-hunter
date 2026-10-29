@@ -3,19 +3,26 @@ import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle
 
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestMessagesReceivedCommand,
-    RallarBlackBoxTestMessagesSendCommand,
-    RallarBlackBoxTestWaitCommand
+    RallarBlackBoxTestLoopCommand,
+    RallarBlackBoxTestMessagesSendCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
-import { toPayloadWait, toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
-import { toCommandId, toLoopIterationSendHandleId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
+import { toCommandId, toLoopIterationSendHandleId } from '../../alm-conformance-step-identities.ts';
 
-/** A paced cell's sends run 10 ms apart, far inside its cadence of 500 ms or more, so they meet in one staged window. */
-export const PUBLICATION_SEND_INTERVAL_MS = 10;
+/**
+ * Every paced cell's cadence. The ALM observation job of main run 40875760473 (86800bff2, `ws` smoke) measured the lead
+ * send's `transport-accepted` 244 ms after staging and a loop of five sends 10 ms apart at 305 ms end to end, so at a
+ * 500 ms cadence the loop straddled the second opportunity; locally the lead admits in 2 to 3 ms and the loop runs in
+ * about 60 ms. The cadence must exceed the lead's admission plus the sends' spread with margin, and half of it, the
+ * lead's budget, still proves an idle lane admits at once against a boundary one cadence away.
+ */
+export const PUBLICATION_CADENCE_MS = 2_000;
+
+/** A paced cell's loop sends run 10 ms apart, far inside its cadence, so they meet in one staged window. */
+const PUBLICATION_SEND_INTERVAL_MS = 10;
 
 /** Far above one specimen's envelope, so only the drain's message budget decides a selection. */
 export const PUBLICATION_DRAIN_BYTES = 64 * 1024;
@@ -26,9 +33,9 @@ export const PUBLICATION_DRAIN_BYTES = 64 * 1024;
  * lane's first boundary, one cadence later, misses this budget and fails the cell, which is how the cells prove D469's
  * "admitted at once" on an idle lane.
  */
-export const PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO = 0.5;
+const PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO = 0.5;
 
-/** A value the stage displaced or expired never reached a carrier admission. */
+/** A value the stage displaced, expired, cancelled or refused never reached a carrier admission. */
 export const NEVER_ATTEMPTED: AlmPublicationFact = ['attempts', 0];
 
 /**
@@ -40,13 +47,40 @@ export const STAGE_DISPLACED: AlmPublicationFact = ['reason', 'displaced it befo
 /** One field of an observation and the value it must hold: equal to it, or containing it. */
 export type AlmPublicationFact = readonly [field: string, expected: string | number, operator?: 'contains'];
 
+/** The one session a send lists, by lane role; undefined, the send addresses its room. */
+export type AlmPublicationRecipientPeer = RallarBlackBoxTestMessagesSendCommand['recipientPeer'];
+
+/** `one`: every loop send on the lead's stream; `one-per-send`: each iteration on a resource of its own. */
+export type AlmPublicationLoopStreams = 'one' | 'one-per-send';
+
 interface AlmPublicationSendsInput {
     readonly step: AlmConformanceStepInput;
     /** The sends after the lead send 0, which the loop names 1 to `burst`. */
     readonly burst: number;
     readonly publication: ALPublicationPolicy;
-    /** The lifetime of sends 1 to `burst`; absent, the live channel's own. The lead send 0 always keeps the channel's. */
-    readonly ttlMs?: number;
+    /** The lifetime of sends 1 to `burst`. The lead send 0 always keeps the live channel's own. */
+    readonly ttlMs: number;
+    readonly streams: AlmPublicationLoopStreams;
+}
+
+interface AlmPublicationSendInput {
+    readonly step: AlmConformanceStepInput;
+    readonly index: number;
+    readonly publication: ALPublicationPolicy;
+    readonly ttlMs: number;
+    /** Undefined on the lead's stream; otherwise the suffix of a resource of its own. */
+    readonly stream: string | undefined;
+    readonly recipientPeer: AlmPublicationRecipientPeer;
+}
+
+interface AlmPublicationLiveSend {
+    readonly step: AlmConformanceStepInput;
+    readonly index: number;
+    readonly publication: ALPublicationPolicy;
+    /** Undefined keeps the live channel's own lifetime. */
+    readonly ttlMs: number | undefined;
+    readonly resourceId: string;
+    readonly recipientPeer: AlmPublicationRecipientPeer;
 }
 
 interface AlmPublicationVerdictInput {
@@ -59,56 +93,99 @@ interface AlmPublicationVerdictInput {
 }
 
 /**
- * Live sends of one specimen on one resource, so one stream key. Send 0 stages on the idle lane, whose opportunity runs
- * on the session engine's next pass, so the sender waits for its admission, bounded by
- * `PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO`: a send staged before that pass would displace it or share its drain. Send 0
- * keeps the live channel's own lifetime, so a cell's short one never races its admission or arrival. The
- * loop then sends 1 to `burst`: iteration `n` (from 1) names the handle of send
- * `n` and carries `seq` `n`, a number, since a loop writes a string that is only `{loop.iteration}` as the
- * iteration's number. A command's budget is the harness's own: a live send returns once it is staged.
+ * The lifetime of a value staged before the `opportunity`-th boundary after the lead's admission and carried by it: one
+ * cadence past that boundary, since the live channel's own 1 000 ms would expire it before its first.
  */
-export function toPublicationSendCommands(sends: AlmPublicationSendsInput): readonly RallarBlackBoxTestCommand[] {
-    const { step } = sends;
-    const lead = toLiveSendCommand(sends, undefined);
+export function toPublicationTtlMs(opportunity: number): number {
+    return (opportunity + 1) * PUBLICATION_CADENCE_MS;
+}
+
+/**
+ * Send 0 stages on the idle lane, whose opportunity runs on the session engine's next pass, so the sender waits for its
+ * admission, bounded by `PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO`: a send staged before that pass would displace it or
+ * share its drain. Send 0 keeps the live channel's own lifetime, so a cell's short one never races its admission or
+ * arrival.
+ */
+export function toPublicationLeadCommands(
+    step: AlmConformanceStepInput,
+    publication: ALPublicationPolicy,
+    recipientPeer: AlmPublicationRecipientPeer
+): readonly RallarBlackBoxTestCommand[] {
     return [
-        lead,
+        toLiveSendCommand({
+            step,
+            index: 0,
+            publication,
+            ttlMs: undefined,
+            resourceId: toResourceId(step, undefined),
+            recipientPeer
+        }),
         ...toPublicationVerdictCommands({
             step,
             index: 0,
             state: 'transport-accepted',
             facts: [],
-            budgetMs: sends.publication.cadenceMs * PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO
-        }),
-        {
-            kind: 'loop',
-            commandId: toCommandId(step, 'paced-sends'),
-            count: sends.burst,
-            intervalMs: PUBLICATION_SEND_INTERVAL_MS,
-            commands: [{
-                ...toLiveSendCommand(sends, sends.ttlMs),
-                commandId: toCommandId(step, 'paced-send'),
-                handleId: toLoopIterationSendHandleId(step),
-                payload: { specimen: 'paced', seq: '{loop.iteration}' }
-            }]
-        }
+            budgetMs: publication.cadenceMs * PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO
+        })
     ];
 }
 
-function toLiveSendCommand(
-    sends: AlmPublicationSendsInput,
-    ttlMs: number | undefined
-): RallarBlackBoxTestMessagesSendCommand {
-    const send = toSendCommand({
-        ...sends.step,
-        index: 0,
-        payload: { specimen: 'paced', seq: 0 },
+/**
+ * The lead, then a loop of sends 1 to `burst`: iteration `n` (from 1) names the handle of send `n` and carries `seq`
+ * `n`, a number, since a loop writes a string that is only `{loop.iteration}` as the iteration's number. A command's
+ * budget is the harness's own: a live send returns once it is staged.
+ */
+export function toPublicationSendCommands(sends: AlmPublicationSendsInput): readonly RallarBlackBoxTestCommand[] {
+    return [...toPublicationLeadCommands(sends.step, sends.publication, undefined), toPublicationLoopCommand(sends)];
+}
+
+/** One send `index` with `seq` `index`, for a cell whose sends name their streams one by one. */
+export function toPublicationSendCommand(send: AlmPublicationSendInput): RallarBlackBoxTestMessagesSendCommand {
+    const { stream, ...live } = send;
+    return toLiveSendCommand({ ...live, resourceId: toResourceId(send.step, stream) });
+}
+
+function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackBoxTestLoopCommand {
+    const { step } = sends;
+    const stream = sends.streams === 'one' ? undefined : '{loop.iteration}';
+    return {
+        kind: 'loop',
+        commandId: toCommandId(step, 'paced-sends'),
+        count: sends.burst,
+        intervalMs: PUBLICATION_SEND_INTERVAL_MS,
+        commands: [{
+            ...toLiveSendCommand({
+                step,
+                index: 0,
+                publication: sends.publication,
+                ttlMs: sends.ttlMs,
+                resourceId: toResourceId(step, stream),
+                recipientPeer: undefined
+            }),
+            commandId: toCommandId(step, 'paced-send'),
+            handleId: toLoopIterationSendHandleId(step),
+            payload: { specimen: 'paced', seq: '{loop.iteration}' }
+        }]
+    };
+}
+
+function toResourceId(step: AlmConformanceStepInput, stream: string | undefined): string {
+    return stream === undefined ? `alm-${step.scenarioKey}` : `alm-${step.scenarioKey}-${stream}`;
+}
+
+function toLiveSendCommand(send: AlmPublicationLiveSend): RallarBlackBoxTestMessagesSendCommand {
+    const command = toSendCommand({
+        ...send.step,
+        index: send.index,
+        payload: { specimen: 'paced', seq: send.index },
         delivery: {
-            resourceId: `alm-${sends.step.scenarioKey}`,
+            resourceId: send.resourceId,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
-            ...(ttlMs === undefined ? {} : { ttlMs })
+            ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
+            ...(send.recipientPeer === undefined ? {} : { recipientPeer: send.recipientPeer })
         }
     });
-    return { ...send, purpose: 'live', publication: sends.publication };
+    return { ...command, purpose: 'live', publication: send.publication };
 }
 
 /** Send `index`'s handle reaches `state`, its observation states it, and each fact holds on that observation. */
@@ -137,50 +214,4 @@ export function toPublicationVerdictCommands(
             })
         )
     ];
-}
-
-/** The receiver holds `count` arrivals of the cell's type, within the sender's whole send budget. */
-export function toArrivalCountCommand(
-    receiver: AlmConformanceStepInput,
-    count: number
-): RallarBlackBoxTestMessagesReceivedCommand {
-    return toReceivedCommand({ ...receiver, index: count, count, absent: false });
-}
-
-/** No arrival past the `count - 1` the receiver holds within `windowMs`, which opens at the last expected one. */
-export function toNoFurtherArrivalCommand(
-    receiver: AlmConformanceStepInput,
-    count: number,
-    windowMs: number
-): RallarBlackBoxTestMessagesReceivedCommand {
-    return {
-        ...toReceivedCommand({ ...receiver, index: count, count, absent: true }),
-        windowMs,
-        timeoutMs: windowMs + RESPONSE_MARGIN_MS
-    };
-}
-
-/**
- * `arrived`: the specimen carrying `seq` has arrived. `not-yet`: read from the page's history at once, it has not; right
- * after an arrival count this orders that arrival before the specimen a later opportunity carries. The read assumes the
- * count resolves well inside one cadence of the arrival it waited for, which a slow hosted receiver could break (red,
- * never falsely green); S1-ii's hosted placement revisits it.
- */
-export function toSeqArrivalWait(
-    receiver: AlmConformanceStepInput,
-    seq: number,
-    expectation: 'arrived' | 'not-yet'
-): RallarBlackBoxTestWaitCommand {
-    const arrived = expectation === 'arrived';
-    const wait = toPayloadWait({
-        step: receiver,
-        name: `${expectation}-seq-${seq}`,
-        payload: { specimen: 'paced', seq },
-        absent: !arrived
-    });
-    return {
-        ...wait,
-        match: { ...wait.match, payloadFields: { 'data.typeId': toScenarioTypeId(receiver) } },
-        ...(arrived ? {} : { timeoutMs: 0 })
-    };
 }

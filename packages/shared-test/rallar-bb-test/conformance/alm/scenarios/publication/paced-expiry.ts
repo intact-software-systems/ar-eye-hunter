@@ -4,23 +4,24 @@ import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import {
     NEVER_ATTEMPTED,
+    PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
+    toPublicationSendCommands,
+    toPublicationVerdictCommands
+} from './publication-commands.ts';
+import {
     toArrivalCountCommand,
     toNoFurtherArrivalCommand,
-    toPublicationSendCommands,
-    toPublicationVerdictCommands,
     toSeqArrivalWait
-} from './publication-commands.ts';
+} from './publication-receiver-commands.ts';
 
 const PACED_EXPIRY_PUBLICATION: ALPublicationPolicy = {
-    cadenceMs: 1_000,
+    cadenceMs: PUBLICATION_CADENCE_MS,
     retainNewest: 1,
     drain: { messages: 8, bytes: PUBLICATION_DRAIN_BYTES }
 };
 /** Far shorter than the cadence, so send 1's deadline passes while it waits for its opportunity. */
 const PACED_EXPIRY_TTL_MS = 100;
-/** Past the second opportunity, which would carry send 1 had it not expired. */
-const NO_FURTHER_ARRIVAL_WINDOW_MS = 1_500;
 
 /** D468: send 0 is admitted at once; send 1 expires staged, before any carrier attempt. */
 export const pacedExpiry: AlmConformanceScenarioDefinition = {
@@ -35,7 +36,8 @@ export const pacedExpiry: AlmConformanceScenarioDefinition = {
             step: sender,
             burst: 1,
             publication: PACED_EXPIRY_PUBLICATION,
-            ttlMs: PACED_EXPIRY_TTL_MS
+            ttlMs: PACED_EXPIRY_TTL_MS,
+            streams: 'one'
         }),
         ...toPublicationVerdictCommands({
             step: sender,
@@ -45,8 +47,8 @@ export const pacedExpiry: AlmConformanceScenarioDefinition = {
         })
     ],
     toRecipientCommands: (receiver) => [
-        toArrivalCountCommand(receiver, 1),
-        toSeqArrivalWait(receiver, 0, 'arrived'),
-        toNoFurtherArrivalCommand(receiver, 2, NO_FURTHER_ARRIVAL_WINDOW_MS)
+        toArrivalCountCommand(receiver, 1, 0),
+        toSeqArrivalWait(receiver, 0),
+        toNoFurtherArrivalCommand(receiver, 2)
     ]
 };

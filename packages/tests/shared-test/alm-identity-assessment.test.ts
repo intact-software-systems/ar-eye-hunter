@@ -140,6 +140,19 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(new IdentityTranscript('combined').input())).toEqual([]);
     });
 
+    it('rejects a combined recipe whose paced loop repeats a reload\'s original send', () => {
+        const transcript = new IdentityTranscript('combined');
+        const original = transcript.sender.commands.find((command) =>
+            command.kind === 'messages.send' && command.commandId?.includes('-delivery-reload-') === true
+        )!;
+        const loop = transcript.sender.command('loop');
+        transcript.sender.replaceCommand({ ...loop, commands: [{ ...original, commandId: `${loop.commandId}-original` }] });
+
+        expect(assessAlmConformanceIdentity(transcript.input())).toEqual(expect.arrayContaining([
+            expect.stringContaining('reload must preserve native holds, one original send')
+        ]));
+    });
+
     it('accepts canonical zero write baseline, queued retained work, and reset counters in the new document', () => {
         const transcript = new IdentityTranscript('reload');
         const sender = transcript.sender;

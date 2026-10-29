@@ -5,7 +5,10 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type {
+    AlmConformanceLaneFamily,
+    AlmConformanceScenarioId
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
@@ -26,9 +29,7 @@ import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scen
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
-import { pacedExpiry } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-expiry.ts';
-import { pacedLatest } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-latest.ts';
-import { pacedNewestN } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-newest-n.ts';
+import { pacedIsolationLists } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-isolation-lists.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -123,11 +124,13 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'churn-bounded-tracks', carriers: churnBoundedTracks.carriers },
     // The combined connect carries one selector, the scenario topic's, so no hosted page hears a group-state delta.
     { scenarioKey: 'server-originated', carriers: serverOriginated.carriers },
-    // The paced cells' lane evidence is local; placed by S1-ii, so manifest 18 stays as recorded until then.
-    { scenarioKey: 'paced-latest', carriers: pacedLatest.carriers },
-    { scenarioKey: 'paced-newest-n', carriers: pacedNewestN.carriers },
-    { scenarioKey: 'paced-expiry', carriers: pacedExpiry.carriers }
+    // The paced list-isolation cell waits until a hosted run proves the paced send shape on three agents (D481);
+    // manifest 22 stays as recorded.
+    { scenarioKey: 'paced-isolation-lists', carriers: pacedIsolationLists.carriers }
 ];
+
+/** The cells whose sender closes and reconnects with lowered limits, the volatile bound's or the publication stage's. */
+const RECONNECTING_ALM_SCENARIO_IDS: readonly AlmConformanceScenarioId[] = ['capacity', 'paced-capacity'];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
     const scenarios = toAlmConformanceScenariosForAllCarriers('two-agent');
@@ -218,13 +221,15 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
         }).filter((scenario) => !isHetznerWithheldAlmScenario(scenario.scenarioKey, carrier))
     ).filter((scenario) => HOSTED_ALM_LANE_FAMILIES[family].includes(scenario.laneFamily));
     // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a
-    // capacity block closes and reconnects its sender, so nothing but another capacity block follows it.
+    // capacity block closes and reconnects its sender under lowered limits, so nothing but another such block follows it.
+    const isReconnecting = (scenario: AlmConformanceScenario) =>
+        RECONNECTING_ALM_SCENARIO_IDS.includes(scenario.scenarioId);
     const isHoisted = (scenario: AlmConformanceScenario) =>
-        scenario.scenarioId === 'delivery-reload' || scenario.scenarioId === 'capacity';
+        scenario.scenarioId === 'delivery-reload' || isReconnecting(scenario);
     return [
         ...scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload'),
         ...scenarios.filter((scenario) => !isHoisted(scenario)),
-        ...scenarios.filter((scenario) => scenario.scenarioId === 'capacity')
+        ...scenarios.filter(isReconnecting)
     ];
 }
 

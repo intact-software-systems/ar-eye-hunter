@@ -16,8 +16,7 @@ import {
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
-import { toConnectCommand } from '../../alm-conformance-session-commands.ts';
-import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { toLimitsReconnectCommands } from '../../to-limits-reconnect-commands.ts';
 
 /** One field the refused send's observation states, and the value it must hold. */
 export type AlmVolatileBoundRefusalFact = readonly [field: string, expected: string | number];
@@ -35,9 +34,8 @@ export function toLimitRefusalFacts(limit: ALVolatileSessionLimit): readonly Alm
 }
 
 /**
- * A session reads its bound once, when it initialises, so the page closes first and reconnects with the lowered or
- * raised limits, written as given; the page reads an age or track limit the override leaves out as its constant.
- * `restored` reconnects without the field.
+ * The page reconnects with the lowered or raised volatile limits, written as given; the page reads an age or track limit
+ * the override leaves out as its constant. `restored` reconnects without the field.
  */
 export function toBoundReconnectCommands(
     sender: AlmConformanceStepInput,
@@ -49,15 +47,7 @@ export function toBoundReconnectCommands(
         )
         | undefined
 ): readonly RallarBlackBoxTestCommand[] {
-    const connect = toConnectCommand(sender);
-    return [
-        { kind: 'close', commandId: toCommandId(sender, `close-before-${name}`) },
-        {
-            ...connect,
-            commandId: toCommandId(sender, `connect-${name}`),
-            rallar: limits === undefined ? connect.rallar : { ...connect.rallar, almVolatileLimits: { ...limits } }
-        }
-    ];
+    return toLimitsReconnectCommands(sender, name, limits === undefined ? {} : { almVolatileLimits: { ...limits } });
 }
 
 /** The send ends `rejected`, its command result says so, and each fact holds on the rejected observation. */

@@ -96,14 +96,17 @@ describe('hosted ALM reload composition', () => {
             receiverStart = recoveryEnd + 1;
         }
         expect(sender.commands.slice(senderStart).some((command) => command.kind === 'messages.send')).toBe(true);
-        // After the reload checkpoints only the capacity sender reconnects, to lower its volatile bound and restore it.
+        // After the reload checkpoints only the capacity senders reconnect, to lower the volatile bound or the
+        // publication stage's limits and restore them.
         expect(
             sender.commands.slice(senderStart).flatMap((command) => command.kind === 'rtc.connect' ? [command.commandId] : [])
         ).toEqual(
-            ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) => [
-                `alm-${carrier}-capacity-sender-connect-lowered`,
-                `alm-${carrier}-capacity-sender-connect-restored`
-            ])
+            ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) =>
+                ['capacity', 'paced-capacity'].flatMap((key) => [
+                    `alm-${carrier}-${key}-sender-connect-lowered`,
+                    `alm-${carrier}-${key}-sender-connect-restored`
+                ])
+            )
         );
         expect(receiver.commands.slice(receiverStart).some((command) => command.kind === 'messages.received')).toBe(true);
     });

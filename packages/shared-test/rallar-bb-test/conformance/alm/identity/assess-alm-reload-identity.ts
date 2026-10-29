@@ -139,7 +139,10 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
 
 function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
     const { send, prefix, suffix, sender, receiverBefore, recovery, absence, checkpoint } = evidence;
-    const allCommands = sender.participant.recipe.commands;
+    // A paced cell's loop repeats one send template, so its children count beside the root's own commands.
+    const allCommands = sender.participant.recipe.commands.flatMap((command) =>
+        command.kind === 'loop' ? command.commands : [command]
+    );
     const linearRoot = allCommands.every((command) =>
         !['recipe.run', 'recipe.load', 'loop', 'parallel'].includes(command.kind)
     );
