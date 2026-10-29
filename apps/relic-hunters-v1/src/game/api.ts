@@ -62,17 +62,25 @@ export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapsho
     return await decodeRelicResponse(response, 'Failed to reset expedition');
 }
 
+export interface RelicCommandRequest {
+    readonly gameId: string;
+    readonly command: RelicCommand;
+    readonly requestId: string;
+    readonly sessionId: string;
+}
+
 export async function sendRelicCommand(
-    gameId: string,
-    command: RelicCommand
+    { gameId, command, requestId, sessionId }: RelicCommandRequest
 ): Promise<RelicPublicSnapshot | undefined> {
     const session = readSession();
-    if (!session) {
+    if (!session || session.sessionId !== sessionId) {
         return undefined;
     }
 
     const response = await fetch(
-        `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/commands/requests/${crypto.randomUUID()}`,
+        `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/commands/requests/${
+            encodeURIComponent(requestId)
+        }`,
         {
             method: 'POST',
             headers: newApiRequestHeaders({ authSession: session }),
@@ -81,10 +89,26 @@ export async function sendRelicCommand(
     );
     if (!response.ok) {
         const body = await readApiErrorBody(response);
-        throw new Error(`Failed to send expedition command: ${response.status} ${body}`);
+        const message = `Failed to send expedition command: ${response.status} ${body}`;
+        let refused = false;
+        try {
+            refused = decodeRelicCommandRefusal(JSON.parse(body));
+        }
+        catch {
+            // An unreadable error body cannot establish a durable result.
+        }
+        throw refused ? new RelicCommandRefusedError(message) : new Error(message);
     }
 
     return await decodeRelicResponse(response, 'Failed to send expedition command');
+}
+
+/** A durable AppInbox refusal; transport/auth failures do not establish a command outcome. */
+export class RelicCommandRefusedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'RelicCommandRefusedError';
+    }
 }
 
 async function decodeRelicResponse(response: Response, failure: string): Promise<RelicPublicSnapshot> {
@@ -93,4 +117,9 @@ async function decodeRelicResponse(response: Response, failure: string): Promise
         throw new Error(`${failure}: ${decoded.left?.message ?? 'Invalid expedition snapshot'}`);
     }
     return decoded.right;
+}
+
+function decodeRelicCommandRefusal(value: unknown): boolean {
+    return typeof value === 'object' && value !== null && 'status' in value && value.status === 'refused' &&
+        'code' in value && typeof value.code === 'string' && 'error' in value && typeof value.error === 'string';
 }

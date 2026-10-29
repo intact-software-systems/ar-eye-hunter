@@ -18,6 +18,8 @@ import {
 import { materializeGroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-repository.ts';
 import type { GroupStateAuthoritativeSnapshot } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { SESSIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
@@ -30,6 +32,9 @@ import {
 } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateEntryRead } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+import { readActiveGroupSessionRole } from '@shared/api/group-spectating.ts';
+import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
@@ -87,12 +92,18 @@ export namespace RelicGameMutationService {
         readonly serverPeerId: string;
     }
 
+    export interface KeeperPresence {
+        readonly sessionId: string;
+        readonly read: RuntimeStateEntryRead<GroupPresenceSession>;
+    }
+
     export interface Read {
         readonly ingress: Ingress;
         readonly attemptAtEpochMs: number;
         readonly session: PersistedAuthSession | null;
         readonly group: GroupStateAuthoritativeSnapshot | null;
         readonly save: RoomOwnedAppData.Read;
+        readonly keeperPresence: KeeperPresence | null;
     }
 
     export interface Attempt extends Read, AppInboxCommandAttempt {}
@@ -119,6 +130,10 @@ export namespace RelicGameMutationService {
         readonly value: string;
         readonly expectedRevision: number;
         readonly expireAtIso: string;
+        readonly presenceKey: string | null;
+        readonly presenceRevision: number | null;
+        readonly presenceValue: string | null;
+        readonly presenceExpireAtIso: string | null;
     }
 
     export interface Computed {
@@ -130,7 +145,7 @@ export namespace RelicGameMutationService {
     }
 
     export interface Dependencies {
-        readonly groups: Pick<GroupStateRepository, 'readSnapshotWithAuthorityGuard'>;
+        readonly groups: Pick<GroupStateRepository, 'readSnapshotWithAuthorityGuard' | 'readPresenceEntry'>;
         readonly sessions: Pick<AuthSessionPersistence, 'findBySessionId'>;
         readonly data: Pick<RoomOwnedAppData, 'read'>;
     }
@@ -181,17 +196,27 @@ export class RelicGameMutationService {
         if (save === undefined) {
             throw new TypeError('Relic room-owned AppData binding is missing');
         }
+        const keeperId = ingress.command.move?.kind === 'take-keeper' && save.entry !== null
+            ? decodeStoredRelicSave(save.entry.value, save.entry.schemaVersion, ingress.command.gameId).adminPlayerId
+            : undefined;
+        const keeperPresence = keeperId === undefined ? null : {
+            sessionId: keeperId,
+            read: await this.dependencies.groups.readPresenceEntry({ ...ref, sessionId: keeperId })
+        };
         return {
             ingress,
             group: group ?? null,
             session: session ?? null,
             save,
+            keeperPresence,
             attemptAtEpochMs: Math.max(this.config.now(), ingress.capturedAtEpochMs)
         };
     }
 
     needsInitialState(read: RelicGameMutationService.Read): boolean {
         return authorizeRelicGameMutation(read) === null &&
+            read.ingress.command.move?.kind !== 'leave-expedition' &&
+            read.ingress.command.move?.kind !== 'take-keeper' &&
             (read.ingress.command.operation === 'reset' || read.save.entry === null);
     }
 
@@ -239,7 +264,7 @@ export class RelicGameMutationService {
             return false;
         }
         const state = decodeStoredRelicSave(read.save.entry.value, read.save.entry.schemaVersion, gameId);
-        return state.players.some((player) => player.playerId === sessionId);
+        return state.players.some((player) => player.playerId === sessionId && player.withdrawnAtEpochMs === undefined);
     }
 
     compute(attempt: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
@@ -262,6 +287,13 @@ export class RelicGameMutationService {
                     updated_ts = now(), revision = revision + 1
                 where store_namespace = ${guard.namespace} and store_key = ${guard.key}
                   and revision = ${guard.expectedRevision}
+                  and (${guard.presenceKey}::text is null or coalesce((
+                      select revision is not distinct from ${guard.presenceRevision}::bigint
+                         and store_value is not distinct from ${guard.presenceValue}::text
+                         and expire_at_ts is not distinct from ${guard.presenceExpireAtIso}::timestamptz
+                      from runtime_state_store
+                      where store_namespace = ${SESSIONS_NAMESPACE} and store_key = ${guard.presenceKey}
+                  ), ${guard.presenceRevision}::bigint is null))
                 returning revision
             `;
             if (rows.length !== 1) {
@@ -362,7 +394,7 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     const previous = read.save.entry === null
         ? null
         : decodeStoredRelicSave(read.save.entry.value, read.save.entry.schemaVersion, command.gameId);
-    const guard = computeRelicGameGroupGuard(group);
+    const guard = computeRelicGameGroupGuard(group, read.keeperPresence);
     if (command.operation === 'ensure' && previous !== null) {
         return {
             result: { status: 'initialized', gameId: command.gameId },
@@ -371,6 +403,13 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
             outboxWrites: [],
             provenance: []
         };
+    }
+    if (previous === null && (command.move?.kind === 'leave-expedition' || command.move?.kind === 'take-keeper')) {
+        return refused(command, {
+            code: 'expedition-unavailable',
+            message: 'There is no expedition to leave or take over.',
+            httpStatus: 409
+        });
     }
     const initial = read.ingress.initial;
     if ((command.operation === 'reset' || previous === null) && initial === null) {
@@ -407,14 +446,27 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     };
 }
 
-function computeRelicGameGroupGuard(group: GroupStateAuthoritativeSnapshot): RelicGameMutationService.GroupGuard {
+function computeRelicGameGroupGuard(
+    group: GroupStateAuthoritativeSnapshot,
+    keeperPresence: RelicGameMutationService.KeeperPresence | null
+): RelicGameMutationService.GroupGuard {
     const authority = materializeGroupStateAuthorityGuard(group.authorityGuard);
+    const presenceEntry = keeperPresence?.read.value?.entry ?? keeperPresence?.read.expiredEntry;
     return {
         namespace: authority.namespace,
         key: authority.key,
         value: authority.value,
         expectedRevision: authority.expectedRevision,
-        expireAtIso: new Date(authority.expireAtTimestamp).toISOString()
+        expireAtIso: new Date(authority.expireAtTimestamp).toISOString(),
+        presenceKey: keeperPresence === null ? null : groupStatePresenceSessionStorageKey({
+            ...group.authorityGuard.groupRef,
+            sessionId: keeperPresence.sessionId
+        }),
+        presenceRevision: presenceEntry?.revision ?? null,
+        presenceValue: presenceEntry?.value ?? null,
+        presenceExpireAtIso: presenceEntry === undefined
+            ? null
+            : new Date(presenceEntry.expireAtTimestamp).toISOString()
     };
 }
 
@@ -444,12 +496,31 @@ function computeRelicGameTransition(
             username: read.session.username
         }, {
             senderId: read.session.sessionId,
-            now: mutationAtEpochMs
+            now: mutationAtEpochMs,
+            presentPlayerIds: presentRelicPlayers(read)
         }).mapRight((result) => result.state);
     }
     catch (error) {
         throw new Error('Relic rule evaluation failed unexpectedly', { cause: error });
     }
+}
+
+/** Takeover uses its later point read for the Keeper; the matching revision is checked by the first write. */
+function presentRelicPlayers(read: RelicGameMutationService.Read): readonly string[] {
+    const group = read.group?.snapshot;
+    if (!group) {
+        return [];
+    }
+    const keeperPresence = read.keeperPresence;
+    const activeSessions = keeperPresence === null ? group.activeSessions : [
+        ...group.activeSessions.filter((session) => session.sessionId !== keeperPresence.sessionId),
+        ...(keeperPresence.read.value === undefined ? [] : [keeperPresence.read.value.value])
+    ];
+    const snapshot = { ...group, activeSessions };
+    return activeSessions.filter((session) => {
+        const role = readActiveGroupSessionRole(snapshot, session.sessionId, read.attemptAtEpochMs);
+        return role !== undefined && role !== 'spectator';
+    }).map((session) => session.sessionId);
 }
 
 function refused(

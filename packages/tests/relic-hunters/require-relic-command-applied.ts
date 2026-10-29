@@ -1,4 +1,5 @@
-import type { RelicApplyCommandResult, RelicRuleRefusal } from '../../relic-hunters/src/rules.ts';
+import type { RelicRuleRefusal } from '../../relic-hunters/src/model.ts';
+import type { RelicApplyCommandResult } from '../../relic-hunters/src/rules.ts';
 import type { Either } from '../../shared/resilience/Either.ts';
 
 export function requireRelicCommandApplied(result: Either<RelicRuleRefusal, RelicApplyCommandResult>): RelicApplyCommandResult {

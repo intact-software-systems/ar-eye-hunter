@@ -23,7 +23,7 @@ describe('Relic command evaluation', () => {
             gameId: 'room-1',
             username: 'Alice',
             action: { kind: 'search' }
-        }, { senderId: 'alice', now: 20 });
+        }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 20 });
 
         expect(result.left).toEqual({ code: 'participant-required', message: 'Join the expedition before sending game commands.' });
         expect(result.right).toBeUndefined();
@@ -36,23 +36,34 @@ describe('Relic command evaluation', () => {
             kind: 'start-expedition',
             gameId: 'room-1',
             username: 'Watcher'
-        }, { senderId: 'watcher', now: 20 });
+        }, { presentPlayerIds: ['watcher'], senderId: 'watcher', now: 20 });
         expect(result.left?.code).toBe('participant-required');
         expect(result.right).toBeUndefined();
     });
 
     it('resolves and finishes a solo expedition without counting an unjoined watcher', () => {
         const command = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', username: 'Alice' };
-        let state = requireRelicCommandApplied(applyRelicCommand(undefined, { ...command, kind: 'join-expedition' }, { senderId: 'alice', now: 1 })).state;
+        let state = requireRelicCommandApplied(
+            applyRelicCommand(undefined, { ...command, kind: 'join-expedition' }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1 })
+        ).state;
         state = { ...state, maxRounds: 1 };
-        expect(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { senderId: 'watcher', now: 2 }).left?.code).toBe('participant-required');
-        state = requireRelicCommandApplied(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { senderId: 'alice', now: 3 })).state;
+        expect(applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { presentPlayerIds: ['watcher'], senderId: 'watcher', now: 2 }).left?.code)
+            .toBe('participant-required');
         state = requireRelicCommandApplied(
-            applyRelicCommand(state, { ...command, kind: 'submit-action', action: { kind: 'search' } }, { senderId: 'alice', now: 4 })
+            applyRelicCommand(state, { ...command, kind: 'start-expedition' }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 3 })
+        ).state;
+        state = requireRelicCommandApplied(
+            applyRelicCommand(state, { ...command, kind: 'submit-action', action: { kind: 'search' } }, {
+                presentPlayerIds: ['alice'],
+                senderId: 'alice',
+                now: 4
+            })
         ).state;
         expect(state.phase).toBe('review');
         expect(state.players.map((player) => player.playerId)).toEqual(['alice']);
-        state = requireRelicCommandApplied(applyRelicCommand(state, { ...command, kind: 'continue-review' }, { senderId: 'alice', now: 5 })).state;
+        state = requireRelicCommandApplied(
+            applyRelicCommand(state, { ...command, kind: 'continue-review' }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 5 })
+        ).state;
         expect(state.phase).toBe('finished');
     });
 
@@ -71,7 +82,7 @@ describe('Relic command evaluation', () => {
             kind: 'join-expedition',
             gameId: 'room-1',
             username: 'Alice'
-        }, { senderId: 'alice', now: 1 })).state;
+        }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1 })).state;
         const unassigned = { ...joined, adminPlayerId: undefined };
         const commands = [
             { kind: 'start-expedition' },
@@ -87,7 +98,7 @@ describe('Relic command evaluation', () => {
                 gameId: 'room-1',
                 username: 'Alice',
                 ...command
-            }, { senderId: 'alice', now: 2 });
+            }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 2 });
             expect(result.left).toMatchObject({ code: 'administrator-required' });
             expect(result.right).toBeUndefined();
         }
@@ -99,7 +110,7 @@ describe('Relic command evaluation', () => {
             kind: 'join-expedition',
             gameId: 'room-1',
             username: 'Alice'
-        }, { senderId: 'alice', now: 1 })).state;
+        }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1 })).state;
         const unassigned = { ...joined, adminPlayerId: undefined };
         const before = structuredClone(unassigned);
         const result = applyRelicCommand(unassigned, {
@@ -107,7 +118,7 @@ describe('Relic command evaluation', () => {
             kind: 'start-expedition',
             gameId: 'room-1',
             username: 'Bob'
-        }, { senderId: 'bob', now: 2 });
+        }, { presentPlayerIds: ['bob'], senderId: 'bob', now: 2 });
 
         expect(result.left).toMatchObject({ code: 'participant-required' });
         expect(result.right).toBeUndefined();
@@ -120,7 +131,7 @@ describe('Relic command evaluation', () => {
             kind: 'join-expedition',
             gameId: 'room-1',
             username: 'Alice'
-        }, { senderId: 'alice', now: 1 })).state;
+        }, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1 })).state;
         expect(joined.adminPlayerId).toBe('alice');
 
         const unassigned = { ...joined, adminPlayerId: undefined };
@@ -130,7 +141,7 @@ describe('Relic command evaluation', () => {
             kind: 'join-expedition',
             gameId: 'room-1',
             username: 'Bob'
-        }, { senderId: 'bob', now: 2 })).state;
+        }, { presentPlayerIds: ['bob'], senderId: 'bob', now: 2 })).state;
 
         expect(next.players.map((player) => player.playerId)).toEqual(['alice', 'bob']);
         expect(next.adminPlayerId).toBeUndefined();
@@ -144,8 +155,8 @@ describe('Relic command evaluation', () => {
             gameId: 'room-1',
             username: 'Alice'
         } as const;
-        const result = applyRelicCommand(undefined, command, { senderId: 'alice', now: 1234 });
-        const repeated = applyRelicCommand(undefined, command, { senderId: 'alice', now: 1234 });
+        const result = applyRelicCommand(undefined, command, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1234 });
+        const repeated = applyRelicCommand(undefined, command, { presentPlayerIds: ['alice'], senderId: 'alice', now: 1234 });
 
         expect(result.left).toBeUndefined();
         expect(result.right?.state).toMatchObject({ createdAtEpochMs: 1234, updatedAtEpochMs: 1234 });

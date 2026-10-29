@@ -17,6 +17,7 @@ const RELIC_ROUND_TRANSITION_RULES: Readonly<Partial<Record<RelicPhaseChange, Re
     'lobby:planning': { transition: 'round-started', eventType: 'round_started' },
     'planning:review': { transition: 'round-resolved', eventType: 'action_revealed' },
     'review:planning': { transition: 'review-continued', eventType: 'round_started' },
+    'planning:finished': { transition: 'finished', eventType: 'game_finished' },
     'review:finished': { transition: 'finished', eventType: 'game_finished' }
 };
 

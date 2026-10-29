@@ -1,14 +1,9 @@
-import { createRallarAiFunnyRoomName } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it } from 'vitest';
 
-import { RELIC_ROOM_NAME_THEME } from '../src/game/relic-hunters-runtime.ts';
+import { createRelicRoomName } from '../src/game/runtime/create-relic-room-name.ts';
 
-describe('Relic room name theme', () => {
+describe('Relic room names', () => {
     it('preserves the expedition base phrase and seeded vocabulary', () => {
-        expect(createRallarAiFunnyRoomName({
-            baseName: '',
-            theme: RELIC_ROOM_NAME_THEME,
-            seed: 'fixed-seed'
-        })).toBe('Relic Hunters Expedition: Laser Teacup #739CF8');
+        expect(createRelicRoomName('fixed-seed', [])).toBe('Relic Hunters Expedition: Laser Teacup #739CF8');
     });
 });

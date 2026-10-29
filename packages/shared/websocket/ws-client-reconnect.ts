@@ -57,7 +57,13 @@ export class WsClientReconnect {
                 this.sessionId,
                 {
                     onOpen: () => {},
-                    onClose: () => this.reconnect(),
+                    onClose: (event) => {
+                        if (event.code === 1000 && event.reason === 'connection-replaced') {
+                            this.disable();
+                            return;
+                        }
+                        this.reconnect();
+                    },
                     onError: () => this.reconnect()
                 }
             );

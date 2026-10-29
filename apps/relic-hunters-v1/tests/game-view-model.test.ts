@@ -66,6 +66,29 @@ describe('computeRelicGameViewModel', () => {
         expect(viewModel.objective).toContain('Find relics, then escape within 10 rounds.');
     });
 
+    it('preserves banked history without offering controls to a withdrawn escaped hunter', () => {
+        const base = planningSnapshot();
+        const snapshot = {
+            ...base,
+            players: base.players.map((player) =>
+                player.playerId === 'alice-session'
+                    ? { ...player, escaped: true, withdrawnAtEpochMs: NOW + 10, score: 15 }
+                    : player
+            )
+        };
+        const viewModel = computeRelicGameViewModel({
+            snapshot,
+            localPlayerId: 'alice-session',
+            draft: { kind: 'search' },
+            lang: 'en',
+            revealedEvents: []
+        });
+        expect(viewModel.currentPlayer).toBeUndefined();
+        expect(viewModel.isAdmin).toBe(false);
+        expect(viewModel.turnStatus.canSubmit).toBe(false);
+        expect(viewModel.snapshot?.players.find((player) => player.playerId === 'alice-session')?.score).toBe(15);
+    });
+
     it('marks a submitted local player as locked and waiting for the remaining party', () => {
         let state = planningState();
         state = requireRelicCommandApplied(applyRelicCommand(
@@ -77,7 +100,7 @@ describe('computeRelicGameViewModel', () => {
                 username: 'Alice',
                 action: { kind: 'move', targetRoomId: 'hallway' }
             },
-            { senderId: 'alice-session', now: NOW + 4 }
+            { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: NOW + 4 }
         )).state;
 
         const viewModel = computeRelicGameViewModel({
@@ -224,7 +247,7 @@ function planningState(): RelicGameState {
             gameId: 'game-1',
             username: 'Alice'
         },
-        { senderId: 'alice-session', now: NOW + 3 }
+        { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: NOW + 3 }
     )).state;
     return state;
 }
@@ -241,6 +264,6 @@ function join(
             username,
             characterId
         },
-        { senderId, now: now }
+        { presentPlayerIds: [senderId], senderId, now: now }
     )).state;
 }

@@ -3,7 +3,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { ALDeliveryState } from '@shared-web/browser/rallar.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
-import type { RelicHuntersRuntimePhase } from './relic-hunters-runtime.ts';
+import type { RelicHuntersRuntime, RelicHuntersRuntimePhase } from './relic-hunters-runtime.ts';
 import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
 
 export const RELIC_SNAPSHOT_TRANSPORT = 'rallar-ws+rtc';
@@ -94,5 +94,22 @@ export function toRelicRuntimeSnapshotSummary(
         submittedCount: snapshot.submittedPlayerIds.length,
         eventCount: snapshot.events.length,
         roomInvestigationCount: snapshot.roomInvestigations.length
+    };
+}
+
+export function toRelicRoomDiagnostics(
+    state: RelicHuntersRuntime.Connection,
+    authority: RallarGameAuthorityClientStatus | undefined,
+    connected = state.diagnostics.middlewareConnected
+): Partial<RelicRuntimeDiagnostics> {
+    const roomReady = !!state.roomId;
+    return {
+        roomId: state.roomId,
+        roomReady,
+        snapshotReady: !!state.snapshot,
+        rtcReady: connected && roomReady,
+        authorityReady: connected && roomReady && !!authority?.started,
+        authorityPhase: authority?.phase,
+        authorityPeerAssistReadyPeers: authority?.peerAssist.readyPeerIds.length ?? 0
     };
 }

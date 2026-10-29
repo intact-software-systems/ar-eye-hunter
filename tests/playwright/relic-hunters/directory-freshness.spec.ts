@@ -34,7 +34,9 @@ test(
         await page.getByLabel('Password', { exact: true }).fill('test-only-password');
         await page.getByRole('button', { name: 'Enter', exact: true }).click();
         await expect(page.getByText('No public expeditions found.')).toBeVisible();
-        await page.getByRole('button', { name: 'Relic Hunters Expedition', exact: false }).click();
+        // The authenticated session already has presence in this expedition.
+        await expect(page.getByRole('button', { name: 'Relic Hunters Expedition', exact: false }))
+            .toBeDisabled({ timeout: 30_000 });
         await expect(page.getByRole('region', { name: 'Expedition hosting' }).getByText('room-1', { exact: true }))
             .toBeVisible();
         await expect(page.getByRole('button', { name: '✓ Ready', exact: true })).toBeDisabled();

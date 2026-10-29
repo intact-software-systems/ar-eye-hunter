@@ -20,7 +20,14 @@ export type RelicGameMove =
     }>
     & (
         | Readonly<{ kind: 'join-expedition'; characterId: RelicCharacterId | null; }>
-        | Readonly<{ kind: 'start-expedition' | 'force-resolve-round' | 'continue-review'; }>
+        | Readonly<{
+            kind:
+                | 'start-expedition'
+                | 'force-resolve-round'
+                | 'continue-review'
+                | 'leave-expedition'
+                | 'take-keeper';
+        }>
         | Readonly<{ kind: 'pickup-relic'; relicId: string; }>
         | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number; }>
         | Readonly<{

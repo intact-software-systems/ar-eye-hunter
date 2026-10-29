@@ -32,10 +32,11 @@ const races = (['membership', 'presence'] as const).flatMap((operation) =>
 
 describe('retirement fences work authorized before archival', () => {
     it.each(races)('rejects stale $operation with $order transactions', async ({ operation, order }) => {
-        fixture = await createRetentionDatabaseFixture();
-        await seedRetentionRoom(fixture);
+        const database = await createRetentionDatabaseFixture();
+        fixture = database;
+        await seedRetentionRoom(database);
         const activity = await prepareMutation(
-            fixture,
+            database,
             mutationDescriptor(
                 operation === 'membership'
                     ? {
@@ -55,26 +56,30 @@ describe('retirement fences work authorized before archival', () => {
                             principalId: 'owner',
                             generationId: 'late',
                             connectionGenerationId: 'late-connection',
-                            connectedAtEpochMs: fixture.nowEpochMs,
-                            lastHeartbeatAtEpochMs: fixture.nowEpochMs,
-                            expiresAtEpochMs: fixture.nowEpochMs + 60_000,
+                            connectedAtEpochMs: database.nowEpochMs,
+                            lastHeartbeatAtEpochMs: database.nowEpochMs,
+                            expiresAtEpochMs: database.nowEpochMs + 60_000,
                             actorPrincipalId: 'owner'
                         }
                     }
             )
         );
-        await commitRetention(fixture, (await prepareRetention(fixture, 'observe')).computed);
-        fixture.nowEpochMs += 1_000;
-        await commitRetention(fixture, (await prepareRetention(fixture, 'archive')).computed);
-        fixture.nowEpochMs += 604800000;
-        const deletion = await prepareRetention(fixture, 'delete');
+        await commitRetention(database, (await prepareRetention(database, 'observe')).computed);
+        database.nowEpochMs += 1_000;
+        await commitRetention(database, (await prepareRetention(database, 'archive')).computed);
+        database.nowEpochMs += 604800000;
+        const deletion = await prepareRetention(database, 'delete');
         const staleWrite = requireMutationWrite(activity.computed);
-        const writeActivity = () => commitMutation(fixture!, staleWrite);
-        const writeDeletion = () => commitRetention(fixture!, deletion.computed);
+        const writeActivity = () => commitMutation(database, staleWrite);
+        const writeDeletion = () => commitRetention(database, deletion.computed);
 
         if (order === 'overlap') {
             const [writer, retirement] = await Promise.allSettled([writeActivity(), writeDeletion()]);
-            expect(writer).toMatchObject({ status: 'rejected', reason: { code: 'runtime-state-write-conflict' } });
+            if (writer.status !== 'rejected') {
+                throw new Error('The stale writer must not commit after archival.');
+            }
+            // PostgreSQL may abort the overlapping stale transaction before its application guard returns.
+            expect(['runtime-state-write-conflict', '40P01']).toContain(writer.reason.code);
             expect(retirement.status).toBe('fulfilled');
         }
         else if (order === 'writer-first') {
@@ -85,10 +90,12 @@ describe('retirement fences work authorized before archival', () => {
             await writeDeletion();
             await expect(writeActivity()).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         }
-        expect(await fixture.repository.findGroup(RETENTION_REF)).toBeUndefined();
-        expect(await fixture.repository.listMembers(RETENTION_REF)).toEqual([]);
-        expect(await fixture.repository.listPresenceAdmissions(RETENTION_REF)).toEqual([]);
-        expect(await fixture.repository.listPresenceSessions(RETENTION_REF)).toEqual([]);
-        expect((await fixture.repository.listEvents(RETENTION_REF)).filter((event) => event.eventType === 'group-deleted')).toHaveLength(1);
+        expect(await database.repository.findGroup(RETENTION_REF)).toBeUndefined();
+        expect(await database.repository.listMembers(RETENTION_REF)).toEqual([]);
+        expect(await database.repository.listPresenceAdmissions(RETENTION_REF)).toEqual([]);
+        expect(await database.repository.listPresenceSessions(RETENTION_REF)).toEqual([]);
+        const deletions = (await database.repository.listEvents(RETENTION_REF))
+            .filter((event) => event.eventType === 'group-deleted');
+        expect(deletions).toHaveLength(1);
     }, 30_000);
 });
