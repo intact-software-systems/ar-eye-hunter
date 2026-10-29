@@ -414,7 +414,7 @@ a recorded fallback/repair transition. A transport cannot silently claim an
 unsupported guarantee.
 
 **CURRENT — S3a, the purpose table and carrier capabilities:** A typed channel
-declares `purpose: 'command' | 'notification'` (required), and the purpose table
+declares `purpose: 'command' | 'notification' | 'live'` (required), and the purpose table
 in `al-contracts`
 ([`AL_CHANNEL_SEND_DEFAULTS`](../../packages/shared/al-contracts/resolve-al-channel-send-defaults.ts))
 fixes the channel's send defaults (D52):
@@ -423,6 +423,7 @@ fixes the channel's send defaults (D52):
 | -------------- | --------------- | ------------------------ | -------- | ---------- |
 | `command`      | `at-least-once` | `receiver`               | 30 s     | `volatile` |
 | `notification` | `at-least-once` | `all-logical-recipients` | 30 s     | `volatile` |
+| `live`         | `best-effort`   | `none`                   | 1 s      | `volatile` |
 
 The two acks are one frozen-audience algorithm (D41). A `world` or `all`
 broadcast names no logical audience, so it keeps `ack: 'none'`; a principal or
@@ -436,6 +437,35 @@ client, the RTC overlay and the WS server — owns its capability declaration
 the default set plus `receiver`), and its composition root installs it under the
 application's QoS provider, whose own capabilities override the carrier's. The
 `unsupported` ack refusal reads the carrier's own declaration.
+
+**CURRENT — S1-i, the live purpose and the publication stage:** a `live` channel
+declares a required `publication` policy, `{ cadenceMs, retainNewest, drain: { messages, bytes } }`,
+each field a positive safe integer within `AL_PUBLICATION_POLICY_LIMITS` and none
+with a product default
+([`al-publication-policy.ts`](../../packages/shared/al-contracts/publication/al-publication-policy.ts));
+`publication` on another purpose, a live channel without one, or a live channel
+with a durability other than `volatile` is a definition issue (D466). Each live
+send names the `resourceId` of its stream and is refused `missing-resource-id`
+without one; a live send that asks `at-least-once`, a receipt, `seq` or
+`orderingKey`, an exclusive claim, a supersedence or a durability other than
+`volatile` is refused `unsupported` before a handle opens (D467, D471). The
+sender stamps `latest-wins` supersedence on the stream key, so a late copy is
+also conflated at admission and on receipt. The browser dispatch stages the
+send in its connect's
+[`ALOutboundPublicationStage`](../../packages/shared/alm/outbound/publication/al-outbound-publication-stage.ts)
+instead of writing a leg, and the handle reads `staged`. A value staged on a
+stream that already holds `retainNewest` values displaces the oldest, which
+settles `superseded`; a
+value whose deadline passes staged settles `expired` with no attempt; a value
+heavier than `drain.bytes` is refused `oversized`. At each cadence boundary of
+its lane an opportunity admits at most the drain budget, streams in their
+first-staged order and each oldest first, through today's carrier admission;
+a late engine pass runs one opportunity, never a catch-up burst (D468–D470).
+The stage runs as one task on the connect's queue engine, stops when the
+connect's settlement epoch closes, and settles what it holds
+`skipped`/`disposed`. **Limit:** `cancel()` on a staged value records
+`cancelled` on its handle, and the stage still admits the value at its
+opportunity (D471).
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile
@@ -770,8 +800,11 @@ browser's inbound stores keeps at most 256 delivered markers
 `packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts`),
 evicting the least recently admitted track's marker unless that track still
 buffers a release; the WS server's stores keep every marker until its expiry.
-**Limit:** the reliable lane has no bounded newest-N queue per key; bounded
-publication pacing is Slice 1 of the
+**Limit:** the reliable lane has no bounded newest-N queue per key. A `live`
+channel's sends are paced before admission by the publication stage (S1-i,
+above), its newest N values per stream bounded by its policy; per-key and
+per-session bounds, fair selection across streams and groups, and cancellation
+on the stage are Slice 1's S1-ii in the
 [publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md).
 **Limit:** there is no relay fanout reduction or alternate route under
 congestion, no routing around one backpressured peer, no congestion on RTC
