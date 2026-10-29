@@ -3,11 +3,11 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { ApiHttpError } from '../../api/http-error.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
-import { BrowserRallarSubscriptionScope } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade, RallarAuthState } from '../../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
@@ -99,7 +99,7 @@ export class RallarRoomEntry {
         console.error('Error notifying room entry listener', error);
     });
     private readonly flights = new SingleFlight<string, RallarRoomEntry.State>();
-    private subscriptions: BrowserRallarSubscriptionScope | null = null;
+    private subscriptions: SubscriptionScope | null = null;
     private attempt: RallarRoomEntry.Attempt | null = null;
     private generation = 0;
     private sessionKey: string | null = null;
@@ -151,7 +151,7 @@ export class RallarRoomEntry {
         }
         const session = this.dependencies.auth.session();
         this.sessionKey = session ? toAuthSessionKey(session) : null;
-        this.subscriptions = new BrowserRallarSubscriptionScope();
+        this.subscriptions = new SubscriptionScope();
         this.subscriptions.add(
             this.dependencies.auth.onChange((state) => this.authChanged(state), { emitCurrent: false })
         );
@@ -247,10 +247,15 @@ export class RallarRoomEntry {
 
     public stop(): void {
         this.invalidateAttempt();
-        this.subscriptions?.unsubscribe();
+        const subscriptions = this.subscriptions;
         this.subscriptions = null;
-        if (this.state.status === 'joining') {
-            this.publish({ ...this.state, status: 'pending', failure: null });
+        try {
+            subscriptions?.unsubscribe();
+        }
+        finally {
+            if (this.state.status === 'joining') {
+                this.publish({ ...this.state, status: 'pending', failure: null });
+            }
         }
     }
 

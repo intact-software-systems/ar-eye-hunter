@@ -1,30 +1,36 @@
+import type { RallarGameParticipant } from '@shared/rallar-game/rematch.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import {
+    admitRelicHunter,
+    startRelicExpedition,
+    type RelicPlayerAdmissionResult
+} from './expedition-preparation.ts';
+import { RELIC_EXPEDITION_CAPACITY } from './model.ts';
+import { applyRelicRematchCommand, withdrawRelicRematch } from './relic-rematch.ts';
 
 import {
-    defaultRelicCharacterId,
     findRelicCharacter,
     type RelicCharacter
 } from './characters.ts';
-import { createRelicGame } from './create-relic-game.ts';
 import {
     type RelicActionInput,
     type RelicCommand,
-    type RelicEvent,
     type RelicGameState,
     type RelicPendingAction,
     type RelicPlayer,
-    type RelicRoom,
-    type RelicRoomInvestigation,
-    type RelicRoomInvestigationEffect,
     type RelicRuleRefusal
 } from './model.ts';
-import { toRelicEvent, type RelicEventOptions } from './to-relic-event.ts';
+import { resolveSearch } from './resolve-search.ts';
+import { appendRelicEvent, withRelicEvent } from './to-relic-event.ts';
 
 export interface RelicCommandEvaluation {
     readonly senderId: string;
     readonly now: number;
     /** Current eligible room sessions, observed by the authority for this attempt. */
     readonly presentPlayerIds: readonly string[];
+    readonly rematchParticipants?: readonly RallarGameParticipant[];
+    /** Captured pristine proposal, supplied only when starting the next expedition. */
+    readonly nextExpedition?: RelicGameState;
 }
 
 export interface RelicApplyCommandResult {
@@ -46,49 +52,6 @@ interface RelicPickup {
     readonly now: number;
 }
 
-interface RelicRoomInvestigationQuery {
-    readonly state: RelicGameState;
-    readonly player: RelicPlayer;
-    readonly result: RelicRoomInvestigation['result'];
-    readonly relicId?: string;
-}
-
-interface RelicRoomInvestigationInput extends RelicRoomInvestigationQuery {
-    readonly now: number;
-}
-
-interface RelicInvestigationDetails {
-    readonly summary: string;
-    readonly hint: string;
-    readonly effect: RelicRoomInvestigationEffect;
-    readonly danger: string | undefined;
-    readonly revealedRoomId: string | undefined;
-}
-
-interface RelicPlayerAdmission {
-    readonly state: RelicGameState;
-    readonly playerId: string;
-    readonly username: string;
-    readonly now: number;
-    readonly characterId: RelicPlayer['characterId'] | undefined;
-}
-
-interface RelicPlayerAdmissionResult {
-    readonly state: RelicGameState;
-    readonly player: RelicPlayer;
-}
-
-interface RelicEventAppend {
-    readonly state: Pick<RelicGameState, 'events' | 'round'>;
-    readonly message: string;
-    readonly now: number;
-    readonly options?: RelicEventOptions;
-}
-
-interface RelicStateEvent extends RelicEventAppend {
-    readonly state: RelicGameState;
-}
-
 interface RelicRoundCommandInput {
     readonly state: RelicGameState;
     readonly player: RelicPlayer;
@@ -102,13 +65,6 @@ interface RelicActionSubmission extends RelicRoundCommandInput {
     readonly command: Extract<RelicCommand, { kind: 'submit-action'; }>;
 }
 
-interface RelicSearchCollection {
-    readonly state: RelicGameState;
-    readonly player: RelicPlayer;
-    readonly now: number;
-    readonly relic: RelicGameState['relics'][number];
-}
-
 interface RelicTransfer {
     readonly state: RelicGameState;
     readonly player: RelicPlayer;
@@ -116,76 +72,62 @@ interface RelicTransfer {
     readonly stolenRelicId: string;
 }
 
-interface RelicJoinedPlayerRefresh {
-    readonly state: RelicGameState;
-    readonly existing: RelicPlayer;
-    readonly username: string;
-    readonly characterId: RelicPlayer['characterId'] | undefined;
-}
-
-const MAX_PLAYERS = 4;
-const STARTING_HEALTH = 3;
-
-const EMPTY_ROOM_CLUES: Partial<Record<RelicRoom['kind'], RelicInvestigationDetails>> = {
-    storage: {
-        summary: 'The crates held a torn supply map, but no relic.',
-        hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
-        effect: 'map-fragment',
-        danger: undefined,
-        revealedRoomId: 'trap'
-    },
-    shrine: {
-        summary: 'The altar runes were read and the empty glyph path was marked.',
-        hint: 'The shrine points toward treasure, but the party should watch the remaining rounds.',
-        effect: 'rune-reading',
-        danger: undefined,
-        revealedRoomId: 'treasure'
-    },
-    trap: {
-        summary: 'The safe edges of the pressure plates were marked.',
-        hint: 'Move carefully from here; repeated noise can make the room punish the party.',
-        effect: 'safe-path',
-        danger: 'Pressure plates remain unstable.',
-        revealedRoomId: 'monster'
-    },
-    treasure: {
-        summary: 'The chest and mirror were checked, but the prize trail was cold.',
-        hint: 'The mirror scratches point back toward rooms the party may have skipped.',
-        effect: 'treasure-trail',
-        danger: undefined,
-        revealedRoomId: undefined
-    },
-    monster: {
-        summary: 'The chains and ash were searched, revealing only old danger.',
-        hint: 'The next useful choice is usually the Exit unless the party needs one last relic.',
-        effect: 'monster-trace',
-        danger: 'Bones and ash suggest the room can turn costly.',
-        revealedRoomId: 'exit'
-    },
-    exit: {
-        summary: 'The exit runes were read and the way out was marked.',
-        hint: 'Prime Escape here to bank carried relics and the escape bonus.',
-        effect: 'exit-route',
-        danger: undefined,
-        revealedRoomId: undefined
-    }
-};
-
 export function applyRelicCommand(
-    previous: RelicGameState | undefined,
+    state: RelicGameState,
     command: RelicCommand,
     evaluation: RelicCommandEvaluation
 ): Either<RelicRuleRefusal, RelicApplyCommandResult> {
+    if (
+        command.kind === 'set-rematch-ready' || command.kind === 'start-rematch' ||
+        command.kind === 'set-rematch-round-limit'
+    ) {
+        if (evaluation.rematchParticipants === undefined) {
+            return Either.ofLeft({
+                code: 'authority-required',
+                message: 'Fresh room authority is required to prepare the next expedition.'
+            });
+        }
+        return applyRelicRematchCommand(state, command, {
+            ...evaluation,
+            rematchParticipants: evaluation.rematchParticipants
+        }).mapRight((next) => ({
+            state: next,
+            resolvedRound: false
+        }));
+    }
+    return applyCurrentRelicCommand(state, command, evaluation);
+}
+
+function applyCurrentRelicCommand(
+    state: RelicGameState,
+    command: Exclude<RelicCommand, { kind: 'set-rematch-ready' | 'start-rematch' | 'set-rematch-round-limit'; }>,
+    evaluation: RelicCommandEvaluation
+): Either<RelicRuleRefusal, RelicApplyCommandResult> {
     const now = evaluation.now;
-    const state = previous ?? createRelicGame(command.gameId, command.gameId, now);
     const existing = state.players.find((player) => player.playerId === evaluation.senderId);
+    if (command.kind === 'leave-expedition' && state.phase === 'finished') {
+        return withdrawRelicRematch(state, evaluation).mapRight((next) => ({ state: next, resolvedRound: false }));
+    }
+    if (state.phase === 'finished' && (command.kind === 'start-expedition' || command.kind === 'set-round-limit')) {
+        return Either.ofLeft({
+            code: 'rematch-required',
+            message: 'Use Play again to prepare the next expedition together.'
+        });
+    }
+    if (state.phase === 'finished' && command.kind === 'join-expedition' && existing) {
+        return Either.ofRight({ state, resolvedRound: false });
+    }
     if (command.kind === 'leave-expedition') {
         return Either.ofRight(withdrawHunter(state, evaluation));
     }
     if (existing?.withdrawnAtEpochMs !== undefined) {
         return Either.ofLeft({ code: 'hunter-withdrawn', message: 'This hunter has left the expedition.' });
     }
-    if (command.kind !== 'join-expedition' && !existing) {
+    if (
+        command.kind !== 'join-expedition' && !existing &&
+        !(command.kind === 'take-keeper' &&
+            state.rematch?.hunters.some((hunter) => hunter.playerId === evaluation.senderId))
+    ) {
         return Either.ofLeft({
             code: 'participant-required',
             message: 'Join the expedition before sending game commands.'
@@ -198,7 +140,7 @@ export function applyRelicCommand(
     if (admissionIssues.length > 0) {
         return Either.ofLeft(admissionIssues[0]);
     }
-    const joined = command.kind !== 'join-expedition' && existing ? { state, player: existing } : ensurePlayer({
+    const joined = command.kind !== 'join-expedition' && existing ? { state, player: existing } : admitRelicHunter({
         state,
         playerId: evaluation.senderId,
         username: command.username,
@@ -209,25 +151,13 @@ export function applyRelicCommand(
     if (issues.length > 0) {
         return Either.ofLeft(issues[0]);
     }
-    switch (command.kind) {
-        case 'join-expedition':
-            return Either.ofRight({ state: touch(joined.state, now), resolvedRound: false });
-        case 'start-expedition':
-            return Either.ofRight({ state: startExpedition(joined.state, joined.player, now), resolvedRound: false });
-        case 'set-round-limit':
-            return Either.ofRight({
-                state: touch({ ...joined.state, roundTimeLimitMs: command.timeLimitMs }, now),
-                resolvedRound: false
-            });
-        default:
-            return Either.ofRight(applyRoundCommand({ state: joined.state, player: joined.player, command, now }));
-    }
+    return applyAdmittedRelicCommand(joined, command, now);
 }
 
 /** A deliberate withdrawal ends this hunter's participation; a presence loss alone never calls this rule. */
 function withdrawHunter(state: RelicGameState, evaluation: RelicCommandEvaluation): RelicApplyCommandResult {
     const player = state.players.find((candidate) => candidate.playerId === evaluation.senderId);
-    if (!player || player.withdrawnAtEpochMs !== undefined || state.phase === 'finished') {
+    if (!player || player.withdrawnAtEpochMs !== undefined) {
         return { state, resolvedRound: false };
     }
     const players = state.players
@@ -255,7 +185,7 @@ function withdrawHunter(state: RelicGameState, evaluation: RelicCommandEvaluatio
             const { carriedBy: _carriedBy, ...dropped } = relic;
             return { ...dropped, roomId: player.roomId };
         }),
-        events: appendEvent({
+        events: appendRelicEvent({
             state,
             message: `${player.username} left the expedition.${
                 successor && successor !== state.adminPlayerId
@@ -285,16 +215,15 @@ function takeKeeper(
             message: 'Return to the expedition room before taking over as Keeper.'
         });
     }
-    if (state.phase === 'finished') {
-        return Either.ofLeft({ code: 'expedition-finished', message: 'The expedition is already finished.' });
-    }
     if (state.adminPlayerId === evaluation.senderId) {
         return Either.ofRight({ state, resolvedRound: false });
     }
     if (state.adminPlayerId && evaluation.presentPlayerIds.includes(state.adminPlayerId)) {
         return Either.ofLeft({ code: 'keeper-present', message: 'The current Keeper is still present.' });
     }
-    const hunter = state.players.find((player) => player.playerId === evaluation.senderId);
+    const hunter = state.phase === 'finished' && state.rematch
+        ? state.rematch.hunters.find((player) => player.playerId === evaluation.senderId)
+        : state.players.find((player) => player.playerId === evaluation.senderId);
     if (!hunter) {
         return Either.ofLeft({
             code: 'participant-required',
@@ -306,7 +235,7 @@ function takeKeeper(
             ...state,
             adminPlayerId: hunter.playerId,
             updatedAtEpochMs: evaluation.now,
-            events: appendEvent({
+            events: appendRelicEvent({
                 state,
                 message: `${hunter.username} took over as Keeper.`,
                 now: evaluation.now,
@@ -325,7 +254,7 @@ function validatePlayerAdmission(state: RelicGameState, playerId: string): reado
     if (state.phase !== 'lobby') {
         issues.push({ code: 'expedition-started', message: 'Cannot join an expedition after it has started.' });
     }
-    if (state.players.length >= MAX_PLAYERS) {
+    if (state.players.length >= RELIC_EXPEDITION_CAPACITY) {
         issues.push({ code: 'expedition-full', message: 'This expedition is full.' });
     }
     return issues;
@@ -333,7 +262,14 @@ function validatePlayerAdmission(state: RelicGameState, playerId: string): reado
 
 function validateRelicCommand(
     { state, player }: RelicPlayerAdmissionResult,
-    command: Exclude<RelicCommand, { kind: 'leave-expedition' | 'take-keeper'; }>,
+    command: Exclude<RelicCommand, {
+        kind:
+            | 'leave-expedition'
+            | 'take-keeper'
+            | 'set-rematch-ready'
+            | 'start-rematch'
+            | 'set-rematch-round-limit';
+    }>,
     now: number
 ): readonly RelicRuleRefusal[] {
     const isAdmin = state.adminPlayerId === player.playerId;
@@ -395,24 +331,6 @@ function validateRoundCommand({ state, player, command, now }: RelicRoundCommand
     return issues;
 }
 
-function startExpedition(state: RelicGameState, player: RelicPlayer, now: number): RelicGameState {
-    const starting = state.phase === 'lobby';
-    return touch({
-        ...state,
-        phase: starting ? 'planning' : state.phase,
-        roundStartedAtEpochMs: starting ? now : state.roundStartedAtEpochMs,
-        events: appendEvent({
-            state,
-            message: `${player.username} started the expedition.`,
-            now,
-            options: {
-                type: 'round_started',
-                tone: 'success'
-            }
-        })
-    }, now);
-}
-
 function applyRoundCommand({ state, player, command, now }: RelicRoundCommandInput): RelicApplyCommandResult {
     switch (command.kind) {
         case 'continue-review':
@@ -443,7 +361,7 @@ function submitAction({ state, player, command, now }: RelicActionSubmission): R
     const submittedState = touch({
         ...state,
         pendingActions,
-        events: appendEvent({
+        events: appendRelicEvent({
             state,
             message: `${player.username} locked in a plan.`,
             now,
@@ -476,7 +394,7 @@ function forceRoundResolutionState(
 
     return touch({
         ...state,
-        events: appendEvent({
+        events: appendRelicEvent({
             state,
             message,
             now,
@@ -499,7 +417,7 @@ export function legalMoveTargets(
 function resolveRound(state: RelicGameState, now: number): RelicGameState {
     let next = {
         ...state,
-        events: appendEvent({
+        events: appendRelicEvent({
             state,
             message: `Round ${state.round} actions are revealed.`,
             now,
@@ -549,7 +467,7 @@ function advanceReviewedRound(state: RelicGameState, now: number): RelicGameStat
         roundStartedAtEpochMs: finished ? state.roundStartedAtEpochMs : now,
         winnerIds: [],
         events: finished
-            ? appendEvent({
+            ? appendRelicEvent({
                 state,
                 message: 'The castle collapses as the expedition ends.',
                 now,
@@ -563,7 +481,7 @@ function advanceReviewedRound(state: RelicGameState, now: number): RelicGameStat
                     tone: 'success'
                 }
             })
-            : appendEvent({
+            : appendRelicEvent({
                 state,
                 message: `Round ${nextRound} begins.`,
                 now,
@@ -602,7 +520,7 @@ function resolveAction(
 function resolveMove({ state, player, action, now }: RelicActionResolution): RelicGameState {
     const targetRoomId = action.targetRoomId;
     if (!targetRoomId || !legalMoveTargets(state, player).includes(targetRoomId)) {
-        return withEvent({
+        return withRelicEvent({
             state,
             message: `${player.username} failed to find a valid path.`,
             now,
@@ -614,7 +532,7 @@ function resolveMove({ state, player, action, now }: RelicActionResolution): Rel
     }
 
     return updatePlayer(
-        withEvent(
+        withRelicEvent(
             {
                 state,
                 message: `${player.username} moved to ${roomName(state, targetRoomId)}.`,
@@ -640,112 +558,6 @@ function resolveMove({ state, player, action, now }: RelicActionResolution): Rel
     );
 }
 
-function resolveSearch(
-    state: RelicGameState,
-    player: RelicPlayer,
-    now: number
-): RelicGameState {
-    const hasUnfoundRelics = state.relics.some(
-        (r) => r.roomId === player.roomId && !r.foundBy
-    );
-
-    // Block further searching only once the room is fully looted
-    if (!hasUnfoundRelics && state.roomInvestigations.some((i) => i.roomId === player.roomId)) {
-        return withEvent(
-            {
-                state,
-                message: `${player.username} searched ${
-                    roomName(state, player.roomId)
-                } again, but the useful clues were already marked.`,
-                now,
-                options: {
-                    type: 'player_searched',
-                    animationCue: {
-                        type: 'search_altar',
-                        playerId: player.playerId,
-                        roomId: player.roomId,
-                        durationMs: 520,
-                        intensity: 'low'
-                    },
-                    tone: 'neutral'
-                }
-            }
-        );
-    }
-
-    const relic = state.relics.find((candidate) => candidate.roomId === player.roomId && !candidate.foundBy);
-    if (!relic) {
-        return withEvent(
-            {
-                state: markRoomInvestigated({ state, player, now, result: 'empty' }),
-                message: emptySearchMessage(state, player),
-                now,
-                options: {
-                    type: 'player_searched',
-                    animationCue: {
-                        type: 'search_altar',
-                        playerId: player.playerId,
-                        roomId: player.roomId,
-                        durationMs: 700,
-                        intensity: 'low'
-                    },
-                    tone: 'mystery'
-                }
-            }
-        );
-    }
-
-    return collectSearchedRelic({ state, player, now, relic });
-}
-
-function collectSearchedRelic({ state, player, now, relic }: RelicSearchCollection): RelicGameState {
-    const relics = state.relics.map((candidate) =>
-        candidate.id === relic.id
-            ? { ...candidate, foundBy: player.playerId, carriedBy: player.playerId }
-            : candidate
-    );
-    const stateWithRelic = { ...state, relics };
-
-    const moreRemain = relics.some((r) => r.roomId === player.roomId && !r.foundBy);
-    const investigatedState = markRoomInvestigated({
-        state: stateWithRelic,
-        player,
-        now,
-        result: 'relic-found',
-        relicId: relic.id
-    });
-
-    const message = moreRemain
-        ? `${player.username} found the ${relic.name}. The room still hides more…`
-        : `${player.username} found the ${relic.name}.`;
-
-    return updatePlayer(
-        withEvent(
-            {
-                state: investigatedState,
-                message,
-                now,
-                options: {
-                    type: 'relic_found',
-                    animationCue: {
-                        type: 'relic_reveal',
-                        playerId: player.playerId,
-                        roomId: player.roomId,
-                        relicId: relic.id,
-                        durationMs: 1_200,
-                        intensity: 'high'
-                    },
-                    tone: 'success'
-                }
-            }
-        ),
-        {
-            ...player,
-            relicIds: [...player.relicIds, relic.id]
-        }
-    );
-}
-
 function pickUpRelic({ state, player, relicId, now }: RelicPickup): RelicGameState {
     const relic = state.relics.find((candidate) => candidate.id === relicId);
     if (!relic) {
@@ -764,7 +576,7 @@ function pickUpRelic({ state, player, relicId, now }: RelicPickup): RelicGameSta
         ? player.relicIds
         : [...player.relicIds, relic.id];
     const pickedState = updatePlayer(
-        withEvent(
+        withRelicEvent(
             {
                 state: {
                     ...state,
@@ -817,144 +629,6 @@ function validateRelicPickup(
     return issues;
 }
 
-function emptySearchMessage(state: RelicGameState, player: RelicPlayer): string {
-    const room = state.map.find((candidate) => candidate.id === player.roomId);
-    switch (room?.kind) {
-        case 'storage':
-            return `${player.username} searched the crates and marked a false supply trail.`;
-        case 'shrine':
-            return `${player.username} read the altar runes and marked the empty glyph path.`;
-        case 'trap':
-            return `${player.username} studied the pressure plates and marked the safe edges.`;
-        case 'treasure':
-            return `${player.username} checked the chest and mirror, but the prize was gone.`;
-        case 'monster':
-            return `${player.username} searched the chains and ash, finding only old danger.`;
-        case 'exit':
-            return `${player.username} read the exit runes and marked the way out.`;
-        default:
-            return `${player.username} searched but found nothing.`;
-    }
-}
-
-function markRoomInvestigated({ state, player, now, result, relicId }: RelicRoomInvestigationInput): RelicGameState {
-    const investigation: RelicRoomInvestigation = {
-        roomId: player.roomId,
-        searchedByPlayerId: player.playerId,
-        searchedByUsername: player.username,
-        searchedAtRound: state.round,
-        searchedAtEpochMs: now,
-        result,
-        ...roomInvestigationDetails({ state, player, result, relicId }),
-        ...(relicId ? { relicId } : {})
-    };
-
-    return {
-        ...state,
-        roomInvestigations: [
-            ...state.roomInvestigations.filter((candidate) => candidate.roomId !== player.roomId),
-            investigation
-        ]
-    };
-}
-
-function roomInvestigationDetails(
-    { state, player, result, relicId }: RelicRoomInvestigationQuery
-): RelicInvestigationDetails {
-    const room = state.map.find((candidate) => candidate.id === player.roomId);
-    const relic = relicId ? state.relics.find((candidate) => candidate.id === relicId) : undefined;
-    const revealedRoomId = revealedRoomForInvestigation(state, player.roomId);
-
-    if (result === 'relic-found' && relic) {
-        return {
-            summary: `${relic.name} was recovered here.`,
-            hint: room?.kind === 'exit'
-                ? 'The exit route is still the safest way to bank the score.'
-                : 'Carry the relic toward the Exit before the castle closes.',
-            effect: investigationEffect(room),
-            danger: room?.kind === 'trap' || room?.kind === 'monster'
-                ? 'The find stirred a dangerous room.'
-                : undefined,
-            revealedRoomId
-        };
-    }
-
-    const clue = room && EMPTY_ROOM_CLUES[room.kind];
-    return clue
-        ? { ...clue, revealedRoomId: room?.kind === 'exit' ? undefined : revealedRoomId ?? clue.revealedRoomId }
-        : {
-            summary: `${roomName(state, player.roomId)} was searched clear.`,
-            hint: 'Move toward a stronger clue or the Exit.',
-            effect: 'ordinary-search',
-            danger: undefined,
-            revealedRoomId
-        };
-}
-
-function investigationEffect(room: RelicRoom | undefined): RelicRoomInvestigationEffect {
-    switch (room?.kind) {
-        case 'storage':
-            return 'map-fragment';
-        case 'shrine':
-            return 'rune-reading';
-        case 'trap':
-            return 'safe-path';
-        case 'treasure':
-            return 'treasure-trail';
-        case 'monster':
-            return 'monster-trace';
-        case 'exit':
-            return 'exit-route';
-        default:
-            return 'ordinary-search';
-    }
-}
-
-function revealedRoomForInvestigation(
-    state: RelicGameState,
-    roomId: string
-): string | undefined {
-    const room = state.map.find((candidate) => candidate.id === roomId);
-    if (!room) {
-        return undefined;
-    }
-
-    const neighbors = room.neighbors
-        .map((neighborId) => state.map.find((candidate) => candidate.id === neighborId))
-        .filter((candidate): candidate is RelicRoom => !!candidate && !candidate.collapsed);
-    return highestValueRelicNeighbor(state, neighbors)?.id ?? neighbors[0]?.id;
-}
-
-function highestValueRelicNeighbor(
-    state: RelicGameState,
-    neighbors: readonly RelicRoom[]
-): RelicRoom | undefined {
-    return neighbors
-        .map((neighbor) => ({
-            neighbor,
-            value: highestUnfoundRelicValue(state, neighbor.id)
-        }))
-        .filter((candidate) => candidate.value > 0)
-        .sort((left, right) => right.value - left.value)[0]?.neighbor;
-}
-
-function highestUnfoundRelicValue(
-    state: RelicGameState,
-    roomId: string
-): number {
-    return Math.max(
-        0,
-        ...state.relics
-            .filter((relic) =>
-                relic.roomId === roomId &&
-                !relic.foundBy &&
-                !relic.carriedBy &&
-                !relic.escapedBy
-            )
-            .map((relic) => relic.value)
-    );
-}
-
 function resolveSteal({ state, player, action, now }: RelicActionResolution): RelicGameState {
     const target = state.players.find((candidate) =>
         candidate.playerId === action.targetPlayerId &&
@@ -964,7 +638,7 @@ function resolveSteal({ state, player, action, now }: RelicActionResolution): Re
     );
     const stolenRelicId = target?.relicIds[0];
     if (!target || !stolenRelicId) {
-        return withEvent({
+        return withRelicEvent({
             state,
             message: `${player.username} tried to steal but came up empty.`,
             now,
@@ -983,7 +657,7 @@ function resolveSteal({ state, player, action, now }: RelicActionResolution): Re
         });
     }
 
-    return withEvent(
+    return withRelicEvent(
         {
             state: transferCarriedRelic({ state, player, target, stolenRelicId }),
             message: `${player.username} stole from ${target.username}.`,
@@ -1029,7 +703,7 @@ function resolveEscape(
     now: number
 ): RelicGameState {
     if (player.roomId !== 'exit') {
-        return withEvent({
+        return withRelicEvent({
             state,
             message: `${player.username} tried to escape too early.`,
             now,
@@ -1047,7 +721,7 @@ function resolveEscape(
     );
 
     return updatePlayer(
-        withEvent(
+        withRelicEvent(
             {
                 state: {
                     ...state,
@@ -1079,7 +753,7 @@ function resolveEscape(
 }
 
 function applyRuinPhase(state: RelicGameState, noise: number, now: number): RelicGameState {
-    let next = withEvent({
+    let next = withRelicEvent({
         state,
         message: `The ruin hears ${noise} noise.`,
         now,
@@ -1109,7 +783,7 @@ function damageExposedHunter(state: RelicGameState, now: number): RelicGameState
     }
     const health = Math.max(0, target.health - 1);
     return updatePlayer(
-        withEvent({
+        withRelicEvent({
             state,
             message: `${target.username} is hurt by falling stones.`,
             now,
@@ -1136,7 +810,7 @@ function markUnstableRoom(state: RelicGameState, now: number): RelicGameState {
         return state;
     }
     return {
-        ...withEvent({
+        ...withRelicEvent({
             state,
             message: `${roomToMark.name} becomes unstable.`,
             now,
@@ -1156,7 +830,7 @@ function collapseUnstableRoom(state: RelicGameState, now: number): RelicGameStat
         return state;
     }
     return {
-        ...withEvent({
+        ...withRelicEvent({
             state,
             message: `${roomToCollapse.name} collapses.`,
             now,
@@ -1177,60 +851,6 @@ function collapseUnstableRoom(state: RelicGameState, now: number): RelicGameStat
                 ? { ...player, health: 0, defeated: true }
                 : player
         )
-    };
-}
-
-function ensurePlayer(
-    { state, playerId, username, now, characterId }: RelicPlayerAdmission
-): RelicPlayerAdmissionResult {
-    const existing = state.players.find((player) => player.playerId === playerId);
-    if (existing) {
-        const player = refreshJoinedPlayer({ state, existing, username, characterId });
-        return { state: updatePlayer(state, player), player };
-    }
-
-    const nextCharacterId = characterId ?? defaultRelicCharacterId(state.players.length);
-    const player: RelicPlayer = {
-        playerId,
-        username,
-        characterId: nextCharacterId,
-        roomId: 'entrance',
-        health: startingHealth(nextCharacterId),
-        escaped: false,
-        defeated: false,
-        score: 0,
-        relicIds: []
-    };
-
-    return {
-        state: {
-            ...state,
-            adminPlayerId: state.players.length === 0 ? state.adminPlayerId ?? playerId : state.adminPlayerId,
-            players: [...state.players, player],
-            events: appendEvent({
-                state,
-                message: `${username} joined as ${findRelicCharacter(player.characterId).name}.`,
-                now,
-                options: {
-                    type: 'player_joined',
-                    tone: 'success'
-                }
-            })
-        },
-        player
-    };
-}
-
-function refreshJoinedPlayer({ state, existing, username, characterId }: RelicJoinedPlayerRefresh): RelicPlayer {
-    if (existing.username === username && !characterId) {
-        return existing;
-    }
-    const nextCharacterId = state.phase === 'lobby' && characterId ? characterId : existing.characterId;
-    return {
-        ...existing,
-        username,
-        characterId: nextCharacterId,
-        health: state.phase === 'lobby' && characterId ? startingHealth(nextCharacterId) : existing.health
     };
 }
 
@@ -1312,10 +932,6 @@ function escapeBonusForPlayer(player: RelicPlayer): number {
     return 5 + (findRelicCharacter(player.characterId).escapeBonus ?? 0);
 }
 
-function startingHealth(characterId: RelicPlayer['characterId']): number {
-    return STARTING_HEALTH + (findRelicCharacter(characterId).healthBonus ?? 0);
-}
-
 function baseNoiseForAction(action: RelicActionInput): number {
     switch (action.kind) {
         case 'escape':
@@ -1369,20 +985,6 @@ function updatePlayer(state: RelicGameState, player: RelicPlayer): RelicGameStat
     };
 }
 
-function withEvent({ state, message, now, options }: RelicStateEvent): RelicGameState {
-    return {
-        ...state,
-        events: appendEvent({ state, message, now, options })
-    };
-}
-
-function appendEvent({ state, message, now, options }: RelicEventAppend): readonly RelicEvent[] {
-    return [
-        ...state.events,
-        toRelicEvent({ round: state.round, message, now, options })
-    ].slice(-64);
-}
-
 function touch(state: RelicGameState, now: number): RelicGameState {
     return scoreAllPlayers({
         ...state,
@@ -1392,4 +994,33 @@ function touch(state: RelicGameState, now: number): RelicGameState {
 
 function roomName(state: RelicGameState, roomId: string): string {
     return state.map.find((room) => room.id === roomId)?.name ?? roomId;
+}
+function applyAdmittedRelicCommand(
+    joined: RelicPlayerAdmissionResult,
+    command: Exclude<RelicCommand, {
+        kind:
+            | 'set-rematch-ready'
+            | 'start-rematch'
+            | 'set-rematch-round-limit'
+            | 'leave-expedition'
+            | 'take-keeper';
+    }>,
+    now: number
+): Either<RelicRuleRefusal, RelicApplyCommandResult> {
+    switch (command.kind) {
+        case 'join-expedition':
+            return Either.ofRight({ state: touch(joined.state, now), resolvedRound: false });
+        case 'start-expedition':
+            return Either.ofRight({
+                state: touch(startRelicExpedition(joined.state, joined.player, now), now),
+                resolvedRound: false
+            });
+        case 'set-round-limit':
+            return Either.ofRight({
+                state: touch({ ...joined.state, roundTimeLimitMs: command.timeLimitMs }, now),
+                resolvedRound: false
+            });
+        default:
+            return Either.ofRight(applyRoundCommand({ state: joined.state, player: joined.player, command, now }));
+    }
 }

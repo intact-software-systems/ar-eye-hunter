@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import '../setup-browser-indexeddb.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import '../setup-browser-indexeddb.ts';
 
 import {
     applyRelicCommand,
@@ -18,7 +18,6 @@ import {
     type RelicPublicSnapshot,
     type RelicRoundTransitionEvent
 } from '@relic-hunters/mod.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarMessage,
     RallarMessageReplyOutcome,
@@ -37,6 +36,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import {
     act,
     createElement,
@@ -142,7 +142,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                 roomState: rallarMock.roomState
             };
         },
-        subscriptions: () => new BrowserRallarSubscriptionScope(),
+        subscriptions: () => new SubscriptionScope(),
         rooms: {
             state: () => rallarMock.roomState,
             refresh: async () => {
@@ -421,10 +421,10 @@ describe('Relic Hunters browser app', () => {
     it('shows the rule text of a refused command where the command error shows', async () => {
         writeSession(session());
         rallarMock.roomState = roomState(2);
-        stubSnapshotFetch(snapshotWithPlayers(2, 'planning'));
+        stubSnapshotFetch({ ...snapshotWithPlayers(2, 'planning'), roundStartedAtEpochMs: Date.now() });
 
         await renderApp();
-        await waitFor(() => rallarMock.hunterEventHandler !== undefined);
+        await waitFor(() => rallarMock.hunterEventHandler !== undefined && submitPlanButton() !== undefined);
         expect(container.querySelector('.error-panel')).toBeNull();
         await act(async () => {
             await rallarMock.hunterEventHandler?.(REFUSED, toHunterEventMessage(REFUSED));
@@ -1056,6 +1056,7 @@ const REFUSED: RelicHunterEvent = {
     principalId: 'client-1',
     playerId: 'alice-session',
     kind: 'command-refused',
+    completedGameId: null,
     command: 'force-resolve-round',
     text: 'Round timer has not expired.'
 };

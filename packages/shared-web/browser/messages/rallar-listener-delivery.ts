@@ -2,48 +2,7 @@ import type {
     RallarStateEventListener,
     RallarStateEventMessage
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type {
-    RallarStateListener,
-    RallarSubscriptionScope,
-    RallarUnsubscribe
-} from '@shared-web/browser/rallar-shared-contracts.ts';
-
-/** Owns teardown for an application-defined collection of Rallar listeners. */
-export class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
-    private readonly unsubscribers = new Set<RallarUnsubscribe>();
-    private closed = false;
-
-    add(unsubscribe?: RallarUnsubscribe): RallarSubscriptionScope {
-        if (!unsubscribe) {
-            return this;
-        }
-
-        if (this.closed) {
-            unsubscribe();
-            return this;
-        }
-
-        this.unsubscribers.add(unsubscribe);
-        return this;
-    }
-
-    unsubscribe(): void {
-        if (this.closed) {
-            return;
-        }
-
-        this.closed = true;
-        const current = [...this.unsubscribers];
-        this.unsubscribers.clear();
-        for (const unsubscribe of current) {
-            unsubscribe();
-        }
-    }
-
-    size(): number {
-        return this.unsubscribers.size;
-    }
-}
+import type { RallarStateListener } from '@shared-web/browser/rallar-shared-contracts.ts';
 
 export async function notifyStateEventListener<TEvent>(
     listener: RallarStateEventListener<TEvent>,

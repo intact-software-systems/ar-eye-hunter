@@ -10,7 +10,7 @@ import {
     resetTouchPointer,
     shouldFireHeldWeapon,
     updateTouchPointer
-} from '../../../apps/ar-eye-hunter-v1/src/game/mobileInput.ts';
+} from '../../../apps/ar-eye-hunter-v1/src/game/mobile-input.ts';
 
 describe('AR Eye Hunter mobile input', () => {
     it('maps virtual stick movement with deadzone, clamp, and sprint threshold', () => {
@@ -29,8 +29,8 @@ describe('AR Eye Hunter mobile input', () => {
 
     it('tracks independent move/look pointers and resets them on cancel', () => {
         let state = createInitialTouchControlState();
-        state = updateTouchPointer(state, 'move', 11, { x: 48, y: 80 });
-        state = updateTouchPointer(state, 'look', 22, { x: 420, y: 130 });
+        state = updateTouchPointer({ state: state, role: 'move', pointerId: 11, point: { x: 48, y: 80 } });
+        state = updateTouchPointer({ state: state, role: 'look', pointerId: 22, point: { x: 420, y: 130 } });
 
         expect(state.movePointerId).toBe(11);
         expect(state.lookPointerId).toBe(22);

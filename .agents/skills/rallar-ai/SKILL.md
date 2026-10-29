@@ -21,7 +21,7 @@ rg -n "RallarAi|createRallarAi|generateJson|schemaId|provider|lifecycle|AI_DIREC
 - `packages/shared/rallar-ai`: shared JSON contracts, hashing, schemas, lifecycle, governance, mock/fake providers, deterministic helpers.
 - `packages/shared-web/browser/rallar-ai.ts`: browser facade and provider execution policy.
 - `packages/shared-server/rallar-ai`: server AI facade and providers such as Ollama.
-- `apps/ar-eye-hunter-v1/src/game/aiDirector.ts`: AR Eye gameplay event proposals.
+- `apps/ar-eye-hunter-v1/src/game/ai-director.ts`: AR Eye gameplay event proposals.
 - `apps/relic-hunter-server-v1/src/relic-expedition-ai.ts`: server-side Relic expedition generation with procedural fallback.
 - `apps/relic-hunters-v1/src/game/ai`: Relic browser planning assistant.
 

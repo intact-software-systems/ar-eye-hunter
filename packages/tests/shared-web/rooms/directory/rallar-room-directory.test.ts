@@ -27,6 +27,7 @@ const ALICE: AuthSession = {
 };
 
 class DirectoryBrowser {
+    public failAuthCleanup = false;
     readonly timers = createManualTimers(0);
     readonly authListeners = new Set<RallarAuthChangeListener>();
     readonly activityListeners = new Set<() => void>();
@@ -41,6 +42,9 @@ class DirectoryBrowser {
                 this.authListeners.add(listener);
                 return () => {
                     this.authListeners.delete(listener);
+                    if (this.failAuthCleanup) {
+                        throw new Error('auth cleanup failed');
+                    }
                 };
             }
         },
@@ -248,4 +252,20 @@ describe('room directory freshness', () => {
         await browser.timers.advance(60_000);
         expect(browser.requests).toHaveLength(1);
     });
+});
+
+it('stops directory timers and restarts after a subscription cleanup failure', async () => {
+    const browser = new DirectoryBrowser();
+    await browser.directory.start();
+    expect(browser.timers.pendingCount()).toBe(1);
+    browser.failAuthCleanup = true;
+    expect(() => browser.directory.stop()).toThrow(AggregateError);
+    expect(browser.directory.getState().status).toBe('idle');
+    expect(browser.timers.pendingCount()).toBe(0);
+    expect(browser.authListeners.size + browser.activityListeners.size).toBe(0);
+    browser.failAuthCleanup = false;
+    await browser.directory.start();
+    expect(browser.requests).toHaveLength(2);
+    expect(browser.directory.getState().status).toBe('ready');
+    browser.directory.stop();
 });

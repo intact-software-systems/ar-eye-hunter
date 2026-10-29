@@ -14,23 +14,21 @@ import {
     ProceduralArenaAudio,
     type ArenaAudioSettings,
     type ArenaMusicLayerState
-} from '../arenaAudio.ts';
+} from '../arena-audio.ts';
+import type { PlayerPose } from '../arena-contracts.ts';
+import { type ArenaSimulationState } from '../arena-contracts.ts';
+import { createInitialPlayerState, EMPTY_INPUT, type LocalPlayerState } from '../arena-player-state.ts';
 import {
     calculateVirtualStick,
     createInitialTouchControlState,
     type InputDeviceKind,
     type MobileControlSettings
-} from '../mobileInput.ts';
+} from '../mobile-input.ts';
 import {
     createInitialArenaState,
-    createInitialPlayerState,
-    EMPTY_INPUT,
     hydrateArenaSnapshot,
-    toArenaSnapshot,
-    type ArenaSimulationState,
-    type LocalPlayerState
+    toArenaSnapshot
 } from '../simulation.ts';
-import type { PlayerPose } from '../types.ts';
 import type {
     ArenaSceneClock,
     BabylonArenaProps,

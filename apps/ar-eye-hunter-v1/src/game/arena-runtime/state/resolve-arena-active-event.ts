@@ -1,4 +1,4 @@
-import type { ArenaEvent } from '../../types.ts';
+import type { ArenaEvent } from '../../arena-contracts.ts';
 
 /**
  * The headline after a remote snapshot or director event: the local session's own event, such as a pickup it lost,

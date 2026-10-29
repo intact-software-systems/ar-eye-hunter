@@ -284,7 +284,7 @@ describe('Relic authoritative save mutations', () => {
                 move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'take-keeper', username: fixture.guest.username }
             }, null);
             expect(takeover.computed.result.status).toBe('applied');
-            expect(takeover.computed.guard?.presenceRevision).toBe(0);
+            expect((await fixture.repository.findPresenceEntry(ref))?.entry.revision).toBe(0);
             await fixture.repository.deletePresence(ref, 0);
             await fixture.repository.insertPresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 });
             await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, takeover.computed)))

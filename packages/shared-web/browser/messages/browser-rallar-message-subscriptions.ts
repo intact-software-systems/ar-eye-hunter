@@ -1,4 +1,5 @@
 import type {
+    RallarMessage,
     RallarMessageHandler,
     RallarMessageTransport
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -19,6 +20,7 @@ import {
     recordALInboundDiagnostic,
     type ALInboundRuntimeDiagnosticsSink
 } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { AsyncNotifications, notifyConcurrentListeners } from '@shared/cache/async-notifications.ts';
 
 interface BrowserRallarMessageSubscriptionsInput {
     readonly wsInbox: BrowserWebSocketInbox;
@@ -31,7 +33,7 @@ type RallarInboundMessageTransport = Extract<RallarMessageTransport, 'rtc' | 'ws
 
 interface RallarMessageSubscription {
     readonly selector: RallarMessageSelector;
-    readonly listeners: Set<RallarMessageHandler>;
+    readonly listeners: AsyncNotifications<RallarMessage>;
 }
 
 export class BrowserRallarMessageSubscriptions {
@@ -57,7 +59,7 @@ export class BrowserRallarMessageSubscriptions {
 
         const subscription = this.readOrCreateSubscription(transport, selector);
         const listener = handler as RallarMessageHandler;
-        subscription.listeners.add(listener);
+        const registration = subscription.listeners.subscribe(listener);
         if (transport === 'rtc') {
             this.registerRtcCallback(selector);
         }
@@ -65,7 +67,7 @@ export class BrowserRallarMessageSubscriptions {
             this.subscribeWsInbox();
         }
 
-        return () => this.unsubscribe(transport, subscription, listener);
+        return () => this.unsubscribe(transport, subscription, registration.unsubscribe);
     }
 
     public attachRtc(context = this.input.readMiddleware()): void {
@@ -89,15 +91,19 @@ export class BrowserRallarMessageSubscriptions {
     private unsubscribe(
         transport: RallarInboundMessageTransport,
         subscription: RallarMessageSubscription,
-        listener: RallarMessageHandler
+        unsubscribe: RallarUnsubscribe
     ): void {
-        subscription.listeners.delete(listener);
+        unsubscribe();
         if (subscription.listeners.size > 0) {
             return;
         }
 
         const registry = this.subscriptionRegistry(transport);
-        registry.delete(toRallarMessageSelectorKey(subscription.selector));
+        const key = toRallarMessageSelectorKey(subscription.selector);
+        if (registry.get(key) !== subscription) {
+            return;
+        }
+        registry.delete(key);
         if (transport === 'rtc' && subscription.selector.typeId) {
             if (!this.hasRtcSubscriptionsForTypeId(subscription.selector.typeId)) {
                 this.unregisterRtcCallback(subscription.selector.typeId);
@@ -122,7 +128,7 @@ export class BrowserRallarMessageSubscriptions {
         }
         const created: RallarMessageSubscription = {
             selector,
-            listeners: new Set<RallarMessageHandler>()
+            listeners: new AsyncNotifications<RallarMessage>()
         };
         registry.set(key, created);
         return created;
@@ -206,16 +212,9 @@ export class BrowserRallarMessageSubscriptions {
             return;
         }
         const rallarMessage = toRallarMessage<never>(transport, message, this.input.sendReply);
-        await Promise.all(
-            [...listeners].map(async (listener) => {
-                try {
-                    await listener(rallarMessage);
-                }
-                catch (error) {
-                    console.error('Error notifying Rallar message listener', error);
-                }
-            })
-        );
+        await notifyConcurrentListeners(listeners, rallarMessage, (error) => {
+            console.error('Error notifying Rallar message listener', error);
+        });
     }
 
     private matchingListeners(
@@ -227,7 +226,7 @@ export class BrowserRallarMessageSubscriptions {
             if (!matchesRallarMessageSelector(subscription.selector, message)) {
                 continue;
             }
-            for (const listener of subscription.listeners) {
+            for (const listener of subscription.listeners.getListeners()) {
                 listeners.add(listener);
             }
         }

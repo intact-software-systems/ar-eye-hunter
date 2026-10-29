@@ -3,26 +3,6 @@ import { act, createElement, type RefObject, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { useArenaDirectorMessageHandler } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-director-message-handler.ts';
-import {
-    useArenaPeerMessageHandlers,
-    type ArenaPeerMessageHandlers
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
-import { useArenaStateAcceptance, type ArenaStateAcceptance } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts';
-import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import {
-    createInitialArenaState,
-    createInitialVitalsState,
-    finishArenaMatchIfDue,
-    resolveEyeAttackCue,
-    resolvePickupIntent,
-    resolvePlayerHitIntent,
-    spawnWeaponPickup,
-    startArenaMatch,
-    toArenaSnapshot,
-    upsertPlayerPose,
-    type ArenaSimulationState
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type {
     ArenaEvent,
     ArenaMatchLifecycleMessage,
@@ -32,7 +12,26 @@ import type {
     PlayerHitAccepted,
     PlayerPose,
     RemotePlayer
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { type ArenaSimulationState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
+import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
+import { useArenaDirectorMessageHandler } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-director-message-handler.ts';
+import {
+    useArenaPeerMessageHandlers,
+    type ArenaPeerMessageHandlers
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
+import { useArenaStateAcceptance, type ArenaStateAcceptance } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts';
+import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+import {
+    createInitialArenaState,
+    resolveEyeAttackCue,
+    resolvePickupIntent,
+    resolvePlayerHitIntent,
+    spawnWeaponPickup,
+    toArenaSnapshot,
+    upsertPlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 vi.mock('@shared-web/browser/rallar.ts', async () => {
     const { createGroupSnapshotFixture } = await import('../shared-web/authoritative-group-fixtures.ts');
@@ -54,7 +53,7 @@ interface IncomingFixture {
     readonly hits: DeferredState<readonly PlayerHitAccepted[]>;
     readonly pickups: DeferredState<readonly PickupAccepted[]>;
     readonly players: DeferredState<ReadonlyMap<string, RemotePlayer>>;
-    readonly matchRef: RefObject<Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot'> | undefined>;
+    readonly matchRef: RefObject<Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot' | 'status'> | undefined>;
     readonly snapshotRef: RefObject<ArenaSnapshot | undefined>;
     readonly roomIdRef: RefObject<string | undefined>;
     clock: number;
@@ -210,6 +209,9 @@ describe('accepted match-start lifetime', () => {
         const snapshots: ArenaSnapshot[] = [];
         let valid = true;
         fixture.matchRef.current = {
+            status: () => {
+                throw new Error('No rematch authority is configured in this incoming-publication fixture.');
+            },
             publishEvent: async () => {
                 eventStarted.resolve();
                 await eventDone.promise;
@@ -232,6 +234,9 @@ describe('accepted match-start lifetime', () => {
         if (end === 'replacement') {
             replaceRoom(fixture);
             fixture.matchRef.current = {
+                status: () => {
+                    throw new Error('No rematch authority is configured in this incoming-publication fixture.');
+                },
                 publishEvent: async () => ({ status: 'sent' }),
                 publishSnapshot: async (snapshot) => {
                     snapshots.push(snapshot);
@@ -261,6 +266,9 @@ describe('accepted match-start lifetime', () => {
         const fixture = incomingFixture({ ...incomingMessages().snapshot, roomId: undefined });
         const snapshots: ArenaSnapshot[] = [];
         fixture.matchRef.current = {
+            status: () => {
+                throw new Error('No rematch authority is configured in this incoming-publication fixture.');
+            },
             publishEvent: async () => ({ status: 'sent' }),
             publishSnapshot: async (snapshot) => {
                 snapshots.push(snapshot);
@@ -283,6 +291,9 @@ describe('accepted match-start lifetime', () => {
         const fixture = incomingFixture({ ...incomingMessages().snapshot, roomId: 'prior-room' });
         const events: GameRealtimeMessage[] = [];
         fixture.matchRef.current = {
+            status: () => {
+                throw new Error('No rematch authority is configured in this incoming-publication fixture.');
+            },
             publishEvent: async (event) => {
                 events.push(event);
                 return { status: 'sent' };
@@ -322,6 +333,7 @@ async function mountIncoming(fixture: IncomingFixture): Promise<IncomingOwners> 
     let owners: Omit<IncomingOwners, 'unmount'> | undefined;
     function Harness() {
         const input = {
+            setError: () => {},
             nowMs: () => fixture.clock,
             publishMatchLifecycleOutput: async (
                 match: Pick<ArenaRallarGameMatchHandle, 'publishEvent'>,
@@ -437,7 +449,16 @@ function incomingMessages(): IncomingMessages {
 
 function incomingCombatMessages(state: ArenaSimulationState, now: number): Pick<IncomingMessages, 'hit' | 'pickup' | 'eye'> {
     const hit = resolvePlayerHitIntent(state, {
-        shot: { sessionId: 'attacker', username: 'attacker', color: '#00ffaa', origin: [0, 1.72, 0], direction: [0, 0, 1], seq: 1, sentAtEpochMs: now },
+        shot: {
+            sessionId: 'attacker',
+            username: 'attacker',
+            color: '#00ffaa',
+            origin: [0, 1.72, 0],
+            direction: [0, 0, 1],
+            seq: 1,
+            sentAtEpochMs: now,
+            weaponKind: 'pulse-rifle' as const
+        },
         targetSessionId: 'target',
         predictedImpact: [0, 1.72, 9],
         sentAtEpochMs: now

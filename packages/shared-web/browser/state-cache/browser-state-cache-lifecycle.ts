@@ -3,7 +3,7 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
-import { toError } from '@shared/resilience/to-error.ts';
+import { AsyncNotifications } from '@shared/cache/async-notifications.ts';
 import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
 // dprint-ignore
 import {
@@ -106,16 +106,13 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     cancelSnapshotAssemblies(): void {
         this.#snapshotAssembly.clear();
     }
-    readonly #changeListeners = new Set<StateCacheChangeListener>();
+    readonly #changeNotifications = new AsyncNotifications<StateCacheChange>();
     readonly #observerTasks = new Set<Promise<void>>();
     #observersUnsubscribe: (() => void) | undefined;
     #observerContext: BrowserStateCacheLifecycle.ObserverContext | undefined;
 
     onChange(listener: StateCacheChangeListener): () => void {
-        this.#changeListeners.add(listener);
-        return () => {
-            this.#changeListeners.delete(listener);
-        };
+        return this.#changeNotifications.subscribe(listener).unsubscribe;
     }
 
     initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void {
@@ -313,19 +310,9 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private async notifyStateCacheChange(change: StateCacheChange): Promise<void> {
-        await Promise.all(
-            [...this.#changeListeners].map(async (listener) => {
-                try {
-                    await listener(change);
-                }
-                catch (error) {
-                    console.error(
-                        'Error notifying state cache listener',
-                        toError(error)
-                    );
-                }
-            })
-        );
+        await this.#changeNotifications.publishConcurrent(change, (error) => {
+            console.error('Error notifying state cache listener', error);
+        });
     }
 
     private readActiveStateCacheScope(initialScope: StateScope): StateScope {

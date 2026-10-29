@@ -14,8 +14,7 @@ import {
 } from './relic-intel.tsx';
 import {
     RelicLobby,
-    RelicPreferencesControls,
-    SidePanelMenu
+    RelicPreferencesControls
 } from './relic-lobby.tsx';
 import { CastleMap, castleMapExitDistances } from './relic-map.tsx';
 import {
@@ -89,10 +88,18 @@ function RelicSectionMenu({ game }: RelicSectionMenuProps) {
         items.push({ id: 'hud-ai', label: 'AI' }, { id: 'hud-map', label: 'Map' }, { id: 'hud-intel', label: 'Intel' });
     }
     return (
-        <SidePanelMenu
-            items={items}
-            onJump={(id) => document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'auto' })}
-        />
+        <nav className="side-panel-menu" aria-label="Side panel sections">
+            {items.map((item) => (
+                <button
+                    key={item.id}
+                    type="button"
+                    onClick={() =>
+                        document.getElementById(item.id)?.scrollIntoView({ block: 'start', behavior: 'auto' })}
+                >
+                    {item.label}
+                </button>
+            ))}
+        </nav>
     );
 }
 
@@ -117,7 +124,11 @@ function RelicExpeditionPanel({ game, turn, preferences, reset }: RelicExpeditio
         <div id="hud-plan" className="panel stack">
             <RelicPartyControls game={game} turn={turn} preferences={preferences} />
             <div className="button-grid">
-                <button type="button" disabled={game.participation !== 'player'} onClick={() => void reset()}>
+                <button
+                    type="button"
+                    disabled={game.participation !== 'player' || game.snapshot?.phase === 'finished'}
+                    onClick={() => void reset()}
+                >
                     {preferences.lang === 'no' ? 'Tilbakestill' : 'Reset'}
                 </button>
                 <RelicPreferencesControls preferences={preferences} />

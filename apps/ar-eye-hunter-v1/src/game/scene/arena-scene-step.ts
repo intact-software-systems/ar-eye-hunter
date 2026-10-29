@@ -4,20 +4,6 @@ import {
     estimateRallarMotionVelocity
 } from '@shared/rallar-motion/mod.ts';
 
-import {
-    shouldFireHeldWeapon
-} from '../mobileInput.ts';
-import {
-    applyPlayerHitAccepted,
-    findPickupNearPlayer,
-    getWeaponStats,
-    resolveShot,
-    stepLocalPlayer,
-    toArenaSnapshot,
-    upsertPlayerPose,
-    type ArenaSimulationState,
-    type ShotResolution
-} from '../simulation.ts';
 import type {
     ArenaSnapshot,
     EyeTargetState,
@@ -26,7 +12,20 @@ import type {
     ShotIntent,
     Vec3Tuple,
     WeaponKind
-} from '../types.ts';
+} from '../arena-contracts.ts';
+import { type ArenaSimulationState } from '../arena-contracts.ts';
+import { stepLocalPlayer } from '../arena-player-state.ts';
+import { resolveShot, type ShotResolution } from '../arena-targets.ts';
+import { getWeaponStats } from '../arena-weapons.ts';
+import {
+    shouldFireHeldWeapon
+} from '../mobile-input.ts';
+import {
+    applyPlayerHitAccepted,
+    findPickupNearPlayer,
+    toArenaSnapshot,
+    upsertPlayerPose
+} from '../simulation.ts';
 import { syncRemoteAvatars, syncRemoteShots } from './arena-peer-view.ts';
 import type {
     BabylonArenaProps,
@@ -116,13 +115,13 @@ function reconcileSceneObservations(input: ArenaSceneStepInput): void {
 }
 function advancePlayerPrediction(input: ArenaSceneStepInput, dtMs: number, now: number): void {
     const { runtime } = input;
-    runtime.localPlayer = stepLocalPlayer(
-        runtime.localPlayer,
-        freezeInput(runtime.input),
+    runtime.localPlayer = stepLocalPlayer({
+        player: runtime.localPlayer,
+        input: freezeInput(runtime.input),
         dtMs,
-        now,
-        runtime.arenaState.layout.halfSize
-    );
+        nowEpochMs: now,
+        arenaHalfSize: runtime.arenaState.layout.halfSize
+    });
     const localPlayerId = input.localSessionId ?? 'local';
     runtime.arenaState = upsertPlayerPose(runtime.arenaState, {
         sessionId: localPlayerId,
@@ -207,7 +206,12 @@ export function fireLocalShot(input: ArenaLocalShotInput): void {
     const now = runtime.clock.nowEpochMs();
     const sessionId = input.localSessionId ?? 'local';
     const shot = createLocalShot(input, now);
-    const resolution = resolveShot(runtime.arenaState, runtime.localPlayer.combat, shot, now);
+    const resolution = resolveShot({
+        state: runtime.arenaState,
+        combat: runtime.localPlayer.combat,
+        shot,
+        nowEpochMs: now
+    });
     presentLocalShot(runtime, { shot, resolution, touchAssisted: input.touchAssisted ?? false });
     sendPredictedPlayerHit(input, shot);
     input.onLocalCombatChange(resolution.combat);

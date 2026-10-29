@@ -1,6 +1,6 @@
 import type { RallarAiFunnyRoomNameTheme } from '@shared/rallar-ai/mod.ts';
 
-import { GAME_ROOM_NAME } from '../../types.ts';
+import { GAME_ROOM_NAME } from '../../arena-contracts.ts';
 
 export const ARENA_ROOM_NAME_THEME: RallarAiFunnyRoomNameTheme = {
     id: 'ar-eye-hunter',

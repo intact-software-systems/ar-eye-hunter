@@ -1,5 +1,4 @@
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
-import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarMessage,
     RallarRtcStatus,
@@ -10,6 +9,7 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import { AL_DELIVERY_ADMITTED_STATES, isALDeliveryAdmitted } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import {
     createRallarGameAuthorityEnvelope,
     createRallarGameAuthoritySequenceTracker,
@@ -67,7 +67,9 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private readonly config: RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>;
     private readonly typeIds: RallarGameAuthorityTypeIds;
     private readonly sequenceTracker = createRallarGameAuthoritySequenceTracker();
-    private readonly statusHandlers = new Set<RallarGameAuthorityStatusHandler>();
+    private readonly statusNotifications = new SynchronousNotifications<RallarGameAuthorityClientStatus>((error) => {
+        console.error('Error notifying Rallar Game authority status handler', error);
+    });
     private readonly pendingCommands = new Map<number, number>();
     private subscriptions: RallarSubscriptionScope | undefined;
     private started = false;
@@ -115,9 +117,14 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         this.stopped = true;
         this.started = false;
         this.pendingCommands.clear();
-        this.subscriptions?.unsubscribe();
+        const subscriptions = this.subscriptions;
         this.subscriptions = undefined;
-        this.publishStatus('stopped');
+        try {
+            subscriptions?.unsubscribe();
+        }
+        finally {
+            this.publishStatus('stopped');
+        }
     }
 
     public status(): RallarGameAuthorityClientStatus {
@@ -181,11 +188,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     }
 
     public onStatus(handler: RallarGameAuthorityStatusHandler): RallarUnsubscribe {
-        this.statusHandlers.add(handler);
-        notifyListener(handler, this.currentStatus);
-        return () => {
-            this.statusHandlers.delete(handler);
-        };
+        return this.statusNotifications.subscribeAndNotify(handler, this.currentStatus).unsubscribe;
     }
 
     private subscribeToState(): void {
@@ -539,7 +542,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         reason?: string
     ): void {
         this.currentStatus = this.createStatus(phase, reason);
-        this.emitStatus(this.currentStatus);
+        this.statusNotifications.publishLatest(this.currentStatus);
     }
 
     private createStatus(
@@ -589,12 +592,6 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
 
     private readLocalPeerId(): string | undefined {
         return this.config.rallar.session()?.sessionId;
-    }
-
-    private emitStatus(status: RallarGameAuthorityClientStatus): void {
-        for (const handler of this.statusHandlers) {
-            notifyListener(handler, status);
-        }
     }
 }
 

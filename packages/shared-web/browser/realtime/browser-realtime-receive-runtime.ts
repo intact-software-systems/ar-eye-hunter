@@ -2,7 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { RallarRealtimeHandler, RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
-import { toError } from '@shared/resilience/to-error.ts';
+import { AsyncNotifications } from '@shared/cache/async-notifications.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelPayload } from '@shared/webrtc/qrtc-data-channel.ts';
 
@@ -23,8 +23,8 @@ export namespace BrowserRealtimeReceiveRuntime {
 
 /** Owns realtime lane subscriptions, inbound decoding, and peer callback lifetime. */
 export class BrowserRealtimeReceiveRuntime {
-    private readonly binaryListeners = new Map<string, Set<RallarRealtimeHandler<ArrayBuffer>>>();
-    private readonly jsonListeners = new Map<string, Set<RallarRealtimeHandler<ApiJsonValue>>>();
+    private readonly binaryListeners = new Map<string, AsyncNotifications<RallarRealtimeMessage<ArrayBuffer>>>();
+    private readonly jsonListeners = new Map<string, AsyncNotifications<RallarRealtimeMessage<ApiJsonValue>>>();
     private readonly input: BrowserRealtimeReceiveRuntime.Input;
 
     constructor(input: BrowserRealtimeReceiveRuntime.Input) {
@@ -33,13 +33,13 @@ export class BrowserRealtimeReceiveRuntime {
 
     onJson<T>(laneId: string, handler: RallarRealtimeHandler<T>): RallarUnsubscribe {
         const listeners = this.jsonListeners.get(laneId) ??
-            new Set<RallarRealtimeHandler<ApiJsonValue>>();
+            new AsyncNotifications<RallarRealtimeMessage<ApiJsonValue>>();
         // JSON syntax is validated below; the public generic remains the caller's application payload contract.
-        listeners.add(handler as RallarRealtimeHandler<ApiJsonValue>);
+        const subscription = listeners.subscribe(handler as RallarRealtimeHandler<ApiJsonValue>);
         this.jsonListeners.set(laneId, listeners);
         this.registerLaneCallbacks(laneId);
         return () => {
-            listeners.delete(handler as RallarRealtimeHandler<ApiJsonValue>);
+            subscription.unsubscribe();
             this.deleteLaneIfUnused(laneId);
         };
     }
@@ -49,12 +49,12 @@ export class BrowserRealtimeReceiveRuntime {
         handler: RallarRealtimeHandler<ArrayBuffer>
     ): RallarUnsubscribe {
         const listeners = this.binaryListeners.get(laneId) ??
-            new Set<RallarRealtimeHandler<ArrayBuffer>>();
-        listeners.add(handler);
+            new AsyncNotifications<RallarRealtimeMessage<ArrayBuffer>>();
+        const subscription = listeners.subscribe(handler);
         this.binaryListeners.set(laneId, listeners);
         this.registerLaneCallbacks(laneId);
         return () => {
-            listeners.delete(handler);
+            subscription.unsubscribe();
             this.deleteLaneIfUnused(laneId);
         };
     }
@@ -162,7 +162,7 @@ export class BrowserRealtimeReceiveRuntime {
             console.error('Error parsing Rallar realtime JSON message');
             return;
         }
-        await notifyListeners(listeners, toRealtimeMessage(input, parsed));
+        await listeners.publishConcurrent(toRealtimeMessage(input, parsed), reportRealtimeListenerError);
     }
 
     private async dispatchBinary(
@@ -174,7 +174,7 @@ export class BrowserRealtimeReceiveRuntime {
             return;
         }
         const bytes = await toArrayBuffer(data);
-        await notifyListeners(listeners, toRealtimeMessage(input, bytes));
+        await listeners.publishConcurrent(toRealtimeMessage(input, bytes), reportRealtimeListenerError);
     }
 
     private deleteLaneIfUnused(laneId: string): void {
@@ -208,18 +208,8 @@ function toRealtimeMessage<T>(
     };
 }
 
-async function notifyListeners<T>(
-    listeners: Set<RallarRealtimeHandler<T>>,
-    message: RallarRealtimeMessage<T>
-): Promise<void> {
-    await Promise.all([...listeners].map(async (listener) => {
-        try {
-            await listener(message);
-        }
-        catch (error) {
-            console.error('Error notifying Rallar realtime listener', toError(error));
-        }
-    }));
+function reportRealtimeListenerError(error: Error): void {
+    console.error('Error notifying Rallar realtime listener', error);
 }
 
 async function toArrayBuffer(data: Exclude<RtcDataChannelPayload, string>): Promise<ArrayBuffer> {

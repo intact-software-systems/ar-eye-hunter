@@ -19,7 +19,6 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type {
     RallarAuthChangeListener,
@@ -40,6 +39,7 @@ import type {
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
 import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
@@ -245,6 +245,26 @@ describe('RelicHuntersRuntime', () => {
         expect(runtime.getState().error).toBe(refusal.text);
         backend.deliverSnapshot({ ...relicSnapshot('room-1', 21), phase: 'finished' });
         expect(runtime.getState().error).toBeUndefined();
+        backend.deliverHunterEvent(refusal);
+        expect(runtime.getState().error).toBeUndefined();
+    });
+
+    it('shows a rematch refusal while results remain and ignores it after the next expedition starts', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const finished = { ...relicSnapshot('room-1', 21), phase: 'finished' as const };
+        backend.deliverSnapshot(finished);
+        const refusal = {
+            ...refusedPlan(),
+            command: 'set-rematch-ready' as const,
+            completedGameId: `room-1:${finished.createdAtEpochMs}`,
+            text: 'Your room membership changed. Confirm again.'
+        };
+        backend.deliverHunterEvent(refusal);
+        expect(runtime.getState().error).toBe(refusal.text);
+        expect(runtime.getState().snapshot?.phase).toBe('finished');
+        backend.deliverSnapshot({ ...finished, createdAtEpochMs: finished.createdAtEpochMs + 1, updatedAtEpochMs: 22, phase: 'planning' });
         backend.deliverHunterEvent(refusal);
         expect(runtime.getState().error).toBeUndefined();
     });
@@ -773,6 +793,32 @@ describe('RelicHuntersRuntime', () => {
         oldLogin.reject(new Error('Obsolete login failed'));
         await pending;
         expect(runtime.getState()).toMatchObject({ connectionState: 'ready', session, error: undefined });
+    });
+
+    it('binds Play again commands to the displayed completed expedition and settings', async () => {
+        const backend = new RelicRuntimeBackend();
+        backend.wsDelivery = { state: 'acknowledged', reason: undefined };
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const finished = { ...relicSnapshot('room-1', 21), phase: 'finished' as const };
+        backend.deliverSnapshot(finished);
+        await runtime.getState().setRematchReady(true, 'kael-ironstride');
+        await runtime.getState().startRematch();
+        await runtime.getState().setRematchRoundLimit(180_000);
+        expect(backend.commands.map((entry) => entry.command)).toEqual([
+            expect.objectContaining({
+                kind: 'set-rematch-ready',
+                ready: true,
+                characterId: 'kael-ironstride',
+                completedGameId: `room-1:${finished.createdAtEpochMs}`,
+                settingsKey: `round-limit:${finished.roundTimeLimitMs}:0`
+            }),
+            expect.objectContaining({ kind: 'start-rematch', completedGameId: `room-1:${finished.createdAtEpochMs}` }),
+            expect.objectContaining({ kind: 'set-rematch-round-limit', timeLimitMs: 180_000 })
+        ]);
+        backend.deliverSnapshot({ ...finished, phase: 'planning', updatedAtEpochMs: finished.updatedAtEpochMs + 1 });
+        await runtime.getState().setRematchReady(false, 'kael-ironstride');
+        expect(backend.commands).toHaveLength(3);
     });
 
     it('sends gameplay over WS and records the receipt without a second REST attempt', async () => {
@@ -1335,7 +1381,7 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
         return { session: this.session, connected: !!this.session, roomState: this.state };
     }
     public subscriptions() {
-        return new BrowserRallarSubscriptionScope();
+        return new SubscriptionScope();
     }
     public async login() {
         if (!this.session) {
@@ -1547,6 +1593,7 @@ function refusedPlan(): RelicHunterEvent {
         principalId: 'alice-client',
         playerId: 'alice-session',
         kind: 'command-refused',
+        completedGameId: null,
         command: 'submit-action',
         text: 'Review the revealed actions before planning the next turn.'
     };

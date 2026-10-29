@@ -25,6 +25,7 @@ const ALICE: AuthSession = {
 };
 
 class RecoveryBrowser {
+    public failAuthCleanup = false;
     public session: AuthSession | undefined = ALICE;
     public now = 100;
     public failOpen = false;
@@ -43,6 +44,9 @@ class RecoveryBrowser {
             this.authListeners.add(listener);
             return () => {
                 this.authListeners.delete(listener);
+                if (this.failAuthCleanup) {
+                    throw new Error('auth cleanup failed');
+                }
             };
         }
     };
@@ -398,4 +402,23 @@ describe('recent room navigation history', () => {
         expect(browser.entry.getState()).toBe(entered);
         expect(history.getState()).toMatchObject({ status: 'ready', rooms: [{ roomRef: { ...SCOPE, groupId: 'room-a' } }] });
     });
+});
+
+it('closes history storage and can restart after a subscription cleanup failure', async () => {
+    const browser = createBrowser();
+    const history = browser.createHistory();
+    await history.start();
+    browser.failAuthCleanup = true;
+    try {
+        await expect(history.stop()).rejects.toThrow(AggregateError);
+        expect(browser.manager.size()).toBe(0);
+        expect(history.getState().status).toBe('signed-out');
+    }
+    finally {
+        browser.failAuthCleanup = false;
+    }
+    await history.start();
+    expect(history.getState().status).toBe('ready');
+    await browser.visit('after-restart');
+    expect(history.getState().rooms.map((room) => room.roomRef.groupId)).toEqual(['after-restart']);
 });

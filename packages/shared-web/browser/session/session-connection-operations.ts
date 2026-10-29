@@ -6,10 +6,10 @@ import {
 } from '@shared-web/browser/api-client-config.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarConnectionOperations, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
 import type { RallarSessionAuthLifecycle } from './session-auth-lifecycle.ts';
 
@@ -35,7 +35,7 @@ export function createRallarSessionConnectionOperations(
             input.connectionRuntime.readMiddleware() !== undefined,
         session: readSession,
         serverPeerId: () => input.connectionRuntime.readMiddleware()?.middleware.webSocketQueueBox.serverPeerId,
-        subscriptions: () => new BrowserRallarSubscriptionScope(),
+        subscriptions: () => new SubscriptionScope(),
         flow: <K, V>(policies = {}) => CommandsOrchestrator.withPolicies<K, V>(policies)
     };
 }

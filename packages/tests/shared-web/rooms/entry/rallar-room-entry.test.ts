@@ -85,6 +85,7 @@ interface EntryRequest {
 }
 
 class EntryBrowser {
+    public failAuthCleanup = false;
     public url = 'https://game.example/';
     public session: AuthSession | undefined;
     public readonly storage = new Map<string, string>();
@@ -104,6 +105,9 @@ class EntryBrowser {
                     this.authListeners.add(listener);
                     return () => {
                         this.authListeners.delete(listener);
+                        if (this.failAuthCleanup) {
+                            throw new Error('auth cleanup failed');
+                        }
                     };
                 }
             },
@@ -622,3 +626,26 @@ function shareLink(destination: RallarRoomEntry.Destination): string {
 function roomSnapshot(roomRef: GroupRef): GroupSnapshot {
     return createGroupSnapshotFixture({ ...roomRef, sessionIds: ['alice'] });
 }
+
+it('normalizes pending entry and can restart after a subscription cleanup failure', async () => {
+    const browser = new EntryBrowser();
+    browser.session = SESSION;
+    const pending = Promise.withResolvers<GroupSnapshot>();
+    browser.respond = () => pending.promise;
+    const entry = browser.createEntry();
+    entry.start();
+    entry.enter(DESTINATION);
+    const joining = entry.resume();
+    expect(entry.getState().status).toBe('joining');
+    browser.failAuthCleanup = true;
+    expect(() => entry.stop()).toThrow(AggregateError);
+    expect(entry.getState().status).toBe('pending');
+    expect(browser.authListeners.size + browser.roomListeners.size + browser.locationListeners.size).toBe(0);
+    browser.failAuthCleanup = false;
+    entry.start();
+    expect(browser.authListeners.size).toBe(1);
+    pending.resolve(roomSnapshot(DESTINATION.roomRef));
+    await joining;
+    expect((await entry.resume()).status).toBe('entered');
+    entry.stop();
+});

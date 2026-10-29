@@ -19,7 +19,7 @@ export interface RelicGameServices {
 export interface CreateRelicGameServicesInput {
     readonly database: PSqlSql;
     readonly groups: GroupStateRepository;
-    readonly sessions: Pick<AuthSessionPersistence, 'findBySessionId'>;
+    readonly sessions: Pick<AuthSessionPersistence, 'findBySessionId' | 'readSessionBySessionIdEntry'>;
     readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly serviceId: string;
     readonly appInbox: RallarServerAppInbox;

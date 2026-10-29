@@ -363,6 +363,9 @@ const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'conn
     sendPlayerHit: vi.fn(),
     sendPickupIntent: vi.fn(),
     startArenaMatch: vi.fn(),
+    setRematchReady: vi.fn(),
+    startRematch: vi.fn(),
+    setRematchDuration: vi.fn(),
     publishArenaSnapshot: vi.fn()
 };
 

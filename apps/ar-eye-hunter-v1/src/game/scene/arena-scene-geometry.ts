@@ -1,5 +1,5 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
-import type { Vec3Tuple } from '../types.ts';
+import type { Vec3Tuple } from '../arena-contracts.ts';
 
 export function hashString(value: string): number {
     let hash = 0;

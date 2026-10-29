@@ -8,6 +8,9 @@ import type { ApiV1IceConfiguration, ApiV1MeteredIceConfiguration } from '../con
 import { getMeteredIceCandidates } from '../services/get-metered-ice-candidates.ts';
 import { toAuthErrorResponse } from '../services/request-auth-service.ts';
 
+// The credentials outlive the API's cache window by at least this margin, so a caller always gets a configuration it can still use after the response reaches it.
+const ICE_MIN_ADVERTISED_VALIDITY_MS = 30_000;
+
 class MeteredIceFetchError extends Error {
     public readonly status: number;
     public readonly body: string;
@@ -68,7 +71,7 @@ export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): voi
 
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
                     readRateLimiter('webrtc-ice', authSession.clientId, rateLimit),
-                    async () => await readIceConfig(cache),
+                    async () => await readIceConfig(cache, input.nowEpochMs),
                     c.json({ error: 'Too many ICE configuration requests' }, 429)
                 );
             }
@@ -79,9 +82,12 @@ export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): voi
     );
 }
 
-async function readIceConfig(cache: LoanedValue<IceConfig>): Promise<Response> {
+async function readIceConfig(
+    cache: LoanedValue<IceConfig>,
+    nowEpochMs: () => number
+): Promise<Response> {
     try {
-        return toJsonResponse<IceConfig>(await cache.get());
+        return toJsonResponse<IceConfig>(toAdvertisedIceConfig(await cache.get(), nowEpochMs()));
     }
     catch (error) {
         if (error instanceof MeteredIceFetchError) {
@@ -119,6 +125,13 @@ async function readFreshIceConfig(
     const expiresAtEpochMs = nowEpochMs() + configuration.cacheTtlMs;
 
     return { iceServers, expiresAtEpochMs };
+}
+
+function toAdvertisedIceConfig(cached: IceConfig, nowEpochMs: number): IceConfig {
+    return {
+        iceServers: cached.iceServers,
+        expiresAtEpochMs: Math.max(cached.expiresAtEpochMs, nowEpochMs + ICE_MIN_ADVERTISED_VALIDITY_MS)
+    };
 }
 
 export function createLocalIceConfig(

@@ -1,7 +1,14 @@
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameEnvelope } from '@shared-web/game/mod.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { isArenaRematchCommand } from '../../../arena-rematch.ts';
 
+import {
+    GAME_PROTOCOL,
+    type GameRealtimeMessage,
+    type PickupIntent,
+    type PlayerHitIntent
+} from '../../../arena-contracts.ts';
 import {
     isArenaAcceptedShotFromSender,
     isArenaMatchStartIntentFromSender,
@@ -16,12 +23,6 @@ import {
     resolvePlayerHitIntent,
     toArenaSnapshot
 } from '../../../simulation.ts';
-import {
-    GAME_PROTOCOL,
-    type GameRealtimeMessage,
-    type PickupIntent,
-    type PlayerHitIntent
-} from '../../../types.ts';
 import { isCurrentArenaPlayerSession } from '../../arena-participation.ts';
 import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 
@@ -50,6 +51,12 @@ export async function acceptArenaMatchIntent(
     }
     const owner: ArenaIntentOwner = { input, generation, roomId, match };
     const message = envelope.payload;
+    if (message.protocol === GAME_PROTOCOL && message.kind === 'match-rematch-intent') {
+        if (isArenaRematchCommand(message.command) && message.command.sessionId === envelope.senderId) {
+            await input.acceptRematchIntent(message.command, () => isCurrentArenaIntentOwner(owner));
+        }
+        return;
+    }
     if (isArenaShotIntentFromSender(message, envelope.senderId)) {
         await match.publishEvent({
             protocol: GAME_PROTOCOL,

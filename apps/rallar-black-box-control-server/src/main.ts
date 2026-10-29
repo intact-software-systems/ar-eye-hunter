@@ -99,7 +99,10 @@ const routeDependencies = {
     now: timers.nowMs
 };
 
-await snapshotPersistence.restore();
+const restoredSnapshot = await snapshotPersistence.restore();
+if (restoredSnapshot.left !== undefined) {
+    Deno.exit(1);
+}
 await completedRuns.restore();
 const stopRunCompletion = completedRuns.start();
 const stopDeadlineSweep = startControlDeadlineSweep({

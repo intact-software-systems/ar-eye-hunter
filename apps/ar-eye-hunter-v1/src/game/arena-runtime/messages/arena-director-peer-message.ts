@@ -2,8 +2,8 @@ import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 
+import type { ArenaSnapshot, GameRealtimeMessage, RemotePlayer, RemoteShot } from '../../arena-contracts.ts';
 import { hydrateArenaSnapshot, toArenaSnapshot, upsertPlayerPose } from '../../simulation.ts';
-import type { ArenaSnapshot, GameRealtimeMessage, RemotePlayer, RemoteShot } from '../../types.ts';
 import { toValidatedPlayerPose } from '../state/to-validated-player-pose.ts';
 
 interface ArenaShotProjectionInput {

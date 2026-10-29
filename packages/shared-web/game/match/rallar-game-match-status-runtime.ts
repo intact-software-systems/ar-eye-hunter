@@ -1,5 +1,6 @@
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import type { RallarGameDirectorAppointmentEligibility } from '../director/rallar-game-director-appointment-contracts.ts';
 import type { RallarGameFreshDirectorStatus } from '../director/rallar-game-fresh-director-status.ts';
 import type {
@@ -30,7 +31,9 @@ export namespace RallarGameMatchStatusRuntime {
 /** Owns match lifecycle flags, recovery state, egress state, and status observation. */
 export class RallarGameMatchStatusRuntime {
     private readonly input: RallarGameMatchStatusRuntime.Input;
-    private readonly handlers = new Set<RallarGameStatusHandler>();
+    private readonly notifications = new SynchronousNotifications<RallarGameMatchStatus>((error) => {
+        console.error('Error notifying Rallar Game status handler', error);
+    });
     private started = false;
     private stopped = false;
     private reliableEgress: RallarGameEgressState = 'empty';
@@ -127,9 +130,7 @@ export class RallarGameMatchStatusRuntime {
     }
 
     onStatus(handler: RallarGameStatusHandler): () => void {
-        this.handlers.add(handler);
-        void notifyRallarGameStatusHandler(handler, this.currentStatus);
-        return () => this.handlers.delete(handler);
+        return this.notifications.subscribeAndNotify(handler, this.currentStatus).unsubscribe;
     }
 
     private updateRecoveryForDirector(directorStatus: RallarDirectorStatus): void {
@@ -160,9 +161,7 @@ export class RallarGameMatchStatusRuntime {
         reason?: string
     ): void {
         this.currentStatus = this.createStatus(phase, directorStatus, reason);
-        for (const handler of this.handlers) {
-            void notifyRallarGameStatusHandler(handler, this.currentStatus);
-        }
+        this.notifications.publishLatest(this.currentStatus);
     }
 
     private createStatus(
@@ -207,17 +206,5 @@ export class RallarGameMatchStatusRuntime {
         }
 
         return 'none';
-    }
-}
-
-async function notifyRallarGameStatusHandler(
-    handler: RallarGameStatusHandler,
-    status: RallarGameMatchStatus
-): Promise<void> {
-    try {
-        await handler(status);
-    }
-    catch (error) {
-        console.error('Error notifying Rallar Game status handler', error);
     }
 }

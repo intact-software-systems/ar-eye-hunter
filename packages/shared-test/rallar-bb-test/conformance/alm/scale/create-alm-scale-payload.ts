@@ -22,8 +22,10 @@ export function createAlmScalePayload(
         payload: {
             protocol: 'ar-eye-hunter.v1',
             kind: intent ? 'intent' : 'event',
-            roomId: input.group.groupId,
+            roomRef: input.group,
             senderId: '{auth.sessionId}',
+            // A wire specimen, not a claim about the live participant's admitted generation.
+            senderGenerationId: 'fixture-generation:{auth.sessionId}',
             seq: intent ? sequence : kind === 'started' ? 1 : 2,
             sentAtEpochMs: kind === 'ended' ? ENDED_AT_EPOCH_MS : STARTED_AT_EPOCH_MS,
             directorEpoch: 1,
@@ -86,6 +88,7 @@ function createMatchPayload(input: AlmScaleRecipeInput, kind: 'started' | 'ended
     return {
         matchId: `match:${input.group.groupId}:${STARTED_AT_EPOCH_MS}:60000`,
         status: kind === 'started' ? 'active' : 'complete',
+        enrollment: 'open',
         durationMs: 60_000,
         directorSessionId: '{auth.sessionId}',
         startedAtEpochMs: STARTED_AT_EPOCH_MS,

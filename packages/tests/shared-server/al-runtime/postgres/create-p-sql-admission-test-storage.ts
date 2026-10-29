@@ -13,8 +13,13 @@ export interface PSqlAdmissionTestStorage {
 }
 
 export async function createPSqlAdmissionTestStorage(): Promise<PSqlAdmissionTestStorage> {
+    const storage = await createClosablePSqlAdmissionTestStorage();
+    onTestFinished(() => storage.sql.close());
+    return storage;
+}
+
+export async function createClosablePSqlAdmissionTestStorage(): Promise<PSqlAdmissionTestStorage> {
     const sql = createPGliteSqlClient(new PGlite());
-    onTestFinished(() => sql.close());
     await sql.exec(await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8'));
     return { sql, repository: new PSqlRuntimeStateRepository(sql) };
 }

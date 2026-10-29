@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { deriveArenaLinkState, deriveArenaPresenceNotices, type ArenaLinkState } from '../../../apps/ar-eye-hunter-v1/src/game/squadLink.ts';
+import { deriveArenaLinkState, deriveArenaPresenceNotices, type ArenaLinkState } from '../../../apps/ar-eye-hunter-v1/src/game/squad-link.ts';
 
 describe('AR Eye Hunter squad link awareness', () => {
     it('maps transport state to player-facing squad link labels', () => {

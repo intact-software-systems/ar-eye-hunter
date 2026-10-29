@@ -54,7 +54,7 @@ export default function App() {
             {winnerMatch && (
                 <MatchWinnerOverlay
                     match={winnerMatch}
-                    onClose={() => presentation.setDismissedMatchId(winnerMatch.matchId)}
+                    arena={arena}
                 />
             )}
         </main>

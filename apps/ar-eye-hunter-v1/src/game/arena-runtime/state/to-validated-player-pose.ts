@@ -1,5 +1,5 @@
+import type { PlayerPose } from '../../arena-contracts.ts';
 import { createDeterministicAvatarProfile, validateAvatarProfile } from '../../avatarProfile.ts';
-import type { PlayerPose } from '../../types.ts';
 
 export function toValidatedPlayerPose(pose: PlayerPose): PlayerPose {
     const validation = validateAvatarProfile(pose.avatarProfile, pose.sessionId);

@@ -1,5 +1,6 @@
-import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useCallback } from 'react';
+import { hasValidArenaRematch } from '../../arena-rematch.ts';
 
 import {
     GAME_PROTOCOL,
@@ -7,7 +8,7 @@ import {
     type ArenaMatchState,
     type ArenaSnapshot,
     type GameRealtimeMessage
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
 import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
 import { acceptArenaDirectorPeerMessage, type ArenaDirectorPeerMessageInput } from './arena-director-peer-message.ts';
@@ -16,6 +17,7 @@ interface ArenaDirectorMessageHandlerInput
     extends
         ArenaDirectorPeerMessageInput,
         Pick<ArenaStateAcceptance, 'acceptEyeAttack' | 'acceptPickup' | 'acceptPlayerHit'> {
+    readonly setError: Dispatch<SetStateAction<string | undefined>>;
     readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
     readonly setRemoteEvents: Dispatch<SetStateAction<readonly ArenaEvent[]>>;
 }
@@ -39,6 +41,15 @@ function acceptArenaDirectorOutput(
         return;
     }
 
+    if (message.kind === 'director-rematch-refused') {
+        if (
+            message.sessionId === input.sessionRef.current?.sessionId &&
+            message.completedGameId === input.arenaSnapshotRef.current?.match?.matchId
+        ) {
+            input.setError((previous) => isCurrent() ? message.message : previous);
+        }
+        return;
+    }
     if (
         acceptArenaDirectorPeerMessage(input, message, isCurrent) ||
         acceptArenaDirectorMatchUpdate(input, message, isCurrent)
@@ -83,6 +94,12 @@ function acceptArenaDirectorMatchUpdate(
     message: GameRealtimeMessage,
     isCurrent: () => boolean
 ): boolean {
+    if (
+        (message.kind === 'director-match-started' || message.kind === 'director-match-ended') &&
+        !hasValidArenaRematch(message.accepted.match)
+    ) {
+        return true;
+    }
     if (message.kind === 'director-match-started') {
         input.setArenaSnapshot((previous) => {
             if (!isCurrent() || !previous || message.accepted.revision < previous.revision) {

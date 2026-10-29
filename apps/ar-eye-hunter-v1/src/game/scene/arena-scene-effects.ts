@@ -7,7 +7,7 @@ import type {
     ArenaEvent,
     EyeAttackCue,
     Vec3Tuple
-} from '../types.ts';
+} from '../arena-contracts.ts';
 import type { TransientEffect } from './arena-scene-contracts.ts';
 import { clamp, vector3 } from './arena-scene-geometry.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';

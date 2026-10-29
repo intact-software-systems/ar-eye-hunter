@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState, type Dispatch, type RefObject, type S
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarDirectorOutputOptions, RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
 
+import type { ArenaMatchLifecycleMessage } from '../../arena-contracts.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { ArenaMatchLifecycleMessage } from '../../types.ts';
 import type { MatchDelivery } from '../arena-connection-contracts.ts';
 import { toMatchDelivery } from './to-match-delivery.ts';
 

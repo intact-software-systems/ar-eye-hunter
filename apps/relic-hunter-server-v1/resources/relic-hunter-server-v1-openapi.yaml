@@ -568,6 +568,8 @@ components:
             type: string
         setup:
           $ref: '#/components/schemas/RelicExpeditionSetupMetadata'
+        rematch:
+          $ref: '#/components/schemas/RelicRematch'
 
     RelicCharacterId:
       type: string
@@ -610,6 +612,9 @@ components:
         - $ref: '#/components/schemas/RelicPickupCommandRequest'
         - $ref: '#/components/schemas/RelicContinueReviewCommandRequest'
         - $ref: '#/components/schemas/RelicSetRoundLimitCommandRequest'
+        - $ref: '#/components/schemas/RelicSetRematchReadyCommandRequest'
+        - $ref: '#/components/schemas/RelicStartRematchCommandRequest'
+        - $ref: '#/components/schemas/RelicSetRematchRoundLimitCommandRequest'
 
     RelicCommandRequestBase:
       type: object
@@ -727,3 +732,120 @@ components:
             timeLimitMs:
               type: integer
               enum: [60000, 180000, 300000]
+
+    RelicRematchIdentity:
+      type: object
+      required: [completedGameId, settingsKey]
+      properties:
+        completedGameId:
+          type: string
+          minLength: 1
+          description: Exact completed expedition incarnation shown in the current preparation.
+        settingsKey:
+          type: string
+          minLength: 1
+          description: Exact preparation settings version. A settings change invalidates all previous confirmations.
+
+    RelicSetRematchReadyCommandRequest:
+      description: Assigns or cancels this authenticated session's consent. Repeated assignments are idempotent. Spectators cannot opt in.
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - $ref: '#/components/schemas/RelicRematchIdentity'
+        - type: object
+          required: [kind, ready, participationKey, characterId]
+          properties:
+            kind:
+              type: string
+              const: set-rematch-ready
+            ready:
+              type: boolean
+            participationKey:
+              type: string
+              minLength: 1
+              description: Current room membership identity captured when the player confirmed.
+            characterId:
+              $ref: '#/components/schemas/RelicCharacterId'
+
+    RelicStartRematchCommandRequest:
+      description: The present Keeper explicitly starts after every eligible present candidate confirms. Fresh membership, authentication and presence are checked by the authoritative attempt.
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - $ref: '#/components/schemas/RelicRematchIdentity'
+        - type: object
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              const: start-rematch
+
+    RelicSetRematchRoundLimitCommandRequest:
+      description: The present Keeper changes the next expedition's round limit and clears consent. Completed results remain unchanged.
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - $ref: '#/components/schemas/RelicRematchIdentity'
+        - type: object
+          required: [kind, timeLimitMs]
+          properties:
+            kind:
+              type: string
+              const: set-rematch-round-limit
+            timeLimitMs:
+              type: integer
+              enum: [60000, 180000, 300000]
+
+    RelicRematch:
+      type: object
+      additionalProperties: false
+      required: [preparation, hunters, roundTimeLimitMs]
+      properties:
+        preparation:
+          allOf:
+            - $ref: '#/components/schemas/RelicRematchIdentity'
+            - type: object
+              required: [players]
+              properties:
+                players:
+                  type: array
+                  maxItems: 4
+                  items:
+                    oneOf:
+                      - type: object
+                        additionalProperties: false
+                        required: [sessionId, ready]
+                        properties:
+                          sessionId:
+                            type: string
+                            minLength: 1
+                          ready:
+                            type: boolean
+                            const: false
+                      - type: object
+                        additionalProperties: false
+                        required: [sessionId, ready, participationKey]
+                        properties:
+                          sessionId:
+                            type: string
+                            minLength: 1
+                          ready:
+                            type: boolean
+                            const: true
+                          participationKey:
+                            type: string
+                            minLength: 1
+        hunters:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [playerId, username, characterId]
+            properties:
+              playerId:
+                type: string
+              username:
+                type: string
+              characterId:
+                $ref: '#/components/schemas/RelicCharacterId'
+        roundTimeLimitMs:
+          type: integer
+          enum: [60000, 180000, 300000]

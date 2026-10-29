@@ -7,8 +7,7 @@ import {
     materializeAiArenaEvent,
     validateAiDirectorProposalValue,
     type AiDirectorContext
-} from '../../aiDirector.ts';
-import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
+} from '../../ai-director.ts';
 import {
     GAME_AI_LANE_ID,
     GAME_AI_TOPIC_ID,
@@ -16,7 +15,8 @@ import {
     type AiDirectorProposal,
     type AiDirectorProposalValue,
     type ArenaEvent
-} from '../../types.ts';
+} from '../../arena-contracts.ts';
+import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 

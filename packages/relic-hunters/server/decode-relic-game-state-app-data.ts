@@ -48,7 +48,8 @@ export function decodeRelicGameStateAppData(value: JsonWireValue): RelicGameStat
         pendingActions,
         events: publicSnapshotCandidate.events,
         winnerIds: publicSnapshotCandidate.winnerIds,
-        ...(setup === undefined ? {} : { setup })
+        ...(setup === undefined ? {} : { setup }),
+        ...(publicSnapshotCandidate.rematch === undefined ? {} : { rematch: publicSnapshotCandidate.rematch })
     };
 }
 

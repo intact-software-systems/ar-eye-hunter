@@ -242,8 +242,7 @@
               "theme": "ocean",
               "rallarRetention": {
                 "mode": "temporary",
-                "reconnectGraceMs": 600000,
-                "emptyPresenceFingerprint": null
+                "reconnectGraceMs": 600000
               }
             }
           }
@@ -372,8 +371,7 @@
             "metadata": {
               "rallarRetention": {
                 "mode": "temporary",
-                "reconnectGraceMs": 600000,
-                "emptyPresenceFingerprint": null
+                "reconnectGraceMs": 600000
               }
             }
           }

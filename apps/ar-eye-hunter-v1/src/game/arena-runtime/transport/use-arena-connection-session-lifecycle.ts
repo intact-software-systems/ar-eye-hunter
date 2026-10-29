@@ -1,16 +1,16 @@
-import { useCallback, useEffect } from 'react';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
+import { useCallback, useEffect } from 'react';
 
-import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
+import type { ArenaSnapshot, RemotePlayer } from '../../arena-contracts.ts';
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
-import type { ArenaSnapshot, RemotePlayer } from '../../types.ts';
 import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
 import { isArenaPlayerSession, isCurrentArenaSpectator } from '../arena-participation.ts';
 import { arenaRecentRooms, arenaRoomEntry } from '../arena-room-entry.ts';

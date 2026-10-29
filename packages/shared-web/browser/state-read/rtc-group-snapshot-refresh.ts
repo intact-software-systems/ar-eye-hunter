@@ -2,11 +2,7 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-
-interface ActiveGroupSnapshotRefresh {
-    readonly controller: AbortController;
-    readonly task: Promise<boolean>;
-}
+import { SingleFlight } from '@shared/resilience/single-flight.ts';
 
 export namespace RtcGroupSnapshotRefresh {
     export interface Input {
@@ -20,9 +16,9 @@ export namespace RtcGroupSnapshotRefresh {
 }
 
 export class RtcGroupSnapshotRefresh {
-    readonly #activeByGroup = new Map<string, ActiveGroupSnapshotRefresh>();
+    readonly #refreshes = new SingleFlight<string, boolean>();
+    readonly #controller = new AbortController();
     readonly #input: RtcGroupSnapshotRefresh.Input;
-    #disposed = false;
 
     constructor(input: RtcGroupSnapshotRefresh.Input) {
         this.#input = input;
@@ -33,7 +29,7 @@ export class RtcGroupSnapshotRefresh {
         acceptance: ALInboundMessageRuntime.Acceptance
     ): Promise<boolean> {
         if (
-            this.#disposed || acceptance.kind !== 'not-admitted' ||
+            this.#controller.signal.aborted || acceptance.kind !== 'not-admitted' ||
             !isNotYetInSyncReason(acceptance.reason)
         ) {
             return false;
@@ -43,32 +39,26 @@ export class RtcGroupSnapshotRefresh {
         if (roomRef === undefined || (targets?.mode !== 'multicast' && targets?.mode !== 'broadcast')) {
             return false;
         }
-        const groupKey = toScopedGroupKey(roomRef);
-        const active = this.#activeByGroup.get(groupKey);
-        if (active !== undefined) {
-            return await active.task && !this.#disposed && !active.controller.signal.aborted;
-        }
-
-        const controller = new AbortController();
-        const task = this.#input.refreshGroupSnapshot(
-            roomRef,
-            targets.minSnapshotVersion ?? 0,
-            controller.signal
-        ).then(() => !this.#disposed && !controller.signal.aborted, () => false).finally(() => {
-            if (this.#activeByGroup.get(groupKey)?.task === task) {
-                this.#activeByGroup.delete(groupKey);
-            }
-        });
-        this.#activeByGroup.set(groupKey, { controller, task });
-        return await task && !this.#disposed && !controller.signal.aborted;
+        const refreshed = await this.#refreshes.run(
+            toScopedGroupKey(roomRef),
+            () => this.refreshGroupSnapshot(roomRef, targets.minSnapshotVersion ?? 0)
+        );
+        return refreshed && !this.#controller.signal.aborted;
     }
 
     dispose(): void {
-        this.#disposed = true;
-        for (const active of this.#activeByGroup.values()) {
-            active.controller.abort();
+        this.#controller.abort();
+        this.#refreshes.clear();
+    }
+
+    private async refreshGroupSnapshot(roomRef: GroupRef, minSnapshotVersion: number): Promise<boolean> {
+        try {
+            await this.#input.refreshGroupSnapshot(roomRef, minSnapshotVersion, this.#controller.signal);
+            return !this.#controller.signal.aborted;
         }
-        this.#activeByGroup.clear();
+        catch {
+            return false;
+        }
     }
 }
 
