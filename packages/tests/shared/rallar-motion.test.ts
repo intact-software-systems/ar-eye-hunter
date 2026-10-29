@@ -124,6 +124,16 @@ describe('Rallar Motion', () => {
         expect(estimate.metadata).toEqual({ score: 2 });
     });
 
+    it('treats an unbounded or non-numeric sample window as never trimming', () => {
+        for (const maxSamplesPerEntity of [Number.POSITIVE_INFINITY, Number.NaN]) {
+            const buffer = createRallarMotionBuffer({ interpolationDelayMs: 0, maxSamplesPerEntity });
+
+            const results = [1_000, 1_100, 1_200, 1_300, 1_400, 1_500, 1_600, 1_700, 1_800, 1_900].map((at) => buffer.push(sample('player-1', at, [at, 0, 0])));
+
+            expect(results.at(-1)).toMatchObject({ status: 'accepted', sampleCount: 10, droppedSampleCount: 0 });
+        }
+    });
+
     it('prunes by age and max sample count', () => {
         const buffer = createRallarMotionBuffer({
             interpolationDelayMs: 0,
@@ -425,6 +435,49 @@ describe('Rallar Motion', () => {
         });
     });
 
+    it('reports the boundary a send waits for, and keeps a past one past', () => {
+        const base = { lastSentSample: { position: [0, 0, 0] as const }, cadenceMs: 100 };
+
+        expect(shouldSendRallarMotionUpdate({
+            ...base,
+            nowEpochMs: 5_000,
+            lastSentAtEpochMs: 1_000,
+            nextSample: { position: [1, 0, 0] }
+        })).toEqual({ shouldSend: true, reason: 'position', nextAllowedEpochMs: 1_100 });
+        expect(shouldSendRallarMotionUpdate({
+            ...base,
+            nowEpochMs: 1_050,
+            lastSentAtEpochMs: 1_000,
+            nextSample: { position: [1, 0, 0] }
+        })).toEqual({ shouldSend: false, reason: 'waiting', nextAllowedEpochMs: 1_100 });
+        expect(shouldSendRallarMotionUpdate({
+            ...base,
+            idleCadenceMs: 200,
+            nowEpochMs: 1_150,
+            lastSentAtEpochMs: 1_000,
+            nextSample: { position: [0, 0, 0] }
+        })).toEqual({ shouldSend: false, reason: 'waiting', nextAllowedEpochMs: 1_200 });
+        expect(shouldSendRallarMotionUpdate({
+            ...base,
+            nowEpochMs: 5_000,
+            lastSentAtEpochMs: 1_000,
+            nextSample: { position: [0, 0, 0] }
+        })).toEqual({ shouldSend: false, reason: 'waiting', nextAllowedEpochMs: 1_100 });
+        expect(shouldSendRallarMotionUpdate({
+            ...base,
+            nowEpochMs: 5_000,
+            lastSentAtEpochMs: undefined,
+            nextSample: { position: [0, 0, 0] }
+        })).toEqual({ shouldSend: true, reason: 'initial', nextAllowedEpochMs: 5_100 });
+        expect(shouldSendRallarMotionUpdate({
+            ...base,
+            nowEpochMs: 5_000,
+            lastSentAtEpochMs: 1_000,
+            forceSendAfterMs: 500,
+            nextSample: { position: [0, 0, 0] }
+        })).toEqual({ shouldSend: true, reason: 'force', nextAllowedEpochMs: 5_100 });
+    });
+
     it('estimates and smooths kinematics from receiver-local samples', () => {
         const estimator = createRallarMotionKinematicsEstimator({
             smoothingAlpha: 0.5,
@@ -548,7 +601,7 @@ describe('Rallar Motion', () => {
     });
 });
 
-function sample<TMetadata = unknown>(
+function sample<TMetadata>(
     entityId: string,
     observedAtEpochMs: number,
     position: RallarMotionVec3,

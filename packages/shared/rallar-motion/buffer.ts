@@ -87,7 +87,10 @@ export function createRallarMotionBuffer<TMetadata>(
             }
 
             const beforeTrim = track.samples.length;
-            track.samples = [...retainNewest(track.samples, resolved.maxSamplesPerEntity).retained];
+            const { retained: newestSamples, displaced } = retainNewest(track.samples, resolved.maxSamplesPerEntity);
+            if (displaced.length > 0) {
+                track.samples = [...newestSamples];
+            }
             const retained = track.samples.includes(sample);
             const droppedSampleCount = beforeTrim - track.samples.length;
 
@@ -249,13 +252,7 @@ function normalizeRallarMotionBufferOptions(
             options.maxExtrapolationMs,
             DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxExtrapolationMs
         ),
-        maxSamplesPerEntity: Math.max(
-            1,
-            Math.floor(
-                options.maxSamplesPerEntity ??
-                    DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSamplesPerEntity
-            )
-        ),
+        maxSamplesPerEntity: resolveMaxSamplesPerEntity(options.maxSamplesPerEntity),
         maxSampleAgeMs: sanitizeRallarMotionNonNegative(
             options.maxSampleAgeMs,
             DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSampleAgeMs
@@ -300,6 +297,14 @@ function isDiscontinuous<TMetadata>(
 
     return classifyRallarMotionDiscontinuity(source, target, options)
         .discontinuous;
+}
+
+function resolveMaxSamplesPerEntity(value: number | undefined): number {
+    const requested = value ?? DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSamplesPerEntity;
+    if (!Number.isFinite(requested)) {
+        return Number.MAX_SAFE_INTEGER;
+    }
+    return Math.min(Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(requested)));
 }
 
 function compareRallarMotionSamples<TMetadata>(

@@ -1,7 +1,17 @@
-import { computeNextCadenceAtMs, isCadenceDue } from '@shared/resilience/cadence.ts';
+import { computeCadenceBoundaryAtMs, computeNextCadenceAtMs, isCadenceDue } from '@shared/resilience/cadence.ts';
 import { describe, expect, it } from 'vitest';
 
 const CADENCE_MS = 100;
+
+describe('computeCadenceBoundaryAtMs', () => {
+    it('is one cadence after the last', () => {
+        expect(computeCadenceBoundaryAtMs({ lastAtMs: 5_000, cadenceMs: CADENCE_MS })).toBe(5_100);
+    });
+
+    it('is the last itself for a zero cadence', () => {
+        expect(computeCadenceBoundaryAtMs({ lastAtMs: 5_000, cadenceMs: 0 })).toBe(5_000);
+    });
+});
 
 describe('computeNextCadenceAtMs', () => {
     it('is now when there was no last', () => {
@@ -29,18 +39,14 @@ describe('computeNextCadenceAtMs', () => {
 });
 
 describe('isCadenceDue', () => {
-    it('is always due for a zero or negative cadence', () => {
-        expect(isCadenceDue({ lastAtMs: 5_000, cadenceMs: 0, nowMs: 5_000 })).toBe(true);
-        expect(isCadenceDue({ lastAtMs: 5_000, cadenceMs: -10, nowMs: 5_000 })).toBe(true);
-    });
-
-    it('is due when there was no last', () => {
-        expect(isCadenceDue({ lastAtMs: undefined, cadenceMs: CADENCE_MS, nowMs: 5_000 })).toBe(true);
+    it('is always due for a zero or negative cadence, even before the boundary', () => {
+        expect(isCadenceDue({ boundaryAtMs: 5_050, cadenceMs: 0, nowMs: 5_000 })).toBe(true);
+        expect(isCadenceDue({ boundaryAtMs: 5_050, cadenceMs: -10, nowMs: 5_000 })).toBe(true);
     });
 
     it('is due from the boundary on and not before it', () => {
-        expect(isCadenceDue({ lastAtMs: 5_000, cadenceMs: CADENCE_MS, nowMs: 5_099 })).toBe(false);
-        expect(isCadenceDue({ lastAtMs: 5_000, cadenceMs: CADENCE_MS, nowMs: 5_100 })).toBe(true);
-        expect(isCadenceDue({ lastAtMs: 5_000, cadenceMs: CADENCE_MS, nowMs: 6_000 })).toBe(true);
+        expect(isCadenceDue({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_099 })).toBe(false);
+        expect(isCadenceDue({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_100 })).toBe(true);
+        expect(isCadenceDue({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 6_000 })).toBe(true);
     });
 });

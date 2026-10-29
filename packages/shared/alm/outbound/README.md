@@ -1014,7 +1014,7 @@ deadline passed `expired`, then takes the streams in order, each oldest first, u
 that throws settles each selected value `admission` `failed` with its message, and the opportunity writes one
 payload-free `publication-opportunity` diagnostic (`laneKey`, `atMs`, `selected`, `deferred`, `expired`,
 `bytes`). The next boundary is one cadence after the opportunity
-([`computeNextCadenceAtMs`](../../resilience/cadence.ts), which the motion send gate shares), so a lane the
+([`computeNextCadenceAtMs`](../../resilience/cadence.ts), whose boundary the motion send gate shares through `computeCadenceBoundaryAtMs`), so a lane the
 engine reaches late runs one bounded opportunity, never a catch-up burst. A lane its opportunity emptied stays
 scheduled for one more boundary, so a value staged within the cadence still waits, and then goes idle. After the due
 lanes ran, the task calls `wakeAt` with the earliest next opportunity, or with `undefined` once every lane is idle.
