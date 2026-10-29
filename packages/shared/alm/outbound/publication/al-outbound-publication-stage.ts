@@ -51,8 +51,12 @@ export namespace ALOutboundPublicationStage {
     export interface Input<TContext> {
         readonly taskId: string;
         readonly queueEngine: InboxOutboxEngine;
+        /** The epoch-millisecond integer clock `queueEngine` schedules by: lanes are due and handed to `wakeAt` on it. */
         readonly clock: ALOutboundMessageRuntime.Clock;
-        /** Admits the values one opportunity selected; a rejection settles each of them `failed`. */
+        /**
+         * Admits the values one opportunity selected. It rejects only when it admitted none of them, and the stage then
+         * settles each `failed`; once a value enters admission, its carrier settles that value's outcome.
+         */
         readonly submit: (selected: readonly ALOutboundStagedPublication<TContext>[]) => Promise<void>;
         readonly settle: ALDeliverySettlementSink;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink;
@@ -92,12 +96,14 @@ export class ALOutboundPublicationStage<TContext> {
         });
     }
 
+    /**
+     * The caller stages only a value whose deadline is still ahead, as its admission refusal guarantees (D471): an
+     * expired one would displace a live value of its stream and then expire at the boundary.
+     */
     stage(input: ALOutboundPublicationStage.StageInput<TContext>): ALOutboundPublicationStage.StageResult {
-        if (this.disposed) {
-            throw new Error('The publication stage is disposed.');
-        }
+        this.assertStageOpen();
         const laneKey = toALPublicationLaneKey(input.msg);
-        const lane = this.lanes.get(laneKey) ?? toIdleLane<TContext>(laneKey, input.policy);
+        const lane = this.lanes.get(laneKey) ?? createIdleLane<TContext>(laneKey, input.policy);
         if (input.bytes > lane.policy.drain.bytes) {
             return {
                 kind: 'refused',
@@ -167,6 +173,13 @@ export class ALOutboundPublicationStage<TContext> {
         return displaced;
     }
 
+    /** Its owner drops a disposed stage in the same synchronous step, so a later stage() is a wiring defect. */
+    private assertStageOpen(): void {
+        if (this.disposed) {
+            throw new Error('The publication stage is disposed.');
+        }
+    }
+
     private hasDueLane(nowMs: number): boolean {
         return [...this.lanes.values()].some((lane) => isLaneDue(lane, nowMs));
     }
@@ -178,6 +191,9 @@ export class ALOutboundPublicationStage<TContext> {
                 return;
             }
             await this.runOpportunity(lane);
+        }
+        if (this.disposed) {
+            return;
         }
         const nextOpportunities = [...this.lanes.values()].flatMap((lane) => lane.nextOpportunityAtMs ?? []);
         this.input.queueEngine.wakeAt(
@@ -204,6 +220,9 @@ export class ALOutboundPublicationStage<TContext> {
         lane.lastOpportunityAtMs = atMs;
         this.scheduleLane(lane, atMs);
         await this.submitSelected(selection.selected);
+        if (this.disposed) {
+            return;
+        }
         writeALOutboundRuntimeDiagnostic(this.input.diagnostics, {
             kind: 'publication-opportunity',
             laneKey: lane.laneKey,
@@ -265,7 +284,7 @@ export class ALOutboundPublicationStage<TContext> {
     }
 }
 
-function toIdleLane<TContext>(laneKey: string, policy: ALPublicationPolicy): ALOutboundPublicationLane<TContext> {
+function createIdleLane<TContext>(laneKey: string, policy: ALPublicationPolicy): ALOutboundPublicationLane<TContext> {
     return { laneKey, policy, streams: new Map(), lastOpportunityAtMs: undefined, nextOpportunityAtMs: undefined };
 }
 

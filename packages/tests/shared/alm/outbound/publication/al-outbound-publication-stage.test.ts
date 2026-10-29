@@ -93,7 +93,6 @@ function opportunitiesOf(diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent
 describe('ALOutboundPublicationStage', () => {
     it('settles a value staged and submits it at the next pass when its lane was idle', async () => {
         const fixture = createStageFixture();
-        const wake = vi.spyOn(fixture.engine, 'wake');
 
         const staged = stageValue(fixture, 'v1');
 
@@ -101,7 +100,6 @@ describe('ALOutboundPublicationStage', () => {
         expect(fixture.settlements).toEqual([
             expect.objectContaining({ kind: 'staged', msgId: staged.msgId, carrier: 'rtc', atMs: START_MS })
         ]);
-        expect(wake).toHaveBeenCalledTimes(1);
         expect(fixture.stage.readLane('arena/arena.pose.v1')).toEqual({
             laneKey: 'arena/arena.pose.v1',
             policy: LATEST_POLICY,
@@ -118,6 +116,60 @@ describe('ALOutboundPublicationStage', () => {
             staged: 0,
             streams: 0
         });
+    });
+
+    it('brings a started engine\'s next pass forward when a value lands on an idle lane', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const fixture = createStageFixture();
+            fixture.engine.start();
+            await vi.advanceTimersByTimeAsync(1_000);
+
+            stageValue(fixture, 'v1');
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(fixture.submitted).toEqual([['v1']]);
+            await fixture.engine.stop();
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('holds a value staged while an opportunity awaits submit until the lane\'s next boundary', async () => {
+        let releaseSubmit: () => void = () => undefined;
+        const submitHeld = new Promise<void>((resolve) => {
+            releaseSubmit = resolve;
+        });
+        const submitted: string[][] = [];
+        const fixture = createStageFixture(async (selected) => {
+            submitted.push(selected.map((publication) => publication.context));
+            if (submitted.length === 1) {
+                await submitHeld;
+            }
+        });
+        stageValue(fixture, 'v1');
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(submitted).toEqual([['v1']]));
+
+        fixture.clock.atMs += 10;
+        const midSubmit = stageValue(fixture, 'v2');
+        releaseSubmit();
+        await pass;
+        await fixture.engine.stop();
+
+        expect(midSubmit).toMatchObject({ kind: 'staged', displacedMsgId: undefined });
+        expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({
+            nextOpportunityAtMs: START_MS + LATEST_POLICY.cadenceMs,
+            staged: 1
+        });
+        await runEnginePass(fixture.engine);
+        expect(submitted).toEqual([['v1']]);
+
+        fixture.clock.atMs = START_MS + LATEST_POLICY.cadenceMs;
+        await runEnginePass(fixture.engine);
+        expect(submitted).toEqual([['v1'], ['v2']]);
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'superseded')).toEqual([]);
     });
 
     it('admits only the newest of the values staged within one cadence and supersedes the rest', async () => {
@@ -231,14 +283,12 @@ describe('ALOutboundPublicationStage', () => {
 
     it('refuses a value heavier than the drain budget without settling or staging it', () => {
         const fixture = createStageFixture();
-        const wake = vi.spyOn(fixture.engine, 'wake');
 
         const refused = stageValue(fixture, 'v1', { bytes: LATEST_POLICY.drain.bytes + 1 });
 
         expect(refused).toMatchObject({ kind: 'refused', reason: 'oversized' });
         expect(fixture.settlements).toEqual([]);
         expect(fixture.stage.readLane('arena/arena.pose.v1')).toBeUndefined();
-        expect(wake).not.toHaveBeenCalled();
     });
 
     it('reports each opportunity with the counts it selected, deferred and expired', async () => {
@@ -276,6 +326,15 @@ describe('ALOutboundPublicationStage', () => {
             }
         ]);
         expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({ staged: 1, streams: 1 });
+
+        fixture.clock.atMs = START_MS + 2 * policy.cadenceMs;
+        await runEnginePass(fixture.engine);
+        expect(fixture.submitted).toEqual([['v1'], ['v3', 'v4'], ['v5']]);
+        expect(opportunitiesOf(fixture.diagnostics).at(-1)).toMatchObject({
+            selected: 1,
+            deferred: 0,
+            bytes: VALUE_BYTES
+        });
     });
 
     it('settles each selected value failed when submit throws and keeps the engine task healthy', async () => {
@@ -291,6 +350,28 @@ describe('ALOutboundPublicationStage', () => {
             trackedReceiptAlgo: 'none'
         });
         expect(fixture.reportTaskFailure).not.toHaveBeenCalled();
+    });
+
+    it('writes no opportunity report for a submit that resolves after dispose', async () => {
+        let releaseSubmit: () => void = () => undefined;
+        const submitHeld = new Promise<void>((resolve) => {
+            releaseSubmit = resolve;
+        });
+        const submitted: string[][] = [];
+        const fixture = createStageFixture(async (selected) => {
+            submitted.push(selected.map((publication) => publication.context));
+            await submitHeld;
+        });
+        stageValue(fixture, 'v1');
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(submitted).toEqual([['v1']]));
+
+        fixture.stage.dispose();
+        releaseSubmit();
+        await pass;
+        await fixture.engine.stop();
+
+        expect(opportunitiesOf(fixture.diagnostics)).toEqual([]);
     });
 
     it('settles every staged value skipped on dispose and leaves the engine', async () => {
