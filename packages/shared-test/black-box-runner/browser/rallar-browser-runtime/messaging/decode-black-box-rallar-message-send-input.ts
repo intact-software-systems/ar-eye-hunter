@@ -18,6 +18,10 @@ import {
     type BlackBoxRallarCommandRecord,
     type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
+import {
+    decodeBlackBoxRallarMessageChannel,
+    type BlackBoxRallarMessageChannel
+} from './decode-black-box-rallar-message-channel.ts';
 
 type MessageSendIdentity = Pick<
     BlackBoxRallarMessageSendInput,
@@ -58,6 +62,8 @@ const REPLAY_REFUSED_FIELDS = [
     'typeId',
     'topicId',
     'payload',
+    'purpose',
+    'publication',
     'roomRef',
     'scope',
     'principalId',
@@ -125,16 +131,21 @@ function decodeOrdinarySend(
     if (isInputIssue(ownership)) {
         return Either.ofLeft(ownership);
     }
-    return decodeMessageAudience(value).flatMap(
+    const addressing: Either<BlackBoxRallarInputIssue, MessageSendAudience & BlackBoxRallarMessageChannel> =
+        decodeMessageAudience(value).flatMap(
+            (issue) => Either.ofLeft(issue),
+            (audience) => decodeBlackBoxRallarMessageChannel(value).mapRight((channel) => ({ ...audience, ...channel }))
+        );
+    return addressing.flatMap(
         (issue) => Either.ofLeft(issue),
-        (peer) =>
+        (addressed) =>
             decodeMessageSendIdentity(value).flatMap(
                 (issue) => Either.ofLeft(issue),
                 (identity) =>
                     decodeMessageSendOptions(value).mapRight((options) => ({
                         ...identity,
                         ...options,
-                        ...peer,
+                        ...addressed,
                         payload,
                         ownership,
                         resourceId: decodeBlackBoxCommandString(value.resourceId),

@@ -3,6 +3,8 @@ import type {
     ALDurabilityAlgo,
     ALOwnershipAlgo
 } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type {
     ALDeliveryCarrier,
     ALDeliveryState
@@ -371,6 +373,10 @@ export type RallarBlackBoxTestMessagesSendCommand =
         typeId: string;
         topicId?: string;
         payload: RallarBlackBoxTestJsonValue;
+        /** The channel the page opens for the send; absent, a send to a `toPeer` is a `command`, any other a `notification`. */
+        purpose?: ALChannelPurpose;
+        /** The live channel's pacing: required with purpose `live` and refused with any other. */
+        publication?: ALPublicationPolicy;
         roomRef?: RallarBlackBoxTestRecord;
         scope?: 'room' | 'world' | 'principal';
         /** With scope `principal`: the principal whose live sessions in the room the send addresses. */

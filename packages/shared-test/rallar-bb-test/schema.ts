@@ -1,3 +1,5 @@
+import { AL_PUBLICATION_POLICY_LIMITS } from '@shared/al-contracts/publication/al-publication-policy.ts';
+
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from './assert/assert-value-operators.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
@@ -461,6 +463,15 @@ const messagesQosSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIE
         algo: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesQosAckAlgo }
     })
 });
+/** Every field a positive integer within its limit; the page decodes the policy the product validates. */
+const messagesPublicationSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesPublication, {
+    cadenceMs: toPositiveIntegerSchema(AL_PUBLICATION_POLICY_LIMITS.maxCadenceMs),
+    retainNewest: toPositiveIntegerSchema(AL_PUBLICATION_POLICY_LIMITS.maxRetainNewest),
+    drain: strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesPublicationDrain, {
+        messages: toPositiveIntegerSchema(AL_PUBLICATION_POLICY_LIMITS.maxDrainMessages),
+        bytes: toPositiveIntegerSchema(AL_PUBLICATION_POLICY_LIMITS.maxDrainBytes)
+    })
+});
 const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
     controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
     typeId: stringSchema,
@@ -489,6 +500,10 @@ const storageFaultActionSchema: JsonSchema = {
  * An ordinary send requires its carrier, type and payload; a replay names `replayOnCarrier` instead. The control
  * validator and the page decoder refuse a replay that also names an ordinary send field.
  */
+function toPositiveIntegerSchema(maximum: number): JsonSchema {
+    return { type: 'integer', minimum: 1, maximum };
+}
+
 function toMessagesSendSchema(schema: JsonSchema): JsonSchema {
     return {
         ...schema,
@@ -663,6 +678,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         typeId: stringSchema,
         topicId: stringSchema,
         payload: anySchema,
+        purpose: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesPurpose },
+        publication: messagesPublicationSchema,
         roomRef: recordSchema,
         scope: messagesScopeSchema,
         principalId: stringSchema,

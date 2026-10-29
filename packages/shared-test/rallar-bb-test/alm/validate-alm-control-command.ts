@@ -1,3 +1,4 @@
+import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from '../control/control-command-issue.ts';
 import {
@@ -99,6 +100,8 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         ...validateStringField(command, 'connection', path),
         ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
         ...validateStringField(command, 'typeId', path),
+        ...validateEnumField({ record: command, key: 'purpose', path, allowed: values.messagesPurpose }),
+        ...validateMessagesPublicationField(command),
         ...['topicId', 'orderingKey', 'handleId', 'resourceId'].flatMap((key) =>
             validateStringField(command, key, path)
         ),
@@ -142,6 +145,18 @@ function validateMessagesSnapshotFloorField(command: RallarBlackBoxTestRecord): 
             : [toControlCommandIssue(`${path} must name exactly one of ${fields.optional.join(', ')}.`)]),
         ...named.flatMap((key) => validateIntegerField({ record: floor, key, path, minimum: 1 }))
     ];
+}
+
+/** The product's own decoder judges the policy, so a recipe states only what a live channel accepts. */
+function validateMessagesPublicationField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    if (command.publication === undefined) {
+        return [];
+    }
+    return decodeALPublicationPolicy(command.publication).fold(
+        (issues) =>
+            issues.map((issue) => toControlCommandIssue(`messages.send${issue.path.slice(1)}: ${issue.message}`)),
+        () => []
+    );
 }
 
 function validateMessagesQosField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {

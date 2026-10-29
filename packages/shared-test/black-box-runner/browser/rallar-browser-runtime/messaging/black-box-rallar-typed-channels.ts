@@ -10,6 +10,7 @@ import {
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
 import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -32,6 +33,8 @@ export interface TypedChannelRoute {
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;
     readonly purpose: ALChannelPurpose;
+    /** Stated exactly on a `live` route: the pacing its channel declares. */
+    readonly publication: ALPublicationPolicy | undefined;
     /** The channel's recovery owner; undefined declares none, so a message the receiver cannot order is dropped. */
     readonly recovery: RallarChannelRecovery | undefined;
 }
@@ -103,6 +106,7 @@ export class BlackBoxRallarTypedChannels {
             roomId: config.roomId,
             roomRef: route.roomRef,
             purpose: route.purpose,
+            ...(route.publication === undefined ? {} : { publication: route.publication }),
             ...(route.durability === undefined ? {} : { durability: route.durability }),
             ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable }),
             ...(route.recovery === undefined ? {} : { recovery: route.recovery })
@@ -155,6 +159,7 @@ export class BlackBoxRallarTypedChannels {
             durability: undefined,
             onStorageUnavailable: undefined,
             purpose: 'notification',
+            publication: undefined,
             recovery: config.rallar.recoveryOwner === 'record' ? this.#createRecordingRecoveryOwner(config) : undefined
         });
     }

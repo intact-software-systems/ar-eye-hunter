@@ -24,8 +24,12 @@ export function toCommandId(step: AlmConformanceStepInput, name: string): string
 
 /** A recipient's own send names its role, so no handle of a cell names two sends. */
 export function toSendHandleId(step: AlmConformanceMessageStepInput): string {
-    const origin = isSenderPage(step.role) ? '' : `${step.role}-`;
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${origin}send-${step.index}`;
+    return toHandleId(step, step.index);
+}
+
+/** A loop's send template: iteration `n` (from 1) names the handle `toSendHandleId` names for index `n`. */
+export function toLoopIterationSendHandleId(step: AlmConformanceStepInput): string {
+    return toHandleId(step, '{loop.iteration}');
 }
 
 /** A responder's reply to the `step.index`-th arrival names its role, so the reply handles of a cell stay apart. */
@@ -43,6 +47,11 @@ export function toRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBlack
         workspaceId: group.workspaceId,
         groupId: group.groupId
     };
+}
+
+function toHandleId(step: AlmConformanceStepInput, index: number | string): string {
+    const origin = isSenderPage(step.role) ? '' : `${step.role}-`;
+    return `alm-${step.input.carrier}-${step.scenarioKey}-${origin}send-${index}`;
 }
 
 /** The successor is a second page of the sender's session: it shares the sender's connection and its handles. */
