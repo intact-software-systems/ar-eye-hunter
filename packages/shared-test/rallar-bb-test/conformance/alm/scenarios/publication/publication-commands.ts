@@ -20,11 +20,25 @@ export const PUBLICATION_SEND_INTERVAL_MS = 10;
 /** Far above one specimen's envelope, so only the drain's message budget decides a selection. */
 export const PUBLICATION_DRAIN_BYTES = 64 * 1024;
 
+/**
+ * The share of the cadence within which send 0 must reach `transport-accepted`. An idle lane runs its opportunity on the
+ * session engine's next pass, so the lead admission lands within a few ms; a stage that held the first value until its
+ * lane's first boundary, one cadence later, misses this budget and fails the cell, which is how the cells prove D469's
+ * "admitted at once" on an idle lane.
+ */
+export const PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO = 0.5;
+
 /** A value the stage displaced or expired never reached a carrier admission. */
 export const NEVER_ATTEMPTED: AlmPublicationFact = ['attempts', 0];
 
-/** One field of an observation and the value it must hold. */
-export type AlmPublicationFact = readonly [field: string, expected: string | number];
+/**
+ * The stage's own displacement detail, which the dispatch path's latest-wins supersedence at admission ("replaced this
+ * one at its admission") does not carry. The lifecycle keeps no replacement message id, so this names the mechanism.
+ */
+export const STAGE_DISPLACED: AlmPublicationFact = ['reason', 'displaced it before its opportunity', 'contains'];
+
+/** One field of an observation and the value it must hold: equal to it, or containing it. */
+export type AlmPublicationFact = readonly [field: string, expected: string | number, operator?: 'contains'];
 
 interface AlmPublicationSendsInput {
     readonly step: AlmConformanceStepInput;
@@ -40,12 +54,15 @@ interface AlmPublicationVerdictInput {
     readonly index: number;
     readonly state: ALDeliveryState;
     readonly facts: readonly AlmPublicationFact[];
+    /** Absent, the state's own budget. */
+    readonly budgetMs?: number;
 }
 
 /**
  * Live sends of one specimen on one resource, so one stream key. Send 0 stages on the idle lane, whose opportunity runs
- * on the session engine's next pass, so the sender waits for its admission: a send staged before that pass would
- * displace it or share its drain. The loop then sends 1 to `burst`: iteration `n` (from 1) names the handle of send
+ * on the session engine's next pass, so the sender waits for its admission, bounded by
+ * `PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO`: a send staged before that pass would displace it or share its drain. The
+ * loop then sends 1 to `burst`: iteration `n` (from 1) names the handle of send
  * `n` and carries `seq` `n`, a number, since a loop writes a string that is only `{loop.iteration}` as the
  * iteration's number. A command's budget is the harness's own: a live send returns once it is staged.
  */
@@ -54,7 +71,13 @@ export function toPublicationSendCommands(sends: AlmPublicationSendsInput): read
     const lead = toLiveSendCommand(sends);
     return [
         lead,
-        ...toPublicationVerdictCommands({ step, index: 0, state: 'transport-accepted', facts: [] }),
+        ...toPublicationVerdictCommands({
+            step,
+            index: 0,
+            state: 'transport-accepted',
+            facts: [],
+            budgetMs: sends.publication.cadenceMs * PUBLICATION_LEAD_OBSERVE_BUDGET_RATIO
+        }),
         {
             kind: 'loop',
             commandId: toCommandId(step, 'paced-sends'),
@@ -86,11 +109,11 @@ function toLiveSendCommand(sends: AlmPublicationSendsInput): RallarBlackBoxTestM
 
 /** Send `index`'s handle reaches `state`, its observation states it, and each fact holds on that observation. */
 export function toPublicationVerdictCommands(
-    { step, index, state, facts }: AlmPublicationVerdictInput
+    { step, index, state, facts, budgetMs }: AlmPublicationVerdictInput
 ): readonly RallarBlackBoxTestCommand[] {
     const resultName = `observe-${state}-${index}`;
     return [
-        toObserveCommand({ ...step, index, state }),
+        toObserveCommand({ ...step, index, state, ...(budgetMs === undefined ? {} : { budgetMs }) }),
         toResultAssertion({
             step,
             name: `assert-${state}-${index}`,
@@ -99,13 +122,13 @@ export function toPublicationVerdictCommands(
             operator: 'equals',
             expected: state
         }),
-        ...facts.map(([field, expected]) =>
+        ...facts.map(([field, expected, operator]) =>
             toResultAssertion({
                 step,
                 name: `assert-${field.replace('.', '-')}-${index}`,
                 resultName,
                 field,
-                operator: 'equals',
+                operator: operator ?? 'equals',
                 expected
             })
         )
@@ -134,17 +157,20 @@ export function toNoFurtherArrivalCommand(
 }
 
 /**
- * The specimen carrying `seq` has arrived, or, read from the page's history at once, has not arrived yet: right
- * after an arrival count, the second orders that arrival before the specimen a later opportunity carries.
+ * `arrived`: the specimen carrying `seq` has arrived. `not-yet`: read from the page's history at once, it has not; right
+ * after an arrival count this orders that arrival before the specimen a later opportunity carries. The read assumes the
+ * count resolves well inside one cadence of the arrival it waited for, which a slow hosted receiver could break (red,
+ * never falsely green); S1-ii's hosted placement revisits it.
  */
 export function toSeqArrivalWait(
     receiver: AlmConformanceStepInput,
     seq: number,
-    arrived: boolean
+    expectation: 'arrived' | 'not-yet'
 ): RallarBlackBoxTestWaitCommand {
+    const arrived = expectation === 'arrived';
     const wait = toPayloadWait({
         step: receiver,
-        name: arrived ? `arrived-seq-${seq}` : `not-yet-seq-${seq}`,
+        name: `${expectation}-seq-${seq}`,
         payload: { specimen: 'paced', seq },
         absent: !arrived
     });

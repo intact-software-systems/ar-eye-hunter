@@ -5,6 +5,7 @@ import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-con
 import {
     NEVER_ATTEMPTED,
     PUBLICATION_DRAIN_BYTES,
+    STAGE_DISPLACED,
     toArrivalCountCommand,
     toNoFurtherArrivalCommand,
     toPublicationSendCommands,
@@ -46,21 +47,26 @@ export const pacedNewestN: AlmConformanceScenarioDefinition = {
             ttlMs: PACED_NEWEST_N_TTL_MS
         }),
         ...toPublicationVerdictCommands({ step: sender, index: LAST_SEND, state: 'staged', facts: [] }),
-        ...toPublicationVerdictCommands({ step: sender, index: 1, state: 'superseded', facts: [NEVER_ATTEMPTED] }),
+        ...toPublicationVerdictCommands({
+            step: sender,
+            index: 1,
+            state: 'superseded',
+            facts: [NEVER_ATTEMPTED, STAGE_DISPLACED]
+        }),
         ...[2, 3, LAST_SEND].flatMap((index) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
         )
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1),
-        toSeqArrivalWait(receiver, 0, true),
-        toSeqArrivalWait(receiver, 2, false),
+        toSeqArrivalWait(receiver, 0, 'arrived'),
+        toSeqArrivalWait(receiver, 2, 'not-yet'),
         toArrivalCountCommand(receiver, 3),
-        toSeqArrivalWait(receiver, 2, true),
-        toSeqArrivalWait(receiver, 3, true),
-        toSeqArrivalWait(receiver, LAST_SEND, false),
+        toSeqArrivalWait(receiver, 2, 'arrived'),
+        toSeqArrivalWait(receiver, 3, 'arrived'),
+        toSeqArrivalWait(receiver, LAST_SEND, 'not-yet'),
         toArrivalCountCommand(receiver, 4),
-        toSeqArrivalWait(receiver, LAST_SEND, true),
+        toSeqArrivalWait(receiver, LAST_SEND, 'arrived'),
         toNoFurtherArrivalCommand(receiver, 5, NO_FURTHER_ARRIVAL_WINDOW_MS)
     ]
 };

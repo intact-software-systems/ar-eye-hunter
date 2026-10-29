@@ -496,14 +496,14 @@ const storageFaultActionSchema: JsonSchema = {
     ]
 };
 
-/**
- * An ordinary send requires its carrier, type and payload; a replay names `replayOnCarrier` instead. The control
- * validator and the page decoder refuse a replay that also names an ordinary send field.
- */
 function toPositiveIntegerSchema(maximum: number): JsonSchema {
     return { type: 'integer', minimum: 1, maximum };
 }
 
+/**
+ * An ordinary send requires its carrier, type and payload; a replay names `replayOnCarrier` instead. The control
+ * validator and the page decoder refuse a replay that also names an ordinary send field.
+ */
 function toMessagesSendSchema(schema: JsonSchema): JsonSchema {
     return {
         ...schema,

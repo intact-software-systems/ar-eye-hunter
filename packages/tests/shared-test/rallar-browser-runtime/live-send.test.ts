@@ -78,6 +78,13 @@ it.each([
     expect(decodeBlackBoxRallarMessageSendInput({ ...SEND, ...fields }).left).toEqual({ message });
 });
 
+it('reads a null purpose as absent, which the toPeer rule fills and a publication cannot ride on', () => {
+    expect(decodeBlackBoxRallarMessageSendInput({ ...SEND, purpose: null }).right)
+        .toMatchObject({ purpose: undefined, publication: undefined });
+    expect(decodeBlackBoxRallarMessageSendInput({ ...SEND, purpose: null, publication: POLICY }).left)
+        .toEqual({ message: 'messages.send.publication is allowed only with purpose live.' });
+});
+
 it('refuses a purpose or a publication beside replayOnCarrier', () => {
     const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' } };
 

@@ -62,6 +62,8 @@ function toObserveNames(index: number, state: string, facts: readonly string[]):
  */
 function expectSends(scenario: AlmConformanceScenario, carrier: AlmConformanceCarrier, sends: {
     readonly burst: number;
+    /** Half the cadence: a stage that held send 0 until its lane's first boundary fails the lead observation. */
+    readonly leadBudgetMs: number;
     readonly publication: ALPublicationPolicy;
     readonly ttlMs?: number;
 }): void {
@@ -80,7 +82,10 @@ function expectSends(scenario: AlmConformanceScenario, carrier: AlmConformanceCa
         payload: { specimen: 'paced', seq: 0 },
         handleId: `alm-${carrier}-${scenario.scenarioKey}-send-0`
     });
-    expect(findCommand(sender, 'observe-transport-accepted-0')).toMatchObject({ state: ['transport-accepted'] });
+    expect(findCommand(sender, 'observe-transport-accepted-0')).toMatchObject({
+        state: ['transport-accepted'],
+        timeoutMs: sends.leadBudgetMs
+    });
     expect(findCommand(sender, 'paced-sends')).toEqual({
         kind: 'loop',
         commandId: `${sender.recipeId}-paced-sends`,
@@ -138,12 +143,13 @@ describe('paced-latest', () => {
 
             expectSends(scenario, carrier, {
                 burst: 5,
+                leadBudgetMs: 250,
                 publication: { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
             });
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
                 ...SENDS_PROLOGUE,
-                ...[1, 2, 3, 4].flatMap((index) => toObserveNames(index, 'superseded', ['attempts'])),
+                ...[1, 2, 3, 4].flatMap((index) => toObserveNames(index, 'superseded', ['attempts', 'reason'])),
                 ...toObserveNames(5, 'transport-accepted', []),
                 'stats'
             ]);
@@ -151,6 +157,12 @@ describe('paced-latest', () => {
                 source: `resultCache.${scenario.sender.recipeId}-observe-superseded-3.value.attempts`,
                 operator: 'equals',
                 expected: 0
+            });
+            // The stage's own displacement, not the dispatch path's latest-wins supersedence at admission.
+            expect(findCommand(scenario.sender, 'assert-reason-3')).toMatchObject({
+                source: `resultCache.${scenario.sender.recipeId}-observe-superseded-3.value.reason`,
+                operator: 'contains',
+                expected: 'displaced it before its opportunity'
             });
         }
     );
@@ -195,6 +207,7 @@ describe('paced-newest-n', () => {
 
             expectSends(scenario, carrier, {
                 burst: 4,
+                leadBudgetMs: 250,
                 publication: { cadenceMs: 500, retainNewest: 3, drain: { messages: 2, bytes: 65_536 } },
                 ttlMs: 1_500
             });
@@ -202,7 +215,7 @@ describe('paced-newest-n', () => {
                 ...SENDER_PROLOGUE,
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(4, 'staged', []),
-                ...toObserveNames(1, 'superseded', ['attempts']),
+                ...toObserveNames(1, 'superseded', ['attempts', 'reason']),
                 ...[2, 3, 4].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
                 'stats'
             ]);
@@ -240,6 +253,7 @@ describe('paced-expiry', () => {
 
             expectSends(scenario, carrier, {
                 burst: 1,
+                leadBudgetMs: 500,
                 publication: { cadenceMs: 1_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
                 ttlMs: 100
             });

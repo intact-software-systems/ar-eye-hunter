@@ -5,6 +5,7 @@ import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-con
 import {
     NEVER_ATTEMPTED,
     PUBLICATION_DRAIN_BYTES,
+    STAGE_DISPLACED,
     toArrivalCountCommand,
     toNoFurtherArrivalCommand,
     toPublicationSendCommands,
@@ -36,16 +37,21 @@ export const pacedLatest: AlmConformanceScenarioDefinition = {
     toSenderCommands: (sender) => [
         ...toPublicationSendCommands({ step: sender, burst: LAST_SEND, publication: PACED_LATEST_PUBLICATION }),
         ...DISPLACED_INDEXES.flatMap((index) =>
-            toPublicationVerdictCommands({ step: sender, index, state: 'superseded', facts: [NEVER_ATTEMPTED] })
+            toPublicationVerdictCommands({
+                step: sender,
+                index,
+                state: 'superseded',
+                facts: [NEVER_ATTEMPTED, STAGE_DISPLACED]
+            })
         ),
         ...toPublicationVerdictCommands({ step: sender, index: LAST_SEND, state: 'transport-accepted', facts: [] })
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1),
-        toSeqArrivalWait(receiver, 0, true),
-        toSeqArrivalWait(receiver, LAST_SEND, false),
+        toSeqArrivalWait(receiver, 0, 'arrived'),
+        toSeqArrivalWait(receiver, LAST_SEND, 'not-yet'),
         toArrivalCountCommand(receiver, 2),
-        toSeqArrivalWait(receiver, LAST_SEND, true),
+        toSeqArrivalWait(receiver, LAST_SEND, 'arrived'),
         toNoFurtherArrivalCommand(receiver, 3, NO_FURTHER_ARRIVAL_WINDOW_MS)
     ]
 };

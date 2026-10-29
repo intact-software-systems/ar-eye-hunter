@@ -46,7 +46,7 @@ export const pacedExpiry: AlmConformanceScenarioDefinition = {
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1),
-        toSeqArrivalWait(receiver, 0, true),
+        toSeqArrivalWait(receiver, 0, 'arrived'),
         toNoFurtherArrivalCommand(receiver, 2, NO_FURTHER_ARRIVAL_WINDOW_MS)
     ]
 };

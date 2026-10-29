@@ -35,6 +35,9 @@ type MessageSendOptions = Pick<
 
 type MessageSendAudience = Pick<BlackBoxRallarMessageSendInput, 'toPeer' | 'principalId' | 'recipientPeer'>;
 
+/** Everything an ordinary send names but the channel it opens. */
+type MessageSendFields = Omit<BlackBoxRallarMessageSendInput, keyof BlackBoxRallarMessageChannel>;
+
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'principal'];
 const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput['reliability']>[] = [
@@ -119,6 +122,15 @@ function decodeReplaySend(
 function decodeOrdinarySend(
     value: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
+    return decodeBlackBoxRallarMessageChannel(value).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (channel) => decodeMessageSendFields(value).mapRight((fields) => ({ ...fields, ...channel }))
+    );
+}
+
+function decodeMessageSendFields(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendFields> {
     const payload = value.payload;
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
@@ -131,21 +143,16 @@ function decodeOrdinarySend(
     if (isInputIssue(ownership)) {
         return Either.ofLeft(ownership);
     }
-    const addressing: Either<BlackBoxRallarInputIssue, MessageSendAudience & BlackBoxRallarMessageChannel> =
-        decodeMessageAudience(value).flatMap(
-            (issue) => Either.ofLeft(issue),
-            (audience) => decodeBlackBoxRallarMessageChannel(value).mapRight((channel) => ({ ...audience, ...channel }))
-        );
-    return addressing.flatMap(
+    return decodeMessageAudience(value).flatMap(
         (issue) => Either.ofLeft(issue),
-        (addressed) =>
+        (peer) =>
             decodeMessageSendIdentity(value).flatMap(
                 (issue) => Either.ofLeft(issue),
                 (identity) =>
                     decodeMessageSendOptions(value).mapRight((options) => ({
                         ...identity,
                         ...options,
-                        ...addressed,
+                        ...peer,
                         payload,
                         ownership,
                         resourceId: decodeBlackBoxCommandString(value.resourceId),
