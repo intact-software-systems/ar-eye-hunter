@@ -12,6 +12,7 @@ import {
     type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
+import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -410,6 +411,17 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         expired: number;
         /** The envelope bytes of the selected values. */
         bytes: number;
+    }>
+    | Readonly<{
+        kind: 'publication-staging';
+        laneKey: string;
+        msgId: string;
+        traceId: string;
+        atMs: number;
+        /** What the stage settled for the value; a value an opportunity selected is its carrier's to settle. */
+        outcome: 'staged' | 'superseded' | 'expired' | 'refused' | 'cancelled';
+        /** The stage limit a capacity refusal passed; absent on every other outcome, an oversized refusal included. */
+        limit?: ALPublicationStageLimit;
     }>
     | ALOutboundCongestionDiagnostic;
 

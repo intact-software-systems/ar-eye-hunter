@@ -1,3 +1,4 @@
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AnalyzeUploadFile } from './recipe-console-analyze-artifacts.ts';
 import {
     ANALYZE_AGENT_ID,
@@ -17,8 +18,13 @@ const PUBLICATION_COMMAND_ID = 'pose-send';
 const PUBLICATION_TOPIC_ID = 'room.pose';
 const PUBLICATION_TYPE_ID = 'room.pose.v1';
 const PUBLICATION_LANE_KEY = `${PUBLICATION_TOPIC_ID}/${PUBLICATION_TYPE_ID}`;
+/** The page's outbound diagnostics topic: the page states the stage's event as it is, and the row reads its message. */
+const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 
-type PublicationStagingOutcome = 'staged' | 'superseded' | 'expired' | 'refused' | 'cancelled';
+type PublicationStagingData = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-staging'; }>;
+type PublicationOpportunityData = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-opportunity'; }>;
+type PublicationEventData = PublicationStagingData | PublicationOpportunityData;
+type PublicationStagingOutcome = PublicationStagingData['outcome'];
 
 export interface PublicationDiagnosticRow {
     readonly outcome: PublicationStagingOutcome | 'opportunity';
@@ -27,28 +33,9 @@ export interface PublicationDiagnosticRow {
     readonly traceId?: string;
 }
 
-interface PublicationStagingData {
-    readonly kind: 'publication-staging';
-    readonly laneKey: string;
-    readonly msgId: string;
-    readonly traceId: string;
-    readonly atMs: number;
-    readonly outcome: PublicationStagingOutcome;
-    readonly limit?: string;
-}
+type PublicationSeverity = 'info' | 'warning';
 
-interface PublicationOpportunityData {
-    readonly kind: 'publication-opportunity';
-    readonly laneKey: string;
-    readonly atMs: number;
-    readonly selected: number;
-    readonly deferred: number;
-    readonly expired: number;
-    readonly bytes: number;
-}
-
-type PublicationEventData = PublicationStagingData | PublicationOpportunityData;
-
+/** A page runtime event as `events.jsonl` keeps it: the control envelope around the page's own diagnostic event. */
 interface PublicationDiagnosticEvent {
     readonly kind: 'diagnostic';
     readonly protocolVersion: 1;
@@ -58,16 +45,22 @@ interface PublicationDiagnosticEvent {
     readonly eventId: string;
     readonly atEpochMs: number;
     readonly payload: {
-        readonly diagnosticSchemaVersion: 1;
-        readonly topic: string;
-        readonly diagnosticTypeId: PublicationEventData['kind'];
-        readonly severity: 'info' | 'warning';
-        readonly transport: 'messages.rtc';
-        readonly message: string;
-        readonly typeId: string;
-        readonly topicId: string;
-        readonly data: PublicationEventData;
-        readonly source: string;
+        readonly kind: 'diagnostic';
+        readonly topic: typeof OUTBOUND_DIAGNOSTICS_TOPIC;
+        readonly severity: PublicationSeverity;
+        readonly eventId: string;
+        readonly atEpochMs: number;
+        readonly payload: {
+            readonly diagnosticSchemaVersion: 1;
+            readonly diagnosticTypeId: typeof OUTBOUND_DIAGNOSTICS_TOPIC;
+            readonly topic: typeof OUTBOUND_DIAGNOSTICS_TOPIC;
+            readonly severity: PublicationSeverity;
+            /** The page names no message of its own: the row reads one from `data`. */
+            readonly message: typeof OUTBOUND_DIAGNOSTICS_TOPIC;
+            readonly atEpochMs: number;
+            readonly data: PublicationEventData;
+            readonly source: 'browser-rallar-runtime';
+        };
     };
 }
 
@@ -75,7 +68,7 @@ interface PublicationStagingFact {
     readonly outcome: PublicationStagingOutcome;
     readonly msgId: string;
     readonly traceId: string;
-    readonly limit?: string;
+    readonly limit?: PublicationStagingData['limit'];
 }
 
 const STAGING_FACTS: readonly PublicationStagingFact[] = [
@@ -197,6 +190,8 @@ function toDiagnosticEvents(): readonly PublicationDiagnosticEvent[] {
             candidate.msgId === row.msgId && candidate.outcome === row.outcome
         );
         const atMs = ANALYZE_BASE_EPOCH_MS + 400 + index * 50;
+        const eventId = `publication-diagnostic-${index + 1}`;
+        const severity: PublicationSeverity = row.outcome === 'refused' ? 'warning' : 'info';
         const data: PublicationEventData = fact
             ? {
                 kind: 'publication-staging',
@@ -214,19 +209,24 @@ function toDiagnosticEvents(): readonly PublicationDiagnosticEvent[] {
             runId: ANALYZE_CONTROL_RUN_ID,
             agentId: ANALYZE_AGENT_ID,
             commandId: PUBLICATION_COMMAND_ID,
-            eventId: `publication-diagnostic-${index + 1}`,
+            eventId,
             atEpochMs: atMs,
             payload: {
-                diagnosticSchemaVersion: 1,
-                topic: 'alm.publication',
-                diagnosticTypeId: data.kind,
-                severity: row.outcome === 'refused' ? 'warning' : 'info',
-                transport: 'messages.rtc',
-                message: row.message,
-                typeId: PUBLICATION_TYPE_ID,
-                topicId: PUBLICATION_TOPIC_ID,
-                data,
-                source: 'rallar.browser.messages'
+                kind: 'diagnostic',
+                topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+                severity,
+                eventId,
+                atEpochMs: atMs,
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: OUTBOUND_DIAGNOSTICS_TOPIC,
+                    topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+                    severity,
+                    message: OUTBOUND_DIAGNOSTICS_TOPIC,
+                    atEpochMs: atMs,
+                    data,
+                    source: 'browser-rallar-runtime'
+                }
             }
         };
     });

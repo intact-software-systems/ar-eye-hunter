@@ -62,7 +62,8 @@ export function decodeCount(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
-function decodeCounts<Field extends string>(
+/** Every field a whole number at or above zero; the left names each one that is not, under `path`. */
+export function decodeCounts<Field extends string>(
     value: unknown,
     fields: readonly Field[],
     path: string

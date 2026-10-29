@@ -291,6 +291,9 @@ async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDepende
     const { BlackBoxRallarVolatileLimits } = await import(
         '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
     );
+    const { BlackBoxRallarPublicationLimits } = await import(
+        '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
+    );
     const context = createDefaultApiMiddlewareTestDouble({
         session: authSession,
         middleware: { webRtcGroupManager: createWebRtcGroupManager() }
@@ -308,8 +311,10 @@ async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDepende
         }).receipt
     }));
     configureApiClient({ apiBaseUrl: 'https://api.example.test' });
-    const limits = new BlackBoxRallarVolatileLimits();
-    const runtime = createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: limits.get });
+    const runtime = createBlackBoxBrowserRallarRuntimeDependency({
+        readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get,
+        readPublicationStageLimits: new BlackBoxRallarPublicationLimits().get
+    });
     runtime.setDefaults({ ...scope, diagnosticsPorts: { signalingDiagnostics: () => {} } });
     return runtime;
 }

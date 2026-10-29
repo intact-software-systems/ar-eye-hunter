@@ -30,6 +30,7 @@ interface StageFixture {
 }
 
 type OpportunityDiagnostic = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-opportunity'; }>;
+type StagingDiagnostic = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-staging'; }>;
 
 interface StageFixtureOptions {
     readonly submit?: (selected: readonly ALOutboundStagedPublication<string>[]) => Promise<void>;
@@ -72,7 +73,7 @@ function stageValue(
     fixture: StageFixture,
     context: string,
     options?: { topicId?: string; resourceId?: string; policy?: ALPublicationPolicy; ttlMs?: number; bytes?: number; }
-): ALOutboundPublicationStage.StageResult & { readonly msgId: string; } {
+): ALOutboundPublicationStage.StageResult & { readonly msgId: string; readonly traceId: string; } {
     const msg = createLiveMessage(
         options?.topicId ?? 'arena',
         options?.resourceId ?? 'entity-1',
@@ -85,13 +86,17 @@ function stageValue(
         bytes: options?.bytes ?? VALUE_BYTES,
         context
     });
-    return { ...result, msgId: msg.id.msgId };
+    return { ...result, msgId: msg.id.msgId, traceId: msg.id.traceId };
 }
 
 /** Runs one engine pass and joins the runnable it started: `stop` awaits the work the engine owns. */
 async function runEnginePass(engine: InboxOutboxEngine): Promise<void> {
     await engine.executeOnce();
     await engine.stop();
+}
+
+function stagingDiagnosticsOf(diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[]): readonly StagingDiagnostic[] {
+    return diagnostics.filter((event): event is StagingDiagnostic => event.kind === 'publication-staging');
 }
 
 function opportunitiesOf(diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[]): readonly OpportunityDiagnostic[] {
@@ -314,7 +319,8 @@ describe('ALOutboundPublicationStage', () => {
             reason: 'capacity',
             limit: 'staged-values',
             detail: 'Staging the value would hold 3 values, past the stage\'s limit of 2.',
-            msgId: refused.msgId
+            msgId: refused.msgId,
+            traceId: refused.traceId
         });
         expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['staged', 'staged']);
         expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({ staged: 1, streams: 1 });
@@ -664,5 +670,57 @@ describe('ALOutboundPublicationStage', () => {
 
         expect(fixture.submitted).toEqual([['v1'], ['v3']]);
         expect(opportunitiesOf(fixture.diagnostics)).toHaveLength(2);
+    });
+    it('writes one payload-free staging diagnostic per outcome a value meets on the stage, naming a capacity limit', async () => {
+        const fixture = createStageFixture({ limits: { maxStagedValues: 2 } });
+        const first = stageValue(fixture, 'v1', { resourceId: 'entity-1' });
+        const second = stageValue(fixture, 'v2', { resourceId: 'entity-1' });
+        const third = stageValue(fixture, 'v3', { resourceId: 'entity-2' });
+        const refused = stageValue(fixture, 'v4', { resourceId: 'entity-3' });
+        const oversized = stageValue(fixture, 'v5', { resourceId: 'entity-3', bytes: LATEST_POLICY.drain.bytes + 1 });
+        fixture.stage.cancel(third.msgId);
+        const expiring = stageValue(fixture, 'v6', { resourceId: 'entity-4', ttlMs: 0 });
+
+        fixture.clock.atMs += 1;
+        await runEnginePass(fixture.engine);
+
+        const laneKey = 'arena/arena.pose.v1';
+        const fact = (value: { msgId: string; traceId: string; }, outcome: StagingDiagnostic['outcome'], atMs: number) => ({
+            kind: 'publication-staging',
+            laneKey,
+            msgId: value.msgId,
+            traceId: value.traceId,
+            atMs,
+            outcome
+        });
+        expect(fixture.submitted).toEqual([['v2']]);
+        expect(stagingDiagnosticsOf(fixture.diagnostics)).toEqual([
+            fact(first, 'staged', START_MS),
+            fact(second, 'staged', START_MS),
+            fact(first, 'superseded', START_MS),
+            fact(third, 'staged', START_MS),
+            { ...fact(refused, 'refused', START_MS), limit: 'staged-values' },
+            fact(oversized, 'refused', START_MS),
+            fact(third, 'cancelled', START_MS),
+            fact(expiring, 'staged', START_MS),
+            fact(expiring, 'expired', START_MS + 1)
+        ]);
+    });
+
+    it('writes the staging diagnostics a reconfiguration settles: superseded by retention, refused oversized', () => {
+        const fixture = createStageFixture();
+        const wide: ALPublicationPolicy = { ...LATEST_POLICY, retainNewest: 2 };
+        const narrow: ALPublicationPolicy = { ...LATEST_POLICY, drain: { messages: 8, bytes: 200 } };
+        const older = stageValue(fixture, 'v1', { policy: wide });
+        stageValue(fixture, 'v2', { policy: wide });
+        const heavy = stageValue(fixture, 'heavy', { resourceId: 'entity-2', policy: wide, bytes: 500 });
+
+        stageValue(fixture, 'light', { resourceId: 'entity-3', policy: narrow });
+
+        expect(stagingDiagnosticsOf(fixture.diagnostics).slice(3, 5)).toEqual([
+            expect.objectContaining({ msgId: older.msgId, traceId: older.traceId, outcome: 'superseded' }),
+            expect.objectContaining({ msgId: heavy.msgId, traceId: heavy.traceId, outcome: 'refused' })
+        ]);
+        expect(stagingDiagnosticsOf(fixture.diagnostics)[4]).not.toHaveProperty('limit');
     });
 });

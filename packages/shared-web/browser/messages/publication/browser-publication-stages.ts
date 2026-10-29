@@ -9,7 +9,9 @@ import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-pu
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     ALOutboundPublicationStage,
-    type ALOutboundPublicationLaneReport
+    toIdleALOutboundPublicationStageReport,
+    type ALOutboundPublicationLaneReport,
+    type ALOutboundPublicationStageReport
 } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALOutboundStagedPublication } from '@shared/alm/outbound/publication/al-outbound-staged-publication.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -73,7 +75,14 @@ export class BrowserPublicationStages {
         return this.current?.stage.cancel(msgId) ?? false;
     }
 
-    /** No production caller reads it yet: S1-ii's usage report is its consumer, and the tests read it until then. */
+    /** The connect's stage report; a connect whose stage has not started, or has stopped, reports it idle (D480). */
+    readReport(context: ApiMiddleware): ALOutboundPublicationStageReport {
+        return this.current?.context === context
+            ? this.current.stage.readReport()
+            : toIdleALOutboundPublicationStageReport(context.middleware.publicationStageLimits);
+    }
+
+    /** One lane of the connect's stage; only the tests read it, and the usage report reads `readReport`. */
     readLane(context: ApiMiddleware, laneKey: string): ALOutboundPublicationLaneReport | undefined {
         return this.current?.context === context ? this.current.stage.readLane(laneKey) : undefined;
     }

@@ -17,6 +17,8 @@ import {
     AL_VOLATILE_SESSION_MAX_BYTES
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const FAIRNESS_SCENARIO_IDS = ['own-share-under-inbound', 'buffered-track-drains', 'churn-bounded-tracks'] as const;
@@ -136,7 +138,8 @@ describe('own-share-under-inbound', () => {
         orderingTracks: 0,
         deliveredMarkers: 0,
         repliesHeld: 0,
-        replyWaitsOpen: 0
+        replyWaitsOpen: 0,
+        publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
     };
 
     it.each(FAIRNESS_CARRIERS['own-share-under-inbound'])(
@@ -295,7 +298,8 @@ describe('churn-bounded-tracks', () => {
         orderingTracks: 256,
         deliveredMarkers: 256,
         repliesHeld: 0,
-        replyWaitsOpen: 0
+        replyWaitsOpen: 0,
+        publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
     };
 
     it('opens 280 tracks with one send each, paced, and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {

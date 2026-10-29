@@ -187,8 +187,8 @@ records what the runner was doing while the cell ran:
   command's result: every ALM recipe ends with one, so each page reads its ledger once per cell. The
   decoded snapshot keeps each reading as `ledgerReadings`, `{ atEpochMs, agentId, usage, own, inbound,
   overloaded, orderingTracks }` per agent; the control client's periodic stats read no page, carry no
-  `alm`, and are skipped, as is a reading whose block does not decode (one without its pools or its
-  `orderingTracks` included). `{ outcome: 'measured', readingCount, maxAdmissions, maxBytes,
+  `alm`, and are skipped, as is a reading whose block does not decode (one without its pools, its
+  `orderingTracks` or its `publication` stage report included; the ledger keeps no publication field). `{ outcome: 'measured', readingCount, maxAdmissions, maxBytes,
   maxOldestAgeMs, maxTracks, maxInboundAdmissions, maxInboundBytes, maxOrderingTracks,
   overloadedReadings }`: each maximum is the most any one page held at one reading, not a sum across
   pages — `maxInboundAdmissions` and `maxInboundBytes` of its inbound pool (D189), `maxOrderingTracks`

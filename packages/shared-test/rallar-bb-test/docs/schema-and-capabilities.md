@@ -941,6 +941,22 @@ bound its session read, and a connect that names the field on a live facade has 
 recipe closes the connection before a connect that names the field, and closes and reconnects without it to restore
 the constants (`AL_VOLATILE_SESSION_LIMITS`).
 
+### The lane-only `rallar.almPublicationLimits` connect field
+
+`rtc.connect.rallar.almPublicationLimits` names `maxStreams`, `maxStagedValues` and `maxStagedBytes`, each a positive
+safe integer, and nothing else. It lowers the publication stage limits (D477) of the session this connect initialises
+the way `almVolatileLimits` lowers the volatile bound: the page holds the value and the browser session reads it once,
+when it initialises, so a recipe closes the connection before a connect that names the field. A connect that names
+none initialises its session with the product defaults (`AL_PUBLICATION_STAGE_LIMITS`: 64 streams, 1 000 values,
+4 MiB), so closing and reconnecting without it restores them. Every value must name all three fields; any other shape
+fails the connect with each issue `decodeALPublicationStageLimits` names, as `path: message` joined by a space, for
+example `$.almPublicationLimits.maxWindowMs: Expected only maxStreams, maxStagedValues and maxStagedBytes.` or
+`$.almPublicationLimits.maxStagedBytes: Expected a positive safe integer.`; a value that is not an object fails with
+`$.almPublicationLimits: Expected a publication stage limits object.` Like `almVolatileLimits` it is validated in the
+page only and is a harness capability, never a `rallar.connect` option. A value it refuses at capacity settles its
+handle `rejected` with `failure.reason` `capacity` and `failure.limit` naming the limit, and writes a `refused`
+`publication-staging` diagnostic (`runtime-diagnostic-contract.md`).
+
 ### The lane-only `rallar.recoveryOwner` connect field
 
 `rtc.connect.rallar.recoveryOwner` is `'record'` or absent; any other value fails the connect. Like
@@ -1262,10 +1278,18 @@ A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
 own: { admissions, bytes }, inbound: { admissions, bytes },
 limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
-orderingTracks }`. All but the last are read at the command from
-`rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
+repliesHeld, replyWaitsOpen, publication, orderingTracks, deliveredMarkers }`. All but the last two are read at the
+command from `rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
 two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
+`publication` is the connect's publication stage report (D480): `{ lanes, streams, staged, stagedBytes,
+limits: { maxStreams, maxStagedValues, maxStagedBytes }, counters: { staged, superseded, expired, refused,
+cancelled, admitted, deferred } }`. `lanes`, `streams`, `staged` and `stagedBytes` are what the stage holds now;
+`limits` are the session's stage limits, lowered by `rallar.almPublicationLimits`; each counter is cumulative over the
+connect, one per value the stage settled that way, with `admitted` the values its opportunities handed to a carrier
+and `deferred` the values each opportunity left for a later one, summed over the opportunities. A connect that
+staged no live value yet reports zeros with its limits. An `assert` reads it as
+`latestStats.rallar.alm.publication.counters.refused`.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

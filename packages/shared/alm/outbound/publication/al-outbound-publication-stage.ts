@@ -22,6 +22,7 @@ import type {
 import {
     writeALOutboundRuntimeDiagnostic,
     type ALOutboundMessageRuntime,
+    type ALOutboundRuntimeDiagnosticsEvent,
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
 import {
@@ -48,6 +49,19 @@ export interface ALOutboundPublicationLaneReport {
 export interface ALOutboundPublicationStageReport extends ALOutboundPublicationLedgerReport {
     readonly lanes: number;
 }
+
+/** What a stage under `limits` reports before it holds or settled anything: a connect that staged no live value yet. */
+export function toIdleALOutboundPublicationStageReport(
+    limits: ALPublicationStageLimits
+): ALOutboundPublicationStageReport {
+    return { lanes: 0, ...new ALOutboundPublicationLedger(limits).readReport() };
+}
+
+/** One value's outcome on the stage, as its `publication-staging` diagnostic states it. */
+type ALPublicationStagingOutcome = Pick<
+    Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-staging'; }>,
+    'outcome' | 'limit'
+>;
 
 const NEWER_VALUE_DETAIL = 'A newer live value of the stream displaced it before its opportunity.';
 const SHRUNK_RETENTION_DETAIL = 'The live channel\'s retention shrank, and newer values of the stream displaced it.';
@@ -144,12 +158,12 @@ export class ALOutboundPublicationStage<TContext> {
             this.ledger.resolveRefusal({ previous, next: retained })
         );
         if (refusal !== undefined) {
-            this.ledger.count('refused', 1);
+            this.recordOutcome(publication, publication.stagedAtMs, toRefusedOutcome(refusal));
             return refusal;
         }
         this.lanes.set(laneKey, lane);
+        this.recordOutcome(publication, publication.stagedAtMs, { outcome: 'staged' });
         this.input.settle(toStagedSettlement(publication));
-        this.ledger.count('staged', 1);
         this.writeStream(lane, publication.streamKey, retained);
         this.settleSuperseded(
             displaced.map((value) => ({ displaced: value, replacement: publication })),
@@ -163,7 +177,7 @@ export class ALOutboundPublicationStage<TContext> {
         return { kind: 'staged', displacedMsgId: displaced[0]?.msgId };
     }
 
-    /** No production caller reads it yet: S1-ii's usage report is its consumer, and the tests read it until then. */
+    /** One lane's schedule and holdings; only the tests read it, and the usage report reads `readReport`. */
     readLane(laneKey: string): ALOutboundPublicationLaneReport | undefined {
         const lane = this.lanes.get(laneKey);
         if (lane === undefined) {
@@ -188,12 +202,13 @@ export class ALOutboundPublicationStage<TContext> {
         const { lane, publication } = found;
         const stream = lane.streams.get(publication.streamKey) ?? [];
         this.writeStream(lane, publication.streamKey, stream.filter((value) => value.msgId !== msgId));
-        this.ledger.count('cancelled', 1);
+        const atMs = this.input.clock.nowMs();
+        this.recordOutcome(publication, atMs, { outcome: 'cancelled' });
         this.input.settle({
             kind: 'cancelled',
             msgId,
             carrier: publication.carrier,
-            atMs: this.input.clock.nowMs(),
+            atMs,
             traceId: publication.traceId
         });
         return true;
@@ -259,14 +274,14 @@ export class ALOutboundPublicationStage<TContext> {
             this.writeStream(lane, streamKey, reconfiguration.remaining[index] ?? [])
         );
         this.settleSuperseded(reconfiguration.superseded, atMs, SHRUNK_RETENTION_DETAIL);
-        this.ledger.count('refused', reconfiguration.oversized.length);
-        reconfiguration.oversized.forEach((publication) =>
+        reconfiguration.oversized.forEach((publication) => {
+            this.recordOutcome(publication, atMs, { outcome: 'refused' });
             this.settleAdmission(publication, atMs, {
                 kind: 'refused',
                 reason: 'oversized',
                 detail: toOversizedDetail(publication.bytes, policy.drain.bytes)
-            })
-        );
+            });
+        });
         this.wakeAtNextOpportunity();
     }
 
@@ -275,8 +290,8 @@ export class ALOutboundPublicationStage<TContext> {
         atMs: number,
         detail: string
     ): void {
-        this.ledger.count('superseded', supersessions.length);
-        supersessions.forEach(({ displaced, replacement }) =>
+        supersessions.forEach(({ displaced, replacement }) => {
+            this.recordOutcome(displaced, atMs, { outcome: 'superseded' });
             this.input.settle({
                 kind: 'superseded',
                 msgId: displaced.msgId,
@@ -285,8 +300,25 @@ export class ALOutboundPublicationStage<TContext> {
                 replacementMsgId: replacement.msgId,
                 detail,
                 traceId: replacement.traceId
-            })
-        );
+            });
+        });
+    }
+
+    /** Counts one value's outcome and states it as a payload-free diagnostic, under the value's own trace (D480). */
+    private recordOutcome(
+        publication: ALOutboundStagedPublication<TContext>,
+        atMs: number,
+        outcome: ALPublicationStagingOutcome
+    ): void {
+        this.ledger.count(outcome.outcome, 1);
+        writeALOutboundRuntimeDiagnostic(this.input.diagnostics, {
+            kind: 'publication-staging',
+            laneKey: publication.laneKey,
+            msgId: publication.msgId,
+            traceId: publication.traceId,
+            atMs,
+            ...outcome
+        });
     }
 
     /** Its owner drops a disposed stage in the same synchronous step, so a later stage() is a wiring defect. */
@@ -382,7 +414,7 @@ export class ALOutboundPublicationStage<TContext> {
     }
 
     private settleExpired(publication: ALOutboundStagedPublication<TContext>, atMs: number): void {
-        this.ledger.count('expired', 1);
+        this.recordOutcome(publication, atMs, { outcome: 'expired' });
         this.input.settle({
             kind: 'expired',
             msgId: publication.msgId,
@@ -439,6 +471,12 @@ function resolveStageRefusal<TContext>(
         };
     }
     return ledgerRefusal === undefined ? undefined : { kind: 'refused', reason: 'capacity', ...ledgerRefusal };
+}
+
+function toRefusedOutcome(
+    refusal: Extract<ALOutboundPublicationStage.StageResult, { kind: 'refused'; }>
+): ALPublicationStagingOutcome {
+    return refusal.reason === 'capacity' ? { outcome: 'refused', limit: refusal.limit } : { outcome: 'refused' };
 }
 
 function toOversizedDetail(bytes: number, drainBytes: number): string {

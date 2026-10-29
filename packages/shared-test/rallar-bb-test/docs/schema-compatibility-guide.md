@@ -940,3 +940,75 @@ docs/rallar-api-reference.md the carrier's protections.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/rallar-browser-runtime/read-congestion-counters.test.ts packages/tests/shared/multicast/rtc-enqueue-protection.test.ts packages/tests/shared/multicast/web-rtc-overlay-backpressure.test.ts
 ```
+
+```text
+Title: rtc.connect may lower the publication stage limits of the session it initialises
+Date: 2026-10-29
+Owner: ALM QoS S1-ii
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- Other: none; rallar is a free record in the recipe schema and the control validator
+
+Old shape:
+rtc.connect.rallar carried no publication limits; every session's publication stage read the product limits.
+
+New shape:
+rtc.connect.rallar.almPublicationLimits names maxStreams, maxStagedValues and maxStagedBytes, each a positive safe
+integer, and nothing else. It is validated in the page only: a malformed value fails that rtc.connect with every issue
+decodeALPublicationStageLimits names, as path: message. Like almVolatileLimits it reaches only the session the
+connect initialises next.
+
+Migration:
+None: a connect without the field keeps the product limits (AL_PUBLICATION_STAGE_LIMITS), and the next connect
+without it restores them.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the field in its lane-only section.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts packages/tests/shared-test/rallar-browser-runtime/connection.test.ts
+```
+
+```text
+Title: stats.rallar.alm carries the publication stage report; two publication diagnostics read as rows
+Date: 2026-10-29
+Owner: ALM QoS S1-ii
+
+Change type:
+- Compatible addition to a result value and to the outbound diagnostics; a stricter decode of recorded stats
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; the stats result value, its decoder and the
+  distributed-run diagnostic rows change
+
+Old shape:
+stats.rallar.alm named no publication stage. The publication stage wrote only publication-opportunity, whose
+distributed-run row read its topic as its message.
+
+New shape:
+stats.rallar.alm.publication is { lanes, streams, staged, stagedBytes, limits: { maxStreams, maxStagedValues,
+maxStagedBytes }, counters: { staged, superseded, expired, refused, cancelled, admitted, deferred } } (D480). A page
+answer without it, or with a bad field in it, fails the stats command, naming each bad field under publication. The
+stage also writes one payload-free publication-staging outbound diagnostic per value outcome; a refused one is
+recorded at warning severity, and the distributed-run rows read both publication kinds as readable messages.
+
+Migration:
+None for recipes. A recorded stats event from before this change no longer decodes and is skipped, so re-reading an
+older artifact reports no-readings for its ledger.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the stats block; runtime-diagnostic-contract.md the two publication diagnostics;
+alm-observation-artifact.md the ledger readings' decode.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/rallar-browser-runtime/publication-diagnostic-rows.test.ts packages/tests/shared-test/rallar-browser-runtime/payload-free-diagnostics.test.ts
+```

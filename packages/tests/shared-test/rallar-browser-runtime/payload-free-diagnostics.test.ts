@@ -1,6 +1,12 @@
+import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import { decodeNonBlankText, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     beforeEach,
     expect,
@@ -18,6 +24,8 @@ import {
 
 const SENTINEL = 'payload must never enter diagnostics';
 const secretPayload = { secret: SENTINEL };
+
+const PUBLICATION_KINDS: ReadonlySet<string> = new Set(['publication-staging', 'publication-opportunity']);
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
@@ -59,6 +67,48 @@ it('keeps every application payload out of the lane diagnostics while message ev
     expect(diagnostics.filter((event) => event.topic === 'rallar.browser.ws.unhandled_message').map((event) => event.data))
         .toEqual([{ pattern: 'unhandled-ws-message', source: 'console.warn' }]);
 });
+
+it('keeps every application payload out of the publication staging and opportunity diagnostics', async () => {
+    const runtime = await loadConnectedRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    const outbound = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics;
+    if (outbound === undefined) {
+        throw new Error('The connect installed no outbound diagnostics port.');
+    }
+    const engine = new InboxOutboxEngine({ nowEpochMs: Date.now, random: () => 0.5, reportTaskFailure: () => undefined });
+    const stage = new ALOutboundPublicationStage<string>({
+        taskId: 'al-outbound-publication-stage',
+        queueEngine: engine,
+        clock: { nowMs: Date.now },
+        submit: async () => {},
+        settle: () => {},
+        diagnostics: outbound,
+        limits: { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 1 }
+    });
+    const policy = { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
+    for (const resourceId of ['entity-1', 'entity-1', 'entity-2']) {
+        const msg = newALUnicastMessage('self', { topicId: 'room.pose', resourceId, contextId: 'bb-group' }, 'peer-1', 'room.pose.v1', secretPayload);
+        stage.stage({ msg: { ...msg, constraints: { expiresAtMs: Date.now() + 60_000 } }, carrier: 'rtc', policy, bytes: 96, context: resourceId });
+    }
+    await engine.executeOnce();
+    await engine.stop();
+
+    const publication = events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics' && PUBLICATION_KINDS.has(toDataKind(event.data)));
+    expect(publication.map((event) => toDataKind(event.data))).toEqual([
+        'publication-staging',
+        'publication-staging',
+        'publication-staging',
+        'publication-staging',
+        'publication-opportunity'
+    ]);
+    expect(JSON.stringify(publication)).not.toContain(SENTINEL);
+});
+
+function toDataKind(data: BlackBoxRallarEvent['data']): string {
+    return decodeNonBlankText(decodeRecord(data).kind) ?? 'none';
+}
 
 async function loadConnectedRuntime(): Promise<BlackBoxRallarRuntime> {
     const runtime = await loadRuntime();

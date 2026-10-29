@@ -5,6 +5,7 @@ import {
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -183,6 +184,7 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 diagnostics.emit({
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.outbound_diagnostics',
+                    ...(isRefusedPublication(event) ? { severity: 'warning' as const } : {}),
                     data: { ...event }
                 });
             }
@@ -208,6 +210,11 @@ export function createBlackBoxRallarDiagnosticsPorts(
             }
         }
     });
+}
+
+/** A live value the publication stage refused reads as a warning; others keep their topic's severity (D480). */
+function isRefusedPublication(event: ALOutboundRuntimeDiagnosticsEvent): boolean {
+    return event.kind === 'publication-staging' && event.outcome === 'refused';
 }
 
 function publishBlackBoxRallarSignalingDiagnostic(

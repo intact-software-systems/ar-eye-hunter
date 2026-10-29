@@ -12,6 +12,7 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserRallarEvent } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
@@ -67,6 +68,7 @@ it.each(['success', 'failure'] as const)('certifies only no-data connect progres
     const page = createBlackBoxRallarRuntime({
         facade: facade.rallar,
         volatileLimits: new BlackBoxRallarVolatileLimits(),
+        publicationLimits: new BlackBoxRallarPublicationLimits(),
         targetWindow: target,
         clock: { now: Date.now },
         readDocument: () => ({ timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }),

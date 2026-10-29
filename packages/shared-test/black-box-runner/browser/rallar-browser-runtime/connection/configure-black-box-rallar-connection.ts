@@ -10,12 +10,14 @@ import type { BlackBoxRallarConnectionConfig } from '../black-box-rallar-operati
 import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
 import { toBlackBoxRallarDefaults } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import type { BlackBoxRallarPublicationLimits } from './black-box-rallar-publication-limits.ts';
 import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 
 export interface ConfigureBlackBoxRallarConnectionInput {
     readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
     readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
     readonly volatileLimits: BlackBoxRallarVolatileLimits;
+    readonly publicationLimits: BlackBoxRallarPublicationLimits;
     readonly config: BlackBoxRallarConnectionConfig;
     readonly connectionState: BlackBoxRallarConnectionState;
 }
@@ -27,12 +29,12 @@ export interface ConfiguredBlackBoxRallarConnection {
 
 /**
  * An unscoped connection inherits no application defaults. Explicit host capture settings independently carry
- * diagnostics ports; omission carries neither. Volatile limits reach only the session initialised next.
+ * diagnostics ports; omission carries neither. Volatile and publication limits reach only the session initialised next.
  */
 export function configureBlackBoxRallarConnection(
     input: ConfigureBlackBoxRallarConnectionInput
 ): ConfiguredBlackBoxRallarConnection {
-    const { rallar, diagnostics, volatileLimits, config, connectionState } = input;
+    const { rallar, diagnostics, volatileLimits, publicationLimits, config, connectionState } = input;
     const almDiagnostics = config.rallar.almDiagnostics ?? true;
     if (rallar.status() !== 'idle') {
         const current = connectionState.verifiedConfiguration();
@@ -55,6 +57,7 @@ export function configureBlackBoxRallarConnection(
     const defaults = toBlackBoxRallarDefaults(config);
     rallar.setDefaults(defaults === undefined ? undefined : { ...defaults, diagnosticsPorts });
     volatileLimits.set(config);
+    publicationLimits.set(config);
     connectionState.recordConfiguration({
         config,
         defaults,

@@ -1,6 +1,10 @@
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { toRallarRtcCaptureContext } from '@shared-web/browser/rallar-operation-options.ts';
 import {
+    decodeALPublicationStageLimits,
+    type ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import {
     AL_VOLATILE_SESSION_MAX_AGE_MS,
     AL_VOLATILE_SESSION_MAX_TRACKS,
     type ALVolatileSessionLimits
@@ -66,6 +70,7 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         leaveRoomOnClose: optionalBoolean(record.leaveRoomOnClose),
         logoutOnClose: optionalBoolean(record.logoutOnClose),
         almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits),
+        almPublicationLimits: decodeAlmPublicationLimits(record.almPublicationLimits),
         recoveryOwner: optionalChoice(record.recoveryOwner, ['record'])
     };
 }
@@ -237,6 +242,19 @@ function decodeAlmVolatileLimits(value: unknown): ALVolatileSessionLimits | unde
         );
     }
     return { maxAdmissions, maxBytes, maxAgeMs, maxTracks };
+}
+
+/** Every issue the decoder names fails the connect, each as `path: message`; absent keeps the product defaults. */
+function decodeAlmPublicationLimits(value: unknown): ALPublicationStageLimits | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    return decodeALPublicationStageLimits(value).fold(
+        (issues) => {
+            throw new TypeError(issues.map((issue) => `${issue.path}: ${issue.message}`).join(' '));
+        },
+        (limits) => limits
+    );
 }
 
 function isPositiveInteger(value: unknown): value is number {

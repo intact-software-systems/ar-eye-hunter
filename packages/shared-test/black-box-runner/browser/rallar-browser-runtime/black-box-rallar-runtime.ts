@@ -8,6 +8,7 @@ import {
     createBlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
 import { BlackBoxRallarConnectionRuntime } from './connection/black-box-rallar-connection-runtime.ts';
+import { BlackBoxRallarPublicationLimits } from './connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from './connection/black-box-rallar-volatile-limits.ts';
 export type {
     BlackBoxRallarAuthenticateDiagnostics,
@@ -74,11 +75,14 @@ export function installBlackBoxRallarRuntime(
     targetWindow: BlackBoxRallarRuntimeInstallationTarget
 ): BlackBoxRallarRuntime {
     const volatileLimits = new BlackBoxRallarVolatileLimits();
+    const publicationLimits = new BlackBoxRallarPublicationLimits();
     const installation = new BlackBoxRallarConnectionRuntime({
         facade: createBlackBoxBrowserRallarRuntimeDependency({
-            readVolatileSessionLimits: volatileLimits.get
+            readVolatileSessionLimits: volatileLimits.get,
+            readPublicationStageLimits: publicationLimits.get
         }),
         volatileLimits,
+        publicationLimits,
         targetWindow,
         clock: { now: Date.now },
         readDocument: () => ({

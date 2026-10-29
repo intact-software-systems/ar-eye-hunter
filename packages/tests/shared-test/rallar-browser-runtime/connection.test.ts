@@ -1,4 +1,9 @@
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import {
+    AL_PUBLICATION_STAGE_LIMITS,
+    type ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionLimits
@@ -223,4 +228,26 @@ it('holds a connect\'s lowered volatile limits for the session the facade initia
         { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 4_096 },
         AL_VOLATILE_SESSION_LIMITS
     ]);
+});
+
+it('holds a connect\'s lowered publication limits for the session the facade initialises, and the product defaults after', async () => {
+    const publicationLimits = new BlackBoxRallarPublicationLimits();
+    const runtime = await loadRuntime(new BlackBoxRallarVolatileLimits(), publicationLimits);
+    const read: ALPublicationStageLimits[] = [];
+    facade.behavior.connect.mockImplementation(async () => {
+        read.push(publicationLimits.get());
+    });
+    const config = {
+        connection: 'aliceAlm',
+        actor: 'alice',
+        rallar: { apiBaseUrl: 'https://api.example.test', username: 'alice', password: 'secret' }
+    };
+    const lowered = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
+
+    await runtime.connect({ ...config, rallar: { ...config.rallar, almPublicationLimits: lowered } });
+    await runtime.close();
+    await runtime.connect(config);
+    await runtime.close();
+
+    expect(read).toEqual([lowered, AL_PUBLICATION_STAGE_LIMITS]);
 });

@@ -147,7 +147,9 @@ every session the page opens. The event's `data` is the event itself:
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
   `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
-  `rtc-handoff-refusal`, or `rtc-queued-bytes-high-water`
+  `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `publication-staging`
+  or `publication-opportunity` (the last two are described under
+  **Publication stage diagnostics** below)
 - `durationMs`: how long that phase took, on every kind but `commit-phases`,
   `control-admission`, `receipt-confirmation`, `congestion` and the three `rtc-*` kinds: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
@@ -360,6 +362,40 @@ the same probe count is benign under `own-commit` and a fan-out regression under
 This is the evidence a `deadline-expiry` conformance run uses to attribute a
 slow admission (the serialized IndexedDB chain a typed send commits through)
 to a phase instead of a single opaque send latency.
+
+### Publication stage diagnostics
+
+A `live` channel's values wait in the connect's publication stage before admission
+(D469, D470). The stage writes two payload-free kinds on this topic; neither
+carries the message, its payload or its route beyond the lane key:
+
+- `publication-staging` carries `laneKey` (`topicId/typeId`), `msgId`,
+  `traceId`, `atMs` and `outcome`: one event per outcome a value meets on the
+  stage (D480). `outcome` is `staged` when the stage took the value,
+  `superseded` when a newer value of its stream displaced it (or the channel's
+  retention shrank), `expired` when its deadline passed while it waited,
+  `refused` when the stage would not hold it, and `cancelled` when its handle
+  cancelled it before its opportunity. A value an opportunity selected leaves
+  the stage: its carrier settles what happens next, so it writes no further
+  event here. `limit` follows `outcome` on a capacity refusal only, naming the
+  stage limit it would have passed (`streams`, `staged-values` or
+  `staged-bytes`); an oversized refusal, a value heavier than the channel's
+  `drain.bytes`, has none. `traceId` is the value's own envelope trace, so a
+  displaced value's event joins its own handle, not its replacement's.
+  `{"kind":"publication-staging","laneKey":"room.pose/room.pose.v1","msgId":"msg-3","traceId":"trace-3","atMs":1760000000000,"outcome":"refused","limit":"staged-values"}`
+- `publication-opportunity` carries `laneKey`, `atMs`, `selected`, `deferred`
+  (the values still staged after it), `expired` and `bytes` (the envelope bytes
+  of the selected values): one event per opportunity a lane ran, written after
+  the selection reached its carriers
+
+The harness records a `refused` staging event at `warning` severity and every
+other one, and every opportunity, at `info`. The producer names no message, so
+the distributed-run diagnostic rows read one from `data`:
+`Publication <outcome> on <laneKey>. <msgId>` and
+`Publication opportunity on <laneKey>: <selected> selected, <deferred> deferred, <expired> expired.`
+The row's identity summary carries the event's `msgId` and `traceId`. The
+counts the stage keeps behind these events are the page's
+`stats.rallar.alm.publication` (`schema-and-capabilities.md`).
 
 ## Inbound Admission Diagnostics
 

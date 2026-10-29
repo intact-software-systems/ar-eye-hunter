@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { normalizeBlackBoxResponseHeaders } from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
@@ -105,7 +107,8 @@ describe('runtime construction', () => {
             repliesHeld: 0,
             replyWaitsOpen: 0,
             limits: AL_VOLATILE_SESSION_LIMITS,
-            overloaded: false
+            overloaded: false,
+            publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
         };
         const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 };
         const input = {

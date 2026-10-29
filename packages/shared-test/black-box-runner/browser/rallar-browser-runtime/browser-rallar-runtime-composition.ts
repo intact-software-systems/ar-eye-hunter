@@ -56,6 +56,7 @@ import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-ralla
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
@@ -211,6 +212,8 @@ export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFa
 export interface CreateBlackBoxBrowserRallarRuntimeDependencyInput {
     /** Read once per session initialisation (D74); a connect sets what it returns before it connects. */
     readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+    /** Read once per session initialisation, as the volatile limits are (D477). */
+    readonly readPublicationStageLimits: () => ALPublicationStageLimits;
 }
 
 export function createBlackBoxBrowserRallarRuntimeDependency(
@@ -222,7 +225,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const congestion = createBlackBoxRallarCongestionCounters();
     const inboundStoreCounts = new ALInboundStoreCounts();
     const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
-        input.readVolatileSessionLimits
+        input
     );
     const rooms = createBrowserRoomsComposition({
         state,
@@ -416,7 +419,7 @@ function toBlackBoxBrowserRuntimeDependency(
 }
 
 function createBlackBoxBrowserTransportComposition(
-    readVolatileSessionLimits: () => ALVolatileSessionLimits
+    input: CreateBlackBoxBrowserRallarRuntimeDependencyInput
 ): BlackBoxBrowserTransportComposition {
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
@@ -428,8 +431,8 @@ function createBlackBoxBrowserTransportComposition(
     });
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
-        readVolatileSessionLimits,
-        readPublicationStageLimits: undefined,
+        readVolatileSessionLimits: input.readVolatileSessionLimits,
+        readPublicationStageLimits: input.readPublicationStageLimits,
         foundation,
         state,
         sessionDeliveries: browserDeliveryComposition.sessionDeliveries,

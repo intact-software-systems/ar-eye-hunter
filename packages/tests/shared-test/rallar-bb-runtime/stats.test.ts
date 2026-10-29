@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -19,6 +20,14 @@ import { decodeRecord } from '../../../shared-test/rallar-bb-test/runtime/decode
 import { createBrowserRallarRequiredMethodsTestDouble } from '../browser-rallar-required-methods-test-double.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
+const PUBLICATION_REPORT: RallarBlackBoxTestAlmUsage['publication'] = {
+    lanes: 1,
+    streams: 2,
+    staged: 3,
+    stagedBytes: 300,
+    limits: AL_PUBLICATION_STAGE_LIMITS,
+    counters: { staged: 5, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 1, deferred: 2 }
+};
 const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
     own: { admissions: 2, bytes: 600 },
@@ -28,7 +37,8 @@ const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     orderingTracks: 3,
     deliveredMarkers: 3,
     repliesHeld: 2,
-    replyWaitsOpen: 1
+    replyWaitsOpen: 1,
+    publication: PUBLICATION_REPORT
 };
 const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
@@ -39,7 +49,8 @@ const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     orderingTracks: 256,
     deliveredMarkers: 256,
     repliesHeld: 512,
-    replyWaitsOpen: 0
+    replyWaitsOpen: 0,
+    publication: { ...PUBLICATION_REPORT, lanes: 0, streams: 0, staged: 0, stagedBytes: 0 }
 };
 
 function createDefaultPageRuntime(
@@ -343,7 +354,13 @@ describe('the stats result rallar.alm block', () => {
             overloaded: 'no',
             orderingTracks: 2.5,
             deliveredMarkers: -1,
-            repliesHeld: 1.5
+            repliesHeld: 1.5,
+            publication: {
+                ...PUBLICATION_REPORT,
+                stagedBytes: -1,
+                limits: { maxStreams: 64, maxStagedValues: 1_000 },
+                counters: { ...PUBLICATION_REPORT.counters, cancelled: 0.5 }
+            }
         }));
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -353,7 +370,28 @@ describe('the stats result rallar.alm block', () => {
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
                 'usage.tracks is not a count; own.bytes is not a count; inbound.admissions is not a count; ' +
                 'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count; ' +
-                'deliveredMarkers is not a count; repliesHeld is not a count; replyWaitsOpen is not a count'
+                'deliveredMarkers is not a count; repliesHeld is not a count; replyWaitsOpen is not a count; ' +
+                'publication.stagedBytes is not a count; publication.limits.maxStagedBytes is not a count; ' +
+                'publication.counters.cancelled is not a count'
+        );
+    });
+
+    it('fails the stats command when the page answers a ledger report without its publication stage report', async () => {
+        const { publication: _publication, ...withoutPublication } = FIRST_REPORT;
+        const runtime = createDefaultPageRuntime(async () => withoutPublication);
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s session ledger report is not valid: publication.lanes is not a count; ' +
+                'publication.streams is not a count; publication.staged is not a count; ' +
+                'publication.stagedBytes is not a count; publication.limits.maxStreams is not a count; ' +
+                'publication.limits.maxStagedValues is not a count; publication.limits.maxStagedBytes is not a count; ' +
+                'publication.counters.staged is not a count; publication.counters.superseded is not a count; ' +
+                'publication.counters.expired is not a count; publication.counters.refused is not a count; ' +
+                'publication.counters.cancelled is not a count; publication.counters.admitted is not a count; ' +
+                'publication.counters.deferred is not a count'
         );
     });
 });

@@ -13,6 +13,7 @@ import type {
     BlackBoxBrowserMessagesDependency,
     BlackBoxBrowserRallarRuntimeDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
@@ -52,6 +53,8 @@ import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/brow
 import type { RallarConnectStatus, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
@@ -314,6 +317,7 @@ class ScaleActor {
                 peers: { ...facade.rallar.peers, session: () => this.session, getRoomLeaderSessionId: () => 'director-session' }
             },
             volatileLimits: new BlackBoxRallarVolatileLimits(),
+            publicationLimits: new BlackBoxRallarPublicationLimits(),
             targetWindow: {},
             clock: { now: Date.now },
             readDocument: () => ({ timeOrigin: 1_000, origin: 'https://scale.example.test' }),
@@ -365,7 +369,8 @@ class ScaleActor {
                     orderingTracks: 85,
                     deliveredMarkers: 85,
                     repliesHeld: 0,
-                    replyWaitsOpen: 0
+                    replyWaitsOpen: 0,
+                    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
                 }),
                 readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 readStorageCounters: async (command) =>
