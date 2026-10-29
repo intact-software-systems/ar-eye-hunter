@@ -1,12 +1,12 @@
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     AL_MESSAGE_RESOURCE_LIMITS,
     computeALMessageEnvelopeBytes
 } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
-import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     ALOutboundPublicationStage,
     type ALOutboundPublicationLaneReport
@@ -35,7 +35,6 @@ export namespace BrowserPublicationStages {
 
     export interface Input {
         readonly nowMs: () => number;
-        readonly settle: ALDeliverySettlementSink;
         /** Writes one selected delivery's carrier leg; it states its own failure as a settlement. */
         readonly submit: (delivery: LiveDelivery, epoch: BrowserDeliverySettlements.Epoch) => Promise<void>;
     }
@@ -44,11 +43,13 @@ export namespace BrowserPublicationStages {
 interface BrowserConnectPublicationStage {
     readonly context: ApiMiddleware;
     readonly stage: ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery>;
+    readonly stopWatchingEpoch: RallarUnsubscribe;
 }
 
 /**
- * Owns the connected session's one publication stage, on its connect's queue engine (D471). A live delivery of
- * another connect ends the current stage first: its values belong to a transport that no longer exists.
+ * Owns the connected session's one publication stage, on its connect's queue engine (D471). The stage settles
+ * under its connect's epoch and stops when that epoch closes, which is the first step of the connect's shutdown,
+ * or when the session ends, whichever comes first.
  */
 export class BrowserPublicationStages {
     private readonly input: BrowserPublicationStages.Input;
@@ -60,7 +61,7 @@ export class BrowserPublicationStages {
 
     stage(delivery: BrowserPublicationStages.LiveDelivery, epoch: BrowserDeliverySettlements.Epoch): void {
         const { message, carrier } = delivery;
-        const result = this.readStage(delivery.context).stage({
+        const result = this.readStage(delivery.context, epoch).stage({
             msg: message,
             carrier,
             policy: delivery.publication.policy,
@@ -68,7 +69,7 @@ export class BrowserPublicationStages {
             context: { delivery, epoch }
         });
         if (result.kind === 'refused') {
-            this.input.settle({
+            epoch.settlements[carrier]({
                 kind: 'admission',
                 msgId: message.id.msgId,
                 traceId: message.id.traceId,
@@ -85,26 +86,31 @@ export class BrowserPublicationStages {
     }
 
     /** Settles every staged value `skipped`/`disposed` and takes the stage's task off its engine. */
-    endSession(): void {
-        const ended = this.current;
+    stopStage(): void {
+        const stopped = this.current;
         this.current = undefined;
-        ended?.stage.dispose();
+        stopped?.stopWatchingEpoch();
+        stopped?.stage.dispose();
     }
 
-    private readStage(context: ApiMiddleware): ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery> {
+    /** A delivery of another connect stops the current stage first: one connect holds staged values at a time. */
+    private readStage(
+        context: ApiMiddleware,
+        epoch: BrowserDeliverySettlements.Epoch
+    ): ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery> {
         if (this.current?.context === context) {
             return this.current.stage;
         }
-        this.endSession();
+        this.stopStage();
         const stage = new ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery>({
             taskId: PUBLICATION_STAGE_TASK_ID,
             queueEngine: context.middleware.qboxEngine,
             clock: { nowMs: this.input.nowMs },
             submit: async (selected) => await this.submit(selected),
-            settle: this.input.settle,
+            settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
             diagnostics: context.middleware.outboundDiagnostics
         });
-        this.current = { context, stage };
+        this.current = { context, stage, stopWatchingEpoch: epoch.onClose(() => this.stopStage()) };
         return stage;
     }
 

@@ -15,7 +15,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
-import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
@@ -54,24 +54,15 @@ export class BrowserTypedMessageChannels {
             purpose: definition.purpose,
             durability: definition.durability,
             onStorageUnavailable: definition.onStorageUnavailable ?? 'refuse',
-            publication: toChannelPublication(definition.publication)
+            publication: definition.publication && decodeALPublicationPolicy(definition.publication).right
         };
         return {
-            send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) => {
-                const send = { ...options, ...route, payload };
-                throwIfLiveSendIssues(send, policy);
-                return await this.input.sender.sendTyped(send, policy);
-            },
-            sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) => {
-                const send = { ...options, ...route, payload };
-                throwIfLiveSendIssues(send, policy);
-                return await this.input.sender.sendRtc(send, policy);
-            },
-            sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) => {
-                const send = { ...options, ...route, payload };
-                throwIfLiveSendIssues(send, policy);
-                return await this.input.sender.sendWs(send, policy);
-            },
+            send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
+                await this.input.sender.sendTyped(toChannelSend({ ...options, ...route, payload }, policy), policy),
+            sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
+                await this.input.sender.sendRtc(toChannelSend({ ...options, ...route, payload }, policy), policy),
+            sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
+                await this.input.sender.sendWs(toChannelSend({ ...options, ...route, payload }, policy), policy),
             onRtc: (handler) =>
                 this.input.rtc.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
@@ -121,18 +112,11 @@ export class BrowserTypedMessageChannels {
     }
 }
 
-/** A copy, so a definition changed after the channel was created changes nothing. */
-function toChannelPublication(publication: ALPublicationPolicy | undefined): ALPublicationPolicy | undefined {
-    return publication === undefined ? undefined : { ...publication, drain: { ...publication.drain } };
-}
-
-/** A live channel's send is refused here, where its policy is known, before the sender opens a handle. */
-function throwIfLiveSendIssues(
-    send: BrowserLiveSendOptions,
-    policy: BrowserTypedChannelPolicy
-): void {
+/** The send a channel hands its sender: a live channel's is refused here, where its policy is known, before a handle opens. */
+function toChannelSend<TSend extends BrowserLiveSendOptions>(send: TSend, policy: BrowserTypedChannelPolicy): TSend {
     const issues = policy.publication === undefined ? [] : validateBrowserLiveSend(send);
     if (issues.length > 0) {
         throwRallarValidation(issues);
     }
+    return send;
 }

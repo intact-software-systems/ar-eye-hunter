@@ -62,6 +62,47 @@ describe('browser session delivery observation', () => {
         expect((await currentWaiting).lifecycle.state).toBe('unobservable');
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it('runs an epoch\'s close listeners while it is still open, so what they settle lands before the fence', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const fixture = createObservation();
+        const handle = fixture.registry.open(createMessage('closing'), 'ws');
+        const epoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
+        epoch.onClose(() =>
+            epoch.settlements.ws({
+                kind: 'cancelled',
+                msgId: handle.msgId,
+                carrier: 'ws',
+                atMs: 0,
+                traceId: 'trace-browser-delivery-observation'
+            })
+        );
+
+        fixture.feed.close();
+
+        expect(handle.lifecycle().state).toBe('cancelled');
+        expect(epoch.isOpen()).toBe(false);
+    });
+
+    it('ends the session after its end listeners ran, even when one of them throws', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const fixture = createObservation();
+        const handle = fixture.registry.open(createMessage('ending'), 'ws');
+        const statesAtEnd: string[] = [];
+        fixture.owner.onSessionEnd(() => {
+            throw new Error('A session-end listener failed.');
+        });
+        fixture.owner.onSessionEnd(() => statesAtEnd.push(handle.lifecycle().state));
+
+        fixture.owner.endSession(fixture.session);
+        fixture.owner.endSession(fixture.session);
+
+        expect(statesAtEnd).toEqual(['submitted']);
+        expect(handle.lifecycle().state).toBe('unobservable');
+    });
 });
 
 interface DeliveryObservationFixture {

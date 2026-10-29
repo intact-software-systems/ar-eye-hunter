@@ -78,7 +78,7 @@ export namespace BrowserRallarMessageDispatch {
 
 /**
  * Owns admission and carrier fallback after the sender opens the caller's handle, and the publication stages a
- * live send waits in for its opportunity; the session's end disposes them.
+ * live send waits in for its opportunity; the connect's close or the session's end stops them.
  */
 export class BrowserRallarMessageDispatch {
     private readonly input: BrowserRallarMessageDispatch.Input;
@@ -88,10 +88,10 @@ export class BrowserRallarMessageDispatch {
         this.input = input;
         this.publicationStages = new BrowserPublicationStages({
             nowMs: input.nowMs,
-            settle: input.sessionDeliveries.settle,
             submit: async (delivery, epoch) => await this.submitStaged(delivery, epoch)
         });
-        input.sessionDeliveries.onSessionEnd(() => this.publicationStages.endSession());
+        // Never unsubscribed: the dispatch lives as long as its facade, and a page holds one.
+        input.sessionDeliveries.onSessionEnd(() => this.publicationStages.stopStage());
     }
 
     /** A send its admission refuses settles at once; a live one is staged, and its leg waits for its opportunity. */
@@ -111,15 +111,11 @@ export class BrowserRallarMessageDispatch {
         void this.writeLeg(delivery, epoch, refusal);
     }
 
-    /** A staged send whose connect ended meanwhile ends its observation, as a send without a transport does. */
+    /** A staged send's first leg: `send` already read its admission refusal, and the connect's close stops its stage. */
     private async submitStaged(
         delivery: BrowserRallarMessageDispatch.Delivery,
         epoch: BrowserDeliverySettlements.Epoch
     ): Promise<void> {
-        if (!epoch.isOpen()) {
-            this.input.deliveries.release(delivery.message.id.msgId);
-            return;
-        }
         await this.writeLeg(delivery, epoch, undefined);
     }
 

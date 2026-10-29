@@ -1,4 +1,6 @@
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 
 export namespace BrowserDeliverySettlements {
     export interface Carriers {
@@ -20,7 +22,13 @@ export namespace BrowserDeliverySettlements {
     export interface Epoch {
         readonly settlements: Carriers;
         isOpen(): boolean;
+        /** Ends the connect's settlements: it runs the close listeners while still open, then fences. */
         close(): void;
+        /**
+         * Runs once, synchronously, when the connect's epoch closes and before it fences, so work the connect still
+         * holds settles under it. A listener's error is reported and never interrupts the close.
+         */
+        onClose(listener: () => void): RallarUnsubscribe;
     }
 }
 
@@ -41,6 +49,9 @@ export class BrowserDeliverySettlements {
     ): BrowserDeliverySettlements.Epoch {
         this.close();
         let open = true;
+        const closeNotifications = new SynchronousNotifications<void>((error) =>
+            console.error('Error closing a Rallar delivery epoch', error)
+        );
         const sink: ALDeliverySettlementSink = (event) => {
             if (!open) {
                 return;
@@ -54,7 +65,16 @@ export class BrowserDeliverySettlements {
             settlements: { ws: sink, rtc: sink },
             isOpen: () => open,
             close: () => {
+                if (!open) {
+                    return;
+                }
+                closeNotifications.publishLatest(undefined);
                 open = false;
+                closeNotifications.clear();
+            },
+            onClose: (listener) => {
+                const subscription = closeNotifications.subscribe(listener);
+                return () => subscription.unsubscribe();
             }
         };
         this.current = epoch;

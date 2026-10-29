@@ -1,4 +1,4 @@
-import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
+import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import { toBrowserPublicationDelivery } from '@shared-web/browser/messages/publication/to-browser-publication-delivery.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -18,6 +18,9 @@ const LIVE_POLICY: ALPublicationPolicy = { cadenceMs: 500, retainNewest: 1, drai
 interface StagesFixture {
     readonly clock: { atMs: number; };
     readonly stages: BrowserPublicationStages;
+    /** Each connect's epoch is opened here, and opening the next one closes the current one, as a reconnect does. */
+    readonly feed: BrowserDeliverySettlements;
+    /** What the open epochs settled, in settlement order. */
     readonly settlements: ALDeliverySettlement[];
     /** The msgId of each delivery `submit` received, in submission order, with the epoch it was staged in. */
     readonly submitted: { readonly msgId: string; readonly epoch: BrowserDeliverySettlements.Epoch; }[];
@@ -35,26 +38,28 @@ function createStagesFixture(): StagesFixture {
     const submitted: StagesFixture['submitted'] = [];
     const stages = new BrowserPublicationStages({
         nowMs: () => clock.atMs,
-        settle: (settlement) => settlements.push(settlement),
         submit: async (delivery, epoch) => {
             submitted.push({ msgId: delivery.message.id.msgId, epoch });
             return await Promise.resolve();
         }
     });
-    return { clock, stages, settlements, submitted };
+    return { clock, stages, feed: new BrowserDeliverySettlements(), settlements, submitted };
 }
 
-function createConnect(clock: StagesFixture['clock']): ConnectFixture {
+/** Opens the connect's epoch on the fixture's feed, closing the previous connect's. */
+function createConnect(fixture: StagesFixture): ConnectFixture {
     const engine = new InboxOutboxEngine({
-        nowEpochMs: () => clock.atMs,
+        nowEpochMs: () => fixture.clock.atMs,
         random: () => 0.5,
         reportTaskFailure: () => undefined
     });
-    const sink = () => {};
+    const record = (settlement: ALDeliverySettlement) => {
+        fixture.settlements.push(settlement);
+    };
     return {
         context: createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine } }),
         engine,
-        epoch: { settlements: { ws: sink, rtc: sink }, isOpen: () => true, close: () => {} }
+        epoch: fixture.feed.open({ ws: record, rtc: record, holds: () => true }, { relaySettlement: () => {} })
     };
 }
 
@@ -102,7 +107,7 @@ async function runEnginePass(engine: InboxOutboxEngine): Promise<void> {
 describe('BrowserPublicationStages', () => {
     it('stages every live delivery of one connect on that connect\'s stage and submits them at its opportunity', async () => {
         const fixture = createStagesFixture();
-        const connect = createConnect(fixture.clock);
+        const connect = createConnect(fixture);
         const first = toLiveDelivery(connect, 'entity-1');
         const second = toLiveDelivery(connect, 'entity-2');
 
@@ -131,7 +136,7 @@ describe('BrowserPublicationStages', () => {
 
     it('settles a displaced value superseded by the value that replaced it', () => {
         const fixture = createStagesFixture();
-        const connect = createConnect(fixture.clock);
+        const connect = createConnect(fixture);
         const first = toLiveDelivery(connect, 'entity-1');
         const second = toLiveDelivery(connect, 'entity-1');
 
@@ -145,25 +150,25 @@ describe('BrowserPublicationStages', () => {
         }));
     });
 
-    it('disposes the stage of a replaced connect when a live delivery stages on the next one', async () => {
+    it('disposes a connect\'s stage under its epoch when the connect closes, before any later send', async () => {
         const fixture = createStagesFixture();
-        const replaced = createConnect(fixture.clock);
-        const next = createConnect(fixture.clock);
+        const replaced = createConnect(fixture);
         const stranded = toLiveDelivery(replaced, 'entity-1');
-        const fresh = toLiveDelivery(next, 'entity-1');
-
         fixture.stages.stage(stranded, replaced.epoch);
-        fixture.stages.stage(fresh, next.epoch);
 
-        expect(fixture.settlements).toContainEqual(expect.objectContaining({
+        const next = createConnect(fixture);
+        await replaced.engine.stop();
+
+        expect(replaced.epoch.isOpen()).toBe(false);
+        expect(fixture.settlements.at(-1)).toMatchObject({
             kind: 'admission',
             msgId: stranded.message.id.msgId,
-            verdict: expect.objectContaining({ kind: 'skipped', reason: 'disposed' })
-        }));
+            verdict: { kind: 'skipped', reason: 'disposed' }
+        });
         expect(fixture.stages.readLane(replaced.context, LANE_KEY)).toBeUndefined();
-        expect(fixture.stages.readLane(next.context, LANE_KEY)).toMatchObject({ staged: 1 });
 
-        await runEnginePass(replaced.engine);
+        const fresh = toLiveDelivery(next, 'entity-1');
+        fixture.stages.stage(fresh, next.epoch);
         await runEnginePass(next.engine);
 
         expect(fixture.submitted.map((submission) => submission.msgId)).toEqual([fresh.message.id.msgId]);
@@ -171,12 +176,12 @@ describe('BrowserPublicationStages', () => {
 
     it('settles every staged value skipped as disposed at session end, and stages afresh after it', async () => {
         const fixture = createStagesFixture();
-        const connect = createConnect(fixture.clock);
+        const connect = createConnect(fixture);
         const ended = toLiveDelivery(connect, 'entity-1');
         const later = toLiveDelivery(connect, 'entity-1');
 
         fixture.stages.stage(ended, connect.epoch);
-        fixture.stages.endSession();
+        fixture.stages.stopStage();
 
         expect(fixture.settlements.at(-1)).toMatchObject({
             kind: 'admission',
@@ -196,7 +201,7 @@ describe('BrowserPublicationStages', () => {
 
     it('refuses a delivery heavier than its drain budget oversized, staging nothing', () => {
         const fixture = createStagesFixture();
-        const connect = createConnect(fixture.clock);
+        const connect = createConnect(fixture);
         const heavy = toLiveDelivery(connect, 'entity-1', { ...LIVE_POLICY, drain: { messages: 8, bytes: 64 } });
 
         fixture.stages.stage(heavy, connect.epoch);

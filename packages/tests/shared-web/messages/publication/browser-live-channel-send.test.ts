@@ -4,11 +4,12 @@ import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-pu
 import { toALPublicationStreamKey } from '@shared/al-contracts/publication/to-al-publication-stream-key.ts';
 import { AL_LIVE_CHANNEL_TTL_MS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
 import { createBrowserMessageSenderFixture, toQueuedMessageAdmission } from '../browser-message-sender-fixture.ts';
 
+const START_MS = 1_760_000_000_000;
 /** A cadence no test outlives, so every value staged after a lane's first opportunity waits for the next one. */
 const LIVE_POLICY: ALPublicationPolicy = { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
 
@@ -18,7 +19,15 @@ interface LiveSendFixture extends ReturnType<typeof createBrowserMessageSenderFi
     readonly admitted: ALMessage[];
 }
 
+/**
+ * The fixture's dispatch and registry, the envelope builders and the engine all read `Date.now`; one frozen clock
+ * keeps every value inside its 1 s deadline however long the test runner stalls between the send and the pass.
+ */
 function createLiveSendFixture(): LiveSendFixture {
+    vi.useFakeTimers({ toFake: ['Date'], now: START_MS });
+    onTestFinished(() => {
+        vi.useRealTimers();
+    });
     const engine = new InboxOutboxEngine({
         nowEpochMs: () => Date.now(),
         random: () => 0.5,
@@ -111,14 +120,17 @@ describe('a live channel send', () => {
         expect(fixture.admitted).toEqual([]);
     });
 
-    it('releases a staged value whose connect was replaced before its opportunity, and never admits it', async () => {
+    it('settles a staged value skipped as disposed when its connect closes, and its stopped engine never admits it', async () => {
         const fixture = createLiveSendFixture();
 
         const handle = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), toLiveChannel(LIVE_POLICY));
         fixture.replaceTransport();
-        await runEnginePass(fixture.engine);
+        await fixture.engine.stop();
 
-        expect(handle.lifecycle().state).toBe('unobservable');
+        expect(handle.lifecycle()).toMatchObject({
+            state: 'failed',
+            evidence: { failure: { kind: 'skipped', reason: 'disposed' } }
+        });
         expect(fixture.admitted).toEqual([]);
     });
 

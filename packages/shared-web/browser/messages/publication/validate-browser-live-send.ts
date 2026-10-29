@@ -16,7 +16,7 @@ interface BrowserLiveSendRefusal {
 
 /**
  * A live send is one replaceable value of the stream its `resourceId` names, paced and conflated latest-wins
- * before admission, so it asks for no reliability, receipt, ordering, claim or storage (D467).
+ * before admission, so it asks for no reliability, receipt, ordering, claim, supersedence or storage (D467).
  */
 export function validateBrowserLiveSend(send: BrowserLiveSendOptions): readonly RallarValidationIssue[] {
     const issues: RallarValidationIssue[] = toBrowserLiveSendRefusals(send)
@@ -58,6 +58,11 @@ function toBrowserLiveSendRefusals(send: BrowserLiveSendOptions): readonly Brows
         { path: '$.seq', refused: send.seq !== undefined, message: 'A live send is unordered.' },
         { path: '$.orderingKey', refused: send.orderingKey !== undefined, message: 'A live send is unordered.' },
         { path: '$.ownership', refused: isExclusiveSendInput(send), message: 'A live send claims no resource.' },
+        {
+            path: '$.qos.supersedence',
+            refused: qos?.supersedence !== undefined,
+            message: 'A live send is conflated latest-wins on its stream.'
+        },
         {
             path: '$.qos.durability',
             refused: qos?.durability !== undefined && qos.durability.algo !== 'volatile',

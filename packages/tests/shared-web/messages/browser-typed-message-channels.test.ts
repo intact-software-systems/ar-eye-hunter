@@ -600,7 +600,12 @@ describe('Rallar typed message channel', () => {
             seq: 1,
             orderingKey: 'arena-order',
             ownership: 'exclusive',
-            qos: { delivery: { algo: 'at-least-once' }, ack: { algo: 'receiver' }, durability: { algo: 'local-outbox' } }
+            qos: {
+                delivery: { algo: 'at-least-once' },
+                ack: { algo: 'receiver' },
+                supersedence: { algo: 'latest-wins' },
+                durability: { algo: 'local-outbox' }
+            }
         })).rejects.toMatchObject({
             issues: [
                 unsupported('$.qos.delivery'),
@@ -609,6 +614,7 @@ describe('Rallar typed message channel', () => {
                 unsupported('$.seq'),
                 unsupported('$.orderingKey'),
                 unsupported('$.ownership'),
+                unsupported('$.qos.supersedence'),
                 unsupported('$.qos.durability')
             ]
         });
@@ -640,7 +646,8 @@ describe('Rallar typed message channel', () => {
             publication: LIVE_PUBLICATION
         });
 
-        const handle = await channel.sendRtc({ text: 'pose' }, { resourceId: 'entity-1' });
+        // The facade's delivery clock is the page's own; a deadline no runner stall reaches keeps the value staged.
+        const handle = await channel.sendRtc({ text: 'pose' }, { resourceId: 'entity-1', ttlMs: 60_000 });
         expect(handle.lifecycle().state).toBe('staged');
         expect(admitted).toEqual([]);
 
