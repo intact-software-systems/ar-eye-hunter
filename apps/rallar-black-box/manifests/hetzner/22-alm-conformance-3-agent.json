@@ -258,6 +258,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-aggregated-receipt-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -394,6 +395,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-missing-recipient-retry-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -519,6 +521,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-ws-frozen-audience-membership-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -649,6 +652,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-aggregated-receipt-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -779,6 +783,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-missing-recipient-retry-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -909,6 +914,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-unknown-ack-version-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1050,6 +1056,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-frozen-audience-membership-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1180,6 +1187,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-aggregated-receipt-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1310,6 +1318,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-missing-recipient-retry-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1440,6 +1449,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-unknown-ack-version-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
@@ -1581,6 +1591,7 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-frozen-audience-membership-send-1",
             "state": [
+              "staged",
               "rejected",
               "pending-authority",
               "accepted",
