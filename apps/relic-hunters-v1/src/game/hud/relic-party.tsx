@@ -96,7 +96,6 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
             snapshot: game.snapshot,
             currentPlayer,
             isAdmin: turn.viewModel.isAdmin,
-            onlineMemberCount: game.onlinePlayerCount,
             lang
         })
         : undefined;
@@ -239,7 +238,6 @@ interface LobbyStartBlockerInput {
     readonly snapshot: RelicPublicSnapshot;
     readonly currentPlayer?: RelicPlayer;
     readonly isAdmin: boolean;
-    readonly onlineMemberCount?: number;
     readonly lang: Lang;
 }
 
@@ -247,13 +245,8 @@ function computeLobbyStartBlocker({
     snapshot,
     currentPlayer,
     isAdmin,
-    onlineMemberCount,
     lang
 }: LobbyStartBlockerInput): string | undefined {
-    const joinedCount = snapshot.players.length;
-    const onlineOnlyCount = typeof onlineMemberCount === 'number'
-        ? Math.max(0, onlineMemberCount - joinedCount)
-        : 0;
     const keeper = resolveLobbyKeeper(snapshot);
 
     if (!currentPlayer) {
@@ -270,16 +263,6 @@ function computeLobbyStartBlocker({
         return lang === 'no'
             ? `Bare ${keeper.username} kan starte jakten.`
             : `Only ${keeper.username} can start the hunt.`;
-    }
-    if (joinedCount === 0) {
-        return lang === 'no'
-            ? 'Minst én jeger må bli med i ekspedisjonen.'
-            : 'At least one hunter must join the expedition.';
-    }
-    if (onlineOnlyCount > 0) {
-        return lang === 'no'
-            ? `${onlineOnlyCount} tilkoblet rommedlem må bli med i ekspedisjonen.`
-            : `${onlineOnlyCount} online room member${onlineOnlyCount === 1 ? '' : 's'} must join the expedition.`;
     }
     return undefined;
 }
@@ -369,9 +352,9 @@ export function PartyChangePrompt({
     const offlineJoinedCount = Math.max(0, expeditionPlayers - onlinePlayers);
     const onlineOnlyCount = Math.max(0, onlinePlayers - expeditionPlayers);
     const detail = offlineJoinedCount > 0
-        ? 'Offline joined hunters can hold a round until the timer expires. Start Over removes the stale roster; Keep Going leaves them in the expedition.'
+        ? 'Disconnected hunters keep their progress. Missing plans use the round timer. If the Keeper is unavailable, a present hunter can take over without resetting.'
         : onlineOnlyCount > 0
-        ? 'Some online room members have not joined the expedition yet. Start Over rebuilds the roster; Keep Going leaves the current expedition as-is.'
+        ? 'Some room members are not taking part in this expedition. The joined hunters can keep playing; room membership does not add a turn to the round.'
         : 'The expedition roster no longer matches the connected party.';
     return (
         <div className="panel stack party-change-panel">
@@ -673,10 +656,10 @@ function LobbyReadinessHint(
                 ? (
                     <small className="lobby-party-hint">
                         {lang === 'no'
-                            ? `${onlineOnlyCount} tilkoblet rommedlem må bli med i ekspedisjonen.`
-                            : `${onlineOnlyCount} online room member${onlineOnlyCount === 1 ? '' : 's'} still need${
-                                onlineOnlyCount === 1 ? 's' : ''
-                            } to join.`}
+                            ? `${onlineOnlyCount} tilkoblet rommedlem er ikke med i ekspedisjonen. Keeper kan starte med de påmeldte jegerne.`
+                            : `${onlineOnlyCount} online room member${
+                                onlineOnlyCount === 1 ? '' : 's'
+                            } have not joined. The Keeper can start with the joined hunters.`}
                     </small>
                 )
                 : offlineJoinedCount > 0

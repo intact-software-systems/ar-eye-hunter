@@ -1,11 +1,12 @@
-import { expect, type Page } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
+import { registerRelicHunter, waitForExpeditionScene } from './relic-browser-room-workflow.ts';
 
 roomBrowserTest(
     'watches through visible controls, recovers watching, and promotes only before an expedition starts',
     async ({ page: host, guest: watcher }) => {
         roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-        await registerSpectatingHunter(host, 'host');
+        await registerRelicHunter(host, 'host');
         await host.getByRole('button', { name: 'New Room', exact: true }).click();
         await expect(host.getByLabel('Room link', { exact: true })).toHaveValue(/#rallar-room\?/);
         await waitForExpeditionScene(host);
@@ -14,7 +15,7 @@ roomBrowserTest(
         if (!roomId) {
             throw new Error('The host link must identify its expedition room.');
         }
-        await registerSpectatingHunter(watcher, 'watcher');
+        await registerRelicHunter(watcher, 'watcher');
         await watcher.getByLabel('Room reference', { exact: true }).fill(roomId);
         await watcher.getByLabel('Participation', { exact: true }).selectOption('spectator');
         await watcher.getByRole('button', { name: 'Watch room', exact: true }).click();
@@ -59,7 +60,7 @@ roomBrowserTest(
     'offers Watch for a full player roster without allowing promotion',
     async ({ page: host, guest: watcher }) => {
         roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-        await registerSpectatingHunter(host, 'full-host');
+        await registerRelicHunter(host, 'full-host');
         // A one-player capacity exercises the same server admission limit without unrelated player scenes.
         await host.route('**/groups/requests/*', async (route) => {
             await route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), maxMembers: 1 }) });
@@ -70,7 +71,7 @@ roomBrowserTest(
         await host.getByRole('button', { name: 'New Room', exact: true }).click();
         const room = await (await created).json();
         await waitForExpeditionScene(host);
-        await registerSpectatingHunter(watcher, 'full-watcher');
+        await registerRelicHunter(watcher, 'full-watcher');
         await watcher.getByRole('button', { name: 'Refresh', exact: true }).click();
         await expect(
             watcher.getByRole('button', { name: `${room.group.displayName} 1 player · 0 watching · Full`, exact: true })
@@ -84,21 +85,3 @@ roomBrowserTest(
         await expect(host.locator('.lobby-party-row')).toHaveCount(1);
     }
 );
-
-async function registerSpectatingHunter(page: Page, role: string): Promise<void> {
-    const suffix = crypto.randomUUID();
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Register', exact: true }).click();
-    await page.getByLabel('Username', { exact: true }).fill(`spectating-${role}-${suffix}`);
-    await page.getByLabel('Display name', { exact: true }).fill(role);
-    await page.getByLabel('Password', { exact: true }).fill(`spectating-${suffix}`);
-    await page.getByRole('button', { name: 'Create Hunter', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'New Room', exact: true })).toBeEnabled();
-}
-
-async function waitForExpeditionScene(page: Page): Promise<void> {
-    // A new Babylon context can block browser tasks while portable SwiftShader initializes.
-    // Require the actual expedition frame before testing the room's visible participation state.
-    await expect(page.locator('canvas.relic-scene[data-scene-runtime="next"]'))
-        .toHaveAttribute('data-scene-ready', 'true', { timeout: 30_000 });
-}

@@ -63,6 +63,8 @@ export const RELIC_CHARACTER_IDS: readonly RelicCharacterId[] = [
 export type RelicEventType =
     | 'game_waiting'
     | 'player_joined'
+    | 'player_withdrew'
+    | 'keeper_changed'
     | 'round_started'
     | 'action_submitted'
     | 'action_revealed'
@@ -160,6 +162,8 @@ export type RelicPlayer = Readonly<{
     defeated: boolean;
     score: number;
     relicIds: readonly string[];
+    /** Present only when a withdrawn escaped hunter remains as banked-score history. */
+    withdrawnAtEpochMs?: number;
 }>;
 
 export type RelicActionInput = Readonly<{
@@ -245,6 +249,18 @@ export type RelicCommand =
     }>
     | Readonly<{
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        kind: 'leave-expedition';
+        gameId: string;
+        username: string;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        kind: 'take-keeper';
+        gameId: string;
+        username: string;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         kind: 'submit-action';
         gameId: string;
         username: string;
@@ -284,6 +300,11 @@ export type RelicServerEvent = Readonly<{
 }>;
 
 export type RelicRoundTransition = 'round-started' | 'round-resolved' | 'review-continued' | 'finished';
+
+export interface RelicRuleRefusal {
+    readonly code: string;
+    readonly message: string;
+}
 
 /** The transition of a round, published beside the snapshot of the command that made it. */
 export interface RelicRoundTransitionEvent {
@@ -411,34 +432,24 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
         return false;
     }
 
-    if (value.kind === 'join-expedition') {
-        return value.characterId === undefined || isRelicCharacterId(value.characterId);
+    switch (value.kind) {
+        case 'join-expedition':
+            return value.characterId === undefined || isRelicCharacterId(value.characterId);
+        case 'start-expedition':
+        case 'leave-expedition':
+        case 'take-keeper':
+        case 'force-resolve-round':
+        case 'continue-review':
+            return true;
+        case 'set-round-limit':
+            return typeof value.timeLimitMs === 'number' && [60_000, 180_000, 300_000].includes(value.timeLimitMs);
+        case 'pickup-relic':
+            return typeof value.relicId === 'string' && value.relicId.length > 0;
+        case 'submit-action':
+            return isRecord(value.action) && isRelicActionKind(value.action.kind);
+        default:
+            return false;
     }
-
-    if (value.kind === 'start-expedition') {
-        return true;
-    }
-
-    if (value.kind === 'set-round-limit') {
-        return typeof value.timeLimitMs === 'number' &&
-            [60_000, 180_000, 300_000].includes(value.timeLimitMs as number);
-    }
-
-    if (value.kind === 'force-resolve-round') {
-        return true;
-    }
-
-    if (value.kind === 'pickup-relic') {
-        return typeof value.relicId === 'string' && value.relicId.length > 0;
-    }
-
-    if (value.kind === 'continue-review') {
-        return true;
-    }
-
-    return value.kind === 'submit-action' &&
-        isRecord(value.action) &&
-        isRelicActionKind(value.action.kind);
 }
 
 export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
@@ -508,6 +519,8 @@ function isRelicCommandKind(value: unknown): value is RelicCommand['kind'] {
     return isOneOf<RelicCommand['kind']>(value, [
         'join-expedition',
         'start-expedition',
+        'leave-expedition',
+        'take-keeper',
         'submit-action',
         'force-resolve-round',
         'pickup-relic',
@@ -595,6 +608,8 @@ function isRelicPlayer(value: unknown): value is RelicPlayer {
         isFiniteNumber(value.health) &&
         typeof value.escaped === 'boolean' &&
         typeof value.defeated === 'boolean' &&
+        (value.withdrawnAtEpochMs === undefined ||
+            value.escaped === true && isFiniteNumber(value.withdrawnAtEpochMs) && value.withdrawnAtEpochMs >= 0) &&
         isFiniteNumber(value.score) &&
         Array.isArray(value.relicIds) && value.relicIds.every(isString);
 }
@@ -616,6 +631,8 @@ function isRelicEventType(value: unknown): value is RelicEventType {
     return isOneOf<RelicEventType>(value, [
         'game_waiting',
         'player_joined',
+        'player_withdrew',
+        'keeper_changed',
         'round_started',
         'action_submitted',
         'action_revealed',

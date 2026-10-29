@@ -105,7 +105,7 @@ async function readRelicRestRequest(
 
 function toRelicRestErrorResponse(c: Context, error: Error): Response {
     if (error instanceof RelicGameMutationRefusedError) {
-        return c.json({ error: error.message, code: error.result.code }, error.result.httpStatus);
+        return c.json({ status: 'refused', error: error.message, code: error.result.code }, error.result.httpStatus);
     }
     if (error instanceof RelicGameInboxFailureError) {
         return Response.json({ error: error.message, code: error.failure.code }, { status: error.failure.status });

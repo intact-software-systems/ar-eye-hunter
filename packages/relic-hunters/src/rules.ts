@@ -5,58 +5,31 @@ import {
     findRelicCharacter,
     type RelicCharacter
 } from './characters.ts';
-import {
-    relicsFromRelicExpeditionBlueprint,
-    roomsFromRelicExpeditionBlueprint,
-    validateRelicExpeditionBlueprint,
-    type RelicExpeditionBlueprint
-} from './expedition-blueprint.ts';
+import { createRelicGame } from './create-relic-game.ts';
 import {
     type RelicActionInput,
-    type RelicAnimationCue,
     type RelicCommand,
     type RelicEvent,
-    type RelicEventType,
-    type RelicExpeditionSetupMetadata,
     type RelicGameState,
     type RelicPendingAction,
     type RelicPlayer,
     type RelicRoom,
     type RelicRoomInvestigation,
-    type RelicRoomInvestigationEffect
+    type RelicRoomInvestigationEffect,
+    type RelicRuleRefusal
 } from './model.ts';
-import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
+import { toRelicEvent, type RelicEventOptions } from './to-relic-event.ts';
 
 export interface RelicCommandEvaluation {
     readonly senderId: string;
     readonly now: number;
-}
-
-export interface RelicRuleRefusal {
-    readonly code: string;
-    readonly message: string;
+    /** Current eligible room sessions, observed by the authority for this attempt. */
+    readonly presentPlayerIds: readonly string[];
 }
 
 export interface RelicApplyCommandResult {
     readonly state: RelicGameState;
     readonly resolvedRound: boolean;
-}
-
-export interface CreateRelicGameFromBlueprintInput {
-    readonly gameId: string;
-    readonly roomId: string;
-    readonly blueprint: RelicExpeditionBlueprint;
-    readonly now: number;
-    readonly setup?: Partial<RelicExpeditionSetupMetadata>;
-}
-
-interface RelicGameCreation {
-    readonly gameId: string;
-    readonly roomId: string;
-    readonly now: number;
-    readonly map: readonly RelicRoom[];
-    readonly relics: readonly RelicGameState['relics'][number][];
-    readonly setup: RelicExpeditionSetupMetadata;
 }
 
 interface RelicActionResolution {
@@ -105,13 +78,6 @@ interface RelicPlayerAdmissionResult {
     readonly player: RelicPlayer;
 }
 
-interface RelicEventInput {
-    readonly round: number;
-    readonly message: string;
-    readonly now: number;
-    readonly options?: RelicEventOptions;
-}
-
 interface RelicEventAppend {
     readonly state: Pick<RelicGameState, 'events' | 'round'>;
     readonly message: string;
@@ -121,12 +87,6 @@ interface RelicEventAppend {
 
 interface RelicStateEvent extends RelicEventAppend {
     readonly state: RelicGameState;
-}
-
-interface RelicEventOptions {
-    readonly type?: RelicEventType;
-    readonly animationCue?: RelicAnimationCue;
-    readonly tone?: RelicEvent['tone'];
 }
 
 interface RelicRoundCommandInput {
@@ -165,49 +125,6 @@ interface RelicJoinedPlayerRefresh {
 
 const MAX_PLAYERS = 4;
 const STARTING_HEALTH = 3;
-const MAX_ROUNDS = 10;
-
-export const RELIC_MVP_MAP: readonly RelicRoom[] = [
-    { id: 'entrance', name: 'Entrance', kind: 'entrance', x: 0, z: -6, neighbors: ['hallway', 'storage'] },
-    { id: 'hallway', name: 'Hallway', kind: 'hallway', x: 0, z: -3, neighbors: ['entrance', 'shrine', 'trap'] },
-    { id: 'storage', name: 'Storage', kind: 'storage', x: -4, z: -3, neighbors: ['entrance', 'trap'] },
-    { id: 'shrine', name: 'Shrine', kind: 'shrine', x: 4, z: -3, neighbors: ['hallway', 'treasure'] },
-    {
-        id: 'trap',
-        name: 'Trap Room',
-        kind: 'trap',
-        x: 0,
-        z: 0,
-        neighbors: ['hallway', 'storage', 'treasure', 'monster']
-    },
-    { id: 'treasure', name: 'Treasure Chamber', kind: 'treasure', x: 4, z: 0, neighbors: ['shrine', 'trap'] },
-    { id: 'monster', name: 'Monster Lair', kind: 'monster', x: 0, z: 3, neighbors: ['trap', 'exit'] },
-    { id: 'exit', name: 'Exit', kind: 'exit', x: 0, z: 6, neighbors: ['monster'] }
-];
-
-export const RELIC_MVP_RELICS = [
-    // Entrance and Exit — visible neon freebies so every room has something worth touching.
-    { id: 'visitor-badge', name: 'Visitor Badge of Questionable Consent', value: 1, roomId: 'entrance' },
-    { id: 'gift-shop-receipt', name: 'Gift Shop Exit Receipt', value: 2, roomId: 'exit' },
-    // Treasure Chamber — three prizes of descending value
-    { id: 'golden-idol', name: 'Golden Idol', value: 5, roomId: 'treasure' },
-    { id: 'jade-dragon', name: 'Jade Dragon', value: 3, roomId: 'treasure' },
-    { id: 'pearl-netsuke', name: 'Pearl Netsuke', value: 2, roomId: 'treasure' },
-    // Shrine — two sacred artefacts
-    { id: 'oracle-stone', name: 'Oracle Stone', value: 4, roomId: 'shrine' },
-    { id: 'moonstone', name: 'Moonstone Pendant', value: 3, roomId: 'shrine' },
-    // Storage — hidden cache, second piece buried deeper
-    { id: 'sun-disk', name: 'Sun Disk', value: 6, roomId: 'storage' },
-    { id: 'bronze-mirror', name: 'Bronze Mirror', value: 3, roomId: 'storage' },
-    // Monster Lair — great risk, two rewards
-    { id: 'cursed-mask', name: 'Cursed Mask', value: 8, roomId: 'monster' },
-    { id: 'bone-seal', name: 'Bone Seal', value: 4, roomId: 'monster' },
-    // Trap Room — two relics worth braving the spikes
-    { id: 'serpent-crown', name: 'Serpent Crown', value: 7, roomId: 'trap' },
-    { id: 'rusted-tanto', name: 'Rusted Tantō', value: 3, roomId: 'trap' },
-    // Hallway — scattered find for sharp-eyed hunters
-    { id: 'copper-coin', name: 'Copper Coin', value: 2, roomId: 'hallway' }
-] as const;
 
 const EMPTY_ROOM_CLUES: Partial<Record<RelicRoom['kind'], RelicInvestigationDetails>> = {
     storage: {
@@ -254,94 +171,6 @@ const EMPTY_ROOM_CLUES: Partial<Record<RelicRoom['kind'], RelicInvestigationDeta
     }
 };
 
-export function createRelicGame(
-    gameId: string,
-    roomId: string,
-    now: number
-): RelicGameState {
-    return createRelicGameState({
-        gameId,
-        roomId,
-        now,
-        map: RELIC_MVP_MAP,
-        relics: RELIC_MVP_RELICS,
-        setup: {
-            schemaVersion: 1,
-            source: 'default',
-            seed: 'relic-static-v1',
-            theme: 'Castle of Yamashiro',
-            blueprintId: 'relic-static-v1'
-        }
-    });
-}
-
-export function createRelicGameFromBlueprint(
-    { gameId, roomId, blueprint, now, setup }: CreateRelicGameFromBlueprintInput
-): Either<RelicRuleRefusal, RelicGameState> {
-    const validation = validateRelicExpeditionBlueprint(blueprint);
-    if (!validation.ok) {
-        return Either.ofLeft({
-            code: 'invalid-expedition-blueprint',
-            message: `Invalid Relic expedition blueprint: ${validation.errors.join('; ')}`
-        });
-    }
-    return Either.ofRight(createRelicGameState({
-        gameId,
-        roomId,
-        now,
-        map: roomsFromRelicExpeditionBlueprint(blueprint),
-        relics: relicsFromRelicExpeditionBlueprint(blueprint),
-        setup: {
-            schemaVersion: 1,
-            source: setup?.source ?? blueprint.source ?? 'procedural',
-            seed: setup?.seed ?? blueprint.seed,
-            theme: setup?.theme ?? blueprint.theme,
-            blueprintId: setup?.blueprintId
-        }
-    }));
-}
-
-function createRelicGameState({
-    gameId,
-    roomId,
-    now,
-    map,
-    relics,
-    setup
-}: RelicGameCreation): RelicGameState {
-    return {
-        protocolVersion: RELIC_PROTOCOL_VERSION,
-        gameId,
-        roomId,
-        phase: 'lobby',
-        round: 1,
-        maxRounds: MAX_ROUNDS,
-        createdAtEpochMs: now,
-        updatedAtEpochMs: now,
-        adminPlayerId: undefined,
-        roundTimeLimitMs: 60_000,
-        roundStartedAtEpochMs: undefined,
-        map,
-        relics,
-        roomInvestigations: [],
-        players: [],
-        pendingActions: [],
-        events: [
-            toEvent({
-                round: 1,
-                message: 'The expedition is waiting for hunters.',
-                now,
-                options: {
-                    type: 'game_waiting',
-                    tone: 'mystery'
-                }
-            })
-        ],
-        winnerIds: [],
-        setup
-    };
-}
-
 export function applyRelicCommand(
     previous: RelicGameState | undefined,
     command: RelicCommand,
@@ -350,11 +179,20 @@ export function applyRelicCommand(
     const now = evaluation.now;
     const state = previous ?? createRelicGame(command.gameId, command.gameId, now);
     const existing = state.players.find((player) => player.playerId === evaluation.senderId);
+    if (command.kind === 'leave-expedition') {
+        return Either.ofRight(withdrawHunter(state, evaluation));
+    }
+    if (existing?.withdrawnAtEpochMs !== undefined) {
+        return Either.ofLeft({ code: 'hunter-withdrawn', message: 'This hunter has left the expedition.' });
+    }
     if (command.kind !== 'join-expedition' && !existing) {
         return Either.ofLeft({
             code: 'participant-required',
             message: 'Join the expedition before sending game commands.'
         });
+    }
+    if (command.kind === 'take-keeper') {
+        return takeKeeper(state, evaluation);
     }
     const admissionIssues = validatePlayerAdmission(state, evaluation.senderId);
     if (admissionIssues.length > 0) {
@@ -386,6 +224,99 @@ export function applyRelicCommand(
     }
 }
 
+/** A deliberate withdrawal ends this hunter's participation; a presence loss alone never calls this rule. */
+function withdrawHunter(state: RelicGameState, evaluation: RelicCommandEvaluation): RelicApplyCommandResult {
+    const player = state.players.find((candidate) => candidate.playerId === evaluation.senderId);
+    if (!player || player.withdrawnAtEpochMs !== undefined || state.phase === 'finished') {
+        return { state, resolvedRound: false };
+    }
+    const players = state.players
+        .filter((candidate) => candidate.playerId !== player.playerId || candidate.escaped)
+        .map((candidate) =>
+            candidate.playerId === player.playerId
+                ? { ...candidate, withdrawnAtEpochMs: evaluation.now }
+                : candidate
+        );
+    const successor = state.adminPlayerId === player.playerId
+        ? players.find((candidate) =>
+            candidate.playerId !== player.playerId && candidate.withdrawnAtEpochMs === undefined &&
+            evaluation.presentPlayerIds.includes(candidate.playerId)
+        )?.playerId
+        : state.adminPlayerId;
+    const next = touch({
+        ...state,
+        players,
+        adminPlayerId: successor,
+        pendingActions: state.pendingActions.filter((pending) => pending.playerId !== player.playerId),
+        relics: state.relics.map((relic) => {
+            if (relic.carriedBy !== player.playerId || relic.escapedBy !== undefined) {
+                return relic;
+            }
+            const { carriedBy: _carriedBy, ...dropped } = relic;
+            return { ...dropped, roomId: player.roomId };
+        }),
+        events: appendEvent({
+            state,
+            message: `${player.username} left the expedition.${
+                successor && successor !== state.adminPlayerId
+                    ? ` ${players.find((candidate) => candidate.playerId === successor)?.username} is now Keeper.`
+                    : ''
+            }`,
+            now: evaluation.now,
+            options: { type: 'player_withdrew' }
+        })
+    }, evaluation.now);
+    const active = activePlayers(next);
+    if (next.phase !== 'lobby' && active.length === 0) {
+        return { state: advanceReviewedRound(next, evaluation.now), resolvedRound: false };
+    }
+    const resolvedRound = next.phase === 'planning' &&
+        active.every((hunter) => next.pendingActions.some((pending) => pending.playerId === hunter.playerId));
+    return { state: resolvedRound ? resolveRound(next, evaluation.now) : next, resolvedRound };
+}
+
+function takeKeeper(
+    state: RelicGameState,
+    evaluation: RelicCommandEvaluation
+): Either<RelicRuleRefusal, RelicApplyCommandResult> {
+    if (!evaluation.presentPlayerIds.includes(evaluation.senderId)) {
+        return Either.ofLeft({
+            code: 'present-hunter-required',
+            message: 'Return to the expedition room before taking over as Keeper.'
+        });
+    }
+    if (state.phase === 'finished') {
+        return Either.ofLeft({ code: 'expedition-finished', message: 'The expedition is already finished.' });
+    }
+    if (state.adminPlayerId === evaluation.senderId) {
+        return Either.ofRight({ state, resolvedRound: false });
+    }
+    if (state.adminPlayerId && evaluation.presentPlayerIds.includes(state.adminPlayerId)) {
+        return Either.ofLeft({ code: 'keeper-present', message: 'The current Keeper is still present.' });
+    }
+    const hunter = state.players.find((player) => player.playerId === evaluation.senderId);
+    if (!hunter) {
+        return Either.ofLeft({
+            code: 'participant-required',
+            message: 'Join the expedition before taking over as Keeper.'
+        });
+    }
+    return Either.ofRight({
+        state: {
+            ...state,
+            adminPlayerId: hunter.playerId,
+            updatedAtEpochMs: evaluation.now,
+            events: appendEvent({
+                state,
+                message: `${hunter.username} took over as Keeper.`,
+                now: evaluation.now,
+                options: { type: 'keeper_changed' }
+            })
+        },
+        resolvedRound: false
+    });
+}
+
 function validatePlayerAdmission(state: RelicGameState, playerId: string): readonly RelicRuleRefusal[] {
     if (state.players.some((player) => player.playerId === playerId)) {
         return [];
@@ -402,7 +333,7 @@ function validatePlayerAdmission(state: RelicGameState, playerId: string): reado
 
 function validateRelicCommand(
     { state, player }: RelicPlayerAdmissionResult,
-    command: RelicCommand,
+    command: Exclude<RelicCommand, { kind: 'leave-expedition' | 'take-keeper'; }>,
     now: number
 ): readonly RelicRuleRefusal[] {
     const isAdmin = state.adminPlayerId === player.playerId;
@@ -1448,20 +1379,8 @@ function withEvent({ state, message, now, options }: RelicStateEvent): RelicGame
 function appendEvent({ state, message, now, options }: RelicEventAppend): readonly RelicEvent[] {
     return [
         ...state.events,
-        toEvent({ round: state.round, message, now, options })
+        toRelicEvent({ round: state.round, message, now, options })
     ].slice(-64);
-}
-
-function toEvent({ round, message, now, options }: RelicEventInput): RelicEvent {
-    return {
-        id: `${round}:${now}:${toEventHash(message)}`,
-        round,
-        type: options?.type ?? 'round_started',
-        message,
-        animationCue: options?.animationCue,
-        tone: options?.tone ?? 'neutral',
-        createdAtEpochMs: now
-    };
 }
 
 function touch(state: RelicGameState, now: number): RelicGameState {
@@ -1473,13 +1392,4 @@ function touch(state: RelicGameState, now: number): RelicGameState {
 
 function roomName(state: RelicGameState, roomId: string): string {
     return state.map.find((room) => room.id === roomId)?.name ?? roomId;
-}
-
-function toEventHash(message: string): string {
-    let hash = 0;
-    for (const char of message) {
-        hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-    }
-
-    return hash.toString(36);
 }

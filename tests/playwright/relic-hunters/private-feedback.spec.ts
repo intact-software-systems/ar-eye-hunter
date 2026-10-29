@@ -21,7 +21,8 @@ test('dismisses a refused plan when another hunter advances the expedition to th
     await page.getByLabel('Display name').fill('Alice');
     await page.getByLabel('Password').fill('test-only-password');
     await page.getByRole('button', { name: 'Create Hunter' }).click();
-    await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+    // The authenticated session already has presence in this expedition.
+    await expect(page.getByRole('button', { name: 'Relic Hunters Expedition' })).toBeDisabled({ timeout: 30_000 });
     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
     await page.getByRole('button', { name: 'Submit Plan' }).click();
     await expect(page.getByText(refusal, { exact: true })).toBeVisible();

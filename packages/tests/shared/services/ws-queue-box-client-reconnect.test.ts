@@ -130,6 +130,25 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         );
     });
 
+    it('yields a replaced session connection without requesting another socket', async () => {
+        vi.useFakeTimers();
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+        const service = createDefaultReconnectService(client);
+        const socket = await openInitialConnection(client);
+        service.enableReconnect();
+
+        socket.disconnect(1000, 'connection-replaced');
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: false,
+            reconnecting: false,
+            reconnectExhausted: false,
+            isOpen: false
+        });
+        expect(TestWebSocket.instances).toHaveLength(1);
+    });
+
     it('does not reconnect after an intentional service close', async () => {
         vi.useFakeTimers();
         const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());

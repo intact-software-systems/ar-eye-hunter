@@ -70,7 +70,7 @@ describe('turn summary and timeline derivation', () => {
                 username: 'Alice',
                 action: { kind: 'move', targetRoomId: 'hallway' }
             },
-            { senderId: 'alice-session', now: NOW + 4 }
+            { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: NOW + 4 }
         )).state;
 
         const summary = deriveCurrentTurnSummaryModel({
@@ -218,7 +218,7 @@ function planningState(): RelicGameState {
             gameId: 'game-1',
             username: 'Alice'
         },
-        { senderId: 'alice-session', now: NOW + 3 }
+        { presentPlayerIds: ['alice-session'], senderId: 'alice-session', now: NOW + 3 }
     )).state;
 }
 
@@ -234,7 +234,7 @@ function join(
             username,
             characterId
         },
-        { senderId, now: now }
+        { presentPlayerIds: [senderId], senderId, now: now }
     )).state;
 }
 

@@ -252,6 +252,12 @@ components:
       properties:
         error:
           type: string
+        code:
+          type: string
+        status:
+          type: string
+          const: refused
+          description: Present only when AppInbox has durably refused this command; transport and authentication failures do not establish its outcome.
 
     RelicExpeditionSetupMetadata:
       type: object
@@ -388,6 +394,11 @@ components:
         health:
           type: integer
           format: int64
+        withdrawnAtEpochMs:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Present only for a withdrawn escaped hunter retained as banked-score history.
         escaped:
           type: boolean
         defeated:
@@ -448,6 +459,8 @@ components:
           enum:
             - game_waiting
             - player_joined
+            - player_withdrew
+            - keeper_changed
             - round_started
             - action_submitted
             - action_revealed
@@ -590,6 +603,8 @@ components:
       oneOf:
         - $ref: '#/components/schemas/RelicJoinExpeditionCommandRequest'
         - $ref: '#/components/schemas/RelicStartExpeditionCommandRequest'
+        - $ref: '#/components/schemas/RelicLeaveExpeditionCommandRequest'
+        - $ref: '#/components/schemas/RelicTakeKeeperCommandRequest'
         - $ref: '#/components/schemas/RelicSubmitActionCommandRequest'
         - $ref: '#/components/schemas/RelicForceResolveRoundCommandRequest'
         - $ref: '#/components/schemas/RelicPickupCommandRequest'
@@ -633,6 +648,28 @@ components:
             kind:
               type: string
               const: start-expedition
+
+    RelicLeaveExpeditionCommandRequest:
+      description: Withdraws only the authenticated session's hunter, drops carried relics and transfers Keeper to a present hunter. Banked results remain.
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              const: leave-expedition
+
+    RelicTakeKeeperCommandRequest:
+      description: An existing present hunter takes Keeper only after the current Keeper's server presence expires. Reconnection does not reclaim Keeper.
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              const: take-keeper
 
     RelicSubmitActionCommandRequest:
       allOf:

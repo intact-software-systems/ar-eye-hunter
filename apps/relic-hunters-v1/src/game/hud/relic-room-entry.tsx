@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
+
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 
@@ -14,8 +16,8 @@ interface RelicRoomEntryDraft {
 }
 
 export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
-    const watchBlocked = game.participation === 'player' && game.snapshot?.phase !== 'finished' &&
-        game.snapshot?.players.some((player) => player.playerId === game.session?.sessionId) === true;
+    const watchBlocked = game.participation === 'player' &&
+        hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
     const owner = game.roomEntry;
     const [entry, setEntry] = useState(owner.getState());
     const [draft, setDraft] = useState<RelicRoomEntryDraft>({ reference: '', code: '', participation: 'preserve' });
