@@ -27,6 +27,50 @@ export interface PublicationDiagnosticRow {
     readonly traceId?: string;
 }
 
+interface PublicationStagingData {
+    readonly kind: 'publication-staging';
+    readonly laneKey: string;
+    readonly msgId: string;
+    readonly traceId: string;
+    readonly atMs: number;
+    readonly outcome: PublicationStagingOutcome;
+    readonly limit?: string;
+}
+
+interface PublicationOpportunityData {
+    readonly kind: 'publication-opportunity';
+    readonly laneKey: string;
+    readonly atMs: number;
+    readonly selected: number;
+    readonly deferred: number;
+    readonly expired: number;
+    readonly bytes: number;
+}
+
+type PublicationEventData = PublicationStagingData | PublicationOpportunityData;
+
+interface PublicationDiagnosticEvent {
+    readonly kind: 'diagnostic';
+    readonly protocolVersion: 1;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly eventId: string;
+    readonly atEpochMs: number;
+    readonly payload: {
+        readonly diagnosticSchemaVersion: 1;
+        readonly topic: string;
+        readonly diagnosticTypeId: PublicationEventData['kind'];
+        readonly severity: 'info' | 'warning';
+        readonly transport: 'messages.rtc';
+        readonly message: string;
+        readonly typeId: string;
+        readonly topicId: string;
+        readonly data: PublicationEventData;
+        readonly source: string;
+    };
+}
+
 interface PublicationStagingFact {
     readonly outcome: PublicationStagingOutcome;
     readonly msgId: string;
@@ -147,13 +191,13 @@ function toStagingRow(fact: PublicationStagingFact): PublicationDiagnosticRow {
     };
 }
 
-function toDiagnosticEvents(): readonly Readonly<Record<string, unknown>>[] {
+function toDiagnosticEvents(): readonly PublicationDiagnosticEvent[] {
     return PUBLICATION_DIAGNOSTIC_ROWS.map((row, index) => {
         const fact = STAGING_FACTS.find((candidate) =>
             candidate.msgId === row.msgId && candidate.outcome === row.outcome
         );
         const atMs = ANALYZE_BASE_EPOCH_MS + 400 + index * 50;
-        const data = fact
+        const data: PublicationEventData = fact
             ? {
                 kind: 'publication-staging',
                 laneKey: PUBLICATION_LANE_KEY,
@@ -175,7 +219,7 @@ function toDiagnosticEvents(): readonly Readonly<Record<string, unknown>>[] {
             payload: {
                 diagnosticSchemaVersion: 1,
                 topic: 'alm.publication',
-                diagnosticTypeId: String(data.kind),
+                diagnosticTypeId: data.kind,
                 severity: row.outcome === 'refused' ? 'warning' : 'info',
                 transport: 'messages.rtc',
                 message: row.message,
@@ -188,7 +232,7 @@ function toDiagnosticEvents(): readonly Readonly<Record<string, unknown>>[] {
     });
 }
 
-function toJsonLines(rows: readonly unknown[]): string {
+function toJsonLines(rows: readonly object[]): string {
     return `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`;
 }
 

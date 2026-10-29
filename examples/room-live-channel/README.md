@@ -24,6 +24,8 @@ one of these states, and several are normal:
 - `superseded`: a newer value of the same stream displaced it before an
   opportunity. This is the lane working, not a failure.
 - `expired`: its deadline passed while staged, so it was never attempted.
+- `cancelled`: `handle.cancel()` ran before its opportunity, so it was never
+  attempted.
 - `rejected` or `failed`: the value was refused (for example `oversized`
   against `drain.bytes`), or the session ended while it was staged.
 
@@ -63,9 +65,9 @@ const handle = await poseChannel.send(
     { resourceId: 'player-1' }
 );
 
-const staged = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 1_000 });
-if (staged.lifecycle.state !== 'staged') {
-    console.warn('Pose was not staged', staged.lifecycle.state, staged.lifecycle.evidence.reason);
+const first = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 1_000 });
+if (first.lifecycle.state === 'rejected' || first.lifecycle.state === 'failed') {
+    console.warn('Pose was refused', first.lifecycle.state, first.lifecycle.evidence.reason);
 }
 
 const settled = await handle.wait({ timeoutMs: 2_000 });
@@ -87,8 +89,10 @@ console.info('publication', rallar.messages.readUsage().publication);
 unsubscribe();
 ```
 
-The first `wait(...)` resolves as soon as the handle leaves `submitted`, which
-is `staged` for a live send, and the second resolves at the terminal state.
+The first `wait(...)` resolves as soon as the handle leaves `submitted`: usually
+`staged`, but the next engine pass may already have admitted or displaced the
+value, so only `rejected` and `failed` are a problem there. The second resolves
+at the terminal state.
 A value that ends `superseded` or `expired` needs no retry: a newer value of
 its stream is the one in flight, or the next send replaces it.
 

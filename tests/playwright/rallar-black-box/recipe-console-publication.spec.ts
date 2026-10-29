@@ -20,8 +20,8 @@ test('shows a paced cell as staging and opportunity evidence rows with their ide
     await expect(analyzeVerdict(page)).toHaveAttribute('data-run-state', 'passed');
 
     const performance = page.locator('[data-analyze-section="performance"]');
-    await expect(performance.getByText('Diagnostics', { exact: true }).locator('..'))
-        .toContainText(String(PUBLICATION_WARNING_COUNT));
+    await expect(performance.getByText('Diagnostics', { exact: true }).locator('..').locator('dd'))
+        .toHaveText(String(PUBLICATION_WARNING_COUNT));
 
     const search = analyzeSearch(page);
     await expect(search.locator('[data-analyze-matching-truth]'))
