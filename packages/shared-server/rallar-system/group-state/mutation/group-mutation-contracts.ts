@@ -7,6 +7,7 @@ import type {
     GroupTopologyReconfigureLanding
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     AuditStamp,
     Group,
@@ -437,6 +438,8 @@ export interface GroupMutationRead {
     readonly authorityPresenceSessions: readonly GroupPresenceSession[];
     readonly authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     readonly presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
+    /** The target's publication-grant row, loaded only for the departures the read scope names. */
+    readonly targetPublicationGrant: RuntimeStateEntryValue<GroupPublicationGrant> | null;
     /** Loaded only for the operations the read scope's policy rule names. */
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     /**
@@ -569,6 +572,12 @@ export type PresenceAdmissionCandidate =
         expectedRevision: number;
     }>;
 
+/** A change to one principal's publication-grant row, guarded by the row revision the read observed. */
+export type GroupPublicationGrantEffect =
+    | Readonly<{ operation: 'insert'; value: GroupPublicationGrant; }>
+    | Readonly<{ operation: 'update'; value: GroupPublicationGrant; expectedRevision: number; }>
+    | Readonly<{ operation: 'delete'; value: GroupPublicationGrant; expectedRevision: number; }>;
+
 export interface GroupMutationDomainWrite {
     readonly outcome: 'write';
     readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
@@ -586,6 +595,7 @@ export interface GroupMutationDomainWrite {
     readonly plannedLayoutFence: GroupPlannedLayoutRow | null;
     readonly layoutTombstones: GroupLayoutTombstones | null;
     readonly connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
+    readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
 }
 
 export interface GroupMutationPersistence {

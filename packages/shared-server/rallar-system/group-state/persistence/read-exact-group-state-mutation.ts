@@ -1,3 +1,4 @@
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
     GroupMember,
@@ -29,6 +30,7 @@ import {
     MEMBERS_NAMESPACE,
     PRESENCE_ADMISSIONS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { groupStateIdempotencyStorageKey } from './idempotency/group-idempotency-storage-key.ts';
@@ -37,6 +39,11 @@ import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from './presence/group-presence-storage-keys.ts';
+import {
+    canonicalStoredPublicationGrant,
+    canonicalStoredPublicationGrants
+} from './publication/group-publication-grant-codec.ts';
+import { groupStatePublicationGrantStorageKey } from './publication/group-publication-grant-storage-key.ts';
 import { toGroupStateAuthoritySelectors, type GroupStateAuthorityBatchRead } from './read-group-state-authority.ts';
 
 export interface GroupStateMutationExactReadInput {
@@ -52,6 +59,7 @@ export interface GroupStateMutationExactReadInput {
     readonly memberPrincipalIds: readonly string[];
     readonly presenceSessionIds: readonly string[];
     readonly admissionPrincipalIds: readonly string[];
+    readonly publicationGrantPrincipalIds: readonly string[];
 }
 
 interface ExactEntry<Identity extends string, Value> {
@@ -80,6 +88,7 @@ export interface GroupStateMutationExactEntries {
     readonly members: readonly ExactEntry<string, GroupMember>[];
     readonly presenceSessions: readonly ExactEntry<string, GroupPresenceSession>[];
     readonly admissions: readonly ExactEntry<string, GroupPresenceAdmission>[];
+    readonly publicationGrants: readonly ExactEntry<string, GroupPublicationGrant>[];
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     readonly groupSnapshot: GroupStateMutationExactSnapshot;
     readonly authSession: GroupStateMutationExactAuthSession;
@@ -114,10 +123,19 @@ export interface GroupStateMutationExactReadDecoders {
     groupSnapshot(rows: GroupStateAuthorityBatchRead): GroupSnapshot | undefined;
 }
 
-type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission';
+type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission' | 'grant';
+
+type AggregateSlotKind =
+    | 'group'
+    | 'presence-summary'
+    | 'lifecycle-policy'
+    | 'roster'
+    | 'sessions'
+    | 'publication-grants'
+    | 'auth-session';
 
 type ReadSlot =
-    | Readonly<{ kind: 'group' | 'presence-summary' | 'lifecycle-policy' | 'roster' | 'sessions' | 'auth-session'; }>
+    | Readonly<{ kind: AggregateSlotKind; }>
     | Readonly<{ kind: IdentitySlotKind; identity: string; }>;
 
 interface SlotSelection {
@@ -130,6 +148,7 @@ interface ExactReadIdentities {
     readonly memberIds: readonly string[];
     readonly sessionIds: readonly string[];
     readonly admissionIds: readonly string[];
+    readonly grantIds: readonly string[];
 }
 
 interface ExactReadSelectorSet {
@@ -156,7 +175,8 @@ export async function readGroupStateMutationExactEntries({
         requestIds: requireUniqueDenseStrings(input.requestIds, 'request IDs'),
         memberIds: requireUniqueDenseStrings(input.memberPrincipalIds, 'member principal IDs'),
         sessionIds: requireUniqueDenseStrings(input.presenceSessionIds, 'presence session IDs'),
-        admissionIds: requireUniqueDenseStrings(input.admissionPrincipalIds, 'admission principal IDs')
+        admissionIds: requireUniqueDenseStrings(input.admissionPrincipalIds, 'admission principal IDs'),
+        grantIds: requireUniqueDenseStrings(input.publicationGrantPrincipalIds, 'publication grant principal IDs')
     });
     const liveSelections = toGroupStateReadBatchLiveSelections(
         selectors,
@@ -187,6 +207,11 @@ function toExactReadResult(
         members: toExactEntries(selections, 'member', decoders.member),
         presenceSessions: toExactEntries(selections, 'presence', decoders.presenceSession),
         admissions: toExactEntries(selections, 'admission', decoders.admission),
+        publicationGrants: toExactEntries(
+            selections,
+            'grant',
+            (principalId, entry) => canonicalStoredPublicationGrant(entry, { ...input.aggregateRef, principalId })
+        ),
         lifecyclePolicy: input.includeLifecyclePolicy
             ? decoders.lifecyclePolicy(findSlotSelection(selections, 'lifecycle-policy')?.entries[0]?.value)
             : null,
@@ -197,7 +222,11 @@ function toExactReadResult(
                     group: group?.entries[0],
                     members: findSlotSelection(selections, 'roster')?.entries ?? [],
                     summary: summary?.entries[0],
-                    sessions: findSlotSelection(selections, 'sessions')?.entries ?? []
+                    sessions: findSlotSelection(selections, 'sessions')?.entries ?? [],
+                    publicationGrants: canonicalStoredPublicationGrants(
+                        findSlotSelection(selections, 'publication-grants')?.entries ?? [],
+                        input.aggregateRef
+                    )
                 })
             }
             : { status: 'unread' },
@@ -276,11 +305,14 @@ function addAggregateSelectors(input: GroupStateMutationExactReadInput, add: Exa
         if (!input.includeGroup || !input.includePresenceSummary) {
             throw new TypeError('A group snapshot read includes the group and its presence summary');
         }
-        const [group, roster, summary, sessions] = toGroupStateAuthoritySelectors(input.aggregateRef);
+        const [group, roster, summary, sessions, publicationGrants] = toGroupStateAuthoritySelectors(
+            input.aggregateRef
+        );
         add(group, { kind: 'group' });
         add(roster, { kind: 'roster' });
         add(summary, { kind: 'presence-summary' });
         add(sessions, { kind: 'sessions' });
+        add(publicationGrants, { kind: 'publication-grants' });
     }
     else {
         if (input.includeGroup) {
@@ -354,6 +386,17 @@ function addIdentitySelectors(
                 key: groupStatePresenceAdmissionStorageKey({ ...ref, principalId })
             },
             { kind: 'admission', identity: principalId }
+        )
+    );
+    identities.grantIds.forEach((principalId, index) =>
+        add(
+            {
+                selectorId: `grant:${index}`,
+                kind: 'key',
+                namespace: PUBLICATION_GRANTS_NAMESPACE,
+                key: groupStatePublicationGrantStorageKey(ref, principalId)
+            },
+            { kind: 'grant', identity: principalId }
         )
     );
 }

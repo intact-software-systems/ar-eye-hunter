@@ -16,7 +16,8 @@ import {
 import {
     readsGroupActiveMemberPrincipalIds,
     readsGroupActiveMembers,
-    readsGroupLifecyclePolicy
+    readsGroupLifecyclePolicy,
+    readsTargetPublicationGrant
 } from './group-mutation-read-scope.ts';
 
 interface ReadExactGroupMutationInput {
@@ -53,7 +54,8 @@ export async function readExactGroupMutation({
         requestIds: idempotencyKey === null ? [] : [idempotencyKey],
         memberPrincipalIds: uniqueDefined([actorPrincipalId, targetPrincipalId]),
         presenceSessionIds: uniqueDefined([targetSessionId]),
-        admissionPrincipalIds: uniqueDefined([targetPrincipalId])
+        admissionPrincipalIds: uniqueDefined([targetPrincipalId]),
+        publicationGrantPrincipalIds: readsTargetPublicationGrant(command) ? uniqueDefined([targetPrincipalId]) : []
     });
     return {
         read: assembleExactGroupMutationRead(command, read),
@@ -98,6 +100,7 @@ function assembleExactGroupMutationRead(
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: read.presenceSummaries[0] ?? null,
+        targetPublicationGrant: exactEntry(read.publicationGrants, targetPrincipalId),
         lifecyclePolicy: read.lifecyclePolicy,
         activeMemberPrincipalIds: readsGroupActiveMemberPrincipalIds(command.operation)
             ? activeMembers?.filter((member) => member.role !== 'spectator').map((member) => member.principalId)

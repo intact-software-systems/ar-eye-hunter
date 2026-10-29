@@ -5,18 +5,21 @@ import {
 } from 'vitest';
 
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
+import type { GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     readGroupMutation,
     readGroupMutationWithSnapshot
 } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -67,6 +70,12 @@ describe('GroupStateService mutation exact reads', () => {
                     selectorId: 'presence-sessions',
                     kind: 'prefix',
                     namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
+                    selectorId: 'publication-grants',
+                    kind: 'prefix',
+                    namespace: 'group-state:publication-grants',
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
@@ -130,6 +139,7 @@ describe('GroupStateService mutation exact reads', () => {
                 'members',
                 'presence-summary',
                 'presence-sessions',
+                'publication-grants',
                 'lifecycle-policy',
                 'idempotency:0',
                 'member:0',
@@ -212,6 +222,12 @@ describe('GroupStateService mutation exact reads', () => {
                     selectorId: 'presence-sessions',
                     kind: 'prefix',
                     namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
+                    selectorId: 'publication-grants',
+                    kind: 'prefix',
+                    namespace: 'group-state:publication-grants',
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
@@ -311,6 +327,39 @@ describe('GroupStateService mutation exact reads', () => {
                 }
             ]
         ]);
+    });
+
+    it('leave, remove and ban read the target grant row; join and role changes do not', async () => {
+        const { runtime, service } = await createSeededService('grant-scope');
+        const ref = { ...SCOPE, groupId: 'grant-scope' };
+        const grantSelectorsOf = async (mutate: () => Promise<GroupStateWritten>) => {
+            runtime.readBatchCalls.length = 0;
+            await mutate();
+            return mutationReadCalls(runtime).flat().filter((selector) => selector.kind === 'key' && selector.namespace === PUBLICATION_GRANTS_NAMESPACE);
+        };
+        const grantSelector = (principalId: string) => ({
+            selectorId: 'grant:0',
+            kind: 'key',
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            key: groupStatePublicationGrantStorageKey(ref, principalId)
+        });
+
+        expect(await grantSelectorsOf(() => service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' })))
+            .toEqual([]);
+        expect(
+            await grantSelectorsOf(() => service.setGroupMemberRole(SCOPE, ref.groupId, 'bob', { role: 'admin', actorPrincipalId: 'owner' }))
+        ).toEqual([]);
+        expect(
+            await grantSelectorsOf(() => service.upsertMember(SCOPE, ref.groupId, 'bob', { status: 'left', actorPrincipalId: 'bob' }))
+        ).toEqual([grantSelector('bob')]);
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
+        expect(
+            await grantSelectorsOf(() => service.removeGroupMember(SCOPE, ref.groupId, 'bob', { actorPrincipalId: 'owner' }))
+        ).toEqual([grantSelector('bob')]);
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'carol' });
+        expect(
+            await grantSelectorsOf(() => service.banGroupMember(SCOPE, ref.groupId, 'carol', { actorPrincipalId: 'owner' }))
+        ).toEqual([grantSelector('carol')]);
     });
 
     it('keeps an expired batch authority read observational', async () => {

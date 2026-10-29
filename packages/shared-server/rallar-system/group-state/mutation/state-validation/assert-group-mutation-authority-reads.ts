@@ -1,16 +1,21 @@
+import { validateGroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import { assertGroupRefIdentity } from '../../persistence/group-state-persistence-contracts.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '../../persistence/presence/group-presence-storage-keys.ts';
+import { groupStatePublicationGrantStorageKey } from '../../persistence/publication/group-publication-grant-storage-key.ts';
 import { validateGroupStateRuntimeEntry } from '../../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,
     validatePresenceSession
 } from '../../persistence/validate-persisted-group-presence.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
+import { readsTargetPublicationGrant } from '../read/group-mutation-read-scope.ts';
 import type { GroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 
 interface AssertGroupMutationAuthorityReadsInput {
@@ -28,6 +33,31 @@ export function assertGroupMutationAuthorityReads({
 }: AssertGroupMutationAuthorityReadsInput): void {
     assertAdmissionReads({ read, command, ref, identities });
     assertAuthorityPresenceReads(read, ref);
+    assertTargetPublicationGrantRead({ read, command, ref, identities });
+}
+
+/** Only a departure reads the target's grant row, and the row it read belongs to that target in this group. */
+function assertTargetPublicationGrantRead({
+    read,
+    command,
+    ref,
+    identities
+}: AssertGroupMutationAuthorityReadsInput): void {
+    const grant = read.targetPublicationGrant;
+    if (grant === null) {
+        return;
+    }
+    const principalId = identities.targetPrincipalId;
+    if (!readsTargetPublicationGrant(command) || principalId === null || grant.value.principalId !== principalId) {
+        throw new TypeError('Target publication grant read differs from the command read scope');
+    }
+    const key = groupStatePublicationGrantStorageKey(ref, principalId);
+    validateGroupStateRuntimeEntry(grant, 'Target publication grant', key);
+    assertGroupRefIdentity(grant.value, ref, key);
+    const issues = validateGroupPublicationGrant(grant.value);
+    if (issues.length > 0) {
+        throw new TypeError(`Target publication grant is invalid: ${formatRallarValidation(issues)}`);
+    }
 }
 
 function assertAdmissionReads({

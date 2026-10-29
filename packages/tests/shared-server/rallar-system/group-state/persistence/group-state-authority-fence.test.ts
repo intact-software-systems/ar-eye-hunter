@@ -155,6 +155,12 @@ describe('GroupStateRepository authority fence', () => {
                     kind: 'prefix',
                     namespace: 'group-state:sessions',
                     keyPrefix: `${groupKey}:`
+                },
+                {
+                    selectorId: 'publication-grants',
+                    kind: 'prefix',
+                    namespace: 'group-state:publication-grants',
+                    keyPrefix: `${groupKey}:`
                 }
             ]
         ]);

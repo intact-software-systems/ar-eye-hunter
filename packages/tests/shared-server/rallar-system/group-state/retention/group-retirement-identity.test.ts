@@ -102,7 +102,8 @@ describe('permanently retired scoped identities', () => {
             requestIds: [],
             memberPrincipalIds: [],
             presenceSessionIds: [],
-            admissionPrincipalIds: []
+            admissionPrincipalIds: [],
+            publicationGrantPrincipalIds: []
         });
         expect(read.groups).toEqual([]);
         expect(read.expiredGroupEntry).toEqual(expired);

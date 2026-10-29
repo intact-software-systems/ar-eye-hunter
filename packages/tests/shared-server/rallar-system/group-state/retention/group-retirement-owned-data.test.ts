@@ -12,12 +12,16 @@ import {
     GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
     toGroupConnectTriggerStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import { GroupRetentionService } from '@shared-server/rallar-system/group-state/retention/group-retention-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import {
+    commitRetention,
     createRetentionDatabaseFixture,
+    prepareRetention,
     RETENTION_REF,
     seedRetentionRoom,
     type RetentionDatabaseFixture
@@ -66,6 +70,20 @@ describe('transactional deletion of room-owned rows', () => {
         expect(await fixture.runtime.findEntry(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, ownedLatch)).toBeUndefined();
         expect(await fixture.runtime.findEntry(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, foreignLatch)).toBeDefined();
         expect(await fixture.repository.findGroup(foreignRef)).toEqual({ ...group, ...foreignRef });
+    }, 30_000);
+
+    it('retirement deletes the group\'s publication-grant rows', async () => {
+        fixture = await createRetentionDatabaseFixture();
+        await archive(fixture);
+        const ownedGrant = await seedGrant(fixture, RETENTION_REF);
+        const foreignGrant = await seedGrant(fixture, { ...RETENTION_REF, groupId: 'another-room' });
+
+        const { computed } = await prepareRetention(fixture, 'delete-grants');
+        await commitRetention(fixture, computed);
+
+        expect(await fixture.repository.findGroup(RETENTION_REF)).toBeUndefined();
+        expect(await fixture.runtime.findEntry(PUBLICATION_GRANTS_NAMESPACE, ownedGrant)).toBeUndefined();
+        expect(await fixture.runtime.findEntry(PUBLICATION_GRANTS_NAMESPACE, foreignGrant)).toBeDefined();
     }, 30_000);
 
     it('rolls back group retirement and child deletion when an observed save revision loses', async () => {
@@ -133,5 +151,23 @@ async function seedLatch(fixture: RetentionDatabaseFixture, groupRef: typeof RET
     const key = toGroupConnectTriggerStorageKey(latch);
     await fixture.runtime.upsert(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, key, JSON.stringify(latch), NEVER_EXPIRE_AT_TIMESTAMP);
     expect(key.startsWith(groupStateGroupStorageKey(groupRef))).toBe(true);
+    return key;
+}
+
+async function seedGrant(fixture: RetentionDatabaseFixture, groupRef: typeof RETENTION_REF): Promise<string> {
+    const grant = {
+        ...groupRef,
+        principalId: 'owner',
+        topics: { 'room.feed': { publish: true, subscribe: true } },
+        updated: {
+            atEpochMs: 1,
+            actor: { kind: 'principal', principalId: 'owner' },
+            reason: null,
+            traceId: null,
+            requestId: 'grant-owner-feed-000001'
+        }
+    };
+    const key = groupStatePublicationGrantStorageKey(groupRef, 'owner');
+    await fixture.runtime.upsert(PUBLICATION_GRANTS_NAMESPACE, key, JSON.stringify(grant), NEVER_EXPIRE_AT_TIMESTAMP);
     return key;
 }

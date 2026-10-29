@@ -31,6 +31,7 @@ import type {
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
     GroupMutationReceipt,
+    GroupPublicationGrantEffect,
     PresenceAdmissionCandidate,
     PresenceGuardCandidate
 } from './group-mutation-contracts.ts';
@@ -63,6 +64,7 @@ export interface GroupMutationWriteInput {
     readonly connectTriggerLatchEffect?: RuntimeStateGuardedBatchEffect | null;
     readonly layoutTombstones?: GroupLayoutTombstones | null;
     readonly lifecyclePolicy: GroupLifecyclePolicy | null;
+    readonly publicationGrantEffects?: readonly GroupPublicationGrantEffect[];
 }
 
 export interface RejectedGroupMutationInput {
@@ -159,7 +161,8 @@ export function computeGroupMutationWriteResult(
         acceptedLayoutPromotion,
         plannedLayoutFence,
         layoutTombstones,
-        connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
+        connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null,
+        publicationGrantEffects: input.publicationGrantEffects ?? []
     };
     return { ...computed, persistence: computeGroupMutationPersistence(computed, facts, read) };
 }

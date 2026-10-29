@@ -13,7 +13,8 @@ import type {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
-    GroupMutationRead
+    GroupMutationRead,
+    GroupPublicationGrantEffect
 } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import { auditStamp, noOp, requireGroup } from '../group-mutation-result.ts';
@@ -88,7 +89,8 @@ export function computeJoin(
         read,
         facts,
         members: [member],
-        eventType: existing?.status === 'active' ? 'member-role-changed' : groupMemberEventType(status)
+        eventType: existing?.status === 'active' ? 'member-role-changed' : groupMemberEventType(status),
+        publicationGrantEffects: []
     });
 }
 
@@ -126,7 +128,8 @@ export function computeInvite(
         read,
         facts,
         members: [member],
-        eventType: 'member-invited'
+        eventType: 'member-invited',
+        publicationGrantEffects: []
     });
 }
 
@@ -156,7 +159,8 @@ export function computeRevokeInvite(
                 audit
             )
         ],
-        eventType: 'member-left'
+        eventType: 'member-left',
+        publicationGrantEffects: []
     });
 }
 
@@ -211,7 +215,14 @@ export function computeGovernedMember(
         audit
     );
     const eventType = governedMemberEventType(command);
-    return computeGroupMembershipWrite({ command, read, facts, members: [member], eventType });
+    return computeGroupMembershipWrite({
+        command,
+        read,
+        facts,
+        members: [member],
+        eventType,
+        publicationGrantEffects: toDepartureGrantEffects(read, member)
+    });
 }
 
 export function computeTransfer(
@@ -242,7 +253,8 @@ export function computeTransfer(
             { ...actor, role: 'admin', updated: audit },
             { ...target, role: 'owner', updated: audit }
         ],
-        eventType: 'ownership-transferred'
+        eventType: 'ownership-transferred',
+        publicationGrantEffects: []
     });
 }
 
@@ -301,8 +313,20 @@ export function computeUpsertMember(
         read,
         facts,
         members: [member],
-        eventType: groupMemberEventType(member.status)
+        eventType: groupMemberEventType(member.status),
+        publicationGrantEffects: toDepartureGrantEffects(read, member)
     });
+}
+
+/** A departure deletes the target's grant row in its own batch, so a rejoin never finds it again (D485). */
+function toDepartureGrantEffects(
+    read: GroupMutationRead,
+    member: GroupMember
+): readonly GroupPublicationGrantEffect[] {
+    const grant = read.targetPublicationGrant;
+    return grant === null || member.status === 'active'
+        ? []
+        : [{ operation: 'delete', value: grant.value, expectedRevision: grant.entry.revision }];
 }
 
 interface CreateJoinedGroupMemberInput {

@@ -18,6 +18,7 @@ export default {
             adminPrunePageTest,
             'packages/tests/shared-server/queuebox/resource-inbox-topic-selection.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/persistence/group-publication-grant-sql.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-concurrency.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-inbox.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retention-pages.test.ts',

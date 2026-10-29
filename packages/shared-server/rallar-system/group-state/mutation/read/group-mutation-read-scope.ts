@@ -79,3 +79,14 @@ export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
         command.operation === 'applyPlannedLayout' ||
         command.operation === 'resetGroupFormation';
 }
+
+/**
+ * The target's publication-grant row is read exactly by the departures, which delete it in their own batch (D485):
+ * a remove, a ban, or an upsert out of active, a leave among them. Join, admission, unban and role changes never
+ * consult it.
+ */
+export function readsTargetPublicationGrant(command: GroupMutationCommand): boolean {
+    return command.operation === 'removeGroupMember' ||
+        command.operation === 'banGroupMember' ||
+        (command.operation === 'upsertMember' && command.input.status !== 'active');
+}
