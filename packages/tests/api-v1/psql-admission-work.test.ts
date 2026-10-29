@@ -1,8 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
+    afterAll,
+    beforeAll,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -33,7 +36,10 @@ import {
 } from '@shared/mod.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import {
+    createClosablePSqlAdmissionTestStorage,
+    type PSqlAdmissionTestStorage
+} from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     createOutboundMessage,
     peekOutboundWorkReadyAt,
@@ -50,9 +56,17 @@ interface TestPreparedOutboundSend {
     readonly msgId: string;
 }
 
+let storage: PSqlAdmissionTestStorage;
+
+beforeAll(async () => {
+    storage = await createClosablePSqlAdmissionTestStorage();
+});
+
+afterAll(async () => await storage?.sql.close());
+
 describe('PostgreSQL inbound admission', () => {
     it('lists prefix rows through runtime-state pages when available', async () => {
-        const { sql, repository } = await createPSqlAdmissionTestStorage();
+        const { sql, repository } = storage;
         const namespace = 'psql-test:inbound:paged-list';
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const prefix = 'effect:';
@@ -87,15 +101,16 @@ describe('PostgreSQL inbound admission', () => {
     });
 
     it('returns a read-only admission result without opening a SQL transaction', async () => {
-        const { sql } = await createPSqlAdmissionTestStorage();
+        const { sql } = storage;
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'psql-test:read-only', nowMs: Date.now });
-        vi.spyOn(sql, 'begin').mockRejectedValue(new Error('A read-only result must not begin a write'));
+        const begin = vi.spyOn(sql, 'begin').mockRejectedValue(new Error('A read-only result must not begin a write'));
+        onTestFinished(() => begin.mockRestore());
 
         await expect(backend.write((read) => read.read('missing', decodeIndexedRecord))).resolves.toBeUndefined();
     });
 
     it('conditionally admits message provenance and rejects the original stale candidate', async () => {
-        const { sql, repository } = await createPSqlAdmissionTestStorage();
+        const { sql, repository } = storage;
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
@@ -133,8 +148,8 @@ describe('PostgreSQL inbound admission', () => {
     });
 
     it('records inbound receipt progress while retaining message provenance', async () => {
-        const { sql, repository } = await createPSqlAdmissionTestStorage();
-        const namespace = 'psql-test:inbound:admission';
+        const { sql, repository } = storage;
+        const namespace = 'psql-test:inbound:receipt-progress';
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
@@ -223,7 +238,7 @@ describe('PostgreSQL inbound admission', () => {
 
 describe('PostgreSQL outbound admission', () => {
     it('conditionally advances sender version and persists durable effects in one commit', async () => {
-        const { sql, repository } = await createPSqlAdmissionTestStorage();
+        const { sql, repository } = storage;
         const namespace = 'psql-test:outbound:admission';
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
@@ -304,8 +319,8 @@ describe('PostgreSQL outbound admission', () => {
     });
 
     it('bumps the owning sender version when accepting outbound control messages', async () => {
-        const { sql, repository } = await createPSqlAdmissionTestStorage();
-        const namespace = 'psql-test:outbound:admission';
+        const { sql, repository } = storage;
+        const namespace = 'psql-test:outbound:control-ack';
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodePreparedOutboundSend,
@@ -387,7 +402,7 @@ describe('PostgreSQL outbound admission', () => {
         const { createDefaultPSqlALOutboundRuntimeStores } = await import(
             '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts'
         );
-        const { repository } = await createPSqlAdmissionTestStorage();
+        const { repository } = storage;
         const namespace = 'psql-test:factory';
         const stores = createDefaultPSqlALOutboundRuntimeStores({
             namespace,
