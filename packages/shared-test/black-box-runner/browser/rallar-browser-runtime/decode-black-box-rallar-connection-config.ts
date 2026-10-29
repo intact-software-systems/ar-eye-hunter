@@ -244,7 +244,7 @@ function decodeAlmVolatileLimits(value: unknown): ALVolatileSessionLimits | unde
     return { maxAdmissions, maxBytes, maxAgeMs, maxTracks };
 }
 
-/** Every issue the decoder names fails the connect, each as `path: message`; absent keeps the product defaults. */
+/** Every issue the decoder names fails the connect, each as `path: message`; an absent field decodes as absent. */
 function decodeAlmPublicationLimits(value: unknown): ALPublicationStageLimits | undefined {
     if (value === undefined) {
         return undefined;

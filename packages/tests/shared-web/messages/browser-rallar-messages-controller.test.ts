@@ -158,10 +158,14 @@ describe('rallar.messages.readUsage', () => {
         });
         await channel.sendWs({ x: 1 }, { scope: 'world', resourceId: 'entity-1', ttlMs: 60_000 });
 
-        expect(facade.messages.readUsage().publication).toMatchObject({
+        const staged = facade.messages.readUsage().publication;
+        expect(staged).toMatchObject({
             lanes: 1,
+            streams: 1,
+            staged: 1,
             limits: STAGE_LIMITS,
             counters: { ...NO_PUBLICATION_COUNTERS, staged: 1 }
         });
+        expect(staged.stagedBytes).toBeGreaterThan(0);
     });
 });

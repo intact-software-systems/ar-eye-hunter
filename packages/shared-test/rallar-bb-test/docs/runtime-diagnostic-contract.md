@@ -151,7 +151,8 @@ every session the page opens. The event's `data` is the event itself:
   or `publication-opportunity` (the last two are described under
   **Publication stage diagnostics** below)
 - `durationMs`: how long that phase took, on every kind but `commit-phases`,
-  `control-admission`, `receipt-confirmation`, `congestion` and the three `rtc-*` kinds: `commit-phases` splits its own into the two halves
+  `control-admission`, `receipt-confirmation`, `congestion`, the three `rtc-*` kinds and the two
+  `publication-*` kinds, which are outcomes, not phases: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
   storage read cost
@@ -162,7 +163,10 @@ every session the page opens. The event's `data` is the event itself:
   guessed at from a duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
   `control-admission` (after a receipt's `phase`), `receipt-confirmation`,
-  `congestion` and `rtc-ack-submission`. `traceId` is the message's envelope
+  `congestion` and `rtc-ack-submission`. `publication-staging` is the one
+  message-scoped kind without the pair: it carries the value's `traceId` before
+  `atMs` and no `corrId`, and `publication-opportunity` names no message.
+  `traceId` is the message's envelope
   trace (`id.traceId`) and `corrId` its correlation (`actions.corrId`, or its
   own `msgId` when it carries none): the same identity the server's rows and
   the browser's send handle name. On `control-admission`,
@@ -377,7 +381,10 @@ carries the message, its payload or its route beyond the lane key:
   `refused` when the stage would not hold it, and `cancelled` when its handle
   cancelled it before its opportunity. A value an opportunity selected leaves
   the stage: its carrier settles what happens next, so it writes no further
-  event here. `limit` follows `outcome` on a capacity refusal only, naming the
+  event here. A value still staged when the stage stops (its connect's epoch
+  closes or the session ends) settles `skipped`/`disposed` on its handle and
+  writes no staging event, and no counter of `stats.rallar.alm.publication`
+  counts it. `limit` follows `outcome` on a capacity refusal only, naming the
   stage limit it would have passed (`streams`, `staged-values` or
   `staged-bytes`); an oversized refusal, a value heavier than the channel's
   `drain.bytes`, has none. `traceId` is the value's own envelope trace, so a

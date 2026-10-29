@@ -1,4 +1,7 @@
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALPublicationStagingOutcome
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AnalyzeUploadFile } from './recipe-console-analyze-artifacts.ts';
 import {
     ANALYZE_AGENT_ID,
@@ -24,10 +27,9 @@ const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 type PublicationStagingData = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-staging'; }>;
 type PublicationOpportunityData = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-opportunity'; }>;
 type PublicationEventData = PublicationStagingData | PublicationOpportunityData;
-type PublicationStagingOutcome = PublicationStagingData['outcome'];
 
 export interface PublicationDiagnosticRow {
-    readonly outcome: PublicationStagingOutcome | 'opportunity';
+    readonly outcome: ALPublicationStagingOutcome | 'opportunity';
     readonly message: string;
     readonly msgId?: string;
     readonly traceId?: string;
@@ -65,7 +67,7 @@ interface PublicationDiagnosticEvent {
 }
 
 interface PublicationStagingFact {
-    readonly outcome: PublicationStagingOutcome;
+    readonly outcome: ALPublicationStagingOutcome;
     readonly msgId: string;
     readonly traceId: string;
     readonly limit?: PublicationStagingData['limit'];
@@ -82,7 +84,7 @@ const STAGING_FACTS: readonly PublicationStagingFact[] = [
 
 const OPPORTUNITY = { selected: 1, deferred: 0, expired: 1, bytes: 96 } as const;
 
-const STAGING_MESSAGES: Readonly<Record<PublicationStagingOutcome, string>> = {
+const STAGING_MESSAGES: Readonly<Record<ALPublicationStagingOutcome, string>> = {
     staged: `Publication staged on ${PUBLICATION_LANE_KEY}.`,
     superseded: `Publication superseded on ${PUBLICATION_LANE_KEY}.`,
     expired: `Publication expired on ${PUBLICATION_LANE_KEY}.`,

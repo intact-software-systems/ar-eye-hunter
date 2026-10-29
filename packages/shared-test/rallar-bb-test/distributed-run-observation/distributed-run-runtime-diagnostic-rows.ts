@@ -1,4 +1,4 @@
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALPublicationStagingOutcome } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import { decodeCount } from '../alm/decode-al-volatile-session-report.ts';
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
@@ -21,14 +21,14 @@ import type {
 import { toDistributedRunIdentitySummary } from './to-distributed-run-identity-summary.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
-type ALPublicationStagingOutcome = Extract<
-    ALOutboundRuntimeDiagnosticsEvent,
-    { kind: 'publication-staging'; }
->['outcome'];
-
-const STAGING_OUTCOMES: ReadonlySet<string> = new Set(
-    ['staged', 'superseded', 'expired', 'refused', 'cancelled'] satisfies readonly ALPublicationStagingOutcome[]
-);
+/** Every staging outcome, so an outcome the stage adds is a type error here until the rows can read it. */
+const STAGING_OUTCOMES: Readonly<Record<ALPublicationStagingOutcome, true>> = {
+    staged: true,
+    superseded: true,
+    expired: true,
+    refused: true,
+    cancelled: true
+};
 
 export function toDistributedRunRuntimeDiagnosticRows(
     events: readonly ControlEventSnapshot[]
@@ -113,7 +113,7 @@ function toPublicationDiagnosticMessage(data: RallarBlackBoxTestRecord): string 
 function toStagingMessage(laneKey: string, data: RallarBlackBoxTestRecord): string | undefined {
     const outcome = decodeNonBlankText(data.outcome);
     const msgId = decodeNonBlankText(data.msgId);
-    return outcome !== undefined && STAGING_OUTCOMES.has(outcome) && msgId !== undefined
+    return outcome !== undefined && Object.hasOwn(STAGING_OUTCOMES, outcome) && msgId !== undefined
         ? `Publication ${outcome} on ${laneKey}. ${msgId}`
         : undefined;
 }

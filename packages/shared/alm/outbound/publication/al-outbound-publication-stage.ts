@@ -57,8 +57,8 @@ export function toIdleALOutboundPublicationStageReport(
     return { lanes: 0, ...new ALOutboundPublicationLedger(limits).readReport() };
 }
 
-/** One value's outcome on the stage, as its `publication-staging` diagnostic states it. */
-type ALPublicationStagingOutcome = Pick<
+/** One value's outcome on the stage, with a capacity refusal's limit, as its `publication-staging` event states it. */
+type ALPublicationStagingFact = Pick<
     Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'publication-staging'; }>,
     'outcome' | 'limit'
 >;
@@ -308,7 +308,7 @@ export class ALOutboundPublicationStage<TContext> {
     private recordOutcome(
         publication: ALOutboundStagedPublication<TContext>,
         atMs: number,
-        outcome: ALPublicationStagingOutcome
+        outcome: ALPublicationStagingFact
     ): void {
         this.ledger.count(outcome.outcome, 1);
         writeALOutboundRuntimeDiagnostic(this.input.diagnostics, {
@@ -475,7 +475,7 @@ function resolveStageRefusal<TContext>(
 
 function toRefusedOutcome(
     refusal: Extract<ALOutboundPublicationStage.StageResult, { kind: 'refused'; }>
-): ALPublicationStagingOutcome {
+): ALPublicationStagingFact {
     return refusal.reason === 'capacity' ? { outcome: 'refused', limit: refusal.limit } : { outcome: 'refused' };
 }
 

@@ -310,6 +310,9 @@ export interface ALOutboundRtcQueuedBytesHighWater {
     readonly queuedBytes: number;
 }
 
+/** What the publication stage settled for one value; a value an opportunity selected is its carrier's to settle. */
+export type ALPublicationStagingOutcome = 'staged' | 'superseded' | 'expired' | 'refused' | 'cancelled';
+
 export type ALOutboundRuntimeDiagnosticsEvent =
     | ALOutboundReceiptConfirmationDiagnostic
     | ALOutboundRtcAckSubmission
@@ -418,8 +421,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         msgId: string;
         traceId: string;
         atMs: number;
-        /** What the stage settled for the value; a value an opportunity selected is its carrier's to settle. */
-        outcome: 'staged' | 'superseded' | 'expired' | 'refused' | 'cancelled';
+        outcome: ALPublicationStagingOutcome;
         /** The stage limit a capacity refusal passed; absent on every other outcome, an oversized refusal included. */
         limit?: ALPublicationStageLimit;
     }>

@@ -1284,8 +1284,9 @@ two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
 `publication` is the connect's publication stage report (D480): `{ lanes, streams, staged, stagedBytes,
 limits: { maxStreams, maxStagedValues, maxStagedBytes }, counters: { staged, superseded, expired, refused,
-cancelled, admitted, deferred } }`. `lanes`, `streams`, `staged` and `stagedBytes` are what the stage holds now;
-`limits` are the session's stage limits, lowered by `rallar.almPublicationLimits`; each counter is cumulative over the
+cancelled, admitted, deferred } }`. `lanes` counts the lanes the connect has opened, one per live channel route
+it staged on (an emptied lane stays open until the stage stops); `streams`, `staged` and `stagedBytes` are what the
+stage holds now; `limits` are the session's stage limits, lowered by `rallar.almPublicationLimits`; each counter is cumulative over the
 connect, one per value the stage settled that way, with `admitted` the values its opportunities handed to a carrier
 and `deferred` the values each opportunity left for a later one, summed over the opportunities. A connect that
 staged no live value yet reports zeros with its limits. An `assert` reads it as
