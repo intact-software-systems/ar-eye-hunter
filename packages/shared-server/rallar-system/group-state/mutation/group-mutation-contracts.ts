@@ -739,15 +739,6 @@ export function isGroupAdmissionPolicyReadOperation(
     );
 }
 
-export type GroupMutationIdempotencyProbe =
-    | Readonly<{ outcome: 'miss'; }>
-    | Readonly<{ outcome: 'replay'; receipt: GroupMutationReceipt; }>
-    | Readonly<{
-        outcome: 'idempotency-conflict';
-        existingCommandHash: string;
-        receivedCommandHash: string;
-    }>;
-
 export class GroupMutationRejectedError extends Error {
     readonly status = 400;
     readonly code = 'group-mutation-rejected';

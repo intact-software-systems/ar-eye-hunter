@@ -12,6 +12,18 @@ describe('group mutation facts validation', () => {
         expect(() => assertGroupMutationFacts({ ...facts, attemptAtEpochMs: facts.nowEpochMs + 1 })).not.toThrow();
     });
 
+    it('rejects a non-string command hash whose string coercion matches the hash format', () => {
+        const facts = createGroupAuthorityFacts();
+
+        expect(() =>
+            assertGroupMutationFacts({
+                ...facts,
+                // @ts-expect-error Malformed persisted facts must not pass through string coercion.
+                commandHash: [facts.commandHash]
+            })
+        ).toThrow('Group mutation commandHash is invalid');
+    });
+
     it('rejects an attempt dated before its ingress instant', () => {
         const facts = createGroupAuthorityFacts();
 
@@ -22,7 +34,8 @@ describe('group mutation facts validation', () => {
     it('rejects facts that carry no attempt instant', () => {
         const { attemptAtEpochMs: _attemptAtEpochMs, ...facts } = createGroupAuthorityFacts();
 
-        expect(() => assertGroupMutationFacts(facts as ReturnType<typeof createGroupAuthorityFacts>))
+        // @ts-expect-error Persisted facts without the required attempt instant must be rejected.
+        expect(() => assertGroupMutationFacts(facts))
             .toThrow('Group mutation attempt timestamp is invalid');
     });
 });
