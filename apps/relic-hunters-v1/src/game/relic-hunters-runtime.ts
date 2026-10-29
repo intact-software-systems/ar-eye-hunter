@@ -1210,15 +1210,14 @@ export class RelicHuntersRuntime {
         if (!this.current(attempt, true)) {
             return;
         }
-        const message = toError(error).message;
         if (
-            input.kind === 'continue-review' && message.includes('There is no review to continue') &&
+            input.kind === 'continue-review' && error.message.includes('There is no review to continue') &&
             this.connection.snapshot?.phase !== 'review'
         ) {
             this.phase('ready', { snapshotReady: !!this.connection.snapshot, lastError: undefined });
             return;
         }
-        this.phase('degraded', { lastError: message }, { error: message });
+        this.phase('degraded', { lastError: error.message }, { error: error.message });
     }
 
     private async resetExpedition(): Promise<void> {

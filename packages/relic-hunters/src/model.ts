@@ -301,12 +301,12 @@ export type RelicServerEvent = Readonly<{
 
 export type RelicRoundTransition = 'round-started' | 'round-resolved' | 'review-continued' | 'finished';
 
-/** The transition of a round, published beside the snapshot of the command that made it. */
 export interface RelicRuleRefusal {
     readonly code: string;
     readonly message: string;
 }
 
+/** The transition of a round, published beside the snapshot of the command that made it. */
 export interface RelicRoundTransitionEvent {
     readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
     readonly gameId: string;
