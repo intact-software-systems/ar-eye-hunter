@@ -14,6 +14,7 @@ import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conforma
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { isRallarGameEnvelope } from '../../shared-web/game/envelopes.ts';
 import { toOverlayLayoutIdentity } from '../../shared/repository/overlays-repository.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
@@ -508,6 +509,10 @@ describe('ALM scale recipes', () => {
             }
         };
         expect(shot).toMatchObject({ payload: { payload: { payload: expectedShot } } });
+        if (!('payload' in shot) || !isJsonRecordValue(shot.payload)) {
+            throw new Error('Invalid shot relay envelope');
+        }
+        expect(isRallarGameEnvelope(shot.payload.payload, 'ar-eye-hunter.v1')).toBe(true);
         const events = flattenCommands(scale.recipes[0].commands).filter((command) => command.kind === 'messages.send');
         expect(events).toHaveLength(2);
         const messages = events.map((event) => {
@@ -517,13 +522,14 @@ describe('ALM scale recipes', () => {
                     payload: {
                         kind: 'event',
                         senderId: '{auth.sessionId}',
-                        roomId: 'scale-room'
+                        roomRef: GROUP
                     }
                 }
             });
             if (!('payload' in event) || !isJsonRecordValue(event.payload) || !isJsonRecordValue(event.payload.payload)) {
                 throw new Error('Invalid relay/game envelope');
             }
+            expect(isRallarGameEnvelope(event.payload.payload, 'ar-eye-hunter.v1')).toBe(true);
             return event.payload.payload.payload;
         });
         expect(messages).toEqual(createExpectedLifecycleMessages());

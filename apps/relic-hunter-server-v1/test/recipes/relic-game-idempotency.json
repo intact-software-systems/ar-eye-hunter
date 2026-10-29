@@ -1208,7 +1208,7 @@
     {
       "type": "include",
       "include": {
-        "path": "../../../../packages/shared-test/black-box-runner/tests/app-inbox/command-replay.json",
+        "path": "../../../../packages/shared-test/black-box-runner/recipes/app-inbox-command-replay.json",
         "nameSuffix": "readyAgainAlice",
         "variables": {
           "commandPath": "/api/relic/games/{gameId}/commands/requests/readyAgainAlice-{runId}",
@@ -1315,7 +1315,7 @@
     {
       "type": "include",
       "include": {
-        "path": "../../../../packages/shared-test/black-box-runner/tests/app-inbox/command-replay.json",
+        "path": "../../../../packages/shared-test/black-box-runner/recipes/app-inbox-command-replay.json",
         "nameSuffix": "startRematch",
         "variables": {
           "commandPath": "/api/relic/games/{gameId}/commands/requests/startRematch-{runId}",
