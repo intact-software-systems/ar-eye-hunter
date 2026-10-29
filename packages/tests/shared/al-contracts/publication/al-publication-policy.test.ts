@@ -42,8 +42,8 @@ describe('validateALPublicationPolicy (D466)', () => {
         const issues = validateALPublicationPolicy({ cadenceMs: 0, retainNewest: 65, drain: { messages: 0, bytes: 0.5 } });
 
         expect(issues.map((issue) => [issue.path, issue.code])).toEqual([
-            ['$.publication.cadenceMs', 'invalid-cadenceMs'],
-            ['$.publication.retainNewest', 'invalid-retainNewest'],
+            ['$.publication.cadenceMs', 'invalid-cadence-ms'],
+            ['$.publication.retainNewest', 'invalid-retain-newest'],
             ['$.publication.drain.messages', 'invalid-drain-messages'],
             ['$.publication.drain.bytes', 'invalid-drain-bytes']
         ]);
@@ -70,15 +70,15 @@ describe('decodeALPublicationPolicy (D466)', () => {
         const issues = decodeALPublicationPolicy({}).left;
 
         expect(issues?.map((issue) => [issue.path, issue.code])).toEqual([
-            ['$.publication.cadenceMs', 'invalid-cadenceMs'],
-            ['$.publication.retainNewest', 'invalid-retainNewest'],
+            ['$.publication.cadenceMs', 'invalid-cadence-ms'],
+            ['$.publication.retainNewest', 'invalid-retain-newest'],
             ['$.publication.drain.messages', 'invalid-drain-messages'],
             ['$.publication.drain.bytes', 'invalid-drain-bytes']
         ]);
     });
 
-    it('refuses a missing drain object at both drain paths', () => {
-        expect(toDecodedPaths({ cadenceMs: 100, retainNewest: 1 })).toEqual([
+    it.each([undefined, 5, [], null])('refuses a drain of %j at both drain paths', (drain) => {
+        expect(toDecodedPaths({ cadenceMs: 100, retainNewest: 1, drain })).toEqual([
             '$.publication.drain.messages',
             '$.publication.drain.bytes'
         ]);

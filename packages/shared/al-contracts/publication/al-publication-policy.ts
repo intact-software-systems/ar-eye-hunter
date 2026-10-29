@@ -20,13 +20,28 @@ export const AL_PUBLICATION_POLICY_LIMITS = {
     maxDrainBytes: 4 * 1024 * 1024
 } as const;
 
-/** Checks the ranges and integrality of a typed policy; returns every issue. */
 export function validateALPublicationPolicy(policy: ALPublicationPolicy): readonly RallarValidationIssue[] {
     return [
-        validateField(policy.cadenceMs, 'cadenceMs', AL_PUBLICATION_POLICY_LIMITS.maxCadenceMs),
-        validateField(policy.retainNewest, 'retainNewest', AL_PUBLICATION_POLICY_LIMITS.maxRetainNewest),
-        validateField(policy.drain.messages, 'drain.messages', AL_PUBLICATION_POLICY_LIMITS.maxDrainMessages),
-        validateField(policy.drain.bytes, 'drain.bytes', AL_PUBLICATION_POLICY_LIMITS.maxDrainBytes)
+        validateField(policy.cadenceMs, {
+            path: '$.publication.cadenceMs',
+            code: 'invalid-cadence-ms',
+            limit: AL_PUBLICATION_POLICY_LIMITS.maxCadenceMs
+        }),
+        validateField(policy.retainNewest, {
+            path: '$.publication.retainNewest',
+            code: 'invalid-retain-newest',
+            limit: AL_PUBLICATION_POLICY_LIMITS.maxRetainNewest
+        }),
+        validateField(policy.drain.messages, {
+            path: '$.publication.drain.messages',
+            code: 'invalid-drain-messages',
+            limit: AL_PUBLICATION_POLICY_LIMITS.maxDrainMessages
+        }),
+        validateField(policy.drain.bytes, {
+            path: '$.publication.drain.bytes',
+            code: 'invalid-drain-bytes',
+            limit: AL_PUBLICATION_POLICY_LIMITS.maxDrainBytes
+        })
     ].filter((issue) => issue !== undefined);
 }
 
@@ -54,18 +69,20 @@ export function decodeALPublicationPolicy(
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(policy);
 }
 
-function validateField(
-    value: number,
-    field: string,
-    limit: number
-): RallarValidationIssue | undefined {
-    if (isWithinLimit(value, limit)) {
+interface ALPublicationFieldRule {
+    readonly path: string;
+    readonly code: string;
+    readonly limit: number;
+}
+
+function validateField(value: number, rule: ALPublicationFieldRule): RallarValidationIssue | undefined {
+    if (isWithinLimit(value, rule.limit)) {
         return undefined;
     }
     return {
-        path: `$.publication.${field}`,
-        code: `invalid-${field.replace('.', '-')}`,
-        message: `Expected a positive safe integer of at most ${limit}.`
+        path: rule.path,
+        code: rule.code,
+        message: `Expected a positive safe integer of at most ${rule.limit}.`
     };
 }
 

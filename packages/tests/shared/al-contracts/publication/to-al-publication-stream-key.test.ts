@@ -122,6 +122,21 @@ describe('toALPublicationStreamKey (D467)', () => {
         expect(message.targets).toMatchObject({ recipientPeerIds: ['peer-b', 'peer-a'] });
     });
 
+    it('differs for a room unicast and a room multicast of the same resource', () => {
+        const unicast = newALUnicastMessage('sender', route(), 'peer-a', 'pose.v1', { x: 1 }, { groupRef: ROOM });
+
+        expect(toALPublicationStreamKey(unicast)).not.toBe(toALPublicationStreamKey(roomMulticast()));
+    });
+
+    it('keys a multicast by the sender fixed list the stage sees, before the carrier freezes the audience', () => {
+        const fixed: ALMessage = {
+            ...roomMulticast(),
+            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['peer-a'] }
+        };
+
+        expect(toALPublicationStreamKey(fixed)).not.toBe(toALPublicationStreamKey(roomMulticast()));
+    });
+
     it('differs for a principal broadcast, a room broadcast and a room multicast of one room', () => {
         const principal = newALPrincipalBroadcastMessage(
             'sender',
