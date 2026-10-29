@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import '../setup-browser-indexeddb.ts';
+import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
@@ -64,6 +67,7 @@ const session: AuthSession = {
 
 const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>();
 const mockRallar = vi.hoisted(() => ({
+    data: { open: vi.fn<RallarDataFacade['open']>() },
     serverPeerId: () => 'default-qbox-server',
     auth: {
         restore: vi.fn(),
@@ -109,7 +113,8 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: mockRallar
 }));
 
-vi.mock('../../../apps/relic-hunters-v1/src/game/api.ts', () => ({
+vi.mock('../../../apps/relic-hunters-v1/src/game/api.ts', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../../../apps/relic-hunters-v1/src/game/api.ts')>(),
     fetchRelicSnapshot: vi.fn(),
     initializeRelicGame: vi.fn(),
     resetRelicGame: vi.fn(),
@@ -122,7 +127,16 @@ describe('useRelicHunters auth lifecycle', () => {
     let current: RelicHuntersRuntime.Connection | undefined;
 
     beforeEach(() => {
+        Object.defineProperty(navigator, 'locks', {
+            configurable: true,
+            value: {
+                request: async <T>(_name: string, run: () => Promise<T>): Promise<T> => await run()
+            }
+        });
         vi.resetAllMocks();
+        const data = createRallarDataFacade({ manager: new RepositoryManager(), resolveScopeKey: (scope) => scope });
+        const dbName = `relic-browser-test-${crypto.randomUUID()}`;
+        mockRallar.data.open.mockImplementation((name, options) => data.open(name, { ...options, dbName, sync: false }));
         authListeners.clear();
         current = undefined;
         container = document.createElement('div');
@@ -248,7 +262,7 @@ describe('useRelicHunters auth lifecycle', () => {
 
     it('clears relic runtime state when auth is unauthorized outside manual logout', async () => {
         await renderHook();
-        await waitForState(() => current?.connectionState === 'connected');
+        await waitForState(() => current?.connectionState === 'connected' && current.directory.status === 'ready');
 
         expect(current?.session).toEqual(session);
         expect(current?.roomId).toBe('relic-room-1');

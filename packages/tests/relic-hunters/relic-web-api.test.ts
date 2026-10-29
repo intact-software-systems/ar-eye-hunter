@@ -19,6 +19,7 @@ import {
 } from 'vitest';
 import {
     fetchRelicSnapshot,
+    RelicCommandRefusedError,
     resetRelicGame,
     sendRelicCommand
 } from '../../../apps/relic-hunters-v1/src/game/api.ts';
@@ -37,7 +38,9 @@ describe('Relic Hunters web API client', () => {
         vi.stubGlobal('fetch', fetch);
 
         await expect(fetchRelicSnapshot('room-1')).resolves.toBeUndefined();
-        await expect(sendRelicCommand('room-1', joinCommand())).resolves.toBeUndefined();
+        await expect(
+            sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: '11111111-1111-4111-8111-111111111111', sessionId: 'alice-session' })
+        ).resolves.toBeUndefined();
         await expect(resetRelicGame('room-1')).resolves.toBeUndefined();
         expect(fetch).not.toHaveBeenCalled();
     });
@@ -53,7 +56,7 @@ describe('Relic Hunters web API client', () => {
         vi.stubGlobal('fetch', fetch);
 
         const command = joinCommand('room/1');
-        await sendRelicCommand('room/1', command);
+        await sendRelicCommand({ gameId: 'room/1', command: command, requestId: '11111111-1111-4111-8111-111111111111', sessionId: 'alice-session' });
 
         expect(fetch).toHaveBeenCalledTimes(1);
         const [url, init = {}] = fetch.mock.calls[0];
@@ -75,7 +78,7 @@ describe('Relic Hunters web API client', () => {
 
         await fetchRelicSnapshot('room-1');
         await resetRelicGame('room-1');
-        await sendRelicCommand('room-1', joinCommand());
+        await sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: '11111111-1111-4111-8111-111111111111', sessionId: 'alice-session' });
 
         const headers = fetch.mock.calls.map(([, init]) => new Headers(init?.headers));
         const traces = headers.map((sent) => sent.get('x-request-id') ?? '');
@@ -91,7 +94,9 @@ describe('Relic Hunters web API client', () => {
         vi.stubGlobal('fetch', fetch);
         await expect(resetRelicGame('room-1')).rejects.toThrow('not a Relic snapshot');
         expect(fetch.mock.calls[0][0]).toMatch(/^\/api\/relic\/games\/room-1\/reset\/requests\/[0-9a-f-]{36}$/);
-        await expect(sendRelicCommand('room-1', joinCommand())).rejects.toThrow('not a Relic snapshot');
+        await expect(
+            sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: '11111111-1111-4111-8111-111111111111', sessionId: 'alice-session' })
+        ).rejects.toThrow('not a Relic snapshot');
     });
 
     it('reads a Relic snapshot body and rejects one that names no game incarnation', async () => {
@@ -108,6 +113,28 @@ describe('Relic Hunters web API client', () => {
         await expect(fetchRelicSnapshot('room-1')).rejects.toThrow('Failed to load expedition: not a Relic snapshot');
     });
 
+    it('distinguishes a durable refusal from an uncertain transport failure', async () => {
+        writeSession(session());
+        const responses = [
+            new Response(JSON.stringify({ status: 'refused', code: 'rule-refused', error: 'Expedition full' }), { status: 409 }),
+            new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503 })
+        ];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => {
+                const response = responses.shift();
+                if (!response) {
+                    throw new Error('Unexpected request');
+                }
+                return response;
+            })
+        );
+        await expect(sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: 'admission-request', sessionId: 'alice-session' })).rejects
+            .toBeInstanceOf(RelicCommandRefusedError);
+        await expect(sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: 'admission-request', sessionId: 'alice-session' })).rejects.not
+            .toBeInstanceOf(RelicCommandRefusedError);
+    });
+
     it('surfaces response text when command submission fails', async () => {
         writeSession(session());
         vi.stubGlobal(
@@ -115,7 +142,9 @@ describe('Relic Hunters web API client', () => {
             vi.fn(async () => new Response('invalid command', { status: 400 }))
         );
 
-        await expect(sendRelicCommand('room-1', joinCommand())).rejects.toThrow(
+        await expect(
+            sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: '11111111-1111-4111-8111-111111111111', sessionId: 'alice-session' })
+        ).rejects.toThrow(
             'Failed to send expedition command: 400 invalid command'
         );
     });
@@ -126,7 +155,9 @@ describe('Relic Hunters web API client', () => {
         vi.spyOn(unreadable, 'text').mockRejectedValue(new TypeError('body stream already read'));
         vi.stubGlobal('fetch', vi.fn(async () => unreadable));
 
-        await expect(sendRelicCommand('room-1', joinCommand())).rejects.toThrow(
+        await expect(
+            sendRelicCommand({ gameId: 'room-1', command: joinCommand(), requestId: '11111111-1111-4111-8111-111111111111', sessionId: 'alice-session' })
+        ).rejects.toThrow(
             /^Failed to send expedition command: 400 $/
         );
     });

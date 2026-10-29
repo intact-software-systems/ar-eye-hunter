@@ -2,6 +2,7 @@ export * from './src/characters.ts';
 export * from './src/compute-relic-planning-ai-suggestion.ts';
 export * from './src/create-relic-game.ts';
 export * from './src/expedition-blueprint.ts';
+export * from './src/has-unfinished-relic-participation.ts';
 export * from './src/model.ts';
 export * from './src/planning-ai.ts';
 export * from './src/protocol.ts';

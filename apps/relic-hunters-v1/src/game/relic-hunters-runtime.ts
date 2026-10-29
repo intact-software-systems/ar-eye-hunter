@@ -1,5 +1,6 @@
 import {
     decodeRelicSnapshotPayload,
+    hasUnfinishedRelicParticipation,
     RELIC_PROTOCOL_VERSION,
     type RelicActionInput,
     type RelicCharacterId,
@@ -25,23 +26,18 @@ import type { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/ra
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import {
-    createRallarAiFunnyRoomName,
-    type RallarAiFunnyRoomNameTheme
-} from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { RelicRoundDeadlineRepair } from './relic-round-deadline-repair.ts';
 import {
     createInitialRelicRuntimeDiagnostics,
+    toRelicRoomDiagnostics,
     toRelicRuntimeSnapshotSummary,
     type RelicRuntimeDiagnostics
 } from './relic-runtime-diagnostics.ts';
@@ -49,29 +45,15 @@ import {
     classifyRelicSnapshotAcceptance,
     type RelicSnapshotSource
 } from './relic-snapshot-ordering.ts';
+import { createRelicRoomName } from './runtime/create-relic-room-name.ts';
+import { RelicExpeditionParticipation } from './runtime/relic-expedition-participation.ts';
+import { RelicRoundDeadlineRepair } from './runtime/relic-round-deadline-repair.ts';
+import { toCreatedRelicRoomSnapshot } from './runtime/to-created-relic-room-snapshot.ts';
 import type { RelicWsCommandDelivery } from './send-relic-ws-command.ts';
 import type { RelicHunterEventSubscription } from './subscribe-relic-hunter-events.ts';
 import type { RelicRoundTransitionSubscription } from './subscribe-relic-round-transitions.ts';
 import { toRelicCommandPhase, type RelicCommandOutcome } from './to-relic-command-phase.ts';
 
-export const RELIC_ROOM_NAME_THEME: RallarAiFunnyRoomNameTheme = {
-    id: 'relic-hunters',
-    defaultBaseName: 'Relic Hunters Expedition',
-    nouns: [
-        'Teacup',
-        'Compass',
-        'Pickle',
-        'Noodle',
-        'Lantern',
-        'Keycard',
-        'Scroll',
-        'Dojo',
-        'Kiosk',
-        'Satchel',
-        'Map',
-        'Pebble'
-    ]
-};
 const SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
 const ROUND_TRANSITION_CUE_LOG_SIZE = 16;
 
@@ -102,7 +84,7 @@ interface RelicAuthentication {
 }
 
 export namespace RelicHuntersRuntime {
-    export interface Dependencies {
+    export interface Dependencies extends RelicExpeditionParticipation.Dependencies {
         readonly roomEntry: RallarRoomEntry;
         readonly recentRooms: RallarRecentRooms;
         readonly directory: RallarRoomDirectory;
@@ -133,13 +115,11 @@ export namespace RelicHuntersRuntime {
         joinRoom(roomId: string, participation: 'preserve' | 'player' | 'spectator'): Promise<void>;
         leaveRoom(roomId: string): Promise<void>;
         initializeGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
-        fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
         sendWsCommand(roomId: string, command: RelicCommand): Promise<RelicWsCommandDelivery | undefined>;
-        sendRestCommand(roomId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined>;
         resetGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     }
 
-    export interface Connection {
+    export interface Connection extends Actions {
         readonly roomEntry: RallarRoomEntry;
         readonly recentRooms: RallarRecentRooms;
         readonly participation: 'player' | 'spectator' | undefined;
@@ -154,6 +134,9 @@ export namespace RelicHuntersRuntime {
         readonly snapshot: RelicPublicSnapshot | undefined;
         readonly roundTransition: RelicRoundTransitionEvent | undefined;
         readonly lastHunterEvent: RelicHunterEvent | undefined;
+    }
+
+    export interface Actions {
         login(username: string, password: string): Promise<void>;
         register(username: string, password: string, displayName?: string): Promise<void>;
         logout(): Promise<void>;
@@ -198,6 +181,7 @@ export class RelicHuntersRuntime {
     private generation = 0;
     private roomGeneration = 0;
     private readonly connectionStarts = new SingleFlight<string, void>();
+    private readonly departures = new SingleFlight<string, void>();
     private bootstrap: AbortController | undefined;
     private lifecycle: RallarSubscriptionScope | undefined;
     private transport: RallarSubscriptionScope | undefined;
@@ -205,10 +189,12 @@ export class RelicHuntersRuntime {
     private snapshotRequest = 0;
     private roomRefreshRequest = 0;
     private stopSnapshotRepair: (() => void) | undefined;
+    private readonly admission: RelicExpeditionParticipation;
     private readonly roundRepair: RelicRoundDeadlineRepair;
 
     public constructor(deps: RelicHuntersRuntime.Dependencies) {
         this.deps = deps;
+        this.admission = new RelicExpeditionParticipation(deps);
         this.roundRepair = new RelicRoundDeadlineRepair({
             timers: deps.timers,
             refresh: () => this.hydrateRoom('timeout-repair')
@@ -284,28 +270,7 @@ export class RelicHuntersRuntime {
         this.deps.roomEntry.stop();
     }
 
-    private actions(): Pick<
-        RelicHuntersRuntime.Connection,
-        | 'login'
-        | 'register'
-        | 'logout'
-        | 'refreshRooms'
-        | 'createRoom'
-        | 'joinRoom'
-        | 'watchRoom'
-        | 'joinAsPlayer'
-        | 'leaveRoom'
-        | 'leaveExpedition'
-        | 'takeKeeper'
-        | 'joinExpedition'
-        | 'startExpedition'
-        | 'submitAction'
-        | 'forceResolveRound'
-        | 'pickupRelic'
-        | 'continueReview'
-        | 'setRoundLimit'
-        | 'resetExpedition'
-    > {
+    private actions(): RelicHuntersRuntime.Actions {
         return {
             login: (username, password) =>
                 this.authenticate({ mode: 'login', username, password, displayName: undefined }),
@@ -317,8 +282,8 @@ export class RelicHuntersRuntime {
             joinRoom: (roomId) => this.joinRoom(roomId, 'preserve'),
             watchRoom: (roomId) => this.joinRoom(roomId, 'spectator'),
             joinAsPlayer: () => this.joinAsPlayer(),
-            leaveRoom: () => this.leaveRoom(),
-            leaveExpedition: () => this.leaveExpedition(),
+            leaveRoom: () => this.depart(true),
+            leaveExpedition: () => this.depart(false),
             takeKeeper: () => this.sendCommand({ kind: 'take-keeper' }),
             joinExpedition: (characterId) => this.sendCommand({ kind: 'join-expedition', characterId }),
             startExpedition: () => this.sendCommand({ kind: 'start-expedition' }),
@@ -385,8 +350,9 @@ export class RelicHuntersRuntime {
 
     private entryChanged(state: RallarRoomEntry.State): void {
         if (
-            state.status === 'pending' && this.hasUnfinishedParticipation() &&
-            (state.destination?.participation === 'spectator' ||
+            state.status === 'pending' && this.blocksRoomChange() &&
+            (this.connection.diagnostics.commandInFlight !== undefined ||
+                state.destination?.participation === 'spectator' ||
                 state.destination?.roomRef.groupId !== this.connection.roomId)
         ) {
             this.deps.roomEntry.cancel();
@@ -553,7 +519,7 @@ export class RelicHuntersRuntime {
             wsListenerReady: true,
             roomListenerReady: true,
             lastError: undefined,
-            ...this.roomDiagnostics(this.connection, true)
+            ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus(), true)
         });
         if (!this.current(attempt)) {
             return;
@@ -574,23 +540,6 @@ export class RelicHuntersRuntime {
         if (this.current(attempt)) {
             await this.hydrateRoom('bootstrap');
         }
-    }
-
-    private roomDiagnostics(
-        state: RelicHuntersRuntime.Connection = this.connection,
-        connected = state.diagnostics.middlewareConnected
-    ): Partial<RelicRuntimeDiagnostics> {
-        const authority = this.deps.authorityStatus();
-        const roomReady = !!state.roomId;
-        return {
-            roomId: state.roomId,
-            roomReady,
-            snapshotReady: !!state.snapshot,
-            rtcReady: connected && roomReady,
-            authorityReady: connected && roomReady && !!authority?.started,
-            authorityPhase: authority?.phase,
-            authorityPeerAssistReadyPeers: authority?.peerAssist.readyPeerIds.length ?? 0
-        };
     }
 
     private adoptRoom(state: RallarRoomState, hydrate: boolean): void {
@@ -628,9 +577,9 @@ export class RelicHuntersRuntime {
             ...next,
             diagnostics: {
                 ...next.diagnostics,
-                ...this.roomDiagnostics(next),
+                ...toRelicRoomDiagnostics(next, this.deps.authorityStatus()),
                 lastSnapshotSource: changed ? undefined : next.diagnostics.lastSnapshotSource,
-                commandInFlight: roleChanged ? undefined : next.diagnostics.commandInFlight
+                commandInFlight: changed || roleChanged ? undefined : next.diagnostics.commandInFlight
             }
         });
         if (
@@ -755,7 +704,7 @@ export class RelicHuntersRuntime {
             error: refusalExpired && this.connection.error === feedback?.text ? undefined : this.connection.error,
             diagnostics: {
                 ...this.connection.diagnostics,
-                ...this.roomDiagnostics(),
+                ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
                 snapshotReady: true,
                 lastSnapshotSource: source,
                 lastAcceptedSnapshot: toRelicRuntimeSnapshotSummary(snapshot, source),
@@ -779,9 +728,20 @@ export class RelicHuntersRuntime {
         if (!attempt?.roomId) {
             return;
         }
+        const roomId = attempt.roomId;
         const request = ++this.snapshotRequest;
         const refreshesConnection = source === 'bootstrap' || source === 'room-hydration';
         try {
+            if (this.admission.hasPending(attempt.roomId, attempt.session.sessionId)) {
+                await this.deps.withParticipationLock(
+                    attempt.roomId,
+                    attempt.session.sessionId,
+                    () => this.admission.reconcile(roomId, attempt.session.sessionId)
+                );
+                if (!this.current(attempt, true) || request !== this.snapshotRequest) {
+                    return;
+                }
+            }
             const existing = await this.deps.fetchSnapshot(attempt.roomId);
             if (!this.current(attempt, true) || request !== this.snapshotRequest) {
                 return;
@@ -803,7 +763,7 @@ export class RelicHuntersRuntime {
             }
             if (refreshesConnection) {
                 this.phase(this.connection.snapshot ? 'ready' : 'connected', {
-                    ...this.roomDiagnostics(),
+                    ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
                     lastError: undefined
                 });
             }
@@ -932,7 +892,7 @@ export class RelicHuntersRuntime {
         joinMode: GroupJoinMode,
         directoryListing: GroupDirectoryListing | undefined
     ): Promise<GroupSnapshot | undefined> {
-        if (this.hasUnfinishedParticipation()) {
+        if (this.blocksRoomChange()) {
             this.operationFailed(new Error('Use Leave expedition before creating another room.'));
             return undefined;
         }
@@ -948,12 +908,10 @@ export class RelicHuntersRuntime {
         if (!this.current(attempt)) {
             return;
         }
-        const displayName = createRallarAiFunnyRoomName({
-            baseName: RELIC_ROOM_NAME_THEME.defaultBaseName,
-            theme: RELIC_ROOM_NAME_THEME,
-            seed: this.deps.createRoomNameSeed(),
-            existingNames: this.connection.rooms.map((room) => room.name)
-        });
+        const displayName = createRelicRoomName(
+            this.deps.createRoomNameSeed(),
+            this.connection.rooms.map((room) => room.name)
+        );
         let snapshot: GroupSnapshot;
         try {
             snapshot = await this.deps.createRoom(displayName, joinMode, directoryListing);
@@ -963,7 +921,7 @@ export class RelicHuntersRuntime {
                 return undefined;
             }
             const failure = toError(error);
-            const admitted = toCreatedRoomSnapshot(failure);
+            const admitted = toCreatedRelicRoomSnapshot(failure);
             if (!admitted) {
                 this.operationFailed(failure);
                 throw error;
@@ -982,14 +940,22 @@ export class RelicHuntersRuntime {
     }
 
     private hasUnfinishedParticipation(): boolean {
-        return this.connection.participation === 'player' && this.connection.snapshot?.phase !== 'finished' &&
-            this.connection.snapshot?.players.some((player) =>
-                    player.playerId === this.connection.session?.sessionId && player.withdrawnAtEpochMs === undefined
-                ) === true;
+        return this.connection.participation === 'player' &&
+            hasUnfinishedRelicParticipation(this.connection.snapshot, this.connection.session?.sessionId);
+    }
+
+    private blocksRoomChange(): boolean {
+        return this.connection.diagnostics.commandInFlight !== undefined ||
+            this.admission.hasPending(this.connection.roomId, this.connection.session?.sessionId) ||
+            (this.connection.participation === 'player' && !this.connection.snapshot) ||
+            this.hasUnfinishedParticipation();
     }
 
     private async joinRoom(roomId: string, participation: 'preserve' | 'player' | 'spectator'): Promise<void> {
-        if (this.hasUnfinishedParticipation() && (participation === 'spectator' || roomId !== this.connection.roomId)) {
+        if (
+            this.blocksRoomChange() && (this.connection.diagnostics.commandInFlight !== undefined ||
+                participation === 'spectator' || roomId !== this.connection.roomId)
+        ) {
             this.operationFailed(new Error('Use Leave expedition before entering or watching another expedition.'));
             return;
         }
@@ -1031,69 +997,75 @@ export class RelicHuntersRuntime {
         await this.joinRoom(this.connection.roomId, 'player');
     }
 
-    private async leaveExpedition(): Promise<void> {
+    private depart(leaveRoom: boolean): Promise<void> {
         const attempt = this.attempt();
         if (!attempt?.roomId) {
+            return Promise.resolve();
+        }
+        return this.departures.run(
+            `${attempt.generation}:${attempt.roomGeneration}`,
+            () => this.finishDeparture(attempt, leaveRoom)
+        );
+    }
+
+    private async finishDeparture(attempt: RelicHuntersRuntime.Attempt, leaveRoom: boolean): Promise<void> {
+        if (this.connection.diagnostics.commandInFlight) {
+            this.operationFailed(new Error('Wait for the current expedition command before leaving.'));
             return;
         }
+        this.diagnose({ commandInFlight: 'leave-expedition' });
         try {
-            await this.withdrawExpedition(attempt);
+            await this.deps.withParticipationLock(attempt.roomId ?? '', attempt.session.sessionId, async () => {
+                if (!this.current(attempt, true)) {
+                    return;
+                }
+                await this.withdrawExpedition(attempt);
+                if (leaveRoom && attempt.roomId && this.current(attempt, true)) {
+                    await this.deps.leaveRoom(attempt.roomId);
+                    if (this.current(attempt)) {
+                        this.adoptRoom(this.deps.roomState(), false);
+                    }
+                }
+            });
         }
         catch (error) {
             if (this.current(attempt, true)) {
                 this.operationFailed(toError(error));
+            }
+        }
+        finally {
+            if (this.current(attempt, true) && this.connection.diagnostics.commandInFlight === 'leave-expedition') {
+                this.diagnose({ commandInFlight: undefined });
             }
         }
     }
 
     /** Membership may be removed only after the game authority confirms withdrawal, not after WS admission. */
     private async withdrawExpedition(attempt: RelicHuntersRuntime.Attempt): Promise<void> {
-        if (!attempt.roomId || !this.hasUnfinishedParticipation()) {
+        if (!attempt.roomId || this.connection.participation !== 'player') {
             return;
         }
-        const snapshot = await this.deps.sendRestCommand(attempt.roomId, {
-            protocolVersion: RELIC_PROTOCOL_VERSION,
-            gameId: attempt.roomId,
-            username: attempt.session.username,
-            kind: 'leave-expedition'
-        });
+        if (!this.connection.snapshot) {
+            throw new Error('Expedition state is not ready. Refresh before leaving.');
+        }
+        const snapshot = await this.admission.withdraw(
+            { roomId: attempt.roomId, session: attempt.session },
+            () => this.current(attempt, true)
+        );
         if (!this.current(attempt, true)) {
             return;
         }
-        if (
-            !snapshot ||
-            snapshot.players.some((player) =>
-                player.playerId === attempt.session.sessionId && player.withdrawnAtEpochMs === undefined
-            )
-        ) {
-            throw new Error('Withdrawal has not been confirmed. Stay in the room and try again.');
+        if (!snapshot) {
+            throw new Error('Expedition state is not ready. Refresh before leaving.');
         }
         this.acceptSnapshot(snapshot, 'rest-command', attempt.roomId);
-        if (this.current(attempt, true)) {
-            this.phase('ready', { snapshotReady: true, lastError: undefined }, { error: undefined });
+        if (
+            this.connection.snapshot?.createdAtEpochMs !== snapshot.createdAtEpochMs ||
+            this.hasUnfinishedParticipation()
+        ) {
+            throw new Error('Expedition changed while leaving. Stay in the room and try again.');
         }
-    }
-
-    private async leaveRoom(): Promise<void> {
-        const attempt = this.attempt();
-        if (!attempt?.roomId) {
-            return;
-        }
-        try {
-            await this.withdrawExpedition(attempt);
-            if (!this.current(attempt, true)) {
-                return;
-            }
-            await this.deps.leaveRoom(attempt.roomId);
-            if (this.current(attempt)) {
-                this.adoptRoom(this.deps.roomState(), false);
-            }
-        }
-        catch (error) {
-            if (this.current(attempt, true)) {
-                this.operationFailed(toError(error));
-            }
-        }
+        this.phase('ready', { snapshotReady: true, lastError: undefined }, { error: undefined });
     }
 
     private async finishRoomChange(attempt: RelicHuntersRuntime.Attempt, roomId: string): Promise<boolean> {
@@ -1129,7 +1101,7 @@ export class RelicHuntersRuntime {
             return false;
         }
         this.phase(this.connection.snapshot || this.connection.participation === 'spectator' ? 'ready' : 'degraded', {
-            ...this.roomDiagnostics(),
+            ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
             lastHydratedAtEpochMs: this.deps.timers.nowMs(),
             lastError: this.connection.snapshot || this.connection.participation === 'spectator'
                 ? undefined
@@ -1151,11 +1123,14 @@ export class RelicHuntersRuntime {
 
     private async sendCommand(input: RelicCommandDraft): Promise<void> {
         const attempt = this.attempt();
-        if (!attempt?.roomId || this.connection.participation !== 'player') {
+        if (
+            !attempt?.roomId || this.connection.participation !== 'player' ||
+            this.connection.diagnostics.commandInFlight !== undefined
+        ) {
             return;
         }
-        const key = commandInFlightKey(input);
-        if (this.connection.diagnostics.commandInFlight === key) {
+        const key = input.kind;
+        if (input.kind !== 'join-expedition' && this.admission.hasPending(attempt.roomId, attempt.session.sessionId)) {
             return;
         }
         this.publish({
@@ -1172,13 +1147,25 @@ export class RelicHuntersRuntime {
                 username: attempt.session.username,
                 ...input
             };
-            const delivery = await this.deps.sendWsCommand(attempt.roomId, command);
+            const delivery = input.kind === 'join-expedition'
+                ? undefined
+                : await this.deps.sendWsCommand(attempt.roomId, command);
             if (!this.current(attempt, true)) {
                 return;
             }
-            // REST is used only before a WS server is known; never retry a WS attempt over REST.
+            // Admission needs a durable result. Other commands use REST only when no WS server is known.
             const outcome: RelicCommandOutcome = delivery === undefined
-                ? { transport: 'rest', snapshot: await this.deps.sendRestCommand(attempt.roomId, command) }
+                ? {
+                    transport: 'rest',
+                    snapshot: input.kind === 'join-expedition'
+                        ? await this.admission.join(attempt.roomId, attempt.session.sessionId, command)
+                        : await this.deps.sendRestCommand({
+                            gameId: attempt.roomId,
+                            command,
+                            requestId: crypto.randomUUID(),
+                            sessionId: attempt.session.sessionId
+                        })
+                }
                 : { transport: 'ws', delivery };
             if (!this.current(attempt, true)) {
                 return;
@@ -1222,10 +1209,14 @@ export class RelicHuntersRuntime {
 
     private async resetExpedition(): Promise<void> {
         const attempt = this.attempt();
-        if (!attempt?.roomId || this.connection.participation !== 'player') {
+        if (
+            !attempt?.roomId || this.connection.participation !== 'player' ||
+            this.connection.diagnostics.commandInFlight !== undefined ||
+            this.admission.hasPending(attempt.roomId, attempt.session.sessionId)
+        ) {
             return;
         }
-        this.publish({ error: undefined });
+        this.diagnose({ commandInFlight: 'reset-expedition', lastError: undefined });
         if (!this.current(attempt, true)) {
             return;
         }
@@ -1253,36 +1244,14 @@ export class RelicHuntersRuntime {
             const message = toError(error).message;
             this.phase('degraded', { lastError: message }, { error: message });
         }
+        finally {
+            if (this.current(attempt, true)) {
+                this.diagnose({ commandInFlight: undefined });
+            }
+        }
     }
 }
 
 function sameSession(left: AuthSession | undefined, right: AuthSession): boolean {
     return left?.sessionId === right.sessionId && left?.clientId === right.clientId;
-}
-
-function toCreatedRoomSnapshot(error: Error): GroupSnapshot | undefined {
-    if (
-        error.name !== 'RallarRoomSwitchPartialFailureError' ||
-        !('operation' in error) || error.operation !== 'create-and-switch' || !('joinedRoom' in error)
-    ) {
-        return undefined;
-    }
-    try {
-        // The committed result identifies this creation even while its cached room is absent or replaced.
-        validateAuthoritativeGroupSnapshot(error.joinedRoom);
-        return error.joinedRoom;
-    }
-    catch {
-        return undefined;
-    }
-}
-
-function commandInFlightKey(input: RelicCommandDraft): string {
-    if (input.kind === 'submit-action') {
-        return `${input.kind}:${JSON.stringify(input.action)}`;
-    }
-    if (input.kind === 'pickup-relic') {
-        return `${input.kind}:${input.relicId}`;
-    }
-    return input.kind;
 }

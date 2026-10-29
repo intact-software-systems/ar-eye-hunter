@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import '../setup-browser-indexeddb.ts';
+import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
 import {
     applyRelicCommand,
@@ -68,6 +71,7 @@ type PlanningRequestAnswer = (
 ) => RallarMessageReplyOutcome<object> | Promise<RallarMessageReplyOutcome<object>>;
 
 const rallarMock = vi.hoisted(() => ({
+    dataOpen: vi.fn<RallarDataFacade['open']>(),
     session: undefined as AuthSession | undefined,
     roomState: undefined as RallarRoomState | undefined,
     connectCalls: 0,
@@ -211,9 +215,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             })
         },
         data: {
-            open: vi.fn(async () => ({
-                set: vi.fn(async () => undefined)
-            }))
+            open: rallarMock.dataOpen
         },
         realtime: {
             sendJson: vi.fn(async () => [])
@@ -275,6 +277,12 @@ describe('Relic Hunters browser app', () => {
     let container: HTMLDivElement;
 
     beforeEach(() => {
+        Object.defineProperty(navigator, 'locks', {
+            configurable: true,
+            value: {
+                request: async <T>(_name: string, run: () => Promise<T>): Promise<T> => await run()
+            }
+        });
         (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
         vi.unstubAllGlobals();
         vi.stubGlobal('localStorage', createBrowserTestStorage());
@@ -283,6 +291,9 @@ describe('Relic Hunters browser app', () => {
         sessionStorage.clear();
         window.history.replaceState(null, '', '/');
         vi.clearAllMocks();
+        const data = createRallarDataFacade({ manager: new RepositoryManager(), resolveScopeKey: (scope) => scope });
+        const dbName = `relic-browser-test-${crypto.randomUUID()}`;
+        rallarMock.dataOpen.mockImplementation((name, options) => data.open(name, { ...options, dbName, sync: false }));
         rallarMock.session = session();
         rallarMock.roomState = roomState(1);
         rallarMock.connectCalls = 0;
@@ -332,7 +343,7 @@ describe('Relic Hunters browser app', () => {
         stubSnapshotFetch({ ...snapshotWithPlayers(1), adminPlayerId: undefined });
 
         await renderApp();
-        await waitFor(() => container.textContent?.includes('Alice') === true);
+        await waitFor(() => container.querySelector('.lobby-waiting-admin') !== null);
 
         expect(container.querySelector('.lobby-begin-btn')).toBeNull();
         expect(container.querySelector('.timer-limit-selector')).toBeNull();

@@ -252,6 +252,12 @@ components:
       properties:
         error:
           type: string
+        code:
+          type: string
+        status:
+          type: string
+          const: refused
+          description: Present only when AppInbox has durably refused this command; transport and authentication failures do not establish its outcome.
 
     RelicExpeditionSetupMetadata:
       type: object

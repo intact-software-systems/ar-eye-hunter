@@ -432,34 +432,24 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
         return false;
     }
 
-    if (value.kind === 'join-expedition') {
-        return value.characterId === undefined || isRelicCharacterId(value.characterId);
+    switch (value.kind) {
+        case 'join-expedition':
+            return value.characterId === undefined || isRelicCharacterId(value.characterId);
+        case 'start-expedition':
+        case 'leave-expedition':
+        case 'take-keeper':
+        case 'force-resolve-round':
+        case 'continue-review':
+            return true;
+        case 'set-round-limit':
+            return typeof value.timeLimitMs === 'number' && [60_000, 180_000, 300_000].includes(value.timeLimitMs);
+        case 'pickup-relic':
+            return typeof value.relicId === 'string' && value.relicId.length > 0;
+        case 'submit-action':
+            return isRecord(value.action) && isRelicActionKind(value.action.kind);
+        default:
+            return false;
     }
-
-    if (value.kind === 'start-expedition' || value.kind === 'leave-expedition' || value.kind === 'take-keeper') {
-        return true;
-    }
-
-    if (value.kind === 'set-round-limit') {
-        return typeof value.timeLimitMs === 'number' &&
-            [60_000, 180_000, 300_000].includes(value.timeLimitMs as number);
-    }
-
-    if (value.kind === 'force-resolve-round') {
-        return true;
-    }
-
-    if (value.kind === 'pickup-relic') {
-        return typeof value.relicId === 'string' && value.relicId.length > 0;
-    }
-
-    if (value.kind === 'continue-review') {
-        return true;
-    }
-
-    return value.kind === 'submit-action' &&
-        isRecord(value.action) &&
-        isRelicActionKind(value.action.kind);
 }
 
 export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {

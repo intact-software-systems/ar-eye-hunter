@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 
+import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readActiveGroupSessionRole, readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
 
@@ -18,11 +19,10 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
     if (!game.session || game.connectionState === 'signed-out') {
         return <RelicAuthForm game={game} />;
     }
+    const mutationPending = game.diagnostics.commandInFlight !== undefined;
     const currentRoom = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
-    const hunter = game.snapshot?.players.find((player) =>
-        player.playerId === game.session?.sessionId && player.withdrawnAtEpochMs === undefined
-    );
-    const unfinished = game.participation === 'player' && !!hunter && game.snapshot?.phase !== 'finished';
+    const unfinished = game.participation === 'player' &&
+        hasUnfinishedRelicParticipation(game.snapshot, game.session.sessionId);
     const keeperRole = game.snapshot?.adminPlayerId
         ? readActiveGroupSessionRole(currentRoom, game.snapshot.adminPlayerId, Date.now())
         : undefined;
@@ -73,8 +73,14 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                     )}
                     {unfinished && (
                         <>
-                            <button type="button" onClick={() => void game.leaveExpedition()}>Leave expedition</button>
-                            {game.snapshot?.adminPlayerId !== hunter?.playerId && (
+                            <button
+                                type="button"
+                                disabled={mutationPending}
+                                onClick={() => void game.leaveExpedition()}
+                            >
+                                Leave expedition
+                            </button>
+                            {game.snapshot?.adminPlayerId !== game.session.sessionId && (
                                 <button
                                     type="button"
                                     disabled={keeperPresent}
@@ -89,7 +95,13 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                             </small>
                         </>
                     )}
-                    <button type="button" onClick={() => void game.leaveRoom()}>Leave room</button>
+                    <button
+                        type="button"
+                        disabled={mutationPending}
+                        onClick={() => void game.leaveRoom()}
+                    >
+                        Leave room
+                    </button>
                     <small>
                         Leave room removes this account from the room in every tab. Leave expedition keeps room
                         membership.
@@ -190,10 +202,8 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 }
 
 function RelicRoomsList({ game }: RelicSessionProps) {
-    const watchBlocked = game.participation === 'player' && game.snapshot?.phase !== 'finished' &&
-        game.snapshot?.players.some((player) =>
-            player.playerId === game.session?.sessionId && player.withdrawnAtEpochMs === undefined
-        );
+    const watchBlocked = game.participation === 'player' &&
+        hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters') &&
         room.snapshot.members.some((member) =>
@@ -249,13 +259,9 @@ function RelicRoomsList({ game }: RelicSessionProps) {
                         type="button"
                         key={room.roomId}
                         data-room-id={room.roomId}
-                        disabled={room.full || !game.diagnostics.middlewareConnected}
+                        disabled={room.roomId === game.roomId || room.full || !game.diagnostics.middlewareConnected}
                         className={room.roomId === game.roomId ? 'room-row active' : 'room-row'}
-                        onClick={() => {
-                            if (room.roomId !== game.roomId) {
-                                void game.joinRoom(room.roomId);
-                            }
-                        }}
+                        onClick={() => void game.joinRoom(room.roomId)}
                     >
                         <span>{room.name}</span>
                         <small>

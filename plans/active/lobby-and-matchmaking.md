@@ -85,6 +85,11 @@ the same account. Room roles remain principal-scoped; watching must not silently
 live session's unfinished expedition. Explicit room departure must complete the game-owned exit
 before membership removal. Leave room remains visibly account-wide; Leave expedition is the
 per-session control that preserves other sessions and room membership. Network loss does not imply withdrawal.
+Join awaits its durable REST result; an uncertain admission keeps its original request identity in
+Rallar Data and reconciles after reload or before departure. A room/session browser lock coordinates
+Join, explicit departure and implicit room switches across tabs sharing one login. Departure and
+room switching read current authoritative participation while holding that lock. Durable command
+refusals are distinguished from transport failures, so a missing response never proves non-admission.
 
 Use the existing roster, relics and Keeper fields. Retain escaped banked-score records with an
 optional withdrawal timestamp: absence means that hunter has not withdrawn. Marked records cannot

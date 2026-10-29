@@ -200,6 +200,7 @@
       "expect": {
         "status": 409,
         "body": {
+          "status": "refused",
           "code": "expedition-unavailable"
         }
       }
@@ -223,6 +224,7 @@
       "expect": {
         "status": 409,
         "body": {
+          "status": "refused",
           "code": "expedition-unavailable"
         }
       }
@@ -497,6 +499,7 @@
       "expect": {
         "status": 409,
         "body": {
+          "status": "refused",
           "code": "rule-refused"
         }
       }
@@ -1221,6 +1224,7 @@
       "expect": {
         "status": 409,
         "body": {
+          "status": "refused",
           "code": "rule-refused"
         }
       }

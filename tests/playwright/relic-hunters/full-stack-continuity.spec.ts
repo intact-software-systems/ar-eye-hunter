@@ -4,12 +4,13 @@ import { registerRelicHunter, waitForExpeditionScene } from './relic-browser-roo
 
 roomBrowserTest(
     'continues an expedition after the Keeper leaves through the visible controls',
-    async ({ page: host, guest }) => {
+    async ({ page: host, guest }, testInfo) => {
         const link = await joinTwoHunters(host, guest);
         await expect(guest.getByRole('button', { name: 'Take over as Keeper', exact: true })).toBeDisabled();
         await host.getByRole('button', { name: 'Leave expedition', exact: true }).click();
         await expect(host.locator('.lobby-party-row')).toHaveCount(1);
         await expect(guest.locator('.lobby-begin-btn')).toBeEnabled();
+        await guest.screenshot({ path: testInfo.outputPath('keeper-after-departure.png') });
         await expect(host.getByLabel('Room link', { exact: true })).toHaveValue(link);
         await guest.locator('.lobby-begin-btn').click();
         await guest.getByRole('button', { name: 'Submit Plan' }).click();
@@ -71,7 +72,7 @@ roomBrowserTest(
 
 roomBrowserTest('withdraws only this hunter when two sessions use the same account', async ({ page: host, guest }) => {
     const credentials = await registerRelicHunter(host, 'same-account');
-    await host.getByRole('button', { name: 'New Room', exact: true }).click();
+    await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
     await waitForExpeditionScene(host);
     const link = await host.getByLabel('Room link', { exact: true }).inputValue();
     await host.getByRole('button', { name: /Join as/ }).click();
@@ -92,9 +93,124 @@ roomBrowserTest('withdraws only this hunter when two sessions use the same accou
     await expect(guest.getByRole('region', { name: 'Round review', exact: true })).toBeVisible();
 });
 
+roomBrowserTest(
+    'recovers an uncertain Join after reload and then withdraws through visible controls',
+    async ({ page }) => {
+        await registerRelicHunter(page, 'join-recovery');
+        await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        await waitForExpeditionScene(page);
+        const requestIds: string[] = [];
+        await page.route('**/commands/requests/*', async (route) => {
+            if (route.request().postDataJSON()?.kind !== 'join-expedition') {
+                await route.continue();
+                return;
+            }
+            requestIds.push(route.request().url());
+            if (requestIds.length === 1) {
+                const committed = await route.fetch();
+                expect(committed.ok()).toBe(true);
+                await route.abort('failed');
+            }
+            else {
+                await route.continue();
+            }
+        });
+        await page.getByRole('button', { name: /Join as/ }).click();
+        await expect(page.getByText('Failed to fetch', { exact: true }).first()).toBeVisible();
+        await page.reload();
+        await waitForExpeditionScene(page);
+        await expect(page.getByRole('button', { name: 'Leave expedition', exact: true })).toBeEnabled();
+        expect(requestIds).toHaveLength(2);
+        expect(requestIds[1]).toBe(requestIds[0]);
+        await page.getByRole('button', { name: 'Leave expedition', exact: true }).click();
+        await expect(page.locator('.lobby-party-row')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
+    }
+);
+
+roomBrowserTest(
+    'withdraws across shared-session tabs when last-owner room removal is refused',
+    async ({ page: host }) => {
+        await registerRelicHunter(host, 'shared-session');
+        await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        await waitForExpeditionScene(host);
+        const link = await host.getByLabel('Room link', { exact: true }).inputValue();
+        const other = await host.context().newPage();
+        await other.goto(link);
+        await waitForExpeditionScene(other);
+        const committed = Promise.withResolvers<void>();
+        const response = Promise.withResolvers<void>();
+        await host.route('**/commands/requests/*', async (route) => {
+            if (route.request().postDataJSON()?.kind !== 'join-expedition') {
+                await route.continue();
+                return;
+            }
+            const result = await route.fetch();
+            expect(result.ok()).toBe(true);
+            committed.resolve();
+            await response.promise;
+            await route.fulfill({ response: result });
+        });
+        try {
+            await host.getByRole('button', { name: /Join as/ }).click();
+            await committed.promise;
+            await other.getByRole('button', { name: 'Leave room', exact: true }).click();
+            await expect(other.getByRole('button', { name: 'Leave room', exact: true })).toBeDisabled();
+            response.resolve();
+            await expect(other.locator('.lobby-party-row')).toHaveCount(0);
+            await expect(host.locator('.lobby-party-row')).toHaveCount(0);
+            await expect(other.locator('.error-panel')).toContainText('Cannot remove or demote the last active owner.');
+            await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
+            await expect(other.getByRole('button', { name: /Join as/ })).toBeEnabled();
+        }
+        finally {
+            response.resolve();
+            await other.close();
+        }
+    }
+);
+
+roomBrowserTest(
+    'refuses an implicit room switch after another tab admits the shared hunter',
+    async ({ page: host }) => {
+        await registerRelicHunter(host, 'shared-navigation');
+        await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        await waitForExpeditionScene(host);
+        const link = await host.getByLabel('Room link', { exact: true }).inputValue();
+        const other = await host.context().newPage();
+        await other.goto(link);
+        await waitForExpeditionScene(other);
+        const requested = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        await host.route('**/commands/requests/*', async (route) => {
+            if (route.request().postDataJSON()?.kind === 'join-expedition') {
+                requested.resolve();
+                await release.promise;
+            }
+            await route.continue();
+        });
+        try {
+            await host.getByRole('button', { name: /Join as/ }).click();
+            await requested.promise;
+            await other.getByRole('button', { name: 'New Room', exact: true }).click();
+            release.resolve();
+            await expect(
+                other.getByText('Use Leave expedition before entering or watching another expedition.', { exact: true })
+                    .first()
+            ).toBeVisible();
+            await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
+            await expect(host.locator('.lobby-party-row')).toHaveCount(1);
+        }
+        finally {
+            release.resolve();
+            await other.close();
+        }
+    }
+);
+
 async function joinTwoHunters(host: Page, guest: Page): Promise<string> {
     await registerRelicHunter(host, 'continuity-keeper');
-    await host.getByRole('button', { name: 'New Room', exact: true }).click();
+    await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
     await waitForExpeditionScene(host);
     const link = await host.getByLabel('Room link', { exact: true }).inputValue();
     const roomId = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
