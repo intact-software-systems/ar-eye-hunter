@@ -83,8 +83,9 @@ roomBrowserTest(
 roomBrowserTest(
     'Quick Joined peers keep the match countdown and results when the host renderer was paused',
     { annotation: { type: 'room-journey', description: 'repeat-play' } },
-    async ({ page: alice, guest: bob }, testInfo) => {
-        // One-minute play plus paused-render setup and captured peer results can exceed two minutes.
+    async ({ page: alice, guest: bob }) => {
+        // Real one-minute play, paused-render setup and rematch recovery share this deadline.
+        // Automatic failure artifacts own screenshots; full-page success captures add substantial diagnostic overhead.
         roomBrowserTest.setTimeout(180_000);
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         await alice.addInitScript(installAnimationFrameGate);
@@ -120,7 +121,6 @@ roomBrowserTest(
         await bob.getByRole('button', { name: 'Request sync', exact: true }).click();
         await assertRunningMatch(aliceOperations, bobOperations);
         await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
-        await bob.screenshot({ path: testInfo.outputPath('quick-join-playing.png'), fullPage: true });
         const aliceResults = alice.getByRole('dialog', { name: 'Match results' });
         const bobResults = bob.getByRole('dialog', { name: 'Match results' });
         await expect(aliceResults).toBeVisible({ timeout: 65_000 });
@@ -131,7 +131,6 @@ roomBrowserTest(
             await aliceResults.locator('.match-results').innerText(),
             { useInnerText: true }
         );
-        await bob.screenshot({ path: testInfo.outputPath('quick-join-results.png'), fullPage: true });
         await roomBrowserTest.step('room-journey:repeat-play', async () => {
             const startAgain = aliceResults.getByRole('button', { name: 'Start next match', exact: true });
             await expect(startAgain).toBeDisabled();
@@ -161,7 +160,6 @@ roomBrowserTest(
             await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence')))
                 .toBeGreaterThan(shotsBefore);
             await bob.keyboard.press('Escape');
-            await bob.screenshot({ path: testInfo.outputPath('quick-join-second-match.png'), fullPage: true });
             await expect(aliceOperations.getByLabel('Account reference', { exact: true })).toHaveValue('alice');
             await expect(bobOperations.getByLabel('Account reference', { exact: true })).toHaveValue('bob');
             await expect(aliceOperations.locator('.room-row.active')).toHaveAttribute(
