@@ -6,7 +6,7 @@ import {
 
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { requireOneOf } from '@shared/api/exact-object-decoding.ts';
+import { requireEpoch, requireExactKeys, requireOneOf, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { toStageTriggerTimerDelayMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -15,7 +15,7 @@ import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { fnv1a64, toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import {
     opensPlannedCandidateStage,
     type GroupLifecycleTransitionOperation,
@@ -104,41 +104,38 @@ export function computeFormationTimerEntry(input: ComputeFormationTimerEntryInpu
 }
 
 export function decodeFormationTimerWork(resource: string): GroupFormationTimerWork {
-    const message = decodeJsonObject(
+    const message = requireRecord(
         decodeJsonWireValue(JSON.parse(resource), 'Formation timer message'),
         'Formation timer message'
     );
-    const payload = decodeJsonObject(message.payload, 'Formation timer message payload');
+    const payload = requireRecord(message.payload, 'Formation timer message payload');
     const payloadResource = payload.resource;
     if (typeof payloadResource !== 'string') {
         throw new TypeError('Formation timer message payload is invalid');
     }
-    const parsed = decodeExactJsonObject(
+    const parsed = requireRecord(
         decodeJsonWireValue(JSON.parse(payloadResource), 'Formation timer work payload'),
-        ['kind', 'groupRef', 'formationEpoch', 'groupSnapshotVersion', 'notBeforeEpochMs'],
         'Formation timer work payload'
     );
-    const groupRef = decodeExactJsonObject(
-        parsed.groupRef,
-        ['applicationId', 'workspaceId', 'groupId'],
-        'Formation timer group identity'
-    );
+    requireExactKeys(parsed, ['kind', 'groupRef', 'formationEpoch', 'groupSnapshotVersion', 'notBeforeEpochMs'], 'Formation timer work payload');
+    const groupRef = requireRecord(parsed.groupRef, 'Formation timer group identity');
+    requireExactKeys(groupRef, ['applicationId', 'workspaceId', 'groupId'], 'Formation timer group identity');
+    requireString(groupRef.applicationId, 'Formation timer application id');
+    requireString(groupRef.workspaceId, 'Formation timer workspace id');
+    requireString(groupRef.groupId, 'Formation timer group id');
+    requireEpoch(parsed.formationEpoch, 'Formation timer epoch');
+    requireEpoch(parsed.groupSnapshotVersion, 'Formation timer group snapshot version');
+    requireEpoch(parsed.notBeforeEpochMs, 'Formation timer due time');
     return {
         kind: requireOneOf(parsed.kind, GROUP_FORMATION_TIMER_KINDS, 'Formation timer kind'),
         groupRef: {
-            applicationId: decodeNonEmptyString(groupRef.applicationId, 'Formation timer application id'),
-            workspaceId: decodeNonEmptyString(groupRef.workspaceId, 'Formation timer workspace id'),
-            groupId: decodeNonEmptyString(groupRef.groupId, 'Formation timer group id')
+            applicationId: groupRef.applicationId,
+            workspaceId: groupRef.workspaceId,
+            groupId: groupRef.groupId
         },
-        formationEpoch: decodeNonNegativeSafeInteger(parsed.formationEpoch, 'Formation timer epoch'),
-        groupSnapshotVersion: decodeNonNegativeSafeInteger(
-            parsed.groupSnapshotVersion,
-            'Formation timer group snapshot version'
-        ),
-        notBeforeEpochMs: decodeNonNegativeSafeInteger(
-            parsed.notBeforeEpochMs,
-            'Formation timer due time'
-        )
+        formationEpoch: parsed.formationEpoch,
+        groupSnapshotVersion: parsed.groupSnapshotVersion,
+        notBeforeEpochMs: parsed.notBeforeEpochMs
     };
 }
 
@@ -252,45 +249,6 @@ function timerEntry(
         expireAtEpochMs: facts.expireAtEpochMs,
         traceId: facts.traceId
     });
-}
-
-function decodeExactJsonObject(
-    value: JsonWireValue | undefined,
-    expectedKeys: readonly string[],
-    label: string
-): JsonWireObject {
-    const record = decodeJsonObject(value, label);
-    const keys = Object.keys(record).sort();
-    const expected = [...expectedKeys].sort();
-    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
-        throw new TypeError(`${label} fields are invalid`);
-    }
-    return record;
-}
-
-function decodeJsonObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
-    if (value === undefined || !isJsonWireObject(value)) {
-        throw new TypeError(`${label} is invalid`);
-    }
-    return value;
-}
-
-function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function decodeNonEmptyString(value: JsonWireValue | undefined, label: string): string {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new TypeError(`${label} is invalid`);
-    }
-    return value;
-}
-
-function decodeNonNegativeSafeInteger(value: JsonWireValue | undefined, label: string): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-        throw new TypeError(`${label} is invalid`);
-    }
-    return value;
 }
 
 interface FormationTimerMessageInput {

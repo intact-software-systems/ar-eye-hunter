@@ -7,7 +7,7 @@ import type { GroupMove, GroupMoveAction, GroupMoveRequest } from '@shared/api/m
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { SingleFlight } from '@shared/resilience/single-flight.ts';
+import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
@@ -71,13 +71,12 @@ export class RallarRoomMove {
     private readonly notifications = new SynchronousNotifications<RallarRoomMove.State>((error) => {
         console.error('Error notifying room move listener', error);
     });
-    private readonly reads = new SingleFlight<number, void>();
+    private reads: ThrottledFlush | null = null;
     private readonly attemptedEntries = new Set<string>();
     private subscriptions: SubscriptionScope | null = null;
     private controller = new AbortController();
     private generation = 0;
     private revision = 0;
-    private refreshRequested = 0;
     private sessionKey: string | null = null;
     private state: RallarRoomMove.State = { moves: [], busy: false, enteringMoveId: null, error: null };
 
@@ -151,23 +150,32 @@ export class RallarRoomMove {
     public stop(): void {
         const subscriptions = this.subscriptions;
         this.subscriptions = null;
-        subscriptions?.unsubscribe();
-        this.invalidate();
-        this.publish({ moves: [], busy: false, enteringMoveId: null, error: null });
+        try {
+            subscriptions?.unsubscribe();
+        }
+        finally {
+            this.invalidate();
+            this.publish({ moves: [], busy: false, enteringMoveId: null, error: null });
+        }
     }
 
     public refresh(): Promise<void> {
-        this.refreshRequested++;
-        const generation = this.generation;
-        return this.reads.run(generation, async () => {
-            while (this.generation === generation && this.subscriptions !== null) {
-                const requested = this.refreshRequested;
-                await this.readMoves();
-                if (requested === this.refreshRequested) {
-                    return;
+        if (this.subscriptions === null) {
+            return Promise.resolve();
+        }
+        if (this.reads === null) {
+            const generation = this.generation;
+            this.reads = new ThrottledFlush({
+                timers: this.dependencies.timers,
+                write: async () => {
+                    if (this.generation === generation && this.subscriptions !== null) {
+                        await this.readMoves();
+                    }
                 }
-            }
-        });
+            }, { minIntervalMs: 0, firstMarkDelayMs: 0 });
+        }
+        void this.reads.mark();
+        return this.reads.drain();
     }
 
     public async propose(destination: GroupRef): Promise<void> {
@@ -426,7 +434,9 @@ export class RallarRoomMove {
         this.generation++;
         this.controller.abort();
         this.controller = new AbortController();
-        this.reads.clear();
+        const reads = this.reads;
+        this.reads = null;
+        void reads?.stop();
         this.attemptedEntries.clear();
     }
 

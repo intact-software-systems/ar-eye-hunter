@@ -5,10 +5,8 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
-    WS_OUTBOX_PROVENANCE_NAMESPACE,
-    type WsOutboxProvenance
+    computeWsOutboxProvenanceRecord,
+    WS_OUTBOX_PROVENANCE_NAMESPACE
 } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import type { GroupPresenceSummaryComputedWork } from './group-presence-summary-effects.ts';
 
@@ -29,24 +27,21 @@ export function computeGroupDeltaProvenance(
             continue;
         }
         const message = decodePersistedALMessage(write.entry.resource);
-        const facts: Omit<WsOutboxProvenance, 'digest'> = {
-            version: 1,
+        const record = computeWsOutboxProvenanceRecord({
             producerKind: 'state-sync',
-            queueKey: write.entry.key,
-            typeId: write.entry.typeId,
-            messageId: message.id.msgId,
-            senderId: message.id.senderId,
+            entry: write.entry,
+            message,
             expiresAtMs: write.entry.audit.expiryTs.epochMilliseconds,
             target: {
                 kind: 'scoped-room-broadcast',
                 groupRef: computed.work.aggregateRef,
                 admittedAudience: computed.summary.summary.activeSessionIds
             }
-        };
+        });
         proofs.push({
             queueKey: write.entry.key,
-            key: toWsOutboxProvenanceKey(write.entry.key),
-            value: JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(write.entry, facts) }),
+            key: record.key,
+            value: record.value,
             expiresAt: write.expiresAt
         });
     }

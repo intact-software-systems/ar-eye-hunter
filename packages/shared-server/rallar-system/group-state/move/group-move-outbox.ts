@@ -13,12 +13,7 @@ import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guar
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
-import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
-    WS_OUTBOX_PROVENANCE_NAMESPACE,
-    type WsOutboxProvenance
-} from '../../websocket/outbox/ws-outbox-provenance.ts';
+import { computeWsOutboxProvenanceRecord } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
 export interface GroupMoveDeadline extends GroupMoveClaim {
@@ -79,13 +74,10 @@ export function computeGroupMovePublication(input: GroupMovePublicationInput): G
             EnqueuedType.WS_OUTBOX,
             Temporal.Instant.fromEpochMilliseconds(input.createdAtEpochMs)
         );
-        const facts: Omit<WsOutboxProvenance, 'digest'> = {
-            version: 1,
+        const record = computeWsOutboxProvenanceRecord({
             producerKind: 'state-sync',
-            queueKey: entry.key,
-            typeId: entry.typeId,
-            messageId: message.id.msgId,
-            senderId: message.id.senderId,
+            entry,
+            message,
             expiresAtMs,
             target: {
                 kind: 'scoped-principal-broadcast',
@@ -93,15 +85,11 @@ export function computeGroupMovePublication(input: GroupMovePublicationInput): G
                 admittedAudience: move.participants.filter((participant) => participant.principalId === principalId)
                     .map((participant) => participant.sessionId).sort()
             }
-        };
-        const proof: WsOutboxProvenance = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
+        });
         provenance.push({
             effectId: `move-publication:${entry.key.resourceId}`,
             operation: 'insert',
-            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
-            key: toWsOutboxProvenanceKey(entry.key),
-            value: JSON.stringify(proof),
-            expireAtTimestamp: expiresAtMs
+            ...record
         });
         outbox.push(computeAppOutboxInsert(entry));
     }

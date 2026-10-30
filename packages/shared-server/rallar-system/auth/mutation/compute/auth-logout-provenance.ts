@@ -5,8 +5,7 @@ import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { isExactAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
+    computeWsOutboxProvenanceRecord,
     WS_OUTBOX_PROVENANCE_NAMESPACE,
     type WsOutboxProvenance
 } from '../../../websocket/outbox/ws-outbox-provenance.ts';
@@ -49,24 +48,20 @@ export function computeAuthLogoutProvenance(
         issuedAtMs: computed.command.expected.issuedAtEpochMs,
         expiresAtMs: computed.command.expected.expiresAtEpochMs
     };
-    const facts: Omit<WsOutboxProvenance, 'digest'> = {
-        version: 1,
+    const record = computeWsOutboxProvenanceRecord({
         producerKind: 'auth-session-invalidation',
-        queueKey: write.entry.key,
-        typeId: write.entry.typeId,
-        messageId: message.id.msgId,
-        senderId: message.id.senderId,
+        entry: write.entry,
+        message,
         expiresAtMs: sessionInvalidation.expiresAtMs,
         target: {
             kind: 'exact-invalidated-session',
             sessionInvalidation,
             admittedAudience: [sessionInvalidation.sessionId]
         }
-    };
-    const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(write.entry, facts) };
+    });
     return {
-        key: toWsOutboxProvenanceKey(write.entry.key),
-        value: JSON.stringify(proof),
+        key: record.key,
+        value: record.value,
         expiresAt: write.expiresAt,
         queueKey: write.entry.key
     };

@@ -8,6 +8,7 @@ import {
 import { toDomain } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import {
     computeWsOutboxProvenanceDigest,
+    computeWsOutboxProvenanceRecord,
     toWsOutboxProvenanceKey,
     WS_OUTBOX_PROVENANCE_NAMESPACE,
     WsOutboxProvenanceReader,
@@ -29,9 +30,12 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
-interface WsOutboxProvenanceFixture {
+interface WsOutboxMessageRow {
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
+}
+
+interface WsOutboxProvenanceFixture extends WsOutboxMessageRow {
     readonly proof: WsOutboxProvenance;
     readonly repository: FakeRuntimeStateRepository;
     readonly reader: WsOutboxProvenanceReader;
@@ -39,6 +43,31 @@ interface WsOutboxProvenanceFixture {
 }
 
 describe('row-bound WS producer provenance', () => {
+    it('serializes the exact accepted proof and keeps the row digest binding', async () => {
+        const fixture = await createFixture(['peer']);
+        const record = computeWsOutboxProvenanceRecord({
+            entry: fixture.entry,
+            message: fixture.message,
+            producerKind: fixture.proof.producerKind,
+            target: fixture.proof.target,
+            expiresAtMs: fixture.proof.expiresAtMs
+        });
+        expect(record).toEqual({
+            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+            key: fixture.key,
+            value: JSON.stringify(fixture.proof),
+            expireAtTimestamp: fixture.proof.expiresAtMs
+        });
+        await fixture.repository.upsert(record.namespace, record.key, record.value, record.expireAtTimestamp);
+        await expect(fixture.reader.readProducerProvenance(fixture.message, fixture.entry)).resolves.toEqual({
+            admittedAudience: ['peer'],
+            recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+        });
+        const forgedMessage = { ...fixture.message, payload: { ...fixture.message.payload, resource: '{"forged":true}' } };
+        const forgedEntry = { ...fixture.entry, resource: JSON.stringify(forgedMessage) };
+        await expect(fixture.reader.readProducerProvenance(forgedMessage, forgedEntry)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
     it.each(['applicationId', 'workspaceId'] as const)('rejects a principal proof whose room differs in %s even with a valid digest', async (field) => {
         const fixture = await createPrincipalRoomFixture(field);
         await expect(fixture.reader.readProducerProvenance(fixture.message, fixture.entry))
@@ -279,7 +308,7 @@ describe('row-bound WS producer provenance', () => {
     });
 });
 
-function toWorldFanoutRow(resourceId: string): Readonly<{ message: ALMessage; entry: ResourceEntry; }> {
+function toWorldFanoutRow(resourceId: string): WsOutboxMessageRow {
     const message = newALBroadcastMessage(
         'server',
         { topicId: 'app.crdt', resourceId, contextId: 'app' },
@@ -294,7 +323,7 @@ function toWorldFanoutRow(resourceId: string): Readonly<{ message: ALMessage; en
 async function writeWorldFanoutProof(
     repository: FakeRuntimeStateRepository,
     resourceId: string
-): Promise<Readonly<{ message: ALMessage; entry: ResourceEntry; }>> {
+): Promise<WsOutboxMessageRow> {
     const row = toWorldFanoutRow(resourceId);
     const facts = {
         version: 1 as const,

@@ -3,7 +3,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupMove, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 const source = { applicationId: 'game', workspaceId: 'default', groupId: 'source' };
 const destination = { ...source, groupId: 'destination' };
@@ -35,7 +35,26 @@ afterEach(() => {
     }
 });
 
-function browser() {
+interface MoveApi extends RallarRoomMove.Api {
+    readonly commands: GroupMoveRequest[];
+    readonly list: Mock<RallarRoomMove.Api['list']>;
+    readonly mutate: Mock<RallarRoomMove.Api['mutate']>;
+    setMoves(moves: readonly GroupMove[]): void;
+}
+
+interface RoomMoveBrowser {
+    readonly owner: RallarRoomMove;
+    readonly api: MoveApi;
+    readonly refreshRooms: Mock<() => Promise<void>>;
+    readonly unsubscribeAuth: Mock<() => void>;
+    currentRoom(): typeof source;
+    selectRoom(groupId: string): void;
+    changeAuth(next: AuthSession | undefined): void;
+    block(reason: string | null): void;
+    notify(): void;
+}
+
+function browser(): RoomMoveBrowser {
     let auth: AuthSession | undefined = session;
     let current = { ...source, displayName: 'Source room' };
     let blocker: string | null = null;
@@ -43,9 +62,10 @@ function browser() {
         throw error;
     });
     const api = createMoveApi();
+    const unsubscribeAuth = vi.fn(() => {});
     const refreshRooms = vi.fn(async () => {});
     const owner = new RallarRoomMove({
-        auth: { session: () => auth, onChange: () => () => {} },
+        auth: { session: () => auth, onChange: () => unsubscribeAuth },
         currentRoom: () => current,
         activate: async () => {
             current = { ...destination, displayName: 'Destination room' };
@@ -68,7 +88,7 @@ function browser() {
         owner,
         api,
         refreshRooms,
-        commands: api.commands,
+        unsubscribeAuth,
         currentRoom: () => current,
         selectRoom: (groupId: string) => {
             current = { ...current, groupId };
@@ -76,7 +96,6 @@ function browser() {
         changeAuth: (next: AuthSession | undefined) => {
             auth = next;
         },
-        setMoves: api.setMoves,
         block: (reason: string | null) => {
             blocker = reason;
         },
@@ -84,7 +103,7 @@ function browser() {
     };
 }
 
-function createMoveApi() {
+function createMoveApi(): MoveApi {
     let moves: readonly GroupMove[] = [committed];
     const commands: GroupMoveRequest[] = [];
     return {
@@ -92,8 +111,8 @@ function createMoveApi() {
         setMoves: (next: readonly GroupMove[]) => {
             moves = next;
         },
-        list: vi.fn(async () => moves),
-        mutate: vi.fn(async (request: GroupMoveRequest) => {
+        list: vi.fn<RallarRoomMove.Api['list']>(async () => moves),
+        mutate: vi.fn<RallarRoomMove.Api['mutate']>(async (request) => {
             commands.push(request);
             if (request.action === 'arrive') {
                 moves = [{ ...committed, participants: committed.participants.map((p) => ({ ...p, arrivedAtEpochMs: 130 })) }];
@@ -109,7 +128,7 @@ describe('Move together browser lifecycle', () => {
         const b = browser();
         await b.owner.start();
         expect(b.currentRoom().groupId).toBe(destination.groupId);
-        expect(b.commands.map((command) => command.action)).toEqual(['arrive']);
+        expect(b.api.commands.map((command) => command.action)).toEqual(['arrive']);
         expect(b.owner.getState().moves[0].participants[0].arrivedAtEpochMs).toBe(130);
     });
 
@@ -118,7 +137,7 @@ describe('Move together browser lifecycle', () => {
         b.block('Leave expedition first');
         await b.owner.start();
         expect(b.currentRoom().groupId).toBe(source.groupId);
-        expect(b.commands).toEqual([]);
+        expect(b.api.commands).toEqual([]);
         expect(b.owner.getState()).toMatchObject({ error: 'Leave expedition first', moves: [committed] });
         b.block(null);
         await b.owner.enter(committed);
@@ -138,49 +157,91 @@ describe('Move together browser lifecycle', () => {
 
     it('sends only the scoped room identity from a richer current-room snapshot', async () => {
         const b = browser();
-        b.setMoves([]);
+        b.api.setMoves([]);
         await b.owner.start();
         await b.owner.propose(destination);
-        expect(b.commands[0].source).toEqual(source);
+        expect(b.api.commands[0].source).toEqual(source);
     });
 
     it('re-reads a notification that arrives while the preceding read is in flight', async () => {
         const b = browser();
-        b.setMoves([]);
+        b.api.setMoves([]);
+        const reading = Promise.withResolvers<void>();
         let release: (moves: readonly GroupMove[]) => void = () => {};
         b.api.list.mockImplementationOnce(() =>
             new Promise((resolve) => {
                 release = resolve;
+                reading.resolve();
             })
         );
         const started = b.owner.start();
-        await Promise.resolve();
-        b.setMoves([{ ...committed, status: 'proposed', completedAtEpochMs: null }]);
+        await reading.promise;
+        b.api.setMoves([{ ...committed, status: 'proposed', completedAtEpochMs: null }]);
         b.notify();
         release([]);
         await started;
         expect(b.owner.getState().moves[0]?.status).toBe('proposed');
     });
 
+    it.each([0, 1, 2, 3, 4, 5, 6, 7])('observes a refresh requested during read settlement at microtask offset %i', async (offset) => {
+        const b = browser();
+        const pending: GroupMove = { ...committed, status: 'proposed', completedAtEpochMs: null };
+        const refreshed = Promise.withResolvers<void>();
+        b.api.list.mockImplementationOnce(async () => {
+            afterMicrotasks(offset, () => {
+                b.api.setMoves([pending]);
+                b.owner.refresh().then(refreshed.resolve, refreshed.reject);
+            });
+            return [];
+        });
+        await b.owner.start();
+        await refreshed.promise;
+        expect(b.owner.getState().moves).toEqual([pending]);
+    });
+
+    it('aborts and isolates the previous session even when subscription cleanup throws', async () => {
+        const b = browser();
+        const pending: GroupMove = { ...committed, status: 'proposed', completedAtEpochMs: null };
+        b.api.setMoves([pending]);
+        await b.owner.start();
+        const reading = Promise.withResolvers<AbortSignal>();
+        const oldRead = Promise.withResolvers<readonly GroupMove[]>();
+        b.api.list.mockImplementationOnce(async (_scope, _session, signal) => {
+            reading.resolve(signal);
+            return await oldRead.promise;
+        });
+        const refreshing = b.owner.refresh();
+        const signal = await reading.promise;
+        b.unsubscribeAuth.mockImplementationOnce(() => { throw new Error('cleanup failure'); });
+        expect(() => b.owner.stop()).toThrow(AggregateError);
+        expect(signal.aborted).toBe(true);
+        expect(b.owner.getState()).toEqual({ moves: [], busy: false, enteringMoveId: null, error: null });
+        b.api.setMoves([pending]);
+        await b.owner.start();
+        oldRead.resolve([]);
+        await refreshing;
+        expect(b.owner.getState().moves).toEqual([pending]);
+    });
+
     it('keeps the current proposal readable when refreshing an older room is forbidden', async () => {
         const b = browser();
         const pending: GroupMove = { ...committed, moveId: 'pending', status: 'proposed', completedAtEpochMs: null };
         const old: GroupMove = { ...committed, participants: committed.participants.map((participant) => ({ ...participant, arrivedAtEpochMs: 130 })) };
-        b.setMoves([pending, old]);
+        b.api.setMoves([pending, old]);
         b.refreshRooms.mockRejectedValue(new Error('Old room access was revoked'));
         await b.owner.start();
         expect(b.owner.getState().moves).toEqual([pending, old]);
         await b.owner.act('confirm', pending);
-        expect(b.commands[0]).toMatchObject({ action: 'confirm', moveId: 'pending' });
+        expect(b.api.commands[0]).toMatchObject({ action: 'confirm', moveId: 'pending' });
     });
 
     it('blocks confirmation before sending when the game becomes ineligible', async () => {
         const b = browser();
-        b.setMoves([]);
+        b.api.setMoves([]);
         await b.owner.start();
         b.block('Finish the match first');
         await b.owner.act('confirm', { ...committed, status: 'proposed', completedAtEpochMs: null });
-        expect(b.commands).toEqual([]);
+        expect(b.api.commands).toEqual([]);
         expect(b.owner.getState().error).toBe('Finish the match first');
     });
 
@@ -188,8 +249,19 @@ describe('Move together browser lifecycle', () => {
         const b = browser();
         await b.owner.start();
         b.selectRoom('third-room');
-        b.setMoves([committed]);
+        b.api.setMoves([committed]);
         await b.owner.refresh();
         expect(b.currentRoom().groupId).toBe('third-room');
     });
 });
+
+function afterMicrotasks(remaining: number, run: () => void): void {
+    queueMicrotask(() => {
+        if (remaining > 0) {
+            afterMicrotasks(remaining - 1, run);
+        }
+        else {
+            run();
+        }
+    });
+}
