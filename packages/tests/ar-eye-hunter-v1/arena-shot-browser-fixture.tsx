@@ -1,5 +1,6 @@
 import type { AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
 import { EngineStore } from '@babylonjs/core/Engines/engineStore.js';
+import type { Effect } from '@babylonjs/core/Materials/effect.js';
 import type { Scene } from '@babylonjs/core/scene.js';
 import {
     StrictMode,
@@ -22,6 +23,7 @@ interface FixtureSceneInput {
 interface InitialRenderer {
     readonly engine: AbstractEngine;
     readonly scene: Scene;
+    readonly floorEffect: Effect;
 }
 
 function ShotRegressionScene() {
@@ -71,13 +73,17 @@ function RendererInspection() {
             <button
                 onClick={() => {
                     const engine = EngineStore.Instances[0];
-                    if (!initial.current && engine?.scenes[0]) {
-                        initial.current = { engine, scene: engine.scenes[0] };
+                    const scene = engine?.scenes[0];
+                    const floorEffect = scene?.getMeshByName('floor')?.subMeshes?.[0]?.effect;
+                    if (!initial.current && engine && scene && floorEffect) {
+                        initial.current = { engine, scene, floorEffect };
                     }
                     setInspection(JSON.stringify({
                         sameEngine: engine !== undefined && engine === initial.current?.engine,
                         originalEngineDisposed: initial.current?.engine.isDisposed,
                         originalSceneDisposed: initial.current?.scene.isDisposed,
+                        originalFloorEffectDisposed: initial.current?.floorEffect.isDisposed,
+                        sameFloorEffect: floorEffect !== undefined && floorEffect === initial.current?.floorEffect,
                         scenes: engine?.scenes.length ?? 0,
                         loops: engine?.activeRenderLoops.length ?? 0
                     }));

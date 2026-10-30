@@ -1,4 +1,5 @@
 import { Engine } from '@babylonjs/core/Engines/engine.js';
+import { Effect } from '@babylonjs/core/Materials/effect.js';
 
 import { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 
@@ -13,6 +14,9 @@ export class ArenaCanvasRuntime {
     private scene: ArenaSceneRuntime | undefined;
 
     constructor(canvas: HTMLCanvasElement) {
+        // Babylon's application-wide policy retains compiled shaders until their engine is disposed.
+        // Room scenes still dispose independently; replacing one must not recompile the same arena materials.
+        Effect.PersistentMode = true;
         this.canvas = canvas;
         this.engine = new Engine(canvas, true, { antialias: true, preserveDrawingBuffer: true, stencil: true });
     }
