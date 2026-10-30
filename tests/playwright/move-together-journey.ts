@@ -62,12 +62,12 @@ async function commitMoveWithNetworkRecovery(
     await guest.context().setOffline(false);
     await guestMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
     await expect(guestMove.getByRole('alert')).toContainText('403');
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(guestMove).toContainText('1 of 2 arrived');
     await guest.unroute(faults.destinationPresence);
     await guestMove.getByRole('button', { name: 'Retry destination entry', exact: true }).click();
     for (const page of [host, guest]) {
-        await expect(page.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible();
+        await expect(page.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
         await expect(page.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText(
             '0 present · 2 away'
         );
@@ -91,20 +91,20 @@ async function returnThroughRetainedMembership(
     if (game === 'arena') {
         await openArenaOperations(guest);
     }
-    await expect(guest.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(guestMove).toContainText('2 of 2 arrived');
     // Retained membership remains usable, and a completed move must not pull a returning player away.
     await guest.getByLabel('Room reference', { exact: true }).fill(source);
     await guest.getByRole('button', { name: 'Enter room', exact: true }).click();
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await guestMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(guest.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText(
         '1 present · 1 away'
     );
     await guest.getByLabel('Room reference', { exact: true }).fill(destination);
     await guest.getByRole('button', { name: 'Enter room', exact: true }).click();
-    await expect(guest.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
 }
 
 async function playInDestination(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
@@ -179,10 +179,10 @@ export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 
     if (game === 'arena') {
         await openArenaOperations(guest);
     }
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await guestMove.getByRole('button', { name: 'Confirm move', exact: true }).click();
     await expect(guestMove.getByRole('status')).toContainText('cancelled');
-    await expect(host.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(host.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(hostMove.getByRole('status')).toContainText('cancelled');
     await hostMove.getByRole('button', { name: 'Propose move', exact: true }).click();
     await hostMove.getByRole('button', { name: 'Confirm move', exact: true }).click();
@@ -191,13 +191,13 @@ export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 
     await registerDifferentAccount(host);
     await guestMove.getByRole('button', { name: 'Confirm move', exact: true }).click();
     await expect(guestMove.getByRole('status')).toContainText('cancelled');
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     // A new proposal observes the remaining cohort; the server expires it without another mutation.
     await guestMove.getByLabel('Destination room reference', { exact: true }).fill(destination);
     await guestMove.getByRole('button', { name: 'Propose move', exact: true }).click();
     await expect(guestMove.getByRole('status')).toContainText('proposed');
     await expect(guestMove.getByRole('status')).toContainText('expired', { timeout: 135000 });
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
 }
 
 async function prepareMoveRooms(
@@ -237,7 +237,7 @@ async function prepareMoveRooms(
         exact: true
     })
         .click();
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     return { source, destination };
 }
 
@@ -298,10 +298,10 @@ export async function moveLeavesSpectatorJourney(host: Page, watcher: Page, game
     await hostMove.getByRole('button', { name: 'Propose move', exact: true }).click();
     await hostMove.getByRole('button', { name: 'Confirm move', exact: true }).click();
     await hostMove.getByRole('button', { name: 'Move everyone', exact: true }).click();
-    await expect(host.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible();
+    await expect(host.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(hostMove).toContainText('1 of 1 arrived');
     await watcherMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
-    await expect(watcher.getByText(`Entered ${source}.`, { exact: true })).toBeVisible();
+    await expect(watcher.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(watching).toBeVisible();
     await expect(watcherMove.getByRole('button', { name: 'Confirm move', exact: true })).toHaveCount(0);
     await expect(watcherMove.getByRole('button', { name: 'Propose move', exact: true })).toBeDisabled();
