@@ -117,8 +117,9 @@ export class WsQueueBoxServerDequeueAuthority {
 
     /**
      * The row's admitted audience as this attempt finds it (D498): a frozen-audience row's sessions the re-check still
-     * finds eligible, rejecting when the re-check cannot read so the row waits for its retry; any other row's as
-     * captured. A session the re-check drops stays expected in the receipt its admission wrote.
+     * finds eligible, rejecting when the re-check cannot read so the row waits for its retry, and nobody when no
+     * re-check is wired; any other row's as captured. A session the re-check drops stays expected in the receipt its
+     * admission wrote.
      */
     async readCurrentAudience(
         message: ALMessage,
@@ -127,9 +128,12 @@ export class WsQueueBoxServerDequeueAuthority {
         const { targetResolution, filterEligibleCapturedSessionIds } = this.dependencies;
         if (
             authority.admittedAudience === undefined || authority.sessionInvalidation !== undefined ||
-            filterEligibleCapturedSessionIds === undefined || !targetResolution.requiresFrozenAudience(message)
+            !targetResolution.requiresFrozenAudience(message)
         ) {
             return authority.admittedAudience;
+        }
+        if (filterEligibleCapturedSessionIds === undefined) {
+            return [];
         }
         return await readWsQueueBoxServerEligibleAudience({
             message,

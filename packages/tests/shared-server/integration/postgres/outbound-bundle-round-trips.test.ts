@@ -204,7 +204,7 @@ function createWsDequeueLane(sql: PSqlSql, runId: string): WsDequeueLane {
         outboundStores: stores,
         queueEngine: engine,
         dequeueTiming: undefined,
-        targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
+        targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
         readAuthenticatedConnectionScope: () => ({ scope: WS_SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance: (message, entry) => proofs.readProducerProvenance(message, entry)
     });

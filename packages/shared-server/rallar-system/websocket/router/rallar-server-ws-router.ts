@@ -26,7 +26,6 @@ import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-serv
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
-import { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
 import {
     authorizeRallarServerWsIngress,
     computeAdmittedRallarServerWsMessage,
@@ -123,11 +122,11 @@ export class RallarServerWsRouter {
 
     constructor(
         service: WsQueueBoxServerService,
-        options: RallarServerWsRouterOptions = {}
+        options: RallarServerWsRouterOptions
     ) {
         this.service = service;
         this.serverPeerId = service.name;
-        this.registry = new RallarServerWsTopicRegistry(options.grantedTopics ?? new WsGrantedTopicSet());
+        this.registry = new RallarServerWsTopicRegistry(options.grantedTopics);
         this.maxPayloadBytes = options.maxPayloadBytes ??
             RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;
@@ -471,7 +470,7 @@ export class RallarServerWsRouter {
         const publish = async (
             message: ALMessage,
             selectedFanout: RallarServerWsFanout | undefined,
-            scope = inboundScope
+            scope: StateScope | null | undefined
         ) => await this.publishToFanout({
             message,
             fanout: selectedFanout ?? fanout,
@@ -480,7 +479,8 @@ export class RallarServerWsRouter {
             senderId
         });
         return {
-            toTargets: async (targetMessage, selectedFanout) => await publish(targetMessage, selectedFanout),
+            toTargets: async (targetMessage, selectedFanout) =>
+                await publish(targetMessage, selectedFanout, inboundScope),
             toPeer: async (input) =>
                 await publish(
                     { ...input.message, targets: { mode: 'unicast', toPeerId: input.peerId } },
@@ -499,7 +499,8 @@ export class RallarServerWsRouter {
                             exceptPeerIds: options?.exceptPeerIds
                         }
                     },
-                    options?.fanout
+                    options?.fanout,
+                    inboundScope
                 ),
             toAll: async (targetMessage, options) =>
                 await publish(
@@ -507,7 +508,8 @@ export class RallarServerWsRouter {
                         ...targetMessage,
                         targets: { mode: 'broadcast', scope: 'all', exceptPeerIds: options?.exceptPeerIds }
                     },
-                    options?.fanout
+                    options?.fanout,
+                    inboundScope
                 )
         };
     }

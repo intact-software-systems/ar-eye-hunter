@@ -59,6 +59,7 @@ export async function createServerIngressFixture(
         socket: server,
         name: 'server',
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
         authorizeInboundMessage,

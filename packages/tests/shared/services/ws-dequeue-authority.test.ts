@@ -301,7 +301,7 @@ function createFixture(
         outbox: stores.workQueue,
         outboundStores: stores,
         queueEngine: engine,
-        targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
+        targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance
     };

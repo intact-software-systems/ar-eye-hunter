@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { publishRallarServerWsMessage } from '@shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts';
@@ -210,6 +211,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
     it('sends the server\'s outbox room notification to the frozen sessions only, and its receipt expects exactly them', async () => {
         const fixture = createServerFixture(['b', 'c', 'late-joiner']);
         const router = new RallarServerWsRouter(fixture.service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: Date.now,
             readServerPublishAudience: async () => Either.ofRight(AUDIENCE)
         });
@@ -268,7 +270,7 @@ function createServerFixture(roomPeerIds: readonly string[]): ServerFixture {
         outbox: backend.workQueue,
         outboundStores: { admissionStore: store, workQueue: backend.workQueue },
         queueEngine: engine,
-        targetResolver: { resolveGroupRecipients: () => roomRecipients }
+        targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => roomRecipients }
     });
     onTestFinished(() => service.dispose());
     return { service, store, engine, sockets };

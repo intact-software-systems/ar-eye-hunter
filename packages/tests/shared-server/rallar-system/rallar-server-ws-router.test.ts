@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -1265,7 +1266,7 @@ const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspac
 const AUDIENCE_SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 function createRouter(
-    options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
+    options?: Omit<ConstructorParameters<typeof RallarServerWsRouter>[1], 'grantedTopics'>
 ): RouterFixture {
     const socket = createRecordingWsServer();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
@@ -1284,7 +1285,7 @@ function createRouter(
                 : undefined,
         targetResolver: createTargetResolver()
     });
-    const router = new RallarServerWsRouter(service, options);
+    const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), ...options });
     onTestFinished(() => service.dispose());
 
     return {
@@ -1303,7 +1304,7 @@ interface IngressRouterFixture {
 }
 
 function createIngressRouter(
-    options: ConstructorParameters<typeof RallarServerWsRouter>[1],
+    options: Omit<ConstructorParameters<typeof RallarServerWsRouter>[1], 'grantedTopics'>,
     inboundStores?: ALInboundRuntimeStores,
     qosProvider?: ALQosInputProvider
 ): IngressRouterFixture {
@@ -1322,6 +1323,7 @@ function createIngressRouter(
         inboundStores,
         qosProvider,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: () => 'peer-1',
             resolvePeerRecipients: (peerId) =>
                 peerId === 'peer-1'
@@ -1331,7 +1333,7 @@ function createIngressRouter(
         }
     });
     onTestFinished(() => service.dispose());
-    return { router: new RallarServerWsRouter(service, options), service, socket };
+    return { router: new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), ...options }), service, socket };
 }
 
 interface AudienceRouterFixture {
@@ -1379,6 +1381,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
                 }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => input.fanout === 'outbox' ? Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId })) : []
@@ -1387,6 +1390,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
     onTestFinished(() => service.dispose());
     let authorizations = 0;
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         nowEpochMs: () => 1,
         authorizeRoomMessage: ({ message }) => {
             authorizations += 1;
@@ -1429,6 +1433,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
                 ? { scope: AUDIENCE_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => sessionIds.map((peerId) => ({ peerId, connectionId: peerId }))
@@ -1436,6 +1441,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
     });
     onTestFinished(() => service.dispose());
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         nowEpochMs: () => 1,
         authorizeRoomMessage: ({ message }) =>
             message.targets === undefined ? false : {
@@ -1573,6 +1579,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     onTestFinished(() => service.dispose());
     const server = {
         ws: new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             wakeOutbox: () => qboxEngine.wake()
         })
     };
@@ -1628,6 +1635,7 @@ function createTargetResolver(): WsServerTargetResolver {
     };
 
     return {
+        requiresFrozenAudience: () => false,
         resolvePeerRecipients: (peerId: string) => {
             const connectionId = connectionIdByPeerId[peerId];
             return connectionId

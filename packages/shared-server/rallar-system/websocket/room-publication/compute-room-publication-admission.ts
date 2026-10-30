@@ -3,6 +3,7 @@ import { resolveGroupPublicationPermissions } from '@shared/api/group-publicatio
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { requireActiveGroup } from '../../group-state/policy/group-policy-primitives.ts';
 import type {
     RallarServerWsRoomAudience,
     RallarServerWsTopicAccess
@@ -34,7 +35,8 @@ export namespace RoomPublicationAdmission {
 /**
  * The one WS publication decision (D487): a `members` topic reaches the room's authorized audience; a `granted` topic
  * admits a session holding effective `publish` or a listed server producer, and reaches only the sessions of the
- * principals holding effective `subscribe`. Targeting and the leader receipt only narrow either audience.
+ * principals holding effective `subscribe`. A group that is not active (archived, deleted, expired) holds no effective
+ * grant (D485). Targeting and the leader receipt only narrow either audience.
  */
 export function computeRoomPublicationAdmission(
     input: RoomPublicationAdmission.Input
@@ -55,6 +57,9 @@ export function computeRoomPublicationAudience(
         return audience;
     }
     const { snapshot, topic } = input;
+    if (requireActiveGroup(snapshot.group, input.nowEpochMs) !== undefined) {
+        return { ...audience, sessions: [] };
+    }
     const subscribers = new Set(
         snapshot.publicationGrants
             .map((grant) => grant.principalId)
@@ -63,13 +68,18 @@ export function computeRoomPublicationAudience(
     return { ...audience, sessions: audience.sessions.filter((session) => subscribers.has(session.principalId)) };
 }
 
+/** A granted topic is grants of one room: a publication that names no room's GroupRef is refused (§5.2). */
+export function toUngroupedRoomPublicationRefusal(topicId: string): RoomPublicationAdmission.Refusal {
+    return { code: 'unsupported', logMessage: `Granted WS topic ${topicId} needs a room GroupRef.` };
+}
+
 function resolveGrantedPublisherRefusal(
     input: RoomPublicationAdmission.Input,
     serverProducerIds: readonly string[]
 ): RoomPublicationAdmission.Refusal | undefined {
     const { topic, publisher } = input;
     if (readALTargetGroupRef(input.message) === undefined) {
-        return { code: 'unsupported', logMessage: `Granted WS topic ${topic.topicId} needs a room GroupRef.` };
+        return toUngroupedRoomPublicationRefusal(topic.topicId);
     }
     if (publisher.kind === 'server-producer') {
         return publisher.producerId !== undefined && serverProducerIds.includes(publisher.producerId)
@@ -79,7 +89,8 @@ function resolveGrantedPublisherRefusal(
                 logMessage: `Server producer ${publisher.producerId ?? '(none)'} may not publish on ${topic.topicId}.`
             };
     }
-    return resolveGroupPublicationPermissions(input.snapshot, publisher.principalId, topic.topicId).publish
+    return requireActiveGroup(input.snapshot.group, input.nowEpochMs) === undefined &&
+            resolveGroupPublicationPermissions(input.snapshot, publisher.principalId, topic.topicId).publish
         ? undefined
         : {
             code: 'no-publish-grant',

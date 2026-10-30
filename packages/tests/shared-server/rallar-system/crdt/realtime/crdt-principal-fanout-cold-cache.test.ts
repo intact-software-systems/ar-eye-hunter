@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -75,6 +76,7 @@ describe('CRDT principal fanout from a cold cache', () => {
                     : undefined;
             },
             targetResolver: createWsServerTargetResolver(webSocketServer, {
+                grantedTopics: new WsGrantedTopicSet(),
                 findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(cache, ref),
                 now: () => NOW
             })

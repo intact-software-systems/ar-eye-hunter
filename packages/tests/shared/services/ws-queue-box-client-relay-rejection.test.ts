@@ -473,6 +473,7 @@ async function createRelayFixture(
         queueEngine: engine,
         forwardsRoomScopedMessages: false,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: recipients
         }

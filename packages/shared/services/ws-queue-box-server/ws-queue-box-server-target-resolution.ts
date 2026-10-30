@@ -34,7 +34,7 @@ export class WsQueueBoxServerTargetResolution {
 
     /** A granted topic's message reaches only the audience frozen at its admission (D487). */
     requiresFrozenAudience(message: ALMessage): boolean {
-        return this.#targetResolver.requiresFrozenAudience?.(message) ?? false;
+        return this.#targetResolver.requiresFrozenAudience(message);
     }
 
     resolvePeerIdForConnection(connectionId: string, message: ALMessage): string | undefined {

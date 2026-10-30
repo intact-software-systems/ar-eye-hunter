@@ -1,4 +1,5 @@
 import { materializeRtcOverlayTopologyMessages } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-messages.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -17,7 +18,7 @@ it.each(['short-room', 'group-rtc-replay-33fd71196b34408d84fbf238'])(
         for (const id of ['session-1', 'session-999', 'not-a-recipient']) {
             server.addConnection(server.createConnectionContext({ id, socket: createOpenTestWebSocket() }));
         }
-        const resolver = createWsServerTargetResolver(server);
+        const resolver = createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet() });
         const recipients = pages.flatMap((message) => resolver.resolveBroadcastRecipients?.('room', message) ?? []);
         expect([...new Set(recipients.map((recipient) => recipient.connectionId))].sort()).toEqual(['session-1', 'session-999']);
         expect(pages.length).toBeGreaterThan(1);

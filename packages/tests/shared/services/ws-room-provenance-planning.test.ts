@@ -117,7 +117,7 @@ function createFixture(): RoomProvenanceFixture {
     }
     const targetResolution = new WsQueueBoxServerTargetResolution({
         socket,
-        targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'frozen', connectionId: 'peer-socket' }] }
+        targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'frozen', connectionId: 'peer-socket' }] }
     });
     const planner = new WsQueueBoxServerOutboundPlanning({
         serverPeerId: 'server',

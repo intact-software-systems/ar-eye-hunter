@@ -18,6 +18,7 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import {
@@ -94,6 +95,8 @@ interface RegisterQueueBoxOutboxPublisherInput {
     readonly publisherId: string;
     readonly timing?: RallarTimingSink;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+    /** One session's held sends, run one after the other so they reach it in the order they were held. */
+    readonly heldSends: ExclusionKeyedAdmission;
 }
 
 interface ReceiveQueueBoxPubSubMessageDependencies {
@@ -107,6 +110,8 @@ interface ReceiveQueueBoxPubSubMessageDependencies {
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
     readonly wakeQueueEngine?: () => void;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+    /** One session's held sends, run one after the other so they reach it in the order they were held. */
+    readonly heldSends: ExclusionKeyedAdmission;
 }
 
 interface SendRemoteQueueBoxOutboxEntryDependencies {
@@ -117,6 +122,8 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
     readonly jitterUnit: () => number;
     readonly wakeQueueEngine?: () => void;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+    /** One session's held sends, run one after the other so they reach it in the order they were held. */
+    readonly heldSends: ExclusionKeyedAdmission;
 }
 
 interface RequeueFailedRemoteOutboxEntryInput {
@@ -165,6 +172,7 @@ export function installQueueBoxPubSubBridge(
         jitterUnit = Math.random,
         clock = { nowMs: Date.now }
     } = options;
+    const heldSends = new ExclusionKeyedAdmission({ maxConcurrent: Number.MAX_SAFE_INTEGER, keyedChainsFirst: false });
 
     registerQueueBoxOutboxPublisher({
         wsQBoxServerService,
@@ -173,6 +181,7 @@ export function installQueueBoxPubSubBridge(
         publisherId,
         timing,
         filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+        heldSends,
         receiptObserver: options.receiptObserver
     });
     const readiness = timeRallarAsync(
@@ -194,7 +203,8 @@ export function installQueueBoxPubSubBridge(
                     jitterUnit,
                     onValidatedOutboxKeyReceived: options.onValidatedOutboxKeyReceived,
                     wakeQueueEngine: options.wakeQueueEngine,
-                    filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds
+                    filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+                    heldSends
                 });
             });
         }
@@ -385,7 +395,8 @@ async function receiveQueueBoxPubSubMessage(
         retryPolicy: options.retryPolicy,
         jitterUnit: options.jitterUnit,
         wakeQueueEngine: options.wakeQueueEngine,
-        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds
+        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+        heldSends: options.heldSends
     });
 }
 
@@ -493,7 +504,10 @@ async function readCapturedPublicationPolicy(
 function deferAwaitedCapturedRecipients(
     input: SendToCapturedLocalTargetsInput,
     result: Pick<WsServerLiveSendResult, 'failedCount'>,
-    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+    options: Pick<
+        SendRemoteQueueBoxOutboxEntryDependencies,
+        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds' | 'heldSends'
+    >
 ): ExpectedConnectionHolds.AudienceHold {
     const { policy } = input;
     if (result.failedCount > 0 || policy === undefined) {
@@ -502,8 +516,15 @@ function deferAwaitedCapturedRecipients(
     return options.wsQBoxServerService.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
         expiresAtEpochMs: input.entry.audit.expiryTs.epochMilliseconds,
         send: (sessionId) => {
-            void sendToCapturedLocalTargets({ ...input, policy: { ...policy, admittedAudience: [sessionId] } }, options)
-                .catch((error) => console.error('Held WebSocket send failed:', error));
+            // One session's held rows re-check one after the other, so they reach it in the order they were held.
+            void options.heldSends.admit(
+                sessionId,
+                () =>
+                    sendToCapturedLocalTargets(
+                        { ...input, policy: { ...policy, admittedAudience: [sessionId] } },
+                        options
+                    )
+            ).catch((error) => console.error('Held WebSocket send failed:', error));
         }
     });
 }
@@ -522,20 +543,37 @@ async function sendToCapturedLocalTargets(
             new TypeError('Captured WS recipient authority differs from the publication target')
         );
     }
-    const captured = policy?.admittedAudience;
-    const rechecked = isWsQueueBoxServerCapturedSessionRow(message, entry.key) ||
-        options.wsQBoxServerService.requiresFrozenAudience(message);
-    const eligible = !rechecked || captured === undefined ||
-            options.filterEligibleCapturedSessionIds === undefined || policy?.sessionInvalidation !== undefined
-        ? undefined
-        : await options.filterEligibleCapturedSessionIds({
-            message,
-            candidateSessionIds: captured,
-            recipientScope: resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope)
-        });
+    const eligible = await readCapturedEligibleSessionIds(input, options);
     return options.wsQBoxServerService.sendToTargetsWithResult(
         toWsQueueBoxServerCapturedSendInput({ message, key: entry.key, policy, eligibleSessionIds: eligible })
     );
+}
+
+/**
+ * The captured sessions a local send may address: re-checked for a scoped row and a frozen-audience row, nobody for a
+ * frozen-audience row with no re-check wired; undefined leaves the send to resolve the row's targets.
+ */
+async function readCapturedEligibleSessionIds(
+    { message, entry, policy }: SendToCapturedLocalTargetsInput,
+    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+): Promise<readonly string[] | undefined> {
+    const captured = policy?.admittedAudience;
+    const frozen = options.wsQBoxServerService.requiresFrozenAudience(message);
+    if (captured === undefined || policy?.sessionInvalidation !== undefined) {
+        return undefined;
+    }
+    if (!frozen && !isWsQueueBoxServerCapturedSessionRow(message, entry.key)) {
+        return undefined;
+    }
+    const filter = options.filterEligibleCapturedSessionIds;
+    if (filter === undefined) {
+        return frozen ? [] : undefined;
+    }
+    return await filter({
+        message,
+        candidateSessionIds: captured,
+        recipientScope: resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope)
+    });
 }
 
 export interface ToPubSubMessageInput {

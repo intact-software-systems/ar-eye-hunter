@@ -4,12 +4,15 @@ import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-sys
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type {
     RallarServerWsFanout,
-    RallarServerWsRoomAuthorizationInput
+    RallarServerWsPublishResult,
+    RallarServerWsRoomAuthorizationInput,
+    RallarServerWsRouterOptions,
+    RallarServerWsUnicastInputDto
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
-import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALEventRoute, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -26,6 +29,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
+import { createRecordingLiveWsPublication } from './recording-live-ws-publication.ts';
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const FEED = 'room.feed';
@@ -196,9 +200,95 @@ describe('a granted WS topic (D486, D487)', () => {
             grantedTopics: fixture.grantedTopics
         });
 
-        expect(resolver.resolveBroadcastRecipients?.('room', roomBroadcast('alice', FEED, 'unfrozen'))).toEqual([]);
-        expect(resolver.requiresFrozenAudience?.(roomBroadcast('alice', FEED, 'unfrozen'))).toBe(true);
+        const unfrozen = roomBroadcast('alice', FEED, 'unfrozen');
+        expect(resolver.resolveBroadcastRecipients?.('room', unfrozen)).toEqual([]);
+        expect(resolver.requiresFrozenAudience(unfrozen)).toBe(true);
         expect(resolver.resolveBroadcastRecipients?.('room', roomBroadcast('alice', 'room.chat', 'members'))).toHaveLength(5);
+    });
+
+    it('the resolver resolves no world, all or unicast targets on a granted topic', () => {
+        const fixture = createGrantedFixture('live-only');
+        const resolver = createWsServerTargetResolver(fixture.socketServer, {
+            findGroupSnapshotByRef: () => createSnapshot(),
+            grantedTopics: fixture.grantedTopics
+        });
+
+        for (const scope of ['world', 'all'] as const) {
+            expect(resolver.resolveBroadcastRecipients?.(scope, ungroupedSend(FEED, { mode: 'broadcast', scope }))).toEqual([]);
+            expect(resolver.resolveBroadcastRecipients?.(scope, ungroupedSend('app.news', { mode: 'broadcast', scope })))
+                .toHaveLength(5);
+        }
+        expect(resolver.resolvePeerRecipients?.('bob', ungroupedSend(FEED, { mode: 'unicast', toPeerId: 'bob' }))).toEqual([]);
+        expect(resolver.resolvePeerRecipients?.('bob', ungroupedSend('app.news', { mode: 'unicast', toPeerId: 'bob' })))
+            .toEqual([{ peerId: 'bob', connectionId: 'bob' }]);
+    });
+
+    it('a server publish of a granted topic as a world broadcast or a scope-less unicast returns refused unsupported and sends nothing', async () => {
+        const recording = createRecordingLiveWsPublication();
+        const fixture = createGrantedFixture('live-only', recording.livePublication);
+        const scope = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
+
+        const results = [
+            await fixture.router.publish({
+                message: ungroupedSend(FEED, { mode: 'broadcast', scope: 'world' }, fixture.router.serverPeerId),
+                scope,
+                producerId: PRODUCER
+            }),
+            await fixture.router.publish({
+                message: ungroupedSend(FEED, { mode: 'unicast', toPeerId: 'bob' }, fixture.router.serverPeerId),
+                scope,
+                producerId: 'unlisted-producer'
+            })
+        ];
+
+        expect(results.map((result) => [result.status, result.refusal])).toEqual([
+            ['refused', 'unsupported'],
+            ['refused', 'unsupported']
+        ]);
+        expect(recording.notices).toEqual([]);
+        await settle();
+        expect(readDeliveredBy(fixture, 'ungrouped')).toEqual({ alice: 0, 'alice-2': 0, bob: 0, carol: 0, dan: 0 });
+    });
+
+    it('a proxy publishing onto a granted topic through toAll or toPeer is refused and sends nothing', async () => {
+        const fixture = createGrantedFixture('live-only');
+        const statuses: string[] = [];
+        fixture.router.on({ topicId: 'room.chat' }, async (message, context) => {
+            const relayed = { ...message.raw, route: { ...message.raw.route, topicId: FEED } };
+            statuses.push((await context.proxy.toAll(relayed)).status);
+            statuses.push(
+                (await context.proxy.toPeer({
+                    message: relayed,
+                    peerId: 'bob',
+                    scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }
+                })).status
+            );
+        });
+
+        await fixture.service.acceptIncomingMessage(roomBroadcast('alice', 'room.chat', 'proxy-ungrouped'), 'alice');
+
+        await expect.poll(() => statuses).toEqual(['refused', 'refused']);
+        await settle();
+        expect(readDelivered(fixture.sockets.bob, 'proxy-ungrouped', FEED)).toBe(0);
+        expect(readDelivered(fixture.sockets.carol, 'proxy-ungrouped', FEED)).toBe(0);
+    });
+
+    it('a proxy toPeer without a scope still fails', async () => {
+        const fixture = createGrantedFixture('live-only');
+        const results: RallarServerWsPublishResult[] = [];
+        fixture.router.on({ topicId: 'room.chat' }, async (message, context) => {
+            results.push(
+                await context.proxy.toPeer({
+                    message: { ...message.raw, route: { ...message.raw.route, topicId: 'app.news' } },
+                    peerId: 'bob'
+                } as RallarServerWsUnicastInputDto)
+            );
+        });
+
+        await fixture.service.acceptIncomingMessage(roomBroadcast('alice', 'room.chat', 'scope-less-peer'), 'alice');
+
+        await expect.poll(() => results.map((result) => result.status)).toEqual(['failed']);
+        expect(readDelivered(fixture.sockets.bob, 'scope-less-peer', 'app.news')).toBe(0);
     });
 
     it('a demoted spectator keeps subscribe and is refused publish', async () => {
@@ -214,7 +304,10 @@ describe('a granted WS topic (D486, D487)', () => {
     });
 });
 
-function createGrantedFixture(fanout: RallarServerWsFanout): GrantedFixture {
+function createGrantedFixture(
+    fanout: RallarServerWsFanout,
+    livePublication?: RallarServerWsRouterOptions['livePublication']
+): GrantedFixture {
     const socketServer = new JsonWebSocketServer();
     const sockets = Object.fromEntries(
         (Object.keys(SESSIONS) as SessionId[]).map((sessionId) => [sessionId, new TestWebSocket(`ws://${sessionId}`)])
@@ -256,7 +349,8 @@ function createGrantedFixture(fanout: RallarServerWsFanout): GrantedFixture {
         readServerPublishAudience: createServerPublishRoomAudienceReader({
             readGroupSnapshot: () => Promise.resolve(readSnapshot()),
             nowEpochMs: Date.now
-        })
+        }),
+        livePublication
     }).install().defineTopic({
         topicId: FEED,
         scope: 'room',
@@ -327,6 +421,12 @@ function roomBroadcast(senderId: string, topicId: string, msgId: string): ALMess
         ttlMs: 30_000
     });
     return { ...base, id: { ...base.id, msgId } };
+}
+
+/** A send that names no room: a world or all broadcast, or a unicast without a GroupRef. */
+function ungroupedSend(topicId: string, targets: ALTargets, senderId = 'alice'): ALMessage {
+    const base = newALBroadcastMessage(senderId, newALEventRoute(topicId, 'world', 'ungrouped'), 'world', 'feed.v1', {});
+    return { ...base, id: { ...base.id, msgId: 'ungrouped' }, targets };
 }
 
 async function settle(): Promise<void> {

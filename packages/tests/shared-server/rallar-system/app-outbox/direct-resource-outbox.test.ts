@@ -454,7 +454,7 @@ describe('direct resource outbox writes', () => {
             outbox: outbox,
             socket: socket,
             name: 'server-1',
-            targetResolver: { resolveBroadcastRecipients },
+            targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients },
             readProducerProvenance: (message, row) => proofReader.readProducerProvenance(message, row),
             readAuthenticatedConnectionScope: () => ({ scope: producer.ref, expiresAtEpochMs: producer.now + 60_000 }),
             queueEngine: engine
@@ -496,7 +496,7 @@ describe('direct resource outbox writes', () => {
             outbox: outbox,
             socket: socket,
             name: 'server-1',
-            targetResolver: { resolveBroadcastRecipients },
+            targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients },
             outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome),
             readProducerProvenance: (message, row) => proofReader.readProducerProvenance(message, row),
             readAuthenticatedConnectionScope: () => ({ scope: producer.ref, expiresAtEpochMs: producer.now + 60_000 }),

@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
@@ -23,7 +24,7 @@ Deno.test('required server assembly preserves explicit owners and mounts each in
         repositories,
         appDataRepository: APP_DATA_REPOSITORY,
         nowEpochMs: () => 1_000,
-        ws: {},
+        ws: { grantedTopics: new WsGrantedTopicSet() },
         systemInstallers,
         routeInstallers
     });
@@ -47,7 +48,7 @@ Deno.test('required server assembly retains the room-scoped game authority surfa
         repositories: new RepositoryManager(),
         appDataRepository: APP_DATA_REPOSITORY,
         nowEpochMs: () => 1_000,
-        ws: {},
+        ws: { grantedTopics: new WsGrantedTopicSet() },
         systemInstallers: createSystemInstallers(state),
         routeInstallers: createRouteInstallers(state)
     });

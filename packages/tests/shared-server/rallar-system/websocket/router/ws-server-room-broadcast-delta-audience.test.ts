@@ -1,4 +1,5 @@
 import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import {
     newALBroadcastMessage,
@@ -34,6 +35,7 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
     it('delivers to the persisted audience without consulting a group snapshot', () => {
         const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'joining-session', 'stranger-session']);
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => createDeltaEnvelopeFixtureGroupSnapshot([ALICE]),
             now: () => DELTA_ENVELOPE_FIXTURE_NOW
         });
@@ -51,6 +53,7 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
     it('intersects the persisted audience with locally open connections only', () => {
         const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session']);
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => createDeltaEnvelopeFixtureGroupSnapshot([ALICE, JOINING]),
             now: () => DELTA_ENVELOPE_FIXTURE_NOW
         });
@@ -71,6 +74,7 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
     it('delivers the persisted snapshot audience when the local snapshot is absent', () => {
         const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'joining-session', 'stranger-session']);
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => undefined,
             now: () => DELTA_ENVELOPE_FIXTURE_NOW
         });
@@ -109,6 +113,7 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
     it('rejects a persisted audience carried for a different group', () => {
         const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'foreign-session']);
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => createDeltaEnvelopeFixtureGroupSnapshot([ALICE]),
             now: () => DELTA_ENVELOPE_FIXTURE_NOW
         });

@@ -53,10 +53,26 @@ Deno.test('a server-origin granted row re-checks the subscribe half only', async
     assert.deepEqual(eligible, ['alice']);
 });
 
-Deno.test('a granted row rejects when the snapshot read fails or finds no room, so its step sends nothing and retries', async () => {
-    for (const read of [() => Promise.reject(new Error('probe failed')), () => Promise.resolve(undefined)]) {
-        await assert.rejects(
-            filterGrantedWsRecipientSessionIds({ ...portInput(feedMessage('alice'), ['bob']), readCurrentSnapshot: read })
+Deno.test('a granted row rejects when the snapshot read fails, so its step sends nothing and retries', async () => {
+    await assert.rejects(
+        filterGrantedWsRecipientSessionIds({
+            ...portInput(feedMessage('alice'), ['bob']),
+            readCurrentSnapshot: () => Promise.reject(new Error('probe failed'))
+        })
+    );
+});
+
+Deno.test('a granted row whose read finds no current snapshot of its room, or a foreign one, reaches nobody', async () => {
+    const foreign = grantedSnapshot();
+    for (
+        const read of [
+            () => Promise.resolve(undefined),
+            () => Promise.resolve({ ...foreign, group: { ...foreign.group, groupId: 'other-room' } })
+        ]
+    ) {
+        assert.deepEqual(
+            await filterGrantedWsRecipientSessionIds({ ...portInput(feedMessage('alice'), ['bob']), readCurrentSnapshot: read }),
+            []
         );
     }
 });

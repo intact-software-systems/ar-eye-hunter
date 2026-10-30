@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { installLiveWsNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
+import { encodeLiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
@@ -24,10 +26,13 @@ import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
+import { API_V1_LIVE_WS_NOTICE_CHANNEL, createApiV1LiveWsNoticeTransport } from '../../src/db/api-v1-live-ws-notice-transport.ts';
+import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
 import { filterGrantedWsRecipientSessionIds } from '../../src/services/filter-granted-ws-recipient-session-ids.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
 
@@ -35,6 +40,7 @@ const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', gro
 const FEED = 'room.feed';
 const SERVER_PEER_ID = 'room-granted-delivery';
 const PRODUCER = 'feed-producer';
+const MEMBERS_TOPIC = 'room.chat';
 
 type Permissions = GroupPublicationTopicPermissions;
 type Grants = Readonly<Record<string, Permissions | undefined>>;
@@ -54,14 +60,18 @@ interface GrantedDeliveryHarness {
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     /** Each authority read takes the next answer; the last one repeats. */
     readonly reads: (() => Promise<GroupSnapshot | undefined>)[];
+    /** When set, the D498 re-check reads this instead of taking its turn in `reads`. */
+    recheckRead: (() => Promise<GroupSnapshot | undefined>) | undefined;
     readonly readCount: () => number;
 }
 
 interface GrantedDeliveryHarnessInput {
+    /** The fanout of the granted feed and of the members topic `room.chat` the harness also defines. */
     readonly fanout: RallarServerWsFanout;
-    readonly topicId?: string;
-    /** Installs no WS router topic routing beyond the granted feed; installs a cluster bridge when set. */
+    /** Installs a cluster bridge over a loopback pub/sub. */
     readonly cluster?: boolean;
+    /** Wires the server, and the bridge when installed, without the D498 re-check port: the half-wired composition. */
+    readonly withoutRecheck?: boolean;
 }
 
 Deno.test('each of socket admission, pending replay, inbox dispatch and route refuses a publication without a grant', async () => {
@@ -174,6 +184,34 @@ Deno.test('a revoke between enqueue and dequeue skips the revoked session at the
     });
 });
 
+Deno.test('two held granted rows for one session reach it in admission order however long their re-checks take', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        addConnection(harness.server, 'alice');
+        harness.server.expectedConnections.expect({ id: 'bob', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
+        let rechecks = 0;
+        // Each row's dequeue re-checks once; the first held re-check then answers after the second.
+        harness.recheckRead = async () => {
+            rechecks += 1;
+            if (rechecks === 3) {
+                await new Promise((resolve) => setTimeout(resolve, 40));
+            }
+            return createSnapshot(GRANTS);
+        };
+        const first = feedMessage('alice', 'held-first');
+        const second = feedMessage('alice', 'held-second');
+
+        await harness.service.acceptIncomingMessage(first, 'alice');
+        await harness.service.acceptIncomingMessage(second, 'alice');
+        await waitFor(() => rechecks >= 2);
+        await settle();
+        const bob = openLateConnection(harness.server, 'bob');
+        await waitFor(() => readDelivered(bob, first) > 0 && readDelivered(bob, second) > 0);
+
+        const order = bob.map((frame) => decodePersistedALMessage(frame).id.msgId).filter((msgId) => msgId.startsWith('held-'));
+        assert.deepEqual(order, ['held-first', 'held-second']);
+    });
+});
+
 Deno.test('a server-producer outbox row skips a subscriber revoked before dequeue and still reaches the others', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
@@ -209,12 +247,139 @@ Deno.test('a failed snapshot read at dequeue sends nothing and keeps the row for
     });
 });
 
+for (const cluster of [false, true]) {
+    Deno.test(`a granted outbox row with no re-check port reaches nobody (${cluster ? 'cluster send' : 'single instance'})`, async () => {
+        await withHarness({ fanout: 'outbox', cluster, withoutRecheck: true }, async (harness) => {
+            const frames = addAudience(harness.server);
+            const message = feedMessage('alice', `unchecked-${cluster ? 'cluster' : 'single'}`);
+
+            assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
+            await waitFor(async () => (await readRelayRows(harness, message))[0]?.status === EntityStatus.COMPLETED);
+            await settle();
+
+            assert.equal(readDelivered(frames.bob, message), 0);
+            assert.equal(readDelivered(frames.carol, message), 0);
+        });
+    });
+}
+
+Deno.test('a run of granted rows for a missing room does not stop a members row\'s delivery and does not open the dequeue breaker', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        const granted = Array.from({ length: 12 }, (_, index) => feedMessage('alice', `missing-room-${index}`));
+        // Admission, dispatch and route read the room; every dequeue re-check then finds it gone.
+        harness.recheckRead = () => Promise.resolve(undefined);
+        for (const message of granted) {
+            await harness.service.acceptIncomingMessage(message, 'alice');
+        }
+        await waitFor(async () =>
+            (await Promise.all(granted.map((message) => readRelayRows(harness, message))))
+                .every((rows) => rows[0]?.status === EntityStatus.COMPLETED)
+        );
+        const members = feedMessage('alice', 'members-after-missing-room', undefined, MEMBERS_TOPIC);
+
+        await harness.service.acceptIncomingMessage(members, 'alice');
+        await waitFor(() => readDelivered(frames.bob, members) > 0);
+
+        assert.equal(readDelivered(frames.bob, members), 1);
+        assert.equal(readDelivered(frames.carol, members), 1);
+        assert.equal(granted.some((message) => readDelivered(frames.bob, message) > 0), false);
+    });
+});
+
+Deno.test('a granted row whose publisher\'s session left before dequeue reaches nobody and completes', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        const departed = createSnapshot(GRANTS);
+        harness.reads.push(...grantedReads(3), () =>
+            Promise.resolve({
+                ...departed,
+                activeSessions: departed.activeSessions.filter((session) => session.sessionId !== 'alice')
+            }));
+        const message = feedMessage('alice', 'publisher-departed');
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(async () => (await readRelayRows(harness, message))[0]?.status === EntityStatus.COMPLETED);
+        await settle();
+
+        assert.equal((await readRelayRows(harness, message))[0]?.status, EntityStatus.COMPLETED);
+        assert.equal(readDelivered(frames.bob, message), 0);
+        assert.equal(readDelivered(frames.carol, message), 0);
+    });
+});
+
+Deno.test('a granted row of a room archived before dequeue reaches nobody', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        const snapshot = createSnapshot(GRANTS, 4);
+        harness.reads.push(...grantedReads(3), () =>
+            Promise.resolve({
+                ...snapshot,
+                group: { ...snapshot.group, status: 'archived', archived: snapshot.group.updated, deleted: null }
+            }));
+        const message = feedMessage('alice', 'archived-room');
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => harness.readCount() >= 4);
+        await settle();
+
+        assert.equal(readDelivered(frames.bob, message), 0);
+        assert.equal(readDelivered(frames.carol, message), 0);
+    });
+});
+
+Deno.test('a remote node\'s broad live notice on a granted topic reaches no session', async () => {
+    const localBus = createLocalQueuePubSubBus();
+    const remote = new JsonWebSocketServer();
+    const frames = addAudience(remote);
+    const grantedTopics = new WsGrantedTopicSet();
+    grantedTopics.add(FEED);
+    const targetResolution = new WsQueueBoxServerTargetResolution({
+        socket: remote,
+        targetResolver: createWsServerTargetResolver(remote, { grantedTopics })
+    });
+    const delivered: string[] = [];
+    await installLiveWsNoticeSubscriber({
+        transport: createApiV1LiveWsNoticeTransport({ mode: 'local', publisherId: 'remote', notification: null, localBus, nowMs: Date.now }),
+        channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
+        publisherId: 'remote',
+        nowMs: Date.now,
+        inboundStores: [],
+        // As the middleware resolves a broad notice's recipients on the receiving node.
+        resolveBroadRecipientSessionIds: (message) => targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
+        filterEligibleRecipientSessionIds: (sessionIds) => sessionIds,
+        sendToTargetsWithResult: ({ message, recipientSessionIds }) => {
+            delivered.push(...recipientSessionIds.map((sessionId) => `${message.route.topicId}:${sessionId}`));
+        }
+    });
+    const origin = createApiV1LiveWsNoticeTransport({ mode: 'local', publisherId: 'origin', notification: null, localBus, nowMs: Date.now });
+
+    for (const topicId of [FEED, 'app.news']) {
+        const encoded = encodeLiveWsNotice({
+            channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
+            publisherId: 'origin',
+            scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId },
+            expiresAtMs: Date.now() + 30_000,
+            audience: { mode: 'broad', targetMode: 'world' },
+            message: worldMessage(topicId)
+        });
+        assert.equal(encoded.kind, 'inline');
+        if (encoded.kind === 'inline') {
+            await origin.publish(encoded.notice);
+        }
+    }
+    await settle();
+
+    assert.deepEqual(delivered, ['app.news:alice', 'app.news:bob', 'app.news:carol']);
+    assert.equal(frames.bob.length, 0);
+});
+
 Deno.test('a members-topic outbox row is narrowed by the durable filter only', async () => {
-    await withHarness({ fanout: 'outbox', topicId: 'room.chat' }, async (harness) => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // No principal holds a grant on room.chat: the row is a members row, so no grant decides its sends.
         harness.reads.push(() => Promise.resolve(createSnapshot({})));
-        const message = feedMessage('alice', 'members-row', undefined, 'room.chat');
+        const message = feedMessage('alice', 'members-row', undefined, MEMBERS_TOPIC);
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) > 0 && readDelivered(frames.carol, message) > 0);
@@ -259,6 +424,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
         const next = reads.length > 1 ? reads.shift()! : reads[0];
         return next === undefined ? Promise.resolve(createSnapshot(GRANTS)) : next();
     };
+    const readRecheckSnapshot = (ref: GroupRef) => harness.recheckRead?.() ?? readCurrentSnapshot(ref);
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: stores.workQueue,
@@ -271,13 +437,13 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                 ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => createSnapshot(GRANTS), grantedTopics }),
-        filterEligibleCapturedSessionIds: (captured) =>
+        filterEligibleCapturedSessionIds: input.withoutRecheck === true ? undefined : (captured) =>
             filterGrantedWsRecipientSessionIds({
                 ...captured,
                 durableEligibleSessionIds: captured.candidateSessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
                 grantedTopics,
                 serverPeerId: SERVER_PEER_ID,
-                readCurrentSnapshot,
+                readCurrentSnapshot: readRecheckSnapshot,
                 nowEpochMs: Date.now()
             })
     });
@@ -289,30 +455,36 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
         ),
         readServerPublishAudience: createServerPublishRoomAudienceReader({ readGroupSnapshot: readCurrentSnapshot, nowEpochMs: Date.now })
     });
-    router.defineTopic(
-        input.topicId === undefined
-            ? { topicId: FEED, scope: 'room', participation: 'granted', serverProducerIds: [PRODUCER], fanout: input.fanout }
-            : { topicId: input.topicId, scope: 'room', participation: 'members', fanout: input.fanout }
-    );
+    router.defineTopic({ topicId: FEED, scope: 'room', participation: 'granted', serverProducerIds: [PRODUCER], fanout: input.fanout });
+    router.defineTopic({ topicId: MEMBERS_TOPIC, scope: 'room', participation: 'members', fanout: input.fanout });
     router.install();
+    const harness: GrantedDeliveryHarness = {
+        service,
+        router,
+        server,
+        stores,
+        reads,
+        recheckRead: undefined,
+        readCount: () => readCount
+    };
     if (input.cluster === true) {
         await installQueueBoxPubSubBridge({
             wsQBoxServerService: service,
             bridge: new LoopbackBridge(),
             channel: 'granted',
             publisherId: 'publisher',
-            filterEligibleCapturedSessionIds: (captured) =>
+            filterEligibleCapturedSessionIds: input.withoutRecheck === true ? undefined : (captured) =>
                 filterGrantedWsRecipientSessionIds({
                     ...captured,
                     durableEligibleSessionIds: captured.candidateSessionIds,
                     grantedTopics,
                     serverPeerId: SERVER_PEER_ID,
-                    readCurrentSnapshot,
+                    readCurrentSnapshot: readRecheckSnapshot,
                     nowEpochMs: Date.now()
                 })
         });
     }
-    return { service, router, server, stores, reads, readCount: () => readCount };
+    return harness;
 }
 
 function grantedReads(count: number): (() => Promise<GroupSnapshot | undefined>)[] {
@@ -378,6 +550,14 @@ function feedMessage(senderId: string, msgId: string, minSnapshotVersion?: numbe
     return { ...base, id: { ...base.id, msgId } };
 }
 
+/** A server's world broadcast with a deadline, as another node publishes it live. */
+function worldMessage(topicId: string): ALMessage {
+    const base = newALBroadcastMessage(SERVER_PEER_ID, newALEventRoute(topicId, 'world', 'broad-notice'), 'world', 'feed.v1', {}, {
+        ttlMs: 30_000
+    });
+    return { ...base, id: { ...base.id, msgId: `broad-${topicId}` } };
+}
+
 function receiverAck(message: ALMessage, recipient: string): ALMessage {
     return newALAckControlMessage({ v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-room-granted-delivery' }, {
         ackedMsgId: message.id.msgId,
@@ -439,8 +619,8 @@ async function readRelayRows(harness: GrantedDeliveryHarness, message: ALMessage
     );
 }
 
-async function waitFor(isSettled: () => boolean): Promise<void> {
-    for (let attempt = 0; attempt < 300 && !isSettled(); attempt += 1) {
+async function waitFor(isSettled: () => boolean | Promise<boolean>): Promise<void> {
+    for (let attempt = 0; attempt < 300 && !await isSettled(); attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 5));
     }
 }

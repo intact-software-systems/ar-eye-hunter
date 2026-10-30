@@ -121,6 +121,7 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
         webSocketServer: socket,
         inboundStores,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => sockets[peerId] === undefined ? [] : [{ peerId, connectionId: peerId }]
         },

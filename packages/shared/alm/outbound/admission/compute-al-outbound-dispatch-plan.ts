@@ -54,9 +54,11 @@ function toAttemptAudience(
     captured: readonly string[] | undefined,
     rechecked: readonly string[] | undefined
 ): readonly string[] | undefined {
-    return captured === undefined || rechecked === undefined
-        ? captured
-        : captured.filter((sessionId) => rechecked.includes(sessionId));
+    if (captured === undefined || rechecked === undefined) {
+        return captured;
+    }
+    const eligible = new Set(rechecked);
+    return captured.filter((sessionId) => eligible.has(sessionId));
 }
 
 export function requireALOutboundPlannedMessage(source: ALMessage, planned: ALMessage): void {

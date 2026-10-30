@@ -271,6 +271,7 @@ function createControlInstance(
                 ? { scope: SCOPE, expiresAtEpochMs: Date.now() + 60_000 }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: recipients
         },

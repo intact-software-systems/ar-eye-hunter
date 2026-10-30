@@ -18,41 +18,47 @@ interface ResolveBroadcastRecipientsInput {
     readonly options: WsServerTargetResolutionOptions;
 }
 
+/** A granted topic's message is never resolved from its targets, on any branch: only its frozen audience is sent to. */
 export function createWsServerTargetResolver(
     webSocketServer: JsonWebSocketServer,
-    options: WsServerTargetResolutionOptions = {}
+    options: WsServerTargetResolutionOptions
 ): WsServerTargetResolver {
-    const resolveGroupRecipients = (
-        groupId: string,
-        message: ALMessage
-    ): readonly WsServerResolvedRecipient[] =>
-        resolveWsGroupTargetRecipients({
-            groupId,
-            message,
-            webSocketServer,
-            options
-        });
-
+    const requiresFrozenAudience = (message: ALMessage) => options.grantedTopics.has(message.route.topicId);
     return {
-        resolvePeerRecipients: (peerId, message) => {
-            const principalRecipients = resolveWsCrdtPrincipalTargetRecipients({
-                principalId: peerId,
-                message,
-                webSocketServer,
-                options
-            });
-            if (principalRecipients !== undefined) {
-                return principalRecipients;
-            }
-            const connection = webSocketServer.connections.get(peerId);
-            return connection?.isOpen ? [{ peerId, connectionId: peerId }] : [];
-        },
-        resolveGroupRecipients,
+        resolvePeerRecipients: (peerId, message) =>
+            requiresFrozenAudience(message) ? [] : resolvePeerRecipients({ peerId, message, webSocketServer, options }),
+        resolveGroupRecipients: (groupId, message) =>
+            requiresFrozenAudience(message)
+                ? []
+                : resolveWsGroupTargetRecipients({ groupId, message, webSocketServer, options }),
         resolveBroadcastRecipients: (scope, message) =>
-            resolveBroadcastRecipients({ scope, message, webSocketServer, options }),
+            requiresFrozenAudience(message)
+                ? []
+                : resolveBroadcastRecipients({ scope, message, webSocketServer, options }),
         resolvePeerIdForConnection: (connectionId) => connectionId,
-        requiresFrozenAudience: (message) => options.grantedTopics?.has(message.route.topicId) ?? false
+        requiresFrozenAudience
     };
+}
+
+interface ResolvePeerRecipientsInput {
+    readonly peerId: string;
+    readonly message: ALMessage;
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly options: WsServerTargetResolutionOptions;
+}
+
+function resolvePeerRecipients(input: ResolvePeerRecipientsInput): readonly WsServerResolvedRecipient[] {
+    const { peerId, message, webSocketServer, options } = input;
+    const principalRecipients = resolveWsCrdtPrincipalTargetRecipients({
+        principalId: peerId,
+        message,
+        webSocketServer,
+        options
+    });
+    if (principalRecipients !== undefined) {
+        return principalRecipients;
+    }
+    return webSocketServer.connections.get(peerId)?.isOpen ? [{ peerId, connectionId: peerId }] : [];
 }
 
 function resolveBroadcastRecipients(input: ResolveBroadcastRecipientsInput): readonly WsServerResolvedRecipient[] {

@@ -122,8 +122,8 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
 
 /**
  * The trusted server speaks for the relay it is, so its `resync-required`, `held-by-other`, `unsupported` and
- * `no-publish-grant` NACKs need no expected peer, and neither does its `unauthorized`, `membership-fenced` or `no-leader` refusal of a message
- * before any receipt row exists.
+ * `no-publish-grant` NACKs need no expected peer, and neither does its `unauthorized`, `membership-fenced` or
+ * `no-leader` refusal of a message before any receipt row exists.
  */
 function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
     return resolveALOutboundRelayRejection(read)?.relay === 'trusted-server';

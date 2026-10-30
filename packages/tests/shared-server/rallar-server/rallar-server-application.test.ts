@@ -12,6 +12,7 @@ import type {
     AppDataUpsertInput
 } from '@shared-server/app-data/app-data-repository.ts';
 import { createRallarServerApplication } from '@shared-server/mod.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { InMemoryQueueBox, JsonWebSocketServer } from '@shared/mod.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -81,7 +82,7 @@ describe('RallarServerApplication', () => {
             repositories,
             appDataRepository,
             nowEpochMs: () => 1_000,
-            ws: {},
+            ws: { grantedTopics: new WsGrantedTopicSet() },
             systemInstallers: {
                 installSystemTopics: () => events.push('topics'),
                 installWebSocketLifecycle: () => events.push('lifecycle')

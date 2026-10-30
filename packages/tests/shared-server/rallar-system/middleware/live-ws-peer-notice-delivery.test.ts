@@ -47,7 +47,7 @@ describe('middleware remote live WS notices', () => {
         const runtime = createRallarMiddlewareInfrastructure({
             ...fixture.options,
             webSocketServer: socket,
-            targetResolver: {},
+            targetResolver: { requiresFrozenAudience: () => false },
             readAuthenticatedConnectionScope: (connection) =>
                 socket.connections.get(connection.id) === connection
                     ? { scope: { applicationId: 'app', workspaceId }, principalId, expiresAtEpochMs: Date.now() + 60_000 }
@@ -137,7 +137,7 @@ describe('middleware remote live WS notices', () => {
         const runtime = createRallarMiddlewareInfrastructure({
             ...fixture.options,
             webSocketServer: socket,
-            targetResolver: {},
+            targetResolver: { requiresFrozenAudience: () => false },
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: nowMs + 60_000 }),
             liveWsNoticeSubscriber: {
                 transport,

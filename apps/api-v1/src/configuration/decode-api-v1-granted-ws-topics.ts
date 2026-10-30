@@ -37,22 +37,29 @@ function decodeGrantedWsTopic(
     const issues: Issues = [
         ...Object.keys(value).filter((key) => !TOPIC_KEYS.has(key))
             .map((key) => issue(`${path}.${key}`, 'unknown-key', `${key} is not a field of a granted WS topic.`)),
-        ...validateRallarWsUserTopicId(topicId, `${path}.topicId`).issues,
-        ...(typeId === undefined || isNonEmptyString(typeId)
-            ? []
-            : [issue(`${path}.typeId`, 'invalid-string', 'typeId must be a non-empty string.')]),
-        ...(isFanout(fanout)
-            ? []
-            : [issue(`${path}.fanout`, 'invalid-fanout', 'fanout must be live-only, outbox or none.')]),
-        ...(Array.isArray(serverProducerIds) && serverProducerIds.every(isNonEmptyString)
-            ? []
-            : [issue(`${path}.serverProducerIds`, 'invalid-list', 'serverProducerIds must list non-empty strings.')])
+        ...validateRallarWsUserTopicId(topicId, `${path}.topicId`).issues
     ];
-    return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight({
-        topicId: topicId as string,
-        ...(typeof typeId === 'string' ? { typeId } : {}),
-        fanout: fanout as RallarServerWsFanout,
-        serverProducerIds: [...(serverProducerIds as readonly string[])]
+    if (typeId !== undefined && !isNonEmptyString(typeId)) {
+        issues.push(issue(`${path}.typeId`, 'invalid-string', 'typeId must be a non-empty string.'));
+    }
+    if (!isFanout(fanout)) {
+        issues.push(issue(`${path}.fanout`, 'invalid-fanout', 'fanout must be live-only, outbox or none.'));
+    }
+    if (!isNonEmptyStringList(serverProducerIds)) {
+        issues.push(
+            issue(`${path}.serverProducerIds`, 'invalid-list', 'serverProducerIds must list non-empty strings.')
+        );
+    }
+    if (
+        issues.length > 0 || !isNonEmptyString(topicId) || !isFanout(fanout) || !isNonEmptyStringList(serverProducerIds)
+    ) {
+        return Either.ofLeft(issues);
+    }
+    return Either.ofRight({
+        topicId,
+        ...(isNonEmptyString(typeId) ? { typeId } : {}),
+        fanout,
+        serverProducerIds: [...serverProducerIds]
     });
 }
 
@@ -73,6 +80,10 @@ function isJsonObject(value: unknown): value is ApiJsonObject {
 
 function isFanout(value: unknown): value is RallarServerWsFanout {
     return typeof value === 'string' && FANOUTS.has(value);
+}
+
+function isNonEmptyStringList(value: unknown): value is readonly string[] {
+    return Array.isArray(value) && value.every(isNonEmptyString);
 }
 
 function isNonEmptyString(value: unknown): value is string {

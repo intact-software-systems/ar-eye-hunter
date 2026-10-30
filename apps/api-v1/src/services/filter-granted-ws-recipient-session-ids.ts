@@ -25,7 +25,8 @@ export interface FilterGrantedWsRecipientSessionIdsInput extends CapturedWsRecip
 /**
  * The D498 re-check of one dispatch step. A `members` row keeps the socket and scope filter's result. A granted row is
  * re-admitted on the probed snapshot: its publisher must still hold `publish`, and only durable-eligible sessions that
- * still hold `subscribe` stay. An unreadable or missing snapshot rejects, so the step sends nothing and its row retries.
+ * still hold `subscribe` stay. A failed read rejects, so the step sends nothing and its row retries; a room the read
+ * finds no current snapshot of is a fact, not a failure: the row reaches nobody and completes, charging nothing.
  */
 export async function filterGrantedWsRecipientSessionIds(
     input: FilterGrantedWsRecipientSessionIdsInput
@@ -40,7 +41,7 @@ export async function filterGrantedWsRecipientSessionIds(
     }
     const snapshot = await input.readCurrentSnapshot(groupRef);
     if (snapshot === undefined || !isSameGroupRef(snapshot.group, groupRef)) {
-        throw new Error(`Granted WS row ${message.id.msgId} found no current snapshot of its room.`);
+        return [];
     }
     const audience = readGrantedRowAudience(input, snapshot, { ...message, targets: message.targets });
     const audienceSessionIds = new Set(audience.right?.sessions.map((session) => session.sessionId) ?? []);

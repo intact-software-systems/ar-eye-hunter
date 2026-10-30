@@ -134,7 +134,7 @@ export function decodeAlmDeliveryFailure(value: unknown): Either<string, ALDeliv
 /**
  * A trusted server relay is never named, so an id on one is refused. A trusted server refuses with `resync-required`
  * after admission, `unauthorized`, `no-leader`, `held-by-other` or `unsupported` before it, `no-publish-grant` at
- * either, or `membership-fenced`;
+ * socket admission or `route`, or `membership-fenced`;
  * a peer relay with `resync-required` or `membership-fenced`.
  */
 export function decodeAlmRelayRejection(

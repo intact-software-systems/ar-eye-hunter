@@ -27,7 +27,8 @@ export interface RallarServerWsPublishInputDto {
     readonly producerId?: string;
 }
 
-export interface RallarServerWsUnicastInputDto extends RallarServerWsPublishInputDto {
+/** A proxy's unicast publishes for its rule's sender, never as a server producer, so it names no `producerId`. */
+export interface RallarServerWsUnicastInputDto extends Omit<RallarServerWsPublishInputDto, 'producerId'> {
     readonly scope: StateScope;
     readonly peerId: string;
 }
@@ -207,8 +208,8 @@ export interface RallarServerWsRouterOptions {
     readonly defaultFanout?: RallarServerWsFanout;
     readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
     readonly readServerPublishAudience?: RallarServerWsPublishAudienceReader;
-    /** The composition root's set, shared with the target resolver; absent, the router keeps its own. */
-    readonly grantedTopics?: WsGrantedTopicSet;
+    /** The composition root's set, shared with the target resolver; one with no granted topic passes a new set. */
+    readonly grantedTopics: WsGrantedTopicSet;
     readonly wakeOutbox?: () => void;
     readonly nowEpochMs?: () => number;
     readonly livePublication?: {

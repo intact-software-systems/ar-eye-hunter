@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installLiveWsNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
@@ -53,6 +54,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
@@ -85,12 +87,14 @@ describe('Rallar server WS live cluster publication', () => {
                 name: 'server-a',
                 readAuthenticatedConnectionScope: () => undefined,
                 targetResolver: {
+                    requiresFrozenAudience: () => false,
                     resolveBroadcastRecipients: () => [{ peerId: 'stale-session', connectionId: 'stale-session' }]
                 }
             });
             onTestFinished(() => service.dispose());
             let notices = 0;
             const router = new RallarServerWsRouter(service, {
+                grantedTopics: new WsGrantedTopicSet(),
                 nowEpochMs: () => 100,
                 livePublication: {
                     transport: {
@@ -141,6 +145,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
@@ -181,6 +186,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
@@ -209,6 +215,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             defaultFanout: 'live-only',
             livePublication: {
@@ -252,6 +259,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             defaultFanout: 'none',
             livePublication: {
@@ -314,6 +322,7 @@ describe('Rallar server WS live cluster publication', () => {
             throw new Error('local socket diagnostics failed');
         });
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
@@ -352,6 +361,7 @@ describe('Rallar server WS live cluster publication', () => {
                 expiresAtEpochMs: Number.MAX_SAFE_INTEGER
             }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolveBroadcastRecipients: () => [{ peerId: 'local-session', connectionId: 'local-session' }]
             }
         });
@@ -360,6 +370,7 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => error.mockRestore());
         let notices = 0;
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: {
                 transport: {
@@ -406,6 +417,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
@@ -447,12 +459,14 @@ describe('Rallar server WS live cluster publication', () => {
                 expiresAtEpochMs: Number.MAX_SAFE_INTEGER
             }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolveBroadcastRecipients: () => [{ peerId: 'local-session', connectionId: 'local-session' }]
             }
         });
         onTestFinished(() => service.dispose());
         const notices: LiveWsNotice[] = [];
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => nowMs,
             livePublication: {
                 transport: {
@@ -514,6 +528,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             defaultFanout: 'none',
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
@@ -563,6 +578,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: {
                 transport,
@@ -737,6 +753,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             readServerPublishAudience: async ({ message }) =>
                 Either.ofRight({
@@ -796,6 +813,7 @@ describe('Rallar server WS live cluster publication', () => {
                 expiresAtEpochMs: Number.MAX_SAFE_INTEGER
             }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolveBroadcastRecipients: () => [
                     { peerId: 'room-session', connectionId: 'room-session' },
                     { peerId: 'reconnected-session', connectionId: 'reconnected-session' }
@@ -804,6 +822,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             readServerPublishAudience: async ({ message }) =>
                 Either.ofRight({
                     targets: message.targets!,
@@ -851,6 +870,7 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         let notices = 0;
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             readServerPublishAudience: async ({ message }) =>
                 Either.ofRight({
@@ -900,6 +920,7 @@ describe('Rallar server WS live cluster publication', () => {
             name: 'server-a',
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolveBroadcastRecipients: () => [{ peerId: 'same-session', connectionId: 'same-session' }]
             }
         });
@@ -911,6 +932,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         let notices = 0;
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: {
                 transport: {
@@ -987,6 +1009,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             livePublication: {
                 transport: { publish: async () => {}, subscribe: async () => {} },
@@ -1023,6 +1046,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             readServerPublishAudience: async () => {
                 throw new TypeError('snapshot unavailable');
@@ -1071,6 +1095,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             readServerPublishAudience: async ({ message }) =>
                 Either.ofRight({
@@ -1116,6 +1141,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             readServerPublishAudience: async () => undefined,
             livePublication: {
@@ -1166,6 +1192,7 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: () => 100,
             authorizeRoomMessage: ({ message }) => ({
                 authorized: true,
@@ -1231,11 +1258,13 @@ function createScopedSocketsFixture(
             expiresAtEpochMs: Number.MAX_SAFE_INTEGER
         }),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolveBroadcastRecipients: () => [...sockets.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         }
     });
     onTestFinished(() => service.dispose());
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage,
         nowEpochMs: () => 100,
         livePublication: {
@@ -1341,6 +1370,7 @@ async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
         }
     });
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage: createGroupRoomWsAuthorizer({
             readGroupSnapshot: () => snapshot,
             readPreActivationAppData: () => 'allowed',

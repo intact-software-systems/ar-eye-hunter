@@ -596,6 +596,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         queueEngine: engine,
         forwardsRoomScopedMessages: options.fanout === 'forward',
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => options.origin === 'remote' && peerId === 'a' ? [] : [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
@@ -658,7 +659,7 @@ async function createRemoteOriginInstance(
         name: 'remote-server',
         queueEngine: engine,
         outboundStores,
-        targetResolver: { resolvePeerRecipients: (peerId) => peerId === 'a' ? [{ peerId, connectionId: 'a' }] : [] }
+        targetResolver: { requiresFrozenAudience: () => false, resolvePeerRecipients: (peerId) => peerId === 'a' ? [{ peerId, connectionId: 'a' }] : [] }
     });
     onTestFinished(async () => {
         await remote.dispose();

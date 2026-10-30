@@ -105,7 +105,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
-    readonly grantedTopics?: WsServerTargetResolutionOptions['grantedTopics'];
+    readonly grantedTopics: WsServerTargetResolutionOptions['grantedTopics'];
     /** The per-attempt re-check of captured outbox audiences, handed to the WS server and the cluster bridge (D498). */
     readonly filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter;
     readonly inboundStores?: ALInboundRuntimeStores;

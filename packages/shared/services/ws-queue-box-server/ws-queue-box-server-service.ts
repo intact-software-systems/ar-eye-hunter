@@ -54,6 +54,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
+import { ExclusionKeyedAdmission } from '../../resilience/exclusion-keyed-admission.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
@@ -246,6 +247,10 @@ export class WsQueueBoxServerService {
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly creationNow: QueueBoxUtilities.CreationClock;
     private readonly receiptObserver: WsQueueBoxServerReceiptObserver | undefined;
+    private readonly heldSends = new ExclusionKeyedAdmission({
+        maxConcurrent: Number.MAX_SAFE_INTEGER,
+        keyedChainsFirst: false
+    });
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
@@ -772,8 +777,11 @@ export class WsQueueBoxServerService {
         const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
             expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
             send: (sessionId) => {
-                void this.sendHeldRow({ message, entry, policy: { ...policy, admittedAudience: [sessionId] } })
-                    .catch((error) => console.error('Held WebSocket send failed:', error));
+                // One session's held rows re-check one after the other, so they reach it in the order they were held.
+                void this.heldSends.admit(
+                    sessionId,
+                    () => this.sendHeldRow({ message, entry, policy: { ...policy, admittedAudience: [sessionId] } })
+                ).catch((error) => console.error('Held WebSocket send failed:', error));
             }
         });
         if (awaited.evictedCount > 0) {
@@ -927,7 +935,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         socket: input.socket,
         name: input.name,
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, input.qosProvider),
-        targetResolver: input.targetResolver ?? {},
+        targetResolver: input.targetResolver ?? { requiresFrozenAudience: () => false },
         readProducerProvenance: input.readProducerProvenance,
         filterEligibleCapturedSessionIds: input.filterEligibleCapturedSessionIds,
         inboundRuntime: createDefaultALInboundRuntimeResources({

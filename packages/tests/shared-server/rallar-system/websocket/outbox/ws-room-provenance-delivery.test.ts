@@ -330,7 +330,7 @@ class RoomFixture {
             outboundStores: this.stores,
             queueEngine: this.engine,
             outboundDeliveryOutcome: (outcome) => this.outcomes.push(outcome),
-            targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'session', connectionId: 'peer-socket' }] },
+            targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'session', connectionId: 'peer-socket' }] },
             readProducerProvenance: (message, entry) => this.reader.readProducerProvenance(message, entry),
             readAuthenticatedConnectionScope: () => this.authentication
         });

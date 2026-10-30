@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -322,11 +323,11 @@ Deno.test('generic custom authorization retains its configured resolver without 
         outbox: new InMemoryQueueBox(),
         socket: runtime.socket,
         readAuthenticatedConnectionScope: () => undefined,
-        targetResolver: { resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
+        targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
     });
     const router = new RallarServerWsRouter(
         service,
-        { authorizeRoomMessage: () => true }
+        { grantedTopics: new WsGrantedTopicSet(), authorizeRoomMessage: () => true }
     );
     try {
         await router.route(roomMessage(createGroupSnapshot(2, ['session-1'])));

@@ -54,7 +54,8 @@ import { createRallarServer } from './create-rallar-server.ts';
 export interface CreateDefaultRallarServerInput {
     readonly configuration: ApiV1Configuration;
     readonly databaseLifecycle: ApiV1DatabaseLifecycle;
-    readonly ws?: RallarServerWsRouterOptions;
+    /** Overrides of the router options; the granted topic set is the composition's own. */
+    readonly ws?: Omit<RallarServerWsRouterOptions, 'grantedTopics'>;
 }
 
 export async function createDefaultRallarServer(

@@ -13,6 +13,7 @@ import {
 } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { installTopologyAppOutbox, type InstallTopologyAppOutboxOptions } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -65,7 +66,7 @@ describe('RTC topology websocket publication', () => {
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1',
-            targetResolver: createWsServerTargetResolver(server)
+            targetResolver: createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet() })
         });
         onTestFinished(() => service.dispose());
         const replay = new RtcTopologyReplayEntryHandlerService({

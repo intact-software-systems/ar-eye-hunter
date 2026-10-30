@@ -78,7 +78,7 @@ it('uses the injected clock for resolved-peer delivery and rejects the exact exp
     const live = new WsQueueBoxServerLiveDelivery({
         socket: fixture.socket,
         clock: fixture.clock,
-        targetResolution: new WsQueueBoxServerTargetResolution({ socket: fixture.socket, targetResolver: {} }),
+        targetResolution: new WsQueueBoxServerTargetResolution({ socket: fixture.socket, targetResolver: { requiresFrozenAudience: () => false } }),
         deliveryReporting: new WsQueueBoxServerDeliveryReporting({}),
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 2000 })
     });
@@ -116,6 +116,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         name: 'server',
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: () => [
                 { peerId: 'first', connectionId: 'first' },
                 { peerId: 'first', connectionId: 'second' }

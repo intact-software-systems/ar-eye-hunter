@@ -79,9 +79,9 @@ export interface WsServerTargetResolver {
     ) => string | undefined;
     /**
      * Whether the message reaches only the audience frozen at its admission: its recipients are never resolved from
-     * its targets, and with no admitted audience it reaches nobody (a granted topic, D487). Absent, none does.
+     * its targets, and with no admitted audience it reaches nobody (a granted topic, D487).
      */
-    readonly requiresFrozenAudience?: (message: ALMessage) => boolean;
+    readonly requiresFrozenAudience: (message: ALMessage) => boolean;
 }
 
 /** The sessions a dispatch step re-checks for the row it sends: the row's captured audience, in its scope. */

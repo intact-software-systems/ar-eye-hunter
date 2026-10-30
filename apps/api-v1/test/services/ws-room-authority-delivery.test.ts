@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -345,7 +346,7 @@ Deno.test('generic custom authorization retains its explicit resolver-owned audi
         let bodyFailed = false;
         try {
             const frames = addRecordingConnection(harness.server, 'bob');
-            const router = new RallarServerWsRouter(harness.service, { authorizeRoomMessage: () => decision });
+            const router = new RallarServerWsRouter(harness.service, { grantedTopics: new WsGrantedTopicSet(), authorizeRoomMessage: () => decision });
             const message = roomMessage();
 
             await router.route(message);
@@ -973,7 +974,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
         name: 'room-authority-delivery',
         receiptObserver,
         forwardsRoomScopedMessages: false,
-        targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => state.cached })
+        targetResolver: createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet(), findGroupSnapshotByRef: () => state.cached })
     });
     const authorizeRoomMessage = createApiV1RoomWsAuthorizer({
         readCurrentSnapshot: (ref) => {
@@ -982,7 +983,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
             return Promise.resolve(state.current);
         }
     }, { readLifecyclePolicy: () => Promise.resolve(state.policy) });
-    const router = new RallarServerWsRouter(service, { authorizeRoomMessage, nowEpochMs });
+    const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), authorizeRoomMessage, nowEpochMs });
     return { state, connectionScopes, server, service, router, outbox };
 }
 

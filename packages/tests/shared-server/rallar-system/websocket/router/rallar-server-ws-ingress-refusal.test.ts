@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { RallarServerWsFanout } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
@@ -150,13 +151,18 @@ function createIngressFixture(fanout: RallarServerWsFanout): IngressFixture {
         forwardsRoomScopedMessages: false,
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId }))
         }
     });
     onTestFinished(() => service.dispose());
-    const router = new RallarServerWsRouter(service, {}).install().defineTopic({ participation: 'members', topicId: TOPIC_ID, fanout });
+    const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() }).install().defineTopic({
+        participation: 'members',
+        topicId: TOPIC_ID,
+        fanout
+    });
     return { service, router, outboundStores, sockets };
 }
 

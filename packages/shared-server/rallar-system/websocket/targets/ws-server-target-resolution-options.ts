@@ -21,6 +21,6 @@ export interface WsServerTargetResolutionOptions {
         message: ALMessage
     ) => GroupSnapshot | undefined;
     readonly now?: RallarSnapshotPresenceClock;
-    /** The router's granted topics, whose recipients are only ever an admitted audience; absent, none is granted. */
-    readonly grantedTopics?: WsGrantedTopicSet;
+    /** The router's granted topics, whose recipients are only ever an admitted audience: never resolved here. */
+    readonly grantedTopics: WsGrantedTopicSet;
 }

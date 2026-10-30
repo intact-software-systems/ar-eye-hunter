@@ -3,7 +3,10 @@ import { Either } from '@shared/resilience/Either.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { filterLiveWsRoomRecipientSessionIds } from '../../queue-pubsub/live-ws-audience.ts';
-import type { RoomPublicationAdmission } from '../room-publication/compute-room-publication-admission.ts';
+import {
+    toUngroupedRoomPublicationRefusal,
+    type RoomPublicationAdmission
+} from '../room-publication/compute-room-publication-admission.ts';
 import { authorizeRallarServerWsIngress } from './decode-rallar-server-ws-ingress.ts';
 import type {
     RallarServerWsFanout,
@@ -43,6 +46,10 @@ export async function readRallarServerWsPublicationAudience(
     input: ReadRallarServerWsPublicationAudienceInput
 ): Promise<Either<RallarServerWsPublicationRefusal, RallarServerWsPublicationAudience>> {
     const groupRef = readALTargetGroupRef(input.message);
+    if (input.origin !== 'admitted' && input.topic.participation === 'granted' && !groupRef) {
+        const refusal = toUngroupedRoomPublicationRefusal(input.message.route.topicId);
+        return Either.ofLeft({ reason: refusal.logMessage, refusal: refusal.code });
+    }
     if (!groupRef || input.origin === 'admitted' || input.fanout === 'none') {
         return Either.ofRight({ frozen: undefined });
     }

@@ -128,6 +128,31 @@ describe('computeRoomPublicationAdmission', () => {
         expect(toSessionIds(toSubscriber.right?.sessions)).toEqual(['sub-1']);
     });
 
+    it.each([
+        ['archived', { status: 'archived' as const }],
+        ['deleted', { status: 'deleted' as const }],
+        ['expired', { expiresAtEpochMs: NOW - 1 }]
+    ])('a granted topic of a group that is %s admits no session publisher and reaches nobody; a members topic is unchanged', (_label, change) => {
+        const active = createGrantedSnapshot();
+        const snapshot = { ...active, group: { ...active.group, ...change } } as GroupSnapshot;
+        const message = { targets: roomBroadcast(snapshot) };
+
+        const publisher = computeRoomPublicationAdmission({ snapshot, topic: GRANTED, publisher: session(snapshot, 'pub-1'), message, nowEpochMs: NOW });
+        const producer = computeRoomPublicationAdmission({
+            snapshot,
+            topic: GRANTED,
+            publisher: { kind: 'server-producer', producerId: 'feed-producer' },
+            message,
+            nowEpochMs: NOW
+        });
+        const members = computeRoomPublicationAudience({ snapshot, topic: MEMBERS, message, nowEpochMs: NOW });
+
+        expect(publisher.left?.code).toBe('no-publish-grant');
+        expect(producer.right?.sessions).toEqual([]);
+        expect(computeRoomPublicationAudience({ snapshot, topic: GRANTED, message, nowEpochMs: NOW }).sessions).toEqual([]);
+        expect(members).toEqual(toAuthorizedRoomAudience(snapshot, message, NOW));
+    });
+
     it('the publisher\'s sibling session stays in the audience', () => {
         const snapshot = createGrantedSnapshot();
 
