@@ -69,6 +69,7 @@ describe('room publication identity at WS planning', () => {
             completedHopPeerIds: [],
             missingRanges: [],
             admittedAudience: ['frozen'],
+            admittedConnectionGenerationIds: undefined,
             referenceKey
         });
         expect(repair?.preparedMessages).toMatchObject([

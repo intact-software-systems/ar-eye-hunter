@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';

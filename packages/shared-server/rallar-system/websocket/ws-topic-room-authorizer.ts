@@ -15,7 +15,7 @@ import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crd
 import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import type { GroupPublicationAuthority } from '../group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '../group-state/group-state-service-contracts.ts';
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
 import { filterLiveWsRoomRecipientSessionIds } from '../queue-pubsub/live-ws-audience.ts';
 import {

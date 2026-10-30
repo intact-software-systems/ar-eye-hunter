@@ -323,7 +323,8 @@ export async function readBlackBoxRtcMessageNacks(
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         })
     );
     return observation.nacks;

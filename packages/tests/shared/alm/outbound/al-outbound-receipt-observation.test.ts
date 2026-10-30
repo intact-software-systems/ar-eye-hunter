@@ -64,7 +64,13 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
             ),
             constraints: { expiresAtMs: Date.now() + 30_000 }
         };
-        const plan = () => ({ msg: receipt, dropReasonCode: undefined, lane: 'durable' as const, preparedMessages: [{ text: 'receipt-frame' }] });
+        const plan = () => ({
+            msg: receipt,
+            dropReasonCode: undefined,
+            lane: 'durable' as const,
+            preparedMessages: [{ text: 'receipt-frame' }],
+            admittedConnectionGenerationIds: undefined
+        });
         const runtime = new ALOutboundMessageRuntime({
             ...resources,
             carrier: 'ws',

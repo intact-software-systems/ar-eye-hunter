@@ -375,7 +375,15 @@ async function writeCompetingAdmission(
         msg: message,
         observedCanonicalEntry: entry,
         intent: 'dequeue',
-        planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedAudience: [], recipientScope: SCOPE })
+        planner: () => ({
+            msg: message,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [],
+            admittedAudience: [],
+            recipientScope: SCOPE,
+            admittedConnectionGenerationIds: undefined
+        })
     });
     const computed = computeALOutboundDispatch({
         read,

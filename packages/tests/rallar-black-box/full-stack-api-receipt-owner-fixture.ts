@@ -412,7 +412,7 @@ async function readCompetingReceiptBundle(store: ALOutboundAdmissionStore<WsQueu
     const competitor = { ...message, id: { ...message.id, msgId: 'competing-version' } };
     const read = await store.readOutgoingMessage({
         msg: competitor,
-        planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
+        planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [], admittedConnectionGenerationIds: undefined }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });

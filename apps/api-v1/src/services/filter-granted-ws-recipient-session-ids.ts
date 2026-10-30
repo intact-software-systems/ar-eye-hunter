@@ -1,4 +1,4 @@
-import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     computeRoomPublicationAdmission,
     computeRoomPublicationAudience,

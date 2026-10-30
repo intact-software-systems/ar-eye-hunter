@@ -75,7 +75,7 @@ describe('verified direct room row delivery', () => {
             dequeueAuthority: { admittedAudience: ['session'], recipientScope: undefined },
             planner: (msg, authority) => {
                 authorities.push(authority);
-                return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };
+                return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [], admittedConnectionGenerationIds: undefined };
             }
         });
         expect(authorities).toEqual([{

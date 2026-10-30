@@ -26,7 +26,8 @@ export function computeALOutboundAckRefusal<TPrepared>(
             dropReason: detail,
             dropReasonCode: 'unsupported',
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         });
 }
 

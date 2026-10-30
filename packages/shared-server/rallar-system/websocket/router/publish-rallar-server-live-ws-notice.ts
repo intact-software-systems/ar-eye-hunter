@@ -170,6 +170,7 @@ function toRoomLiveWsPublicationAudience(input: PublishRallarServerWsMessageInpu
         message: input.message,
         audience: input.audience,
         admittedPeerIds: input.admittedPeerIds,
+        topic: input.topic,
         nowEpochMs: input.nowEpochMs
     });
     return { mode: 'room', groupRef, recipientSessionIds };

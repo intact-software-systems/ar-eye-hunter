@@ -352,7 +352,7 @@ function createOutboxOnlyTestRuntime(
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         decodePreparedMessage: decodeALOutboundPreparedMessage,
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
         sendPreparedMessage: async () => {
             throw new Error('An outbox-only admission must not submit a transport send');
         }

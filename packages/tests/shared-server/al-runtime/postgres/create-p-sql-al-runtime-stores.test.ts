@@ -134,7 +134,8 @@ async function seedCapturedPolicyRead(
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
-            admittedAudience: ['session-a']
+            admittedAudience: ['session-a'],
+            admittedConnectionGenerationIds: undefined
         }),
         creationExpiry
     };

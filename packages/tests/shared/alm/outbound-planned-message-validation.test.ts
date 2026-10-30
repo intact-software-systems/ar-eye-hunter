@@ -31,7 +31,13 @@ describe('outbound planner validation boundary', () => {
             stores,
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+            planOutgoingMessage: () => ({
+                msg: planned as ALMessage,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         const result = await runtime.enqueueIfAbsent(original);
         expect(result).toMatchObject({ verdict: { kind: 'failed' }, message: original, entries: [] });
@@ -62,7 +68,13 @@ describe('outbound planner validation boundary', () => {
             stores,
             dequeue,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+            planOutgoingMessage: () => ({
+                msg: planned as ALMessage,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            })
         });
 
         await runtime.ready();
@@ -87,7 +99,8 @@ describe('outbound planner validation boundary', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'No route',
-                dropReasonCode: 'no-route'
+                dropReasonCode: 'no-route',
+                admittedConnectionGenerationIds: undefined
             })
         });
         const result = await runtime.enqueueIfAbsent(original);

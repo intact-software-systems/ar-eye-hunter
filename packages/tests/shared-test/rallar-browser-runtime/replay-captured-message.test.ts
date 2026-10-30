@@ -105,7 +105,8 @@ function createUnsubmittingOutbound(
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [toALOutboundTransportMessage(msg)]
+            preparedMessages: [toALOutboundTransportMessage(msg)],
+            admittedConnectionGenerationIds: undefined
         }),
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
     });

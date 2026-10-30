@@ -1,9 +1,8 @@
 import type { GroupRef, GroupScope, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { compareRuntimeStateKeys } from '../../../runtime-state/read-batch/compare-runtime-state-keys.ts';
-import type { GroupStateService } from '../group-state-service-contracts.ts';
+import type { GroupPublicationAuthority, GroupStateService } from '../group-state-service-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
-import type { GroupPublicationAuthority } from '../persistence/subscription/read-group-topic-subscriptions.ts';
 
 export type CachedGroupStateServiceCache = Readonly<{
     findOrLoadByRef(

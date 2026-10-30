@@ -257,7 +257,7 @@ function captureEvictingBackend(evictExpired: () => void): InMemoryAdmissionBack
 }
 
 function planOrderedVolatileSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
-    return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] };
+    return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }], admittedConnectionGenerationIds: undefined };
 }
 
 /** The step's sends, each the next sequence the application numbers on the next of the session's ordered tracks. */

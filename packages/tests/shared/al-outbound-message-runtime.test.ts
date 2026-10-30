@@ -78,8 +78,20 @@ describe('ALOutboundMessageRuntime', () => {
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ resourceId: msg.route.resourceId }] }),
-            planDequeuedMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ resourceId: msg.route.resourceId }],
+                admittedConnectionGenerationIds: undefined
+            }),
+            planDequeuedMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            }),
             afterDequeueAdmission: undefined,
             planRepairMessage: undefined,
             sendPreparedMessage: async (prepared) => {
@@ -118,7 +130,13 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         onTestFinished(() => runtime.dispose());
         const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
@@ -144,7 +162,8 @@ describe('ALOutboundMessageRuntime', () => {
                 dropReasonCode: 'no-route',
                 msg: msg,
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -169,7 +188,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -195,7 +215,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-immediate');
@@ -231,7 +252,8 @@ describe('ALOutboundMessageRuntime', () => {
                     expectedPeerIds: ['peer-1'],
                     nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-owner-expiry', { ttlMs: 15_000 });
@@ -239,7 +261,13 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
-        const plan = (msg: ALMessage) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile' as const, preparedMessages: [] });
+        const plan = (msg: ALMessage) => ({
+            msg: msg,
+            dropReasonCode: undefined,
+            lane: 'volatile' as const,
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
+        });
         const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
@@ -311,7 +339,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-not-ready');
@@ -327,7 +356,13 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(24);
@@ -355,7 +390,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -372,7 +408,13 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);
@@ -398,7 +440,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -443,7 +486,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -486,7 +530,8 @@ describe('ALOutboundMessageRuntime', () => {
                     msg: msg,
                     dropReasonCode: undefined,
                     lane: 'volatile',
-                    preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }]
+                    preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }],
+                    admittedConnectionGenerationIds: undefined
                 };
             }
         });
@@ -530,7 +575,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -576,7 +622,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-persisted');
@@ -604,7 +651,8 @@ describe('ALOutboundMessageRuntime', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-duplicate');
@@ -633,7 +681,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'latest-wins',
                     key: `presence:${msg.route.contextId}`
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
         const newer = {
@@ -697,7 +746,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (msg, request) => ({
                 msg: msg,
@@ -709,7 +759,8 @@ describe('ALOutboundMessageRuntime', () => {
                         msgId: msg.id.msgId,
                         trigger: request.trigger
                     }
-                ]
+                ],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -745,11 +796,12 @@ describe('ALOutboundMessageRuntime', () => {
                 lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1', 'r2'], nextHopPeerIds: ['r1', 'r2'], mode: 'receiver' },
-                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
+                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (msg, request) => {
                 retried.push(request.failedPeerIds);
-                return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] };
+                return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined };
             }
         });
         const msg = createOutboundMessage('msg-receiver-retry');
@@ -792,11 +844,12 @@ describe('ALOutboundMessageRuntime', () => {
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1'], nextHopPeerIds: ['r1'], mode: 'receiver' },
                 repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
-                admittedAudience: ['r1']
+                admittedAudience: ['r1'],
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (msg, request) => {
                 audiences.push(request.admittedAudience);
-                return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] };
+                return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined };
             }
         });
         await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-admitted-audience-retry'));
@@ -828,13 +881,15 @@ describe('ALOutboundMessageRuntime', () => {
                     expectedPeerIds: ['peer-1'],
                     nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -863,7 +918,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -930,7 +986,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     maxAttempts: 2,
                     retryDelayMs: 50
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-not-yet-in-sync');
@@ -990,7 +1047,8 @@ describe('ALOutboundMessageRuntime', () => {
                             enabled: true,
                             maxAttempts: 2,
                             retryDelayMs: 50
-                        }
+                        },
+                        admittedConnectionGenerationIds: undefined
                     }
                     : {
                         msg: msg,
@@ -1001,7 +1059,8 @@ describe('ALOutboundMessageRuntime', () => {
                             enabled: true,
                             maxAttempts: 2,
                             retryDelayMs: 50
-                        }
+                        },
+                        admittedConnectionGenerationIds: undefined
                     }
         });
         const msg = createOutboundMessage('msg-not-yet-in-sync-outbox');
@@ -1049,7 +1108,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     maxAttempts: 3,
                     retryDelayMs: 50
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-duplicate-not-yet-in-sync');
@@ -1109,7 +1169,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     maxAttempts: 2,
                     retryDelayMs: 50
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-duplicate-retry-budget');
@@ -1164,7 +1225,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'latest-wins',
                     key: `presence:${msg.route.contextId}`
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -1223,7 +1285,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'latest-wins',
                     key: `presence:${msg.id.senderId}:${msg.route.contextId}`
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -1313,7 +1376,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
@@ -1325,7 +1389,8 @@ describe('ALOutboundMessageRuntime', () => {
                         msgId: plannedMsg.id.msgId,
                         trigger: request.trigger
                     }
-                ]
+                ],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -1381,7 +1446,8 @@ describe('ALOutboundMessageRuntime', () => {
                 preparedMessages: [
                     { peerId: 'peer-1' },
                     { peerId: 'peer-2' }
-                ]
+                ],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -1410,13 +1476,15 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-persisted-repair');

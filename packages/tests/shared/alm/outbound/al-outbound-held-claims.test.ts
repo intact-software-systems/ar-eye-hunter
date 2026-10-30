@@ -20,7 +20,13 @@ it('held reservations stay denied until the active owner and its owed follow-up 
     const runtime = createDefaultOutboundTestRuntime({
         stores,
         queueEngine: new InboxOutboxEngine(),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ message: msg.id.msgId }] }),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ message: msg.id.msgId }],
+            admittedConnectionGenerationIds: undefined
+        }),
         sendPreparedMessage: async (prepared) => {
             sent.push(prepared.message ?? 'missing');
             return { status: 'sent', submissionAttempted: true };

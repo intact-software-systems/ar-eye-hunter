@@ -611,7 +611,7 @@ describe('captured outbound audience read', () => {
             admittedConnectionGenerationIds: { 'session-a': 'generation-a', 'session-b': 'generation-b' }
         } as const;
         const captured = captureALOutboundPolicy(plan);
-        const { admittedConnectionGenerationIds: _generations, ...withoutGenerations } = plan;
+        const withoutGenerations = { ...plan, admittedConnectionGenerationIds: undefined };
         const decode = (policy: object) => () => decodeALOutboundCapturedPolicy(JSON.parse(JSON.stringify(policy)));
 
         expect(decodeALOutboundCapturedPolicy(JSON.parse(JSON.stringify(captured)))).toEqual(captured);
@@ -639,7 +639,8 @@ describe('captured outbound audience read', () => {
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
-            admittedAudience: ['session-a', 'session-b']
+            admittedAudience: ['session-a', 'session-b'],
+            admittedConnectionGenerationIds: undefined
         });
 
         expect(toWsQueueBoxServerHeldSessionPolicy(policy, 'session-b')).toEqual({
@@ -732,7 +733,8 @@ async function createFixture(
             lane: 'durable',
             preparedMessages: [],
             admittedAudience,
-            ...(recipientScope === undefined ? {} : { recipientScope })
+            ...(recipientScope === undefined ? {} : { recipientScope }),
+            admittedConnectionGenerationIds: undefined
         }),
         creationExpiry: captureALOutboundCreationExpiry(message)
     };

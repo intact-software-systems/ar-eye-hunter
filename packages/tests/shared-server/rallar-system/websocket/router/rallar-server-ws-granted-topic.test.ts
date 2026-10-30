@@ -1,6 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type {
@@ -59,6 +59,8 @@ interface GrantedFixture {
     readonly snapshots: GroupSnapshot[];
     /** The sessions holding a live subscription to FEED asserted by their live generation; every session by default. */
     readonly subscribed: Set<SessionId>;
+    /** When set, each publication authority read takes the next subscribed set instead of `subscribed`; the last repeats. */
+    readonly subscriptionReads: ReadonlySet<SessionId>[];
 }
 
 describe('a granted WS topic (D486, D487)', () => {
@@ -324,6 +326,20 @@ describe('a granted WS topic (D486, D487)', () => {
         expect(readNacks(fixture.sockets.alice)).toEqual([]);
     });
 
+    it('an unsubscribe between socket admission and route leaves the session out of the cluster live notice', async () => {
+        const recording = createRecordingLiveWsPublication();
+        const fixture = createGrantedFixture('live-only', { livePublication: recording.livePublication });
+        const everyone = new Set(Object.keys(SESSIONS) as SessionId[]);
+        // Socket admission and inbox dispatch read bob's subscription; his unsubscribe commits before route's read.
+        fixture.subscriptionReads.push(everyone, everyone, new Set([...everyone].filter((sessionId) => sessionId !== 'bob')));
+
+        expect((await fixture.service.acceptIncomingMessage(roomBroadcast('alice', FEED, 'route-unsubscribed'), 'alice')).right)
+            .toEqual({ kind: 'admitted' });
+
+        await expect.poll(() => recording.notices.length).toBe(1);
+        expect(recording.notices).toMatchObject([{ audience: { mode: 'room', recipientSessionIds: ['alice-2', 'dan'] } }]);
+    });
+
     it('a group-leader ack whose leader is not subscribed is NACKed no-leader', async () => {
         const fixture = createGrantedFixture('live-only');
         fixture.snapshots.push(withDirector(createSnapshot(), 'bob'));
@@ -421,7 +437,9 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
     const snapshots: GroupSnapshot[] = [];
     const readSnapshot = (): GroupSnapshot => snapshots.length > 1 ? snapshots.shift()! : snapshots[0] ?? createSnapshot();
     const subscribed = new Set(Object.keys(SESSIONS) as SessionId[]);
-    const readPublicationAuthority = async (_ref: GroupRef, topicId: string) => toSubscribedAuthority(readSnapshot(), topicId, subscribed);
+    const subscriptionReads: ReadonlySet<SessionId>[] = [];
+    const readSubscribed = () => subscriptionReads.length > 1 ? subscriptionReads.shift()! : subscriptionReads[0] ?? subscribed;
+    const readPublicationAuthority = async (_ref: GroupRef, topicId: string) => toSubscribedAuthority(readSnapshot(), topicId, readSubscribed());
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: outboundStores.workQueue,
@@ -464,7 +482,18 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
         serverProducerIds: [PRODUCER],
         fanout
     });
-    return { service, router, socketServer, grantedTopics, outboundStores, sockets, authorizations, snapshots, subscribed };
+    return {
+        service,
+        router,
+        socketServer,
+        grantedTopics,
+        outboundStores,
+        sockets,
+        authorizations,
+        snapshots,
+        subscribed,
+        subscriptionReads
+    };
 }
 
 /** Each subscribed session's live row on the topic, asserted by its one live client generation. */

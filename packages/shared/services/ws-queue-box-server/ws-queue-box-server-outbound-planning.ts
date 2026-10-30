@@ -148,7 +148,8 @@ export class WsQueueBoxServerOutboundPlanning {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReasonCode: 'unauthorized',
-                dropReason: 'WS message has no verified scoped audience'
+                dropReason: 'WS message has no verified scoped audience',
+                admittedConnectionGenerationIds: undefined
             };
         }
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
@@ -214,9 +215,7 @@ export class WsQueueBoxServerOutboundPlanning {
             repairTracking: toRepairTrackingPlan(normalized.effective),
             supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
             ...(admittedAudience === undefined ? {} : { admittedAudience }),
-            ...(request.admittedConnectionGenerationIds === undefined
-                ? {}
-                : { admittedConnectionGenerationIds: request.admittedConnectionGenerationIds }),
+            admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
             ...(request.sessionInvalidation === undefined
                 ? {}
                 : { sessionInvalidation: request.sessionInvalidation }),
@@ -361,7 +360,14 @@ function toNoRouteDispatchPlan(
     message: ALMessage,
     dropReason: string
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { msg: message, dropReason, dropReasonCode: 'no-route', lane: 'volatile', preparedMessages: [] };
+    return {
+        msg: message,
+        dropReason,
+        dropReasonCode: 'no-route',
+        lane: 'volatile',
+        preparedMessages: [],
+        admittedConnectionGenerationIds: undefined
+    };
 }
 
 /**

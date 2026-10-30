@@ -4,7 +4,7 @@ import type { GroupTopicSubscription } from '@shared/api/group-publication/group
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { GroupPublicationAuthority } from '../../group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '../../group-state/group-state-service-contracts.ts';
 import { requireActiveGroup } from '../../group-state/policy/group-policy-primitives.ts';
 import type {
     RallarServerWsRoomAudience,

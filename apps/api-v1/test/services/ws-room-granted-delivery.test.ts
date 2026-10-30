@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { installLiveWsNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
 import { encodeLiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
@@ -393,6 +393,32 @@ Deno.test('a remote node\'s broad live notice on a granted topic reaches no sess
     assert.equal(frames.bob.length, 0);
 });
 
+const ROUTE_TIME_CHANGES = [
+    ['an unsubscribe', subscriptionReads(UNSUBSCRIBED_CAROL)],
+    ['a revoke of subscribe', revokedReads()],
+    // Carol's socket reopened under a new generation that has not subscribed yet: her row asserts the closed one.
+    ['a reopened generation', () => Promise.resolve(createAuthority(GRANTS, { reopenedGenerations: { carol: 'client-generation-carol-reopened' } }))]
+] as const;
+
+for (const [change, routeRead] of ROUTE_TIME_CHANGES) {
+    Deno.test(`${change} between socket admission and route skips the session on a live-only granted topic`, async () => {
+        await withHarness({ fanout: 'live-only' }, async (harness) => {
+            const frames = addAudience(harness.server);
+            // Socket admission and inbox dispatch read Carol's live subscription; route's fresh read no longer finds it.
+            harness.reads.push(...grantedReads(2), routeRead);
+            const message = feedMessage({ senderId: 'alice', msgId: `live-route-${change.replaceAll(' ', '-')}` });
+
+            assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
+            await waitFor(() => readDelivered(frames.bob, message) > 0);
+            await settle();
+
+            assert.equal(readDelivered(frames.bob, message), 1, change);
+            assert.equal(readDelivered(frames.carol, message), 0, change);
+            assert.deepEqual(readReceipts(frames.alice)[0]?.expectedRecipientPeerIds, ['bob', 'carol'], change);
+        });
+    });
+}
+
 Deno.test('only subscribed sessions receive a granted publication', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         await withHarness({ fanout }, async (harness) => {
@@ -660,9 +686,11 @@ function subscriptionReads(subscriptions: Subscriptions): RoomRead {
 interface CreateAuthorityOptions {
     readonly snapshotVersion?: number;
     readonly subscriptions?: Subscriptions;
+    /** A session's live client generation where it differs from the one its subscription asserts. */
+    readonly reopenedGenerations?: Subscriptions;
 }
 
-/** The room's snapshot with each subscribed session's live feed row, asserted by its one live client generation. */
+/** The room's snapshot with each subscribed session's live feed row, asserted by its one live client generation unless reopened. */
 function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): GroupPublicationAuthority {
     const snapshot = createSnapshot(grants, options.snapshotVersion);
     const subscriptions = Object.entries(options.subscriptions ?? SUBSCRIBED);
@@ -676,7 +704,9 @@ function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): 
             leaseExpiresAtEpochMs: Date.now() + 120_000,
             admittedAtGroupRevision: snapshot.group.snapshotVersion
         })),
-        liveSessionGenerations: Object.fromEntries(subscriptions.map(([sessionId, generation]) => [sessionId, [generation]]))
+        liveSessionGenerations: Object.fromEntries(
+            subscriptions.map(([sessionId, generation]) => [sessionId, [options.reopenedGenerations?.[sessionId] ?? generation]])
+        )
     };
 }
 

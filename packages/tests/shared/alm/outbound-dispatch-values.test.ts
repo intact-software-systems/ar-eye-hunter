@@ -100,7 +100,7 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -126,7 +126,8 @@ describe('outbound dispatch value ownership', () => {
                 dropReasonCode: undefined,
                 lane: 'durable',
                 preparedMessages: [] as readonly OutboundTestPayload[],
-                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
+                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' },
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -190,7 +191,13 @@ describe('outbound dispatch value ownership', () => {
         });
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ resourceId: message.route.resourceId }] }),
+            planner: () => ({
+                msg: message,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ resourceId: message.route.resourceId }],
+                admittedConnectionGenerationIds: undefined
+            }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
             origin: intent === 'enqueue' ? 'send' : 'drain',
@@ -216,7 +223,8 @@ describe('outbound dispatch value ownership', () => {
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ resourceId: 'exhausted-repair' }]
+                preparedMessages: [{ resourceId: 'exhausted-repair' }],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'

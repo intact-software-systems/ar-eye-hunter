@@ -1,4 +1,3 @@
-import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -7,8 +6,8 @@ import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-s
 import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
 import { clientStatePrincipalStorageKey } from '../../../client-state/persistence/client-state-principal-storage-key.ts';
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '../../../client-state/persistence/client-state-runtime-namespaces.ts';
-import { isGroupSnapshotSessionLive } from '../../../presence/snapshot-presence.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import type { GroupTopicSubscriptionAuthority } from '../../group-state-service-contracts.ts';
 import { groupStateChildStorageKey, groupStateGroupStorageKey } from '../aggregate/group-aggregate-storage-keys.ts';
 import { toGroupStateReadBatchLiveSelections } from '../group-state-persistence-contracts.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
@@ -17,16 +16,6 @@ import {
     canonicalStoredTopicSubscription,
     canonicalStoredTopicSubscriptions
 } from './group-topic-subscription-codec.ts';
-
-/** What a granted topic's audience is decided on: the probed snapshot and the server-only facts read after it. */
-export interface GroupPublicationAuthority {
-    /** The probed snapshot, unchanged. */
-    readonly snapshot: GroupSnapshot;
-    /** The topic's rows whose lease outlasts the read instant. */
-    readonly subscriptions: readonly GroupTopicSubscription[];
-    /** Each candidate session's active, unexpired client-state generations; a session with none is absent. */
-    readonly liveSessionGenerations: Readonly<Record<string, readonly string[]>>;
-}
 
 export interface ReadGroupSessionTopicSubscriptionsInput {
     readonly ref: GroupRef;
@@ -62,17 +51,17 @@ export async function readGroupSessionTopicSubscriptions(
 }
 
 /**
- * The topic's live subscription rows and the live client-state generations of the sessions that could receive it, in
- * one statement issued after the snapshot probe: a revoke, departure or reconnect committed between the two removes
+ * The topic's live subscription rows and the live client-state generations of the snapshot's sessions, in one
+ * statement issued after the snapshot probe: a revoke, departure or reconnect committed between the two removes
  * the row or changes the generation this statement reads, so the pair is never looser than the probe. A row failing
  * its contract is corruption.
  */
 export async function readGroupTopicSubscriptionAuthority(
     repository: RuntimeStateRepositoryLike,
     input: ReadGroupTopicSubscriptionAuthorityInput
-): Promise<Omit<GroupPublicationAuthority, 'snapshot'>> {
+): Promise<GroupTopicSubscriptionAuthority> {
     const ref = toSnapshotGroupRef(input.snapshot);
-    const candidates = toSubscriptionCandidateSessions(input);
+    const sessions = input.snapshot.activeSessions;
     const selectors: readonly RuntimeStateReadBatchSelector[] = [
         {
             selectorId: 'topic-subscriptions',
@@ -81,7 +70,7 @@ export async function readGroupTopicSubscriptionAuthority(
             keyPrefix: `${groupStateGroupStorageKey(ref)}:`,
             storedValueContains: { topicId: input.topicId }
         },
-        ...candidates.map((session, index): RuntimeStateReadBatchSelector => ({
+        ...sessions.map((session, index): RuntimeStateReadBatchSelector => ({
             selectorId: `client-session:${index}`,
             kind: 'prefix-containing',
             namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
@@ -96,7 +85,7 @@ export async function readGroupTopicSubscriptionAuthority(
     );
     return {
         subscriptions: canonicalStoredTopicSubscriptions(subscriptions.entries, ref).map(({ value }) => value),
-        liveSessionGenerations: Object.fromEntries(candidates.flatMap((session, index) => {
+        liveSessionGenerations: Object.fromEntries(sessions.flatMap((session, index) => {
             const generations = toLiveClientGenerations(clientSessions[index].entries, {
                 ...ref,
                 session,
@@ -105,20 +94,6 @@ export async function readGroupTopicSubscriptionAuthority(
             return generations.length === 0 ? [] : [[session.sessionId, generations]];
         }))
     };
-}
-
-/** The live sessions of active members holding effective subscribe: only these can receive the topic. */
-function toSubscriptionCandidateSessions(
-    input: ReadGroupTopicSubscriptionAuthorityInput
-): readonly GroupPresenceSession[] {
-    const { snapshot, topicId, observedAtEpochMs } = input;
-    const activePrincipals = new Set(
-        snapshot.members.filter((member) => member.status === 'active').map((member) => member.principalId)
-    );
-    return snapshot.activeSessions.filter((session) =>
-        activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, observedAtEpochMs) &&
-        resolveGroupPublicationPermissions(snapshot, session.principalId, topicId).subscribe
-    );
 }
 
 function toLiveClientGenerations(

@@ -32,7 +32,8 @@ const congestedPlanner: OutboundTestPlanner = (msg) => ({
     dropReasonCode: 'congested',
     congestionDrop: { cause: 'backpressured', priority: 0 },
     lane: 'volatile',
-    preparedMessages: []
+    preparedMessages: [],
+    admittedConnectionGenerationIds: undefined
 });
 
 const overloadedPlanner: OutboundTestPlanner = (msg) => ({
@@ -41,7 +42,8 @@ const overloadedPlanner: OutboundTestPlanner = (msg) => ({
     dropReasonCode: 'capacity',
     congestionDrop: { cause: 'overloaded', priority: 0 },
     lane: 'volatile',
-    preparedMessages: []
+    preparedMessages: [],
+    admittedConnectionGenerationIds: undefined
 });
 
 /** One volatile send, with the deadline every browser planner states. */
@@ -49,7 +51,8 @@ const admittingPlanner: OutboundTestPlanner = (msg) => ({
     msg: toALOutboundMessage(msg, normalizeALQosPolicy(msg).effective),
     dropReasonCode: undefined,
     lane: 'volatile',
-    preparedMessages: [{ kind: 'send' }]
+    preparedMessages: [{ kind: 'send' }],
+    admittedConnectionGenerationIds: undefined
 });
 
 interface ObservedRuntimeInput {

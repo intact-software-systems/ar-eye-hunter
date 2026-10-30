@@ -143,6 +143,32 @@ describe.each(['memory', 'postgres'] as const)('group topic subscription rows (%
         });
     }, 30_000);
 
+    sqlIt('a session with two active client rows yields both generations, and its row asserting the second is live', async () => {
+        await withSubscriptionSql(backend, async (fixture) => {
+            await seedSubscribableRoom(fixture);
+            await writeClientSession(fixture, { ...clientSessionFor(fixture), clientInstanceId: 'bob-instance-0', generationId: 'bob-ws-generation-0' });
+            const feed = subscriptionFor('room.feed');
+            await writeSubscriptionRow(fixture, feed);
+            const snapshot = withBobPresence(await requireSnapshot(fixture), fixture);
+
+            const authority = await readGroupTopicSubscriptionAuthority(fixture.runtime, {
+                snapshot,
+                topicId: 'room.feed',
+                observedAtEpochMs: fixture.nowEpochMs
+            });
+            const audience = computeRoomPublicationAudience({
+                snapshot,
+                ...authority,
+                topic: { topicId: 'room.feed', participation: 'granted', serverProducerIds: [] },
+                message: { targets: { mode: 'broadcast', scope: 'room', groupRef: REF } },
+                nowEpochMs: fixture.nowEpochMs
+            });
+
+            expect(authority.liveSessionGenerations).toEqual({ 'bob-session': ['bob-ws-generation-0', GENERATION] });
+            expect(audience.recipientConnectionGenerationIds).toEqual({ 'bob-session': GENERATION });
+        });
+    }, 30_000);
+
     sqlIt('a disconnected or expired client session yields no generation', async () => {
         await withSubscriptionSql(backend, async (fixture) => {
             await seedSubscribableRoom(fixture);

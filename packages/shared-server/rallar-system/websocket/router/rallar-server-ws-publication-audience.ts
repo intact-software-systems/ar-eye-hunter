@@ -94,19 +94,36 @@ export interface ResolveAuthorizedRoomSessionIdsInput {
     readonly message: ALMessage;
     readonly audience: RallarServerWsRoomAudience;
     readonly admittedPeerIds: readonly string[] | undefined;
+    readonly topic: RallarServerWsTopicAccess;
     readonly nowEpochMs: number;
 }
 
-/** Admission fixes the addressed room audience; socket liveness remains a send-time decision. */
+/**
+ * Admission fixes the addressed room audience of a members topic, so a session that left after it still receives
+ * (D43); a granted topic's admitted sessions are narrowed to those the route's fresh audience still subscribes (D489).
+ * Socket liveness remains a send-time decision.
+ */
 export function resolveAuthorizedRoomSessionIds(input: ResolveAuthorizedRoomSessionIdsInput): readonly string[] {
     const { message, audience, nowEpochMs } = input;
     if (!isAuthorizedRoomAudience(message, audience, nowEpochMs)) {
         return [];
     }
-    const addressedSessionIds = input.admittedPeerIds ?? audience.sessions
-        .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs))
-        .map((session) => session.sessionId);
+    const addressedSessionIds = input.admittedPeerIds === undefined
+        ? audience.sessions
+            .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs))
+            .map((session) => session.sessionId)
+        : toRouteAdmittedSessionIds(input.admittedPeerIds, audience, input.topic);
     return filterLiveWsRoomRecipientSessionIds(audience.targets, message.id.senderId, addressedSessionIds);
+}
+
+function toRouteAdmittedSessionIds(
+    admittedPeerIds: readonly string[],
+    audience: RallarServerWsRoomAudience,
+    topic: RallarServerWsTopicAccess
+): readonly string[] {
+    return topic.participation === 'granted'
+        ? admittedPeerIds.filter((sessionId) => Object.hasOwn(audience.recipientConnectionGenerationIds, sessionId))
+        : admittedPeerIds;
 }
 
 export function isAuthorizedRoomAudience(

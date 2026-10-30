@@ -14,7 +14,7 @@ it('default outbound disposal joins an owned engine readiness read with no batch
     const stores = createDefaultOutboundTestStores();
     const runtime = createDefaultOutboundTestRuntime({
         stores,
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     await runtime.ready();

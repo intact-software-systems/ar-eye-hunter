@@ -163,7 +163,13 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
                 payload: {
                     kind: 'admit-message',
                     message: toALOutboundMessageReference(fixture.store.canonicalScope, canonicalEntry, message),
-                    policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ peer: 'held' }] }),
+                    policy: captureALOutboundPolicy({
+                        msg: message,
+                        dropReasonCode: undefined,
+                        lane: 'volatile',
+                        preparedMessages: [{ peer: 'held' }],
+                        admittedConnectionGenerationIds: undefined
+                    }),
                     preparedMessages: [{ peer: 'held' }]
                 }
             })
@@ -443,7 +449,8 @@ function toFenceSendDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<
             msg: planned,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [{ text: planned.id.msgId }]
+            preparedMessages: [{ text: planned.id.msgId }],
+            admittedConnectionGenerationIds: undefined
         }),
         intent: 'enqueue',
         phase: 'immediate',
@@ -517,7 +524,8 @@ async function readSupersedingBundle(
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ text: msg.id.msgId }],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' },
+            admittedConnectionGenerationIds: undefined
         })
     });
 }
@@ -545,7 +553,13 @@ async function readPendingAdmissionBundle(
 ): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
     const read = await input.store.readOutgoingMessage({
         msg: input.message,
-        planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ peer: 'held' }] }),
+        planner: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'volatile',
+            preparedMessages: [{ peer: 'held' }],
+            admittedConnectionGenerationIds: undefined
+        }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });

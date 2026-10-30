@@ -172,6 +172,7 @@ async function publishRallarServerWsFanout(
                     message: input.message,
                     audience: input.audience,
                     admittedPeerIds: input.admittedPeerIds,
+                    topic: input.topic,
                     nowEpochMs: input.nowEpochMs
                 }),
                 admittedPeerIds: input.admittedPeerIds,
@@ -208,9 +209,8 @@ interface AdmittedOutboxAudience {
  * The sessions the live branch would address, handed to the outbox beside the message: the server's own
  * outbound owner sends to that audience and its pending row expects it, never the sessions that happen to
  * be connected to the instance that dequeues it (D24, D43). The wire message stays as the origin sent it,
- * so a room larger than the collection limit still fans out. On a granted topic each admitted session's
- * subscription generation travels with it (D489); one the route's audience no longer holds has none, and no
- * dispatch step sends it.
+ * so a room larger than the collection limit still fans out. On a granted topic the admitted sessions are those the
+ * route's audience still subscribes, and each one's subscription generation travels with it (D489).
  */
 function toAdmittedAudience(input: PublishRallarServerWsMessageInput): AdmittedOutboxAudience | undefined {
     const { message, audience, admittedPeerIds } = input;
@@ -221,16 +221,14 @@ function toAdmittedAudience(input: PublishRallarServerWsMessageInput): AdmittedO
         message,
         audience,
         admittedPeerIds,
+        topic: input.topic,
         nowEpochMs: input.nowEpochMs
     });
     const generations = audience.recipientConnectionGenerationIds;
     return {
         sessionIds,
         connectionGenerationIds: input.topic.participation === 'granted'
-            ? Object.fromEntries(
-                sessionIds.filter((sessionId) => Object.hasOwn(generations, sessionId))
-                    .map((sessionId) => [sessionId, generations[sessionId]])
-            )
+            ? Object.fromEntries(sessionIds.map((sessionId) => [sessionId, generations[sessionId]]))
             : undefined
     };
 }

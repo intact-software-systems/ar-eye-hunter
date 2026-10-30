@@ -54,14 +54,16 @@ const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     dropReasonCode: undefined,
     lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }],
-    supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
+    supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' },
+    admittedConnectionGenerationIds: undefined
 });
 
 const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
     lane: 'durable',
-    preparedMessages: [{ text: msg.id.msgId }]
+    preparedMessages: [{ text: msg.id.msgId }],
+    admittedConnectionGenerationIds: undefined
 });
 
 /** Stamps the deadline the QoS normalization of a transport gives a control message, as the planners of both carriers do. */
@@ -69,7 +71,8 @@ const CONTROL_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: msg.id.ts + 30_000 } },
     dropReasonCode: undefined,
     lane: 'durable',
-    preparedMessages: [{ text: msg.id.msgId }]
+    preparedMessages: [{ text: msg.id.msgId }],
+    admittedConnectionGenerationIds: undefined
 });
 
 /** Rewrites the route of `bad-ack` only, which the admission read refuses as a changed authority. */

@@ -1,7 +1,7 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { GroupPublicationAuthority } from '../group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import type { GroupPublicationAuthority } from '../group-state/group-state-service-contracts.ts';
 import { toMembersTopicPublicationAuthority } from './room-publication/compute-room-publication-admission.ts';
 import type {
     RallarServerWsPublishAudienceInputDto,
