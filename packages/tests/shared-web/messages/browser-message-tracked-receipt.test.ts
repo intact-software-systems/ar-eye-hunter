@@ -13,7 +13,10 @@ import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/brow
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
-import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageHandle,
+    RallarTypedMessageChannelDefinition
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     newALBroadcastMessage,
@@ -36,6 +39,7 @@ import {
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -56,6 +60,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 const SESSION_ID = 'session-1';
 const TTL_MS = 30_000;
 const SERVER_PEER_ID = 'server';
+const MEMBERS_PUBLICATION: DispatchHarnessPublication = { access: 'members', permissions: undefined };
 
 interface DispatchHarness {
     readonly registry: BrowserRallarDeliveryRegistry;
@@ -64,8 +69,21 @@ interface DispatchHarness {
 
 type CarrierAdmission = (message: ALMessage) => Promise<ALOutboundEnqueueResult>;
 
+/** The channel access a dispatched send carries, and the publish grant the room's cached snapshot holds for it. */
+interface DispatchHarnessPublication {
+    readonly access: RallarTypedMessageChannelDefinition['access'];
+    readonly permissions: GroupPublicationTopicPermissions | undefined;
+}
+
+interface DispatchHarnessInput {
+    readonly registry: BrowserRallarDeliveryRegistry;
+    readonly carrier: ALDeliveryCarrier;
+    readonly admits: Readonly<Partial<Record<ALDeliveryCarrier, CarrierAdmission>>>;
+    readonly publication: DispatchHarnessPublication;
+}
+
 /** The origin WS client and the browser's dispatch over it, so a test can hand the client the server's controls. */
-interface ExclusiveWsLeg {
+interface WsLeg {
     readonly ws: WsQueueBoxClientService;
     readonly harness: DispatchHarness;
 }
@@ -197,7 +215,12 @@ describe('the receipt an RTC send tracks reaches its handle (R-S3a-4)', () => {
     it('keeps a room send asking qos.ack hop tracking hop, with no downgrade', async () => {
         vi.useFakeTimers();
         const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
-        const harness = createDispatchHarness(createRegistry(), 'rtc', { rtc: (message) => fixture.manager.enqueueIfAbsent(message) });
+        const harness = createDispatchHarness({
+            registry: createRegistry(),
+            carrier: 'rtc',
+            admits: { rtc: (message) => fixture.manager.enqueueIfAbsent(message) },
+            publication: MEMBERS_PUBLICATION
+        });
         const handle = harness.send(newALMulticastMessage('a', toRoute('rtc-hop'), ORIGIN_ROOM, 'chat.message.v1', { text: 'hop' }, {
             reliability: 'at-least-once',
             ack: 'none',
@@ -229,9 +252,14 @@ describe('the receipt a WS fallback leg tracks reaches its handle (R-S3a-4)', ()
             snapshot: createOriginSnapshot(['a', 'b'], 4),
             nextHopPeerIds: []
         });
-        const harness = createDispatchHarness(registry, 'rtc', {
-            rtc: (message) => fixture.manager.enqueueIfAbsent(message),
-            ws: (message) => ws.enqueueOutboxIfAbsent(message)
+        const harness = createDispatchHarness({
+            registry,
+            carrier: 'rtc',
+            admits: {
+                rtc: (message) => fixture.manager.enqueueIfAbsent(message),
+                ws: (message) => ws.enqueueOutboxIfAbsent(message)
+            },
+            publication: MEMBERS_PUBLICATION
         });
         const handle = harness.send(
             newALMulticastMessage('a', toRoute('fallback-hop'), ORIGIN_ROOM, 'chat.message.v1', {
@@ -305,7 +333,12 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
     it('ends a group-leader send on ws acknowledged when the server\'s receipt names the director confirmed', async () => {
         const registry = createRegistry();
         const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
-        const harness = createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) });
+        const harness = createDispatchHarness({
+            registry,
+            carrier: 'ws',
+            admits: { ws: (message) => ws.enqueueOutboxIfAbsent(message) },
+            publication: MEMBERS_PUBLICATION
+        });
         const handle = harness.send(createLeaderSend(SESSION_ID, 'leader-acknowledged-ws'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
@@ -334,7 +367,12 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
     it('ends a group-leader send on ws rejected by the server\'s no-leader refusal, as its relay rejection', async () => {
         const registry = createRegistry();
         const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
-        const harness = createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) });
+        const harness = createDispatchHarness({
+            registry,
+            carrier: 'ws',
+            admits: { ws: (message) => ws.enqueueOutboxIfAbsent(message) },
+            publication: MEMBERS_PUBLICATION
+        });
         const handle = harness.send(createLeaderSend(SESSION_ID, 'leader-refused-ws'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
@@ -358,7 +396,7 @@ describe('the claim of an exclusive room send reaches its handle', () => {
     });
 
     it('ends an exclusive send on ws acknowledged when the server\'s receipt confirms every recipient', async () => {
-        const { ws, harness } = await createExclusiveWsLeg();
+        const { ws, harness } = await createWsLeg(MEMBERS_PUBLICATION);
         const handle = harness.send(createExclusiveSend('receiver'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
@@ -386,7 +424,7 @@ describe('the claim of an exclusive room send reaches its handle', () => {
     });
 
     it('ends a receipted exclusive send on ws rejected by the server\'s held-by-other refusal, as its relay rejection', async () => {
-        const { ws, harness } = await createExclusiveWsLeg();
+        const { ws, harness } = await createWsLeg(MEMBERS_PUBLICATION);
         const handle = harness.send(createExclusiveSend('receiver'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
@@ -400,8 +438,30 @@ describe('the claim of an exclusive room send reaches its handle', () => {
         });
     });
 
+    it('ends a granted send its cached grant admitted rejected by the server\'s no-publish-grant refusal after its admitted receipt, terminal', async () => {
+        const { ws, harness } = await createWsLeg({ access: 'granted', permissions: { publish: true, subscribe: false } });
+        const handle = harness.send(createGrantedTopicSend());
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+        await ws.acceptIncomingMessage(createServerReceipt({
+            msgId: handle.msgId,
+            phase: 'admitted',
+            expectedRecipientPeerIds: ['b'],
+            confirmedRecipientPeerIds: [],
+            nowMs: Date.now
+        }));
+
+        await ws.acceptIncomingMessage(createServerNack(handle.msgId, 'no-publish-grant', Date.now));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('rejected');
+        expect(isALDeliveryTerminal(handle.lifecycle())).toBe(true);
+        expect(handle.lifecycle().evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'no-publish-grant' }
+        });
+    });
+
     it('keeps a receipt-less exclusive send transport-accepted and carries the server\'s held-by-other refusal as evidence', async () => {
-        const { ws, harness } = await createExclusiveWsLeg();
+        const { ws, harness } = await createWsLeg(MEMBERS_PUBLICATION);
         const handle = harness.send(createExclusiveSend('none'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
@@ -425,14 +485,19 @@ async function createLeaderRtcLeg(
     const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b', 'c'] });
     const wsAdmissions: ALMessage[] = [];
     const ws = strategy === 'rtc' ? undefined : await createWsClient(registry, 'a', SERVER_PEER_ID);
-    const harness = createDispatchHarness(registry, 'rtc', {
-        rtc: (message) => fixture.manager.enqueueIfAbsent(message),
-        ...(ws === undefined ? {} : {
-            ws: (message: ALMessage) => {
-                wsAdmissions.push(message);
-                return ws.enqueueOutboxIfAbsent(message);
-            }
-        })
+    const harness = createDispatchHarness({
+        registry,
+        carrier: 'rtc',
+        admits: {
+            rtc: (message) => fixture.manager.enqueueIfAbsent(message),
+            ...(ws === undefined ? {} : {
+                ws: (message: ALMessage) => {
+                    wsAdmissions.push(message);
+                    return ws.enqueueOutboxIfAbsent(message);
+                }
+            })
+        },
+        publication: MEMBERS_PUBLICATION
     });
     return { fixture, harness, wsAdmissions };
 }
@@ -455,10 +520,18 @@ function createLeaderSend(senderId: string, resourceId: string): ALMessage {
     });
 }
 
-async function createExclusiveWsLeg(): Promise<ExclusiveWsLeg> {
+async function createWsLeg(publication: DispatchHarnessPublication): Promise<WsLeg> {
     const registry = createRegistry();
     const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
-    return { ws, harness: createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) }) };
+    return {
+        ws,
+        harness: createDispatchHarness({
+            registry,
+            carrier: 'ws',
+            admits: { ws: (message) => ws.enqueueOutboxIfAbsent(message) },
+            publication
+        })
+    };
 }
 
 /** A room broadcast claiming the one resource every exclusive send here names. */
@@ -468,6 +541,16 @@ function createExclusiveSend(ack: 'receiver' | 'none'): ALMessage {
         reliability: 'at-least-once',
         ack,
         ownership: 'exclusive',
+        ttlMs: TTL_MS
+    });
+}
+
+/** A receipted room publication on a topic the server enforces publication grants on. */
+function createGrantedTopicSend(): ALMessage {
+    return newALBroadcastMessage(SESSION_ID, toRoute('feed-1'), 'room', 'chat.message.v1', { text: 'feed' }, {
+        groupRef: ORIGIN_ROOM,
+        reliability: 'at-least-once',
+        ack: 'receiver',
         ttlMs: TTL_MS
     });
 }
@@ -502,7 +585,12 @@ function toRoute(resourceId: string): ALMessage['route'] {
 async function createWsDispatchHarness(serverPeerId: string | undefined): Promise<DispatchHarness> {
     const registry = createRegistry();
     const service = await createWsClient(registry, SESSION_ID, serverPeerId);
-    return createDispatchHarness(registry, 'ws', { ws: (message) => service.enqueueOutboxIfAbsent(message) });
+    return createDispatchHarness({
+        registry,
+        carrier: 'ws',
+        admits: { ws: (message) => service.enqueueOutboxIfAbsent(message) },
+        publication: MEMBERS_PUBLICATION
+    });
 }
 
 async function createWsClient(
@@ -536,11 +624,7 @@ function createRegistry(): BrowserRallarDeliveryRegistry {
 }
 
 /** The browser's own dispatch and registry over real carrier admissions; with both carriers it may fall back. */
-function createDispatchHarness(
-    registry: BrowserRallarDeliveryRegistry,
-    carrier: ALDeliveryCarrier,
-    admits: Readonly<Partial<Record<ALDeliveryCarrier, CarrierAdmission>>>
-): DispatchHarness {
+function createDispatchHarness({ registry, carrier, admits, publication }: DispatchHarnessInput): DispatchHarness {
     const middleware: ApiMiddleware = createDefaultApiMiddlewareTestDouble({
         middleware: {
             ...(admits.ws === undefined ? {} : { webSocketQueueBox: { enqueueOutboxIfAbsent: admits.ws } }),
@@ -559,7 +643,8 @@ function createDispatchHarness(
         deliveries: registry,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => publication.permissions
     });
     const canFallback = admits.ws !== undefined && admits.rtc !== undefined;
     return {
@@ -574,6 +659,7 @@ function createDispatchHarness(
                 message,
                 canFallback,
                 payloadIssues: [],
+                access: publication.access,
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             });

@@ -94,7 +94,8 @@ export async function refreshGamePresence(fixture: Awaited<ReturnType<typeof cre
             members: observed.members,
             admissions: observed.admissions,
             presenceSessions: observed.presenceSessions,
-            current: observed.current
+            current: observed.current,
+            publicationGrants: observed.publicationGrants
         }
     });
     if (computed.outcome === 'write' && computed.operation === 'update') {

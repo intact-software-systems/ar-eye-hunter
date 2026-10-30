@@ -12,6 +12,7 @@ import { createBrowserMessageSenderFixture, toQueuedMessageAdmission } from '../
 const START_MS = 1_760_000_000_000;
 const LIVE_CHANNEL: BrowserTypedChannelPolicy = {
     purpose: 'live',
+    access: 'members',
     durability: undefined,
     onStorageUnavailable: 'refuse',
     publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } } satisfies ALPublicationPolicy

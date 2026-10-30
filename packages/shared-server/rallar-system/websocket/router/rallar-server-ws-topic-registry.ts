@@ -3,6 +3,7 @@ import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '@shared/al-con
 import { assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -12,7 +13,9 @@ import type {
     RallarServerWsProxyRule,
     RallarServerWsPublishResult,
     RallarServerWsSelector,
-    RallarServerWsTopicDefinition
+    RallarServerWsTopicAccess,
+    RallarServerWsTopicDefinition,
+    RallarServerWsTopicMetadata
 } from './rallar-server-ws-router-contracts.ts';
 
 interface RegisteredHandler {
@@ -41,17 +44,19 @@ export class RallarServerWsTopicRegistry {
     private readonly definitions: RallarServerWsTopicDefinition<JsonWireValue>[] = [];
     private readonly handlers = new Map<string, RegisteredHandler>();
     private readonly proxyRules = new Map<string, RallarServerWsProxyRule<JsonWireValue>>();
+    private readonly grantedTopics: WsGrantedTopicSet;
+
+    constructor(grantedTopics: WsGrantedTopicSet) {
+        this.grantedTopics = grantedTopics;
+    }
 
     define<T extends RallarServerWsPayload>(
         definition: RallarServerWsTopicDefinition<T>
     ): void {
         assertValidRallarWsUserTopicId(definition.topicId, '$.topicId');
-        const exists = this.definitions.some((registered) =>
-            registered.topicId === definition.topicId &&
-            registered.typeId === definition.typeId
-        );
-        if (exists) {
-            throw new Error(`Rallar WS topic already defined: ${toSelectorKey(definition)}`);
+        this.assertDefinable(definition);
+        if (definition.participation === 'granted') {
+            this.grantedTopics.add(definition.topicId);
         }
         const authorize = definition.authorize;
         this.definitions.push({
@@ -118,6 +123,24 @@ export class RallarServerWsTopicRegistry {
             definition.topicId === message.route.topicId &&
             (definition.typeId === undefined || definition.typeId === message.payload.typeId)
         );
+    }
+
+    /**
+     * Who the message's topic reaches: its definition's access, `members` for an implicit topic. A granted topic id
+     * whose definitions name another type id lists no producer, so nothing publishes the undefined type on it.
+     */
+    resolveAccess(message: ALMessage): RallarServerWsTopicAccess {
+        const definition = this.find(message);
+        if (definition) {
+            return toRallarServerWsTopicAccess(definition);
+        }
+        return this.grantedTopics.has(message.route.topicId)
+            ? { participation: 'granted', serverProducerIds: [] }
+            : { participation: 'members' };
+    }
+
+    isGrantedTopic(topicId: string): boolean {
+        return this.grantedTopics.has(topicId);
     }
 
     /**
@@ -191,6 +214,20 @@ export class RallarServerWsTopicRegistry {
         return suppressDefaultFanout || (rule.suppressDefaultFanout ?? false);
     }
 
+    /** Grants are per exact room topic, so a granted topic is room-scoped and its topic id has one participation. */
+    private assertDefinable(definition: RallarServerWsTopicMetadata): void {
+        if (definition.participation === 'granted' && definition.scope !== 'room') {
+            throw new Error(`Granted Rallar WS topic must be scoped to a room: ${toSelectorKey(definition)}`);
+        }
+        const registered = this.definitions.filter((candidate) => candidate.topicId === definition.topicId);
+        if (registered.some((candidate) => candidate.typeId === definition.typeId)) {
+            throw new Error(`Rallar WS topic already defined: ${toSelectorKey(definition)}`);
+        }
+        if (registered.some((candidate) => candidate.participation !== definition.participation)) {
+            throw new Error(`Rallar WS topic ${definition.topicId} cannot be both members and granted`);
+        }
+    }
+
     private requireDeliveryTime(message: ALMessage): void {
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
@@ -205,6 +242,14 @@ export function resolveRallarServerWsTopicFanout(
     defaultFanout: RallarServerWsFanout
 ): RallarServerWsFanout {
     return definition?.fanout ?? defaultFanout;
+}
+
+export function toRallarServerWsTopicAccess(
+    definition: RallarServerWsTopicAccess
+): RallarServerWsTopicAccess {
+    return definition.participation === 'granted'
+        ? { participation: 'granted', serverProducerIds: [...definition.serverProducerIds] }
+        : { participation: 'members' };
 }
 
 function resolveRallarServerWsRuleFanout(

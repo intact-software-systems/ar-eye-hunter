@@ -88,7 +88,8 @@ export function createDeterministicRtcTopologyGroupSnapshot(
             disconnectReason: null
         })),
         memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length
+        onlineMemberCount: memberSessionIds.length,
+        publicationGrants: []
     };
 }
 

@@ -709,7 +709,8 @@ function makeGroupSnapshot(input: MakeGroupSnapshotInput): GroupSnapshot {
             expiresAtEpochMs: liveUntil
         })),
         memberCount,
-        onlineMemberCount: memberCount
+        onlineMemberCount: memberCount,
+        publicationGrants: []
     };
 }
 

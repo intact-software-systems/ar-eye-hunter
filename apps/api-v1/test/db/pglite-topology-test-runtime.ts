@@ -435,7 +435,8 @@ export function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
         }],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 
@@ -487,7 +488,8 @@ export function topologyGroupSnapshotWithSessions(
             session(peerSessionId, 'peer')
         ],
         memberCount: 2,
-        onlineMemberCount: 2
+        onlineMemberCount: 2,
+        publicationGrants: []
     };
 }
 

@@ -1,3 +1,4 @@
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
     GroupMember,
@@ -38,6 +39,7 @@ import {
     MEMBERS_NAMESPACE,
     PRESENCE_ADMISSIONS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { GroupStateSnapshotRepository } from './group-state-snapshot-repository.ts';
@@ -55,6 +57,11 @@ import {
     groupStatePresenceSessionStorageKeySuffix
 } from './presence/group-presence-storage-keys.ts';
 import {
+    canonicalStoredPublicationGrant,
+    canonicalStoredPublicationGrants
+} from './publication/group-publication-grant-codec.ts';
+import { groupStatePublicationGrantStorageKey } from './publication/group-publication-grant-storage-key.ts';
+import {
     readGroupStateMutationExactEntries,
     type GroupStateMutationExactEntries,
     type GroupStateMutationExactReadInput
@@ -69,6 +76,7 @@ export interface GroupPresenceSummaryStoredRead {
     readonly admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
     readonly presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     readonly current: RuntimeStateEntryValue<GroupPresenceSummary> | undefined;
+    readonly publicationGrants: readonly RuntimeStateEntryValue<GroupPublicationGrant>[];
 }
 
 export namespace GroupStateRepositoryReads {
@@ -299,6 +307,16 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         return stored ? canonicalStoredAdmission(stored, ref) : undefined;
     }
 
+    async findPublicationGrantEntry(
+        ref: GroupRef & Readonly<{ principalId: string; }>
+    ): Promise<RuntimeStateEntryValue<GroupPublicationGrant> | undefined> {
+        const stored = await this.getJsonEntryValue(
+            PUBLICATION_GRANTS_NAMESPACE,
+            groupStatePublicationGrantStorageKey(ref, ref.principalId)
+        );
+        return stored ? canonicalStoredPublicationGrant(stored, ref) : undefined;
+    }
+
     async listPresenceAdmissions(ref: GroupRef): Promise<readonly GroupPresenceAdmission[]> {
         return (await this.listPresenceAdmissionEntries(ref)).map(({ value }) => value);
     }
@@ -349,7 +367,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async readPresenceSummaryEntries(ref: GroupRef): Promise<GroupPresenceSummaryStoredRead> {
         const observedAtEpochMs = Date.now();
         const selectors = toGroupPresenceSummarySelectors(ref);
-        const [group, members, summary, sessions, admissions] = toGroupStateReadBatchLiveSelections(
+        const [group, members, summary, sessions, publicationGrants, admissions] = toGroupStateReadBatchLiveSelections(
             selectors,
             await this.repository.readRuntimeStateBatch(selectors),
             observedAtEpochMs
@@ -361,7 +379,8 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             members: members.entries.map((entry) => canonicalStoredMember(entry, ref)),
             admissions: admissions.entries.map((entry) => canonicalStoredAdmission(entry, ref)),
             presenceSessions: sessions.entries.map((entry) => canonicalStoredSession(entry, ref)),
-            current: storedSummary === undefined ? undefined : canonicalStoredSummary(storedSummary, ref)
+            current: storedSummary === undefined ? undefined : canonicalStoredSummary(storedSummary, ref),
+            publicationGrants: canonicalStoredPublicationGrants(publicationGrants.entries, ref)
         };
     }
 

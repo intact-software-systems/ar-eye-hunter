@@ -1,3 +1,7 @@
+import {
+    comparePublicationGrantPrincipalIds,
+    type GroupPublicationGrant
+} from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     GroupMember,
     GroupPresenceSession,
@@ -40,12 +44,18 @@ import {
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
-    PRESENCE_SUMMARIES_NAMESPACE
+    PRESENCE_SUMMARIES_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { canonicalStoredMember } from './membership/group-membership-repository.ts';
 import { decodeGroupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
 import { canonicalStoredSession, canonicalStoredSummary } from './presence/group-presence-repository.ts';
 import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
+import {
+    canonicalStoredPublicationGrant,
+    canonicalStoredPublicationGrants
+} from './publication/group-publication-grant-codec.ts';
+import { decodeGroupStatePublicationGrantStorageKey } from './publication/group-publication-grant-storage-key.ts';
 import {
     readGroupStateAuthorityBatch,
     readVersionedGroupStateSnapshotBatch,
@@ -72,6 +82,7 @@ interface GroupStateSnapshotPageCandidate {
     readonly members: readonly GroupMember[];
     readonly summary: GroupPresenceSummary | undefined;
     readonly sessions: readonly GroupPresenceSession[];
+    readonly publicationGrants: readonly GroupPublicationGrant[];
 }
 
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
@@ -100,6 +111,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                     members: read.membersByGroupId.get(stored.value.groupId) ?? [],
                     summary: read.summariesByGroupId.get(stored.value.groupId),
                     authoritativeSessions: read.sessionsByGroupId.get(stored.value.groupId) ?? [],
+                    publicationGrants: read.publicationGrantsByGroupId.get(stored.value.groupId) ?? [],
                     groupRevision: stored.value.snapshotVersion,
                     observedAtEpochMs,
                     sessionLeaseFields: 'authoritative'
@@ -139,10 +151,11 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
     ): Promise<GroupStateScopeSnapshotRead> {
         const keyPrefix = `${groupStateScopeStorageKey(scope)}:`;
         const groupsBeforeRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
-        const [memberEntriesRaw, summaryEntriesRaw, sessionEntriesRaw] = await Promise.all([
+        const [memberEntriesRaw, summaryEntriesRaw, sessionEntriesRaw, grantEntriesRaw] = await Promise.all([
             this.listJsonEntryValues(MEMBERS_NAMESPACE, keyPrefix),
             this.listJsonEntryValues(PRESENCE_SUMMARIES_NAMESPACE, keyPrefix),
-            this.listSelectedJsonEntryValues(toLivePresenceSessionsSelector(keyPrefix, observedAtEpochMs))
+            this.listSelectedJsonEntryValues(toLivePresenceSessionsSelector(keyPrefix, observedAtEpochMs)),
+            this.listJsonEntryValues(PUBLICATION_GRANTS_NAMESPACE, keyPrefix)
         ]);
         const groupsAfterRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
         const groupsBefore = groupsBeforeRaw.flatMap((stored) => canonicalStoredGroup(stored, scope) ?? []);
@@ -150,12 +163,21 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         const members = memberEntriesRaw.map((stored) => toScopeMember(stored, scope));
         const summaries = summaryEntriesRaw.map((stored) => toScopeSummary(stored, scope));
         const sessions = sessionEntriesRaw.map((stored) => toScopeSession(stored, scope));
+        const grants = grantEntriesRaw.map((stored) => toScopePublicationGrant(stored, scope));
         return {
             groupsBefore,
             groupsAfter,
             membersByGroupId: collectGroupStateValuesByGroupId(members),
             summariesByGroupId: new Map(summaries.map((summary) => [summary.groupId, summary])),
-            sessionsByGroupId: collectGroupStateValuesByGroupId(sessions)
+            sessionsByGroupId: collectGroupStateValuesByGroupId(sessions),
+            publicationGrantsByGroupId: new Map(
+                [...collectGroupStateValuesByGroupId(grants)].map(([groupId, values]) => [
+                    groupId,
+                    values.sort((left, right) =>
+                        comparePublicationGrantPrincipalIds(left.principalId, right.principalId)
+                    )
+                ])
+            )
         };
     }
 
@@ -186,6 +208,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                     members: candidate.members,
                     summary: candidate.summary,
                     authoritativeSessions: candidate.sessions,
+                    publicationGrants: candidate.publicationGrants,
                     groupRevision: after.value.snapshotVersion,
                     observedAtEpochMs,
                     sessionLeaseFields: 'authoritative'
@@ -212,7 +235,8 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                     this.findPresenceSummaryEntry(group),
                     this.readLivePresenceSessions(group, observedAtEpochMs)
                 ]);
-                return { entry, members, summary: summary?.value, sessions };
+                const publicationGrants = await this.listPublicationGrants(group);
+                return { entry, members, summary: summary?.value, sessions, publicationGrants };
             })
         );
     }
@@ -315,12 +339,21 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                 authoritativeSessions: batch.sessions.map(
                     (entry) => canonicalStoredSession(entry, ref).value
                 ),
+                publicationGrants: batch.publicationGrants.map((entry) => entry.value),
                 groupRevision: stored.value.snapshotVersion,
                 observedAtEpochMs,
                 sessionLeaseFields: 'authoritative'
             }),
             authorityGuard: toGroupStateAuthorityGuard(ref, stored)
         };
+    }
+
+    private async listPublicationGrants(ref: GroupRef): Promise<readonly GroupPublicationGrant[]> {
+        const stored = await this.listJsonEntryValues(
+            PUBLICATION_GRANTS_NAMESPACE,
+            `${groupStateGroupStorageKey(ref)}:`
+        );
+        return canonicalStoredPublicationGrants(stored, ref).map((entry) => entry.value);
     }
 
     private async readLivePresenceSessions(
@@ -362,6 +395,15 @@ function toScopeSummary(stored: RuntimeStateEntryValue<JsonWireValue>, scope: Gr
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateGroupStorageKey);
     assertDecodedGroupScope(decoded, scope, stored.entry.key);
     return canonicalStoredSummary(stored, decoded).value;
+}
+
+function toScopePublicationGrant(
+    stored: RuntimeStateEntryValue<JsonWireValue>,
+    scope: GroupScope
+): GroupPublicationGrant {
+    const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStatePublicationGrantStorageKey);
+    assertDecodedGroupScope(decoded, scope, stored.entry.key);
+    return canonicalStoredPublicationGrant(stored, decoded).value;
 }
 
 function toScopeSession(stored: RuntimeStateEntryValue<JsonWireValue>, scope: GroupScope): GroupPresenceSession {

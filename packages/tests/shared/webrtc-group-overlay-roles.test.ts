@@ -73,7 +73,8 @@ function createGroupSnapshot(): GroupSnapshot {
             createActiveSession('peer-planned')
         ],
         memberCount: 3,
-        onlineMemberCount: 3
+        onlineMemberCount: 3,
+        publicationGrants: []
     };
 }
 

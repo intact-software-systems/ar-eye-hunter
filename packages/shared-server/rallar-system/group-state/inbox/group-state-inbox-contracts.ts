@@ -6,12 +6,14 @@ import type {
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
+    GrantGroupPublicationRequest,
     GroupConnectRequest,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
     MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
+    RevokeGroupPublicationRequest,
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
@@ -144,6 +146,20 @@ export interface GroupMemberRoleSetAppInboxPayload {
     readonly request: SetGroupMemberRoleRequest;
 }
 
+export interface GroupPublicationGrantAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: GrantGroupPublicationRequest;
+}
+
+export interface GroupPublicationRevokeAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: RevokeGroupPublicationRequest;
+}
+
 export interface GroupOwnershipTransferAppInboxPayload {
     readonly scope: StateScope;
     readonly groupId: string;
@@ -208,6 +224,8 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_MEMBER_BAN]: GroupMemberBanAppInboxPayload;
     [AppInboxType.GROUP_MEMBER_UNBAN]: GroupMemberUnbanAppInboxPayload;
     [AppInboxType.GROUP_MEMBER_ROLE_SET]: GroupMemberRoleSetAppInboxPayload;
+    [AppInboxType.GROUP_PUBLICATION_GRANT]: GroupPublicationGrantAppInboxPayload;
+    [AppInboxType.GROUP_PUBLICATION_REVOKE]: GroupPublicationRevokeAppInboxPayload;
     [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: GroupOwnershipTransferAppInboxPayload;
     [AppInboxType.GROUP_MEMBER_UPSERT]: GroupMemberUpsertAppInboxPayload;
     [AppInboxType.GROUP_PRESENCE_CONNECT]: GroupPresenceConnectAppInboxPayload;
@@ -255,6 +273,8 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_MEMBER_BAN,
     AppInboxType.GROUP_MEMBER_UNBAN,
     AppInboxType.GROUP_MEMBER_ROLE_SET,
+    AppInboxType.GROUP_PUBLICATION_GRANT,
+    AppInboxType.GROUP_PUBLICATION_REVOKE,
     AppInboxType.GROUP_OWNERSHIP_TRANSFER,
     AppInboxType.GROUP_MEMBER_UPSERT,
     AppInboxType.GROUP_PRESENCE_CONNECT,

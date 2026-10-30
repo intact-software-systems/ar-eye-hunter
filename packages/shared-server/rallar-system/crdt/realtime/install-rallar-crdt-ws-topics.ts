@@ -115,6 +115,7 @@ function createRallarCrdtTopicDefinition(
         topicId: toTopicId(input.topicScope),
         typeId,
         scope: input.topicScope,
+        participation: 'members',
         maxPayloadBytes,
         fanout: input.kind === 'update' || (input.kind === 'catch-up-request' && input.options.logRepository)
             ? 'none'

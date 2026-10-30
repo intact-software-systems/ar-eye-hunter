@@ -132,7 +132,8 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
         deliveries,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => undefined
     });
     let sequence = 0;
     return {
@@ -152,6 +153,7 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
                 rtcCapture: { status: 'unavailable', reason: 'absent' },
                 canFallback: strategy === 'rtc-with-ws-fallback',
                 payloadIssues: [],
+                access: 'members',
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             });

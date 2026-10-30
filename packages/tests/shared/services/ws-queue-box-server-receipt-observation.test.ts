@@ -107,7 +107,7 @@ async function createObservedServer(
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope ?? (() => ({ scope: SCOPE, expiresAtEpochMs })),
-        targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'recipient', connectionId: 'recipient' }] },
+        targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'recipient', connectionId: 'recipient' }] },
         receiptObserver: observe
     });
     if (options.installRoomAuthorizer !== false) {
@@ -786,7 +786,7 @@ function createObservedAuthority(
         serverPeerId: 'server',
         clock,
         newControlId: () => 'nack',
-        targetResolution: new WsQueueBoxServerTargetResolution({ socket, targetResolver: {} }),
+        targetResolution: new WsQueueBoxServerTargetResolution({ socket, targetResolver: { requiresFrozenAudience: () => false } }),
         controlDelivery,
         ackRelay,
         authorizeInboundMessage,

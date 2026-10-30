@@ -434,7 +434,8 @@ function createGroupSnapshot(
             expiresAtEpochMs: NOW_EPOCH_MS + 60_000
         })),
         memberCount: principalIds.length,
-        onlineMemberCount: principalIds.length
+        onlineMemberCount: principalIds.length,
+        publicationGrants: []
     };
 }
 

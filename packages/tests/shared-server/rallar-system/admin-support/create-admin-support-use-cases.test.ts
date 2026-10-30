@@ -893,7 +893,8 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             expiresAtEpochMs: NOW_EPOCH_MS + 60_000
         }],
         memberCount: 1,
-        onlineMemberCount: 1
+        onlineMemberCount: 1,
+        publicationGrants: []
     };
 }
 

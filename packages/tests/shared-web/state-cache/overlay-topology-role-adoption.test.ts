@@ -552,7 +552,8 @@ function groupSnapshot(
         members: [],
         activeSessions: sessionIds.map(activeSession),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 

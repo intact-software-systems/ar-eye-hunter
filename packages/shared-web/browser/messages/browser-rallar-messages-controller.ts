@@ -50,6 +50,7 @@ export namespace BrowserRallarMessagesController {
         resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
         resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence;
         readMessageMaxPayloadBytes(): number;
+        readPublicationPermissions: BrowserRallarMessageDispatch.Input['readPublicationPermissions'];
         /** The session's port, read when a reply is dropped. */
         readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
     }
@@ -148,7 +149,8 @@ function createMessageSender(
             deliveries: input.deliveries,
             sessionDeliveries: input.sessionDeliveries,
             publicationStages: input.publicationStages,
-            nowMs: input.nowMs
+            nowMs: input.nowMs,
+            readPublicationPermissions: input.readPublicationPermissions
         }),
         sessionDeliveries: input.sessionDeliveries,
         inputValidator,

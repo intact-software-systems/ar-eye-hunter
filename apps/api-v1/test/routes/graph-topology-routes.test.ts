@@ -835,7 +835,8 @@ function createGroupSnapshot(
             disconnectReason: null
         })),
         memberCount: memberPrincipalIds.length,
-        onlineMemberCount: memberPrincipalIds.length
+        onlineMemberCount: memberPrincipalIds.length,
+        publicationGrants: []
     };
 }
 

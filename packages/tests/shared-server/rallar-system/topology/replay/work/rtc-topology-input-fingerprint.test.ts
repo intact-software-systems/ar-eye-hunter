@@ -15,6 +15,13 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
+import {
+    applyPublicationMutation,
+    GRANT_ROOM,
+    seedGrantRoom
+} from '../../../group-state/mutation/group-publication-grant-test-runtime.ts';
+import { requireSnapshot } from '../../../group-state/presence/group-presence-test-runtime.ts';
 import { createRtcTopologyGroupSnapshot, toRtcTopologyGroupWithDirector } from '../../rtc-topology-test-fixtures.ts';
 
 const GROUP_REF = {
@@ -113,6 +120,45 @@ describe('RTC topology input fingerprint inputs', () => {
         expect(halted).toBe(flowing);
     });
 
+    // D493: a grant write enqueues presence-summary work, so the planner sees a
+    // fresh snapshot version; grants are no planning input, so that work is a no-op.
+    it('a grant-only write leaves the topology input fingerprint unchanged', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedGrantRoom(runtime);
+        const before = await requireSnapshot(runtime, GRANT_ROOM);
+        await applyPublicationMutation(runtime, {
+            operation: 'grantGroupPublication',
+            actorPrincipalId: 'alice',
+            targetPrincipalId: 'bob',
+            topicId: 'room.feed',
+            publish: true,
+            subscribe: true,
+            requestId: 'grant-bob-feed'
+        });
+        const after = await requireSnapshot(runtime, GRANT_ROOM);
+
+        expect(after.group.snapshotVersion).toBe(before.group.snapshotVersion + 1);
+        expect(after.publicationGrants.map((grant) => grant.principalId)).toEqual(['bob']);
+        expect(computeRtcTopologyInputFingerprint({ ...fingerprintFacts({}), group: after })).toBe(
+            computeRtcTopologyInputFingerprint({ ...fingerprintFacts({}), group: before })
+        );
+    });
+
+    it('a snapshot differing only in publicationGrants has the same topology input fingerprint', () => {
+        const facts = fingerprintFacts({});
+        const granted = {
+            ...facts.group,
+            publicationGrants: [{
+                ...GROUP_REF,
+                principalId: 'peer-1',
+                topics: { 'room.feed': { publish: true, subscribe: true } },
+                updated: facts.group.group.updated
+            }]
+        };
+
+        expect(computeRtcTopologyInputFingerprint({ ...facts, group: granted })).toBe(computeRtcTopologyInputFingerprint(facts));
+    });
+
     it('changes when a planning input changes', () => {
         const narrow = computeRtcTopologyInputFingerprint(fingerprintFacts({}));
         const wide = computeRtcTopologyInputFingerprint({
@@ -169,7 +215,8 @@ function fingerprintFacts(groupOverrides: Partial<Group>): RtcTopologyInputFinge
             members: [],
             activeSessions: [],
             memberCount: 0,
-            onlineMemberCount: 0
+            onlineMemberCount: 0,
+            publicationGrants: []
         },
         effectiveConfig: EFFECTIVE_CONFIG,
         kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },

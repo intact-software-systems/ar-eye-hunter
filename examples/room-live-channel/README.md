@@ -1,6 +1,6 @@
 # Room Live Channel
 
-Use `rallar.messages.room<T>({ purpose: 'live', publication })` for values that
+Use `rallar.messages.room<T>({ purpose: 'live', access: 'members', publication })` for values that
 replace each other: poses, cursors, and other state where only the newest value
 of a stream matters. A live channel is best-effort, asks no receipt, is
 volatile, and each value lives one second by default (override it per send
@@ -49,6 +49,7 @@ const poseChannel = rallar.messages.room<Pose>({
     topicId: 'arena.pose',
     typeId: 'arena.pose.v1',
     purpose: 'live',
+    access: 'members',
     publication: {
         cadenceMs: 50,
         retainNewest: 1,

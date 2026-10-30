@@ -450,7 +450,8 @@ function assembleSenderRemoval(stamped: GroupSnapshot): GroupSnapshot {
         authoritativeSessions: stamped.activeSessions,
         groupRevision,
         observedAtEpochMs: 1_000,
-        sessionLeaseFields: 'authoritative'
+        sessionLeaseFields: 'authoritative',
+        publicationGrants: []
     }, (key, failure) => new Error(`${key}: ${failure}`));
 }
 
@@ -973,7 +974,8 @@ function assembleLeaseObservation(snapshot: GroupSnapshot, lastHeartbeatAtEpochM
         authoritativeSessions: snapshot.activeSessions.map((session) => ({ ...session, lastHeartbeatAtEpochMs, expiresAtEpochMs })),
         groupRevision: 1,
         observedAtEpochMs: 51_000,
-        sessionLeaseFields: 'authoritative'
+        sessionLeaseFields: 'authoritative',
+        publicationGrants: []
     }, (key, message) => new Error(`${key}: ${message}`));
 }
 

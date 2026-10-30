@@ -63,7 +63,8 @@ function createPhasedGroupCommand(policy: GroupLifecyclePolicy): Extract<GroupMu
             createdByPrincipalId: 'alice',
             expiresAtEpochMs: null,
             purgeAfterEpochMs: null,
-            lifecyclePolicy: policy
+            lifecyclePolicy: policy,
+            publicationGrants: {}
         }
     };
 }

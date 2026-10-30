@@ -57,6 +57,7 @@ const MANAGED_API_PASSTHROUGH_NAMES = [
     'RALLAR_REGISTRATION_IP_RATE_LIMIT',
     'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
+    'RALLAR_GRANTED_WS_TOPICS_JSON',
     'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR',
     'TZ'
 ] as const;
@@ -108,6 +109,8 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_REGISTRATION_USER_RATE_LIMIT = env.RALLAR_REGISTRATION_USER_RATE_LIMIT ?? '100';
     env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON = env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON ??
         '[{"documentType":"black-box-map","rollout":"production"}]';
+    env.RALLAR_GRANTED_WS_TOPICS_JSON = env.RALLAR_GRANTED_WS_TOPICS_JSON ??
+        '[{"topicId":"room.bb-granted-feed","fanout":"outbox","serverProducerIds":[]}]';
 
     if (options.backend === 'postgres') {
         env.RALLAR_SQL_BACKEND = 'postgres';

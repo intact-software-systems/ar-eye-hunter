@@ -102,6 +102,7 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
         members: [],
         activeSessions: [],
         memberCount: 0,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }

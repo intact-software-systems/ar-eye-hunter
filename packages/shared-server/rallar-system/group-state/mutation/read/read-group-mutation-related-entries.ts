@@ -1,5 +1,6 @@
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
+import { readsTargetPublicationGrant } from './group-mutation-read-scope.ts';
 
 export interface SequentialRelatedEntries {
     readonly actorMemberEntry: GroupMutationRead['actorMemberEntry'] | undefined;
@@ -9,6 +10,7 @@ export interface SequentialRelatedEntries {
     readonly authorityAdmission: GroupMutationRead['authorityAdmission'] | undefined;
     readonly directorMemberEntry: GroupMutationRead['directorMemberEntry'] | undefined;
     readonly directorAdmission: GroupMutationRead['directorAdmission'] | undefined;
+    readonly targetPublicationGrant: GroupMutationRead['targetPublicationGrant'] | undefined;
 }
 
 interface ReadGroupMutationRelatedEntriesInput {
@@ -51,7 +53,12 @@ export async function readGroupMutationRelatedEntries({
         readOptionalMemberEntry(repository, command, ownerMemberId),
         readOptionalAdmissionEntry(repository, command, appointsDirector ? ownerPrincipalId : null),
         readOptionalMemberEntry(repository, command, directorMemberId),
-        readOptionalAdmissionEntry(repository, command, appointsDirector ? directorPrincipalId : null)
+        readOptionalAdmissionEntry(repository, command, appointsDirector ? directorPrincipalId : null),
+        readOptionalPublicationGrantEntry(
+            repository,
+            command,
+            readsTargetPublicationGrant(command) ? targetPrincipalId : null
+        )
     ]);
     return {
         actorMemberEntry: values[0],
@@ -60,7 +67,8 @@ export async function readGroupMutationRelatedEntries({
         authorityMemberEntry: values[3],
         authorityAdmission: values[4],
         directorMemberEntry: values[5],
-        directorAdmission: values[6]
+        directorAdmission: values[6],
+        targetPublicationGrant: values[7]
     };
 }
 
@@ -81,5 +89,15 @@ async function readOptionalAdmissionEntry(
 ): Promise<GroupMutationRead['targetAdmission'] | undefined> {
     return principalId
         ? await repository.findPresenceAdmissionEntry({ ...command.aggregateRef, principalId })
+        : undefined;
+}
+
+async function readOptionalPublicationGrantEntry(
+    repository: GroupStateRepository,
+    command: GroupMutationCommand,
+    principalId: string | null
+): Promise<GroupMutationRead['targetPublicationGrant'] | undefined> {
+    return principalId
+        ? await repository.findPublicationGrantEntry({ ...command.aggregateRef, principalId })
         : undefined;
 }

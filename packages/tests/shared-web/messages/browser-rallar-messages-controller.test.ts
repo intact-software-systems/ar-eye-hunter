@@ -154,6 +154,7 @@ describe('rallar.messages.readUsage', () => {
             topicId: 'app.pose',
             typeId: 'app.pose.v1',
             purpose: 'live',
+            access: 'members',
             publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
         });
         await channel.sendWs({ x: 1 }, { scope: 'world', resourceId: 'entity-1', ttlMs: 60_000 });

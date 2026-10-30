@@ -1324,6 +1324,44 @@ Deno.test('last-owner protection applies to leave remove ban and demote operatio
     );
 });
 
+Deno.test('grantGroupPublication writes the grant event and bumps snapshotVersion alone', async () => {
+    const service = createTestGroupStateService();
+    await createGovernanceGroup(service);
+    const before = await readSnapshot(service);
+
+    const grantedWritten = await service.grantGroupPublication(TEST_SCOPE, 'group-1', 'member-1', {
+        topicId: 'room.feed',
+        publish: true,
+        subscribe: false,
+        actorPrincipalId: 'owner-1',
+        actorSessionId: 'owner-session',
+        requestId: 'grant-member-1-feed'
+    });
+    const granted = snapshotFromGroupStateWritten(grantedWritten);
+
+    assert.equal(grantedWritten.result?.event?.eventType, 'publication-grant-changed');
+    assert.deepEqual(grantedWritten.result?.event?.payload, {
+        principalId: 'member-1',
+        topicId: 'room.feed',
+        permissions: { publish: true, subscribe: false }
+    });
+    assertSnapshotVersion(granted, before.group.snapshotVersion + 1);
+    assert.equal(granted.group.rosterVersion, before.group.rosterVersion);
+    assert.equal(granted.group.metadataVersion, before.group.metadataVersion);
+    await assertPolicyRejects(
+        () =>
+            service.grantGroupPublication(TEST_SCOPE, 'group-1', 'owner-1', {
+                topicId: 'room.feed',
+                publish: true,
+                subscribe: false,
+                actorPrincipalId: 'admin-1',
+                actorSessionId: 'admin-session',
+                requestId: 'admin-grant-owner'
+            }),
+        'forbidden-role'
+    );
+});
+
 Deno.test('appointDirector lets an active member become director when owner is offline', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {

@@ -283,7 +283,7 @@ function createEmptyTopology(groupRef: GroupRef): GroupTopologyManagementView {
     };
 }
 
-it('gives a named room message the notification purpose and passes a declared one through', async () => {
+it('gives a named room message the notification purpose on members access and passes a declared one through', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
     seedRoomSnapshots([createRoomSnapshot('room-1', ['session-1'])]);
@@ -297,17 +297,19 @@ it('gives a named room message the notification purpose and passes a declared on
         topicId: 'room.cmd',
         typeId: 'room.cmd.v1',
         purpose: 'command',
+        access: 'granted',
         durability: 'local-outbox'
     });
 
     const definitions = room.mock.calls.map(([definition]) => definition);
     expect(definitions).toEqual([
-        { topicId: 'room.chat', typeId: 'room.chat.v1', roomRef, purpose: 'notification' },
+        { topicId: 'room.chat', typeId: 'room.chat.v1', roomRef, purpose: 'notification', access: 'members' },
         {
             topicId: 'room.cmd',
             typeId: 'room.cmd.v1',
             roomRef,
             purpose: 'command',
+            access: 'granted',
             durability: 'local-outbox'
         }
     ]);
@@ -326,6 +328,7 @@ it('passes a declared storage choice through to the room channel', async () => {
         topicId: 'room.cmd',
         typeId: 'room.cmd.v1',
         purpose: 'command',
+        access: 'members',
         durability: 'local-outbox',
         onStorageUnavailable: 'volatile'
     });
@@ -336,6 +339,7 @@ it('passes a declared storage choice through to the room channel', async () => {
         typeId: 'room.cmd.v1',
         roomRef,
         purpose: 'command',
+        access: 'members',
         durability: 'local-outbox',
         onStorageUnavailable: 'volatile'
     }]);

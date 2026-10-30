@@ -381,7 +381,8 @@ describe('QueueBoxPubSubBridge', () => {
         socketOpened = true;
         holds.open({ id: 'awaited-session', generationId: 'generation-1' });
 
-        expect(held).toHaveLength(ExpectedConnectionHolds.MAX_HELD_SENDS_PER_CONNECTION);
+        // A held send runs behind the session's earlier held sends, so it lands on a later turn.
+        await expect.poll(() => held).toHaveLength(ExpectedConnectionHolds.MAX_HELD_SENDS_PER_CONNECTION);
         expect(held.at(-1)).toEqual(messages.at(-1));
         const evicted = timingEvents
             .filter((event) => event.operation === 'outbox-direct-send')
@@ -410,13 +411,142 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
         await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
 
         expect(addressed).toEqual([['admitted-session'], ['admitted-session']]);
+    });
+
+    it('re-checks a frozen-audience room row\'s captured sessions before the local and the remote send (D498)', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const addressed: Array<readonly string[] | undefined> = [];
+        const rechecked: Array<readonly string[]> = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                readAudience: async () => ['subscriber', 'revoked'],
+                requiresFrozenAudience: () => true,
+                sendToTargetsWithResult: (message, recipientSessionIds) => {
+                    addressed.push(recipientSessionIds);
+                    return sentLiveResult(message);
+                }
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: async (input) => {
+                rechecked.push(input.candidateSessionIds);
+                return input.candidateSessionIds.filter((sessionId) => sessionId !== 'revoked');
+            }
+        });
+
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(rechecked).toEqual([['subscriber', 'revoked'], ['subscriber', 'revoked']]);
+        expect(addressed).toEqual([['subscriber'], ['subscriber']]);
+    });
+
+    it('sends nothing and requeues a remote frozen-audience row whose re-check cannot read (D498)', async () => {
+        const bridge = createBridge();
+        const entry = { ...createCanonicalRoomOutboxEntry(Date.now()), status: EntityStatus.RESERVED };
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const sends: WsServerLiveSendInputDto[] = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                sends,
+                readAudience: async () => ['subscriber'],
+                requiresFrozenAudience: () => true
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: async () => {
+                throw new Error('snapshot probe failed');
+            }
+        });
+
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(sends).toEqual([]);
+        expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
+    });
+
+    it('rejects the local publish of a frozen-audience row whose re-check cannot read, after publishing its cluster notice, so the row retries (D498)', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const sends: WsServerLiveSendInputDto[] = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                sends,
+                readAudience: async () => ['subscriber'],
+                requiresFrozenAudience: () => true
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: async () => {
+                throw new Error('snapshot probe failed');
+            }
+        });
+
+        const publication = () => outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
+        await expect(publication()).rejects.toThrow('snapshot probe failed');
+        await expect(publication()).rejects.toThrow('snapshot probe failed');
+
+        expect(sends).toEqual([]);
+        expect(bridge.published.map((published) => published.message.key)).toEqual([entry.key, entry.key]);
+    });
+
+    it('sends two held frozen-audience rows to their session in the order they were held however long their re-checks take', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const held: string[] = [];
+        const service = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => ['late'],
+            requiresFrozenAudience: () => true,
+            sendToTargetsWithResult: (message, recipientSessionIds) => {
+                if (recipientSessionIds?.includes('late')) {
+                    held.push(message.id.msgId);
+                }
+                return recipientSessionIds?.length ? sentLiveResult(message) : noRecipientLiveSendResult(message);
+            }
+        });
+        service.socket.expectedConnections.expect({ id: 'late', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
+        let rechecks = 0;
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: service,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: async (input) => {
+                rechecks += 1;
+                if (rechecks === 3) {
+                    await new Promise((resolve) => setTimeout(resolve, 30));
+                }
+                return rechecks > 2 ? input.candidateSessionIds : [];
+            }
+        });
+        const rows = [createCanonicalRoomOutboxEntry(Date.now()), createCanonicalRoomOutboxEntry(Date.now() + 1)];
+        for (const row of rows) {
+            await outboxPublishers[0](decodePersistedALMessage(row.resource), row, STORED_POLICY_HANDOFF);
+        }
+
+        service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
+
+        await expect.poll(() => held).toEqual(rows.map((row) => decodePersistedALMessage(row.resource).id.msgId));
     });
 
     it('preserves an empty captured audience without falling back to current room members', async () => {
@@ -436,7 +566,7 @@ describe('QueueBoxPubSubBridge', () => {
             bridge: createBridge(),
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
 
         await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF)).resolves.toBeUndefined();
@@ -742,7 +872,7 @@ describe('QueueBoxPubSubBridge', () => {
             channel: 'queuebox-events',
             publisherId: 'local',
             wakeQueueEngine,
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
 
         await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })))
@@ -1211,6 +1341,8 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
         recipientSessionIds?: readonly string[],
         admittedPeerIds?: readonly string[]
     ) => WsServerLiveSendResult;
+    /** Whether the row reaches only its frozen audience (a granted topic); none does by default. */
+    readonly requiresFrozenAudience?: (message: ALMessage) => boolean;
 }
 
 function createTestQueueBoxPubSubWsService(
@@ -1223,6 +1355,7 @@ function createTestQueueBoxPubSubWsService(
             input.registerOutboxPublisher?.(publisher);
             return service;
         },
+        requiresFrozenAudience: (message) => input.requiresFrozenAudience?.(message) ?? false,
         sendToTargetsWithResult(send) {
             input.sends?.push(send);
             const { message, recipientSessionIds, admittedPeerIds } = send;

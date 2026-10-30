@@ -22,7 +22,9 @@ export type GroupGovernanceAction =
     | 'unban'
     | 'promote'
     | 'demote'
-    | 'transfer-ownership';
+    | 'transfer-ownership'
+    | 'grant-publication'
+    | 'revoke-publication';
 
 export interface CanGovernGroupMemberInput {
     readonly snapshot: GroupSnapshot;

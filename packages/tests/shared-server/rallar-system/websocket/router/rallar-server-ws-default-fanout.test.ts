@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -172,6 +173,7 @@ function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only'
             expiresAtEpochMs: Number.MAX_SAFE_INTEGER
         }),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId }))
@@ -179,7 +181,11 @@ function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only'
     });
     onTestFinished(() => service.dispose());
     if (input.routerFanout !== undefined) {
-        new RallarServerWsRouter(service, {}).install().defineTopic({ topicId: 'app.news', fanout: input.routerFanout });
+        new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() }).install().defineTopic({
+            participation: 'members',
+            topicId: 'app.news',
+            fanout: input.routerFanout
+        });
     }
     return { service, sockets };
 }
@@ -211,6 +217,7 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
     const peerIds = ['origin', ...receiverIds];
     const service = createLiveRoomService(socketServer, outboundStores, peerIds);
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage: ({ message }) =>
             message.targets === undefined ? false : {
                 authorized: true,
@@ -221,7 +228,7 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
                 }
             }
     });
-    router.install().defineTopic({ topicId: 'room.chat' });
+    router.install().defineTopic({ participation: 'members', topicId: 'room.chat' });
     return { service, origin, receivers, outboundStores };
 }
 
@@ -242,6 +249,7 @@ function createLiveRoomService(
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => peerIds.map((peerId) => ({ peerId, connectionId: peerId }))

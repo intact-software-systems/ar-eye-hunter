@@ -23,6 +23,7 @@ it('enqueues a browser room message with a queue creator that fits the durable c
         outbox,
         queueEngine: new InboxOutboxEngine(),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolveBroadcastRecipients: () => [{ peerId: 'recipient', connectionId: 'recipient' }]
         }
     });
@@ -63,6 +64,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
         outbox,
         queueEngine: new InboxOutboxEngine(),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: () => [{ peerId: 'origin', connectionId: 'origin' }]
         }
     });

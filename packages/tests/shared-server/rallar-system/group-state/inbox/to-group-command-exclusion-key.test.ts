@@ -25,6 +25,21 @@ describe('toGroupCommandExclusionKey', () => {
             .toBe(`${GROUP_KEY}:session=session-bob`);
     });
 
+    it('keys a publication grant and revoke by their group aggregate, beside the membership commands', () => {
+        for (const type of [AppInboxType.GROUP_PUBLICATION_GRANT, AppInboxType.GROUP_PUBLICATION_REVOKE] as const) {
+            const entry = toEntry({
+                traceId: 'trace-test-fixture',
+                type,
+                topicId: type,
+                resourceId: `${type}-bob`,
+                contextId: 'caller=alice',
+                data: { scope: SCOPE, groupId: 'group-1', principalId: 'bob', request: {} }
+            });
+            expect(toGroupCommandExclusionKey(entry)).toBe(`${GROUP_KEY}:aggregate`);
+            expect(isOrderedBehind(entry, joinEntry('bob', 'group-1'))).toBe(true);
+        }
+    });
+
     it('keeps a server-issued command on its group key and a session cleanup on its scope key', () => {
         expect(toGroupCommandExclusionKey(publicationEntry())).toBe(GROUP_KEY);
         expect(toGroupCommandExclusionKey(cleanupEntry())).toBe(SCOPE_KEY);

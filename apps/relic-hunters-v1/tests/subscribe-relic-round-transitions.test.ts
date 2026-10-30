@@ -51,6 +51,7 @@ describe('the Relic round-transition channel', () => {
             typeId: RELIC_TYPES.event,
             roomRef: ROOM_REF,
             purpose: 'notification',
+            access: 'members',
             recovery: { onResyncRequired: expect.any(Function) }
         }]);
         double.roomDefinitions[0].recovery?.onResyncRequired(toResyncCursor('room-2:1000'));

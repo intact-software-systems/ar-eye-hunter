@@ -82,7 +82,86 @@ describe('group presence summary coalesced slices', () => {
             expect(() => validateGroupStateDeltaEnvelope(delta)).not.toThrow();
         }
     });
+
+    it('computeGroupStateDeltaEnvelope slices grants by the principals its events write', async () => {
+        const runtime = new GroupBarrierRepository();
+        const declared = 'declared-grant-room';
+        await createService(runtime, BASE_EPOCH_MS).createGroup(SCOPE, {
+            groupId: declared,
+            displayName: declared,
+            kind: 'room',
+            joinMode: 'open',
+            createdByPrincipalId: 'alice',
+            publicationGrants: { 'room.feed': { publish: true, subscribe: true } },
+            requestId: `seed-${declared}`
+        });
+        const revoked = 'revoked-grant-room';
+        await seedOpenGroupWithMember(runtime, revoked, 'bob');
+        const revokedBefore = await listEvents(runtime, revoked);
+        await setFeedPublish(runtime, { groupId: revoked, publish: true, nowEpochMs: BASE_EPOCH_MS + 1_000 });
+        await setFeedPublish(runtime, { groupId: revoked, publish: false, nowEpochMs: BASE_EPOCH_MS + 2_000 });
+        const departed = 'departed-grant-room';
+        await seedOpenGroupWithMember(runtime, departed, 'bob');
+        await setFeedPublish(runtime, { groupId: departed, publish: true, nowEpochMs: BASE_EPOCH_MS + 1_000 });
+        const departedBefore = await listEvents(runtime, departed);
+        await createService(runtime, BASE_EPOCH_MS + 2_000).upsertMember(SCOPE, departed, 'bob', {
+            status: 'left',
+            actorPrincipalId: 'bob',
+            requestId: `leave-${departed}-bob`
+        });
+
+        const [created] = await expandBatch(runtime, declared, 0);
+        const revokedDeltas = await expandBatch(runtime, revoked, revokedBefore.length);
+        const [left] = await expandBatch(runtime, departed, departedBefore.length);
+
+        expect(created!.event.eventType).toBe('group-created');
+        expect(grantSliceOf(created!)).toEqual({ granted: ['alice'], removed: [] });
+        expect(created!.publicationGrants[0]!.topics).toEqual({ 'room.feed': { publish: true, subscribe: true } });
+        expect(revokedDeltas.map((delta) => delta.event.eventType)).toEqual([
+            'publication-grant-changed',
+            'publication-grant-changed'
+        ]);
+        expect(revokedDeltas.map(grantSliceOf)).toEqual([
+            { granted: [], removed: ['bob'] },
+            { granted: [], removed: ['bob'] }
+        ]);
+        expect(left!.event.eventType).toBe('member-left');
+        expect(grantSliceOf(left!)).toEqual({ granted: [], removed: ['bob'] });
+        for (const delta of [created!, ...revokedDeltas, left!]) {
+            expect(() => validateGroupStateDeltaEnvelope(delta)).not.toThrow();
+        }
+    });
 });
+
+function grantSliceOf(
+    delta: GroupStateDeltaEnvelope
+): Readonly<{ granted: readonly string[]; removed: readonly string[]; }> {
+    return {
+        granted: delta.publicationGrants.map((grant) => grant.principalId),
+        removed: delta.removedPublicationGrantPrincipalIds
+    };
+}
+
+interface FeedPublishStep {
+    readonly groupId: string;
+    readonly publish: boolean;
+    readonly nowEpochMs: number;
+}
+
+/** alice grants bob publish on room.feed, or revokes it, leaving bob no other permission. */
+async function setFeedPublish(runtime: GroupBarrierRepository, step: FeedPublishStep): Promise<void> {
+    const service = createService(runtime, step.nowEpochMs);
+    const request = {
+        topicId: 'room.feed',
+        publish: true,
+        subscribe: false,
+        actorPrincipalId: 'alice',
+        requestId: `${step.publish ? 'grant' : 'revoke'}-${step.groupId}-bob-feed`
+    };
+    await (step.publish
+        ? service.grantGroupPublication(SCOPE, step.groupId, 'bob', request)
+        : service.revokeGroupPublication(SCOPE, step.groupId, 'bob', request));
+}
 
 function sliceOf(delta: GroupStateDeltaEnvelope): Readonly<{ members: readonly string[]; sessions: readonly string[]; }> {
     return {

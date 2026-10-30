@@ -11,6 +11,7 @@ import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
@@ -96,6 +97,7 @@ export function createRallarMiddlewareTestRuntime(
 
     const options: CreateRallarMiddlewareOptions = {
         readAuthenticatedConnectionScope: () => undefined,
+        grantedTopics: new WsGrantedTopicSet(),
         inbox,
         outbox,
         appInboxDequeueOptions: { newLaneConcurrency: 1 },

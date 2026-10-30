@@ -23,6 +23,11 @@ import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { convergeSummaryForTest, createService, readSummaryWork, toSummaryExpansion } from './group-presence-test-runtime.ts';
+import {
+    createDeltaEnvelopeFixture,
+    createDeltaEnvelopeFixtureAuditStamp,
+    DELTA_ENVELOPE_FIXTURE_GROUP_REF
+} from './group-state-delta-envelope-fixtures.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -159,6 +164,40 @@ describe('group-state delta envelope construction', () => {
         const computed = work.compute(toSummaryExpansion(command, read));
 
         expect(computed.summary.evaluatedAtEpochMs).toBe(BASE_EPOCH_MS + 1_000);
+    });
+});
+
+describe('group-state delta envelope validation', () => {
+    const grantOf = (principalId: string) => ({
+        ...DELTA_ENVELOPE_FIXTURE_GROUP_REF,
+        principalId,
+        topics: { 'room.feed': { publish: true, subscribe: false } },
+        updated: createDeltaEnvelopeFixtureAuditStamp()
+    });
+
+    it('the delta validator accepts both new fields and rejects an extra envelope key', () => {
+        const envelope = {
+            ...createDeltaEnvelopeFixture({ audienceSessionIds: ['alice-session'] }),
+            publicationGrants: [grantOf('bob')],
+            removedPublicationGrantPrincipalIds: ['alice']
+        };
+        const { removedPublicationGrantPrincipalIds: omitted, ...withoutRemoved } = envelope;
+
+        expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
+        expect(omitted).toEqual(['alice']);
+        expect(() => validateGroupStateDeltaEnvelope({ ...envelope, extra: true })).toThrow(/unexpected extra/);
+        expect(() => validateGroupStateDeltaEnvelope(withoutRemoved)).toThrow(/missing removedPublicationGrantPrincipalIds/);
+        for (
+            const [change, message] of [
+                [{ removedPublicationGrantPrincipalIds: ['bob'] }, /also carried/],
+                [{ removedPublicationGrantPrincipalIds: ['carol', 'alice'] }, /removedPublicationGrantPrincipalIds .*ascending/],
+                [{ publicationGrants: [grantOf('carol'), grantOf('bob')] }, /ascending principalId/],
+                [{ publicationGrants: [{ ...grantOf('bob'), groupId: 'room-other' }] }, /another group/],
+                [{ publicationGrants: [{ ...grantOf('bob'), topics: {} }] }, /publicationGrants is invalid: \$\[0\]\.topics/]
+            ] as const
+        ) {
+            expect(() => validateGroupStateDeltaEnvelope({ ...envelope, ...change })).toThrow(message);
+        }
     });
 });
 

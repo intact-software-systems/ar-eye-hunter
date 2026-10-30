@@ -5,20 +5,25 @@ import {
 } from 'vitest';
 
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
+import type { GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     readGroupMutation,
     readGroupMutationWithSnapshot
 } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
+import { readSequentialGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-sequential-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { toRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -67,6 +72,12 @@ describe('GroupStateService mutation exact reads', () => {
                     selectorId: 'presence-sessions',
                     kind: 'prefix',
                     namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
+                    selectorId: 'publication-grants',
+                    kind: 'prefix',
+                    namespace: 'group-state:publication-grants',
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
@@ -130,6 +141,7 @@ describe('GroupStateService mutation exact reads', () => {
                 'members',
                 'presence-summary',
                 'presence-sessions',
+                'publication-grants',
                 'lifecycle-policy',
                 'idempotency:0',
                 'member:0',
@@ -212,6 +224,12 @@ describe('GroupStateService mutation exact reads', () => {
                     selectorId: 'presence-sessions',
                     kind: 'prefix',
                     namespace: 'group-state:sessions',
+                    keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
+                    selectorId: 'publication-grants',
+                    kind: 'prefix',
+                    namespace: 'group-state:publication-grants',
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
@@ -311,6 +329,77 @@ describe('GroupStateService mutation exact reads', () => {
                 }
             ]
         ]);
+    });
+
+    it('create, grant, revoke, leave, remove and ban read the target grant row; join and role changes do not', async () => {
+        const { runtime, service } = await createSeededService('grant-scope');
+        const ref = { ...SCOPE, groupId: 'grant-scope' };
+        const grantSelectorsOf = async (mutate: () => Promise<GroupStateWritten>) => {
+            runtime.readBatchCalls.length = 0;
+            await mutate();
+            return mutationReadCalls(runtime).flat().filter((selector) => selector.kind === 'key' && selector.namespace === PUBLICATION_GRANTS_NAMESPACE);
+        };
+        const grantSelector = (principalId: string) => ({
+            selectorId: 'grant:0',
+            kind: 'key',
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            key: groupStatePublicationGrantStorageKey(ref, principalId)
+        });
+
+        expect(await grantSelectorsOf(() => service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' })))
+            .toEqual([]);
+        expect(
+            await grantSelectorsOf(() => service.setGroupMemberRole(SCOPE, ref.groupId, 'bob', { role: 'admin', actorPrincipalId: 'owner' }))
+        ).toEqual([]);
+        const feed = { topicId: 'room.feed', publish: true, subscribe: false, actorPrincipalId: 'owner' };
+        expect(await grantSelectorsOf(() => service.grantGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
+            .toEqual([grantSelector('bob')]);
+        expect(await grantSelectorsOf(() => service.revokeGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
+            .toEqual([grantSelector('bob')]);
+        expect(
+            await grantSelectorsOf(() => service.upsertMember(SCOPE, ref.groupId, 'bob', { status: 'left', actorPrincipalId: 'bob' }))
+        ).toEqual([grantSelector('bob')]);
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
+        expect(
+            await grantSelectorsOf(() => service.removeGroupMember(SCOPE, ref.groupId, 'bob', { actorPrincipalId: 'owner' }))
+        ).toEqual([grantSelector('bob')]);
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'carol' });
+        expect(
+            await grantSelectorsOf(() => service.banGroupMember(SCOPE, ref.groupId, 'carol', { actorPrincipalId: 'owner' }))
+        ).toEqual([grantSelector('carol')]);
+        const created = { ...SCOPE, groupId: 'grant-scope-created' };
+        expect(
+            await grantSelectorsOf(() =>
+                service.createGroup(SCOPE, { groupId: created.groupId, displayName: 'Created', kind: 'room', createdByPrincipalId: 'owner' })
+            )
+        ).toEqual([{ ...grantSelector('owner'), key: groupStatePublicationGrantStorageKey(created, 'owner') }]);
+    });
+
+    it('the sequential read loads the target grant row for a grant command and a departure, never for a join', async () => {
+        const { runtime, service } = await createSeededService('grant-sequential');
+        const ref = { ...SCOPE, groupId: 'grant-sequential' };
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
+        const grant = {
+            ...ref,
+            principalId: 'bob',
+            topics: { 'room.feed': { publish: true, subscribe: false } },
+            updated: { atEpochMs: 1_000, actor: { kind: 'principal', principalId: 'owner' }, reason: null, traceId: null, requestId: null }
+        };
+        await runtime.upsert(
+            PUBLICATION_GRANTS_NAMESPACE,
+            groupStatePublicationGrantStorageKey(ref, 'bob'),
+            JSON.stringify(grant),
+            Number.MAX_SAFE_INTEGER
+        );
+        const repository = createTestGroupStateRepository(runtime);
+
+        const leave = await readSequentialGroupMutation({ repository, command: leaveCommand(ref, 'bob'), lifecyclePolicy: null });
+        const join = await readSequentialGroupMutation({ repository, command: joinCommand(ref, 'bob'), lifecyclePolicy: null });
+        const revoke = await readSequentialGroupMutation({ repository, command: revokeCommand(ref, 'bob'), lifecyclePolicy: null });
+
+        expect(leave.targetPublicationGrant?.value).toEqual(grant);
+        expect(revoke.targetPublicationGrant?.value).toEqual(grant);
+        expect(join.targetPublicationGrant).toBeNull();
     });
 
     it('keeps an expired batch authority read observational', async () => {
@@ -414,6 +503,49 @@ function joinCommand(
             participation: null,
             inviteToken: null,
             joinCode: null,
+            actorPrincipalId: principalId,
+            actorSessionId: null,
+            reason: null
+        }
+    };
+}
+
+function revokeCommand(
+    aggregateRef: Readonly<StateScope & { groupId: string; }>,
+    principalId: string
+): GroupMutationCommand {
+    return {
+        operation: 'revokeGroupPublication',
+        aggregateRef,
+        commandId: `revoke-${principalId}`,
+        requestId: `revoke-${principalId}`,
+        targetPrincipalId: principalId,
+        input: {
+            topicId: toRallarWsUserTopicId('room.feed'),
+            publish: true,
+            subscribe: false,
+            actorPrincipalId: 'owner',
+            actorSessionId: null,
+            reason: null
+        }
+    };
+}
+
+function leaveCommand(
+    aggregateRef: Readonly<StateScope & { groupId: string; }>,
+    principalId: string
+): GroupMutationCommand {
+    return {
+        operation: 'upsertMember',
+        aggregateRef,
+        commandId: `leave-${principalId}`,
+        requestId: `leave-${principalId}`,
+        targetPrincipalId: principalId,
+        input: {
+            role: null,
+            status: 'left',
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
             actorPrincipalId: principalId,
             actorSessionId: null,
             reason: null

@@ -1,8 +1,10 @@
 # ALM publication QoS and pub/sub addendum
 
-Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing) is
-implemented and recorded as applied in §7; the later slices remain a proposed
-extension, not implemented behavior or an adopted change to `docs/product.md`.
+Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing) and the
+first of Slice 2's two pull requests (S2-i, publication grants and their WS
+enforcement) are implemented and recorded as applied in §7; the rest of Slice 2
+and the later outcomes remain a proposed extension, not implemented behavior or
+an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -562,6 +564,48 @@ isolation, subscriber control traffic, no-grant denial, stale authority waits
 or refusal, held-dispatch revocation, immutable receipt expectations, and
 server/proxy/raw/fallback/repair path coverage. REST changes include black-box
 recipes in `packages/shared-test/black-box-runner`.
+
+As applied (S2-i): Slice 2 lands as two pull requests. S2-i makes publication
+grants an authoritative group-state fact and enforces them on every WS path;
+S2-ii adds session subscriptions, the audience intersection, the browser topic
+roles and the two-producer, two-consumer proof. A principal's grant is one row of
+`group-state:publication-grants` per exact `GroupRef`, naming up to 64 exact
+`app.*` or `room.*` topics, each with `publish`, `subscribe` or both
+(`packages/shared/api/group-publication/group-publication-grants.ts`); absence
+means no rights, and no grant is a wildcard, implicit or inferred from a role.
+Owners and admins grant and revoke through AppInbox (an admin governs regular
+members only), with `POST .../publication-grants/{principalId}/grant` and
+`.../revoke` under `/requests/{requestId}`; a change-less command is a no-op,
+a 65th topic is refused `capacity`, and a spectator is never granted `publish`.
+A write compares-and-sets the group row and bumps `snapshotVersion` alone, so
+no roster floor trips and nothing replans. Leave, remove, ban and any membership
+write out of `active` delete the row in the same write, so a rejoin starts with
+none; retirement deletes the rows; an archived, expired or deleted group keeps
+them, and every enforcement treats it as holding no grant. Readback is the
+group read: `GroupSnapshot.publicationGrants`, its delta and the
+`publication-grant-changed` event; the creator may declare its own grant at
+creation. A WS topic opts in with `participation: 'granted'` (every other topic
+is `members` and unchanged), and one pure `computeRoomPublicationAdmission`
+decides socket admission, pending replay, inbox dispatch and `route`, a server
+producer's publish (only the producers the topic lists, else
+`topic-not-granted`) and a proxy's result (on the original sender's grant): a
+session without effective `publish` is refused `no-publish-grant`, terminal,
+and the audience is the live sessions of principals holding `subscribe`. Every
+outbox dequeue, cluster send, repair and awaited-connection send of a granted topic re-checks the
+captured audience against durable state through one version probe in that step,
+so a revocation committed before the probe is honoured by that step; the declared
+leak window is one in-flight send, and a revoked recipient stays expected and
+unconfirmed in the receipt. A dispatch step whose read fails retries the row; one
+that finds no current room snapshot completes it with no recipients. The NACK is
+sent at socket admission and at `route`; a refusal at a pending replay or an inbox
+dispatch drops the message without one, as every refusal there does. RTC carries
+no granted topic: a granted browser channel sends over WS under every strategy
+but `rtc`, which it refuses `unsupported`, and refuses a send its cached room
+snapshot grants no `publish` before any carrier. api-v1 installs its granted
+topics from `grantedWsTopics` (`RALLAR_GRANTED_WS_TOPICS_JSON`). The recipes
+`api-v1-group-publication-grants.json` and its cluster twin prove persisted
+readback, idempotency, conflict, the denials and a revocation's WS refusal across
+three servers. Decisions D483–D501 are in the roadmap; S2-ii is next.
 
 ### Later outcomes
 

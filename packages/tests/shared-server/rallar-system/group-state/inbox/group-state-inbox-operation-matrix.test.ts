@@ -18,6 +18,8 @@ import {
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
+    type GroupPublicationGrantAppInboxPayload,
+    type GroupPublicationRevokeAppInboxPayload,
     type GroupReconfigureAppInboxPayload,
     type GroupTransportCommandAppInboxPayload,
     type GroupUpdateAppInboxPayload
@@ -34,6 +36,7 @@ import {
     createInviteOperationCase,
     readMatrixMember,
     readMatrixPresenceSession,
+    readMatrixPublicationGrant,
     runOperationMatrix,
     type OperationMatrixCase
 } from './group-state-inbox-operation-matrix-runtime.ts';
@@ -102,6 +105,8 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_MEMBER_BAN,
             AppInboxType.GROUP_MEMBER_UNBAN,
             AppInboxType.GROUP_MEMBER_ROLE_SET,
+            AppInboxType.GROUP_PUBLICATION_GRANT,
+            AppInboxType.GROUP_PUBLICATION_REVOKE,
             AppInboxType.GROUP_OWNERSHIP_TRANSFER,
             AppInboxType.GROUP_MEMBER_UPSERT,
             AppInboxType.GROUP_PRESENCE_CONNECT,
@@ -370,6 +375,50 @@ describe('GroupStateInboxService authenticated authority', () => {
                     } satisfies GroupMemberRoleSetAppInboxPayload,
                     assertDomain: async () => {
                         expect(await readMatrixMember(harness, groupId, 'bob')).toMatchObject({ role: 'admin' });
+                    }
+                },
+                {
+                    type: AppInboxType.GROUP_PUBLICATION_GRANT,
+                    operation: 'grantGroupPublication',
+                    authority: harness.sessions.owner,
+                    data: {
+                        scope: SCOPE,
+                        groupId,
+                        principalId: 'bob',
+                        request: {
+                            topicId: 'room.feed',
+                            publish: true,
+                            subscribe: true,
+                            ...ownerActor,
+                            requestId: 'matrix-grant-bob'
+                        }
+                    } satisfies GroupPublicationGrantAppInboxPayload,
+                    assertDomain: async () => {
+                        expect((await readMatrixPublicationGrant(harness, groupId, 'bob'))?.topics).toEqual({
+                            'room.feed': { publish: true, subscribe: true }
+                        });
+                    }
+                },
+                {
+                    type: AppInboxType.GROUP_PUBLICATION_REVOKE,
+                    operation: 'revokeGroupPublication',
+                    authority: harness.sessions.owner,
+                    data: {
+                        scope: SCOPE,
+                        groupId,
+                        principalId: 'bob',
+                        request: {
+                            topicId: 'room.feed',
+                            publish: true,
+                            subscribe: false,
+                            ...ownerActor,
+                            requestId: 'matrix-revoke-bob'
+                        }
+                    } satisfies GroupPublicationRevokeAppInboxPayload,
+                    assertDomain: async () => {
+                        expect((await readMatrixPublicationGrant(harness, groupId, 'bob'))?.topics).toEqual({
+                            'room.feed': { publish: false, subscribe: true }
+                        });
                     }
                 },
                 createGovernedOperationCase({

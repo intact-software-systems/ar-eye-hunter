@@ -95,10 +95,11 @@ and it has no status list.
   `packages/shared/alm` (D8; roadmap F15).
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
-- ALM topic-policy advertisement (carried from S1-ii, D482): a client learns
-  a topic's effective fanout before sending, so the WS server's `unsupported`
-  refusal of a live publication on an `outbox` topic becomes a synchronous
-  refusal at the send.
+- ALM topic-policy advertisement (carried from S1-ii, D482, and S2-i): a client
+  learns a topic's effective fanout and participation before sending, so the WS
+  server's `unsupported` refusal of a live publication on an `outbox` topic, and
+  the participation a browser channel's `access` only mirrors today, become a
+  synchronous decision at the send.
 - The WS ingress's static read of proxy rules (S1-ii, D482): `resolveFanouts`
   reads their declared targets, so it under-refuses when a suppressing rule's
   `authorize` or `targets` would skip at runtime and over-refuses when a rule
@@ -136,3 +137,61 @@ and it has no status list.
 - The same fixture carries no `stats.rallar.alm` / `readUsage().publication`
   projection; add it, from the real stage's `readReport`, when a hosted recipe
   reads it (S1-ii, Task 8 deviation 1).
+- Restricted RTC parity for publication grants (the addendum's first later
+  outcome, D491): an authenticated original publisher across relays, relay
+  versus application permission, RTC fallback and repair under role churn, and a
+  receiver-side drop of granted-topic traffic that arrives on a raw RTC lane.
+  Until then a granted topic is WS-only.
+- Ordered subscription entry on granted topics (the addendum's second later
+  outcome): start positions, snapshot and live handoff and omission evidence, so
+  a subscriber joining mid-stream gets more than today's per-sender tracks.
+- An admission-time declared publication grant for joiners (D494), with its
+  persisted declaration and lifetime rule; today only the creator declares a
+  grant at creation, and each joiner is granted explicitly.
+- The dispatch re-check for `members` topics (D498): an outbox row of a
+  `members` topic is narrowed only by the socket and scope eligibility filter at
+  dequeue, so a member who left or was banned after admission can still receive
+  it, as before S2-i.
+- A `publicationVersion` grants-only floor on the group row (D484), if browsers
+  need to wait for a grant the way `rosterVersion` lets them wait for a roster.
+- Batched subscription renewal (S2-ii, D489), if the per-subscription renew
+  traffic shows in the state-write gate.
+- The measured pub/sub operating envelope: subscription and permission churn,
+  multi-group producers and slow consumers.
+- The page snapshot read lists each group's publication grants after its three
+  child reads, one more statement per group (running it beside them risks a
+  PGlite rejection under close); one batch-selector read per group, as the
+  principal list already does, would remove the extra statement (S2-i).
+- A granted outbox row costs two snapshot probes per cluster dequeue attempt,
+  `readDequeueAuthority`'s and the bridge's local send's, where D498 budgeted
+  one; skip the dequeue authority's re-check when the cluster publisher sends the
+  row (S2-i).
+- The outbound planner cannot tell a re-checked audience from a captured one: a
+  row whose dequeue authority was not read plans its captured audience whole, and
+  the frozen-audience fact lives in the WS server's resolver, not in the row, so
+  a future producer row on a granted topic would plan un-narrowed; record the
+  frozen bit in the captured policy at admission and plan no recipients for a
+  frozen row whose audience was not re-checked (S2-i).
+- Stale child rows of an expired, unpurged group (members, and now publication
+  grants of principals other than the creator) surface in a group recreated
+  under the same id until retirement purges them; the create would read or
+  delete them in its own batch (S2-i).
+- The held sends' per-session admission key is a colon path, so the held rows of
+  session `a` and session `a:b` order against each other; key on a colon-free
+  encoding of the session id or a plain per-session chain (S2-i).
+- A snapshot read that hangs rather than fails stalls every later held row of
+  that session, `members` rows included, until it settles; bound the re-check's
+  read at the port (S2-i).
+- The WS server service and the pub/sub bridge each own a held-send chain, so a
+  session's locally dequeued held rows and its remote-sent held rows are ordered
+  independently of each other; hand the service's chain to the bridge and one
+  per-session order covers both paths (S2-i).
+- The every-branch refusal of a granted topic lives only in
+  `createWsServerTargetResolver`; `WsQueueBoxServerTargetResolution`'s own
+  broadcast and peer fallbacks would still resolve one for a custom resolver that
+  answers `requiresFrozenAudience` but omits a callback, so return no recipients
+  in `resolveOutboundRecipients` and `resolveInboundRecipients` for such a
+  message (S2-i).
+- The api-v1 Deno test of a room archived before dequeue
+  (`ws-room-granted-delivery.test.ts`) asserts only that nothing was delivered;
+  assert the row reached COMPLETED too, so a row stuck retrying fails it (S2-i).

@@ -235,7 +235,8 @@ describe('Rallar message send', () => {
         const channel = createRallarTestFacade().messages.room({
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.send({ text: 'stated floor' }, { strategy: 'rtc', minSnapshotVersion: 42 });
@@ -268,7 +269,8 @@ describe('Rallar message send', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
         const qos: ALQosPolicyRequest = { ack: { algo: 'hop' } };
 
@@ -470,6 +472,33 @@ describe('Rallar message send', () => {
         });
     });
 
+    it('a members channel\'s sends are unchanged: no grant row is read, RTC legs open and WS legs admit', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const admissions: string[] = [];
+        recordAdmissions('rtc', rtcRxStreamer, admissions);
+        recordAdmissions('ws', webSocketQueueBox, admissions);
+        const channel = createRallarTestFacade().messages.room<{ readonly text: string; }>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification',
+            access: 'members'
+        });
+
+        const handles = [
+            await channel.send({ text: 'fallback' }),
+            await channel.send({ text: 'rtc' }, { strategy: 'rtc' }),
+            await channel.sendRtc({ text: 'sendRtc' }),
+            await channel.sendWs({ text: 'sendWs' })
+        ];
+
+        for (const handle of handles) {
+            expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        }
+        expect(admissions).toEqual(['rtc fallback', 'rtc rtc', 'rtc sendRtc', 'ws sendWs']);
+        expect(() => channel.onRtc(() => {})).not.toThrow();
+    });
+
     it('uses roomRef scope for cached snapshotVersion and target groupRef on WS room sends', async () => {
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(
@@ -668,6 +697,14 @@ describe('the send correlation and the reply path', () => {
         );
     }
 });
+
+/** Logs each send a carrier admits as its carrier and payload text, into one log shared across carriers. */
+function recordAdmissions(carrier: 'rtc' | 'ws', port: EnvelopeCarrier, admissions: string[]): void {
+    port.enqueueOutboxIfAbsent = async (message: ALMessage) => {
+        admissions.push(`${carrier} ${JSON.parse(message.payload.resource).text}`);
+        return await Promise.resolve(toQueuedMessageAdmission(message));
+    };
+}
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
     setRallarFacadeRoomSnapshots([snapshot]);

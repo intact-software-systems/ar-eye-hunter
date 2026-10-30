@@ -78,7 +78,7 @@ Use Rallar Server middleware/facade when the task involves:
    active sessions/peers.
 
 8. Use typed room messages for important room traffic.
-   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path; `definition` requires a `purpose` (`'command'` or `'notification'`). Its `send` defaults to `strategy: 'rtc-with-ws-fallback'`; pass `strategy: 'ws'` or call `sendWs` when the message must be server-routed. Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
+   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path; `definition` requires a `purpose` (`'command'` or `'notification'`) and an `access` (`'members'`, or `'granted'` for a topic restricted by publication grants, which sends over WS only). Its `send` defaults to `strategy: 'rtc-with-ws-fallback'`; pass `strategy: 'ws'` or call `sendWs` when the message must be server-routed. Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
 
 9. Use `roomRef` where scope matters.
    Prefer `GroupRef` over plain `roomId` when the app can operate in multiple application/workspace scopes.
@@ -178,7 +178,7 @@ const rallar = createRallarServerApplication({
     repositories,
     appDataRepository,
     nowEpochMs: Date.now,
-    ws: {},
+    ws: { grantedTopics },
     systemInstallers,
     routeInstallers: {
         webSocket: installWsRoutes,
@@ -204,6 +204,8 @@ If creating middleware directly with `createRallarMiddleware(options)`:
   factory. State-sync results leave through the AppInbox transaction's
   WS_OUTBOX rows; there is no separate state-sync publisher to wire.
 - Provide `findGroupSnapshotByRef` for scoped room routing.
+- Provide `grantedTopics`, one `new WsGrantedTopicSet()` built first and passed
+  to both the middleware and the server application's `ws` options.
 - Start `runtime.qboxEngine`.
 - Install websocket lifecycle cleanup.
 

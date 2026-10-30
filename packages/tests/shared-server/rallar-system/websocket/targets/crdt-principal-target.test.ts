@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -23,6 +24,7 @@ describe('CRDT principal post-commit routing', () => {
         server.addConnection(new ConnectionContext({ id: 'session-a', socket: createOpenTestWebSocket() }));
         const snapshot = createPrincipalSnapshot('workspace-a', 10_000);
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             now: () => 10_000,
             findClientSnapshotByRef: () => ({ ...snapshot, principal: { ...snapshot.principal, [field]: 'another' } })
         });
@@ -35,6 +37,7 @@ describe('CRDT principal post-commit routing', () => {
         server.addConnection(new ConnectionContext({ id: 'socket-a', socket: createOpenTestWebSocket() }));
         const snapshot = createPrincipalSnapshot('workspace-a', 10_000);
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             now: () => 10_000,
             findClientSnapshotByRef: () => ({
                 ...snapshot,
@@ -121,6 +124,7 @@ function principalResolver(input: PrincipalResolverInput) {
         server.addConnection(new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() }));
     }
     const resolver = createWsServerTargetResolver(server, {
+        grantedTopics: new WsGrantedTopicSet(),
         findClientSnapshotByRef: (ref) => {
             input.onRef?.(ref);
             if (input.isCurrent && !input.isCurrent()) {

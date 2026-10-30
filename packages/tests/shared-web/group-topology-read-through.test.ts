@@ -560,7 +560,8 @@ function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): Gr
             expiresAtEpochMs: Date.now() + 120_000
         })),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 

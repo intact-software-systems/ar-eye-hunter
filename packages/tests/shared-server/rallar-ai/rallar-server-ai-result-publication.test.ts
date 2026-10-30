@@ -3,6 +3,7 @@ import {
     toRallarServerAiPublicationTarget,
     type RallarServerAiResultPublicationPort
 } from '@shared-server/rallar-ai/rallar-server-ai-result-publication.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type { RallarServerWsFanout, RallarServerWsPublishResult } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -164,7 +165,7 @@ function createScopedRouterFixture(): ScopedRouterFixture {
         })
     });
     onTestFinished(() => service.dispose());
-    return { router: new RallarServerWsRouter(service), sockets };
+    return { router: new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() }), sockets };
 }
 
 interface PublicationCapture {

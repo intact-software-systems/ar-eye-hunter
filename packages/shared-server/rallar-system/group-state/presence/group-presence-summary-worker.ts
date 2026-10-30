@@ -244,7 +244,8 @@ export class GroupPresenceSummaryWork {
             members: stored.members,
             admissions: stored.admissions,
             presenceSessions: stored.presenceSessions,
-            current: stored.current ?? null
+            current: stored.current ?? null,
+            publicationGrants: stored.publicationGrants
         };
         assertGroupPresenceSummaryRead(ref, presence);
         const inconsistency = validateGroupPresenceSummaryReadConsistency(presence)[0];

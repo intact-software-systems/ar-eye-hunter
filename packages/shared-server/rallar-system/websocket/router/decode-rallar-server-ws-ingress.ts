@@ -13,9 +13,11 @@ import type {
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizationInput,
     RallarServerWsRoomAuthorizer,
+    RallarServerWsTopicAccess,
     RallarServerWsTopicDefinition,
     RallarServerWsTopicMetadata
 } from './rallar-server-ws-router-contracts.ts';
+import { toRallarServerWsTopicAccess } from './rallar-server-ws-topic-registry.ts';
 
 export type RallarServerWsIngressDecodeResult =
     | Readonly<{ kind: 'decoded'; value: JsonWireValue; }>
@@ -23,8 +25,11 @@ export type RallarServerWsIngressDecodeResult =
 
 export interface AuthorizeRallarServerWsIngressInput {
     readonly message: ALMessage;
-    readonly definition?: RallarServerWsTopicDefinition<JsonWireValue>;
-    readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
+    readonly definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined;
+    readonly topic: RallarServerWsTopicAccess;
+    /** The session whose publication this is: the sender, or the original sender of a proxy rule's result (D497). */
+    readonly senderId: string;
+    readonly authorizeRoomMessage: RallarServerWsRoomAuthorizer | undefined;
 }
 
 export type RallarServerWsAuthorizationResult =
@@ -115,9 +120,10 @@ export async function authorizeRallarServerWsIngress(
             definition: input.definition
                 ? toRallarServerWsTopicMetadata(input.definition)
                 : undefined,
+            topic: input.topic,
             roomId,
             roomRef: readRallarServerWsRoomRef(input.message),
-            senderId: input.message.id.senderId,
+            senderId: input.senderId,
             topicId: input.message.route.topicId,
             typeId: input.message.payload.typeId,
             ...toRallarServerWsRoomFloors(input.message)
@@ -134,7 +140,8 @@ export function toRallarServerWsTopicMetadata(
         typeId: definition.typeId,
         scope: definition.scope,
         maxPayloadBytes: definition.maxPayloadBytes,
-        fanout: definition.fanout
+        fanout: definition.fanout,
+        ...toRallarServerWsTopicAccess(definition)
     };
 }
 

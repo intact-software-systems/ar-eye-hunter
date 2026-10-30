@@ -26,11 +26,13 @@ import type {
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
+    GrantGroupPublicationRequest,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
     MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
+    RevokeGroupPublicationRequest,
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
@@ -252,6 +254,24 @@ export type GroupStateRouteCommandInput =
             groupId: string;
             principalId: string;
             request: GroupStateRouteRequestWithId<SetGroupMemberRoleRequest>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'grant-group-publication';
+            groupId: string;
+            principalId: string;
+            request: GroupStateRouteRequestWithId<GrantGroupPublicationRequest>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'revoke-group-publication';
+            groupId: string;
+            principalId: string;
+            request: GroupStateRouteRequestWithId<RevokeGroupPublicationRequest>;
         }>
     )
     | (

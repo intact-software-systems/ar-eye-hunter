@@ -237,6 +237,52 @@ is delivered only with producer provenance; a unicast server publish that names 
 room and carries no scope fails typed, and a server publish that names a room and
 also passes a scope is refused (D103).
 
+**CURRENT — S2-i, publication grants:** a room topic can restrict who publishes
+and who receives to exact grants: one per `GroupRef` × principal × topic, naming
+`publish`, `subscribe` or both, kept as one row per principal of
+`group-state:publication-grants` with at most 64 exact `app.*` or `room.*`
+topics
+([`group-publication-grants.ts`](../../packages/shared/api/group-publication/group-publication-grants.ts),
+D484). There is no wildcard, implicit or role-inferred grant, and a principal
+without a row holds none. Owners and admins grant and revoke through AppInbox and
+REST, an admin governing regular members only; a 65th topic is refused
+`capacity`, a spectator is never granted `publish`, and a change-less command is
+a no-op (D492, D495). A grant write bumps the group's `snapshotVersion` alone, so
+no roster floor trips and nothing replans (D484, D493). Leave, remove, ban and any
+membership write out of `active` delete the row in the same write, so a rejoin
+starts without one; retirement deletes the rows; an archived, expired or deleted
+group keeps them and holds no effective grant (D485). The snapshot, its delta and
+the `publication-grant-changed` event carry the rows, and
+`resolveGroupPublicationPermissions` reads the effective permission, never
+`publish` for a spectator or anything for a non-active member (D488, D501). A WS
+topic opts in with `participation: 'granted'`, which requires `scope: 'room'`;
+every other topic, implicit ones included, is `members` and keeps today's
+audience (D486). On a granted topic one pure `computeRoomPublicationAdmission`
+([`compute-room-publication-admission.ts`](../../packages/shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.ts))
+admits a session holding effective `publish`, or a server producer the topic's
+`serverProducerIds` lists (else `topic-not-granted`), and its audience is the
+live sessions of the principals holding `subscribe`, narrowed by targeting. The
+room authorizer runs it at socket admission, pending replay, inbox dispatch and
+`route`; a proxy's result is admitted on the original sender's grant for the
+result topic (D487, D496, D497). A refused session is NACKed `no-publish-grant`
+at socket admission and at `route`, terminal on its handle whatever the receipt;
+a pending replay or an inbox dispatch drops a refusal without a NACK. A
+granted-topic message that names no room is refused `unsupported`, and the
+process-local target resolver resolves no granted topic. Every outbox dequeue,
+cluster send, repair and awaited-connection send of a granted row re-checks its
+captured audience through an asynchronous port over one version probe in that
+step (D498): a revocation, departure or lease lapse committed before the probe
+is honoured by that step, the declared leak window is one in-flight send, and
+no granted-topic decision reads the 60 s TTL cache. A failed probe leaves the row
+to its retry; a step that finds no current room snapshot completes the row with
+no recipients. The receipt never shrinks: a recipient revoked after admission
+stays expected and reads unconfirmed. api-v1 installs its granted topics from
+`grantedWsTopics` (D499). **Limit:** RTC carries no granted topic, and a granted
+browser channel refuses `rtc` `unsupported` (D491); restricted RTC parity is the
+addendum's first later outcome. Session subscriptions and the audience
+intersection are S2-ii, so until then a granted topic reaches every live session
+of a subscribe-granted principal.
+
 ## Logical audiences
 
 ### Unicast
@@ -498,6 +544,20 @@ send earlier, since it does not know a topic's effective fanout. The ingress
 reads proxy rules from their declarations, so it under- or over-refuses when a
 rule would skip at runtime; the product declares no proxy rule and no client
 topic with an `outbox` fanout, so neither case is reachable today.
+
+**CURRENT — S2-i, the channel's access:** a typed channel also declares a
+required `access: 'members' | 'granted'`
+([`rallar-message-contracts.ts`](../../packages/shared-web/browser/messages/rallar-message-contracts.ts));
+the room session's string binding fills `members`, and a `granted` channel names
+its `topicId` (`invalid-access` and `missing-topic-id` otherwise). A granted
+channel is WS-only: `ws-then-rtc` and `rtc-with-ws-fallback` send over WS at once,
+`sendRtc` and `strategy: 'rtc'` settle `rejected` `refused`/`unsupported`, and
+calling `onRtc` throws. Before any carrier, the dispatch reads the room's
+cached snapshot through `resolveGroupPublicationPermissions` and settles a send
+without effective `publish` `rejected` `refused`/`no-publish-grant`; with no
+snapshot cached the server decides, and its NACK settles the handle `rejected`
+with `relay-rejected` (D500). The local check is advisory: a stale cache refuses a
+just-granted send until the grant's delta lands.
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile

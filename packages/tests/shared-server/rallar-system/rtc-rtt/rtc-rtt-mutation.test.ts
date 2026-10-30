@@ -859,6 +859,7 @@ function rttGroupSnapshot(
             disconnectReason: null
         })),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }

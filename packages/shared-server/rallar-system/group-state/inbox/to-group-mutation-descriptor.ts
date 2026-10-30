@@ -34,6 +34,9 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_OWNERSHIP_TRANSFER:
         case AppInboxType.GROUP_MEMBER_UPSERT:
             return toGovernanceMutationDescriptor(enqueue);
+        case AppInboxType.GROUP_PUBLICATION_GRANT:
+        case AppInboxType.GROUP_PUBLICATION_REVOKE:
+            return toPublicationMutationDescriptor(enqueue);
         case AppInboxType.GROUP_PRESENCE_CONNECT:
         case AppInboxType.GROUP_PRESENCE_HEARTBEAT:
         case AppInboxType.GROUP_PRESENCE_DISCONNECT:
@@ -75,6 +78,8 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'grantGroupAdmission':
         case 'declineGroupAdmission':
         case 'setGroupMemberRole':
+        case 'grantGroupPublication':
+        case 'revokeGroupPublication':
         case 'transferGroupOwnership':
         case 'upsertMember':
             return {
@@ -303,6 +308,24 @@ function toGovernanceMutationDescriptor(
             throw new TypeError(`Unsupported governance AppInbox type: ${enqueueType}`);
         }
     }
+}
+
+function toPublicationMutationDescriptor(
+    enqueue: Extract<
+        AuthenticatedGroupMutationEnqueue,
+        | { readonly type: typeof AppInboxType.GROUP_PUBLICATION_GRANT; }
+        | { readonly type: typeof AppInboxType.GROUP_PUBLICATION_REVOKE; }
+    >
+): GroupMutationDescriptor {
+    return mutationDescriptor({
+        operation: enqueue.type === AppInboxType.GROUP_PUBLICATION_GRANT
+            ? 'grantGroupPublication'
+            : 'revokeGroupPublication',
+        scope: enqueue.data.scope,
+        groupId: enqueue.data.groupId,
+        request: enqueue.data.request,
+        targetPrincipalId: enqueue.data.principalId
+    });
 }
 
 function toTransportMutationDescriptor(

@@ -52,6 +52,7 @@ export class BrowserTypedMessageChannels {
         }
         const policy: BrowserTypedChannelPolicy = {
             purpose: definition.purpose,
+            access: definition.access,
             durability: definition.durability,
             onStorageUnavailable: definition.onStorageUnavailable ?? 'refuse',
             publication: definition.publication && decodeALPublicationPolicy(definition.publication).right
@@ -63,10 +64,12 @@ export class BrowserTypedMessageChannels {
                 await this.input.sender.sendRtc(toChannelSend({ ...options, ...route, payload }, policy), policy),
             sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
                 await this.input.sender.sendWs(toChannelSend({ ...options, ...route, payload }, policy), policy),
-            onRtc: (handler) =>
-                this.input.rtc.onMessage<T>(route, async (message) => {
+            onRtc: (handler) => {
+                throwIfGrantedRtc(policy);
+                return this.input.rtc.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
-                }),
+                });
+            },
             onWs: (handler) =>
                 this.input.ws.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
@@ -119,4 +122,15 @@ function toChannelSend<TSend extends BrowserLiveSendOptions>(send: TSend, policy
         throwRallarValidation(issues);
     }
     return send;
+}
+
+/** No server stands on the RTC path to check a publication grant, so a granted channel neither sends nor listens there. */
+function throwIfGrantedRtc(policy: BrowserTypedChannelPolicy): void {
+    if (policy.access === 'granted') {
+        throwRallarValidation([{
+            path: '$.access',
+            code: 'unsupported',
+            message: 'A granted channel is WS-only: RTC carries no publication grant.'
+        }]);
+    }
 }

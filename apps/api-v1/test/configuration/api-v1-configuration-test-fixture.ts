@@ -170,6 +170,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
             { documentType: '*', rollout: 'disabled' }
         ]
     },
+    grantedWsTopics: [],
     blackBox: {
         operatorToken: {
             mode: 'disabled',

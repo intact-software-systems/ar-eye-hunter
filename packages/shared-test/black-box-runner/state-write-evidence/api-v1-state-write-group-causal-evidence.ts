@@ -1,3 +1,4 @@
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import {
     validateAuthoritativeGroupEvent,
     validateAuthoritativeGroupSnapshot
@@ -38,6 +39,8 @@ const GROUP_PUBLIC_RESULT_EVENT_POLICY: Readonly<Record<string, GroupPublicResul
         eventTypes: ['member-role-changed'],
         allowsNoOp: true
     },
+    GROUP_PUBLICATION_GRANT: { eventTypes: ['publication-grant-changed'], allowsNoOp: true },
+    GROUP_PUBLICATION_REVOKE: { eventTypes: ['publication-grant-changed'], allowsNoOp: true },
     GROUP_OWNERSHIP_TRANSFER: {
         eventTypes: ['ownership-transferred'],
         allowsNoOp: true
@@ -75,20 +78,21 @@ export interface PublicResultReceiptIdentity {
     readonly eventId?: string | null;
 }
 
+/** The caller holds the parsed result as a record; it is decoded here before any field is compared. */
 export function publicResultIdentityMatches(
-    resultValue: unknown,
+    resultValue: object,
     receipt: PublicResultReceiptIdentity,
     kind: 'client' | 'group',
     commandType?: string
 ): boolean {
-    const result = record(resultValue);
-    const written = record(result?.result);
-    const snapshot = record(written?.snapshot);
-    const aggregate = record(snapshot?.[kind === 'client' ? 'principal' : 'group']);
-    const event = written?.event === null ? null : record(written?.event);
+    const result = decodeJsonRecord(resultValue);
+    const written = decodeJsonRecord(result?.result);
+    const snapshot = decodeJsonRecord(written?.snapshot);
+    const aggregate = decodeJsonRecord(snapshot?.[kind === 'client' ? 'principal' : 'group']);
+    const event = written?.event === null ? null : decodeJsonRecord(written?.event);
     if (
-        kind === 'group' &&
-        !authoritativeGroupResultContractsAreValid(snapshot, event, receipt.aggregateRef)
+        result === undefined ||
+        (kind === 'group' && !authoritativeGroupResultContractsAreValid(snapshot, event, receipt.aggregateRef))
     ) {
         return false;
     }
@@ -110,7 +114,7 @@ export function publicResultIdentityMatches(
 }
 
 function groupPublicResultEventMatches(
-    event: Record<string, unknown> | null | undefined,
+    event: ApiJsonObject | null | undefined,
     receipt: PublicResultReceiptIdentity,
     commandType: string | undefined
 ): boolean {
@@ -123,14 +127,15 @@ function groupPublicResultEventMatches(
             event === null && receipt.eventId === null && receipt.outcome === 'no-op' && policy.allowsNoOp
         );
     }
-    const accepted = causalRevision(receipt.causalRevision);
-    const emitted = causalRevision(event?.causalRevision);
+    const accepted = decodeCausalRevision(receipt.causalRevision);
+    const emitted = decodeCausalRevision(event?.causalRevision);
+    const eventType = event?.eventType;
     return (
         event !== undefined &&
         accepted !== undefined &&
         emitted !== undefined &&
         receipt.outcome === 'applied' &&
-        policy.eventTypes.includes(event.eventType as GroupEventType) &&
+        policy.eventTypes.some((allowed) => allowed === eventType) &&
         event.eventId === receipt.eventId &&
         event.requestId === receipt.requestId &&
         event.snapshotVersion === receipt.snapshotVersion &&
@@ -140,8 +145,8 @@ function groupPublicResultEventMatches(
 }
 
 function authoritativeGroupResultContractsAreValid(
-    snapshot: unknown,
-    event: unknown,
+    snapshot: ApiJsonObject | undefined,
+    event: ApiJsonObject | null | undefined,
     aggregateRef: PublicResultReceiptIdentity['aggregateRef']
 ): boolean {
     try {
@@ -157,12 +162,11 @@ function authoritativeGroupResultContractsAreValid(
 }
 
 function groupPublicResultRevisionMatches(
-    snapshotValue: unknown,
+    snapshot: ApiJsonObject | undefined,
     receipt: PublicResultReceiptIdentity
 ): boolean {
-    const snapshot = record(snapshotValue);
-    const accepted = causalRevision(receipt.causalRevision);
-    const observed = causalRevision(snapshot?.causalRevision);
+    const accepted = decodeCausalRevision(receipt.causalRevision);
+    const observed = decodeCausalRevision(snapshot?.causalRevision);
     if (!snapshot || !accepted || !observed) {
         return false;
     }
@@ -182,27 +186,29 @@ function groupPublicResultRevisionMatches(
     return causalOrderMatches;
 }
 
-function causalRevision(value: unknown): GroupCausalRevision | undefined {
-    const candidate = record(value);
-    const groupRevision = Number(candidate?.groupRevision);
-    const presenceRevision = Number(candidate?.presenceRevision);
-    return candidate &&
+function decodeCausalRevision(value: GroupCausalRevision | ApiJsonValue | undefined): GroupCausalRevision | undefined {
+    const candidate = decodeJsonRecord(value);
+    const { groupRevision, presenceRevision } = candidate ?? {};
+    return candidate !== undefined &&
             exactKeys(candidate, ['groupRevision', 'presenceRevision']) &&
-            Number.isSafeInteger(candidate.groupRevision) &&
+            typeof groupRevision === 'number' &&
+            Number.isSafeInteger(groupRevision) &&
             groupRevision >= 0 &&
-            Number.isSafeInteger(candidate.presenceRevision) &&
+            typeof presenceRevision === 'number' &&
+            Number.isSafeInteger(presenceRevision) &&
             presenceRevision >= 0
         ? { groupRevision, presenceRevision }
         : undefined;
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
+/** Evidence results are parsed JSON, so an object here is a JSON object. */
+function decodeJsonRecord(value: unknown): ApiJsonObject | undefined {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
+        ? (value as ApiJsonObject)
         : undefined;
 }
 
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+function exactKeys(value: ApiJsonObject, keys: readonly string[]): boolean {
     const actual = Object.keys(value).sort();
     const expected = [...keys].sort();
     return actual.length === expected.length && actual.every((key, index) => key === expected[index]);

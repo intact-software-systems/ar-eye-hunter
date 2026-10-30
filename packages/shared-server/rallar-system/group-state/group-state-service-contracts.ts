@@ -14,12 +14,14 @@ import type {
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
+    GrantGroupPublicationRequest,
     GroupJoinCodeResponse,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
     MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
+    RevokeGroupPublicationRequest,
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
@@ -142,6 +144,8 @@ interface GroupMutationRequests {
     readonly banGroupMember: BanGroupMemberRequest;
     readonly unbanGroupMember: UnbanGroupMemberRequest;
     readonly setGroupMemberRole: SetGroupMemberRoleRequest;
+    readonly grantGroupPublication: GrantGroupPublicationRequest;
+    readonly revokeGroupPublication: RevokeGroupPublicationRequest;
     readonly transferGroupOwnership: TransferGroupOwnershipRequest;
     readonly upsertMember: UpsertGroupMemberRequest;
     readonly rotateGroupJoinCode: RotateGroupJoinCodeRequest;

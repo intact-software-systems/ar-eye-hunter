@@ -106,6 +106,18 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
     },
     {
         method: 'POST',
+        path: mutationPath(`${API_BASE}/room-1/publication-grants/bob/grant`),
+        body: { topicId: 'room.feed', publish: true, subscribe: false },
+        status: 200
+    },
+    {
+        method: 'POST',
+        path: mutationPath(`${API_BASE}/room-1/publication-grants/bob/revoke`),
+        body: { topicId: 'room.feed', publish: true, subscribe: false },
+        status: 200
+    },
+    {
+        method: 'POST',
         path: mutationPath(`${API_BASE}/room-1/owner/transfer`),
         body: { newOwnerPrincipalId: 'bob' },
         status: 200

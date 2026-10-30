@@ -12,7 +12,10 @@ import {
     type GroupMemberUnbanAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
+import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 
 import { processAuthenticated, SCOPE, type AuthorityHarness } from './group-state-inbox-test-runtime.ts';
 
@@ -108,6 +111,18 @@ export async function readMatrixPresenceSession(
     sessionId: string
 ) {
     return await harness.repository.findPresenceSession({ ...SCOPE, groupId, sessionId });
+}
+
+export async function readMatrixPublicationGrant(
+    harness: AuthorityHarness,
+    groupId: string,
+    principalId: string
+): Promise<GroupPublicationGrant | undefined> {
+    const entry = await harness.runtimeRepository.findEntry(
+        PUBLICATION_GRANTS_NAMESPACE,
+        groupStatePublicationGrantStorageKey({ ...SCOPE, groupId }, principalId)
+    );
+    return entry === undefined ? undefined : JSON.parse(entry.value) as GroupPublicationGrant;
 }
 
 export async function runOperationMatrix(

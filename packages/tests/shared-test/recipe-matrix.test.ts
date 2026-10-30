@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-type MatrixEntry = {
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
+interface MatrixEntry {
     id: string;
     recipe: string;
     category: string;
@@ -21,7 +23,7 @@ type MatrixEntry = {
             timeoutMs?: number;
         };
     };
-};
+}
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const runnerRoot = path.join(repoRoot, 'packages/shared-test/black-box-runner');
@@ -33,7 +35,7 @@ function readMatrix(): { entries: MatrixEntry[]; } {
     return JSON.parse(readFileSync(matrixPath, 'utf8'));
 }
 
-function readRecipe(relativePath: string): Record<string, unknown> {
+function readRecipe(relativePath: string): ApiJsonObject {
     return JSON.parse(readFileSync(path.join(runnerRoot, relativePath), 'utf8'));
 }
 
@@ -50,7 +52,7 @@ function listJsonRecipes(root: string, prefix: string): string[] {
     });
 }
 
-function rtcProviders(recipe: Record<string, unknown>): string[] {
+function rtcProviders(recipe: ApiJsonObject): string[] {
     const connections = recipe.connections as Record<string, { type?: string; provider?: string; }>;
     return Object.values(connections)
         .filter((connection) => connection.type === 'rtc')
@@ -386,7 +388,7 @@ describe('black-box runner recipe matrix', () => {
         const recipe = readRecipe('tests/api-v1/api-v1-client-state.json');
         const steps = recipe.steps as Array<{
             name?: string;
-            request?: { body?: Record<string, unknown>; };
+            request?: { body?: ApiJsonObject; };
             expect?: { status?: number; };
         }>;
         const step = (name: string) => steps.find((candidate) => candidate.name === name);
@@ -405,6 +407,23 @@ describe('black-box runner recipe matrix', () => {
         for (const name of ['connectAliceClientSession', 'heartbeatAliceClientSession', 'disconnectAliceClientSession']) {
             expect(step(name)?.request?.body?.generationId).toBe('{clientGenerationId}');
         }
+    });
+
+    it('runs the publication-grant recipes standalone and across the three-node cluster', () => {
+        const { entries } = readMatrix();
+        const standard = entries.find((entry) => entry.id === 'api-v1-group-publication-grants');
+        const cluster = entries.find((entry) => entry.id === 'api-v1-group-publication-grants-cluster');
+
+        expect(standard?.recipe).toBe('tests/api-v1/api-v1-group-publication-grants.json');
+        expect(standard?.profiles).toEqual(['api-v1-black-box', 'api-v1-black-box-recipes']);
+        expect(standard?.requires?.livePreflight?.timeoutMs).toBe(10_000);
+        expect(cluster?.recipe).toBe('tests/api-v1/api-v1-group-publication-grants-cluster.json');
+        expect(cluster?.profiles).toEqual(['api-v1-black-box-cluster']);
+        expect(cluster?.requires?.httpServices?.map((service) => service.env)).toEqual([
+            'RALLAR_API_BASE_URL',
+            'RALLAR_API_BASE_URL_SECONDARY',
+            'RALLAR_API_BASE_URL_TERTIARY'
+        ]);
     });
 
     it('keeps API-v1 black-box recipes free of RTC connections', () => {

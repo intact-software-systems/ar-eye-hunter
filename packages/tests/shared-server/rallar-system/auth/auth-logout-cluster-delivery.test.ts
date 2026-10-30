@@ -267,7 +267,7 @@ async function createCluster(repository: FakeRuntimeStateRepository, sessionId: 
         outbox: stores.workQueue,
         outboundStores: stores,
         queueEngine: engine,
-        targetResolver: { resolvePeerRecipients: () => [{ peerId: sessionId, connectionId: 'outsider' }] },
+        targetResolver: { requiresFrozenAudience: () => false, resolvePeerRecipients: () => [{ peerId: sessionId, connectionId: 'outsider' }] },
         readProducerProvenance: (message, entry) => reader.readProducerProvenance(message, entry)
     });
     const remoteService = createDefaultWsQueueBoxServerService({

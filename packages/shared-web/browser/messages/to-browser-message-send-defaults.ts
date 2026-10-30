@@ -1,6 +1,8 @@
+import { isExclusiveSendInput } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageSendBase,
-    RallarStorageUnavailablePolicy
+    RallarStorageUnavailablePolicy,
+    RallarTypedMessageChannelDefinition
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
@@ -13,6 +15,7 @@ import {
 /** A typed channel's send policy, copied once from its validated definition when the channel is created. */
 export interface BrowserTypedChannelPolicy {
     readonly purpose: ALChannelPurpose;
+    readonly access: RallarTypedMessageChannelDefinition['access'];
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
     /** Defined exactly on a `live` channel: the policy its sends are staged under. */
@@ -39,6 +42,21 @@ export function resolveBrowserStorageUnavailablePolicy(
     channel: BrowserTypedChannelPolicy | undefined
 ): RallarStorageUnavailablePolicy {
     return channel?.onStorageUnavailable ?? 'refuse';
+}
+
+/** Only the WS server arbitrates a claim and checks a publication grant, so RTC can carry neither send (D500). */
+export function isBrowserWsOnlySend(
+    send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>,
+    channel: BrowserTypedChannelPolicy | undefined
+): boolean {
+    return isExclusiveSendInput(send) || resolveBrowserChannelAccess(channel) === 'granted';
+}
+
+/** A lane send names no channel, so every active member of its room may publish it. */
+export function resolveBrowserChannelAccess(
+    channel: BrowserTypedChannelPolicy | undefined
+): RallarTypedMessageChannelDefinition['access'] {
+    return channel?.access ?? 'members';
 }
 
 /**

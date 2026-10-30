@@ -71,7 +71,8 @@ export function createBrowserMessageSenderFixture(
             deliveries: registry,
             sessionDeliveries,
             publicationStages,
-            nowMs: Date.now
+            nowMs: Date.now,
+            readPublicationPermissions: () => undefined
         }),
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => maxPayloadBytes }),
         connect,

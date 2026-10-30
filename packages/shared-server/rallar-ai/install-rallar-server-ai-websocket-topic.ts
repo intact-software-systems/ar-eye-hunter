@@ -50,6 +50,7 @@ export interface RallarServerAiWebSocketTopicDefinition {
     readonly topicId: string;
     readonly typeId: string;
     readonly scope: RallarServerWsTopicScope;
+    readonly participation: 'members';
     readonly fanout: RallarServerWsFanout;
     readonly maxPayloadBytes: number;
     readonly validate: (value: JsonWireValue) => boolean;
@@ -87,6 +88,7 @@ export function installRallarServerAiWebSocketTopic(
         topicId: input.config.requestTopicId,
         typeId: input.config.requestTypeId,
         scope: input.config.requestScope,
+        participation: 'members',
         fanout: input.config.requestFanout,
         maxPayloadBytes: input.config.maxPayloadBytes,
         validate: (value) => isRallarServerAiJsonRequest(value),

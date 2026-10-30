@@ -137,7 +137,8 @@ function createGroupSnapshot(
         members: [member('alice'), member('bob')],
         activeSessions: [session('alice', 'session-alice'), session('bob', 'session-bob')],
         memberCount: 2,
-        onlineMemberCount: 2
+        onlineMemberCount: 2,
+        publicationGrants: []
     };
 }
 

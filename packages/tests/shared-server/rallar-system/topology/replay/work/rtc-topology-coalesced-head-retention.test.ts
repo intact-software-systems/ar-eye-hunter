@@ -217,7 +217,8 @@ function createHeadHarness(sql: PSqlSql, applicationId: string): HeadHarness {
         members: [member],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
     const state: HeadHarnessState = { group, attemptAtEpochMs: 0 };
     const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);

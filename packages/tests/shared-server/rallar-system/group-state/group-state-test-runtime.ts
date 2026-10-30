@@ -51,6 +51,8 @@ export type GroupStateTestService =
         banGroupMember: GroupStateTestMutationMethod;
         unbanGroupMember: GroupStateTestMutationMethod;
         setGroupMemberRole: GroupStateTestMutationMethod;
+        grantGroupPublication: GroupStateTestMutationMethod;
+        revokeGroupPublication: GroupStateTestMutationMethod;
         transferGroupOwnership: GroupStateTestMutationMethod;
         upsertMember: GroupStateTestMutationMethod;
         connectPresenceSession: GroupStateTestMutationMethod;
@@ -369,6 +371,8 @@ const METHOD_OPERATION: Readonly<Record<string, GroupMutationDescriptor['operati
     banGroupMember: 'banGroupMember',
     unbanGroupMember: 'unbanGroupMember',
     setGroupMemberRole: 'setGroupMemberRole',
+    grantGroupPublication: 'grantGroupPublication',
+    revokeGroupPublication: 'revokeGroupPublication',
     transferGroupOwnership: 'transferGroupOwnership',
     upsertMember: 'upsertMember',
     connectPresenceSession: 'connectPresence',
@@ -389,6 +393,8 @@ const TARGET_MUTATIONS = new Set([
     'banGroupMember',
     'unbanGroupMember',
     'setGroupMemberRole',
+    'grantGroupPublication',
+    'revokeGroupPublication',
     'upsertMember'
 ]);
 const PRESENCE_MUTATIONS = new Set([

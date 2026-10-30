@@ -20,12 +20,12 @@ interface CreateApiRtcTopologyQueuePubSubBridgeInput {
     readonly publisherId: string;
     readonly timing?: RallarTimingSink;
     readonly wakeReplay: () => void;
-    readonly filterEligibleCapturedSessionIds: NonNullable<
-        InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds']
-    >;
 }
 
-type ApiRtcTopologyQueuePubSubBridgeOptions = Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
+type ApiRtcTopologyQueuePubSubBridgeOptions = Omit<
+    InstallQueueBoxPubSubBridgeOptions,
+    'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'
+>;
 
 export function createApiRtcTopologyQueuePubSubBridge(
     input: CreateApiRtcTopologyQueuePubSubBridgeInput
@@ -43,7 +43,6 @@ export function createApiRtcTopologyQueuePubSubBridge(
         channel: input.channel,
         publisherId: input.publisherId,
         timing: input.timing,
-        filterEligibleCapturedSessionIds: input.filterEligibleCapturedSessionIds,
         onValidatedOutboxKeyReceived: (entry) => {
             if (isRtcTopologyPublicationOutboxEntry(entry)) {
                 input.wakeReplay();

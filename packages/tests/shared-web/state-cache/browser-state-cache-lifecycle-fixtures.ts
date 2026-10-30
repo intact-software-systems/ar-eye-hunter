@@ -156,7 +156,8 @@ export function createGroupSnapshot(
         })),
         activeSessions: toGroupFixtureActiveSessions(input),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 
@@ -324,7 +325,9 @@ export function createGroupStateDeltaEnvelope(
         group: resulting.group,
         memberCount: resulting.memberCount,
         onlineMemberCount: resulting.onlineMemberCount,
-        audienceSessionIds: activeSessionIds
+        audienceSessionIds: activeSessionIds,
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
 }
 

@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { installRallarGameAuthorityServer } from '@shared-server/game/install-rallar-game-authority-server.ts';
@@ -214,6 +215,7 @@ function createGameRouterFixture(cluster = false): GameRouterFixture {
     }
     const recording = createRecordingLiveWsPublication();
     const router = new RallarServerWsRouter(createGameService(socket, roomRef, Object.keys(players)), {
+        grantedTopics: new WsGrantedTopicSet(),
         livePublication: cluster ? recording.livePublication : undefined,
         authorizeRoomMessage: ({ message }) =>
             message.targets === undefined ? false : {
@@ -247,6 +249,7 @@ function createGameService(
                 ? { scope: toScope(roomRef), expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => playerIds.map((peerId) => ({ peerId, connectionId: peerId }))

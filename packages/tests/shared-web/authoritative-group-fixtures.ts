@@ -124,7 +124,8 @@ export function createGroupSnapshotFixture(
             })
         ),
         memberCount: memberPrincipalIds.length,
-        onlineMemberCount: input.sessionIds.length
+        onlineMemberCount: input.sessionIds.length,
+        publicationGrants: []
     };
 }
 

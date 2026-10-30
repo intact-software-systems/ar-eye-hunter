@@ -79,3 +79,18 @@ export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
         command.operation === 'applyPlannedLayout' ||
         command.operation === 'resetGroupFormation';
 }
+
+/**
+ * The target's publication-grant row is read exactly by the grant commands, which rewrite it, by the departures,
+ * which delete it in their own batch (D485): a remove, a ban, or an upsert out of active, a leave among them, and by a
+ * create, whose creator's row may survive an expired incarnation (D494). Join, admission, unban and role changes never
+ * consult it.
+ */
+export function readsTargetPublicationGrant(command: GroupMutationCommand): boolean {
+    return command.operation === 'createGroup' ||
+        command.operation === 'grantGroupPublication' ||
+        command.operation === 'revokeGroupPublication' ||
+        command.operation === 'removeGroupMember' ||
+        command.operation === 'banGroupMember' ||
+        (command.operation === 'upsertMember' && command.input.status !== 'active');
+}

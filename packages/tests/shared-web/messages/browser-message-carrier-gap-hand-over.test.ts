@@ -116,7 +116,8 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
         deliveries,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => undefined
     });
     return {
         origin,
@@ -131,6 +132,7 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
                 message,
                 canFallback,
                 payloadIssues: [],
+                access: 'members',
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             });

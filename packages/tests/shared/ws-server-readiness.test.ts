@@ -147,6 +147,7 @@ function createServerRuntime(): ServerRuntime {
         queueEngine: engine,
         readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: () => [{ ...selectedRecipient }],
             resolveGroupRecipients: () => [],
             resolveBroadcastRecipients: () => [],

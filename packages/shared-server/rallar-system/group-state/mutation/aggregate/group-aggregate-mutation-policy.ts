@@ -86,7 +86,8 @@ export function toPolicySnapshot(
         memberCount: stored.value.activeMemberCount,
         onlineMemberCount: members.filter(
             (member) => member.status === 'active' && activePrincipals.has(member.principalId)
-        ).length
+        ).length,
+        publicationGrants: read.targetPublicationGrant === null ? [] : [read.targetPublicationGrant.value]
     };
 }
 

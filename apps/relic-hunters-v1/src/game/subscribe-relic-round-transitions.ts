@@ -32,6 +32,7 @@ export function subscribeRelicRoundTransitions(
         typeId: RELIC_TYPES.event,
         roomRef,
         purpose: 'notification',
+        access: 'members',
         recovery: {
             onResyncRequired: (cursor) => {
                 if (isRelicRoundTrackOfGame(cursor.orderingKey, roomId)) {

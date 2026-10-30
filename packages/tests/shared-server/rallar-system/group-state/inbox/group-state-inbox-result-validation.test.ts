@@ -93,7 +93,8 @@ function createResultInput() {
         members: [read.actorMember],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
     return {
         command,

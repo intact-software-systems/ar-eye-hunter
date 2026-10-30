@@ -22,6 +22,7 @@ export const GROUP_POLICY_REASON_CODES = [
     'group-admission-deadline-passed',
     'group-admission-capacity-reached',
     'group-data-blocked-until-active',
+    'capacity',
     // Product decision 37: the attempt budget bounds one formation series, so
     // a spent series denies `start` until an explicit `reset` clears it.
     'formation-attempts-exhausted'

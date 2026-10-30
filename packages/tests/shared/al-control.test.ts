@@ -145,23 +145,26 @@ describe('AL control message codec', () => {
             .toEqual({ type: 'repair', payload: repair });
     });
 
-    it.each(['membership-fenced', 'held-by-other', 'unsupported'] as const)('round-trips a %s NACK and refuses a reason outside the vocabulary', (reason) => {
-        const refusal: ALNackPayload = {
-            msgId: 'msg-1',
-            fromPeerId: 'sender',
-            toPeerId: 'receiver',
-            reason,
-            observedAtEpochMs: 13
-        };
-        const message = newALNackControlMessage(controlId, refusal);
-        const unknownReason = controlMessageWithResource(
-            AL_CONTROL_NACK_TYPE_ID,
-            JSON.stringify({ ...refusal, reason: 'fenced' })
-        );
+    it.each(['membership-fenced', 'held-by-other', 'unsupported', 'no-publish-grant'] as const)(
+        'round-trips a %s NACK and refuses a reason outside the vocabulary',
+        (reason) => {
+            const refusal: ALNackPayload = {
+                msgId: 'msg-1',
+                fromPeerId: 'sender',
+                toPeerId: 'receiver',
+                reason,
+                observedAtEpochMs: 13
+            };
+            const message = newALNackControlMessage(controlId, refusal);
+            const unknownReason = controlMessageWithResource(
+                AL_CONTROL_NACK_TYPE_ID,
+                JSON.stringify({ ...refusal, reason: 'fenced' })
+            );
 
-        expect(parseALControlMessage(message)).toEqual({ type: 'nack', payload: refusal });
-        expect(decodeALControlMessage(unknownReason).left).toMatchObject({ code: 'malformed' });
-    });
+            expect(parseALControlMessage(message)).toEqual({ type: 'nack', payload: refusal });
+            expect(decodeALControlMessage(unknownReason).left).toMatchObject({ code: 'malformed' });
+        }
+    );
 
     it.each([
         newALAckControlMessage(controlId, ack),

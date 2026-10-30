@@ -60,7 +60,8 @@ export function createGroupSnapshot(
         members: [],
         activeSessions: [],
         memberCount: 0,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 

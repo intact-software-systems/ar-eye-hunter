@@ -64,9 +64,9 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"traceId":"trace-group-state-transaction-boundary","requestId":"create-transaction-boundary-room"},"left":null,' +
     '"removed":null,"banned":null,"invitedByPrincipalId":null,' +
     '"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,' +
-    '"onlineMemberCount":0},"event":{"applicationId":"ar-eye-hunter",' +
+    '"onlineMemberCount":0,"publicationGrants":[]},"event":{"applicationId":"ar-eye-hunter",' +
     '"workspaceId":"default","groupId":"transaction-boundary-room",' +
-    '"eventId":"group-event:96cc07efc32833ebc37c714b22e6c1f27578f5494e5c9cd1ed0d18ed9c2d8d65",' +
+    '"eventId":"group-event:358dab796e3aed8c6de7fcf079567a7368e7fce0521423d093dbccf8a29d47a5",' +
     '"eventType":"group-created","snapshotVersion":1,' +
     '"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
     '"occurredAtEpochMs":1785628800000,"actor":{"kind":"session",' +

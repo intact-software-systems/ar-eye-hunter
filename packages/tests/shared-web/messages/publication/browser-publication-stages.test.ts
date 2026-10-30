@@ -107,6 +107,7 @@ function toLiveDelivery(
     );
     const live = toBrowserPublicationDelivery(message, {
         purpose: 'live',
+        access: 'members',
         durability: undefined,
         onStorageUnavailable: 'refuse',
         publication
@@ -122,6 +123,7 @@ function toLiveDelivery(
         message: live.message,
         canFallback: false,
         payloadIssues: [],
+        access: 'members',
         onStorageUnavailable: 'refuse',
         publication: live.publication
     };

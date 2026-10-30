@@ -38,7 +38,8 @@ surfaces. They are documentation examples, not standalone apps.
 - [Server App Data](./server-app-data/README.md): persist app-owned server
   state with typed fresh reads; incoming writes use AppInbox.
 - [Server Room Topics](./server-room-topics/README.md): validate, authorize,
-  observe, transform, and fan out custom room-scoped WS topics.
+  observe, transform, and fan out custom room-scoped WS topics, and restrict a
+  topic's publishers and receivers to publication grants.
 - [Server Authoritative Game](./server-authoritative-game/README.md): keep
   match truth on Rallar Server, accept commands, and publish room snapshots.
 - [RallarAI Game Event](./rallar-ai-game-event/README.md): treat generated game

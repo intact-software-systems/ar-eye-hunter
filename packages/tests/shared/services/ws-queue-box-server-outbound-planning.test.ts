@@ -61,6 +61,7 @@ describe('WS server outbound planning', () => {
             outboundStores: { admissionStore: store, workQueue: backend.workQueue },
             queueEngine: new InboxOutboxEngine(),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: context.id }],
                 resolveGroupRecipients: () => [{ peerId: 'peer', connectionId: context.id }],
                 resolveBroadcastRecipients: () => [],
@@ -154,7 +155,7 @@ describe('WS server outbound planning', () => {
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket: new JsonWebSocketServer(),
-                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
             }),
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
@@ -214,7 +215,7 @@ describe('WS server outbound planning', () => {
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket: new JsonWebSocketServer(),
-                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
             }),
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
@@ -240,7 +241,7 @@ describe('WS server outbound planning', () => {
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket: server,
-                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
             }),
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
@@ -270,6 +271,7 @@ describe('WS server outbound planning', () => {
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket: new JsonWebSocketServer(),
                 targetResolver: {
+                    requiresFrozenAudience: () => false,
                     resolveGroupRecipients: () => [
                         { peerId: 'b', connectionId: 'b' },
                         { peerId: 'late-joiner', connectionId: 'late-joiner' }
@@ -307,7 +309,7 @@ describe('WS server outbound planning', () => {
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket: new JsonWebSocketServer(),
-                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
             }),
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
@@ -376,7 +378,7 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
         outbox: backend.workQueue,
         outboundStores: { admissionStore: store, workQueue: backend.workQueue },
         queueEngine: engine,
-        targetResolver: { resolveGroupRecipients: () => roomRecipients }
+        targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => roomRecipients }
     });
     onTestFinished(() => service.dispose());
     return { backend, service, store, engine, sockets };

@@ -33,7 +33,8 @@ export function subscribeRelicHunterEvents(
         topicId: RELIC_TOPICS.hunter,
         typeId: RELIC_TYPES.hunter,
         roomRef,
-        purpose: 'notification'
+        purpose: 'notification',
+        access: 'members'
     });
     return channel.onWs((payload, message) => {
         if (

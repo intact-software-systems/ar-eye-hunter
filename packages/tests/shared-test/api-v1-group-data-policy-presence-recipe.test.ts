@@ -298,7 +298,8 @@ function toPresenceSnapshot(boundary: PresenceRecipeBoundary): GroupSnapshot {
             expiresAtEpochMs: 100000,
             disconnectedAtEpochMs: null,
             disconnectReason: null
-        }))
+        })),
+        publicationGrants: []
     };
 }
 

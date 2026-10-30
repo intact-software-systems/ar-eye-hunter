@@ -188,6 +188,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     const fresh = await openRecoveryOwner({ sessionId, principalId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
     const authorizationInput = {
         message: original,
+        topic: { participation: 'members' } as const,
         roomId: roomRef.groupId,
         roomRef,
         senderId: sessionId,

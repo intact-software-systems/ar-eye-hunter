@@ -1,5 +1,6 @@
 import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
+import type { RallarServerWsFanout } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
 export interface ApiV1ConfigurationProfile {
@@ -237,6 +238,14 @@ export interface ApiV1CrdtConfiguration {
     readonly documentTypePolicies: readonly RallarCrdtDocumentTypePolicy[];
 }
 
+/** A room topic api-v1 installs with `participation: 'granted'` (D499): only grant holders publish and subscribe. */
+export interface ApiV1GrantedWsTopicConfiguration {
+    readonly topicId: string;
+    readonly typeId?: string;
+    readonly fanout: RallarServerWsFanout;
+    readonly serverProducerIds: readonly string[];
+}
+
 export interface ApiV1DisabledOperatorTokenConfiguration {
     readonly mode: 'disabled';
     readonly allowedClientIds: readonly string[];
@@ -294,6 +303,7 @@ export interface ApiV1Configuration {
     readonly appInbox: ApiV1AppInboxConfiguration;
     readonly ice: ApiV1IceConfiguration;
     readonly crdt: ApiV1CrdtConfiguration;
+    readonly grantedWsTopics: readonly ApiV1GrantedWsTopicConfiguration[];
     readonly blackBox: ApiV1BlackBoxConfiguration;
     readonly observability: ApiV1ObservabilityConfiguration;
 }

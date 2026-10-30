@@ -14,6 +14,8 @@ const TARGET_PRINCIPAL_TYPES = new Set<AuthenticatedGroupMutationInboxType>([
     AppInboxType.GROUP_MEMBER_BAN,
     AppInboxType.GROUP_MEMBER_UNBAN,
     AppInboxType.GROUP_MEMBER_ROLE_SET,
+    AppInboxType.GROUP_PUBLICATION_GRANT,
+    AppInboxType.GROUP_PUBLICATION_REVOKE,
     AppInboxType.GROUP_MEMBER_UPSERT
 ]);
 
@@ -172,6 +174,10 @@ function toGroupMutationOperation(
             return 'unbanGroupMember';
         case AppInboxType.GROUP_MEMBER_ROLE_SET:
             return 'setGroupMemberRole';
+        case AppInboxType.GROUP_PUBLICATION_GRANT:
+            return 'grantGroupPublication';
+        case AppInboxType.GROUP_PUBLICATION_REVOKE:
+            return 'revokeGroupPublication';
         case AppInboxType.GROUP_OWNERSHIP_TRANSFER:
             return 'transferGroupOwnership';
         case AppInboxType.GROUP_MEMBER_UPSERT:

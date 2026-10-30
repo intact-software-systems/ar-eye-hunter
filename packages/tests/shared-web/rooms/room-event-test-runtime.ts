@@ -154,7 +154,9 @@ export function toRoomEventEnvelopeMessage(
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        audienceSessionIds: []
+        audienceSessionIds: [],
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
     const payload = options.omitGroup
         ? omitGroupFromEnvelope(envelope)

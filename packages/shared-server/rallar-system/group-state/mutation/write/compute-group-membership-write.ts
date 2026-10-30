@@ -4,7 +4,8 @@ import type {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
-    GroupMutationRead
+    GroupMutationRead,
+    GroupPublicationGrantEffect
 } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
@@ -16,6 +17,7 @@ export interface ComputeGroupMembershipWriteInput {
     readonly facts: GroupMutationFacts;
     readonly members: readonly GroupMember[];
     readonly eventType: GroupEventType;
+    readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
 }
 
 export function computeGroupMembershipWrite({
@@ -23,7 +25,8 @@ export function computeGroupMembershipWrite({
     read,
     facts,
     members,
-    eventType
+    eventType,
+    publicationGrantEffects
 }: ComputeGroupMembershipWriteInput): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
@@ -53,7 +56,8 @@ export function computeGroupMembershipWrite({
         presenceAdmission: computeMemberPresenceAdmission({ read, members, facts }),
         eventType,
         lifecyclePolicy: null,
-        presenceSummaryWork: 'enqueue'
+        presenceSummaryWork: 'enqueue',
+        publicationGrantEffects
     });
 }
 

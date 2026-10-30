@@ -4,6 +4,8 @@ import {
 } from '@shared/api/group-director.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
+import type { Group } from '@shared/api/group-types.ts';
+import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type {
     CreateGroupRequest,
     JoinGroupRequest,
@@ -13,7 +15,7 @@ import type {
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
-import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupPublicationGrantOperation } from './mutation/group-mutation-contracts.ts';
 
 export interface GroupMutationIdentity {
     readonly commandId: string;
@@ -90,9 +92,6 @@ function toCreateCommand(
     randomId: () => string
 ): GroupMutationCommand {
     const commandId = request.requestId ?? randomId();
-    const retention = toInitialGroupRetentionState(request.retention);
-    const metadata = { ...structuredClone(request.metadata ?? {}) };
-    delete metadata.rallarSpectatorCapacity;
     return {
         operation: 'createGroup',
         aggregateRef: { ...scope, groupId: request.groupId },
@@ -111,17 +110,26 @@ function toCreateCommand(
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
-            metadata: {
-                ...metadata,
-                ...(request.maxSpectators === undefined ? {} : { rallarSpectatorCapacity: request.maxSpectators }),
-                ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
-            },
+            metadata: toCreateGroupMetadata(request),
             createdByPrincipalId: request.createdByPrincipalId,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
+            publicationGrants: structuredClone(request.publicationGrants ?? {}),
             ...toGroupMutationActorInput(request),
             actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId
         }
+    };
+}
+
+/** The request's metadata with the server-owned spectator capacity and retention entries taken from their own fields. */
+function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
+    const retention = toInitialGroupRetentionState(request.retention);
+    const metadata = { ...structuredClone(request.metadata ?? {}) };
+    delete metadata.rallarSpectatorCapacity;
+    return {
+        ...metadata,
+        ...(request.maxSpectators === undefined ? {} : { rallarSpectatorCapacity: request.maxSpectators }),
+        ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
     };
 }
 
@@ -244,6 +252,26 @@ function toRoleCommand(
         targetPrincipalId: requireTargetPrincipalId(descriptor),
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: { role: request.role, ...toGroupMutationActorInput(request) }
+    };
+}
+
+export function toPublicationMutationCommand(
+    descriptor: Extract<GroupMutationDescriptor, { operation: GroupPublicationGrantOperation; }>,
+    randomId: () => string
+): GroupMutationCommand {
+    const request = descriptor.request;
+    return {
+        operation: descriptor.operation,
+        aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+        targetPrincipalId: requireTargetPrincipalId(descriptor),
+        ...toGroupMutationIdentity(request.requestId, randomId),
+        input: {
+            // Unchecked here: assertGroupMutationCommand refuses an invalid id as a TypeError before any compute.
+            topicId: request.topicId as RallarWsUserTopicId,
+            publish: request.publish,
+            subscribe: request.subscribe,
+            ...toGroupMutationActorInput(request)
+        }
     };
 }
 

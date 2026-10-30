@@ -1,3 +1,4 @@
+import { validatePersistedGroupSnapshot } from '@shared-server/rallar-system/group-state/snapshot/validate-persisted-group-snapshot.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     validateAuthoritativeClientSnapshot,
@@ -8,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
     createActiveClientInstanceFixture,
     createActiveClientSessionFixture,
+    createActiveGroupMemberFixture,
     createActiveGroupPresenceSessionFixture,
     createAuditStampFixture,
     createClientSnapshotFixture,
@@ -488,6 +490,67 @@ describe('authoritative network state validation', () => {
 
         expect(() => validateAuthoritativeGroupSnapshot(mutate(group), scope))
             .toThrow();
+    });
+
+    it('validateAuthoritativeGroupSnapshot accepts publicationGrants and rejects an extra grant key, an unsorted list, a duplicate principal and a grant for another GroupRef', () => {
+        const group = createGroupSnapshotFixture({ ...scope, groupId: 'room-grants', sessionIds: ['alice', 'bob'] });
+        const grantOf = (principalId: string) => ({
+            ...scope,
+            groupId: 'room-grants',
+            principalId,
+            topics: { 'room.feed': { publish: true, subscribe: true } },
+            updated: createAuditStampFixture(2, 'alice')
+        });
+        const granted = { ...group, publicationGrants: [grantOf('alice'), grantOf('bob')] };
+
+        expect(() => validateAuthoritativeGroupSnapshot(granted, scope)).not.toThrow();
+        for (
+            const [publicationGrants, message] of [
+                [[{ ...grantOf('alice'), extra: true }], /\$\[0\]\.extra/],
+                [[grantOf('bob'), grantOf('alice')], /\$\[1\]: .*ascending principalId/],
+                [[grantOf('alice'), grantOf('alice')], /ascending principalId/],
+                [[{ ...grantOf('alice'), groupId: 'room-other' }], /another group/],
+                [[grantOf('zed')], /not an active member/],
+                [[{ ...grantOf('alice'), topics: {} }], /publicationGrants/]
+            ] as const
+        ) {
+            expect(() => validateAuthoritativeGroupSnapshot({ ...group, publicationGrants }, scope)).toThrow(message);
+        }
+        const { publicationGrants: omitted, ...withoutGrants } = granted;
+        expect(omitted).toHaveLength(2);
+        expect(() => validateAuthoritativeGroupSnapshot(withoutGrants, scope)).toThrow(/publicationGrants/);
+    });
+
+    it('both snapshot validators refuse a grant row held by a member who is no longer active', () => {
+        const group = createGroupSnapshotFixture({ ...scope, groupId: 'room-departed', sessionIds: ['alice', 'bob'] });
+        const grantOf = (principalId: string) => ({
+            ...scope,
+            groupId: 'room-departed',
+            principalId,
+            topics: { 'room.feed': { publish: true, subscribe: true } },
+            updated: createAuditStampFixture(2, 'alice')
+        });
+        const departed = createActiveGroupMemberFixture({
+            ...scope,
+            groupId: 'room-departed',
+            principalId: 'lee',
+            role: 'member',
+            actorPrincipalId: 'alice'
+        });
+        if (departed.status !== 'active') {
+            throw new Error('Expected the active member fixture');
+        }
+        const withDeparted = {
+            ...group,
+            members: [...group.members, { ...departed, status: 'left', left: departed.updated }]
+        };
+
+        expect(() => validatePersistedGroupSnapshot(JSON.parse(JSON.stringify({ ...withDeparted, publicationGrants: [grantOf('bob')] }))))
+            .not.toThrow();
+        const held = JSON.parse(JSON.stringify({ ...withDeparted, publicationGrants: [grantOf('bob'), grantOf('lee')] }));
+        expect(() => validateAuthoritativeGroupSnapshot(held, scope)).toThrow(/not an active member/);
+        expect(() => validatePersistedGroupSnapshot(held)).toThrow(/publication grants are invalid/);
+        expect(() => validateAuthoritativeGroupSnapshot({ ...withDeparted, publicationGrants: [grantOf('bob')] }, scope)).not.toThrow();
     });
 
     it.each([

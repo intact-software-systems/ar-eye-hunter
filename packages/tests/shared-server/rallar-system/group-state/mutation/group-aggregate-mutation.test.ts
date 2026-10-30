@@ -4,17 +4,35 @@ import {
     it
 } from 'vitest';
 
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { assertGroupMutationOperationReads } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-operation-reads.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import {
+    GROUPS_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
+import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import {
     createMutationCommand,
     createMutationFacts,
     createMutationRead
 } from '../group-state-concurrency-test-fixtures.ts';
-import { createGroupAuthorityRead, transitionCommand } from './group-mutation-test-runtime.ts';
+
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { createService } from '../presence/group-presence-test-runtime.ts';
+import { createGroupAuthorityRead, SCOPE, transitionCommand } from './group-mutation-test-runtime.ts';
+import {
+    computeDescriptorMutation,
+    GRANT_ROOM,
+    readGrantRow,
+    requireWrite,
+    toTopicGrants
+} from './group-publication-grant-test-runtime.ts';
 
 describe('group aggregate mutation computation', () => {
     it('keeps pure mutation computation synchronous, deterministic, and input preserving', () => {
@@ -165,6 +183,135 @@ describe('group mutation roster read contract', () => {
         );
     });
 });
+
+describe('group creation with a declared publication grant', () => {
+    const createRequest = (
+        publicationGrants?: CreateGroupRequest['publicationGrants'],
+        requestId = 'create-grant-room-declared'
+    ): CreateGroupRequest => ({
+        groupId: GRANT_ROOM,
+        displayName: GRANT_ROOM,
+        kind: 'room',
+        createdByPrincipalId: 'alice',
+        requestId,
+        ...(publicationGrants === undefined ? {} : { publicationGrants })
+    });
+    const describeCreate = (request: CreateGroupRequest) => mutationDescriptor({ operation: 'createGroup', scope: SCOPE, groupId: GRANT_ROOM, request });
+
+    /** alice created the room holding room.feed, and the room's group row has since expired unpurged. */
+    async function expireRoomWithCreatorGrant(): Promise<GroupBarrierRepository> {
+        const runtime = new GroupBarrierRepository();
+        await createService(runtime, 1_000).createGroup(
+            SCOPE,
+            createRequest({ 'room.feed': { publish: true, subscribe: true } }, 'create-grant-room-first-life')
+        );
+        const key = groupStateGroupStorageKey(GRANT_ROOM_REF);
+        const group = await runtime.findEntry(GROUPS_NAMESPACE, key);
+        await runtime.upsert(GROUPS_NAMESPACE, key, group!.value, Date.now() - 1);
+        return runtime;
+    }
+
+    it('create with publicationGrants writes the creator\'s row in the create batch; absent or {} writes none', async () => {
+        const declared = { 'room.feed': { publish: true, subscribe: true } };
+        const runtime = new GroupBarrierRepository();
+        const { computed } = await computeDescriptorMutation(
+            runtime,
+            'alice',
+            describeCreate(createRequest(declared))
+        );
+        const write = requireWrite(computed);
+        const createStamp = write.guard.kind === 'group' ? write.guard.value.created : null;
+        const created = (await createService(runtime, 3_000).createGroup(SCOPE, createRequest(declared))).result;
+
+        expect(write.publicationGrantEffects).toEqual([
+            { operation: 'insert', value: { ...GRANT_ROOM_REF, principalId: 'alice', topics: declared, updated: createStamp } }
+        ]);
+        expect(write.persistence.guardedBatch.effects.map((effect) => effect.effectId)).toContain('publication-grant:alice');
+        expect(await readGrantRow(runtime, 'alice')).toMatchObject({ topics: declared, updated: created.snapshot.group.created });
+        expect(created.snapshot.publicationGrants).toEqual([await readGrantRow(runtime, 'alice')]);
+        for (const publicationGrants of [undefined, {}]) {
+            const empty = new GroupBarrierRepository();
+            const { result } = await createService(empty, 3_000).createGroup(SCOPE, createRequest(publicationGrants));
+            expect(await readGrantRow(empty, 'alice')).toBeUndefined();
+            expect(result.snapshot.publicationGrants).toEqual([]);
+        }
+    });
+
+    it('recreation over an expired room rewrites the creator\'s surviving row with its declaration', async () => {
+        const runtime = await expireRoomWithCreatorGrant();
+        const surviving = await runtime.findEntry(
+            PUBLICATION_GRANTS_NAMESPACE,
+            groupStatePublicationGrantStorageKey(GRANT_ROOM_REF, 'alice')
+        );
+        const declared = { 'room.other': { publish: true, subscribe: false } };
+        const request = createRequest(declared, 'create-grant-room-second-life');
+        const { read, computed } = await computeDescriptorMutation(runtime, 'alice', describeCreate(request));
+
+        expect(read.expiredGroupEntry).not.toBeNull();
+        expect(requireWrite(computed).publicationGrantEffects).toMatchObject([
+            { operation: 'update', expectedRevision: surviving!.revision, value: { principalId: 'alice', topics: declared } }
+        ]);
+        const { result } = await createService(runtime, 3_000).createGroup(SCOPE, request);
+        expect((await readGrantRow(runtime, 'alice'))?.topics).toEqual(declared);
+        expect(result.snapshot.publicationGrants.map((grant) => grant.topics)).toEqual([declared]);
+    });
+
+    it('recreation over an expired room with {} deletes the creator\'s surviving row', async () => {
+        const runtime = await expireRoomWithCreatorGrant();
+        const request = createRequest({}, 'create-grant-room-second-life');
+        const { computed } = await computeDescriptorMutation(runtime, 'alice', describeCreate(request));
+
+        expect(requireWrite(computed).publicationGrantEffects).toMatchObject([{ operation: 'delete' }]);
+        const { result } = await createService(runtime, 3_000).createGroup(SCOPE, request);
+        expect(await readGrantRow(runtime, 'alice')).toBeUndefined();
+        expect(result.snapshot.publicationGrants).toEqual([]);
+    });
+
+    it('a create whose actor differs from its creator reads the creator\'s surviving row and is rejected', async () => {
+        const runtime = await expireRoomWithCreatorGrant();
+        const surviving = await runtime.findEntry(
+            PUBLICATION_GRANTS_NAMESPACE,
+            groupStatePublicationGrantStorageKey(GRANT_ROOM_REF, 'alice')
+        );
+        const request = createRequest({ 'room.other': { publish: true, subscribe: false } }, 'create-grant-room-other-actor');
+        const { service, command } = await computeDescriptorMutation(runtime, 'alice', describeCreate(request));
+        const authority = command.facts.authenticatedAuthority;
+        if (command.command.operation !== 'createGroup' || authority === null) {
+            throw new Error('Expected an authenticated createGroup command');
+        }
+        // A shared command can carry an actor other than its creator; the effect keys on the creator, so the read
+        // scope must load the creator's row whatever the actor is.
+        const otherActor = {
+            ...command,
+            command: { ...command.command, input: { ...command.command.input, actorPrincipalId: 'mallory' } },
+            facts: { ...command.facts, authenticatedAuthority: { ...authority, principalId: 'mallory' } }
+        };
+
+        const read = await service.read(otherActor);
+        const computed = service.compute(otherActor, read);
+
+        expect(read.targetPublicationGrant).toMatchObject({ entry: { revision: surviving!.revision }, value: { principalId: 'alice' } });
+        expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-mutation-rejected' });
+        expect(await readGrantRow(runtime, 'alice')).toMatchObject({ topics: { 'room.feed': { publish: true, subscribe: true } } });
+    });
+
+    it('create refuses a 65-topic or both-false declaration', async () => {
+        for (
+            const publicationGrants of [
+                toTopicGrants(65),
+                { 'room.feed': { publish: false, subscribe: false } },
+                { feed: { publish: true, subscribe: true } }
+            ]
+        ) {
+            const runtime = new GroupBarrierRepository();
+            await expect(createService(runtime, 3_000).createGroup(SCOPE, createRequest(publicationGrants))).rejects
+                .toBeInstanceOf(TypeError);
+            expect(await readGrantRow(runtime, 'alice')).toBeUndefined();
+        }
+    });
+});
+
+const GRANT_ROOM_REF = { ...SCOPE, groupId: GRANT_ROOM };
 
 function deepFreeze<T>(value: T): T {
     if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {

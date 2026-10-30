@@ -232,8 +232,8 @@ describe('a typed channel\'s recovery owner', () => {
             recoveryOwners: owners
         });
 
-        channels.channel({ ...CHAT_ROUTE, purpose: 'command', recovery });
-        channels.channel({ topicId: 'app.chat', typeId: 'chat.unowned.v1', purpose: 'command' });
+        channels.channel({ ...CHAT_ROUTE, purpose: 'command', access: 'members', recovery });
+        channels.channel({ topicId: 'app.chat', typeId: 'chat.unowned.v1', purpose: 'command', access: 'members' });
 
         expect(owners.getOwner(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }))).toBe(recovery);
         expect(owners.getOwner(createResyncMessage({ typeId: 'chat.unowned.v1', seq: 300 }))).toBeUndefined();

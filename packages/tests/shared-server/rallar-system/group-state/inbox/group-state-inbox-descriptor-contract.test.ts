@@ -489,6 +489,56 @@ const descriptorCases: readonly DescriptorCase[] = [
         }
     },
     {
+        name: 'publication-grant',
+        enqueue: {
+            traceId: 'trace-test-fixture',
+            type: AppInboxType.GROUP_PUBLICATION_GRANT,
+            topicId: AppInboxType.GROUP_PUBLICATION_GRANT,
+            resourceId: 'publication-grant-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { topicId: 'room.feed', publish: true, subscribe: false, ...actor, requestId: 'publication-grant' }
+            }
+        },
+        descriptor: {
+            operation: 'grantGroupPublication',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { topicId: 'room.feed', publish: true, subscribe: false, ...actor, requestId: 'publication-grant' }
+        }
+    },
+    {
+        name: 'publication-revoke',
+        enqueue: {
+            traceId: 'trace-test-fixture',
+            type: AppInboxType.GROUP_PUBLICATION_REVOKE,
+            topicId: AppInboxType.GROUP_PUBLICATION_REVOKE,
+            resourceId: 'publication-revoke-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { topicId: 'room.feed', publish: true, subscribe: false, ...actor, requestId: 'publication-revoke' }
+            }
+        },
+        descriptor: {
+            operation: 'revokeGroupPublication',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { topicId: 'room.feed', publish: true, subscribe: false, ...actor, requestId: 'publication-revoke' }
+        }
+    },
+    {
         name: 'ownership-transfer',
         enqueue: {
             traceId: 'trace-test-fixture',

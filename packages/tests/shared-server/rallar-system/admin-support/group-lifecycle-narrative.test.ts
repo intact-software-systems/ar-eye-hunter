@@ -186,7 +186,8 @@ function narrativeFor(
         members: [],
         activeSessions: [],
         memberCount: 0,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
     return projectGroupAdminSupportNarrative({
         request: { groupRef: GROUP_REF },

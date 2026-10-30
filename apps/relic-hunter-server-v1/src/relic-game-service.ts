@@ -121,6 +121,7 @@ export class RelicHunterGameService {
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command,
             scope: 'room',
+            participation: 'members',
             fanout: 'none',
             maxPayloadBytes: 16 * 1024,
             validate: (value, context) => isRelicGameMoveInput(value) && isRelicRoomContext(context, value.gameId)

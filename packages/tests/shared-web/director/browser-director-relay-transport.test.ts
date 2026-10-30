@@ -114,7 +114,8 @@ describe('director receipt output', () => {
             topicId: 'room.director',
             typeId: 'output',
             roomRef: current.roomRef,
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
         expect(room.send).toHaveBeenCalledWith(
             expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
@@ -182,7 +183,8 @@ describe('director command', () => {
                 topicId: 'room.director',
                 typeId,
                 roomRef: current.roomRef,
-                purpose: 'command'
+                purpose: 'command',
+                access: 'members'
             });
             expect(room.send).toHaveBeenCalledWith(
                 expect.objectContaining({

@@ -93,7 +93,7 @@ describe('public WS unicast scope', () => {
             socket,
             outbox: new InMemoryQueueBox(),
             readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
-            targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }
+            targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }
         });
         onTestFinished(() => service.dispose());
         const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
@@ -334,6 +334,7 @@ function createLiveDelivery(expiresAtEpochMs = 0): LiveDeliveryFixture {
         targetResolution: new WsQueueBoxServerTargetResolution({
             socket,
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }],
                 resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }]
             }

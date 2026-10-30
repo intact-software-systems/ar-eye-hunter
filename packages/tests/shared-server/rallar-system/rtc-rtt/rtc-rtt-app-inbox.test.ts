@@ -180,6 +180,7 @@ function createRttGroupSnapshot(nowEpochMs: number): GroupSnapshot {
         members,
         activeSessions,
         memberCount: 2,
-        onlineMemberCount: 2
+        onlineMemberCount: 2,
+        publicationGrants: []
     };
 }
