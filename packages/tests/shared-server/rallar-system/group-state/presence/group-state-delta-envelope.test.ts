@@ -190,6 +190,7 @@ describe('group-state delta envelope validation', () => {
         for (
             const [change, message] of [
                 [{ removedPublicationGrantPrincipalIds: ['bob'] }, /also carried/],
+                [{ removedPublicationGrantPrincipalIds: ['carol', 'alice'] }, /removedPublicationGrantPrincipalIds .*ascending/],
                 [{ publicationGrants: [grantOf('carol'), grantOf('bob')] }, /ascending principalId/],
                 [{ publicationGrants: [{ ...grantOf('bob'), groupId: 'room-other' }] }, /another group/],
                 [{ publicationGrants: [{ ...grantOf('bob'), topics: {} }] }, /publicationGrants is invalid: \$\[0\]\.topics/]

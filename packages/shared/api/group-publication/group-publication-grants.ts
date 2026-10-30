@@ -1,5 +1,6 @@
 import { Either } from '../../resilience/Either.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
+import { isSameGroupRef } from '../api-type-utils.ts';
 import type { AuditStamp, GroupRef, GroupSnapshot, PrincipalId } from '../group-types.ts';
 import { validateRallarWsUserTopicId, type RallarValidationIssue } from '../rallar-validation.ts';
 
@@ -225,11 +226,6 @@ function presentKeys<Key extends string>(record: ApiJsonObject, keys: readonly K
 
 function issue(path: string, code: string, message: string): RallarValidationIssue {
     return { path, code, message };
-}
-
-function isSameGroupRef(left: GroupRef, right: GroupRef): boolean {
-    return left.applicationId === right.applicationId && left.workspaceId === right.workspaceId &&
-        left.groupId === right.groupId;
 }
 
 function isNonEmptyString(value: ApiJsonValue): boolean {

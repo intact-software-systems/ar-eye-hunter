@@ -12,7 +12,11 @@ const apiReference = readRepoFile('docs/rallar-api-reference.md');
 const quickstart = readRepoFile('docs/rallar-quickstart-and-recipes.md');
 const environmentVariables = readRepoFile('docs/environment-variables.md');
 const openApi = readRepoFile('apps/api-v1/resources/api-v1-openapi.yaml');
-const openApiDocument = decodeOpenApiDocument(loadYaml(openApi));
+const loadedOpenApi = loadYaml(openApi);
+if (!isOpenApiRecord(loadedOpenApi)) {
+    throw new TypeError('OpenAPI document must be an object');
+}
+const openApiDocument = requireOpenApiDocument(loadedOpenApi);
 
 describe('Rallar group public contracts', () => {
     it('documents browser-safe room workflows and switch recovery', () => {
@@ -450,38 +454,37 @@ function schema(name: string): OpenApiSchema {
     return value;
 }
 
-function decodeOpenApiDocument(value: unknown): OpenApiDocument {
-    const document = decodeOpenApiRecord(value, 'OpenAPI document');
-    const components = decodeOpenApiRecord(
+function requireOpenApiDocument(document: ApiJsonObject): OpenApiDocument {
+    const components = requireOpenApiRecord(
         document.components,
         'OpenAPI components'
     );
-    const schemaValues = decodeOpenApiRecord(
+    const schemaValues = requireOpenApiRecord(
         components.schemas,
         'OpenAPI component schemas'
     );
     const schemas: Record<string, OpenApiSchema> = {};
     for (const [name, schemaValue] of Object.entries(schemaValues)) {
-        schemas[name] = decodeOpenApiSchema(schemaValue, name);
+        schemas[name] = requireOpenApiSchema(schemaValue, name);
     }
     return { components: { schemas } };
 }
 
-function decodeOpenApiSchema(value: unknown, label: string): OpenApiSchema {
-    const source = decodeOpenApiRecord(value, `OpenAPI schema ${label}`);
+function requireOpenApiSchema(value: ApiJsonValue, label: string): OpenApiSchema {
+    const source = requireOpenApiRecord(value, `OpenAPI schema ${label}`);
     const properties: Record<string, OpenApiSchema> = {};
     if (source.properties !== undefined) {
-        const propertyValues = decodeOpenApiRecord(
+        const propertyValues = requireOpenApiRecord(
             source.properties,
             `OpenAPI schema ${label} properties`
         );
         for (const [name, propertyValue] of Object.entries(propertyValues)) {
-            properties[name] = decodeOpenApiSchema(propertyValue, `${label}.${name}`);
+            properties[name] = requireOpenApiSchema(propertyValue, `${label}.${name}`);
         }
     }
     const discriminator = source.discriminator === undefined
         ? undefined
-        : decodeOpenApiRecord(
+        : requireOpenApiRecord(
             source.discriminator,
             `OpenAPI schema ${label} discriminator`
         );
@@ -494,7 +497,7 @@ function decodeOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
         ...(source.required === undefined
             ? {}
-            : { required: decodeOpenApiStringArray(source.required, `${label}.required`) }),
+            : { required: requireOpenApiStringArray(source.required, `${label}.required`) }),
         ...(source.properties === undefined ? {} : { properties }),
         ...(typeof source.nullable === 'boolean'
             ? { nullable: source.nullable }
@@ -503,14 +506,14 @@ function decodeOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         ...(source.allOf === undefined
             ? {}
             : {
-                allOf: decodeOpenApiArray(source.allOf, `${label}.allOf`)
-                    .map((item, index) => decodeOpenApiSchema(item, `${label}.allOf[${index}]`))
+                allOf: requireOpenApiArray(source.allOf, `${label}.allOf`)
+                    .map((item, index) => requireOpenApiSchema(item, `${label}.allOf[${index}]`))
             }),
         ...(source.oneOf === undefined
             ? {}
             : {
-                oneOf: decodeOpenApiArray(source.oneOf, `${label}.oneOf`)
-                    .map((item, index) => decodeOpenApiSchema(item, `${label}.oneOf[${index}]`))
+                oneOf: requireOpenApiArray(source.oneOf, `${label}.oneOf`)
+                    .map((item, index) => requireOpenApiSchema(item, `${label}.oneOf[${index}]`))
             }),
         ...(propertyName === undefined
             ? {}
@@ -518,7 +521,7 @@ function decodeOpenApiSchema(value: unknown, label: string): OpenApiSchema {
     };
 }
 
-function decodeOpenApiRecord(value: unknown, label: string): ApiJsonObject {
+function requireOpenApiRecord(value: ApiJsonValue, label: string): ApiJsonObject {
     if (!isOpenApiRecord(value)) {
         throw new TypeError(`${label} must be an object`);
     }
@@ -530,15 +533,15 @@ function isOpenApiRecord(value: unknown): value is ApiJsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function decodeOpenApiArray(value: unknown, label: string): readonly ApiJsonValue[] {
+function requireOpenApiArray(value: ApiJsonValue, label: string): readonly ApiJsonValue[] {
     if (!Array.isArray(value)) {
         throw new TypeError(`${label} must be an array`);
     }
     return value;
 }
 
-function decodeOpenApiStringArray(value: unknown, label: string): readonly string[] {
-    const items = decodeOpenApiArray(value, label);
+function requireOpenApiStringArray(value: ApiJsonValue, label: string): readonly string[] {
+    const items = requireOpenApiArray(value, label);
     if (!items.every((item) => typeof item === 'string')) {
         throw new TypeError(`${label} must contain only strings`);
     }

@@ -4,6 +4,7 @@ import {
 } from '@shared/api/group-director.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
+import type { Group } from '@shared/api/group-types.ts';
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type {
     CreateGroupRequest,
@@ -91,9 +92,6 @@ function toCreateCommand(
     randomId: () => string
 ): GroupMutationCommand {
     const commandId = request.requestId ?? randomId();
-    const retention = toInitialGroupRetentionState(request.retention);
-    const metadata = { ...structuredClone(request.metadata ?? {}) };
-    delete metadata.rallarSpectatorCapacity;
     return {
         operation: 'createGroup',
         aggregateRef: { ...scope, groupId: request.groupId },
@@ -112,11 +110,7 @@ function toCreateCommand(
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
-            metadata: {
-                ...metadata,
-                ...(request.maxSpectators === undefined ? {} : { rallarSpectatorCapacity: request.maxSpectators }),
-                ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
-            },
+            metadata: toCreateGroupMetadata(request),
             createdByPrincipalId: request.createdByPrincipalId,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
@@ -124,6 +118,18 @@ function toCreateCommand(
             ...toGroupMutationActorInput(request),
             actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId
         }
+    };
+}
+
+/** The request's metadata with the server-owned spectator capacity and retention entries taken from their own fields. */
+function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
+    const retention = toInitialGroupRetentionState(request.retention);
+    const metadata = { ...structuredClone(request.metadata ?? {}) };
+    delete metadata.rallarSpectatorCapacity;
+    return {
+        ...metadata,
+        ...(request.maxSpectators === undefined ? {} : { rallarSpectatorCapacity: request.maxSpectators }),
+        ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
     };
 }
 

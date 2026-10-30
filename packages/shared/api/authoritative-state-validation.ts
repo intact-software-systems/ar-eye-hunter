@@ -555,7 +555,7 @@ export function validateAuthoritativeGroupSnapshot(
             }
         }
     }
-    validateGroupSnapshotPublicationGrants(snapshot.publicationGrants, ref, memberIds);
+    validateGroupSnapshotPublicationGrants(snapshot.publicationGrants, ref, activeMemberIds);
     const sessions = decodeArray(snapshot.activeSessions, 'GroupSnapshot.activeSessions');
     const sessionIds = new Set<string>();
     const onlinePrincipalIds = new Set<string>();
@@ -618,14 +618,14 @@ export function validateAuthoritativeGroupSnapshot(
 function validateGroupSnapshotPublicationGrants(
     value: WireValue,
     ref: GroupRef,
-    memberIds: ReadonlySet<string>
+    activeMemberIds: ReadonlySet<string>
 ): void {
     const grants = decodeGroupPublicationGrantList(value, ref).fold(
         (issues) => fail(`GroupSnapshot.publicationGrants is invalid: ${formatRallarValidation(issues)}`),
         (decoded) => decoded
     );
-    if (grants.some((grant) => !memberIds.has(grant.principalId))) {
-        fail('GroupSnapshot.publicationGrants principal is not a member');
+    if (grants.some((grant) => !activeMemberIds.has(grant.principalId))) {
+        fail('GroupSnapshot.publicationGrants principal is not an active member');
     }
 }
 

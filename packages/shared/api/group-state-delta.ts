@@ -14,6 +14,7 @@ import {
 } from './group-lifecycle/group-lifecycle-policy.ts';
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import {
+    comparePublicationGrantPrincipalIds,
     decodeGroupPublicationGrantList,
     type GroupPublicationGrant
 } from './group-publication/group-publication-grants.ts';
@@ -344,6 +345,13 @@ function validateDeltaPublicationGrants(
         envelope.removedPublicationGrantPrincipalIds,
         'GroupStateDeltaEnvelope.removedPublicationGrantPrincipalIds'
     );
+    if (
+        removed.slice(1).some((principalId, index) =>
+            comparePublicationGrantPrincipalIds(removed[index], principalId) >= 0
+        )
+    ) {
+        fail('GroupStateDeltaEnvelope.removedPublicationGrantPrincipalIds must be in ascending principalId order');
+    }
     const granted = new Set(grants.map((grant) => grant.principalId));
     if (removed.some((principalId) => granted.has(principalId))) {
         fail('GroupStateDeltaEnvelope removed publication grant principal is also carried as a grant');

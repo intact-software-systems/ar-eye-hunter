@@ -331,7 +331,7 @@ describe('GroupStateService mutation exact reads', () => {
         ]);
     });
 
-    it('grant, revoke, leave, remove and ban read the target grant row; join and role changes do not', async () => {
+    it('create, grant, revoke, leave, remove and ban read the target grant row; join and role changes do not', async () => {
         const { runtime, service } = await createSeededService('grant-scope');
         const ref = { ...SCOPE, groupId: 'grant-scope' };
         const grantSelectorsOf = async (mutate: () => Promise<GroupStateWritten>) => {
@@ -367,6 +367,12 @@ describe('GroupStateService mutation exact reads', () => {
         expect(
             await grantSelectorsOf(() => service.banGroupMember(SCOPE, ref.groupId, 'carol', { actorPrincipalId: 'owner' }))
         ).toEqual([grantSelector('carol')]);
+        const created = { ...SCOPE, groupId: 'grant-scope-created' };
+        expect(
+            await grantSelectorsOf(() =>
+                service.createGroup(SCOPE, { groupId: created.groupId, displayName: 'Created', kind: 'room', createdByPrincipalId: 'owner' })
+            )
+        ).toEqual([{ ...grantSelector('owner'), key: groupStatePublicationGrantStorageKey(created, 'owner') }]);
     });
 
     it('the sequential read loads the target grant row for a grant command and a departure, never for a join', async () => {

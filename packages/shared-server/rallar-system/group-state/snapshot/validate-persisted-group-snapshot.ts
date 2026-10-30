@@ -12,7 +12,10 @@ interface PersistedGroupSnapshotValidation {
 
 /** Validates the complete persisted GroupSnapshot contract at storage boundaries. */
 export function validatePersistedGroupSnapshot(value: unknown): asserts value is GroupSnapshot {
-    const snapshot = decodeSnapshotRecord(value, 'Stored group snapshot');
+    if (!isSnapshotRecord(value)) {
+        throw new TypeError('Stored group snapshot is invalid');
+    }
+    const snapshot = value;
     assertExactRequiredKeys(snapshot, [
         'causalRevision',
         'group',
@@ -22,24 +25,26 @@ export function validatePersistedGroupSnapshot(value: unknown): asserts value is
         'onlineMemberCount',
         'publicationGrants'
     ]);
-    const group = decodeSnapshotRecord(snapshot.group, 'Stored group snapshot group');
+    const group = requireSnapshotRecord(snapshot.group, 'Stored group snapshot group');
     const ref = canonicalGroupRef(group);
     validatePersistedGroup(group, ref);
     const validation = { snapshot, group, ref };
     validatePersistedGroupSnapshotRevisions(validation);
     const activeMembers = validatePersistedGroupSnapshotRoster(validation);
     validatePersistedGroupSnapshotPresence(validation, activeMembers);
-    validatePersistedGroupSnapshotPublicationGrants(validation);
+    validatePersistedGroupSnapshotPublicationGrants(validation, activeMembers);
 }
 
-function validatePersistedGroupSnapshotPublicationGrants(validation: PersistedGroupSnapshotValidation): void {
+function validatePersistedGroupSnapshotPublicationGrants(
+    validation: PersistedGroupSnapshotValidation,
+    activeMembers: ReadonlyMap<string, { role: string; }>
+): void {
     const { snapshot, ref } = validation;
-    const memberIds = new Set((snapshot.members as readonly ApiJsonObject[]).map((member) => member.principalId));
     const grants = decodeGroupPublicationGrantList(snapshot.publicationGrants, ref).fold(
         () => null,
         (decoded) => decoded
     );
-    if (grants === null || grants.some((grant) => !memberIds.has(grant.principalId))) {
+    if (grants === null || grants.some((grant) => !activeMembers.has(grant.principalId))) {
         throw new TypeError('Stored group snapshot publication grants are invalid');
     }
 }
@@ -48,7 +53,7 @@ function validatePersistedGroupSnapshotRevisions(
     validation: PersistedGroupSnapshotValidation
 ): void {
     const { snapshot, group } = validation;
-    const causal = decodeSnapshotRecord(snapshot.causalRevision, 'Stored group snapshot causal revision');
+    const causal = requireSnapshotRecord(snapshot.causalRevision, 'Stored group snapshot causal revision');
     assertExactRequiredKeys(causal, ['groupRevision', 'presenceRevision']);
     requireSafeInteger(causal.groupRevision, 1, 'group revision');
     requireSafeInteger(causal.presenceRevision, 0, 'presence revision');
@@ -141,11 +146,15 @@ function canonicalGroupRef(group: ApiJsonObject): GroupRef {
     };
 }
 
-function decodeSnapshotRecord(value: unknown, label: string): ApiJsonObject {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+function requireSnapshotRecord(value: ApiJsonValue, label: string): ApiJsonObject {
+    if (!isSnapshotRecord(value)) {
         throw new TypeError(`${label} is invalid`);
     }
-    return value as ApiJsonObject;
+    return value;
+}
+
+function isSnapshotRecord(value: unknown): value is ApiJsonObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function assertExactRequiredKeys(value: ApiJsonObject, keys: readonly string[]): void {

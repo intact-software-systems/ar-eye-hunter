@@ -104,24 +104,31 @@ export function createInitialOwner(
     };
 }
 
-/** D494: the creator's declared grant, written in the create batch; an empty declaration writes no row. */
-export function createInitialPublicationGrantEffects(
+/**
+ * D494: the creator's declared grant, written in the create batch. A row surviving an expired incarnation is
+ * rewritten, or deleted for an empty declaration, so the creator never inherits the old incarnation's rights.
+ */
+function createInitialPublicationGrantEffects(
     command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>,
+    read: GroupMutationRead,
     audit: AuditStamp
 ): readonly GroupPublicationGrantEffect[] {
+    const surviving = read.targetPublicationGrant;
     const topics = command.input.publicationGrants;
+    const value = {
+        ...command.aggregateRef,
+        principalId: command.input.createdByPrincipalId,
+        topics: structuredClone(topics),
+        updated: audit
+    };
     if (Object.keys(topics).length === 0) {
-        return [];
+        return surviving === null
+            ? []
+            : [{ operation: 'delete', value: surviving.value, expectedRevision: surviving.entry.revision }];
     }
-    return [{
-        operation: 'insert',
-        value: {
-            ...command.aggregateRef,
-            principalId: command.input.createdByPrincipalId,
-            topics: structuredClone(topics),
-            updated: audit
-        }
-    }];
+    return surviving === null
+        ? [{ operation: 'insert', value }]
+        : [{ operation: 'update', value, expectedRevision: surviving.entry.revision }];
 }
 
 interface CreateInitialPresenceSummaryInput {
@@ -189,7 +196,7 @@ export function computeCreate(
         presenceAdmission: null,
         eventType: 'group-created',
         lifecyclePolicy: resolveCreateGroupLifecyclePolicy(command),
-        publicationGrantEffects: createInitialPublicationGrantEffects(command, audit),
+        publicationGrantEffects: createInitialPublicationGrantEffects(command, read, audit),
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: computeFormationTimerEntries({
             command,
