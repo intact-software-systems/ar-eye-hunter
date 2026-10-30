@@ -9,8 +9,8 @@ import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resy
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import { createBrowserTopicSubscriptionHttpApi } from '@shared-web/browser/messages/subscription/browser-topic-subscription-http-api.ts';
-import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/subscription/browser-topic-subscriptions.ts';
+import { createBrowserTopicSubscriptionHttpApi } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscription-http-api.ts';
+import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';

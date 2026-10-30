@@ -34,7 +34,8 @@ export interface CreateRoomSessionInput {
         input?: RallarScopedOperationOptions
     ) => Promise<GroupTopologyReadThroughOutcome | undefined>;
     readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
-    readonly readPrincipalId: () => string;
+    /** Undefined while no session is signed in. */
+    readonly readPrincipalId: () => string | undefined;
 }
 
 export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSession {
@@ -69,9 +70,10 @@ export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSess
 
 function readRoomTopicRole(input: CreateRoomSessionInput, topicId: string): RallarRoomTopicRole {
     const snapshot = input.stateStore.findGroupSnapshot(input.roomRef);
-    return snapshot === undefined
+    const principalId = input.readPrincipalId();
+    return snapshot === undefined || principalId === undefined
         ? 'none'
-        : toRoomTopicRole(resolveGroupPublicationPermissions(snapshot, input.readPrincipalId(), topicId));
+        : toRoomTopicRole(resolveGroupPublicationPermissions(snapshot, principalId, topicId));
 }
 
 export function toRoomSessionRealtimeDefaults(

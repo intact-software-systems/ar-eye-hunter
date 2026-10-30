@@ -16,8 +16,8 @@ import type {
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { BrowserMessageReplyInbox } from '@shared-web/browser/messages/reply/browser-message-reply-inbox.ts';
-import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/subscription/browser-topic-subscriptions.ts';
 import type { RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
+import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';

@@ -106,6 +106,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly realtime: RallarRealtimeFacade;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
+    readonly readSession: () => AuthSession | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(options: T) => T & RallarOperationOptions;
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
@@ -252,7 +253,7 @@ export function createBrowserRallarRooms(
             leaveRoom: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
             refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
             createFormation,
-            readPrincipalId: () => input.requireSession().clientId
+            readPrincipalId: () => input.readSession()?.clientId
         });
 
     return {

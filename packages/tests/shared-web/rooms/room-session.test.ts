@@ -361,7 +361,7 @@ it('topicRole reads the session principal\'s effective role and none without a c
     expect(roles).toEqual(['none', 'publisher-subscriber', 'none']);
 });
 
-it('a grant delta applied to the cache changes topicRole', async () => {
+it('a newer cached snapshot changes topicRole', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const before = withPrincipalGrant(createRoomSnapshot('room-1', ['principal-1']), { publish: true, subscribe: false });
     seedRoomSnapshots([before]);
@@ -372,6 +372,17 @@ it('a grant delta applied to the cache changes topicRole', async () => {
     roles.push(session.topicRole('room.feed'));
 
     expect(roles).toEqual(['publisher', 'publisher-subscriber']);
+});
+
+it('topicRole answers none when no session is signed in', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const granted = withPrincipalGrant(createRoomSnapshot('room-1', ['principal-1']), { publish: true, subscribe: true });
+    seedRoomSnapshots([granted]);
+    const session = createRallarFacade().rooms.session(granted.group);
+
+    getRoomWorkflowMocks().readSession.mockReturnValue(undefined);
+
+    expect(session.topicRole('room.feed')).toBe('none');
 });
 
 function withPrincipalGrant(snapshot: GroupSnapshot, permissions: GroupPublicationTopicPermissions): GroupSnapshot {

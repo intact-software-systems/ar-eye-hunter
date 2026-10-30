@@ -13,7 +13,9 @@ export function toTopicSubscriptionAnswer(
     subscribed: Either<Error, GroupTopicSubscriptionResult>
 ): TopicSubscriptionAnswer {
     if (subscribed.right !== undefined) {
-        return subscribed.right.outcome === 'subscribed' || subscribed.right.outcome === 'renewed' ? 'active' : 'unchanged';
+        return subscribed.right.outcome === 'subscribed' || subscribed.right.outcome === 'renewed'
+            ? 'active'
+            : 'unchanged';
     }
     const error = subscribed.left;
     if (!(error instanceof ApiHttpError)) {

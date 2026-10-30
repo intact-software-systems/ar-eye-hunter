@@ -2,11 +2,7 @@ import type { GroupPublicationTopicPermissions } from '@shared/api/group-publica
 
 import type { RallarRoomTopicMember } from '../rallar-room-contracts.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
-import {
-    toGrantRoomTopicGroupStateRequest,
-    toRevokeRoomTopicGroupStateRequest,
-    type GroupSnapshot
-} from '../room-group-state-translation.ts';
+import { toRoomTopicGrantGroupStateRequest, type GroupSnapshot } from '../room-group-state-translation.ts';
 import { runGroupSnapshotCommand } from '../room-membership-group-state-workflows.ts';
 import { runRoomTargetMutation, type RunRoomTargetMutationInput } from '../update-room.ts';
 
@@ -29,13 +25,14 @@ export async function revokeRoomTopic(input: RoomTopicGrantInput): Promise<Group
 
 async function changeRoomTopicGrant(input: RoomTopicGrantInput, change: RoomTopicGrantChange): Promise<GroupSnapshot> {
     const options = input.options ?? {};
-    const toRequest = change === 'grant' ? toGrantRoomTopicGroupStateRequest : toRevokeRoomTopicGroupStateRequest;
-    const writeGrant = change === 'grant' ? roomGroupStateHttpApi.grantPublication : roomGroupStateHttpApi.revokePublication;
+    const writeGrant = change === 'grant'
+        ? roomGroupStateHttpApi.grantPublication
+        : roomGroupStateHttpApi.revokePublication;
     return await runRoomTargetMutation({
         ...input,
         options,
         execute: async ({ roomId, session, scope, policies, assertCurrent }) => {
-            const request = toRequest({
+            const request = toRoomTopicGrantGroupStateRequest({
                 request: {
                     topicId: input.topicId,
                     publish: input.permissions.publish,

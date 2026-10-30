@@ -26,7 +26,6 @@ import type {
     ReconfigureStateGroupLifecycleBody,
     RemoveStateGroupMemberBody,
     RevokeStateGroupInviteBody,
-    RevokeStateGroupPublicationBody,
     RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
@@ -43,6 +42,7 @@ export type {
     GroupEvent,
     GroupEventType,
     GroupJoinMode,
+    GroupMember,
     GroupMemberStatus,
     GroupRef,
     GroupRole,
@@ -359,21 +359,10 @@ export function toSetRoomMemberRoleGroupStateRequest(
     };
 }
 
-export function toGrantRoomTopicGroupStateRequest(
+/** A grant and a revoke carry the same fields: each true permission is the one the change adds or removes. */
+export function toRoomTopicGrantGroupStateRequest(
     input: RoomGroupStateRequestInput<GrantStateGroupPublicationBody>
 ): GrantStateGroupPublicationBody {
-    return {
-        topicId: input.request.topicId,
-        publish: input.request.publish,
-        subscribe: input.request.subscribe,
-        ...toMutationAuditFields(input.request),
-        ...toActorRequest(input)
-    };
-}
-
-export function toRevokeRoomTopicGroupStateRequest(
-    input: RoomGroupStateRequestInput<RevokeStateGroupPublicationBody>
-): RevokeStateGroupPublicationBody {
     return {
         topicId: input.request.topicId,
         publish: input.request.publish,
@@ -487,6 +476,7 @@ function toRallarRoomMembers(
         sessionIds.push(session.sessionId);
         sessionIdsByPrincipalId.set(session.principalId, sessionIds);
     }
+    const grantByPrincipalId = new Map(currentRoom.publicationGrants.map((grant) => [grant.principalId, grant]));
     return currentRoom.members
         .map((member) => {
             const client = clients.find(
@@ -503,7 +493,7 @@ function toRallarRoomMembers(
                 isOnline: sessionIds.length > 0,
                 sessionIds,
                 client,
-                topicGrants: toRoomTopicGrants(currentRoom, member.principalId)
+                topicGrants: toRoomTopicGrants(member, grantByPrincipalId.get(member.principalId))
             };
         })
         .sort((left, right) => (left.displayName ?? left.username).localeCompare(right.displayName ?? right.username));

@@ -27,7 +27,6 @@ import type {
     SubscribeGroupTopicRequest,
     TransferGroupOwnershipRequest,
     UnbanGroupMemberRequest,
-    UnsubscribeGroupTopicRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
@@ -55,9 +54,11 @@ export type UpsertStateGroupMemberBody = Omit<UpsertGroupMemberRequest, 'request
 export type ConnectStateGroupPresenceSessionBody = Omit<ConnectGroupPresenceSessionRequest, 'requestId'>;
 export type HeartbeatStateGroupPresenceSessionBody = Omit<HeartbeatGroupPresenceSessionRequest, 'requestId'>;
 export type DisconnectStateGroupPresenceSessionBody = Omit<DisconnectGroupPresenceSessionRequest, 'requestId'>;
-/** The actor is the authenticated session the path names, so the body carries only the topic and its generation. */
+/**
+ * The actor is the authenticated session the path names, so the body carries only the topic and its generation; the
+ * unsubscribe body is the same two fields.
+ */
 export type SubscribeStateGroupTopicBody = Pick<SubscribeGroupTopicRequest, 'topicId' | 'connectionGenerationId'>;
-export type UnsubscribeStateGroupTopicBody = Pick<UnsubscribeGroupTopicRequest, 'topicId' | 'connectionGenerationId'>;
 
 /**
  * The lifecycle routes take the actor from authentication and declare

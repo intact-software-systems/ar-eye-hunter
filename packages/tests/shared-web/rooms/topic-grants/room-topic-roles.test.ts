@@ -42,13 +42,17 @@ describe('room topic roles', () => {
                 }
                 : member
         );
-        const effective = { ...snapshot, members };
+        const grantsOf = (principalId: string) => {
+            const member = members.find((candidate) => candidate.principalId === principalId);
+            const grant = snapshot.publicationGrants.find((candidate) => candidate.principalId === principalId);
+            return member === undefined ? undefined : toRoomTopicGrants(member, grant);
+        };
 
         expect({
-            spectator: toRoomTopicGrants(effective, 'spectator-1'),
-            left: toRoomTopicGrants(effective, 'left-1'),
-            member: toRoomTopicGrants(effective, 'member-1'),
-            ungranted: toRoomTopicGrants(createSnapshot(['member-2']), 'member-2')
+            spectator: grantsOf('spectator-1'),
+            left: grantsOf('left-1'),
+            member: grantsOf('member-1'),
+            ungranted: toRoomTopicGrants(createSnapshot(['member-2']).members[0]!, undefined)
         }).toEqual({
             spectator: {
                 'room.feed': { publish: false, subscribe: true, role: 'subscriber' },

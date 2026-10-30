@@ -16,8 +16,8 @@ import type {
     RallarTypedWsSendOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/subscription/browser-topic-subscriptions.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
+import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 

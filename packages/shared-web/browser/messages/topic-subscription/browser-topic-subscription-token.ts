@@ -1,4 +1,7 @@
-import type { RallarTopicSubscription, RallarTopicSubscriptionStatus } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarTopicSubscription,
+    RallarTopicSubscriptionStatus
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 /** One `subscribe` call's handle; its owner settles it and answers its release. */
 export class BrowserTopicSubscriptionToken implements RallarTopicSubscription {

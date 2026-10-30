@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import type { BrowserTopicSubscriptionHttpApi, BrowserTopicSubscriptionRequest } from '@shared-web/browser/messages/subscription/browser-topic-subscription-http-api.ts';
-import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/subscription/browser-topic-subscriptions.ts';
+import type {
+    BrowserTopicSubscriptionHttpApi,
+    BrowserTopicSubscriptionRequest
+} from '@shared-web/browser/messages/topic-subscription/browser-topic-subscription-http-api.ts';
+import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { GroupTopicSubscriptionResult } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -31,6 +34,18 @@ let answer: TopicSubscriptionAnswer = async () => ({ outcome: 'subscribed' });
 let generation: Either<Error, string> = Either.ofRight('generation-1');
 let socketCallbacks: Map<string, WebSocketClientCallbacks>;
 let requestCount = 0;
+let newRequestId: () => string = () => `request-${++requestCount}`;
+
+/** The socket's generation reader: `read` goes Left once the socket closes; `readKnown` is the open socket's cached id. */
+interface GenerationReader {
+    read(): Promise<Either<Error, string>>;
+    readKnown(): string | undefined;
+}
+
+const currentGenerationReader: GenerationReader = {
+    read: async () => generation,
+    readKnown: () => generation.right
+};
 
 describe('browser topic subscriptions', () => {
     beforeEach(() => {
@@ -40,6 +55,7 @@ describe('browser topic subscriptions', () => {
         generation = Either.ofRight('generation-1');
         socketCallbacks = new Map();
         requestCount = 0;
+        newRequestId = () => `request-${++requestCount}`;
     });
 
     afterEach(() => {
@@ -186,7 +202,8 @@ describe('browser topic subscriptions', () => {
                 const read = generation;
                 generation = Either.ofRight('generation-2');
                 return read;
-            }
+            },
+            readKnown: () => generation.right
         });
 
         const token = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
@@ -281,9 +298,11 @@ describe('browser topic subscriptions', () => {
 
         await vi.advanceTimersByTimeAsync(20_000);
         const callsAfterUnauthorized = calls.length;
-        await vi.advanceTimersByTimeAsync(40_000);
+        answer = async () => ({ outcome: 'subscribed' });
+        const later = owner.hold({ roomRef: ROOM_REF, topicId: 'room.later' });
+        await vi.advanceTimersByTimeAsync(140_000);
 
-        expect([feed.status(), score.status()]).toEqual(['lapsed', 'lapsed']);
+        expect([feed.status(), score.status(), later.status()]).toEqual(['lapsed', 'lapsed', 'pending']);
         expect(calls.length).toBe(callsAfterUnauthorized);
     });
 
@@ -303,6 +322,58 @@ describe('browser topic subscriptions', () => {
         expect(calls).toEqual([subscribeCall('room.feed', 'generation-1', 'request-1')]);
     });
 
+    it('a subscribe made while the key\'s release is pending is sent after the release', async () => {
+        const firstAnswer = Promise.withResolvers<GroupTopicSubscriptionResult>();
+        answer = async () => calls.length === 1 ? await firstAnswer.promise : { outcome: 'subscribed' };
+        const owner = createAttachedOwner();
+        const first = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+        await vi.advanceTimersByTimeAsync(0);
+        const released = first.unsubscribe();
+        const second = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+        await vi.advanceTimersByTimeAsync(0);
+        const callsWhileFirstPending = calls.map((call) => call.call);
+
+        firstAnswer.resolve({ outcome: 'subscribed' });
+        await released;
+
+        expect([callsWhileFirstPending, await second.wait()]).toEqual([['subscribe'], 'active']);
+        expect(calls.map((call) => call.call)).toEqual(['subscribe', 'unsubscribe', 'subscribe']);
+    });
+
+    it('a connection-replaced close while a subscribe is in flight sends no stale-generation retry', async () => {
+        const firstAnswer = Promise.withResolvers<GroupTopicSubscriptionResult>();
+        answer = async () => await firstAnswer.promise;
+        const owner = createAttachedOwner();
+        const token = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+        await vi.advanceTimersByTimeAsync(0);
+
+        closeSocket(1000, 'connection-replaced');
+        firstAnswer.reject(toPolicyDenial('stale-generation'));
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect([calls.length, token.status()]).toEqual([1, 'lapsed']);
+    });
+
+    it('a failed call does not stop the later calls of its key', async () => {
+        let failNextRequestId = true;
+        newRequestId = () => {
+            if (failNextRequestId) {
+                failNextRequestId = false;
+                throw new Error('No request id.');
+            }
+            return `request-${++requestCount}`;
+        };
+        const owner = createAttachedOwner();
+        const token = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+        await vi.advanceTimersByTimeAsync(0);
+        const statusAfterFailure = token.status();
+
+        await vi.advanceTimersByTimeAsync(20_000);
+
+        expect([statusAfterFailure, token.status()]).toEqual(['pending', 'active']);
+        expect(calls).toEqual([subscribeCall('room.feed', 'generation-1', 'request-1')]);
+    });
+
     it('detach releases every key best-effort and lapses the tokens', async () => {
         const owner = createAttachedOwner();
         const feed = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
@@ -313,14 +384,16 @@ describe('browser topic subscriptions', () => {
         };
 
         owner.detach();
+        // The transport shutdown closes the socket in the tick detach runs in, so a read after it is Left.
+        generation = Either.ofLeft(new Error('The WebSocket is not open.'));
         await vi.advanceTimersByTimeAsync(60_000);
 
         expect([feed.status(), score.status()]).toEqual(['lapsed', 'lapsed']);
-        expect(calls.map((call) => [call.call, call.groupId, call.topicId])).toEqual([
-            ['subscribe', 'room-1', 'room.feed'],
-            ['subscribe', 'room-2', 'room.score'],
-            ['unsubscribe', 'room-1', 'room.feed'],
-            ['unsubscribe', 'room-2', 'room.score']
+        expect(calls.map((call) => [call.call, call.groupId, call.topicId, call.connectionGenerationId])).toEqual([
+            ['subscribe', 'room-1', 'room.feed', 'generation-1'],
+            ['subscribe', 'room-2', 'room.score', 'generation-1'],
+            ['unsubscribe', 'room-1', 'room.feed', 'generation-1'],
+            ['unsubscribe', 'room-2', 'room.score', 'generation-1']
         ]);
         expect(socketCallbacks.size).toBe(0);
     });
@@ -334,12 +407,12 @@ function createOwner(): BrowserTopicSubscriptions {
     return new BrowserTopicSubscriptions({
         http,
         timers: createDefaultTimers(),
-        newRequestId: () => `request-${++requestCount}`
+        newRequestId: () => newRequestId()
     });
 }
 
 function createAttachedOwner(
-    generationReader: { read(): Promise<Either<Error, string>>; } = { read: async () => generation }
+    generationReader: GenerationReader = currentGenerationReader
 ): BrowserTopicSubscriptions {
     const owner = createOwner();
     owner.attach(createContext(generationReader));
@@ -347,7 +420,7 @@ function createAttachedOwner(
 }
 
 function createContext(
-    generationReader: { read(): Promise<Either<Error, string>>; } = { read: async () => generation }
+    generationReader: GenerationReader = currentGenerationReader
 ): ApiMiddleware {
     const socket: Partial<JsonWebSocketClient> = {
         onWebsocketCallbacksDo: (id, callbacks) => {
@@ -358,7 +431,10 @@ function createContext(
     };
     return createDefaultApiMiddlewareTestDouble({
         middleware: {
-            ownWsConnectionGeneration: { read: async () => await generationReader.read() },
+            ownWsConnectionGeneration: {
+                read: async () => await generationReader.read(),
+                readKnown: () => generationReader.readKnown()
+            },
             webSocketQueueBox: { socket: socket as JsonWebSocketClient }
         }
     });

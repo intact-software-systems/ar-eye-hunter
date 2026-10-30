@@ -825,7 +825,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'TransferStateGroupOwnershipBody',
                 'TransitionStateGroupLifecycleBody',
                 'UnbanStateGroupMemberBody',
-                'UnsubscribeStateGroupTopicBody',
                 'UpdateStateGroupBody',
                 'UpsertStateGroupMemberBody'
             ],
