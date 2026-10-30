@@ -9,7 +9,7 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
 
 1. [registerGroupStateRoutes](./register-group-state-routes.ts#registerGroupStateRoutes) installs
    the cohesive route families once: read, Quick Join, aggregate mutation, lifecycle, admission,
-   membership, presence, and publication grants.
+   membership, presence, publication grants, and topic subscriptions.
 2. [toGroupStateCommand](./to-group-state-command.ts#toGroupStateCommand) is the canonical HTTP
    request-to-AppInbox command boundary for all authenticated group mutations.
 3. [registerGroupAdmissionRoutes](./register-group-admission-routes.ts#registerGroupAdmissionRoutes)
@@ -18,7 +18,8 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
 4. [registerGroupPresenceRoutes](./register-group-presence-routes.ts#registerGroupPresenceRoutes)
    owns presence connect, heartbeat, and disconnect.
 5. [registerGroupStateReadRoutes](./register-group-state-read-routes.ts#registerGroupStateReadRoutes)
-   owns list/point snapshot reads and event listing;
+   owns list/point snapshot reads, event listing and the always-authenticated self-session
+   topic subscription list;
    [readGroupSnapshotPointQuery](../routes/state-snapshot-read-query.ts#readGroupSnapshotPointQuery)
    decodes the revision-floored resync pull (`minGroupRevision`/`minPresenceRevision`).
 6. [createStateApiResilienceMiddleware](../services/state-api-resilience-middleware.ts#createStateApiResilienceMiddleware)
@@ -35,6 +36,9 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
    responses.
 10. [registerGroupPublicationRoutes](./register-group-publication-routes.ts#registerGroupPublicationRoutes)
     owns the publication grant and revoke routes.
+11. [registerGroupTopicSubscriptionRoutes](./register-group-topic-subscription-routes.ts#registerGroupTopicSubscriptionRoutes)
+    owns the self-session topic subscribe and unsubscribe routes, which answer the receipt's
+    subscription outcome rather than a snapshot.
 
 ## Boundaries
 

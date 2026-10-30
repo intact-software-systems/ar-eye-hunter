@@ -18,6 +18,7 @@ import type {
 import {
     GroupMutationRejectedError
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupTopicSubscriptionResult } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { GroupStateRouteService } from './group-state-route-contracts.ts';
@@ -37,7 +38,11 @@ export type GroupStateResponseInput =
         kind: 'presence';
         receipt: GroupStateInboxDurableResult;
         ref: GroupRef;
-        service: GroupStateRouteService;
+        service: Pick<GroupStateRouteService, 'readCurrentSnapshot'>;
+    }>
+    | Readonly<{
+        kind: 'subscription';
+        receipt: GroupStateInboxDurableResult;
     }>;
 
 export function toGroupStateResponse(
@@ -53,8 +58,12 @@ export function toGroupStateResponse(
 ): Promise<GroupSnapshot>;
 
 export function toGroupStateResponse(
+    input: Extract<GroupStateResponseInput, { kind: 'subscription'; }>
+): GroupTopicSubscriptionResult;
+
+export function toGroupStateResponse(
     input: GroupStateResponseInput
-): GroupMutationWritten | GroupJoinCodeResponse | Promise<GroupSnapshot> {
+): GroupMutationWritten | GroupJoinCodeResponse | Promise<GroupSnapshot> | GroupTopicSubscriptionResult {
     switch (input.kind) {
         case 'mutation':
             return toGroupMutationResponse(requireGroupStateWritten(input.written));
@@ -65,6 +74,8 @@ export function toGroupStateResponse(
                 ...input,
                 receipt: requireGroupReceiptInboxDurableResult(input.receipt)
             });
+        case 'subscription':
+            return toGroupTopicSubscriptionResponse(requireGroupReceiptInboxDurableResult(input.receipt));
     }
 }
 
@@ -75,6 +86,13 @@ function toGroupMutationResponse(written: GroupStateWritten): GroupMutationWritt
 function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeResponse {
     const { event: _event, ...response } = written.result;
     return response;
+}
+
+function toGroupTopicSubscriptionResponse(receipt: GroupReceiptInboxDurableResult): GroupTopicSubscriptionResult {
+    if (!('commandId' in receipt) || receipt.subscriptionOutcome === null) {
+        throw new TypeError('A topic subscription receipt carries its outcome');
+    }
+    return { outcome: receipt.subscriptionOutcome };
 }
 
 async function toGroupPresenceResponse(

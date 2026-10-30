@@ -39,8 +39,10 @@ import type {
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
+    SubscribeGroupTopicRequest,
     TransferGroupOwnershipRequest,
     UnbanGroupMemberRequest,
+    UnsubscribeGroupTopicRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
@@ -55,6 +57,7 @@ export type GroupStateRouteService = Pick<
     | 'listRecentEvents'
     | 'listEventPage'
     | 'readCurrentSnapshot'
+    | 'readGroupSessionTopicSubscriptions'
 >;
 
 export type GroupStateRouteAuthSession = Pick<
@@ -327,6 +330,24 @@ export type GroupStateRouteCommandInput =
             groupId: string;
             sessionId: string;
             request: GroupStateRouteRequestWithId<DisconnectGroupPresenceSessionRequest>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'subscribe-group-topic';
+            groupId: string;
+            sessionId: string;
+            request: GroupStateRouteRequestWithId<SubscribeGroupTopicRequest>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'unsubscribe-group-topic';
+            groupId: string;
+            sessionId: string;
+            request: GroupStateRouteRequestWithId<UnsubscribeGroupTopicRequest>;
         }>
     );
 

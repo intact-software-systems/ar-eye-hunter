@@ -188,6 +188,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
             listSnapshots: rejectUnusedOperation,
             listSnapshotsForPrincipal: rejectUnusedOperation,
             readCurrentSnapshot: rejectUnusedOperation,
+            readGroupSessionTopicSubscriptions: rejectUnusedOperation,
             readSnapshot: rejectUnusedOperation
         },
         clientRestSnapshotReadSelector: { read: rejectUnusedOperation },

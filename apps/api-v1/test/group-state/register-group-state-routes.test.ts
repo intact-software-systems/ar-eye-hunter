@@ -36,6 +36,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
         status: 200
     },
     { method: 'GET', path: `${API_BASE}/room-1/events`, status: 200 },
+    { method: 'GET', path: `${API_BASE}/room-1/sessions/alice-session/subscriptions`, status: 200 },
     { method: 'GET', path: `${API_BASE}/room-1/events/page`, status: 200 },
     {
         method: 'POST',
@@ -155,6 +156,18 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
             disconnectedAtEpochMs: 1,
             expiresAtEpochMs: 1
         },
+        status: 200
+    },
+    {
+        method: 'POST',
+        path: mutationPath(`${API_BASE}/room-1/sessions/alice-session/subscribe`),
+        body: { topicId: 'room.feed', connectionGenerationId: 'ws-generation' },
+        status: 200
+    },
+    {
+        method: 'POST',
+        path: mutationPath(`${API_BASE}/room-1/sessions/alice-session/unsubscribe`),
+        body: { topicId: 'room.feed', connectionGenerationId: 'ws-generation' },
         status: 200
     }
 ];

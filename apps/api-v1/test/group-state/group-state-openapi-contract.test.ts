@@ -219,6 +219,26 @@ const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
         requestSchema: 'DisconnectGroupPresenceSessionRequest',
         status: '200',
         responseSchema: { reference: 'GroupSnapshot' }
+    },
+    {
+        path: `${GROUP_ID_PATH}/sessions/{sessionId}/subscribe`,
+        method: 'post',
+        requestSchema: 'SubscribeGroupTopicRequest',
+        status: '200',
+        responseSchema: { reference: 'GroupTopicSubscriptionResult' }
+    },
+    {
+        path: `${GROUP_ID_PATH}/sessions/{sessionId}/unsubscribe`,
+        method: 'post',
+        requestSchema: 'UnsubscribeGroupTopicRequest',
+        status: '200',
+        responseSchema: { reference: 'GroupTopicSubscriptionResult' }
+    },
+    {
+        path: `${GROUP_ID_PATH}/sessions/{sessionId}/subscriptions`,
+        method: 'get',
+        status: '200',
+        responseSchema: { reference: 'GroupTopicSubscriptionList' }
     }
 ];
 
@@ -268,6 +288,30 @@ Deno.test('publication grant requests name every permission field and admit no o
             path
         );
     }
+});
+
+Deno.test('topic subscription requests name the topic and the asserting generation and admit no other', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    for (const name of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {
+        const request = document.components.schemas[name];
+        assert.equal(request.additionalProperties, false, name);
+        assert.deepEqual(request.required, ['topicId', 'connectionGenerationId'], name);
+        assert.deepEqual(Object.keys(request.properties ?? {}), ['topicId', 'connectionGenerationId', 'reason'], name);
+        assert.equal(request.properties?.topicId.$ref, '#/components/schemas/RallarWsUserTopicId', name);
+    }
+    for (const action of ['subscribe', 'unsubscribe']) {
+        const path = `${GROUP_ID_PATH}/sessions/{sessionId}/${action}/requests/{requestId}`;
+        assert.deepEqual(
+            Object.keys(document.paths[path]?.post?.responses ?? {}),
+            ['200', '400', '401', '403', '409'],
+            path
+        );
+    }
+    assert.deepEqual(
+        Object.keys(document.paths[`${GROUP_ID_PATH}/sessions/{sessionId}/subscriptions`]?.get?.responses ?? {}),
+        ['200', '401', '403']
+    );
 });
 
 Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable RTT', async () => {
