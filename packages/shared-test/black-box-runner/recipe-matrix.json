@@ -3314,7 +3314,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 publication grants across three nodes: a grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, a revoke written on the secondary is read back on the primary and the tertiary, and replaying the primary's grant requestId on the tertiary answers the first result."
+      "description": "No-browser API-v1 publication grants across three nodes: a grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, a revoke written on the secondary is read back on the primary and the tertiary, and replaying the primary's grant requestId on the tertiary answers the first result. Over the granted topic room.bb-granted-feed, Alice's room broadcast on the tertiary reaches Bob, granted subscribe, and not Carol, who joined with no grant; after the revoke on the secondary her next publish on the tertiary is refused with a no-publish-grant NACK, and every node reads the remaining grant back."
     },
     {
       "id": "api-v1-group-reconnect-across-stages",

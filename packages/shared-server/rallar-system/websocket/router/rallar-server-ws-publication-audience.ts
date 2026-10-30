@@ -36,14 +36,16 @@ export interface RallarServerWsPublicationAudience {
 }
 
 /**
- * Why a publish sends nothing: a granted topic refused a server or proxy publish that names no room, the topic refused
- * a server producer, or the room authorizer refused a proxy publish.
+ * Why a publish sends nothing: a granted topic refused a server or proxy publish that names no room, or a server
+ * publish in a composition without a server publish audience reader, the topic refused a server producer, or the room
+ * authorizer refused a proxy publish.
  */
 export interface RallarServerWsPublicationRefusal {
     readonly reason: string;
     /**
-     * The topic policy's refusal: `unsupported` for a server or proxy publish on a granted topic that names no room, or
-     * the server producer's refusal; undefined for a proxy publish the room authorizer refused.
+     * The topic policy's refusal: `unsupported` for a server or proxy publish on a granted topic that names no room or a
+     * server publish on one with no reader composed, or the server producer's refusal; undefined for a proxy publish the
+     * room authorizer refused.
      */
     readonly refusal: RoomPublicationAdmission.RefusalCode | undefined;
 }
@@ -70,6 +72,13 @@ export async function readRallarServerWsPublicationAudience(
         return authorization.authorized
             ? Either.ofRight({ frozen: authorization.audience })
             : Either.ofLeft({ reason: authorization.logMessage, refusal: undefined });
+    }
+    if (input.topic.participation === 'granted' && input.readServerPublishAudience === undefined) {
+        return Either.ofLeft({
+            reason:
+                `No server publish audience reader is composed for granted WS topic ${input.message.route.topicId}.`,
+            refusal: 'unsupported'
+        });
     }
     const audience = await input.readServerPublishAudience?.({
         message: input.message,

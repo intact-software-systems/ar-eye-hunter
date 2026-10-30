@@ -166,6 +166,12 @@ and it has no status list.
   `readDequeueAuthority`'s and the bridge's local send's, where D498 budgeted
   one; skip the dequeue authority's re-check when the cluster publisher sends the
   row (S2-i).
+- The outbound planner cannot tell a re-checked audience from a captured one: a
+  row whose dequeue authority was not read plans its captured audience whole, and
+  the frozen-audience fact lives in the WS server's resolver, not in the row, so
+  a future producer row on a granted topic would plan un-narrowed; record the
+  frozen bit in the captured policy at admission and plan no recipients for a
+  frozen row whose audience was not re-checked (S2-i).
 - Stale child rows of an expired, unpurged group (members, and now publication
   grants of principals other than the creator) surface in a group recreated
   under the same id until retirement purges them; the create would read or
@@ -176,6 +182,10 @@ and it has no status list.
 - A snapshot read that hangs rather than fails stalls every later held row of
   that session, `members` rows included, until it settles; bound the re-check's
   read at the port (S2-i).
+- The WS server service and the pub/sub bridge each own a held-send chain, so a
+  session's locally dequeued held rows and its remote-sent held rows are ordered
+  independently of each other; hand the service's chain to the bridge and one
+  per-session order covers both paths (S2-i).
 - The every-branch refusal of a granted topic lives only in
   `createWsServerTargetResolver`; `WsQueueBoxServerTargetResolution`'s own
   broadcast and peer fallbacks would still resolve one for a custom resolver that

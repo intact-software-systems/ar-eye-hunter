@@ -267,6 +267,34 @@ describe('group creation with a declared publication grant', () => {
         expect(result.snapshot.publicationGrants).toEqual([]);
     });
 
+    it('a create whose actor differs from its creator reads the creator\'s surviving row and is rejected', async () => {
+        const runtime = await expireRoomWithCreatorGrant();
+        const surviving = await runtime.findEntry(
+            PUBLICATION_GRANTS_NAMESPACE,
+            groupStatePublicationGrantStorageKey(GRANT_ROOM_REF, 'alice')
+        );
+        const request = createRequest({ 'room.other': { publish: true, subscribe: false } }, 'create-grant-room-other-actor');
+        const { service, command } = await computeDescriptorMutation(runtime, 'alice', describeCreate(request));
+        const authority = command.facts.authenticatedAuthority;
+        if (command.command.operation !== 'createGroup' || authority === null) {
+            throw new Error('Expected an authenticated createGroup command');
+        }
+        // A shared command can carry an actor other than its creator; the effect keys on the creator, so the read
+        // scope must load the creator's row whatever the actor is.
+        const otherActor = {
+            ...command,
+            command: { ...command.command, input: { ...command.command.input, actorPrincipalId: 'mallory' } },
+            facts: { ...command.facts, authenticatedAuthority: { ...authority, principalId: 'mallory' } }
+        };
+
+        const read = await service.read(otherActor);
+        const computed = service.compute(otherActor, read);
+
+        expect(read.targetPublicationGrant).toMatchObject({ entry: { revision: surviving!.revision }, value: { principalId: 'alice' } });
+        expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-mutation-rejected' });
+        expect(await readGrantRow(runtime, 'alice')).toMatchObject({ topics: { 'room.feed': { publish: true, subscribe: true } } });
+    });
+
     it('create refuses a 65-topic or both-false declaration', async () => {
         for (
             const publicationGrants of [

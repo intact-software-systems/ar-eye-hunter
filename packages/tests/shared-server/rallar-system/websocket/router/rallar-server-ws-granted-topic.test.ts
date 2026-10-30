@@ -168,6 +168,20 @@ describe('a granted WS topic (D486, D487)', () => {
         expect(readDeliveredBy(fixture, 'unlisted')).toEqual({ alice: 0, 'alice-2': 0, bob: 0, carol: 0, dan: 0 });
     });
 
+    it('a server publish on a granted topic with no server publish audience reader composed returns refused unsupported and no outbox row', async () => {
+        const fixture = createGrantedFixture('outbox', { composesServerPublishAudience: false });
+
+        const result = await fixture.router.publish({
+            message: roomBroadcast(fixture.router.serverPeerId, FEED, 'unread'),
+            producerId: PRODUCER
+        });
+
+        expect(result).toMatchObject({ status: 'refused', refusal: 'unsupported', entries: [] });
+        await settle();
+        expect(await readOutboxRowCount(fixture, 'unread')).toBe(0);
+        expect(readDeliveredBy(fixture, 'unread')).toEqual({ alice: 0, 'alice-2': 0, bob: 0, carol: 0, dan: 0 });
+    });
+
     it('a proxy rule relaying a subscriber-only sender onto a granted topic is refused', async () => {
         const fixture = createGrantedFixture('live-only');
         relayChatOntoFeed(fixture);
@@ -225,7 +239,7 @@ describe('a granted WS topic (D486, D487)', () => {
 
     it('a server publish of a granted topic as a world broadcast or a scope-less unicast returns refused unsupported and sends nothing', async () => {
         const recording = createRecordingLiveWsPublication();
-        const fixture = createGrantedFixture('live-only', recording.livePublication);
+        const fixture = createGrantedFixture('live-only', { livePublication: recording.livePublication });
         const scope = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
         const results = [
@@ -304,10 +318,13 @@ describe('a granted WS topic (D486, D487)', () => {
     });
 });
 
-function createGrantedFixture(
-    fanout: RallarServerWsFanout,
-    livePublication?: RallarServerWsRouterOptions['livePublication']
-): GrantedFixture {
+interface GrantedFixtureOptions {
+    readonly livePublication?: RallarServerWsRouterOptions['livePublication'];
+    /** False leaves the router without a server publish audience reader, as a members-only composition is built. */
+    readonly composesServerPublishAudience?: boolean;
+}
+
+function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixtureOptions = {}): GrantedFixture {
     const socketServer = new JsonWebSocketServer();
     const sockets = Object.fromEntries(
         (Object.keys(SESSIONS) as SessionId[]).map((sessionId) => [sessionId, new TestWebSocket(`ws://${sessionId}`)])
@@ -346,11 +363,10 @@ function createGrantedFixture(
             authorizations.push(input);
             return authorizeGroupRoom(input);
         },
-        readServerPublishAudience: createServerPublishRoomAudienceReader({
-            readGroupSnapshot: () => Promise.resolve(readSnapshot()),
-            nowEpochMs: Date.now
-        }),
-        livePublication
+        readServerPublishAudience: options.composesServerPublishAudience === false
+            ? undefined
+            : createServerPublishRoomAudienceReader({ readGroupSnapshot: () => Promise.resolve(readSnapshot()), nowEpochMs: Date.now }),
+        livePublication: options.livePublication
     }).install().defineTopic({
         topicId: FEED,
         scope: 'room',

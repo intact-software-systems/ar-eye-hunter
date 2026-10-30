@@ -42,8 +42,7 @@ const SERVER_PEER_ID = 'room-granted-delivery';
 const PRODUCER = 'feed-producer';
 const MEMBERS_TOPIC = 'room.chat';
 
-type Permissions = GroupPublicationTopicPermissions;
-type Grants = Readonly<Record<string, Permissions | undefined>>;
+type Grants = Readonly<Record<string, GroupPublicationTopicPermissions | undefined>>;
 
 /** Alice publishes, Bob and Carol subscribe. */
 const GRANTS: Grants = {
@@ -86,7 +85,11 @@ Deno.test('each of socket admission, pending replay, inbox dispatch and route re
                 ...Array.from({ length: grantedReads }, () => () => Promise.resolve(createSnapshot(GRANTS))),
                 () => Promise.resolve(revoked)
             );
-            const message = feedMessage('alice', `refused-at-${pass.replaceAll(' ', '-')}`, pass === 'pending replay' ? 4 : undefined);
+            const message = feedMessage({
+                senderId: 'alice',
+                msgId: `refused-at-${pass.replaceAll(' ', '-')}`,
+                ...(pass === 'pending replay' ? { minSnapshotVersion: 4 } : {})
+            });
 
             await harness.service.acceptIncomingMessage(message, 'alice');
             await waitFor(() => harness.readCount() > grantedReads);
@@ -111,7 +114,7 @@ for (const step of ['single-instance dequeue', 'cluster send'] as const) {
             const frames = addAudience(harness.server);
             // Admission, inbox dispatch and route read the grant; the revoke commits before the dequeue's re-check.
             harness.reads.push(...grantedReads(3), revokedReads());
-            const message = feedMessage('alice', `dequeue-${step.replaceAll(' ', '-')}`);
+            const message = feedMessage({ senderId: 'alice', msgId: `dequeue-${step.replaceAll(' ', '-')}` });
 
             assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
             await waitFor(() => readDelivered(frames.bob, message) > 0);
@@ -129,7 +132,10 @@ Deno.test('a revoke between enqueue and dequeue skips the revoked session at rep
         const frames = addAudience(harness.server);
         // The first dequeue sends to both subscribers; neither acknowledges, and the revoke commits before the retry.
         harness.reads.push(...grantedReads(4), revokedReads());
-        const message = { ...feedMessage('alice', 'repaired-revoke'), qos: { ack: { algo: 'receiver', opts: { timeoutMs: 50 } } } } as const;
+        const message = {
+            ...feedMessage({ senderId: 'alice', msgId: 'repaired-revoke' }),
+            qos: { ack: { algo: 'receiver', opts: { timeoutMs: 50 } } }
+        } as const;
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) >= 2);
@@ -144,7 +150,7 @@ Deno.test('a revoke between enqueue and dequeue keeps the revoked session expect
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), revokedReads());
-        const message = feedMessage('alice', 'receipted-revoke');
+        const message = feedMessage({ senderId: 'alice', msgId: 'receipted-revoke' });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) > 0);
@@ -168,7 +174,7 @@ Deno.test('a revoke between enqueue and dequeue skips the revoked session at the
         }
         // Admission, dispatch, route and the dequeue read the grant; Carol's held send re-checks after the revoke.
         harness.reads.push(...grantedReads(4), revokedReads());
-        const message = feedMessage('alice', 'held-revoke');
+        const message = feedMessage({ senderId: 'alice', msgId: 'held-revoke' });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => harness.readCount() >= 4);
@@ -197,8 +203,8 @@ Deno.test('two held granted rows for one session reach it in admission order how
             }
             return createSnapshot(GRANTS);
         };
-        const first = feedMessage('alice', 'held-first');
-        const second = feedMessage('alice', 'held-second');
+        const first = feedMessage({ senderId: 'alice', msgId: 'held-first' });
+        const second = feedMessage({ senderId: 'alice', msgId: 'held-second' });
 
         await harness.service.acceptIncomingMessage(first, 'alice');
         await harness.service.acceptIncomingMessage(second, 'alice');
@@ -217,7 +223,7 @@ Deno.test('a server-producer outbox row skips a subscriber revoked before dequeu
         const frames = addAudience(harness.server);
         // The publish reads the grant once; the revoke commits before the dequeue.
         harness.reads.push(...grantedReads(1), revokedReads());
-        const message = feedMessage(SERVER_PEER_ID, 'produced-revoke');
+        const message = feedMessage({ senderId: SERVER_PEER_ID, msgId: 'produced-revoke' });
 
         const result = await harness.router.publish({ message, fanout: 'outbox', producerId: PRODUCER });
         await waitFor(() => readDelivered(frames.bob, message) > 0);
@@ -233,7 +239,7 @@ Deno.test('a failed snapshot read at dequeue sends nothing and keeps the row for
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), () => Promise.reject(new Error('version probe failed')));
-        const message = feedMessage('alice', 'probe-failed');
+        const message = feedMessage({ senderId: 'alice', msgId: 'probe-failed' });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => harness.readCount() >= 5);
@@ -251,7 +257,7 @@ for (const cluster of [false, true]) {
     Deno.test(`a granted outbox row with no re-check port reaches nobody (${cluster ? 'cluster send' : 'single instance'})`, async () => {
         await withHarness({ fanout: 'outbox', cluster, withoutRecheck: true }, async (harness) => {
             const frames = addAudience(harness.server);
-            const message = feedMessage('alice', `unchecked-${cluster ? 'cluster' : 'single'}`);
+            const message = feedMessage({ senderId: 'alice', msgId: `unchecked-${cluster ? 'cluster' : 'single'}` });
 
             assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
             await waitFor(async () => (await readRelayRows(harness, message))[0]?.status === EntityStatus.COMPLETED);
@@ -266,7 +272,7 @@ for (const cluster of [false, true]) {
 Deno.test('a run of granted rows for a missing room does not stop a members row\'s delivery and does not open the dequeue breaker', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
-        const granted = Array.from({ length: 12 }, (_, index) => feedMessage('alice', `missing-room-${index}`));
+        const granted = Array.from({ length: 12 }, (_, index) => feedMessage({ senderId: 'alice', msgId: `missing-room-${index}` }));
         // Admission, dispatch and route read the room; every dequeue re-check then finds it gone.
         harness.recheckRead = () => Promise.resolve(undefined);
         for (const message of granted) {
@@ -276,7 +282,7 @@ Deno.test('a run of granted rows for a missing room does not stop a members row\
             (await Promise.all(granted.map((message) => readRelayRows(harness, message))))
                 .every((rows) => rows[0]?.status === EntityStatus.COMPLETED)
         );
-        const members = feedMessage('alice', 'members-after-missing-room', undefined, MEMBERS_TOPIC);
+        const members = feedMessage({ senderId: 'alice', msgId: 'members-after-missing-room', topicId: MEMBERS_TOPIC });
 
         await harness.service.acceptIncomingMessage(members, 'alice');
         await waitFor(() => readDelivered(frames.bob, members) > 0);
@@ -296,7 +302,7 @@ Deno.test('a granted row whose publisher\'s session left before dequeue reaches 
                 ...departed,
                 activeSessions: departed.activeSessions.filter((session) => session.sessionId !== 'alice')
             }));
-        const message = feedMessage('alice', 'publisher-departed');
+        const message = feedMessage({ senderId: 'alice', msgId: 'publisher-departed' });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(async () => (await readRelayRows(harness, message))[0]?.status === EntityStatus.COMPLETED);
@@ -317,7 +323,7 @@ Deno.test('a granted row of a room archived before dequeue reaches nobody', asyn
                 ...snapshot,
                 group: { ...snapshot.group, status: 'archived', archived: snapshot.group.updated, deleted: null }
             }));
-        const message = feedMessage('alice', 'archived-room');
+        const message = feedMessage({ senderId: 'alice', msgId: 'archived-room' });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => harness.readCount() >= 4);
@@ -379,7 +385,7 @@ Deno.test('a members-topic outbox row is narrowed by the durable filter only', a
         const frames = addAudience(harness.server);
         // No principal holds a grant on room.chat: the row is a members row, so no grant decides its sends.
         harness.reads.push(() => Promise.resolve(createSnapshot({})));
-        const message = feedMessage('alice', 'members-row', undefined, MEMBERS_TOPIC);
+        const message = feedMessage({ senderId: 'alice', msgId: 'members-row', topicId: MEMBERS_TOPIC });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) > 0 && readDelivered(frames.carol, message) > 0);
@@ -532,13 +538,21 @@ function createSnapshot(grants: Grants, snapshotVersion = 3): GroupSnapshot {
         memberCount: principalIds.length,
         onlineMemberCount: principalIds.length,
         publicationGrants: Object.entries(grants)
-            .filter((entry): entry is [string, Permissions] => entry[1] !== undefined)
+            .filter((entry): entry is [string, GroupPublicationTopicPermissions] => entry[1] !== undefined)
             .map(([principalId, permissions]) => ({ ...ROOM, principalId, topics: { [FEED]: permissions }, updated: group.updated }))
     };
 }
 
-/** An at-least-once receiver-acknowledged room broadcast; a floor makes admission wait for that snapshot version. */
-function feedMessage(senderId: string, msgId: string, minSnapshotVersion?: number, topicId = FEED): ALMessage {
+interface FeedMessageInput {
+    readonly senderId: string;
+    readonly msgId: string;
+    /** A floor makes admission wait for that snapshot version. */
+    readonly minSnapshotVersion?: number;
+    readonly topicId?: string;
+}
+
+/** An at-least-once receiver-acknowledged room broadcast, on the granted feed unless another topic is named. */
+function feedMessage({ senderId, msgId, minSnapshotVersion, topicId = FEED }: FeedMessageInput): ALMessage {
     const base = newALBroadcastMessage(senderId, newALEventRoute(topicId, ROOM.groupId, msgId), 'room', 'feed.v1', { msgId }, {
         groupRef: ROOM,
         reliability: 'at-least-once',
