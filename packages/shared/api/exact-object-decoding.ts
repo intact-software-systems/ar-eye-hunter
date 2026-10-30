@@ -60,12 +60,6 @@ export function requireNullableEpoch(value: unknown, label: string): void {
     }
 }
 
-export function requireNullableInteger(value: unknown, label: string): void {
-    if (value !== null) {
-        requireEpoch(value, label);
-    }
-}
-
 export function requireOneOf<T extends string>(
     value: unknown,
     values: readonly T[],

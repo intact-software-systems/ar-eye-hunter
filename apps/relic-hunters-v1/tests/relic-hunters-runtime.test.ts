@@ -1,3 +1,4 @@
+import { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
 import '../../../packages/tests/setup-browser-indexeddb.ts';
 
 import {
@@ -1326,6 +1327,23 @@ class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     private readonly roomListeners = new Set<(state: RallarRoomState) => void>();
     private readonly hunterListeners = new Set<RelicHunterEventSubscription>();
     private readonly snapshotListeners = new Set<(event: RelicServerEvent) => void>();
+    public readonly roomMove = new RallarRoomMove({
+        auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
+        currentRoom: () => this.state.currentRoomRef,
+        refreshRooms: async () => {},
+        activate: async () => {
+            throw new Error('Move activation is not configured in this runtime fixture');
+        },
+        api: {
+            list: async () => [],
+            mutate: async () => {
+                throw new Error('Move mutation is not configured in this runtime fixture');
+            }
+        },
+        onChanged: () => () => {},
+        withEligibility: async (_destination, run) => await run(),
+        timers: this.timers
+    }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' }, refreshIntervalMs: 15000 });
     public readonly roomEntry: RallarRoomEntry;
     public readonly recentRooms: RallarRecentRooms;
     public readonly directory: RallarRoomDirectory;

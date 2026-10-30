@@ -85,7 +85,7 @@ const reviewedSpectatingUnknownBoundaries = [
 ] as const;
 const reviewedSpectatingLayouts = [
     { directory: 'apps/relic-hunters-v1/src/game', prefix: 'relic', count: 12, density: 23 },
-    { directory: 'packages/shared/api', prefix: 'group', count: 8, density: 25 }
+    { directory: 'packages/shared/api', prefix: 'group', count: 9, density: 27 }
 ] as const;
 const reviewedCappedUnknownBoundaries = [
     ...reviewedSpectatingUnknownBoundaries,

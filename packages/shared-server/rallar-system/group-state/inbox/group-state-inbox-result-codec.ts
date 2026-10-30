@@ -4,8 +4,8 @@ import {
 } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
+import { requireExactKeys, requireOneOf, requireString } from '@shared/api/exact-object-decoding.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     GroupJoinCodeMutationWritten,
@@ -58,26 +58,28 @@ export function decodeGroupJoinCodeWritten(value: JsonWireValue): GroupJoinCodeW
     return { status: 'ok', result: decodeGroupJoinCodeMutationWritten(written.result) };
 }
 
+const GROUP_MUTATION_RECEIPT_FIELDS = [
+    'commandId',
+    'requestId',
+    'commandHash',
+    'aggregateRef',
+    'outcome',
+    'attemptCount',
+    'acceptedStorageRevision',
+    'snapshotVersion',
+    'causalRevision',
+    'eventId',
+    'outboxIds',
+    'joinCode',
+    'joinCodeExpiresAtEpochMs',
+    'rejection'
+];
+
 export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationReceipt {
     const receipt = requireJsonWireRecord(value, 'Group mutation receipt');
     requireExactKeys(
         receipt,
-        [
-            'commandId',
-            'requestId',
-            'commandHash',
-            'aggregateRef',
-            'outcome',
-            'attemptCount',
-            'acceptedStorageRevision',
-            'snapshotVersion',
-            'causalRevision',
-            'eventId',
-            'outboxIds',
-            'joinCode',
-            'joinCodeExpiresAtEpochMs',
-            'rejection'
-        ],
+        GROUP_MUTATION_RECEIPT_FIELDS,
         'Group mutation receipt'
     );
     requireString(receipt.commandId, 'Group mutation receipt commandId');

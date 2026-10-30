@@ -101,6 +101,24 @@ The next game stays in the same room and includes only eligible consenting playe
 their characters and resets expedition progress; AR Eye starts fresh score baselines. Finished results
 remain visible until accepted start. Reset and the old start controls cannot bypass this consent flow.
 
+## Moving together
+
+AR Eye and Relic let present players propose another room in the same application and workspace.
+Every selected player session confirms, then the organizer explicitly chooses Move everyone.
+Spectators stay. Capacity and current access rules are checked for the whole group at commit;
+if one player cannot enter, no destination membership changes.
+
+Admission and arrival are separate: each browser connects to the destination before disconnecting
+its source presence. Old-room memberships and governance remain. The roster labels members
+Present or Away; Away members retain access subject to current bans, room lifecycle and entry
+rules. Membership alone neither keeps a temporary room live nor makes somebody a gameplay player.
+Explicit Leave room remains available separately.
+
+A two-minute proposal can be withdrawn, declined or cancelled before commit. Reload and retries
+recover the server decision. A failed browser entry shows an explicit retry while retaining its
+admitted membership. AR Eye blocks departure during an active match. Relic requires unfinished
+hunters to finish or explicitly Leave expedition, and destination Join Expedition stays explicit.
+
 ## Fit
 
 | Kind of product                              | Fit                         | What to use                                                                                      |

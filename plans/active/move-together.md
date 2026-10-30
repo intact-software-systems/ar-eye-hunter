@@ -5,7 +5,8 @@
 Deliver one complete feature in AR Eye Hunter and Relic Hunters: people already
 playing together can agree on another room and enter it together. The maintainer
 approved this larger slice after the renderer work merged. This document makes
-the admission, consent and recovery boundaries concrete for design approval.
+the admission, consent and recovery boundaries concrete for implementation. The maintainer approved this design, including
+preserving old-room membership and distinguishing Present from Away in both game rosters.
 
 The delivery is one PR with two implementation increments. No legacy paths,
 migration code, duplicated admission rules, permanent party service, cross-game
@@ -25,10 +26,9 @@ does not reserve places. The final transaction checks and allocates all required
 places together. The UI states that capacity is checked when the move is
 committed; an earlier availability reading is not a reservation.
 
-## User flow and proposed product policies
+## User flow and approved product policies
 
-These concrete policies are proposed here, rather than attributed to the earlier
-approval of the overall feature:
+The maintainer approved these concrete policies after reviewing the design:
 
 1. A present player opens **Move together**, selects a destination in the same
    application/workspace from the existing directory or a room reference, and
@@ -52,13 +52,12 @@ approval of the overall feature:
 6. If any player cannot be admitted, no destination memberships change, everyone
    keeps the source room, and the panel explains the failed condition. A new
    attempt requires a new proposal after resolving the problem.
-7. Proposed source policy: preserve old-room memberships and governance, but
+7. Source policy: preserve old-room memberships and governance, but
    disconnect each moving browser's source presence when it activates the
    destination. Returning uses ordinary current admission checks. Explicit
-   **Leave room** stays a separate action. The maintainer has been asked to
-   choose this policy versus removing old memberships; do not implement the
-   dependent departure behavior until that choice is resolved.
-8. Proposed expiry: a proposal accepts consent and commit for two minutes from
+   **Leave room** stays a separate action. The approved move preserves membership; it does not implicitly transfer
+   ownership or remove another session of the same principal.
+8. Expiry: a proposal accepts consent and commit for two minutes from
    creation. The server checks time on every attempt. A bounded durable expiry
    command publishes cancellation; a delayed worker cannot extend eligibility.
    Terminal outcomes remain readable for the existing finished-command retention
@@ -139,17 +138,17 @@ expedition withdrawal, match completion, game readiness, or game leadership.
 
 ## Existing owners and intended implementation
 
-| Responsibility         | Current owner and extension                                                                                                                                                                                                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Admission policy       | `packages/shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts` and `mutation/membership/compute-group-admission-mutation.ts`; reuse for every cohort member.                                                                                                                             |
-| Membership computation | `mutation/membership/compute-group-membership-mutation.ts` and `mutation/write/compute-group-membership-write.ts`; consolidate the reusable join decision before adding a multi-member admission. The current member delta lookup knows only actor and target, so it cannot be reused unchanged for an arbitrary cohort. |
-| Durable mutation       | A focused group-move service under `packages/shared-server/rallar-system/group-state/`, registered through existing AppInbox composition; no app-specific cases.                                                                                                                                                         |
-| Public contract        | A scoped group-move contract under `packages/shared/api/`, with one current schema and typed failures.                                                                                                                                                                                                                   |
-| HTTP boundary          | `apps/api-v1/src/group-state/`; authenticated propose, confirm/withdraw, cancel, commit, arrival and read surfaces. Route spelling is left to implementation.                                                                                                                                                            |
-| Browser lifecycle      | One shared-web room-move owner using `SynchronousNotifications`, `SubscriptionScope`, existing auth/session fences and room operations. Both apps consume it directly.                                                                                                                                                   |
-| Room activation        | `packages/shared-web/browser/rooms/join-room.ts` and the existing entry/runtime owners. Reuse admitted-room adoption and presence operations without duplicating individual admission or silently invoking membership leave.                                                                                             |
-| Game participation     | AR Eye runtime and `apps/relic-hunters-v1/src/game/relic-hunters-browser.ts`; app-specific checks remain in their owners.                                                                                                                                                                                                |
-| Publication/recovery   | Existing durable state-event/outbox delivery and authenticated reads. Notifications wake refresh; lost notifications cannot lose the outcome.                                                                                                                                                                            |
+| Responsibility         | Current owner and extension                                                                                                                                                                                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admission policy       | `packages/shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts` and `mutation/membership/compute-group-admission-mutation.ts`; reuse for every cohort member.                                                                               |
+| Membership computation | `mutation/membership/compute-group-membership-mutation.ts` and `mutation/write/compute-group-membership-write.ts`; stage the existing pure join computation once per distinct principal, feeding each result into the next read projection. No admission policy is copied. |
+| Durable mutation       | A focused group-move service under `packages/shared-server/rallar-system/group-state/`, registered through existing AppInbox composition; no app-specific cases.                                                                                                           |
+| Public contract        | A scoped group-move contract under `packages/shared/api/`, with one current schema and typed failures.                                                                                                                                                                     |
+| HTTP boundary          | `apps/api-v1/src/group-state/`; authenticated propose, confirm/withdraw, cancel, commit, arrival and read surfaces. Route spelling is left to implementation.                                                                                                              |
+| Browser lifecycle      | One shared-web room-move owner using `SynchronousNotifications`, `SubscriptionScope`, existing auth/session fences and room operations. Both apps consume it directly.                                                                                                     |
+| Room activation        | `packages/shared-web/browser/rooms/join-room.ts` and the existing entry/runtime owners. Reuse admitted-room adoption and presence operations without duplicating individual admission or silently invoking membership leave.                                               |
+| Game participation     | AR Eye runtime and `apps/relic-hunters-v1/src/game/relic-hunters-browser.ts`; app-specific checks remain in their owners.                                                                                                                                                  |
+| Publication/recovery   | Existing durable state-event/outbox delivery and authenticated reads. Notifications wake refresh; lost notifications cannot lose the outcome.                                                                                                                              |
 
 ### Transaction discipline
 
@@ -182,7 +181,7 @@ transaction cost. Never silently truncate a cohort.
 ## Two implementation increments in this PR
 
 1. **Authoritative group admission and recovery.** Pin failing semantic tests,
-   consolidate shared admission computation, implement the scoped proposal and
+   reuse shared admission computation, implement the scoped proposal and
    consent state machine, atomic commit, replay/recovery reads, publication and
    REST black-box coverage. This increment must prove all-or-none admission under
    contention and restart before browser wiring depends on it.
@@ -226,12 +225,11 @@ transaction cost. Never silently truncate a cohort.
   final validation, and delivery readiness once gates pass. Human merge ends the
   PR. Publish behavioral evidence in the PR; do not create a progress ledger.
 
-## Design approval and completion
+## Completion
 
-The source-membership question is pending. The organizer, cohort, expiry and
-atomicity policies above are also explicit proposed calls for the design review.
-No production implementation is claimed by this document. Once accepted, exact
-code tasks and test commands are worked out from these two increments. The PR
+The source-membership, organizer, cohort, expiry and atomicity policies above are
+approved. This document specifies the required outcome; it does not claim
+implementation or validation is complete. The PR
 that finishes this specification removes it before merge; Git history and the
 semantic PR description preserve its decisions, and current product documentation
 records the shipped behavior.

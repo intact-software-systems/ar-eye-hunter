@@ -46,6 +46,7 @@ import type { RallarTimingSink } from '../observability/timing.ts';
 import type { GroupStateEventStore } from '../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
+import type { GroupMoveService } from './move/group-move-service.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -204,6 +205,7 @@ export type GroupStateService =
     & Readonly<{
         sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
         quickJoin: GroupQuickJoinService;
+        move: GroupMoveService;
         retention: GroupRetentionService;
         authorizeMutation(
             descriptor: GroupMutationDescriptor,

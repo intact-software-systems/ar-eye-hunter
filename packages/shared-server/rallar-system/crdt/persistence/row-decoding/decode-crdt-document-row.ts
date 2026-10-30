@@ -6,7 +6,7 @@ import {
     type RallarCrdtRetentionPolicy
 } from '@shared/crdt/mod.ts';
 
-import { requireOneOf } from '../../../protocol/exact-object-decoding.ts';
+import { requireOneOf } from '@shared/api/exact-object-decoding.ts';
 import { decodeJsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeExactDocumentMetadata } from '../../mutation/decoding/decode-exact-document-metadata.ts';
 import { decodeExactDocumentRef } from '../../mutation/decoding/decode-exact-document-ref.ts';
@@ -47,80 +47,52 @@ export interface DecodeCrdtDocumentRowInput {
 export function decodeCrdtDocumentRow(
     input: DecodeCrdtDocumentRowInput
 ): RallarCrdtDocumentMetadata {
-    const { row, expectedDocumentKey, expectedDocument } = input;
-    const document = decodeExactDocumentRef(
-        decodeCrdtRowJson(row.document_ref, 'CRDT persisted document identity'),
-        'CRDT persisted document identity'
-    );
-    if (
-        row.document_key !== expectedDocumentKey ||
-        toRallarCrdtDocumentKey(document) !== row.document_key ||
-        toRallarCrdtDocumentKey(expectedDocument) !== row.document_key ||
-        row.application_id !== document.applicationId ||
-        row.workspace_id !== (document.workspaceId ?? null) ||
-        row.document_scope !== document.scope ||
-        row.document_type !== document.documentType ||
-        row.document_id !== document.documentId
-    ) {
-        throw new TypeError('CRDT persisted document identity is corrupt');
-    }
-    const documentRevision = decodePositiveRowInteger(
-        row.document_revision,
-        'CRDT persisted document revision'
-    );
-    const lastAppendSequence = decodeNonNegativeRowInteger(
-        row.last_append_sequence,
-        'CRDT persisted last append sequence'
-    );
-    const updateCount = decodeNonNegativeRowInteger(
-        row.update_count,
-        'CRDT persisted update count'
-    );
-    const snapshotCount = decodeNonNegativeRowInteger(
-        row.snapshot_count,
-        'CRDT persisted snapshot count'
-    );
-    const storedUpdateBytes = decodeNonNegativeRowInteger(
-        row.stored_update_bytes,
-        'CRDT persisted update bytes'
-    );
-    const lifecycle = requireOneOf(
-        row.lifecycle,
-        ['active', 'archived', 'destroyed', 'quarantined'] as const,
-        'CRDT persisted lifecycle'
-    );
-    const createdAtEpochMs = decodeRowEpoch(row.created_at_ts, 'CRDT persisted creation time');
-    const updatedAtEpochMs = decodeRowEpoch(row.updated_at_ts, 'CRDT persisted update time');
-    const archivedAtEpochMs = decodeNullableRowEpoch(
-        row.archived_at_ts,
-        'CRDT persisted archive time'
-    );
-    const destroyedAtEpochMs = decodeNullableRowEpoch(
-        row.destroyed_at_ts,
-        'CRDT persisted destruction time'
-    );
-    const retention = decodeStoredRetentionPolicy(row.retention_policy);
-    const quota = decodeStoredQuotaPolicy(row.quota_policy);
-    const projectionIds = decodeStoredProjectionIds(row.projection_ids);
+    const { row } = input;
+    const document = decodeRowDocumentIdentity(input);
     try {
         return decodeExactDocumentMetadata(
             decodeJsonWireValue(
                 {
                     document,
                     documentKey: row.document_key,
-                    documentRevision,
-                    lifecycle,
-                    createdAtEpochMs,
-                    updatedAtEpochMs,
-                    archivedAtEpochMs,
-                    destroyedAtEpochMs,
-                    lastAppendSequence,
-                    updateCount,
-                    snapshotCount,
-                    storedUpdateBytes,
-                    retention,
-                    quota,
-                    projectionIds
+                    documentRevision: decodePositiveRowInteger(
+                        row.document_revision,
+                        'CRDT persisted document revision'
+                    ),
+                    lifecycle: requireOneOf(
+                        row.lifecycle,
+                        ['active', 'archived', 'destroyed', 'quarantined'] as const,
+                        'CRDT persisted lifecycle'
+                    ),
+                    createdAtEpochMs: decodeRowEpoch(row.created_at_ts, 'CRDT persisted creation time'),
+                    updatedAtEpochMs: decodeRowEpoch(row.updated_at_ts, 'CRDT persisted update time'),
+                    archivedAtEpochMs: decodeNullableRowEpoch(
+                        row.archived_at_ts,
+                        'CRDT persisted archive time'
+                    ),
+                    destroyedAtEpochMs: decodeNullableRowEpoch(
+                        row.destroyed_at_ts,
+                        'CRDT persisted destruction time'
+                    ),
+                    lastAppendSequence: decodeNonNegativeRowInteger(
+                        row.last_append_sequence,
+                        'CRDT persisted last append sequence'
+                    ),
+                    updateCount: decodeNonNegativeRowInteger(
+                        row.update_count,
+                        'CRDT persisted update count'
+                    ),
+                    snapshotCount: decodeNonNegativeRowInteger(
+                        row.snapshot_count,
+                        'CRDT persisted snapshot count'
+                    ),
+                    storedUpdateBytes: decodeNonNegativeRowInteger(
+                        row.stored_update_bytes,
+                        'CRDT persisted update bytes'
+                    ),
+                    retention: decodeStoredRetentionPolicy(row.retention_policy),
+                    quota: decodeStoredQuotaPolicy(row.quota_policy),
+                    projectionIds: decodeStoredProjectionIds(row.projection_ids)
                 },
                 'CRDT persisted document metadata'
             )
@@ -207,4 +179,25 @@ function decodeRowEpoch(value: Date | string, label: string): number {
 
 function decodeNullableRowEpoch(value: Date | string | null, label: string): number | null {
     return value === null ? null : decodeRowEpoch(value, label);
+}
+
+function decodeRowDocumentIdentity(input: DecodeCrdtDocumentRowInput): RallarCrdtDocumentRef {
+    const { row, expectedDocumentKey, expectedDocument } = input;
+    const document = decodeExactDocumentRef(
+        decodeCrdtRowJson(row.document_ref, 'CRDT persisted document identity'),
+        'CRDT persisted document identity'
+    );
+    if (
+        row.document_key !== expectedDocumentKey ||
+        toRallarCrdtDocumentKey(document) !== row.document_key ||
+        toRallarCrdtDocumentKey(expectedDocument) !== row.document_key ||
+        row.application_id !== document.applicationId ||
+        row.workspace_id !== (document.workspaceId ?? null) ||
+        row.document_scope !== document.scope ||
+        row.document_type !== document.documentType ||
+        row.document_id !== document.documentId
+    ) {
+        throw new TypeError('CRDT persisted document identity is corrupt');
+    }
+    return document;
 }

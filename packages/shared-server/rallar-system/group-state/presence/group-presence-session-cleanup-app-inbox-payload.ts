@@ -1,6 +1,6 @@
+import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '../../client-state/inbox/app-client-inbox-contracts.ts';
 import { decodeClientAuthorisedWsSessionConnectAppInboxPayload } from '../../client-state/inbox/client-state-inbox-command-codec.ts';
-import { requireEpoch, requireExactKeys, requireRecord, requireString } from '../../protocol/exact-object-decoding.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 export interface GroupPresenceSessionCleanupAppInboxPayload {

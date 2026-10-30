@@ -1,18 +1,18 @@
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { writeRoomOwnedAppData, type RoomOwnedAppData } from '../../../app-data/room-owned-app-data.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxIdempotencyConflictError, type AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
-import { validateComputedProjection, type ComputedDataValidationIssue } from '../../computed-data-validation.ts';
-import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import {
     requireEpoch,
     requireExactKeys,
     requirePositiveInteger,
     requireRecord,
     requireString
-} from '../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
+import { writeRoomOwnedAppData, type RoomOwnedAppData } from '../../../app-data/room-owned-app-data.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import { AppInboxIdempotencyConflictError, type AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
+import { validateComputedProjection, type ComputedDataValidationIssue } from '../../computed-data-validation.ts';
+import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     GroupMutationComputedWrite,

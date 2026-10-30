@@ -2,8 +2,17 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
+import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
+import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
+import { toRallarCommandOptions } from '../rallar-operation-options.ts';
+import { readStateGroupSnapshot } from '../state-read/point-read.ts';
+import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
+import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
+import { toDisconnectRoomPresenceGroupStateRequest } from './room-group-state-translation.ts';
 
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
 import { leaveRoom, type LeaveRoomInput } from './leave-room.ts';
@@ -66,7 +75,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         groupId: roomId,
         principalId: session.clientId,
         sessionId: session.sessionId,
-        generationId: context.middleware.heartbeat.generationId,
+        generationId: crypto.randomUUID(),
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
         scope,
         authSession: session,
@@ -101,6 +110,187 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     sessionFence.assertCurrent(context);
     return snapshot;
 }
+
+export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
+    readonly move: GroupMove;
+    readonly options: RallarOperationOptions;
+}
+
+/** Membership was admitted atomically by the move; activation changes this session's presence only. */
+export async function activateGroupMove(input: ActivateGroupMoveInput): Promise<GroupSnapshot> {
+    return await input.runAuthAwareOperation(async () => {
+        const move = decodeGroupMove(input.move);
+        const options = input.resolveOperationOptions(input.options);
+        const fence = captureRoomSession(input.requireSession, options.signal);
+        if (
+            move.status !== 'committed' ||
+            !move.participants.some((participant) => participant.principalId === fence.session.clientId)
+        ) {
+            throw new Error('Only an admitted participant can enter a committed move.');
+        }
+        const current = input.stateStore.resolveCurrentRoomRef();
+        if (current && !isSameGroupRef(current, move.source) && !isSameGroupRef(current, move.destination)) {
+            throw new Error(`Return to source room ${move.source.groupId} before retrying this move.`);
+        }
+        const context = await input.connect(options);
+        fence.assertCurrent(context);
+        const activation = { input, move, context, fence, options };
+        const snapshot = await connectMovedSession(activation);
+        const source = await disconnectMovedSession(activation);
+        await adoptJoinedRoom({
+            dependencies: input,
+            context,
+            snapshot,
+            scope: toStateScope(move.destination),
+            assertCurrent: fence.assertCurrent
+        });
+        if (source) {
+            await input.acceptSnapshots({ context, clients: [], groups: [source], scope: toStateScope(move.source) });
+            fence.assertCurrent(context);
+        }
+        return snapshot;
+    });
+}
+
+interface GroupMoveActivation {
+    readonly input: ActivateGroupMoveInput;
+    readonly move: GroupMove;
+    readonly context: ApiMiddleware;
+    readonly fence: RoomSessionFence;
+    readonly options: RallarOperationOptions;
+}
+
+async function connectMovedSession({ move, context, fence, options }: GroupMoveActivation): Promise<GroupSnapshot> {
+    const generationId = crypto.randomUUID();
+    const connected = await createStateGroupPresenceCommand({
+        groupId: move.destination.groupId,
+        principalId: fence.session.clientId,
+        sessionId: fence.session.sessionId,
+        generationId,
+        connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
+        scope: toStateScope(move.destination),
+        authSession: fence.session,
+        assertCurrent: () => fence.assertCurrent(context),
+        policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(options)
+    }).run();
+    fence.assertCurrent(context);
+    if (!connected) {
+        throw new Error('Destination presence did not produce a snapshot.');
+    }
+    const snapshot = await readMovedSessionPresence({
+        snapshot: connected,
+        sessionId: fence.session.sessionId,
+        generationId,
+        present: true,
+        fence,
+        context,
+        options
+    });
+    return snapshot;
+}
+
+async function disconnectMovedSession(
+    { input, move, context, fence, options }: GroupMoveActivation
+): Promise<GroupSnapshot | undefined> {
+    const sourceBeforeDisconnect = input.stateStore.findGroupSnapshot(move.source);
+    const sourceSession = sourceBeforeDisconnect?.activeSessions.find((session) =>
+        session.sessionId === fence.session.sessionId
+    );
+    const requestId = toApiMutationWorkflowRequestId();
+    const request = toDisconnectRoomPresenceGroupStateRequest({
+        generationId: sourceSession?.generationId ?? move.participants.find((participant) =>
+            participant.sessionId === fence.session.sessionId
+        )?.generationId ?? context.middleware.heartbeat.generationId,
+        principalId: fence.session.clientId,
+        actorPrincipalId: fence.session.clientId,
+        actorSessionId: fence.session.sessionId
+    });
+    const source = await new Command<GroupSnapshot | undefined>(async (signal) => {
+        fence.assertCurrent(context);
+        try {
+            return await roomGroupStateHttpApi.disconnectPresence({
+                groupId: move.source.groupId,
+                sessionId: fence.session.sessionId,
+                request,
+                options: { requestId, signal, authSession: fence.session },
+                scope: toStateScope(move.source)
+            });
+        }
+        catch (error) {
+            return tolerateStateWorkflowNotFound(error, undefined);
+        }
+    }, toRallarCommandOptions(options)).run();
+    fence.assertCurrent(context);
+    if (source) {
+        const disconnected = await readMovedSessionPresence({
+            snapshot: source,
+            sessionId: fence.session.sessionId,
+            generationId: request.generationId,
+            present: false,
+            fence,
+            context,
+            options,
+            minPresenceRevision: sourceSession
+                ? (sourceBeforeDisconnect?.causalRevision.presenceRevision ?? 0) + 1
+                : 0
+        });
+        return disconnected;
+    }
+    return undefined;
+}
+
+interface MovedSessionPresenceInput {
+    readonly snapshot: GroupSnapshot;
+    readonly sessionId: string;
+    readonly generationId: string;
+    readonly present: boolean;
+    readonly fence: RoomSessionFence;
+    readonly context: ApiMiddleware;
+    readonly options: RallarOperationOptions;
+    readonly minPresenceRevision?: number;
+}
+
+/** Presence writes commit before their summary. A successful response alone does not prove arrival. */
+async function readMovedSessionPresence(input: MovedSessionPresenceInput): Promise<GroupSnapshot> {
+    const matches = (snapshot: GroupSnapshot) => {
+        if (snapshot.causalRevision.presenceRevision < (input.minPresenceRevision ?? 0)) {
+            return false;
+        }
+        const session = snapshot.activeSessions.find((candidate) => candidate.sessionId === input.sessionId);
+        return input.present
+            ? session?.generationId === input.generationId && session.expiresAtEpochMs > Date.now()
+            : session === undefined;
+    };
+    if (matches(input.snapshot)) {
+        return input.snapshot;
+    }
+    return await new Command(async (signal) => {
+        return await TryWithPolicy.defaults().label('room move presence')
+            .maxElapsedMsecs(input.options.timeoutMs ?? 15000)
+            .retryIntervalMsecs(100).maxRetryIntervalMsecs(500)
+            .retryIf((error) => error instanceof MovePresencePendingError && !signal?.aborted)
+            .run(async () => {
+                signal?.throwIfAborted();
+                input.fence.assertCurrent(input.context);
+                const { snapshot } = await readStateGroupSnapshot(
+                    input.snapshot.group.groupId,
+                    toStateScope(input.snapshot.group),
+                    {
+                        authSession: input.fence.session,
+                        signal,
+                        minCausalRevision: input.snapshot.causalRevision
+                    }
+                );
+                input.fence.assertCurrent(input.context);
+                if (!matches(snapshot)) {
+                    throw new MovePresencePendingError('Room presence has not confirmed the move yet. Retry entering.');
+                }
+                return snapshot;
+            });
+    }, { signal: input.options.signal, timeoutMs: input.options.timeoutMs ?? 15000 }).run();
+}
+
+class MovePresencePendingError extends Error {}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
@@ -183,7 +373,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         groupId: input.joinedRoom.group.groupId,
         principalId: input.session.clientId,
         sessionId: input.session.sessionId,
-        generationId: input.context.middleware.heartbeat.generationId,
+        generationId: crypto.randomUUID(),
         connectionGenerationId,
         scope,
         authSession: input.session,

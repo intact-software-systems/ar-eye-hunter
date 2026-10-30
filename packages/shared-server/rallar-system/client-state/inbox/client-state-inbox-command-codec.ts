@@ -1,3 +1,10 @@
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireExactOptionalKeys,
+    requireOneOf,
+    requireString
+} from '@shared/api/exact-object-decoding.ts';
 import type {
     ConnectClientSessionRequest,
     DisconnectClientSessionRequest,
@@ -7,13 +14,6 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest
 } from '@shared/api/state-types.ts';
-import {
-    requireEpoch,
-    requireExactKeys,
-    requireExactOptionalKeys,
-    requireOneOf,
-    requireString
-} from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientExpiredSessionPageInput } from '../client-state-service-contracts.ts';
 import type {
@@ -46,7 +46,7 @@ export function decodeClientPrincipalUpsertAppInboxPayload(
     requireExactKeys(payload, ['scope', 'principalId', 'request'], 'Client principal AppInbox payload');
     return {
         scope: decodeStateScope(payload.scope),
-        principalId: readString(payload.principalId, 'Client principal id'),
+        principalId: decodeString(payload.principalId, 'Client principal id'),
         request: decodeUpsertClientPrincipalRequest(payload.request)
     };
 }
@@ -62,8 +62,8 @@ export function decodeClientInstanceUpsertAppInboxPayload(
     );
     return {
         scope: decodeStateScope(payload.scope),
-        principalId: readString(payload.principalId, 'Client instance principal id'),
-        clientInstanceId: readString(payload.clientInstanceId, 'Client instance id'),
+        principalId: decodeString(payload.principalId, 'Client instance principal id'),
+        clientInstanceId: decodeString(payload.clientInstanceId, 'Client instance id'),
         request: decodeUpsertClientInstanceRequest(payload.request)
     };
 }
@@ -121,25 +121,25 @@ export function decodeClientAuthorisedWsSessionConnectAppInboxPayload(
     );
     return {
         authSession: {
-            clientId: readString(authSession.clientId, 'Authorised WebSocket client id'),
-            username: readString(authSession.username, 'Authorised WebSocket username'),
-            sessionId: readString(authSession.sessionId, 'Authorised WebSocket session id'),
-            issuedAtEpochMs: readEpoch(authSession.issuedAtEpochMs, 'Authorised WebSocket issued time'),
-            expiresAtEpochMs: readEpoch(authSession.expiresAtEpochMs, 'Authorised WebSocket expiry time')
+            clientId: decodeString(authSession.clientId, 'Authorised WebSocket client id'),
+            username: decodeString(authSession.username, 'Authorised WebSocket username'),
+            sessionId: decodeString(authSession.sessionId, 'Authorised WebSocket session id'),
+            issuedAtEpochMs: decodeEpoch(authSession.issuedAtEpochMs, 'Authorised WebSocket issued time'),
+            expiresAtEpochMs: decodeEpoch(authSession.expiresAtEpochMs, 'Authorised WebSocket expiry time')
         },
-        generationId: readString(payload.generationId, 'Authorised WebSocket generation id'),
-        generationStartedAtEpochMs: readEpoch(
+        generationId: decodeString(payload.generationId, 'Authorised WebSocket generation id'),
+        generationStartedAtEpochMs: decodeEpoch(
             payload.generationStartedAtEpochMs,
             'Authorised WebSocket generation start'
         ),
         scope: decodeStateScope(payload.scope),
-        principalId: readString(payload.principalId, 'Authorised WebSocket principal id'),
-        clientInstanceId: readString(payload.clientInstanceId, 'Authorised WebSocket client instance id'),
-        displayName: readString(payload.displayName, 'Authorised WebSocket display name'),
-        userAgent: readNullableString(payload.userAgent, 'Authorised WebSocket user agent'),
+        principalId: decodeString(payload.principalId, 'Authorised WebSocket principal id'),
+        clientInstanceId: decodeString(payload.clientInstanceId, 'Authorised WebSocket client instance id'),
+        displayName: decodeString(payload.displayName, 'Authorised WebSocket display name'),
+        userAgent: decodeNullableString(payload.userAgent, 'Authorised WebSocket user agent'),
         platform: requireOneOf(payload.platform, CLIENT_PLATFORMS, 'Authorised WebSocket platform'),
-        capabilities: readStringArray(payload.capabilities, 'Authorised WebSocket capabilities'),
-        expiresAtEpochMs: readEpoch(payload.expiresAtEpochMs, 'Authorised WebSocket expiry time')
+        capabilities: decodeStringArray(payload.capabilities, 'Authorised WebSocket capabilities'),
+        expiresAtEpochMs: decodeEpoch(payload.expiresAtEpochMs, 'Authorised WebSocket expiry time')
     };
 }
 
@@ -152,7 +152,7 @@ export function decodeClientAuthorisedWsTicketConnectAppInboxPayload(
         connection: decodeClientAuthorisedWsSessionConnectAppInboxPayload(
             requireJsonWireValue(payload.connection, 'Authorised WebSocket connection')
         ),
-        ticketDigest: readString(payload.ticketDigest, 'Authorised WebSocket ticket digest')
+        ticketDigest: decodeString(payload.ticketDigest, 'Authorised WebSocket ticket digest')
     };
 }
 
@@ -172,11 +172,11 @@ export function decodeClientAuthorisedWsSessionDisconnectAppInboxPayload(
         connection: decodeClientAuthorisedWsSessionConnectAppInboxPayload(
             requireJsonWireValue(payload.connection, 'Authorised WebSocket connection')
         ),
-        disconnectedAtEpochMs: readEpoch(
+        disconnectedAtEpochMs: decodeEpoch(
             payload.disconnectedAtEpochMs,
             'Authorised WebSocket disconnect time'
         ),
-        reason: readString(payload.reason, 'Authorised WebSocket disconnect reason')
+        reason: decodeString(payload.reason, 'Authorised WebSocket disconnect reason')
     };
 }
 
@@ -186,8 +186,8 @@ export function decodeClientExpiredSessionsAppInboxPayload(
     const payload = requireJsonWireObject(value, 'Client expiry AppInbox payload');
     requireExactKeys(payload, ['atEpochMs', 'afterKey'], 'Client expiry AppInbox payload');
     return {
-        atEpochMs: readEpoch(payload.atEpochMs, 'Client expiry time'),
-        afterKey: readNullableString(payload.afterKey, 'Client expiry cursor')
+        atEpochMs: decodeEpoch(payload.atEpochMs, 'Client expiry time'),
+        afterKey: decodeNullableString(payload.afterKey, 'Client expiry cursor')
     };
 }
 
@@ -206,9 +206,9 @@ function decodeClientSessionPayload(value: JsonWireValue, label: string): Readon
     );
     return {
         scope: decodeStateScope(payload.scope),
-        principalId: readString(payload.principalId, `${label} principal id`),
-        clientInstanceId: readString(payload.clientInstanceId, `${label} client instance id`),
-        sessionId: readString(payload.sessionId, `${label} session id`),
+        principalId: decodeString(payload.principalId, `${label} principal id`),
+        clientInstanceId: decodeString(payload.clientInstanceId, `${label} client instance id`),
+        sessionId: decodeString(payload.sessionId, `${label} session id`),
         request: payload.request
     };
 }
@@ -217,8 +217,8 @@ function decodeStateScope(value: JsonWireValue | undefined): StateScope {
     const scope = requireJsonWireObject(value, 'Client AppInbox scope');
     requireExactKeys(scope, ['applicationId', 'workspaceId'], 'Client AppInbox scope');
     return {
-        applicationId: readString(scope.applicationId, 'Client scope application id'),
-        workspaceId: readString(scope.workspaceId, 'Client scope workspace id')
+        applicationId: decodeString(scope.applicationId, 'Client scope application id'),
+        workspaceId: decodeString(scope.workspaceId, 'Client scope workspace id')
     };
 }
 
@@ -244,7 +244,7 @@ function decodeUpsertClientPrincipalRequest(
     });
     return {
         ...decodeMutationActor(request),
-        username: readString(request.username, 'Client principal username'),
+        username: decodeString(request.username, 'Client principal username'),
         ...optionalStringField(request, 'displayName'),
         ...optionalStringField(request, 'avatarUrl'),
         ...(request.status === undefined
@@ -252,7 +252,7 @@ function decodeUpsertClientPrincipalRequest(
             : { status: requireOneOf(request.status, CLIENT_PRINCIPAL_STATUSES, 'Client principal status') }),
         ...optionalStringField(request, 'authProvider'),
         ...optionalStringField(request, 'externalSubjectId'),
-        ...(request.roles === undefined ? {} : { roles: readStringArray(request.roles, 'Client principal roles') }),
+        ...(request.roles === undefined ? {} : { roles: decodeStringArray(request.roles, 'Client principal roles') }),
         ...(request.metadata === undefined
             ? {}
             : { metadata: requireJsonWireObject(request.metadata, 'Client principal metadata') }),
@@ -291,7 +291,7 @@ function decodeUpsertClientInstanceRequest(
         ...optionalStringField(request, 'userAgent'),
         ...(request.capabilities === undefined
             ? {}
-            : { capabilities: readStringArray(request.capabilities, 'Client instance capabilities') })
+            : { capabilities: decodeStringArray(request.capabilities, 'Client instance capabilities') })
     };
 }
 
@@ -309,7 +309,7 @@ function decodeConnectClientSessionRequest(
     ]);
     return {
         ...decodeMutationActor(request),
-        generationId: readString(request.generationId, 'Client session generation id'),
+        generationId: decodeString(request.generationId, 'Client session generation id'),
         ...(request.presenceState === undefined
             ? {}
             : { presenceState: requireOneOf(request.presenceState, CLIENT_PRESENCE_STATES, 'Client presence state') }),
@@ -334,7 +334,7 @@ function decodeHeartbeatClientSessionRequest(
     ]);
     return {
         ...decodeMutationActor(request),
-        generationId: readString(request.generationId, 'Client session generation id'),
+        generationId: decodeString(request.generationId, 'Client session generation id'),
         ...(request.presenceState === undefined
             ? {}
             : { presenceState: requireOneOf(request.presenceState, CLIENT_PRESENCE_STATES, 'Client presence state') }),
@@ -353,7 +353,7 @@ function decodeDisconnectClientSessionRequest(
     ]);
     return {
         ...decodeMutationActor(request),
-        generationId: readString(request.generationId, 'Client session generation id'),
+        generationId: decodeString(request.generationId, 'Client session generation id'),
         ...optionalEpochField(request, 'disconnectedAtEpochMs'),
         ...optionalEpochField(request, 'lastHeartbeatAtEpochMs'),
         ...optionalEpochField(request, 'expiresAtEpochMs')
@@ -388,35 +388,35 @@ function optionalStringField(
     value: JsonWireObject,
     key: string
 ): Readonly<Record<string, string>> {
-    return value[key] === undefined ? {} : { [key]: readString(value[key], key) };
+    return value[key] === undefined ? {} : { [key]: decodeString(value[key], key) };
 }
 
 function optionalEpochField(
     value: JsonWireObject,
     key: string
 ): Readonly<Record<string, number>> {
-    return value[key] === undefined ? {} : { [key]: readEpoch(value[key], key) };
+    return value[key] === undefined ? {} : { [key]: decodeEpoch(value[key], key) };
 }
 
-function readString(value: JsonWireValue | undefined, label: string): string {
+function decodeString(value: JsonWireValue | undefined, label: string): string {
     requireString(value, label);
     return value;
 }
 
-function readNullableString(value: JsonWireValue | undefined, label: string): string | null {
-    return value === null ? null : readString(value, label);
+function decodeNullableString(value: JsonWireValue | undefined, label: string): string | null {
+    return value === null ? null : decodeString(value, label);
 }
 
-function readEpoch(value: JsonWireValue | undefined, label: string): number {
+function decodeEpoch(value: JsonWireValue | undefined, label: string): number {
     requireEpoch(value, label);
     return Number(value);
 }
 
-function readStringArray(value: JsonWireValue | undefined, label: string): readonly string[] {
+function decodeStringArray(value: JsonWireValue | undefined, label: string): readonly string[] {
     if (!Array.isArray(value)) {
         throw new TypeError(`${label} must be an array`);
     }
-    return value.map((entry, index) => readString(entry, `${label} ${index}`));
+    return value.map((entry, index) => decodeString(entry, `${label} ${index}`));
 }
 
 function requireJsonWireValue(value: JsonWireValue | undefined, label: string): JsonWireValue {

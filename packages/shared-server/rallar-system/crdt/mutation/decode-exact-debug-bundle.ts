@@ -11,7 +11,7 @@ import {
     requireExactOptionalKeys,
     requireOneOf,
     requireString
-} from '../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import { decodeExactDocumentMetadata } from './decoding/decode-exact-document-metadata.ts';
@@ -57,10 +57,14 @@ function validateExactDebugBundle(bundle: JsonWireObject): asserts bundle is Jso
         throw new TypeError('CRDT debug bundle document key differs from document');
     }
     if ('metadata' in fields) {
-        decodeExactDocumentMetadata(fields.metadata);
+        if (toRallarCrdtDocumentKey(decodeExactDocumentMetadata(fields.metadata).document) !== fields.documentKey) {
+            throw new TypeError('CRDT debug metadata document differs from bundle');
+        }
     }
     if ('snapshot' in fields) {
-        decodeExactSnapshotEnvelope(fields.snapshot);
+        if (toRallarCrdtDocumentKey(decodeExactSnapshotEnvelope(fields.snapshot).document) !== fields.documentKey) {
+            throw new TypeError('CRDT debug snapshot document differs from bundle');
+        }
     }
     const records = decodeExactRecords(fields.records, document);
     decodeExactRedaction(fields.redaction);
@@ -157,64 +161,65 @@ function decodeExactBundleIntegrity(
     }
 }
 
+const HEALTH_REQUIRED = [
+    'replicaId',
+    'pendingUpdateCount',
+    'failedPendingUpdateCount',
+    'dependencyBlockedUpdateCount',
+    'seenUpdateCount'
+];
+const HEALTH_OPTIONAL = [
+    'lastServerAppendSequence',
+    'lastServerAckAtEpochMs',
+    'lastSyncError',
+    'snapshotAgeMs',
+    'updateLogLag',
+    'quota',
+    'replayDurationMs',
+    'corruptLocalArtifactCount',
+    'transportStrategy',
+    'lastLiveTransport',
+    'lastLiveSendStatus',
+    'liveSentUpdateCount',
+    'liveReceivedUpdateCount',
+    'liveDuplicateUpdateCount',
+    'liveRejectedUpdateCount',
+    'liveDependencyBlockedUpdateCount',
+    'liveRetriedUpdateCount',
+    'liveSyncRequestCount',
+    'liveSyncResponseCount'
+];
+
+const HEALTH_OPTIONAL_COUNTS = [
+    'lastServerAppendSequence',
+    'lastServerAckAtEpochMs',
+    'snapshotAgeMs',
+    'updateLogLag',
+    'replayDurationMs',
+    'corruptLocalArtifactCount',
+    'liveSentUpdateCount',
+    'liveReceivedUpdateCount',
+    'liveDuplicateUpdateCount',
+    'liveRejectedUpdateCount',
+    'liveDependencyBlockedUpdateCount',
+    'liveRetriedUpdateCount',
+    'liveSyncRequestCount',
+    'liveSyncResponseCount'
+];
+
 function decodeExactHealth(value: JsonWireValue | undefined): void {
     const health = requireCrdtJsonWireObject(value, 'CRDT debug health');
-    const required = [
-        'replicaId',
-        'pendingUpdateCount',
-        'failedPendingUpdateCount',
-        'dependencyBlockedUpdateCount',
-        'seenUpdateCount'
-    ];
-    const optional = [
-        'lastServerAppendSequence',
-        'lastServerAckAtEpochMs',
-        'lastSyncError',
-        'snapshotAgeMs',
-        'updateLogLag',
-        'quota',
-        'replayDurationMs',
-        'corruptLocalArtifactCount',
-        'transportStrategy',
-        'lastLiveTransport',
-        'lastLiveSendStatus',
-        'liveSentUpdateCount',
-        'liveReceivedUpdateCount',
-        'liveDuplicateUpdateCount',
-        'liveRejectedUpdateCount',
-        'liveDependencyBlockedUpdateCount',
-        'liveRetriedUpdateCount',
-        'liveSyncRequestCount',
-        'liveSyncResponseCount'
-    ];
     requireExactOptionalKeys({
         value: health,
-        required,
-        optional,
+        required: HEALTH_REQUIRED,
+        optional: HEALTH_OPTIONAL,
         label: 'CRDT debug health'
     });
     requireString(health.replicaId, 'CRDT debug health replicaId');
-    for (const field of required.slice(1)) {
+    for (const field of HEALTH_REQUIRED.slice(1)) {
         requireEpoch(health[field], `CRDT debug health ${field}`);
     }
-    for (
-        const field of [
-            'lastServerAppendSequence',
-            'lastServerAckAtEpochMs',
-            'snapshotAgeMs',
-            'updateLogLag',
-            'replayDurationMs',
-            'corruptLocalArtifactCount',
-            'liveSentUpdateCount',
-            'liveReceivedUpdateCount',
-            'liveDuplicateUpdateCount',
-            'liveRejectedUpdateCount',
-            'liveDependencyBlockedUpdateCount',
-            'liveRetriedUpdateCount',
-            'liveSyncRequestCount',
-            'liveSyncResponseCount'
-        ]
-    ) {
+    for (const field of HEALTH_OPTIONAL_COUNTS) {
         if (field in health) {
             requireEpoch(health[field], `CRDT debug health ${field}`);
         }

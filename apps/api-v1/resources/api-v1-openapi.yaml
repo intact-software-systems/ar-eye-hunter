@@ -1004,6 +1004,83 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves:
+    get:
+      tags: [Group State]
+      summary: Recover this principal's pending and retained terminal room moves
+      description: Authenticated participant lookup, newest proposal first. Contains no private admission credentials. Membership and browser arrival are separate observations.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Moves in this scope whose pinned cohort contains the authenticated principal.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupMove'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Propose, consent to, commit or acknowledge a room move
+      description: |
+        Pins at most sixteen present player sessions for two minutes. Every selected
+        session confirms separately; only the organizer commits after all confirm.
+        Commit admits all distinct principals atomically under current admission
+        policy, or admits none. Source memberships and governance are preserved.
+        Arrival is a later participant observation after browser activation.
+        Each action uses its own stable request ID; conflicting reuse returns 409.
+        Codes and invitation tokens are accepted only on confirmation and never returned.
+        Source and destination must be different rooms in the route's application/workspace.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMoveRequest'
+      responses:
+        '200':
+          description: Durable move decision; committed membership does not imply browser arrival.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMove'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/{requestId}:
     post:
       tags: [Group State]
@@ -7411,6 +7488,117 @@ components:
           type: string
         groupId:
           type: string
+
+    GroupMoveRequest:
+      type: object
+      additionalProperties: false
+      required: [moveId, source, destination, action, joinCode, inviteToken]
+      properties:
+        requestId:
+          type: string
+          description: When supplied, must match the request ID path segment.
+        moveId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        source:
+          $ref: '#/components/schemas/GroupRef'
+        destination:
+          $ref: '#/components/schemas/GroupRef'
+        action:
+          type: string
+          enum: [propose, confirm, withdraw, decline, cancel, commit, arrive]
+        joinCode:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 256
+        inviteToken:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 256
+    GroupMoveParticipant:
+      type: object
+      additionalProperties: false
+      required: [principalId, sessionId, generationId, generationVersion, confirmedAtEpochMs, arrivedAtEpochMs]
+      properties:
+        principalId:
+          type: string
+        sessionId:
+          type: string
+        generationId:
+          type: string
+        generationVersion:
+          type: integer
+          minimum: 0
+        confirmedAtEpochMs:
+          type: [integer, 'null']
+          minimum: 0
+        arrivedAtEpochMs:
+          type: [integer, 'null']
+          minimum: 0
+    GroupMove:
+      type: object
+      additionalProperties: false
+      required: [
+        moveId,
+        source,
+        destination,
+        organizerSessionId,
+        participants,
+        createdAtEpochMs,
+        expiresAtEpochMs,
+        completedAtEpochMs,
+        status,
+        reason,
+        admissionFailure,
+      ]
+      properties:
+        moveId:
+          type: string
+        source:
+          $ref: '#/components/schemas/GroupRef'
+        destination:
+          $ref: '#/components/schemas/GroupRef'
+        organizerSessionId:
+          type: string
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/GroupMoveParticipant'
+        createdAtEpochMs:
+          type: integer
+          minimum: 0
+        expiresAtEpochMs:
+          type: integer
+          minimum: 0
+          description: Exactly 120000 milliseconds after creation; delayed expiry work cannot extend consent.
+        completedAtEpochMs:
+          type: [integer, 'null']
+          minimum: 0
+        status:
+          type: string
+          enum: [proposed, committed, cancelled, expired, denied]
+        reason:
+          type: [string, 'null']
+          enum: [participant-declined, organizer-cancelled, source-roster-changed, source-unavailable, proposal-expired, admission-denied, null]
+        admissionFailure:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [principalId, code, message]
+              properties:
+                principalId:
+                  type: string
+                code:
+                  oneOf:
+                    - $ref: '#/components/schemas/GroupPolicyReasonCode'
+                    - type: string
+                      enum: [group-move-approval-required, group-move-destination-missing]
+                message:
+                  type: string
 
     QuickJoinGroupRequest:
       type: object

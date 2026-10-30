@@ -1,5 +1,5 @@
+import { requireExactOptionalKeys, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { requireExactOptionalKeys, requireString } from '../protocol/exact-object-decoding.ts';
 import {
     decodeJsonWireText,
     decodeJsonWireValue,

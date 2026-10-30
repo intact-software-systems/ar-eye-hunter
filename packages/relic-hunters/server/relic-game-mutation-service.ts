@@ -27,16 +27,16 @@ import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-syste
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateEntryRead } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
     requireEpoch,
     requireExactKeys,
     requireOneOf,
     requireRecord,
     requireString
-} from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateEntryRead } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';

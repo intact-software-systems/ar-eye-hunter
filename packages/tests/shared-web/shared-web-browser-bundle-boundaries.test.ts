@@ -95,6 +95,18 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rallar-media-calls.ts')
     },
     {
+        label: 'browser/rooms/move/rallar-room-move.ts',
+        entry: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
+        output: 'rallar-room-move.min.js',
+        brotliBudgetKiB: budgetFor('browser/rooms/move/rallar-room-move.ts')
+    },
+    {
+        label: 'react/room-move-panel.tsx',
+        entry: 'packages/shared-web/react/room-move-panel.tsx',
+        output: 'room-move-panel.min.js',
+        brotliBudgetKiB: budgetFor('react/room-move-panel.tsx')
+    },
+    {
         label: 'browser/rooms/directory/rallar-room-directory.ts',
         entry: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
         output: 'rallar-room-directory.boundary.min.js',
@@ -178,6 +190,7 @@ describe('shared-web browser bundle boundaries', () => {
     });
 
     it.each([
+        'browser/rooms/move/rallar-room-move.ts',
         'browser/rooms/entry/rallar-room-entry.ts',
         'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
         'browser/rooms/directory/rallar-room-directory.ts'
@@ -190,6 +203,8 @@ describe('shared-web browser bundle boundaries', () => {
             }
             const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
             expect(inputs).not.toContain('packages/shared-web/browser/rallar.ts');
+            expect(inputs).not.toContainEqual(expect.stringContaining('packages/shared-server/'));
+            expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/react/'));
             expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
             expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
         }

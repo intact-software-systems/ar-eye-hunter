@@ -16,13 +16,13 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     requireExactKeys,
     requireExactOptionalKeys,
     requireOneOf,
     requireString
-} from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+} from '@shared/api/exact-object-decoding.ts';
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 

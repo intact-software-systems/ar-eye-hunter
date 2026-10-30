@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { RelicRoomMove } from './relic-room-move.tsx';
 
 import { RelicAiCompanionPanel } from '../ai/relic-ai-panel.tsx';
 import { useRelicPlanningAi } from '../ai/useRelicPlanningAi.ts';
@@ -56,6 +57,7 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
             </button>
             {game.session && <RelicSectionMenu game={game} />}
             <RelicRoomEntry game={game} />
+            {game.session && <RelicRoomMove game={game} />}
             <RelicLobby game={game} preferences={preferences} />
             {game.session && game.roomId && (
                 <>

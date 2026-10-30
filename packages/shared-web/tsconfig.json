@@ -22,10 +22,12 @@
       "@shared/*": [
         "../../packages/shared/*"
       ]
-    }
+    },
+    "jsx": "react-jsx"
   },
   "include": [
     "**/*.ts",
+    "**/*.tsx",
     "**/*.d.ts",
     "../../types/**/*.d.ts"
   ]

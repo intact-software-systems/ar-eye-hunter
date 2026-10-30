@@ -1,4 +1,4 @@
-import { requireExactKeys, requireRecord, requireString } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {

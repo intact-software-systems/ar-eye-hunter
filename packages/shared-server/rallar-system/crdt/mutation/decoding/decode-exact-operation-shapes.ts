@@ -1,4 +1,4 @@
-import { requireExactKeys, requireExactOptionalKeys } from '../../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireExactOptionalKeys } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { requireCrdtJsonWireObject } from './require-crdt-json-wire-object.ts';
 

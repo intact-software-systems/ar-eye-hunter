@@ -131,6 +131,19 @@ Automatic directory reads call only `rooms.directory`. Explicit full room refres
 action and owns its separate current-room guard. Existing HTTP private revalidation is reused without
 an app-owned ETag cache; 304 does not promise less database work. Listing is not access control.
 
+## Consensual room moves
+
+`RallarRoomMove` is imported directly from `browser/rooms/move/rallar-room-move.ts`; its optional
+React view is `react/room-move-panel.tsx`. One owner handles consent, authenticated recovery,
+notification coalescing and arrival in both games. Game participation checks stay in the app.
+
+The [Move together navigation map](../packages/shared-server/rallar-system/group-state/move/README.md)
+traces HTTP, AppInbox, optimistic admission, deadline delivery and browser activation. All destination
+memberships and the committed move share one transaction. Presence activation remains a separate,
+retryable session operation. Source memberships remain; present and away are projections of live
+sessions, not different access rights. Fresh entry generations prevent a disconnected presence
+tombstone from accepting an old connect, and arrival waits for the authoritative presence summary.
+
 ## Temporary retention is a separate group-state capability
 
 Creation accepts `retention: { mode: 'temporary', reconnectGraceMs? }` or persistent intent. Absence

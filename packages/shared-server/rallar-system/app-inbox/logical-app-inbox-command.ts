@@ -4,6 +4,8 @@ import { decodeCrdtMutationCommand } from '../crdt/mutation/crdt-mutation-comman
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { decodeGroupMutationDescriptor } from '../group-state/inbox/decode-group-state-inbox-authority.ts';
+import { decodeGroupMoveCommand } from '../group-state/move/group-move-command.ts';
+import { decodeGroupMoveDeadline } from '../group-state/move/group-move-outbox.ts';
 import { assertGroupMutationCommand } from '../group-state/mutation/command-validation/assert-group-mutation-command.ts';
 import { decodeGroupQuickJoinCommand } from '../group-state/quick-join/group-quick-join-codec.ts';
 import { decodeGroupRetentionCommand } from '../group-state/retention/group-retention-service.ts';
@@ -39,6 +41,21 @@ export function toLogicalAppInboxCommand(
     const stableDomainCommand = toStableDomainCommand(enqueue.type, enqueue.data);
     if (stableDomainCommand) {
         return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableDomainCommand });
+    }
+    if (enqueue.type === AppInboxType.GROUP_MOVE_EXPIRE) {
+        return encodeLogicalCommand({
+            type: enqueue.type,
+            authority: null,
+            data: encodeJsonWireValue(decodeGroupMoveDeadline(enqueue.data))
+        });
+    }
+    if (enqueue.type === AppInboxType.GROUP_MOVE) {
+        // Consent belongs to the exact selected session, including on replay.
+        return encodeLogicalCommand({
+            type: enqueue.type,
+            authority: null,
+            data: encodeJsonWireValue(decodeGroupMoveCommand(enqueue.data))
+        });
     }
     if (enqueue.type === AppInboxType.GROUP_QUICK_JOIN) {
         const command = decodeGroupQuickJoinCommand(enqueue.data);

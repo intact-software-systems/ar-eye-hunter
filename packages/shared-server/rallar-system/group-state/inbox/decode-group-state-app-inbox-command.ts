@@ -1,5 +1,5 @@
+import { requireExactKeys, requireString } from '@shared/api/exact-object-decoding.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
@@ -126,69 +126,40 @@ function isAuthenticatedGroupMutationType(
         type !== AppInboxType.GROUP_ACTIVATION_STATUS;
 }
 
-function toGroupMutationOperation(
-    type: AuthenticatedGroupMutationInboxType
-): GroupMutationCommand['operation'] {
-    switch (type) {
-        case AppInboxType.GROUP_CREATE:
-            return 'createGroup';
-        case AppInboxType.GROUP_UPDATE:
-            return 'updateGroup';
-        case AppInboxType.GROUP_DIRECTOR_APPOINT:
-            return 'appointDirector';
-        case AppInboxType.GROUP_TRANSPORT_PAUSE:
-            return 'pauseGroupTransport';
-        case AppInboxType.GROUP_TRANSPORT_RESUME:
-            return 'resumeGroupTransport';
-        case AppInboxType.GROUP_FORMATION_START:
-            return 'startGroupFormation';
-        case AppInboxType.GROUP_FORMATION_RESET:
-            return 'resetGroupFormation';
-        case AppInboxType.GROUP_PLAN:
-            return 'planGroupLayout';
-        case AppInboxType.GROUP_CONNECT:
-            return 'connectGroup';
-        case AppInboxType.GROUP_ACTIVATE:
-            return 'activateGroup';
-        case AppInboxType.GROUP_RECONFIGURE:
-            return 'reconfigureGroup';
-        case AppInboxType.GROUP_JOIN:
-            return 'joinGroup';
-        case AppInboxType.GROUP_INVITE_CREATE:
-            return 'createGroupInvite';
-        case AppInboxType.GROUP_INVITE_REVOKE:
-            return 'revokeGroupInvite';
-        case AppInboxType.GROUP_INVITE_ACCEPT:
-            return 'acceptGroupInvite';
-        case AppInboxType.GROUP_ADMISSION_GRANT:
-            return 'grantGroupAdmission';
-        case AppInboxType.GROUP_ADMISSION_DECLINE:
-            return 'declineGroupAdmission';
-        case AppInboxType.GROUP_JOIN_CODE_ROTATE:
-            return 'rotateGroupJoinCode';
-        case AppInboxType.GROUP_MEMBER_REMOVE:
-            return 'removeGroupMember';
-        case AppInboxType.GROUP_MEMBER_BAN:
-            return 'banGroupMember';
-        case AppInboxType.GROUP_MEMBER_UNBAN:
-            return 'unbanGroupMember';
-        case AppInboxType.GROUP_MEMBER_ROLE_SET:
-            return 'setGroupMemberRole';
-        case AppInboxType.GROUP_PUBLICATION_GRANT:
-            return 'grantGroupPublication';
-        case AppInboxType.GROUP_PUBLICATION_REVOKE:
-            return 'revokeGroupPublication';
-        case AppInboxType.GROUP_OWNERSHIP_TRANSFER:
-            return 'transferGroupOwnership';
-        case AppInboxType.GROUP_MEMBER_UPSERT:
-            return 'upsertMember';
-        case AppInboxType.GROUP_PRESENCE_CONNECT:
-            return 'connectPresence';
-        case AppInboxType.GROUP_PRESENCE_HEARTBEAT:
-            return 'heartbeatPresence';
-        case AppInboxType.GROUP_PRESENCE_DISCONNECT:
-            return 'disconnectPresence';
-    }
+const GROUP_MUTATION_OPERATIONS: Record<AuthenticatedGroupMutationInboxType, GroupMutationCommand['operation']> = {
+    [AppInboxType.GROUP_CREATE]: 'createGroup',
+    [AppInboxType.GROUP_UPDATE]: 'updateGroup',
+    [AppInboxType.GROUP_DIRECTOR_APPOINT]: 'appointDirector',
+    [AppInboxType.GROUP_TRANSPORT_PAUSE]: 'pauseGroupTransport',
+    [AppInboxType.GROUP_TRANSPORT_RESUME]: 'resumeGroupTransport',
+    [AppInboxType.GROUP_FORMATION_START]: 'startGroupFormation',
+    [AppInboxType.GROUP_FORMATION_RESET]: 'resetGroupFormation',
+    [AppInboxType.GROUP_PLAN]: 'planGroupLayout',
+    [AppInboxType.GROUP_CONNECT]: 'connectGroup',
+    [AppInboxType.GROUP_ACTIVATE]: 'activateGroup',
+    [AppInboxType.GROUP_RECONFIGURE]: 'reconfigureGroup',
+    [AppInboxType.GROUP_JOIN]: 'joinGroup',
+    [AppInboxType.GROUP_INVITE_CREATE]: 'createGroupInvite',
+    [AppInboxType.GROUP_INVITE_REVOKE]: 'revokeGroupInvite',
+    [AppInboxType.GROUP_INVITE_ACCEPT]: 'acceptGroupInvite',
+    [AppInboxType.GROUP_ADMISSION_GRANT]: 'grantGroupAdmission',
+    [AppInboxType.GROUP_ADMISSION_DECLINE]: 'declineGroupAdmission',
+    [AppInboxType.GROUP_JOIN_CODE_ROTATE]: 'rotateGroupJoinCode',
+    [AppInboxType.GROUP_MEMBER_REMOVE]: 'removeGroupMember',
+    [AppInboxType.GROUP_MEMBER_BAN]: 'banGroupMember',
+    [AppInboxType.GROUP_MEMBER_UNBAN]: 'unbanGroupMember',
+    [AppInboxType.GROUP_MEMBER_ROLE_SET]: 'setGroupMemberRole',
+    [AppInboxType.GROUP_PUBLICATION_GRANT]: 'grantGroupPublication',
+    [AppInboxType.GROUP_PUBLICATION_REVOKE]: 'revokeGroupPublication',
+    [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: 'transferGroupOwnership',
+    [AppInboxType.GROUP_MEMBER_UPSERT]: 'upsertMember',
+    [AppInboxType.GROUP_PRESENCE_CONNECT]: 'connectPresence',
+    [AppInboxType.GROUP_PRESENCE_HEARTBEAT]: 'heartbeatPresence',
+    [AppInboxType.GROUP_PRESENCE_DISCONNECT]: 'disconnectPresence'
+};
+
+function toGroupMutationOperation(type: AuthenticatedGroupMutationInboxType): GroupMutationCommand['operation'] {
+    return GROUP_MUTATION_OPERATIONS[type];
 }
 
 function requireJsonWireObject(
