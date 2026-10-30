@@ -1,10 +1,5 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import {
-    decodeGrantGroupPublicationRequest,
-    decodeRevokeGroupPublicationRequest
-} from '@shared-server/rallar-system/group-state/mutation/publication/decode-group-publication-requests.ts';
-import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { GrantGroupPublicationRequest, RevokeGroupPublicationRequest } from '@shared/api/state-types.ts';
 
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
@@ -27,11 +22,6 @@ function registerGrantGroupPublicationRoute(app: Hono, dependencies: GroupStateR
         async (context) => {
             try {
                 const authSession = await dependencies.requireApiAuthSession(context.req);
-                const request = decodeGrantGroupPublicationRequest(
-                    await readGroupStateRouteRequest<GrantGroupPublicationRequest>(context)
-                ).fold((issues) => {
-                    throw new TypeError(formatRallarValidation(issues));
-                }, (decoded) => decoded);
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
@@ -43,7 +33,7 @@ function registerGrantGroupPublicationRoute(app: Hono, dependencies: GroupStateR
                             traceId: readApiRequestTraceId(context),
                             groupId: context.req.param('groupId'),
                             principalId: context.req.param('principalId'),
-                            request
+                            request: await readGroupStateRouteRequest<GrantGroupPublicationRequest>(context)
                         })
                     )
                 });
@@ -62,11 +52,6 @@ function registerRevokeGroupPublicationRoute(app: Hono, dependencies: GroupState
         async (context) => {
             try {
                 const authSession = await dependencies.requireApiAuthSession(context.req);
-                const request = decodeRevokeGroupPublicationRequest(
-                    await readGroupStateRouteRequest<RevokeGroupPublicationRequest>(context)
-                ).fold((issues) => {
-                    throw new TypeError(formatRallarValidation(issues));
-                }, (decoded) => decoded);
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
@@ -78,7 +63,7 @@ function registerRevokeGroupPublicationRoute(app: Hono, dependencies: GroupState
                             traceId: readApiRequestTraceId(context),
                             groupId: context.req.param('groupId'),
                             principalId: context.req.param('principalId'),
-                            request
+                            request: await readGroupStateRouteRequest<RevokeGroupPublicationRequest>(context)
                         })
                     )
                 });

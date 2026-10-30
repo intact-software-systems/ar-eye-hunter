@@ -34,9 +34,7 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
    policy denials (including `group-full`), admission rate limits, and inbox failures to HTTP
    responses.
 10. [registerGroupPublicationRoutes](./register-group-publication-routes.ts#registerGroupPublicationRoutes)
-    owns the publication grant and revoke routes; it decodes the body with
-    [decodeGrantGroupPublicationRequest](../../../../packages/shared-server/rallar-system/group-state/mutation/publication/decode-group-publication-requests.ts#decodeGrantGroupPublicationRequest)
-    before enqueue.
+    owns the publication grant and revoke routes.
 
 ## Boundaries
 

@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 publication grants over REST. The creator's declared initial grant is on the 201 snapshot; an owner grants a member publish on one exact topic, the 200 snapshot and a later read carry the row, the group revision advances, and the event log names publication-grant-changed with the resulting permissions. An equal replay answers the first result and a changed body under the same requestId is an idempotency conflict. An admin cannot grant an admin and a member cannot grant itself (forbidden-role); a principal holds at most 64 topics, so the 65th is refused capacity with limit topics-per-principal. A revoke removes the row, and a member who leaves, or is banned, unbanned and rejoins, comes back holding no grant.",
+  "description": "No-browser API-v1 publication grants over REST. The creator's declared initial grant is on the 201 snapshot; an owner grants a member publish on one exact topic, the 200 snapshot and a later read carry the row, the group revision advances, and the event log names publication-grant-changed with the resulting permissions. A change-less grant under a new requestId is a no-op: the group revision stays and no event is written. A changed body under the grant's requestId is an idempotency conflict, and replaying it after the revoke answers the first result. forbidden-role names its branch: an admin cannot grant an admin, a member cannot grant itself, and a spectator is never granted publish. A principal holds at most 64 topics, so the 65th is refused capacity with limit topics-per-principal. A revoke removes the row, and a member who leaves, or is banned, unbanned and rejoins, comes back holding no grant.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -301,6 +301,70 @@
       }
     },
     {
+      "name": "registerErin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrant-register-erin-{runId}",
+        "body": {
+          "username": "pubgrant-erin-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "erin client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginErin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrant-login-user-erin-{runId}",
+        "body": {
+          "username": "pubgrant-erin-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "erinClientId": "body.clientId",
+          "erinSessionId": "body.sessionId",
+          "erinAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveErinAuthHeader",
+      "type": "set",
+      "output": "erinAuthHeader",
+      "secret": true,
+      "redactAs": "erinAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.erinAccessToken"
+          }
+        ]
+      }
+    },
+    {
       "name": "createGroupWithDeclaredGrant",
       "type": "http",
       "connection": "api",
@@ -316,6 +380,7 @@
           "displayName": "Publication grants {runId}",
           "kind": "room",
           "joinMode": "open",
+          "maxSpectators": 2,
           "publicationGrants": {
             "room.pubgrant-feed": {
               "publish": true,
@@ -457,6 +522,34 @@
       }
     },
     {
+      "name": "erinWatchesAsSpectator",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/pubgrant-join-spectator-erin-{runId}",
+        "headers": {
+          "Authorization": "{erinAuthHeader}",
+          "x-client-id": "{erinClientId}"
+        },
+        "body": {
+          "participation": "spectator"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{erinClientId}",
+              "role": "spectator",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "grantBobPublish",
       "type": "http",
       "connection": "api",
@@ -558,6 +651,9 @@
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "eventsBeforeNoOpGrant": "body"
         }
       },
       "expect": {
@@ -579,12 +675,12 @@
       }
     },
     {
-      "name": "replayGrantSameBody",
+      "name": "regrantBobPublishChangesNothing",
       "type": "http",
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-publish-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-regrant-bob-publish-no-op-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -613,6 +709,40 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "readEventsAfterNoOpGrant",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "eventsAfterNoOpGrant": "body"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theNoOpGrantWritesNoEvent",
+      "type": "assert",
+      "actual": {
+        "eventsAfterNoOpGrant": "{eventsAfterNoOpGrant}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "eventsAfterNoOpGrant",
+            "equals": "{eventsBeforeNoOpGrant}"
+          }
+        ]
       }
     },
     {
@@ -665,7 +795,11 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "denial": {
+            "code": "forbidden-role",
+            "message": "Group admins can only govern regular members."
+          }
         }
       }
     },
@@ -692,7 +826,42 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "denial": {
+            "code": "forbidden-role",
+            "message": "Only active group owners/admins can govern group members."
+          }
+        }
+      }
+    },
+    {
+      "name": "spectatorIsNeverGrantedPublish",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{erinClientId}/grant/requests/pubgrant-grant-spectator-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "denial": {
+            "code": "forbidden-role",
+            "message": "A spectator may subscribe but is never granted publish."
+          }
         }
       }
     },
@@ -792,6 +961,43 @@
             },
             {
               "principalId": "{carolClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "replayGrantSameBody",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "causalRevision": {
+            "groupRevision": "{groupRevisionAfterGrant}"
+          },
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrant-feed": {
+                  "publish": true,
+                  "subscribe": false
+                }
+              }
             }
           ]
         }
