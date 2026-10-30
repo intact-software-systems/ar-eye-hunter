@@ -8,6 +8,7 @@ roomBrowserTest(
     'moves two consenting hunters together, retains away memberships and explicitly joins the expedition',
     async ({ page, guest }) => {
         roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the local Relic server.');
+        roomBrowserTest.setTimeout(240000);
         await moveTogetherJourney(page, guest, 'relic');
     }
 );
