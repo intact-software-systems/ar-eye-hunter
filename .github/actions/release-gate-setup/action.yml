@@ -45,7 +45,7 @@ runs:
         path: |
           ~/.cache/deno
           ~/.deno
-        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock', 'packages/**/deno.lock') }}
         restore-keys: |
           ${{ runner.os }}-deno-
 
@@ -56,13 +56,18 @@ runs:
         path: |
           ~/.cache/deno
           ~/.deno
-        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock', 'packages/**/deno.lock') }}
         restore-keys: |
           ${{ runner.os }}-deno-
 
     - name: Install dependencies
       shell: bash
       run: npm ci
+
+    - name: Cache the native RTC CLI for offline admission tests
+      if: ${{ inputs.deno == 'true' }}
+      shell: bash
+      run: deno cache --frozen --config packages/shared-rtc-bench/deno.json packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts
 
     - name: Install Playwright Chromium
       if: ${{ inputs.playwright == 'true' }}

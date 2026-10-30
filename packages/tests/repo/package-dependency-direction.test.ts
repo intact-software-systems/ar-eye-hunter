@@ -175,6 +175,7 @@ describe('package dependency direction', () => {
 
     it.each([
         'deno.lock',
+        'packages/shared-rtc-bench/deno.lock',
         'apps/api-v1/deno.lock',
         'apps/relic-hunter-server-v1/deno.lock',
         'apps/rallar-black-box-control-server/deno.lock'
