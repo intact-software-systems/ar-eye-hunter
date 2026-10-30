@@ -25,6 +25,7 @@ export default defineConfig({
     root: __dirname,
     resolve: {
         alias: {
+            '@shared-react': path.resolve(__dirname, 'packages/shared-react'),
             '@shared-web': path.resolve(__dirname, 'packages/shared-web'),
             '@shared-server': path.resolve(__dirname, 'packages/shared-server'),
             '@shared': path.resolve(__dirname, 'packages/shared'),

@@ -1,7 +1,8 @@
+import { useRef, useState } from 'react';
+
+import { RoomMovePanel } from '@shared-react/room-move-panel.tsx';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
-import { RoomMovePanel } from '@shared-web/react/room-move-panel.tsx';
-import { useRef, useState } from 'react';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { ARENA_ROOM_SCOPE } from '../game/arena-runtime/arena-room-entry.ts';
 
@@ -14,7 +15,7 @@ export function ArenaRoomMove({ arena }: ArenaRoomMoveProps) {
     current.current = arena;
     const [owner] = useState(() =>
         RallarRoomMove.createBrowser(rallar, async (_destination, run) => {
-            const reason = moveBlocker(current.current);
+            const reason = toMoveBlocker(current.current);
             if (reason) {
                 throw new Error(reason);
             }
@@ -31,12 +32,12 @@ export function ArenaRoomMove({ arena }: ArenaRoomMoveProps) {
             rooms={arena.rooms}
             destinations={arena.openRooms}
             connected={arena.connectionState === 'connected'}
-            blockedReason={moveBlocker(arena)}
+            blockedReason={toMoveBlocker(arena)}
         />
     );
 }
 
-function moveBlocker(arena: ArenaConnection): string | null {
+function toMoveBlocker(arena: ArenaConnection): string | null {
     if (arena.spectating) {
         return 'Spectators stay. Join as player before proposing or confirming a move.';
     }

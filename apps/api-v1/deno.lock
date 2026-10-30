@@ -829,21 +829,18 @@
           "npm:graphology@0.26.0"
         ]
       },
+      "npm:@ar-eye-hunter/shared-react@0.1.0": {
+        "peerDependencies": [
+          "npm:react@^19.2.7"
+        ]
+      },
       "npm:@ar-eye-hunter/shared-rtc-bench@0.1.0": {},
       "npm:@ar-eye-hunter/shared-server@0.1.0": {},
       "npm:@ar-eye-hunter/shared-test@0.1.0": {},
       "npm:@ar-eye-hunter/shared-web@0.1.0": {
         "dependencies": [
           "npm:@js-temporal/polyfill@~0.5.1"
-        ],
-        "peerDependencies": [
-          "npm:react@^19.2.7"
-        ],
-        "peerDependenciesMeta": {
-          "react": {
-            "optional": true
-          }
-        }
+        ]
       },
       "npm:ar-eye-hunter-v1@0.1.0": {
         "dependencies": [

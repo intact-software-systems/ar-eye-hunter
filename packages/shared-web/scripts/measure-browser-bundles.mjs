@@ -36,12 +36,6 @@ const entries = [
         brotliBudgetKiB: budgetsKiB['browser/rooms/move/rallar-room-move.ts']
     },
     {
-        label: 'react/room-move-panel.tsx',
-        entry: 'packages/shared-web/react/room-move-panel.tsx',
-        output: 'room-move-panel.min.js',
-        brotliBudgetKiB: budgetsKiB['react/room-move-panel.tsx']
-    },
-    {
         label: 'browser/rooms/directory/rallar-room-directory.ts',
         entry: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
         output: 'rallar-room-directory.min.js',

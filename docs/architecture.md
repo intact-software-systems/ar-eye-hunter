@@ -131,10 +131,18 @@ Automatic directory reads call only `rooms.directory`. Explicit full room refres
 action and owns its separate current-room guard. Existing HTTP private revalidation is reused without
 an app-owned ETag cache; 304 does not promise less database work. Listing is not access control.
 
+## React package boundary
+
+Common React components and hooks belong in `packages/shared-react`, which may consume
+`packages/shared` and `packages/shared-web`. The `shared`, `shared-web`, `shared-test`,
+`shared-server` and `shared-graph` packages have no React dependency or React-owned code.
+Apps import React components directly from their owning files; there are no forwarding exports
+in the framework-independent packages.
+
 ## Consensual room moves
 
 `RallarRoomMove` is imported directly from `browser/rooms/move/rallar-room-move.ts`; its optional
-React view is `react/room-move-panel.tsx`. One owner handles consent, authenticated recovery,
+React view is `packages/shared-react/room-move-panel.tsx`. One owner handles consent, authenticated recovery,
 notification coalescing and arrival in both games. Game participation checks stay in the app.
 
 The [Move together navigation map](../packages/shared-server/rallar-system/group-state/move/README.md)

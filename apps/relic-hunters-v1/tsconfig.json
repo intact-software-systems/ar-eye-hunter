@@ -16,6 +16,9 @@
       "DOM"
     ],
     "paths": {
+      "@shared-react/*": [
+        "../../packages/shared-react/*"
+      ],
       "@relic-hunters/*": [
         "../../packages/relic-hunters/*"
       ],

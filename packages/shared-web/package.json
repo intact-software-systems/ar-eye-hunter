@@ -12,13 +12,5 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "measure:browser-bundles": "node scripts/measure-browser-bundles.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "peerDependencies": {
-    "react": "^19.2.7"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
   }
 }

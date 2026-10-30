@@ -28,6 +28,7 @@
     "types": [],
     "lib": ["ES2024", "DOM", "WebWorker"],
     "paths": {
+      "@shared-react/*": ["./packages/shared-react/*"],
       "@shared-web/*": ["./packages/shared-web/*"],
       "@shared-server/*": ["./packages/shared-server/*"],
       "@shared-graph/*": ["./packages/shared-graph/*"],

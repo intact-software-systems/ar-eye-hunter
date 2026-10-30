@@ -13,6 +13,9 @@
       "DOM"
     ],
     "paths": {
+      "@shared-react/*": [
+        "../../packages/shared-react/*"
+      ],
       "@api-v1/*": [
         "../../apps/api-v1/*"
       ],

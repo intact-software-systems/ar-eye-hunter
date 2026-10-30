@@ -1,6 +1,6 @@
 import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
+import { RoomMovePanel } from '@shared-react/room-move-panel.tsx';
 import { rallar } from '@shared-web/browser/rallar.ts';
-import { RoomMovePanel } from '@shared-web/react/room-move-panel.tsx';
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 

@@ -9,6 +9,5 @@
   "browser/rooms/entry/rallar-room-entry.ts": 6,
   "browser/rooms/recent-rooms/rallar-recent-rooms.ts": 4,
   "browser/rooms/directory/rallar-room-directory.ts": 5,
-  "browser/rooms/move/rallar-room-move.ts": 8,
-  "react/room-move-panel.tsx": 5
+  "browser/rooms/move/rallar-room-move.ts": 8
 }

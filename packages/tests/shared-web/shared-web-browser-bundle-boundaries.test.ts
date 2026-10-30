@@ -10,6 +10,8 @@ import {
     it
 } from 'vitest';
 
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 interface BundleBoundary {
     readonly label: string;
     readonly entry: string;
@@ -17,12 +19,8 @@ interface BundleBoundary {
     readonly brotliBudgetKiB: number;
 }
 
-type JsonValue = string | number | boolean | null | readonly JsonValue[] | {
-    readonly [key: string]: JsonValue;
-};
-
 interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, JsonValue>>;
+    readonly inputs: Readonly<Record<string, ApiJsonValue>>;
 }
 
 interface SharedWebPackageManifest {
@@ -99,12 +97,6 @@ const budgetedEntries: readonly BundleBoundary[] = [
         entry: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
         output: 'rallar-room-move.min.js',
         brotliBudgetKiB: budgetFor('browser/rooms/move/rallar-room-move.ts')
-    },
-    {
-        label: 'react/room-move-panel.tsx',
-        entry: 'packages/shared-web/react/room-move-panel.tsx',
-        output: 'room-move-panel.min.js',
-        brotliBudgetKiB: budgetFor('react/room-move-panel.tsx')
     },
     {
         label: 'browser/rooms/directory/rallar-room-directory.ts',
@@ -283,7 +275,7 @@ function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     };
 }
 
-function toSharedWebPackageManifest(value: JsonValue): SharedWebPackageManifest {
+function toSharedWebPackageManifest(value: ApiJsonValue): SharedWebPackageManifest {
     const manifest = toJsonObject(value, 'shared-web package manifest');
     return {
         dependencies: toOptionalStringRecord(manifest.dependencies, 'shared-web package manifest.dependencies'),
@@ -294,7 +286,7 @@ function toSharedWebPackageManifest(value: JsonValue): SharedWebPackageManifest 
     };
 }
 
-function toEsbuildMetafile(value: JsonValue): EsbuildMetafile {
+function toEsbuildMetafile(value: ApiJsonValue): EsbuildMetafile {
     const metafile = toJsonObject(value, 'esbuild metafile');
     return {
         inputs: toJsonObject(metafile.inputs, 'esbuild metafile inputs')
@@ -302,7 +294,7 @@ function toEsbuildMetafile(value: JsonValue): EsbuildMetafile {
 }
 
 function toOptionalStringRecord(
-    value: JsonValue | undefined,
+    value: ApiJsonValue | undefined,
     label: string
 ): Readonly<Record<string, string>> | undefined {
     if (value === undefined) {
@@ -319,9 +311,9 @@ function toOptionalStringRecord(
     return stringRecord;
 }
 
-function toJsonObject(value: JsonValue, label: string): Readonly<Record<string, JsonValue>> {
+function toJsonObject(value: ApiJsonValue, label: string): Readonly<Record<string, ApiJsonValue>> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error(`${label} must be an object`);
     }
-    return value as Readonly<Record<string, JsonValue>>;
+    return value as Readonly<Record<string, ApiJsonValue>>;
 }

@@ -18,10 +18,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: { values: ['RallarRoomMove'], types: [], starExports: [], namespaceExports: [] }
     },
     {
-        filePath: 'packages/shared-web/react/room-move-panel.tsx',
-        expected: { values: ['RoomMovePanel'], types: ['RoomMovePanelProps'], starExports: [], namespaceExports: [] }
-    },
-    {
         filePath: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
         expected: { values: ['RallarRoomDirectory'], types: [], starExports: [], namespaceExports: [] }
     },

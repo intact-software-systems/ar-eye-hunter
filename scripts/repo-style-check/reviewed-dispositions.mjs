@@ -7,7 +7,7 @@ import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.m
 export const reviewedDispositions = Object.freeze([
     // Reviewed cohesive optional view: proposal, consent, history and room-presence rendering.
     Object.freeze({
-        path: 'packages/shared-web/react/room-move-panel.tsx',
+        path: 'packages/shared-react/room-move-panel.tsx',
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 50

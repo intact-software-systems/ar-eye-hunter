@@ -1,5 +1,6 @@
-import react from '@vitejs/plugin-react';
 import path from 'node:path';
+
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -7,6 +8,7 @@ export default defineConfig({
     envPrefix: ['VITE_', 'API_'],
     resolve: {
         alias: {
+            '@shared-react': path.resolve(__dirname, '../../packages/shared-react'),
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
             '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),
             '@shared': path.resolve(__dirname, '../../packages/shared')

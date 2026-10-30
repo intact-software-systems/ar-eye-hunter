@@ -1,12 +1,13 @@
+import { useEffect, useId, useState } from 'react';
+
+import type { RallarPeopleOperations, RallarPerson } from '@shared-web/browser/people/rallar-people-contracts.ts';
+import type { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
+import type { RallarRoomSummary } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
 import { computeGroupMemberPresence } from '@shared/api/group-member-presence.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { useEffect, useId, useState } from 'react';
-import type { RallarPeopleOperations, RallarPerson } from '../browser/people/rallar-people-contracts.ts';
-import type { RallarRoomMove } from '../browser/rooms/move/rallar-room-move.ts';
-import type { RallarRoomSummary } from '../browser/rooms/rallar-room-contracts.ts';
 
 export interface RoomMovePanelProps {
     readonly owner: RallarRoomMove;
@@ -39,7 +40,7 @@ export function RoomMovePanel(props: RoomMovePanelProps) {
         }
         return () => props.owner.stop();
     }, [props.owner, props.connected]);
-    const move = state.moves.find((entry) => moveKey(entry) === selected) ?? state.moves[0];
+    const move = state.moves.find((entry) => toMoveKey(entry) === selected) ?? state.moves[0];
     const blocked = props.blockedReason !== null;
     return (
         <section className="panel stack" aria-label="Move together">
@@ -225,7 +226,7 @@ function MoveRoomRosters({ rooms, session, people }: MoveRoomRostersProps) {
                 <ul>
                     {members.map(({ member, presence }) => (
                         <li key={member.principalId}>
-                            {playerName(member.principalId, people)} · {presence === 'present' ? 'Present' : 'Away'}
+                            {toPlayerName(member.principalId, people)} · {presence === 'present' ? 'Present' : 'Away'}
                             {member.role === 'spectator' ? ' · spectator (stays)' : ''}
                         </li>
                     ))}
@@ -235,12 +236,12 @@ function MoveRoomRosters({ rooms, session, people }: MoveRoomRostersProps) {
     });
 }
 
-function playerName(principalId: string, people: readonly RallarPerson[]): string {
+function toPlayerName(principalId: string, people: readonly RallarPerson[]): string {
     const person = people.find((entry) => entry.principalId === principalId);
     return person?.displayName || person?.username || principalId;
 }
 
-function moveKey(move: GroupMove): string {
+function toMoveKey(move: GroupMove): string {
     return JSON.stringify([move.source.groupId, move.moveId]);
 }
 
@@ -249,7 +250,7 @@ function MoveCohort({ move, session, people }: Pick<MoveDecisionProps, 'move' | 
         <ul>
             {move.participants.map((entry) => (
                 <li key={entry.sessionId}>
-                    {playerName(entry.principalId, people)} ·{' '}
+                    {toPlayerName(entry.principalId, people)} ·{' '}
                     {entry.sessionId === session?.sessionId ? 'you' : entry.sessionId.slice(0, 8)} ·{' '}
                     {entry.arrivedAtEpochMs !== null
                         ? 'Arrived'
@@ -278,11 +279,11 @@ function MoveHistory({ moves, move, onSelect }: MoveHistoryProps) {
             <label htmlFor={historyId}>Move history</label>
             <select
                 id={historyId}
-                value={move ? moveKey(move) : ''}
+                value={move ? toMoveKey(move) : ''}
                 onChange={(event) => onSelect(event.target.value)}
             >
                 {moves.map((entry) => (
-                    <option key={moveKey(entry)} value={moveKey(entry)}>
+                    <option key={toMoveKey(entry)} value={toMoveKey(entry)}>
                         {entry.destination.groupId} · {entry.status}
                     </option>
                 ))}
