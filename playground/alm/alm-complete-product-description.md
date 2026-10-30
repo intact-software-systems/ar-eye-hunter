@@ -552,7 +552,7 @@ the room session's string binding fills `members`, and a `granted` channel names
 its `topicId` (`invalid-access` and `missing-topic-id` otherwise). A granted
 channel is WS-only: `ws-then-rtc` and `rtc-with-ws-fallback` send over WS at once,
 `sendRtc` and `strategy: 'rtc'` settle `rejected` `refused`/`unsupported`, and
-`onRtc` throws at definition. Before any carrier, the dispatch reads the room's
+calling `onRtc` throws. Before any carrier, the dispatch reads the room's
 cached snapshot through `resolveGroupPublicationPermissions` and settles a send
 without effective `publish` `rejected` `refused`/`no-publish-grant`; with no
 snapshot cached the server decides, and its NACK settles the handle `rejected`

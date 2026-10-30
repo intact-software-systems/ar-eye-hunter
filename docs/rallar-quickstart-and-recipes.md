@@ -725,6 +725,8 @@ await rallar.media.stopLocal('all');
 ## Server Quickstart
 
 ```ts
+const grantedTopics = new WsGrantedTopicSet();
+
 const runtime = createRallarMiddleware({
     inbox: queueBox,
     outbox: queueBox,
@@ -747,7 +749,8 @@ const runtime = createRallarMiddleware({
         appOutbox: resilienceAppOutbox
     },
     clientsRepository,
-    groupsRepository
+    groupsRepository,
+    grantedTopics
 });
 
 const server = createRallarServerApplication({
@@ -755,7 +758,7 @@ const server = createRallarServerApplication({
     repositories,
     appDataRepository,
     nowEpochMs: Date.now,
-    ws: {},
+    ws: { grantedTopics },
     systemInstallers,
     routeInstallers: {
         webSocket: installWsRoutes,
@@ -769,6 +772,10 @@ server.mountWebSocket(app);
 server.mountRest(app);
 server.start();
 ```
+
+One `WsGrantedTopicSet` goes to both the middleware and the router (`ws`): the
+router's granted topic definitions fill it, and the target resolver and the
+dispatch re-check read it.
 
 ## Server Topic
 

@@ -117,6 +117,10 @@ principals granted `subscribe` receive, and only the server producers listed in
 `producerId`:
 
 ```ts
+interface Headline {
+    headline: string;
+}
+
 rallar.ws.defineTopic<Headline>({
     topicId: 'room.demo.feed',
     typeId: 'room.demo.feed.v1',

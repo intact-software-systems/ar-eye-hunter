@@ -1007,7 +1007,11 @@ resynchronization (see Ordering, Repair And Resynchronization below).
 `access` is required too: `members` lets every active member of the room publish
 and reaches the room's audience; `granted` restricts the channel's topic to the
 room's publication grants (see Group Policy And State Routes above), and the
-server's topic must be declared `participation: 'granted'`. A
+server's topic must be declared `participation: 'granted'`. API-v1 defines no
+app topics: it installs its granted topics, with `scope: 'room'`, from the
+`grantedWsTopics` configuration or `RALLAR_GRANTED_WS_TOPICS_JSON`, each entry
+exactly `{ topicId, typeId?, fanout, serverProducerIds }` (see
+`docs/environment-variables.md`). A
 `room.message<T>('name')` binding fills `members`. Any other value is refused
 `$.access` `invalid-access`, and a granted channel without a `topicId`
 `$.topicId` `missing-topic-id`. A granted channel is WS-only: `ws-then-rtc` and
@@ -2777,12 +2781,15 @@ default resolver returns no recipients for a group target without a
 Applications use `createRallarServerApplication(...)` around the middleware runtime.
 
 ```ts
+const grantedTopics = new WsGrantedTopicSet();
+const runtime = createRallarMiddleware({ ...middlewareOptions, grantedTopics });
+
 const rallarServer = createRallarServerApplication({
     runtime,
     repositories,
     appDataRepository,
     nowEpochMs: Date.now,
-    ws: {},
+    ws: { grantedTopics },
     systemInstallers,
     routeInstallers: {
         webSocket: (app) => installWsRoutes(app),
@@ -2797,6 +2804,13 @@ rallarServer.mountRest(app);
 await runtime.readiness;
 rallarServer.start();
 ```
+
+The router's `ws.grantedTopics` and the middleware's `grantedTopics` are one
+`WsGrantedTopicSet`
+(`packages/shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts`),
+built before both: the router's granted topic definitions fill it, and the
+target resolver and the dispatch re-check read it. A composition with no
+granted topic still passes a new set.
 
 The server application exposes:
 
@@ -2815,7 +2829,7 @@ The server application exposes:
 - `ws.removeTopic(selector)`
 - `ws.on(selector, handler)`
 - `ws.proxy(rule)`
-- `ws.publish({ message, scope?, fanout?, producerId? })`; on a granted topic a publish whose `producerId` the topic does not list returns `status: 'refused'` with `refusal: 'topic-not-granted'`, one that names no room `refusal: 'unsupported'`, and writes nothing; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
+- `ws.publish({ message, scope?, fanout?, producerId? })`; on a granted topic a room publish whose `producerId` the topic does not list returns `status: 'refused'` with `refusal: 'topic-not-granted'` when the router has a `readServerPublishAudience` (API-v1 wires it; a `none` fanout sends nothing anyway), one that names no room `refusal: 'unsupported'`, and a refused publish writes nothing; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
 - `ws.status()`
 - `appData.define/open/lookup/close(...)`
 - the repository manager as `repositories`

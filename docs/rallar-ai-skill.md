@@ -178,7 +178,7 @@ const rallar = createRallarServerApplication({
     repositories,
     appDataRepository,
     nowEpochMs: Date.now,
-    ws: {},
+    ws: { grantedTopics },
     systemInstallers,
     routeInstallers: {
         webSocket: installWsRoutes,
@@ -204,6 +204,8 @@ If creating middleware directly with `createRallarMiddleware(options)`:
   factory. State-sync results leave through the AppInbox transaction's
   WS_OUTBOX rows; there is no separate state-sync publisher to wire.
 - Provide `findGroupSnapshotByRef` for scoped room routing.
+- Provide `grantedTopics`, one `new WsGrantedTopicSet()` built first and passed
+  to both the middleware and the server application's `ws` options.
 - Start `runtime.qboxEngine`.
 - Install websocket lifecycle cleanup.
 
