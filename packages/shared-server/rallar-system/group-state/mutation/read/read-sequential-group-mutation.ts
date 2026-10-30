@@ -13,6 +13,10 @@ import {
     readGroupMutationRelatedEntries,
     type SequentialRelatedEntries
 } from './read-group-mutation-related-entries.ts';
+import {
+    readSequentialGroupMutationSubscriptionEntries,
+    type GroupMutationSubscriptionRead
+} from './read-group-mutation-subscription-entries.ts';
 
 interface ReadSequentialGroupMutationInput {
     readonly repository: GroupStateRepository;
@@ -50,10 +54,12 @@ export async function readSequentialGroupMutation({
         authorityAdmission: related.authorityAdmission,
         directorAdmission: related.directorAdmission
     });
+    const subscriptions = await readSequentialGroupMutationSubscriptionEntries(repository, command);
     return assembleSequentialGroupMutationRead({
         primary,
         identities,
         related,
+        subscriptions,
         authorityPresenceSessionEntries,
         lifecyclePolicy,
         activeMemberPrincipalIds,
@@ -143,6 +149,7 @@ interface AssembleSequentialGroupMutationReadInput {
     readonly primary: SequentialPrimaryEntries;
     readonly identities: SequentialIdentities;
     readonly related: SequentialRelatedEntries;
+    readonly subscriptions: GroupMutationSubscriptionRead;
     readonly authorityPresenceSessionEntries: GroupMutationRead['authorityPresenceSessionEntries'];
     readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
     readonly activeMemberPrincipalIds: GroupMutationRead['activeMemberPrincipalIds'];
@@ -153,6 +160,7 @@ function assembleSequentialGroupMutationRead({
     primary,
     identities,
     related,
+    subscriptions,
     authorityPresenceSessionEntries,
     lifecyclePolicy,
     activeMemberPrincipalIds,
@@ -199,6 +207,7 @@ function assembleSequentialGroupMutationRead({
         authorityPresenceSessionEntries,
         presenceSummary: presenceSummary ?? null,
         targetPublicationGrant: related.targetPublicationGrant ?? null,
+        ...subscriptions,
         lifecyclePolicy,
         activeMemberPrincipalIds,
         activeMembers,

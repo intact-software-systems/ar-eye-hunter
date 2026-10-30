@@ -40,7 +40,7 @@ export interface GroupStateInboxResultReadConflict {
 
 export type GroupStateInboxResultComputed =
     | Readonly<{
-        kind: 'presence';
+        kind: 'receipt';
         durableResult: GroupMutationReceipt;
     }>
     | Readonly<{
@@ -60,9 +60,9 @@ const RESULT_READ_CONFLICT: GroupStateInboxResultReadConflict = {
 export function computeGroupStateInboxResult(
     input: ComputeGroupStateInboxResultInput
 ): GroupStateInboxResultComputation {
-    if (isPresenceOperation(input.command.command.operation)) {
+    if (isReceiptResultOperation(input.command.command.operation)) {
         return Either.ofRight({
-            kind: 'presence',
+            kind: 'receipt',
             durableResult: input.computed.receipt
         });
     }
@@ -88,15 +88,15 @@ export function validateGroupStateInboxResult(
     input: ComputeGroupStateInboxResultInput,
     computed: GroupStateInboxResultComputation
 ): readonly ComputedDataValidationIssue[] {
-    if (isPresenceOperation(input.command.command.operation)) {
+    if (isReceiptResultOperation(input.command.command.operation)) {
         return computed.right === undefined
             ? validateComputedProjection(
-                { kind: 'presence', durableResult: input.computed.receipt },
+                { kind: 'receipt', durableResult: input.computed.receipt },
                 computed.left,
                 'computed.right'
             )
             : validateComputedProjection(
-                { kind: 'presence', durableResult: input.computed.receipt },
+                { kind: 'receipt', durableResult: input.computed.receipt },
                 computed.right,
                 'computed.right'
             );
@@ -113,7 +113,7 @@ export function validateGroupStateInboxResult(
             'computed.right'
         );
     }
-    if (computed.right.kind === 'presence') {
+    if (computed.right.kind === 'receipt') {
         return validateComputedProjection({ kind: 'group' }, computed.right, 'computed.right');
     }
     const event = input.computed.outcome === 'write'
@@ -167,7 +167,7 @@ function hasResultReadConflict(input: ComputeGroupStateInboxResultInput): boolea
 function expectedComputedResultKind(
     input: ComputeGroupStateInboxResultInput
 ): Readonly<{ kind: GroupStateInboxResultComputed['kind']; }> {
-    return { kind: isPresenceOperation(input.command.command.operation) ? 'presence' : 'group' };
+    return { kind: isReceiptResultOperation(input.command.command.operation) ? 'receipt' : 'group' };
 }
 
 function assembleCommittedSnapshot(
@@ -175,7 +175,7 @@ function assembleCommittedSnapshot(
     computed: Extract<GroupMutationComputed, { outcome: 'write'; }>
 ): GroupSnapshot {
     if (computed.guard.kind !== 'group') {
-        throw new TypeError('Presence mutations do not assemble group snapshots.');
+        throw new TypeError('Receipt-only mutations do not assemble group snapshots.');
     }
     return assembleGroupStateSnapshot(
         {
@@ -244,13 +244,16 @@ function readRecordedEvent(
     return event;
 }
 
-function isPresenceOperation(
+/** Presence and subscription commands answer with their receipt alone: they assemble no group snapshot. */
+export function isReceiptResultOperation(
     operation: GroupStateMutationCommand['command']['operation']
 ): boolean {
     return (
         operation === 'connectPresence' ||
         operation === 'heartbeatPresence' ||
-        operation === 'disconnectPresence'
+        operation === 'disconnectPresence' ||
+        operation === 'subscribeGroupTopic' ||
+        operation === 'unsubscribeGroupTopic'
     );
 }
 

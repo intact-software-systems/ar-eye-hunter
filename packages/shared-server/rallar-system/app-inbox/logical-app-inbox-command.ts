@@ -112,6 +112,8 @@ const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor
     [AppInboxType.GROUP_MEMBER_ROLE_SET, 'setGroupMemberRole'],
     [AppInboxType.GROUP_PUBLICATION_GRANT, 'grantGroupPublication'],
     [AppInboxType.GROUP_PUBLICATION_REVOKE, 'revokeGroupPublication'],
+    [AppInboxType.GROUP_TOPIC_SUBSCRIBE, 'subscribeGroupTopic'],
+    [AppInboxType.GROUP_TOPIC_UNSUBSCRIBE, 'unsubscribeGroupTopic'],
     [AppInboxType.GROUP_OWNERSHIP_TRANSFER, 'transferGroupOwnership'],
     [AppInboxType.GROUP_MEMBER_UPSERT, 'upsertMember'],
     [AppInboxType.GROUP_PRESENCE_CONNECT, 'connectPresence'],

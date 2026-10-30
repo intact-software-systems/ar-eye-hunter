@@ -88,6 +88,7 @@ function idempotencyRecord(): GroupMutationIdempotencyRecord {
             outboxIds: [],
             joinCode: null,
             joinCodeExpiresAtEpochMs: null,
+            subscriptionOutcome: null,
             rejection: null
         }
     };
@@ -187,7 +188,7 @@ describe('computed group mutation validation', () => {
             throw new Error('Expected group write computation');
         }
 
-        expect(computed.event.traceId).toBe(facts.traceId);
+        expect(computed.event?.traceId).toBe(facts.traceId);
         expect(computed.guard.value.updated.traceId).toBe(facts.traceId);
     });
 
@@ -283,7 +284,7 @@ describe('computed group mutation validation', () => {
         const read = createMutationRead();
         const facts = createMutationFacts();
         const computed = computeGroupMutation({ command, read, facts });
-        if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
+        if (computed.outcome !== 'write' || computed.guard.kind !== 'group' || computed.event === null) {
             throw new Error('Expected group write computation');
         }
         const sessionEvent = {

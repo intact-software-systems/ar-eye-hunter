@@ -274,6 +274,7 @@ describe('GroupStateRepository persistence', () => {
             event: { kind: 'none' },
             joinCode: null,
             joinCodeExpiresAtEpochMs: null,
+            subscriptionOutcome: null,
             rejection: null
         } as const;
         const identityFreeRecord = {

@@ -34,6 +34,12 @@ import {
     groupStateUpdatePresenceSummaryDescriptor
 } from '../../persistence/presence/group-presence-write-descriptors.ts';
 import { toPublicationGrantBatchEffect } from '../../persistence/publication/group-publication-grant-write-descriptors.ts';
+import {
+    groupStateDeleteTopicSubscriptionDescriptor,
+    groupStateInsertTopicSubscriptionDescriptor,
+    groupStateUpdateTopicSubscriptionDescriptor,
+    toTopicSubscriptionDeleteBatchEffect
+} from '../../persistence/subscription/group-topic-subscription-write-descriptors.ts';
 import type {
     GroupMutationDomainWrite,
     GroupMutationFacts,
@@ -43,7 +49,7 @@ import type {
 
 export function computeGroupMutationPersistence(
     computed: GroupMutationDomainWrite,
-    facts: Pick<GroupMutationFacts, 'expireAtEpochMs'>,
+    facts: Pick<GroupMutationFacts, 'expireAtEpochMs' | 'nowEpochMs'>,
     read: GroupMutationRead
 ): GroupMutationPersistence {
     return {
@@ -62,13 +68,15 @@ export function computeGroupMutationPersistence(
                     )
                 }),
                 expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
-                updatedAtIsoTimestamp: new Date(computed.event.occurredAtEpochMs).toISOString()
+                updatedAtIsoTimestamp: new Date(facts.nowEpochMs).toISOString()
             },
-        eventWrite: {
-            event: computed.event,
-            workspaceKey: groupStateEventWorkspaceKey(computed.event.workspaceId),
-            eventJson: JSON.stringify(computed.event)
-        }
+        eventWrite: computed.event === null
+            ? null
+            : {
+                event: computed.event,
+                workspaceKey: groupStateEventWorkspaceKey(computed.event.workspaceId),
+                eventJson: JSON.stringify(computed.event)
+            }
     };
 }
 
@@ -92,6 +100,7 @@ function computeGroupMutationGuardedBatch(
         effects.push(computed.connectTriggerLatchEffect);
     }
     effects.push(...computed.publicationGrantEffects.map(toPublicationGrantBatchEffect));
+    effects.push(...computed.subscriptionEffects.map(toTopicSubscriptionDeleteBatchEffect));
     if (computed.idempotency) {
         effects.push({
             effectId: 'receipt',
@@ -129,6 +138,16 @@ function computeGroupMutationGuard(
         return guard.operation === 'insert'
             ? groupStateInsertGroupDescriptor(guard.value)
             : groupStateUpdateGroupDescriptor(guard.value, guard.expectedRevision);
+    }
+    if (guard.kind === 'subscription') {
+        switch (guard.operation) {
+            case 'insert':
+                return groupStateInsertTopicSubscriptionDescriptor(guard.ref, guard.value);
+            case 'update':
+                return groupStateUpdateTopicSubscriptionDescriptor(guard.ref, guard.value, guard.expectedRevision);
+            case 'delete':
+                return groupStateDeleteTopicSubscriptionDescriptor(guard.ref, guard.value, guard.expectedRevision);
+        }
     }
     if (guard.operation === 'delete') {
         return groupStateDeletePresenceDescriptor(guard.value, guard.expectedRevision);

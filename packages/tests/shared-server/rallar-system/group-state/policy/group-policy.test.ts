@@ -17,6 +17,10 @@ import {
     canHoldGroupPublicationTopics
 } from '@shared-server/rallar-system/group-state/policy/group-publication-grant-policy.ts';
 import { canReadGroupSnapshot, readGroupVisibility } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import {
+    canSubscribeGroupTopic,
+    type CanSubscribeGroupTopicInput
+} from '@shared-server/rallar-system/group-state/policy/group-topic-subscription-policy.ts';
 import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { denyExhaustedFormationSeries } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
@@ -26,11 +30,36 @@ import type { GroupPublicationTopicGrants } from '@shared/api/group-publication/
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { createActiveClientSessionFixture } from '../../../../shared-web/authoritative-group-fixtures.ts';
 
 const NOW = 1_000;
 const ACTOR: GroupPolicyActor = {
     principalId: 'alice',
     sessionId: 'alice-session'
+};
+
+const SUBSCRIBE_SESSION = createActiveClientSessionFixture({
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    principalId: 'bob',
+    clientInstanceId: 'bob-instance',
+    sessionId: 'bob-session'
+});
+
+const SUBSCRIBE: CanSubscribeGroupTopicInput = {
+    member: member('bob'),
+    grant: {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'group-1',
+        principalId: 'bob',
+        topics: { 'room.feed': { publish: false, subscribe: true } },
+        updated: { atEpochMs: 1, actor: { kind: 'principal', principalId: 'alice' }, reason: null, traceId: null, requestId: null }
+    },
+    topicId: 'room.feed',
+    clientSession: SUBSCRIBE_SESSION,
+    connectionGenerationId: SUBSCRIBE_SESSION.generationId,
+    nowEpochMs: NOW
 };
 
 describe('group policy helpers', () => {
@@ -643,7 +672,10 @@ describe('group policy helpers', () => {
                     preActivationAppData: 'blocked-until-active'
                 })
             ),
-            expectCode(canHoldGroupPublicationTopics(topicGrants(65)))
+            expectCode(canHoldGroupPublicationTopics(topicGrants(65))),
+            expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, clientSession: null })),
+            expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, connectionGenerationId: 'bob-ws-generation-0' })),
+            expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, grant: null }))
         ]);
 
         expect([...GROUP_POLICY_REASON_CODES].filter((code) => !coveredCodes.has(code))).toEqual([]);
@@ -658,6 +690,17 @@ describe('group policy helpers', () => {
         expect(expectCode(canChangeGroupPublicationGrant({ target: undefined, grantsPublish: false }))).toBe('member-not-active');
         expect(expectCode(canChangeGroupPublicationGrant({ target: member('lee', { status: 'left' }), grantsPublish: false })))
             .toBe('member-not-active');
+    });
+
+    it('subscribes an active member\'s live session at its live generation to a topic it may subscribe', () => {
+        expect(canSubscribeGroupTopic(SUBSCRIBE)).toEqual({ allowed: true });
+        expect(canSubscribeGroupTopic({ ...SUBSCRIBE, member: member('bob', { role: 'spectator' }) })).toEqual({ allowed: true });
+        expect(expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, member: member('bob', { status: 'left' }) })))
+            .toBe('member-not-active');
+        expect(expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, member: null }))).toBe('member-not-active');
+        expect(expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, nowEpochMs: SUBSCRIBE_SESSION.expiresAtEpochMs })))
+            .toBe('no-live-session');
+        expect(expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, topicId: 'room.other' }))).toBe('no-subscribe-grant');
     });
 
     it('bounds one principal at 64 granted topics with a named capacity limit', () => {

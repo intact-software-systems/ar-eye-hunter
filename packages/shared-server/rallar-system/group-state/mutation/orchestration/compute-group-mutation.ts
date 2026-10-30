@@ -35,6 +35,7 @@ import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-gro
 import { computeGroupPublicationGrantMutation } from '../publication/compute-group-publication-grant-mutation.ts';
 import { assertGroupMutationFacts } from '../state-validation/assert-group-mutation-facts.ts';
 import { assertGroupMutationRead } from '../state-validation/assert-group-mutation-read.ts';
+import { computeGroupTopicSubscriptionMutation } from '../subscription/compute-group-topic-subscription-mutation.ts';
 
 export interface GroupMutationInput {
     readonly command: GroupMutationCommand;
@@ -132,5 +133,8 @@ function computeFreshGroupMutation(
             return computeHeartbeatGroupPresence(command, read, facts);
         case 'disconnectPresence':
             return computeDisconnectGroupPresence(command, read, facts);
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
+            return computeGroupTopicSubscriptionMutation(command, read, facts);
     }
 }

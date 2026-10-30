@@ -15,7 +15,11 @@ import type {
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
-import type { GroupMutationCommand, GroupPublicationGrantOperation } from './mutation/group-mutation-contracts.ts';
+import type {
+    GroupMutationCommand,
+    GroupPublicationGrantOperation,
+    GroupTopicSubscriptionOperation
+} from './mutation/group-mutation-contracts.ts';
 
 export interface GroupMutationIdentity {
     readonly commandId: string;
@@ -270,6 +274,28 @@ export function toPublicationMutationCommand(
             topicId: request.topicId as RallarWsUserTopicId,
             publish: request.publish,
             subscribe: request.subscribe,
+            ...toGroupMutationActorInput(request)
+        }
+    };
+}
+
+export function toTopicSubscriptionMutationCommand(
+    descriptor: Extract<GroupMutationDescriptor, { operation: GroupTopicSubscriptionOperation; }>,
+    randomId: () => string
+): GroupMutationCommand {
+    const request = descriptor.request;
+    if (!descriptor.sessionId) {
+        throw new NonRetryableException('Group topic subscription session is required');
+    }
+    return {
+        operation: descriptor.operation,
+        aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+        sessionId: descriptor.sessionId,
+        ...toGroupMutationIdentity(request.requestId, randomId),
+        input: {
+            // Unchecked here: assertGroupMutationCommand refuses an invalid id as a TypeError before any compute.
+            topicId: request.topicId as RallarWsUserTopicId,
+            connectionGenerationId: request.connectionGenerationId,
             ...toGroupMutationActorInput(request)
         }
     };

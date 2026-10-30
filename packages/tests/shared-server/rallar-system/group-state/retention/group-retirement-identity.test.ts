@@ -103,7 +103,10 @@ describe('permanently retired scoped identities', () => {
             memberPrincipalIds: [],
             presenceSessionIds: [],
             admissionPrincipalIds: [],
-            publicationGrantPrincipalIds: []
+            publicationGrantPrincipalIds: [],
+            topicSubscriptions: [],
+            clientSessions: [],
+            subscriptionPrincipalIds: []
         });
         expect(read.groups).toEqual([]);
         expect(read.expiredGroupEntry).toEqual(expired);
@@ -149,7 +152,7 @@ describe('permanently retired scoped identities', () => {
         fixture = await createRetentionDatabaseFixture();
         await seedArchivedRoom(fixture);
         const deletion = await prepareRetention(fixture, 'delete-collision');
-        if (deletion.computed.outcome !== 'write') {
+        if (deletion.computed.outcome !== 'write' || deletion.computed.persistence.eventWrite === null) {
             throw new Error('Expected deletion');
         }
         await fixture.repository.appendEvent({ ...deletion.computed.persistence.eventWrite.event, reason: 'foreign-event' });

@@ -49,6 +49,7 @@ describe('group mutation absence', () => {
                     outboxIds: [],
                     joinCode: null,
                     joinCodeExpiresAtEpochMs: null,
+                    subscriptionOutcome: null,
                     rejection: 'Group not found: pure-room'
                 }
             });

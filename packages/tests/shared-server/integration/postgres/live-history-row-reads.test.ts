@@ -137,7 +137,10 @@ describe('Postgres reads of live history rows', () => {
                 memberPrincipalIds: [],
                 presenceSessionIds: [],
                 admissionPrincipalIds: [],
-                publicationGrantPrincipalIds: []
+                publicationGrantPrincipalIds: [],
+                topicSubscriptions: [],
+                clientSessions: [],
+                subscriptionPrincipalIds: []
             });
             expect(mutationRead.groupSnapshot).toMatchObject({
                 status: 'read',

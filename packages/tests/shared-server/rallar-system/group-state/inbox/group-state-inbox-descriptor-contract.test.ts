@@ -539,6 +539,56 @@ const descriptorCases: readonly DescriptorCase[] = [
         }
     },
     {
+        name: 'topic-subscribe',
+        enqueue: {
+            traceId: 'trace-test-fixture',
+            type: AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+            topicId: AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+            resourceId: 'topic-subscribe-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                sessionId: 'subscription-session',
+                request: { topicId: 'room.feed', connectionGenerationId: 'ws-generation-1', ...actor, requestId: 'topic-subscribe' }
+            }
+        },
+        descriptor: {
+            operation: 'subscribeGroupTopic',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: 'subscription-session',
+            request: { topicId: 'room.feed', connectionGenerationId: 'ws-generation-1', ...actor, requestId: 'topic-subscribe' }
+        }
+    },
+    {
+        name: 'topic-unsubscribe',
+        enqueue: {
+            traceId: 'trace-test-fixture',
+            type: AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
+            topicId: AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
+            resourceId: 'topic-unsubscribe-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                sessionId: 'subscription-session',
+                request: { topicId: 'room.feed', connectionGenerationId: 'ws-generation-1', ...actor, requestId: 'topic-unsubscribe' }
+            }
+        },
+        descriptor: {
+            operation: 'unsubscribeGroupTopic',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: 'subscription-session',
+            request: { topicId: 'room.feed', connectionGenerationId: 'ws-generation-1', ...actor, requestId: 'topic-unsubscribe' }
+        }
+    },
+    {
         name: 'ownership-transfer',
         enqueue: {
             traceId: 'trace-test-fixture',

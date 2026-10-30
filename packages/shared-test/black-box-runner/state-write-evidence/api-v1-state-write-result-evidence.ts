@@ -1,8 +1,10 @@
 import { decodeAuthMutationResult } from '@shared-server/mod.ts';
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { decodeAdminPruneEnqueueResultForCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { decodePersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure-decoding.ts';
 import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
 import {
@@ -13,7 +15,7 @@ import { validateTopologyMutationResultPayload } from './validate-topology-mutat
 
 interface ResultEvidence {
     readonly valid: boolean;
-    readonly result: unknown;
+    readonly result: ApiJsonValue | undefined;
     readonly receipt?: ResultEvidenceReceipt;
     readonly failure?: string;
 }
@@ -42,14 +44,14 @@ interface ValidatePersistedAppInboxResultInput {
 }
 
 interface ValidateReceiptResultInput {
-    readonly receipt: RecordValue;
+    readonly receipt: ApiJsonObject;
     readonly commandIds: readonly string[];
     readonly identityKind: ReceiptEffectIdentityKind;
-    readonly result?: RecordValue;
+    readonly result?: ApiJsonObject;
 }
 
 interface ValidatePublicResultIdentityInput {
-    readonly result: RecordValue;
+    readonly result: ApiJsonObject;
     readonly receipt: AuthoritativeResultReceipt;
     readonly kind: 'client' | 'group';
     readonly commandType: string;
@@ -77,10 +79,18 @@ export interface AuthoritativeTopologyReceipt {
     readonly acceptedCreatedAtEpochMs: number | null;
     readonly acceptedUpdatedAtEpochMs: number | null;
     readonly acceptedExpiresAtEpochMs: number | null;
-    readonly acceptedConfig: unknown;
+    readonly acceptedConfig: ApiJsonValue;
 }
 
-type RecordValue = Record<string, unknown>;
+/** The group commands whose durable result is their receipt alone, with no snapshot to compare. */
+const GROUP_RECEIPT_RESULT_COMMAND_TYPES: ReadonlySet<string> = new Set([
+    AppInboxType.GROUP_PRESENCE_CONNECT,
+    AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+    AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    AppInboxType.GROUP_PRESENCE_EXPIRE,
+    AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+    AppInboxType.GROUP_TOPIC_UNSUBSCRIBE
+]);
 
 export type ReceiptEffectIdentityKind = 'logical-msg-id' | 'physical-resource-id';
 
@@ -150,7 +160,7 @@ export function validatePersistedAppInboxResult(
             ? { valid: true, result }
             : invalid(result, 'malformed-group-session-cleanup-result');
     }
-    if (input.commandType.startsWith('GROUP_PRESENCE_')) {
+    if (GROUP_RECEIPT_RESULT_COMMAND_TYPES.has(input.commandType)) {
         return validateEmbeddedAuthoritativeReceipt(
             validateReceiptResult({
                 receipt: result,
@@ -318,7 +328,7 @@ function toResultReceipt(receipt: AuthoritativeResultReceipt): ResultEvidenceRec
     };
 }
 
-function validateClientWritten(value: unknown): boolean {
+function validateClientWritten(value: ApiJsonValue): boolean {
     const result = record(value);
     const written = record(result?.result);
     return Boolean(
@@ -332,7 +342,7 @@ function validateClientWritten(value: unknown): boolean {
     );
 }
 
-function validateRtcRttResult(result: RecordValue, commandIds: readonly string[]): boolean {
+function validateRtcRttResult(result: ApiJsonObject, commandIds: readonly string[]): boolean {
     return (
         exactKeys(result, ['requestId', 'accepted', 'reason', 'affectedGroups', 'updated']) &&
         readMatchingId(result.requestId, commandIds) !== undefined &&
@@ -362,6 +372,7 @@ function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidenc
             'outboxIds',
             'joinCode',
             'joinCodeExpiresAtEpochMs',
+            'subscriptionOutcome',
             'rejection'
         ]
         : [
@@ -409,42 +420,45 @@ function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidenc
     };
 }
 
-function parseResult(value: string | null): unknown {
+/** JSON.parse yields JSON values only, so its result is a JSON value by construction. */
+function parseResult(value: string | null): ApiJsonValue | undefined {
     if (typeof value !== 'string') {
         return undefined;
     }
     try {
-        return JSON.parse(value) as unknown;
+        return JSON.parse(value) as ApiJsonValue;
     }
     catch {
         return undefined;
     }
 }
 
-function record(value: unknown): RecordValue | undefined {
-    return value !== null && typeof value === 'object' && !Array.isArray(value)
-        ? (value as RecordValue)
-        : undefined;
+function record(value: ApiJsonValue | undefined): ApiJsonObject | undefined {
+    return value !== null && typeof value === 'object' && !isJsonArray(value) ? value : undefined;
 }
 
-function nonEmptyString(value: unknown): string | undefined {
+function isJsonArray(value: ApiJsonValue): value is readonly ApiJsonValue[] {
+    return Array.isArray(value);
+}
+
+function nonEmptyString(value: ApiJsonValue | undefined): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function readMatchingId(value: unknown, commandIds: readonly string[]): string | undefined {
+function readMatchingId(value: ApiJsonValue | undefined, commandIds: readonly string[]): string | undefined {
     const id = nonEmptyString(value);
     return id && commandIds.includes(id) ? id : undefined;
 }
 
-function readUniqueIds(value: unknown): readonly string[] | undefined {
-    if (!Array.isArray(value) || !value.every((id) => nonEmptyString(id))) {
+function readUniqueIds(value: ApiJsonValue | undefined): readonly string[] | undefined {
+    if (value === undefined || !isJsonArray(value)) {
         return undefined;
     }
-    const ids = value as string[];
-    return new Set(ids).size === ids.length ? ids : undefined;
+    const ids = value.flatMap((id) => (typeof id === 'string' && id.length > 0 ? [id] : []));
+    return ids.length === value.length && new Set(ids).size === ids.length ? ids : undefined;
 }
 
-function exactKeys(value: RecordValue, keys: readonly string[]): boolean {
+function exactKeys(value: ApiJsonObject, keys: readonly string[]): boolean {
     return JSON.stringify(Object.keys(value).toSorted()) === JSON.stringify([...keys].toSorted());
 }
 
@@ -452,6 +466,6 @@ function sameIds(left: readonly string[], right: readonly string[]): boolean {
     return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
-function invalid(result: unknown, failure: string): ResultEvidence {
+function invalid(result: ApiJsonValue | undefined, failure: string): ResultEvidence {
     return { valid: false, result, failure };
 }

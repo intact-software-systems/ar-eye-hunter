@@ -5,6 +5,8 @@ import {
 } from 'vitest';
 
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
+import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
@@ -13,7 +15,10 @@ import {
 } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { readSequentialGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-sequential-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import {
+    PUBLICATION_GRANTS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
@@ -21,6 +26,7 @@ import {
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
+import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-system/group-state/persistence/subscription/group-topic-subscription-storage-key.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { toRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
@@ -373,6 +379,82 @@ describe('GroupStateService mutation exact reads', () => {
                 service.createGroup(SCOPE, { groupId: created.groupId, displayName: 'Created', kind: 'room', createdByPrincipalId: 'owner' })
             )
         ).toEqual([{ ...grantSelector('owner'), key: groupStatePublicationGrantStorageKey(created, 'owner') }]);
+    });
+
+    it('subscribe reads member, grant, subscription and client session; revoke of subscribe and departures read the principal\'s subscriptions; join and role changes do not', async () => {
+        const { runtime, service } = await createSeededService('subscription-scope');
+        const ref = { ...SCOPE, groupId: 'subscription-scope' };
+        const subscriptionSelectorsOf = async (mutate: () => Promise<object>) => {
+            runtime.readBatchCalls.length = 0;
+            await mutate().catch(() => undefined);
+            return mutationReadCalls(runtime).flat().filter((selector) =>
+                selector.namespace === SUBSCRIPTIONS_NAMESPACE || selector.namespace === CLIENT_STATE_SESSIONS_NAMESPACE ||
+                (selector.namespace === PUBLICATION_GRANTS_NAMESPACE && selector.kind === 'key') ||
+                selector.selectorId.startsWith('member:')
+            );
+        };
+        const principalSubscriptions = (principalId: string) => ({
+            selectorId: 'principal-subscriptions:0',
+            kind: 'prefix-containing',
+            namespace: SUBSCRIPTIONS_NAMESPACE,
+            keyPrefix: `${groupStateGroupStorageKey(ref)}:`,
+            storedValueContains: { principalId }
+        });
+        const subscribe = { topicId: 'room.feed', connectionGenerationId: 'owner-ws-generation', actorPrincipalId: 'owner' };
+
+        expect(await subscriptionSelectorsOf(() => service.subscribeGroupTopicReceipt(SCOPE, ref.groupId, 'owner-session', subscribe)))
+            .toEqual([
+                { selectorId: 'member:0', kind: 'key', namespace: 'group-state:members', key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }) },
+                {
+                    selectorId: 'grant:0',
+                    kind: 'key',
+                    namespace: PUBLICATION_GRANTS_NAMESPACE,
+                    key: groupStatePublicationGrantStorageKey(ref, 'owner')
+                },
+                {
+                    selectorId: 'subscription:0',
+                    kind: 'key',
+                    namespace: SUBSCRIPTIONS_NAMESPACE,
+                    key: groupStateTopicSubscriptionStorageKey(ref, 'owner-session', 'room.feed')
+                },
+                {
+                    selectorId: 'client-session:0',
+                    kind: 'prefix-containing',
+                    namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                    keyPrefix: `${clientStatePrincipalStorageKey({ ...SCOPE, principalId: 'owner' })}:`,
+                    storedValueContains: { sessionId: 'owner-session', status: 'active' }
+                }
+            ]);
+        expect(
+            (await subscriptionSelectorsOf(() => service.unsubscribeGroupTopicReceipt(SCOPE, ref.groupId, 'owner-session', subscribe)))
+                .map((selector) => selector.selectorId)
+        ).toEqual(['member:0', 'subscription:0', 'client-session:0']);
+        await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
+        const feed = { topicId: 'room.feed', publish: true, subscribe: true, actorPrincipalId: 'owner' };
+        await service.grantGroupPublication(SCOPE, ref.groupId, 'bob', feed);
+        expect(await subscriptionSelectorsOf(() => service.revokeGroupPublication(SCOPE, ref.groupId, 'bob', { ...feed, subscribe: false })))
+            .not.toContainEqual(principalSubscriptions('bob'));
+        expect(await subscriptionSelectorsOf(() => service.revokeGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
+            .toContainEqual(principalSubscriptions('bob'));
+        expect(
+            await subscriptionSelectorsOf(() => service.setGroupMemberRole(SCOPE, ref.groupId, 'bob', { role: 'admin', actorPrincipalId: 'owner' }))
+        ).not.toContainEqual(principalSubscriptions('bob'));
+        expect(
+            await subscriptionSelectorsOf(() => service.upsertMember(SCOPE, ref.groupId, 'bob', { status: 'left', actorPrincipalId: 'bob' }))
+        ).toContainEqual(principalSubscriptions('bob'));
+        expect(await subscriptionSelectorsOf(() => service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' })))
+            .toEqual([{
+                selectorId: 'member:0',
+                kind: 'key',
+                namespace: 'group-state:members',
+                key: groupStateMemberStorageKey({ ...ref, principalId: 'bob' })
+            }]);
+        for (const remove of [service.removeGroupMember, service.banGroupMember]) {
+            await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'carol' });
+            expect(await subscriptionSelectorsOf(() => remove(SCOPE, ref.groupId, 'carol', { actorPrincipalId: 'owner' })))
+                .toContainEqual(principalSubscriptions('carol'));
+            await service.unbanGroupMember(SCOPE, ref.groupId, 'carol', { actorPrincipalId: 'owner' }).catch(() => undefined);
+        }
     });
 
     it('the sequential read loads the target grant row for a grant command and a departure, never for a join', async () => {

@@ -21,7 +21,8 @@ import type {
     GroupMutationFacts,
     GroupMutationRead,
     GroupPublicationGrantEffect,
-    GroupPublicationGrantOperation
+    GroupPublicationGrantOperation,
+    GroupTopicSubscriptionDeleteEffect
 } from '../group-mutation-contracts.ts';
 import {
     auditStamp,
@@ -30,6 +31,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
+import { toTopicSubscriptionDeleteEffects } from '../subscription/compute-group-topic-subscription-mutation.ts';
 
 type GroupPublicationGrantCommand = Extract<GroupMutationCommand, { operation: GroupPublicationGrantOperation; }>;
 
@@ -126,8 +128,24 @@ function computePublicationGrantWrite(
         // D493: the summary worker writes the browser delta; grants are no planning input, so the topology work it
         // mints is a no-op.
         presenceSummaryWork: 'enqueue',
-        publicationGrantEffects: [toPublicationGrantEffect(read.targetPublicationGrant, next)]
+        publicationGrantEffects: [toPublicationGrantEffect(read.targetPublicationGrant, next)],
+        subscriptionEffects: computeRevokedSubscriptionEffects(command, read, topics),
+        subscriptionOutcome: null
     });
+}
+
+/** A topic left without subscribe deletes the principal's rows on it in the grant batch: a re-grant revives none. */
+function computeRevokedSubscriptionEffects(
+    command: GroupPublicationGrantCommand,
+    read: GroupMutationRead,
+    topics: GroupPublicationTopicGrants
+): readonly GroupTopicSubscriptionDeleteEffect[] {
+    const { topicId } = command.input;
+    if (topics[topicId]?.subscribe === true) {
+        return [];
+    }
+    const rows = (read.targetPrincipalSubscriptions ?? []).filter((row) => row.value.topicId === topicId);
+    return toTopicSubscriptionDeleteEffects(command.aggregateRef, rows);
 }
 
 function toPublicationGrantEffect(

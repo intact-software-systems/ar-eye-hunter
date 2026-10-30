@@ -11,7 +11,8 @@ import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/j
 import {
     toAggregateMutationCommand,
     toMembershipMutationCommand,
-    toPublicationMutationCommand
+    toPublicationMutationCommand,
+    toTopicSubscriptionMutationCommand
 } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
@@ -300,6 +301,9 @@ export function toDescriptorCommand(
         case 'grantGroupPublication':
         case 'revokeGroupPublication':
             return toPublicationMutationCommand(descriptor, randomId);
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
+            return toTopicSubscriptionMutationCommand(descriptor, randomId);
         default:
             return toMembershipMutationCommand(descriptor, randomId);
     }

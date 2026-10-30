@@ -21,6 +21,8 @@ import {
     type GroupPublicationGrantAppInboxPayload,
     type GroupPublicationRevokeAppInboxPayload,
     type GroupReconfigureAppInboxPayload,
+    type GroupTopicSubscribeAppInboxPayload,
+    type GroupTopicUnsubscribeAppInboxPayload,
     type GroupTransportCommandAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -37,7 +39,9 @@ import {
     readMatrixMember,
     readMatrixPresenceSession,
     readMatrixPublicationGrant,
+    readMatrixTopicSubscription,
     runOperationMatrix,
+    writeMatrixClientSession,
     type OperationMatrixCase
 } from './group-state-inbox-operation-matrix-runtime.ts';
 import { connectPlannedSnapshot } from './group-state-inbox-planned-layout-fixtures.ts';
@@ -107,6 +111,8 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_MEMBER_ROLE_SET,
             AppInboxType.GROUP_PUBLICATION_GRANT,
             AppInboxType.GROUP_PUBLICATION_REVOKE,
+            AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+            AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
             AppInboxType.GROUP_OWNERSHIP_TRANSFER,
             AppInboxType.GROUP_MEMBER_UPSERT,
             AppInboxType.GROUP_PRESENCE_CONNECT,
@@ -140,6 +146,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 actorPrincipalId: 'charlie',
                 actorSessionId: 'charlie-session'
             } as const;
+            await writeMatrixClientSession(harness, 'bob', 'matrix-ws-generation');
             const cases: readonly OperationMatrixCase[] = [
                 {
                     type: AppInboxType.GROUP_CREATE,
@@ -421,6 +428,48 @@ describe('GroupStateInboxService authenticated authority', () => {
                         });
                     }
                 },
+                {
+                    type: AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+                    operation: 'subscribeGroupTopic',
+                    authority: harness.sessions.bob,
+                    data: {
+                        scope: SCOPE,
+                        groupId,
+                        sessionId: 'bob-session',
+                        request: {
+                            topicId: 'room.feed',
+                            connectionGenerationId: 'matrix-ws-generation',
+                            ...bobActor,
+                            requestId: 'matrix-subscribe-bob'
+                        }
+                    } satisfies GroupTopicSubscribeAppInboxPayload,
+                    outboxEntries: 0,
+                    assertDomain: async () => {
+                        expect(await readMatrixTopicSubscription(harness, groupId, 'bob-session', 'room.feed'))
+                            .toMatchObject({ principalId: 'bob', connectionGenerationId: 'matrix-ws-generation' });
+                    }
+                },
+                {
+                    type: AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
+                    operation: 'unsubscribeGroupTopic',
+                    authority: harness.sessions.bob,
+                    data: {
+                        scope: SCOPE,
+                        groupId,
+                        sessionId: 'bob-session',
+                        request: {
+                            topicId: 'room.feed',
+                            connectionGenerationId: 'matrix-ws-generation',
+                            ...bobActor,
+                            requestId: 'matrix-unsubscribe-bob'
+                        }
+                    } satisfies GroupTopicUnsubscribeAppInboxPayload,
+                    outboxEntries: 0,
+                    assertDomain: async () => {
+                        expect(await readMatrixTopicSubscription(harness, groupId, 'bob-session', 'room.feed'))
+                            .toBeUndefined();
+                    }
+                },
                 createGovernedOperationCase({
                     harness,
                     groupId,
@@ -638,7 +687,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                         }
                     } satisfies GroupCreateAppInboxPayload,
                     // A phased creation arms the plan trigger's timer beside its summary (plan slice 11a).
-                    extraOutboxEntries: 1,
+                    outboxEntries: 2,
                     assertDomain: async () => {
                         expect(
                             (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))
@@ -656,7 +705,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                         request: { ...ownerActor, requestId: 'matrix-plan' }
                     } satisfies GroupLifecycleTransitionAppInboxPayload,
                     // The plan arms the connect trigger's latch and its intent work under the default preset (plan slice 11a).
-                    extraOutboxEntries: 1,
+                    outboxEntries: 2,
                     assertDomain: async () => {
                         const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
                         expect(group?.lifecycleState).toBe('planned');

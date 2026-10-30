@@ -175,6 +175,16 @@ export interface RevokeGroupPublicationRequest extends MutationActorInput {
     readonly subscribe: boolean;
 }
 
+export interface SubscribeGroupTopicRequest extends MutationActorInput {
+    readonly topicId: string;
+    readonly connectionGenerationId: string;
+}
+
+export interface UnsubscribeGroupTopicRequest extends MutationActorInput {
+    readonly topicId: string;
+    readonly connectionGenerationId: string;
+}
+
 export interface TransferGroupOwnershipRequest extends MutationActorInput {
     readonly newOwnerPrincipalId: string;
 }

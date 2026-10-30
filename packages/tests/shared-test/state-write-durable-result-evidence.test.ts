@@ -184,6 +184,7 @@ describe('durable AppInbox result evidence', () => {
                 outboxIds: [physicalEffectId],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
+                subscriptionOutcome: null,
                 rejection: null
             })
         };
@@ -216,6 +217,47 @@ describe('durable AppInbox result evidence', () => {
             }]
         });
     });
+
+    it.each(['GROUP_TOPIC_SUBSCRIBE', 'GROUP_TOPIC_UNSUBSCRIBE'])(
+        'validates %s as its receipt with no event and no effect',
+        (commandType) => {
+            const subscriptionCommandId = `${commandType}-command-1`;
+            const subscription = {
+                ...command,
+                ri_resource_id: subscriptionCommandId,
+                ri_resource: JSON.stringify({
+                    payload: { typeId: commandType, resource: JSON.stringify({ commandId: subscriptionCommandId }) }
+                }),
+                result_resource: JSON.stringify({
+                    commandId: subscriptionCommandId,
+                    requestId: subscriptionCommandId,
+                    commandHash,
+                    aggregateRef: topologyGroupRef,
+                    outcome: 'applied',
+                    attemptCount: 1,
+                    acceptedStorageRevision: 0,
+                    snapshotVersion: 1,
+                    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+                    eventId: null,
+                    outboxIds: [],
+                    joinCode: null,
+                    joinCodeExpiresAtEpochMs: null,
+                    subscriptionOutcome: commandType === 'GROUP_TOPIC_SUBSCRIBE' ? 'subscribed' : 'unsubscribed',
+                    rejection: null
+                })
+            };
+
+            expect(deriveApiV1StateWriteEvidence({
+                spec: { match: 'scope', commandTypes: [commandType] },
+                rawRows: [subscription],
+                rawOutboxRows: []
+            })).toMatchObject({
+                atomicCompletionFailures: 0,
+                statusResultFailures: 0,
+                appInbox: [{ receipt: { identityKind: 'physical-resource-id' } }]
+            });
+        }
+    );
 
     it.each([
         ['missing', null],

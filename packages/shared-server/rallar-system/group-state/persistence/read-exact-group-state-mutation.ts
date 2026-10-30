@@ -1,4 +1,6 @@
+import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type {
     Group,
     GroupMember,
@@ -15,6 +17,8 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../../auth/persistence/auth-storage-keys.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
+import { clientStatePrincipalStorageKey } from '../../client-state/persistence/client-state-principal-storage-key.ts';
+import { CLIENT_STATE_SESSIONS_NAMESPACE } from '../../client-state/persistence/client-state-runtime-namespaces.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
@@ -31,7 +35,8 @@ import {
     PRESENCE_ADMISSIONS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
     PUBLICATION_GRANTS_NAMESPACE,
-    SESSIONS_NAMESPACE
+    SESSIONS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { groupStateIdempotencyStorageKey } from './idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
@@ -45,6 +50,12 @@ import {
 } from './publication/group-publication-grant-codec.ts';
 import { groupStatePublicationGrantStorageKey } from './publication/group-publication-grant-storage-key.ts';
 import { toGroupStateAuthoritySelectors, type GroupStateAuthorityBatchRead } from './read-group-state-authority.ts';
+import {
+    canonicalStoredLiveClientSession,
+    canonicalStoredPrincipalTopicSubscriptions,
+    canonicalStoredTopicSubscription
+} from './subscription/group-topic-subscription-codec.ts';
+import { groupStateTopicSubscriptionStorageKey } from './subscription/group-topic-subscription-storage-key.ts';
 
 export interface GroupStateMutationExactReadInput {
     readonly aggregateRef: GroupRef;
@@ -60,6 +71,22 @@ export interface GroupStateMutationExactReadInput {
     readonly presenceSessionIds: readonly string[];
     readonly admissionPrincipalIds: readonly string[];
     readonly publicationGrantPrincipalIds: readonly string[];
+    /** The (session, topic) subscription rows a subscribe or unsubscribe guards. */
+    readonly topicSubscriptions: readonly GroupTopicSubscriptionIdentity[];
+    /** The client-state sessions whose live generation a subscribe or unsubscribe compares, one selector each. */
+    readonly clientSessions: readonly GroupClientSessionIdentity[];
+    /** The principals whose every subscription row in the group a revoke of subscribe or a departure deletes. */
+    readonly subscriptionPrincipalIds: readonly string[];
+}
+
+export interface GroupTopicSubscriptionIdentity {
+    readonly sessionId: string;
+    readonly topicId: string;
+}
+
+export interface GroupClientSessionIdentity {
+    readonly principalId: string;
+    readonly sessionId: string;
 }
 
 interface ExactEntry<Identity extends string, Value> {
@@ -89,6 +116,16 @@ export interface GroupStateMutationExactEntries {
     readonly presenceSessions: readonly ExactEntry<string, GroupPresenceSession>[];
     readonly admissions: readonly ExactEntry<string, GroupPresenceAdmission>[];
     readonly publicationGrants: readonly ExactEntry<string, GroupPublicationGrant>[];
+    /** Keyed by the row's storage key. */
+    readonly topicSubscriptions: readonly ExactEntry<string, GroupTopicSubscription>[];
+    readonly clientSessions: readonly Readonly<{
+        identity: GroupClientSessionIdentity;
+        entry: RuntimeStateEntryValue<ClientSession> | null;
+    }>[];
+    readonly principalSubscriptions: readonly Readonly<{
+        principalId: string;
+        entries: readonly RuntimeStateEntryValue<GroupTopicSubscription>[];
+    }>[];
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     readonly groupSnapshot: GroupStateMutationExactSnapshot;
     readonly authSession: GroupStateMutationExactAuthSession;
@@ -123,7 +160,7 @@ export interface GroupStateMutationExactReadDecoders {
     groupSnapshot(rows: GroupStateAuthorityBatchRead): GroupSnapshot | undefined;
 }
 
-type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission' | 'grant';
+type IdentitySlotKind = 'idempotency' | 'member' | 'presence' | 'admission' | 'grant' | 'subscription';
 
 type AggregateSlotKind =
     | 'group'
@@ -136,7 +173,9 @@ type AggregateSlotKind =
 
 type ReadSlot =
     | Readonly<{ kind: AggregateSlotKind; }>
-    | Readonly<{ kind: IdentitySlotKind; identity: string; }>;
+    | Readonly<{ kind: IdentitySlotKind; identity: string; }>
+    | Readonly<{ kind: 'client-session'; identity: GroupClientSessionIdentity; }>
+    | Readonly<{ kind: 'principal-subscriptions'; identity: string; }>;
 
 interface SlotSelection {
     readonly slot: ReadSlot;
@@ -149,6 +188,9 @@ interface ExactReadIdentities {
     readonly sessionIds: readonly string[];
     readonly admissionIds: readonly string[];
     readonly grantIds: readonly string[];
+    readonly subscriptionKeys: readonly string[];
+    readonly clientSessions: readonly GroupClientSessionIdentity[];
+    readonly subscriptionPrincipalIds: readonly string[];
 }
 
 interface ExactReadSelectorSet {
@@ -176,7 +218,18 @@ export async function readGroupStateMutationExactEntries({
         memberIds: requireUniqueDenseStrings(input.memberPrincipalIds, 'member principal IDs'),
         sessionIds: requireUniqueDenseStrings(input.presenceSessionIds, 'presence session IDs'),
         admissionIds: requireUniqueDenseStrings(input.admissionPrincipalIds, 'admission principal IDs'),
-        grantIds: requireUniqueDenseStrings(input.publicationGrantPrincipalIds, 'publication grant principal IDs')
+        grantIds: requireUniqueDenseStrings(input.publicationGrantPrincipalIds, 'publication grant principal IDs'),
+        subscriptionKeys: requireUniqueDenseStrings(
+            input.topicSubscriptions.map(({ sessionId, topicId }) =>
+                groupStateTopicSubscriptionStorageKey(input.aggregateRef, sessionId, topicId)
+            ),
+            'topic subscription keys'
+        ),
+        clientSessions: input.clientSessions,
+        subscriptionPrincipalIds: requireUniqueDenseStrings(
+            input.subscriptionPrincipalIds,
+            'subscription principal IDs'
+        )
     });
     const liveSelections = toGroupStateReadBatchLiveSelections(
         selectors,
@@ -211,6 +264,33 @@ function toExactReadResult(
             selections,
             'grant',
             (principalId, entry) => canonicalStoredPublicationGrant(entry, { ...input.aggregateRef, principalId })
+        ),
+        topicSubscriptions: toExactEntries(
+            selections,
+            'subscription',
+            (_key, entry) => canonicalStoredTopicSubscription(entry, input.aggregateRef)
+        ),
+        clientSessions: selections.flatMap(({ slot, selection }) =>
+            slot.kind === 'client-session'
+                ? [{
+                    identity: slot.identity,
+                    entry: canonicalStoredLiveClientSession(selection.entries, {
+                        ...input.aggregateRef,
+                        ...slot.identity
+                    })
+                }]
+                : []
+        ),
+        principalSubscriptions: selections.flatMap(({ slot, selection }) =>
+            slot.kind === 'principal-subscriptions'
+                ? [{
+                    principalId: slot.identity,
+                    entries: canonicalStoredPrincipalTopicSubscriptions(selection.entries, {
+                        ...input.aggregateRef,
+                        principalId: slot.identity
+                    })
+                }]
+                : []
         ),
         lifecyclePolicy: input.includeLifecyclePolicy
             ? decoders.lifecyclePolicy(findSlotSelection(selections, 'lifecycle-policy')?.entries[0]?.value)
@@ -285,6 +365,7 @@ function createSelectors(
     };
     addAggregateSelectors(input, add);
     addIdentitySelectors(input, identities, add);
+    addContainingSelectors(input.aggregateRef, identities, add);
     if (input.authSessionId !== null) {
         add(
             {
@@ -356,7 +437,7 @@ function addIdentitySelectors(
 }
 
 function toExactKeySelectorGroups(ref: GroupRef, identities: ExactReadIdentities): readonly ExactKeySelectorGroup[] {
-    const { requestIds, memberIds, sessionIds, admissionIds, grantIds } = identities;
+    const { requestIds, memberIds, sessionIds, admissionIds, grantIds, subscriptionKeys } = identities;
     return [
         {
             kind: 'idempotency',
@@ -387,8 +468,45 @@ function toExactKeySelectorGroups(ref: GroupRef, identities: ExactReadIdentities
             namespace: PUBLICATION_GRANTS_NAMESPACE,
             identities: grantIds,
             keys: grantIds.map((principalId) => groupStatePublicationGrantStorageKey(ref, principalId))
+        },
+        {
+            kind: 'subscription',
+            namespace: SUBSCRIPTIONS_NAMESPACE,
+            identities: subscriptionKeys,
+            keys: subscriptionKeys
         }
     ];
+}
+
+/**
+ * The live client session through the principal's client-state child prefix, and a principal's subscription rows
+ * through the group's, each one `prefix-containing` selector in the same statement as the rest of the read.
+ */
+function addContainingSelectors(ref: GroupRef, identities: ExactReadIdentities, add: ExactReadSelectorSink): void {
+    identities.clientSessions.forEach((identity, index) =>
+        add(
+            {
+                selectorId: `client-session:${index}`,
+                kind: 'prefix-containing',
+                namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                keyPrefix: `${clientStatePrincipalStorageKey({ ...ref, principalId: identity.principalId })}:`,
+                storedValueContains: { sessionId: identity.sessionId, status: 'active' }
+            },
+            { kind: 'client-session', identity }
+        )
+    );
+    identities.subscriptionPrincipalIds.forEach((principalId, index) =>
+        add(
+            {
+                selectorId: `principal-subscriptions:${index}`,
+                kind: 'prefix-containing',
+                namespace: SUBSCRIPTIONS_NAMESPACE,
+                keyPrefix: `${groupStateGroupStorageKey(ref)}:`,
+                storedValueContains: { principalId }
+            },
+            { kind: 'principal-subscriptions', identity: principalId }
+        )
+    );
 }
 
 function addKeySelectors(group: ExactKeySelectorGroup, add: ExactReadSelectorSink): void {

@@ -117,6 +117,8 @@ export function computeApplyPlannedLayout(
         eventType: 'group-updated',
         lifecyclePolicy: null,
         publicationGrantEffects: [],
+        subscriptionEffects: [],
+        subscriptionOutcome: null,
         presenceSummaryWork: 'enqueue'
     });
 }

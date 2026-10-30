@@ -439,6 +439,11 @@ Publication-grant denials: `capacity` (a grant that would hold a 65th topic for
 one principal; the denial details carry `limit: 'topics-per-principal'` and
 `max: 64`).
 
+Topic-subscription denials, each refusing a subscribe for the asserting session:
+`no-subscribe-grant` (the principal holds no effective subscribe on the topic),
+`stale-generation` (the asserted connection generation is not the session's
+live one), and `no-live-session` (the session has no live client-state row).
+
 REST errors keep two shapes. Read routes answer `{ error }` and may also include
 `code`, `message`, and `details`. Mutation routes, including every policy
 workflow route below, answer the canonical `ApiMutationFailure` body

@@ -19,7 +19,9 @@ export async function writeGroupMutation(
     if (computed.persistence.lifecyclePolicyWrite) {
         await writeLifecyclePolicy(transaction, computed.persistence.lifecyclePolicyWrite);
     }
-    await writeGroupEvent(transaction, computed.persistence.eventWrite);
+    if (computed.persistence.eventWrite) {
+        await writeGroupEvent(transaction, computed.persistence.eventWrite);
+    }
     for (const outboxWrite of computed.outboxWrites) {
         await writeAppOutboxInsert(transaction, outboxWrite);
     }
@@ -60,7 +62,7 @@ async function writeLifecyclePolicy(
 
 async function writeGroupEvent(
     transaction: PSqlSql,
-    eventWrite: GroupMutationPersistence['eventWrite']
+    eventWrite: NonNullable<GroupMutationPersistence['eventWrite']>
 ): Promise<void> {
     const event = eventWrite.event;
     const inserted = await transaction<{ event_id: string; }[]>`
@@ -103,7 +105,7 @@ async function writeGroupEvent(
 
 function isExactGroupEvent(
     row: GroupStateEventCollisionRow,
-    eventWrite: GroupMutationPersistence['eventWrite']
+    eventWrite: NonNullable<GroupMutationPersistence['eventWrite']>
 ): boolean {
     const event = eventWrite.event;
     return row.application_id === event.applicationId &&

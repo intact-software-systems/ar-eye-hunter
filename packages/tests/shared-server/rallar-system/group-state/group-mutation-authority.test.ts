@@ -9,6 +9,7 @@ import {
 } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 
 import { authSession } from './group-state-test-runtime.ts';
+import { readMatrixTopicSubscription, writeMatrixClientSession } from './inbox/group-state-inbox-operation-matrix-runtime.ts';
 import {
     createAuthorityHarness,
     createRoom,
@@ -57,8 +58,8 @@ describe('group mutation ingress capture', () => {
         await createRoom(harness, 'publication-room', 'Publication room');
         await joinPublicationRoom(harness, 'bob');
 
-        const granted = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob');
-        const revoked = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_REVOKE, 'bob');
+        const granted = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', PUBLISH_ONLY);
+        const revoked = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_REVOKE, 'bob', PUBLISH_ONLY);
 
         expect(granted.left, JSON.stringify(granted.left)).toBeUndefined();
         expect(revoked.left, JSON.stringify(revoked.left)).toBeUndefined();
@@ -69,7 +70,29 @@ describe('group mutation ingress capture', () => {
                 { principalId: 'bob', topicId: 'room.feed', permissions: { publish: false, subscribe: false } }
             ]);
     });
+
+    it('subscribeGroupTopic and unsubscribeGroupTopic run end to end through processAuthenticated', async () => {
+        const harness = await createAuthorityHarness(['owner', 'bob']);
+        await createRoom(harness, 'publication-room', 'Publication room');
+        await joinPublicationRoom(harness, 'bob');
+        await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', { publish: false, subscribe: true });
+        await writeMatrixClientSession(harness, 'bob', 'bob-ws-generation-1');
+
+        const subscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_SUBSCRIBE);
+        const row = await readMatrixTopicSubscription(harness, 'publication-room', 'bob-session', 'room.feed');
+        const unsubscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE);
+
+        expect(subscribed.right).toMatchObject({ outcome: 'applied', eventId: null, subscriptionOutcome: 'subscribed' });
+        expect(row).toMatchObject({ principalId: 'bob', connectionGenerationId: 'bob-ws-generation-1' });
+        expect(unsubscribed.right).toMatchObject({ outcome: 'applied', subscriptionOutcome: 'unsubscribed' });
+        expect(await readMatrixTopicSubscription(harness, 'publication-room', 'bob-session', 'room.feed')).toBeUndefined();
+        const events = await harness.repository.listEvents({ ...SCOPE, groupId: 'publication-room' });
+        // The subscription writes record no event: the room holds only its creation, join and grant.
+        expect(events.map((event) => event.eventType)).toEqual(['group-created', 'member-joined', 'publication-grant-changed']);
+    });
 });
+
+const PUBLISH_ONLY = { publish: true, subscribe: false } as const;
 
 const PUBLICATION_ROOM_CONTEXT = `${SCOPE.applicationId}:${SCOPE.workspaceId}:publication-room`;
 
@@ -98,7 +121,8 @@ async function joinPublicationRoom(harness: AuthorityHarness, principalId: strin
 async function processPublicationCommand(
     harness: AuthorityHarness,
     type: typeof AppInboxType.GROUP_PUBLICATION_GRANT | typeof AppInboxType.GROUP_PUBLICATION_REVOKE,
-    principalId: string
+    principalId: string,
+    permissions: Readonly<{ publish: boolean; subscribe: boolean; }>
 ) {
     const owner = harness.sessions.owner;
     const requestId = `${type}-${principalId}`;
@@ -118,10 +142,41 @@ async function processPublicationCommand(
                 principalId,
                 request: {
                     topicId: 'room.feed',
-                    publish: true,
-                    subscribe: false,
+                    ...permissions,
                     actorPrincipalId: 'owner',
                     actorSessionId: owner.sessionId,
+                    requestId
+                }
+            }
+        }
+    });
+}
+
+async function processSubscriptionCommand(
+    harness: AuthorityHarness,
+    type: typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE | typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE
+) {
+    const bob = harness.sessions.bob;
+    const requestId = `${type}-bob-feed`;
+    return await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: bob,
+        input: {
+            traceId: 'trace-test-fixture',
+            type,
+            resourceId: requestId,
+            contextId: PUBLICATION_ROOM_CONTEXT,
+            senderId: bob.clientId,
+            data: {
+                scope: SCOPE,
+                groupId: 'publication-room',
+                sessionId: bob.sessionId,
+                request: {
+                    topicId: 'room.feed',
+                    connectionGenerationId: 'bob-ws-generation-1',
+                    actorPrincipalId: 'bob',
+                    actorSessionId: bob.sessionId,
                     requestId
                 }
             }

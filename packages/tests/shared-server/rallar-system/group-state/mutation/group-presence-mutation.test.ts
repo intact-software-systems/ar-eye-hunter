@@ -102,7 +102,7 @@ describe('heartbeat lease renewal classification', () => {
             lastHeartbeatAtEpochMs: 1_500,
             expiresAtEpochMs: 12_000
         });
-        expect(computed.event.eventType).toBe('session-heartbeat');
+        expect(computed.event?.eventType).toBe('session-heartbeat');
     });
 
     it('expands a lapsed-lease revival as an online transition under damped formation', () => {

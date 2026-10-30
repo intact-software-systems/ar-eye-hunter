@@ -64,7 +64,7 @@ describe('activation status series settlement', () => {
         if (computed.outcome !== 'write' || computed.guard.kind !== 'group' || computed.guard.operation !== 'update') {
             throw new Error('Expected new-series group publication');
         }
-        expect(computed.event.eventType).toBe('group-activation-status-changed');
+        expect(computed.event?.eventType).toBe('group-activation-status-changed');
         expect(computed.guard.value).toMatchObject({
             snapshotVersion: 11,
             activationStatus: { condition: 'active', formationEpoch: 2, coverageBasisLayoutIdentity: fixture.basis }
@@ -130,7 +130,10 @@ describe('activation status series settlement', () => {
                         { ...fixture.read, group: { ...fixture.read.group!, value: current.group } },
                         createMutationFacts()
                     );
-                    if (computed.outcome === 'write' && computed.guard.kind === 'group' && computed.guard.operation === 'update') {
+                    if (
+                        computed.outcome === 'write' && computed.guard.kind === 'group' && computed.guard.operation === 'update' &&
+                        computed.event !== null
+                    ) {
                         publications.push(computed.event.eventType);
                         current = { ...current, group: computed.guard.value, causalRevision: computed.receipt.causalRevision };
                     }

@@ -2,7 +2,10 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-state/mutation/to-group-mutation-attempt-facts.ts';
-import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import {
+    PUBLICATION_GRANTS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
@@ -12,6 +15,7 @@ import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/
 import { createTestAuthSession, createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
+import { subscriptionRowFor, writeSubscriptionRow } from './group-topic-subscription-test-runtime.ts';
 
 class GroupBarrierRepository extends FakeRuntimeStateRepository {}
 
@@ -234,6 +238,72 @@ describe('group membership mutation computation', () => {
         expect(computed.outcome === 'write' && grantBatchEffects(computed)).toEqual([]);
     });
 
+    it('a leave deletes every live subscription row of the principal across its sessions and topics', async () => {
+        const runtime = new GroupBarrierRepository();
+        const ref = groupRef('subscription-leave-room');
+        await seedOpenGroup(runtime, ref.groupId);
+        await joinBob(runtime, ref.groupId);
+        const bobRows = [
+            subscriptionRowFor('bob', 'bob-phone', 'room.feed'),
+            subscriptionRowFor('bob', 'bob-session', 'app.scores'),
+            subscriptionRowFor('bob', 'bob-session', 'room.feed')
+        ];
+        const keys = [];
+        for (const row of bobRows) {
+            keys.push(await writeSubscriptionRow(runtime, ref, row));
+        }
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('alice', 'alice-session', 'room.feed'));
+
+        const { computed } = await computeMutation(runtime, 'bob', upsertDescriptor(ref.groupId, 'bob', 'left'));
+
+        expect(computed.outcome === 'write' && computed.subscriptionEffects).toEqual(
+            bobRows.map((value) => ({ ref, value, expectedRevision: 0 }))
+        );
+        expect(computed.outcome === 'write' && subscriptionBatchEffects(computed)).toEqual(
+            keys.map((key) => expect.objectContaining({ operation: 'delete', key, expectedRevision: 0 }))
+        );
+    });
+
+    it('remove and ban delete them', async () => {
+        for (const operation of ['removeGroupMember', 'banGroupMember'] as const) {
+            const runtime = new GroupBarrierRepository();
+            const ref = groupRef(`subscription-${operation}-room`);
+            await seedOpenGroup(runtime, ref.groupId);
+            await joinBob(runtime, ref.groupId);
+            const key = await writeSubscriptionRow(runtime, ref, subscriptionRowFor('bob', 'bob-session', 'room.feed'));
+
+            const { computed } = await computeMutation(
+                runtime,
+                'alice',
+                mutationDescriptor({
+                    operation,
+                    scope: SCOPE,
+                    groupId: ref.groupId,
+                    targetPrincipalId: 'bob',
+                    request: { actorPrincipalId: 'alice', requestId: `${operation}-bob-subscription-0001` }
+                })
+            );
+
+            expect(computed.outcome === 'write' && subscriptionBatchEffects(computed), operation).toEqual([
+                expect.objectContaining({ operation: 'delete', key, effectId: 'topic-subscription:bob-session:room.feed' })
+            ]);
+        }
+    });
+
+    it('a principal with no rows adds no effect', async () => {
+        const runtime = new GroupBarrierRepository();
+        const ref = groupRef('subscription-empty-room');
+        await seedOpenGroup(runtime, ref.groupId);
+        await joinBob(runtime, ref.groupId);
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('alice', 'alice-session', 'room.feed'));
+
+        const { computed } = await computeMutation(runtime, 'bob', upsertDescriptor(ref.groupId, 'bob', 'left'));
+
+        expect(computed.outcome).toBe('write');
+        expect(computed.outcome === 'write' && computed.subscriptionEffects).toEqual([]);
+        expect(computed.outcome === 'write' && subscriptionBatchEffects(computed)).toEqual([]);
+    });
+
     it('validate refuses a computed leave whose grant delete was dropped', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'grant-drop-room');
@@ -346,4 +416,10 @@ function grantBatchEffects(
     computed: Readonly<{ persistence: Readonly<{ guardedBatch: Readonly<{ effects: readonly Readonly<{ namespace: string; }>[]; }>; }>; }>
 ) {
     return computed.persistence.guardedBatch.effects.filter((effect) => effect.namespace === PUBLICATION_GRANTS_NAMESPACE);
+}
+
+function subscriptionBatchEffects(
+    computed: Readonly<{ persistence: Readonly<{ guardedBatch: Readonly<{ effects: readonly Readonly<{ namespace: string; }>[]; }>; }>; }>
+) {
+    return computed.persistence.guardedBatch.effects.filter((effect) => effect.namespace === SUBSCRIPTIONS_NAMESPACE);
 }

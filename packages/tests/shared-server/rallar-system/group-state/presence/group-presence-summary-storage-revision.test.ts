@@ -191,6 +191,9 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         targetPublicationGrant: null,
+        targetTopicSubscription: null,
+        targetClientSession: null,
+        targetPrincipalSubscriptions: null,
         lifecyclePolicy: {
             status: 'present',
             policy: resolveGroupLifecyclePolicyPreset('optimistic')
