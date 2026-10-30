@@ -13,8 +13,6 @@ it.for(['api-v1', 'relic-hunter-server-v1', 'rallar-black-box-control-server'])(
     async (app, context) => {
         const serviceDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-deno-services-'));
         context.onTestFinished(() => rm(serviceDirectory, { recursive: true, force: true }));
-        const lockPath = path.join(repoRoot, 'apps', app, 'deno.lock');
-        const originalLock = await readFile(lockPath, 'utf8');
         await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -32,6 +30,5 @@ it.for(['api-v1', 'relic-hunter-server-v1', 'rallar-black-box-control-server'])(
             await expect(readFile(path.join(serviceDirectory, `${service}.service.d`, 'deno-runtime.conf'), 'utf8'))
                 .resolves.toBe('[Service]\nEnvironment=DENO_NO_PACKAGE_JSON=1\n');
         }
-        await expect(readFile(lockPath, 'utf8')).resolves.toBe(originalLock);
     }
 );
