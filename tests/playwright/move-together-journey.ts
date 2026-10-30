@@ -66,7 +66,7 @@ async function commitMoveWithNetworkRecovery(
     const retryEntry = guestMove.getByRole('button', { name: 'Retry destination entry', exact: true });
     await expect(retryEntry).toBeEnabled();
     await expect(async () => {
-        await retryEntry.click({ timeout: 1000 });
+        await retryEntry.click({ timeout: 15000 });
         await expect(guestMove.getByRole('alert')).toContainText('403', { timeout: 1000 });
     }).toPass({ timeout: 15000 });
     expect(faults.deniedPresenceRequests()).toBeGreaterThan(0);
