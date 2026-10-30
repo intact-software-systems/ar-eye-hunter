@@ -159,7 +159,7 @@ function syncScenePresentation(input: ArenaSceneStepInput, now: number): void {
     });
     const players = new Map(input.remotePlayers);
     for (const player of runtime.arenaState.players) {
-        if (input.spectating || player.sessionId !== input.localSessionId) {
+        if (input.spectating || player.sessionId !== localPlayerId) {
             const existing = players.get(player.sessionId);
             if (!existing || existing.pose.seq <= player.seq) {
                 players.set(player.sessionId, {

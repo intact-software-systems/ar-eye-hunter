@@ -245,6 +245,20 @@ function installAnimationFrameGate(): void {
     });
 }
 
+roomBrowserTest('a local player does not appear as a remote avatar without a session', async ({ page }) => {
+    const fixturePath =
+        new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url).pathname;
+    await page.goto(`/@fs${fixturePath}`);
+    await page.getByRole('button', { name: 'Play without session' }).click();
+    const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+    await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+    await canvas.click();
+    await page.keyboard.down('w');
+    await page.waitForTimeout(500);
+    await page.keyboard.up('w');
+    await expect(canvas).toHaveAttribute('data-arena-avatar-count', '0');
+});
+
 roomBrowserTest('a director canvas shot adopts a match accepted between animation frames', async ({ page }) => {
     roomBrowserTest.skip(
         process.env.RALLAR_ARENA_FULL_STACK === '1',
