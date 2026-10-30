@@ -151,8 +151,10 @@ async function publishRallarServerWsFanout(
         case 'none':
             return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
         case 'outbox': {
+            const admitted = toAdmittedAudience(input);
             const result = await input.service.enqueueOutboxIfAbsent(input.message, {
-                admittedAudience: toAdmittedAudience(input),
+                admittedAudience: admitted?.sessionIds,
+                admittedConnectionGenerationIds: admitted?.connectionGenerationIds,
                 recipientScope: readALTargetGroupRef(input.message) === undefined
                     ? resolveWsQueueBoxServerProvenScope(input.message, input.inboundScope) ?? undefined
                     : undefined
@@ -196,15 +198,39 @@ function toFailedPublishResult(input: PublishRallarServerWsMessageInput, reason:
     return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };
 }
 
+interface AdmittedOutboxAudience {
+    readonly sessionIds: readonly string[];
+    /** A granted topic's captured generation of each admitted session the route's audience still subscribes. */
+    readonly connectionGenerationIds: Readonly<Record<string, string>> | undefined;
+}
+
 /**
  * The sessions the live branch would address, handed to the outbox beside the message: the server's own
  * outbound owner sends to that audience and its pending row expects it, never the sessions that happen to
  * be connected to the instance that dequeues it (D24, D43). The wire message stays as the origin sent it,
- * so a room larger than the collection limit still fans out.
+ * so a room larger than the collection limit still fans out. On a granted topic each admitted session's
+ * subscription generation travels with it (D489); one the route's audience no longer holds has none, and no
+ * dispatch step sends it.
  */
-function toAdmittedAudience(input: PublishRallarServerWsMessageInput): readonly string[] | undefined {
+function toAdmittedAudience(input: PublishRallarServerWsMessageInput): AdmittedOutboxAudience | undefined {
     const { message, audience, admittedPeerIds } = input;
-    return audience === undefined
-        ? undefined
-        : resolveAuthorizedRoomSessionIds({ message, audience, admittedPeerIds, nowEpochMs: input.nowEpochMs });
+    if (audience === undefined) {
+        return undefined;
+    }
+    const sessionIds = resolveAuthorizedRoomSessionIds({
+        message,
+        audience,
+        admittedPeerIds,
+        nowEpochMs: input.nowEpochMs
+    });
+    const generations = audience.recipientConnectionGenerationIds;
+    return {
+        sessionIds,
+        connectionGenerationIds: input.topic.participation === 'granted'
+            ? Object.fromEntries(
+                sessionIds.filter((sessionId) => Object.hasOwn(generations, sessionId))
+                    .map((sessionId) => [sessionId, generations[sessionId]])
+            )
+            : undefined
+    };
 }

@@ -71,7 +71,7 @@ export namespace WsQueueBoxServerDequeueAuthority {
 
     export type AudienceAuthority = Pick<
         ALOutboundCapturedPolicy,
-        'admittedAudience' | 'recipientScope' | 'sessionInvalidation'
+        'admittedAudience' | 'admittedConnectionGenerationIds' | 'recipientScope' | 'sessionInvalidation'
     >;
 }
 
@@ -138,6 +138,7 @@ export class WsQueueBoxServerDequeueAuthority {
         return await readWsQueueBoxServerEligibleAudience({
             message,
             admittedAudience: authority.admittedAudience,
+            admittedConnectionGenerationIds: authority.admittedConnectionGenerationIds,
             provenScope: authority.recipientScope,
             filterEligibleCapturedSessionIds
         });

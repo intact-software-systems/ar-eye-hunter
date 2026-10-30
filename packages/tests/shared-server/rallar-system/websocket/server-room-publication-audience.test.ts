@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { toMembersTopicPublicationAuthority } from '@shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.ts';
 import { computeServerRoomPublicationAudience } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 
@@ -22,7 +23,11 @@ describe('trusted server room publication audience', () => {
             { groupRef }
         );
 
-        const audience = computeServerRoomPublicationAudience({ ...members(message), snapshot, nowEpochMs: 100 });
+        const audience = computeServerRoomPublicationAudience({
+            ...members(message),
+            authority: toMembersTopicPublicationAuthority(snapshot),
+            nowEpochMs: 100
+        });
 
         expect(audience?.right?.sessions.map((session) => session.sessionId)).toEqual(['session-1']);
         expect(audience?.right?.targets).toEqual(message.targets);
@@ -31,7 +36,7 @@ describe('trusted server room publication audience', () => {
                 ...message,
                 targets: { mode: 'broadcast', scope: 'room', groupRef: { ...groupRef, workspaceId: 'other' } }
             }),
-            snapshot,
+            authority: toMembersTopicPublicationAuthority(snapshot),
             nowEpochMs: 100
         })).toBeUndefined();
     });
@@ -61,7 +66,11 @@ describe('trusted server room publication audience', () => {
             }
         };
 
-        expect(computeServerRoomPublicationAudience({ ...members(message), snapshot: archived, nowEpochMs: 100 }))
+        expect(computeServerRoomPublicationAudience({
+            ...members(message),
+            authority: toMembersTopicPublicationAuthority(archived),
+            nowEpochMs: 100
+        }))
             .toBeUndefined();
     });
 
@@ -80,11 +89,57 @@ describe('trusted server room publication audience', () => {
             message,
             topic: { participation: 'granted', serverProducerIds: ['match-producer'] },
             producerId: undefined,
-            snapshot,
+            authority: toMembersTopicPublicationAuthority(snapshot),
             nowEpochMs: 100
         });
 
         expect(refused?.left?.code).toBe('topic-not-granted');
+    });
+
+    it('a listed producer reaches the subscribed sessions of the granted topic, each with its live generation', () => {
+        const base = createGroupSnapshot(2, ['session-1', 'session-2']);
+        const snapshot = {
+            ...base,
+            publicationGrants: base.activeSessions.map((session) => ({
+                applicationId: base.group.applicationId,
+                workspaceId: base.group.workspaceId,
+                groupId: base.group.groupId,
+                principalId: session.principalId,
+                topics: { 'room.match': { publish: false, subscribe: true } },
+                updated: base.group.updated
+            }))
+        };
+        const message = newALBroadcastMessage(
+            'game-server',
+            newALRoute('room.match', 'message', snapshot.group.groupId),
+            'room',
+            'room.match.v1',
+            { tick: 1 },
+            { groupRef: snapshot.group }
+        );
+        const subscribed = snapshot.activeSessions[1]!;
+
+        const audience = computeServerRoomPublicationAudience({
+            message,
+            topic: { participation: 'granted', serverProducerIds: ['match-producer'] },
+            producerId: 'match-producer',
+            authority: {
+                snapshot,
+                subscriptions: [{
+                    sessionId: subscribed.sessionId,
+                    principalId: subscribed.principalId,
+                    topicId: 'room.match',
+                    connectionGenerationId: 'client-generation-2',
+                    leaseExpiresAtEpochMs: 200,
+                    admittedAtGroupRevision: 2
+                }],
+                liveSessionGenerations: { [subscribed.sessionId]: ['client-generation-2'] }
+            },
+            nowEpochMs: 100
+        });
+
+        expect(audience?.right?.sessions.map((session) => session.sessionId)).toEqual([subscribed.sessionId]);
+        expect(audience?.right?.recipientConnectionGenerationIds).toEqual({ [subscribed.sessionId]: 'client-generation-2' });
     });
 });
 

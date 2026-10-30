@@ -198,7 +198,8 @@ describe('Rallar server WS fanout carriers', () => {
                     audience: {
                         targets: message.targets,
                         sessions: [roomSession('sender'), roomSession('remote-session')],
-                        snapshotVersion: 3
+                        snapshotVersion: 3,
+                        recipientConnectionGenerationIds: {}
                     }
                 },
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
@@ -309,7 +310,8 @@ function createCarrierFixture(
             Either.ofRight({
                 targets: message.targets!,
                 sessions: [roomSession('receiver')],
-                snapshotVersion: 3
+                snapshotVersion: 3,
+                recipientConnectionGenerationIds: {}
             }),
         livePublication: cluster ? recording.livePublication : undefined
     });

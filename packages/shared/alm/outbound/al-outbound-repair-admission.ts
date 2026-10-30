@@ -148,6 +148,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             ...toALOutboundControlRepairHint(control.payload),
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
+            admittedConnectionGenerationIds: read.plan?.admittedConnectionGenerationIds,
             recipientScope: read.plan?.recipientScope,
             sessionInvalidation: read.plan?.sessionInvalidation,
             completedHopPeerIds: [],

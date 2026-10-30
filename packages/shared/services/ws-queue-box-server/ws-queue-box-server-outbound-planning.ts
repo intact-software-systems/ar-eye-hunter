@@ -105,6 +105,8 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly clusterPublisherRegistered: boolean;
         /** The audience the router admitted the message to, carried beside it; absent for every other message. */
         readonly admittedAudience: readonly string[] | undefined;
+        /** The generations a granted topic's router captured for its admitted sessions; absent for every other message. */
+        readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
         readonly recipientScope?: StateScope;
         readonly principalTargetId?: string;
         readonly sessionInvalidation?: ALSessionInvalidationAuthority;
@@ -212,6 +214,9 @@ export class WsQueueBoxServerOutboundPlanning {
             repairTracking: toRepairTrackingPlan(normalized.effective),
             supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
             ...(admittedAudience === undefined ? {} : { admittedAudience }),
+            ...(request.admittedConnectionGenerationIds === undefined
+                ? {}
+                : { admittedConnectionGenerationIds: request.admittedConnectionGenerationIds }),
             ...(request.sessionInvalidation === undefined
                 ? {}
                 : { sessionInvalidation: request.sessionInvalidation }),
@@ -273,6 +278,7 @@ export class WsQueueBoxServerOutboundPlanning {
             lane: 'volatile',
             preparedMessages: this.toPreparedRecipients(message, recipients, request),
             admittedAudience: request.admittedAudience,
+            admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
             recipientScope: request.recipientScope,
             principalTargetId: request.principalTargetId,
             sessionInvalidation: request.sessionInvalidation,

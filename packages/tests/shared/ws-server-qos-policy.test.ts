@@ -112,6 +112,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg, {
             admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined,
             recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-2']);
@@ -204,7 +205,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const world = await service.enqueueOutboxIfAbsent(
             shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery),
-            { admittedAudience: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
+            { admittedAudience: undefined, admittedConnectionGenerationIds: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         expect(world.verdict).toEqual({
@@ -403,7 +404,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(msg, { admittedAudience: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } });
+        await service.enqueueOutboxIfAbsent(msg, {
+            admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;

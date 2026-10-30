@@ -31,6 +31,10 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type {
+    CapturedWsRecipientEligibilityInputDto,
+    WsCapturedRecipientEligibilityFilter
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -77,11 +81,21 @@ describe('WS first dequeue authority', () => {
                     supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'snapshot' } }
                 }
             };
-            const admitted = await fixture.service.enqueueOutboxIfAbsent(older, { admittedAudience: [], recipientScope: SCOPE });
+            const admitted = await fixture.service.enqueueOutboxIfAbsent(older, {
+                admittedAudience: [],
+                admittedConnectionGenerationIds: undefined,
+                recipientScope: SCOPE
+            });
             expect(admitted.verdict.kind).toBe('admitted');
             const canonical = admitted.entries[0]!;
             const newer: ALMessage = { ...older, id: { ...older.id, msgId: `${older.id.msgId}-newer` }, ordering: { seq: 2 } };
-            expect((await fixture.service.enqueueOutboxIfAbsent(newer, { admittedAudience: [], recipientScope: SCOPE })).verdict.kind).toBe('admitted');
+            expect(
+                (await fixture.service.enqueueOutboxIfAbsent(newer, {
+                    admittedAudience: [],
+                    admittedConnectionGenerationIds: undefined,
+                    recipientScope: SCOPE
+                })).verdict.kind
+            ).toBe('admitted');
             expect(await fixture.stores.admissionStore.readMessageSupersedence([older])).toEqual([{ status: 'fulfilled', value: true }]);
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(canonical.key))?.status).toBe(EntityStatus.COMPLETED);
@@ -193,6 +207,32 @@ describe('WS first dequeue authority', () => {
         expect(fixture.native.sent).toHaveLength(1);
     });
 
+    it('the held per-session rewrite keeps that session\'s generation', async () => {
+        const rechecks: CapturedWsRecipientEligibilityInputDto[] = [];
+        const fixture = createFixture(undefined, undefined, async (input) => {
+            rechecks.push(input);
+            return input.candidateSessionIds;
+        });
+        fixture.socket.expectedConnections.expect({ id: 'awaited', generationId: 'generation', expiresAtEpochMs: Date.now() + 30_000 });
+        const message = createMessage('broadcast');
+        const generations = { peer: 'subscription-generation-peer', awaited: 'subscription-generation-awaited' };
+        const admitted = await fixture.service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: ['peer', 'awaited'],
+            recipientScope: undefined,
+            admittedConnectionGenerationIds: generations
+        });
+
+        await fixture.engine.executeOnce();
+        await expect.poll(async () => (await fixture.stores.workQueue.getItem(admitted.entries[0]!.key))?.status)
+            .toBe(EntityStatus.COMPLETED);
+        fixture.socket.expectedConnections.open({ id: 'awaited', generationId: 'generation' });
+
+        await expect.poll(() => rechecks.map(toRecheckedGenerations)).toEqual([
+            { candidateSessionIds: ['peer', 'awaited'], capturedConnectionGenerationIds: generations },
+            { candidateSessionIds: ['awaited'], capturedConnectionGenerationIds: { awaited: 'subscription-generation-awaited' } }
+        ]);
+    });
+
     it('refuses a handed policy that does not authorize the row as corruption, without reading the stored one', async () => {
         const fixture = createFixture();
         const storedReads = recordStoredPolicyReads(fixture.stores);
@@ -285,9 +325,15 @@ interface DequeueAuthorityFixture {
     readonly service: WsQueueBoxServerService;
 }
 
+function toRecheckedGenerations(input: CapturedWsRecipientEligibilityInputDto) {
+    return { candidateSessionIds: input.candidateSessionIds, capturedConnectionGenerationIds: input.capturedConnectionGenerationIds };
+}
+
+/** With a re-check, every row reaches only its frozen audience, as a granted topic's row does. */
 function createFixture(
     readProducerProvenance?: WsQueueBoxServerService.Input['readProducerProvenance'],
-    stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage })
+    stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage }),
+    filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter
 ): DequeueAuthorityFixture {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
@@ -301,9 +347,13 @@ function createFixture(
         outbox: stores.workQueue,
         outboundStores: stores,
         queueEngine: engine,
-        targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
+        targetResolver: {
+            requiresFrozenAudience: () => filterEligibleCapturedSessionIds !== undefined,
+            resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }]
+        },
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
-        readProducerProvenance
+        readProducerProvenance,
+        filterEligibleCapturedSessionIds
     };
     const service = createDefaultWsQueueBoxServerService(input);
     onTestFinished(async () => {

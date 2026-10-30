@@ -639,6 +639,7 @@ describe('Rallar server WS live cluster publication', () => {
         const fixture = createScopedSocketsFixture(
             notices,
             createGroupRoomWsAuthorizer({
+                readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
                 readGroupSnapshot: () => snapshot,
                 readPreActivationAppData: () => 'allowed',
                 nowEpochMs: () => 100
@@ -667,6 +668,7 @@ describe('Rallar server WS live cluster publication', () => {
         const fixture = createScopedSocketsFixture(
             notices,
             createGroupRoomWsAuthorizer({
+                readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
                 readGroupSnapshot: () => snapshot,
                 readPreActivationAppData: () => 'allowed',
                 nowEpochMs: () => 100
@@ -759,7 +761,8 @@ describe('Rallar server WS live cluster publication', () => {
                 Either.ofRight({
                     targets: message.targets!,
                     sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
+                    snapshotVersion: 2,
+                    recipientConnectionGenerationIds: {}
                 }),
             livePublication: {
                 transport,
@@ -827,7 +830,8 @@ describe('Rallar server WS live cluster publication', () => {
                 Either.ofRight({
                     targets: message.targets!,
                     sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
+                    snapshotVersion: 2,
+                    recipientConnectionGenerationIds: {}
                 })
         });
         const message = newALBroadcastMessage(
@@ -876,7 +880,8 @@ describe('Rallar server WS live cluster publication', () => {
                 Either.ofRight({
                     targets: message.targets!,
                     sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
+                    snapshotVersion: 2,
+                    recipientConnectionGenerationIds: {}
                 }),
             livePublication: {
                 transport: {
@@ -1101,7 +1106,8 @@ describe('Rallar server WS live cluster publication', () => {
                 Either.ofRight({
                     targets: { ...message.targets!, exceptPeerIds: ['different'] },
                     sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
+                    snapshotVersion: 2,
+                    recipientConnectionGenerationIds: {}
                 }),
             livePublication: {
                 transport,
@@ -1196,7 +1202,7 @@ describe('Rallar server WS live cluster publication', () => {
             nowEpochMs: () => 100,
             authorizeRoomMessage: ({ message }) => ({
                 authorized: true,
-                audience: { targets: message.targets!, sessions: snapshot.activeSessions, snapshotVersion: 2 }
+                audience: { targets: message.targets!, sessions: snapshot.activeSessions, snapshotVersion: 2, recipientConnectionGenerationIds: {} }
             }),
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
@@ -1372,6 +1378,7 @@ async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
     const router = new RallarServerWsRouter(service, {
         grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage: createGroupRoomWsAuthorizer({
+            readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
             readGroupSnapshot: () => snapshot,
             readPreActivationAppData: () => 'allowed',
             nowEpochMs: () => 100

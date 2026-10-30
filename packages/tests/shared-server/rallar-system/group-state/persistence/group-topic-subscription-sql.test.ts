@@ -14,18 +14,23 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { readGroupStateSnapshotVersions } from '@shared-server/rallar-system/group-state/persistence/read-group-state-authority.ts';
 import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-system/group-state/persistence/subscription/group-topic-subscription-storage-key.ts';
-import { readGroupSessionTopicSubscriptions } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import {
+    readGroupSessionTopicSubscriptions,
+    readGroupTopicSubscriptionAuthority
+} from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
 import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { computeRoomPublicationAudience } from '@shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import {
     GROUP_TOPIC_SUBSCRIPTION_LEASE_MS,
     type GroupTopicSubscription
 } from '@shared/api/group-publication/group-topic-subscriptions.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import { recordPostgresStatements, type PostgresStatementLog } from '../../../integration/postgres/test-support/record-postgres-statements.ts';
 import { createResourceInboxTestStorage, type ResourceInboxTestBackend } from '../../../queuebox/resource-inbox-test-storage.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestAuthSession } from '../group-state-test-runtime.ts';
@@ -112,6 +117,88 @@ describe.each(['memory', 'postgres'] as const)('group topic subscription rows (%
             });
 
             expect(rows.map((row) => row.topicId)).toEqual(['app.scores', 'room.feed', 'room.zed']);
+        });
+    }, 30_000);
+
+    sqlIt('the authority read returns the topic\'s live rows and the candidates\' live generations in one statement', async () => {
+        await withSubscriptionSql(backend, async (fixture) => {
+            await seedSubscribableRoom(fixture);
+            const feed = subscriptionFor('room.feed');
+            await writeSubscriptionRow(fixture, feed);
+            await writeSubscriptionRow(fixture, subscriptionFor('room.other'));
+            await writeSubscriptionRow(fixture, { ...subscriptionFor('room.feed'), sessionId: 'bob-lapsed', leaseExpiresAtEpochMs: fixture.nowEpochMs - 1 });
+            const snapshot = withBobPresence(await requireSnapshot(fixture), fixture);
+            const log: PostgresStatementLog = { statements: [], transactions: 0 };
+
+            const authority = await readGroupTopicSubscriptionAuthority(
+                new PSqlRuntimeStateRepository(recordPostgresStatements(fixture.sql, log, null)),
+                { snapshot, topicId: 'room.feed', observedAtEpochMs: fixture.nowEpochMs }
+            );
+
+            expect(log.statements).toHaveLength(1);
+            expect(authority).toEqual({
+                subscriptions: [feed],
+                liveSessionGenerations: { 'bob-session': [GENERATION] }
+            });
+        });
+    }, 30_000);
+
+    sqlIt('a disconnected or expired client session yields no generation', async () => {
+        await withSubscriptionSql(backend, async (fixture) => {
+            await seedSubscribableRoom(fixture);
+            await writeSubscriptionRow(fixture, subscriptionFor('room.feed'));
+            const snapshot = withBobPresence(await requireSnapshot(fixture), fixture);
+            const readGenerations = async () =>
+                (await readGroupTopicSubscriptionAuthority(fixture.runtime, {
+                    snapshot,
+                    topicId: 'room.feed',
+                    observedAtEpochMs: fixture.nowEpochMs
+                })).liveSessionGenerations;
+
+            await writeClientSession(fixture, { ...clientSessionFor(fixture), expiresAtEpochMs: fixture.nowEpochMs });
+            const expired = await readGenerations();
+            await writeClientSession(fixture, {
+                ...clientSessionFor(fixture),
+                status: 'disconnected',
+                disconnectedAtEpochMs: fixture.nowEpochMs - 1,
+                disconnectReason: 'socket-closed'
+            });
+            const disconnected = await readGenerations();
+
+            expect(expired).toEqual({});
+            expect(disconnected).toEqual({});
+        });
+    }, 30_000);
+
+    sqlIt('a revoke committed between the snapshot probe and the subscription read leaves the session out of the audience', async () => {
+        await withSubscriptionSql(backend, async (fixture) => {
+            await seedSubscribableRoom(fixture);
+            await runMutation(fixture, subscribeDescriptor('room.feed', 'subscribe-bob-before-revoke1'));
+            const current = new GroupStateCurrentSnapshotCache({
+                repository: fixture.repository,
+                versionReader: fixture.runtime,
+                nowEpochMs: () => fixture.nowEpochMs,
+                maxEntries: 4
+            });
+            const probed = withBobPresence((await current.readSnapshot(REF))!, fixture);
+            const audienceOf = async (snapshot: GroupSnapshot) =>
+                computeRoomPublicationAudience({
+                    snapshot,
+                    ...await readGroupTopicSubscriptionAuthority(fixture.runtime, {
+                        snapshot,
+                        topicId: 'room.feed',
+                        observedAtEpochMs: fixture.nowEpochMs
+                    }),
+                    topic: { topicId: 'room.feed', participation: 'granted', serverProducerIds: [] },
+                    message: { targets: { mode: 'broadcast', scope: 'room', groupRef: REF } },
+                    nowEpochMs: fixture.nowEpochMs
+                }).sessions.map((session) => session.sessionId);
+            const beforeRevoke = await audienceOf(probed);
+
+            await runMutation(fixture, revokeBobSubscribeDescriptor());
+
+            expect(beforeRevoke).toEqual(['bob-session']);
+            expect(await audienceOf(probed)).toEqual([]);
         });
     }, 30_000);
 
@@ -253,6 +340,52 @@ async function seedSubscribableRoom(fixture: SubscriptionSqlFixture): Promise<vo
         })
     );
     await writeClientSession(fixture, clientSessionFor(fixture));
+}
+
+async function requireSnapshot(fixture: SubscriptionSqlFixture): Promise<GroupSnapshot> {
+    const snapshot = await fixture.repository.readSnapshot(REF);
+    if (snapshot === undefined) {
+        throw new Error('The subscription room has no snapshot');
+    }
+    return snapshot;
+}
+
+/**
+ * The snapshot's sessions come from the presence summary, which converges after a connect commits; the probed snapshot
+ * here carries bob's live session as a converged summary would.
+ */
+function withBobPresence(snapshot: GroupSnapshot, fixture: SubscriptionSqlFixture): GroupSnapshot {
+    const session: GroupPresenceSession = {
+        ...REF,
+        sessionId: 'bob-session',
+        principalId: 'bob',
+        generationId: 'bob-presence-generation',
+        generationVersion: 1,
+        connectionGenerationId: GENERATION,
+        connectedAtEpochMs: fixture.nowEpochMs,
+        lastHeartbeatAtEpochMs: fixture.nowEpochMs,
+        expiresAtEpochMs: fixture.nowEpochMs + 60_000,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    };
+    return { ...snapshot, activeSessions: [session] };
+}
+
+function revokeBobSubscribeDescriptor(): GroupMutationDescriptor {
+    return mutationDescriptor({
+        operation: 'revokeGroupPublication',
+        scope: REF,
+        groupId: REF.groupId,
+        targetPrincipalId: 'bob',
+        request: {
+            topicId: 'room.feed',
+            publish: false,
+            subscribe: true,
+            actorPrincipalId: 'alice',
+            requestId: 'revoke-bob-feed-subscribe-01'
+        }
+    });
 }
 
 function subscribeDescriptor(topicId: string, requestId: string): GroupMutationDescriptor {

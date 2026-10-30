@@ -15,10 +15,12 @@ import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crd
 import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
+import type { GroupPublicationAuthority } from '../group-state/persistence/subscription/read-group-topic-subscriptions.ts';
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
 import { filterLiveWsRoomRecipientSessionIds } from '../queue-pubsub/live-ws-audience.ts';
 import {
     computeRoomPublicationAdmission,
+    toMembersTopicPublicationAuthority,
     type RoomPublicationAdmission
 } from './room-publication/compute-room-publication-admission.ts';
 import type {
@@ -36,7 +38,7 @@ type MaybePromise<T> = T | Promise<T>;
 type ReadRoomAuthorizationSnapshotResult =
     | {
         readonly kind: 'ready';
-        readonly snapshot: GroupSnapshot;
+        readonly authority: GroupPublicationAuthority;
     }
     | {
         readonly kind: 'denied';
@@ -48,6 +50,11 @@ export interface GroupRoomWsAuthorizerDependencies {
         ref: GroupRef,
         input: RallarServerWsRoomAuthorizationInput
     ) => MaybePromise<GroupSnapshot | undefined>;
+    /** A granted topic's probed snapshot with its fresh subscription rows and live generations, in place of the snapshot. */
+    readonly readPublicationAuthority: (
+        ref: GroupRef,
+        topicId: string
+    ) => MaybePromise<GroupPublicationAuthority | undefined>;
     readonly readPreActivationAppData: (
         ref: GroupRef
     ) => MaybePromise<GroupPreActivationAppData>;
@@ -61,7 +68,7 @@ export function createGroupRoomWsAuthorizer(
 }
 
 export interface ComputeServerRoomPublicationAudienceInput extends RallarServerWsPublishAudienceInputDto {
-    readonly snapshot: GroupSnapshot | undefined;
+    readonly authority: GroupPublicationAuthority | undefined;
     readonly nowEpochMs: number;
 }
 
@@ -69,18 +76,18 @@ export interface ComputeServerRoomPublicationAudienceInput extends RallarServerW
 export function computeServerRoomPublicationAudience(
     input: ComputeServerRoomPublicationAudienceInput
 ): Either<RoomPublicationAdmission.Refusal, RallarServerWsRoomAudience> | undefined {
-    const { snapshot, message, nowEpochMs } = input;
+    const { authority, message, nowEpochMs } = input;
     const groupRef = readALTargetGroupRef(message);
     if (
-        !snapshot || !groupRef || !message.targets ||
-        !isSameGroupRef(snapshot.group, groupRef) ||
-        snapshot.group.status !== 'active' || snapshot.group.transportState === 'halted' ||
-        (snapshot.group.expiresAtEpochMs !== null && snapshot.group.expiresAtEpochMs <= nowEpochMs)
+        !authority || !groupRef || !message.targets ||
+        !isSameGroupRef(authority.snapshot.group, groupRef) ||
+        authority.snapshot.group.status !== 'active' || authority.snapshot.group.transportState === 'halted' ||
+        (authority.snapshot.group.expiresAtEpochMs !== null && authority.snapshot.group.expiresAtEpochMs <= nowEpochMs)
     ) {
         return undefined;
     }
     return computeRoomPublicationAdmission({
-        snapshot,
+        ...authority,
         topic: { ...input.topic, topicId: message.route.topicId },
         publisher: { kind: 'server-producer', producerId: input.producerId },
         message: { ...message, targets: message.targets },
@@ -100,12 +107,12 @@ async function authorizeGroupRoomMessage(
     if (snapshotRead.kind === 'denied') {
         return snapshotRead.decision;
     }
-    const { snapshot } = snapshotRead;
-    const policyDenial = await readRoomPolicyDenial(dependencies, input, snapshot);
+    const { authority } = snapshotRead;
+    const policyDenial = await readRoomPolicyDenial(dependencies, input, authority.snapshot);
     if (policyDenial) {
         return policyDenial;
     }
-    return toRoomAuthorizationDecision({ input, targets, snapshot, nowEpochMs: dependencies.nowEpochMs() });
+    return toRoomAuthorizationDecision({ input, targets, authority, nowEpochMs: dependencies.nowEpochMs() });
 }
 
 async function readRoomPolicyDenial(
@@ -151,20 +158,21 @@ async function readRoomPolicyDenial(
 interface ToRoomAuthorizationDecisionInput {
     readonly input: RallarServerWsRoomAuthorizationInput;
     readonly targets: ALTargets;
-    readonly snapshot: GroupSnapshot;
+    readonly authority: GroupPublicationAuthority;
     readonly nowEpochMs: number;
 }
 
 /** The sender passed the room's policy, so its session is live in the snapshot; its topic's admission decides the rest. */
 function toRoomAuthorizationDecision(
-    { input, targets, snapshot, nowEpochMs }: ToRoomAuthorizationDecisionInput
+    { input, targets, authority, nowEpochMs }: ToRoomAuthorizationDecisionInput
 ): RallarServerWsRoomAuthorizationDecision {
+    const { snapshot } = authority;
     const sender = snapshot.activeSessions.find((session) => session.sessionId === input.senderId);
     if (!sender) {
         return false;
     }
     const admission = computeRoomPublicationAdmission({
-        snapshot,
+        ...authority,
         topic: { ...input.topic, topicId: input.topicId },
         publisher: { kind: 'session', sessionId: sender.sessionId, principalId: sender.principalId },
         message: { ...input.message, targets },
@@ -214,9 +222,8 @@ async function readRoomAuthorizationSnapshot(
 ): Promise<ReadRoomAuthorizationSnapshotResult> {
     const groupRef = input.roomRef ??
         readALTargetGroupRef(input.message);
-    const snapshot = groupRef
-        ? await dependencies.readGroupSnapshot(groupRef, input)
-        : undefined;
+    const authority = groupRef ? await readRoomAuthority(dependencies, groupRef, input) : undefined;
+    const snapshot = authority?.snapshot;
     if (groupRef && snapshot && !isSameGroupRef(snapshot.group, groupRef)) {
         return {
             kind: 'denied',
@@ -228,14 +235,27 @@ async function readRoomAuthorizationSnapshot(
             }
         };
     }
-    if (!snapshot) {
+    if (!authority) {
         return { kind: 'denied', decision: toMissingRoomCacheDecision(input) };
     }
-    const floorDenial = resolveRoomFloorDenial(input, snapshot);
+    const floorDenial = resolveRoomFloorDenial(input, authority.snapshot);
     if (floorDenial) {
         return { kind: 'denied', decision: floorDenial };
     }
-    return { kind: 'ready', snapshot };
+    return { kind: 'ready', authority };
+}
+
+/** One read per pass: a granted topic's snapshot comes with its subscription authority, a members topic's alone. */
+async function readRoomAuthority(
+    dependencies: GroupRoomWsAuthorizerDependencies,
+    groupRef: GroupRef,
+    input: RallarServerWsRoomAuthorizationInput
+): Promise<GroupPublicationAuthority | undefined> {
+    if (input.topic.participation === 'granted') {
+        return await dependencies.readPublicationAuthority(groupRef, input.topicId);
+    }
+    const snapshot = await dependencies.readGroupSnapshot(groupRef, input);
+    return snapshot === undefined ? undefined : toMembersTopicPublicationAuthority(snapshot);
 }
 
 function toMissingRoomCacheDecision(

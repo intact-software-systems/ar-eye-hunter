@@ -44,7 +44,11 @@ describe('WS server pre-submission readiness', () => {
             return result;
         });
         const message = createMessage();
-        await service.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
+        await service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: RECIPIENT_SCOPE
+        });
         // Admission returns before its own send batch: the deferred attempt is what this asserts on.
         await vi.advanceTimersByTimeAsync(0);
         for (let cycle = 0; cycle < 25; cycle += 1) {
@@ -78,7 +82,11 @@ describe('WS server pre-submission readiness', () => {
             return result;
         });
         const message = createMessage();
-        await service.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
+        await service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: RECIPIENT_SCOPE
+        });
         const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
         vi.setSystemTime(message.constraints!.expiresAtMs!);
         native.open();
@@ -95,7 +103,11 @@ describe('WS server pre-submission readiness', () => {
         const send = vi.spyOn(native, 'send').mockImplementation(() => {
             throw new Error('native write failed');
         });
-        await service.enqueueOutboxIfAbsent(createMessage(), { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
+        await service.enqueueOutboxIfAbsent(createMessage(), {
+            admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: RECIPIENT_SCOPE
+        });
         await vi.advanceTimersByTimeAsync(0);
         expect(send).toHaveBeenCalledTimes(1);
         const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');

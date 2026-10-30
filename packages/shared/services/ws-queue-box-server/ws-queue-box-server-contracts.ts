@@ -89,6 +89,8 @@ export interface CapturedWsRecipientEligibilityInputDto {
     readonly message: ALMessage;
     readonly candidateSessionIds: readonly string[];
     readonly recipientScope: StateScope | undefined;
+    /** The connection generation the row captured for each candidate (a granted topic's row); null when it captured none. */
+    readonly capturedConnectionGenerationIds: Readonly<Record<string, string>> | null;
 }
 
 /**

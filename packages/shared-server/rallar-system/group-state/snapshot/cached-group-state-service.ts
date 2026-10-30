@@ -3,6 +3,7 @@ import type { StateSnapshotObservation } from '@shared/repository/state-snapshot
 import { compareRuntimeStateKeys } from '../../../runtime-state/read-batch/compare-runtime-state-keys.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+import type { GroupPublicationAuthority } from '../persistence/subscription/read-group-topic-subscriptions.ts';
 
 export type CachedGroupStateServiceCache = Readonly<{
     findOrLoadByRef(
@@ -25,6 +26,11 @@ export type CachedGroupStateService =
     & Readonly<{
         observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
         readCurrentSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
+        /**
+         * The probed current snapshot and, read after it, the topic's subscription rows and live client generations;
+         * undefined when the group has no current snapshot. The rows are never cached.
+         */
+        readCurrentPublicationAuthority(ref: GroupRef, topicId: string): Promise<GroupPublicationAuthority | undefined>;
         readSnapshotAtLeast(
             ref: GroupRef,
             options: Readonly<{
@@ -52,6 +58,12 @@ export function createCachedGroupStateService(
                 return snapshot;
             }),
         readCurrentSnapshot: async (ref) => await options.current.readSnapshot(ref),
+        readCurrentPublicationAuthority: async (ref, topicId) => {
+            const snapshot = await options.current.readSnapshot(ref);
+            return snapshot === undefined
+                ? undefined
+                : { snapshot, ...await options.durable.readGroupTopicSubscriptionAuthority(snapshot, topicId) };
+        },
         readSnapshotAtLeast: async (ref, readOptions) => await options.cache.findOrLoadByRef(ref, readOptions),
         listSnapshotsForPrincipal: async (scope, principalId) =>
             toGroupStorageKeyOrder(await options.principalGroups.listSnapshotsForPrincipal(scope, principalId)),

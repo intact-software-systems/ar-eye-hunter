@@ -152,6 +152,7 @@ function createTimedSnapshotOperations(
     | 'readSnapshot'
     | 'readCausalRevision'
     | 'readGroupSessionTopicSubscriptions'
+    | 'readGroupTopicSubscriptionAuthority'
 > {
     return {
         listSnapshots: async (scope) =>
@@ -188,6 +189,13 @@ function createTimedSnapshotOperations(
                 operation: 'readGroupSessionTopicSubscriptions',
                 details: toScopeTimingDetails(ref),
                 action: async () => await service.readGroupSessionTopicSubscriptions(ref, sessionId)
+            }),
+        readGroupTopicSubscriptionAuthority: async (snapshot, topicId) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'readGroupTopicSubscriptionAuthority',
+                details: toScopeTimingDetails(snapshot.group),
+                action: async () => await service.readGroupTopicSubscriptionAuthority(snapshot, topicId)
             })
     };
 }

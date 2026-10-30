@@ -40,3 +40,20 @@ export function toWsQueueBoxServerCapturedSendInput(
 export function isWsQueueBoxServerCapturedSessionRow(message: ALMessage, key: Key): boolean {
     return message.targets?.mode === 'unicast' || isWsQueueBoxServerDirectScopedBroadcastRow(message, key);
 }
+
+/** A held row's policy for the one session it waits for: that session's audience and generation alone. */
+export function toWsQueueBoxServerHeldSessionPolicy(
+    policy: ALOutboundCapturedPolicy,
+    sessionId: string
+): ALOutboundCapturedPolicy {
+    const generations = policy.admittedConnectionGenerationIds;
+    return {
+        ...policy,
+        admittedAudience: [sessionId],
+        ...(generations === undefined ? {} : {
+            admittedConnectionGenerationIds: Object.hasOwn(generations, sessionId)
+                ? { [sessionId]: generations[sessionId] }
+                : {}
+        })
+    };
+}

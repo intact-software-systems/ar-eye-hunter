@@ -224,7 +224,8 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
                 audience: {
                     targets: message.targets,
                     sessions: peerIds.map(roomSession),
-                    snapshotVersion: 3
+                    snapshotVersion: 3,
+                    recipientConnectionGenerationIds: {}
                 }
             }
     });

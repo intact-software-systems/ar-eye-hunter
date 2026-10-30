@@ -24,10 +24,14 @@ const ABSENT_POLICY: ApiV1RoomWsAuthorizerDependencies = {
     readLifecyclePolicy: () => Promise.resolve({ status: 'absent' })
 };
 
+/** Every room these tests authorize is a members topic's, which never reads a publication authority. */
+const readNoPublicationAuthority = () => Promise.reject(new Error('A members topic reads no publication authority.'));
+
 Deno.test('API room authorization reads the current scoped group snapshot', async () => {
     const snapshot = createSnapshot();
     let requestedRef: GroupRef | undefined;
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: (ref) => {
             requestedRef = ref;
             return Promise.resolve(snapshot);
@@ -55,14 +59,72 @@ Deno.test('API room authorization reads the current scoped group snapshot', asyn
     assert.deepEqual(decision.audience, {
         targets: message.targets,
         sessions: snapshot.activeSessions,
-        snapshotVersion: readGroupVersion(snapshot)
+        snapshotVersion: readGroupVersion(snapshot),
+        recipientConnectionGenerationIds: {}
     });
     assert.deepEqual(requestedRef, snapshot.group);
+});
+
+Deno.test('API room authorization of a granted topic reads the current publication authority instead of the snapshot', async () => {
+    const base = createSnapshot();
+    const [session] = base.activeSessions;
+    const snapshot: GroupSnapshot = {
+        ...base,
+        publicationGrants: [{
+            applicationId: base.group.applicationId,
+            workspaceId: base.group.workspaceId,
+            groupId: base.group.groupId,
+            principalId: session!.principalId,
+            topics: { 'room.feed': { publish: true, subscribe: true } },
+            updated: base.group.updated
+        }]
+    };
+    let requested: Readonly<{ ref: GroupRef; topicId: string; }> | undefined;
+    const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: (ref, topicId) => {
+            requested = { ref, topicId };
+            return Promise.resolve({
+                snapshot,
+                subscriptions: [{
+                    sessionId: session!.sessionId,
+                    principalId: session!.principalId,
+                    topicId,
+                    connectionGenerationId: 'client-generation-1',
+                    leaseExpiresAtEpochMs: Date.now() + 120_000,
+                    admittedAtGroupRevision: 2
+                }],
+                liveSessionGenerations: { [session!.sessionId]: ['client-generation-1'] }
+            });
+        },
+        readCurrentSnapshot: () => Promise.reject(new Error('A granted topic reads its publication authority.'))
+    }, ABSENT_POLICY);
+    const message = newALMulticastMessage(
+        'session-1',
+        newALEventRoute('room.feed', 'group-1', 'message-1'),
+        snapshot.group,
+        'feed.v1',
+        {}
+    );
+
+    const decision = await authorizer({
+        message,
+        topic: { participation: 'granted', serverProducerIds: [] },
+        roomId: 'group-1',
+        roomRef: snapshot.group,
+        senderId: 'session-1',
+        topicId: 'room.feed',
+        typeId: 'feed.v1'
+    });
+
+    assertAuthorized(decision);
+    assert.deepEqual(decision.audience?.recipientConnectionGenerationIds, { 'session-1': 'client-generation-1' });
+    assert.deepEqual(requested, { ref: snapshot.group, topicId: 'room.feed' });
 });
 
 Deno.test('API room authorization rejects a different room in the same application and workspace', async () => {
     const snapshot = createSnapshot();
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () =>
             Promise.resolve({
                 ...snapshot,
@@ -81,6 +143,7 @@ Deno.test('API room authorization rejects a different room in the same applicati
 
 Deno.test('API room authorization fails closed without a scoped group reference', async () => {
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () => Promise.resolve(createSnapshot())
     }, ABSENT_POLICY);
     const message = {
@@ -147,6 +210,7 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
 Deno.test('API room authorization blocks pre-activation app data when policy says so', async () => {
     const snapshot = createConnectingSnapshot();
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
         readLifecyclePolicy: () =>
@@ -181,6 +245,7 @@ Deno.test('API room authorization treats an absent pre-activation policy like an
         ]
     ) {
         const authorizer = createApiV1RoomWsAuthorizer({
+            readCurrentPublicationAuthority: readNoPublicationAuthority,
             readCurrentSnapshot: () => Promise.resolve(snapshot)
         }, dependencies);
 
@@ -191,6 +256,7 @@ Deno.test('API room authorization treats an absent pre-activation policy like an
 Deno.test('API room authorization fails closed on a corrupt policy before activation', async () => {
     const snapshot = createConnectingSnapshot();
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
         readLifecyclePolicy: () => Promise.resolve({ status: 'corrupt', reason: 'unreadable stored policy' })
@@ -205,6 +271,7 @@ Deno.test('API room authorization reads no policy for active groups', async () =
     const snapshot = createSnapshot();
     let policyReads = 0;
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
         readLifecyclePolicy: () => {
@@ -228,6 +295,7 @@ Deno.test('API room authorization reads no policy during accepted-layout reconfi
         };
         let policyReads = 0;
         const authorizer = createApiV1RoomWsAuthorizer({
+            readCurrentPublicationAuthority: readNoPublicationAuthority,
             readCurrentSnapshot: () => Promise.resolve(snapshot)
         }, {
             readLifecyclePolicy: () => {
@@ -255,6 +323,7 @@ Deno.test('API room authorization denies halted application data in every stage 
             };
             let policyReads = 0;
             const authorizer = createApiV1RoomWsAuthorizer({
+                readCurrentPublicationAuthority: readNoPublicationAuthority,
                 readCurrentSnapshot: () => Promise.resolve(snapshot)
             }, {
                 readLifecyclePolicy: () => {
@@ -276,6 +345,7 @@ Deno.test('API room authorization exempts the CRDT topics from the data-policy g
     const snapshot = createConnectingSnapshot();
     let policyReads = 0;
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
         readLifecyclePolicy: () => {
@@ -316,6 +386,7 @@ Deno.test('API room authorization allows CRDT while transport is halted without 
     };
     let policyReads = 0;
     const authorizer = createApiV1RoomWsAuthorizer({
+        readCurrentPublicationAuthority: readNoPublicationAuthority,
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
         readLifecyclePolicy: () => {

@@ -146,7 +146,12 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         expect(decision).toEqual({
             authorized: true,
-            audience: { targets: message.targets, sessions: [snapshot.activeSessions[0], secondSession], snapshotVersion: 2 }
+            audience: {
+                targets: message.targets,
+                sessions: [snapshot.activeSessions[0], secondSession],
+                snapshotVersion: 2,
+                recipientConnectionGenerationIds: {}
+            }
         });
     });
 
@@ -178,7 +183,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         expect(decision).toEqual({
             authorized: true,
-            audience: { targets: listed.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
+            audience: { targets: listed.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2, recipientConnectionGenerationIds: {} }
         });
     });
 
@@ -191,7 +196,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         expect(decision).toEqual({
             authorized: true,
-            audience: { targets: message.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
+            audience: { targets: message.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2, recipientConnectionGenerationIds: {} }
         });
     });
 
@@ -249,6 +254,55 @@ describe('createGroupRoomWsAuthorizer', () => {
             logMessage: 'Rejected room message for leader-room: no-leader: the room has no active leader inside the audience the send names.',
             serverSnapshotVersion: 2
         });
+    });
+
+    it('a granted topic decides on the publication authority it reads instead of the snapshot, a members topic on the snapshot', async () => {
+        const room = createLeaderRoomSnapshot();
+        const snapshot: GroupSnapshot = {
+            ...room,
+            publicationGrants: ['session-a', 'session-b', 'session-c'].map((principalId) => ({
+                applicationId: room.group.applicationId,
+                workspaceId: room.group.workspaceId,
+                groupId: room.group.groupId,
+                principalId,
+                topics: { 'room.command': { publish: principalId === 'session-a', subscribe: true } },
+                updated: room.group.updated
+            }))
+        };
+        const granted = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: () => Promise.reject(new Error('A granted topic reads its publication authority.')),
+            readPublicationAuthority: async (_ref, topicId) => ({
+                snapshot,
+                subscriptions: [{
+                    sessionId: 'session-b',
+                    principalId: 'session-b',
+                    topicId,
+                    connectionGenerationId: 'client-generation-b',
+                    leaseExpiresAtEpochMs: Date.now() + 120_000,
+                    admittedAtGroupRevision: 2
+                }],
+                liveSessionGenerations: { 'session-b': ['client-generation-b'] }
+            })
+        });
+        const members = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = newALBroadcastMessage('session-a', newALEventRoute('room.command', 'leader-room', 'msg-granted'), 'room', 'command.v1', {}, {
+            groupRef: snapshot.group
+        });
+        const input = { ...leaderAuthorizationInput(message), senderId: 'session-a' };
+
+        const grantedDecision = await Promise.resolve(granted({ ...input, topic: { participation: 'granted', serverProducerIds: [] } }));
+        const membersDecision = await Promise.resolve(members(input));
+
+        expect(grantedDecision).toEqual({
+            authorized: true,
+            audience: {
+                targets: message.targets,
+                sessions: [snapshot.activeSessions[1]],
+                snapshotVersion: 2,
+                recipientConnectionGenerationIds: { 'session-b': 'client-generation-b' }
+            }
+        });
+        expect(membersDecision).toEqual(authorizedDecision(snapshot, message));
     });
 
     it('refuses a group-leader room send no-leader when the director\'s presence lease has expired', async () => {
@@ -1033,6 +1087,8 @@ describe('createGroupRoomWsAuthorizer', () => {
 
 interface TestGroupRoomWsAuthorizerDependencies {
     readonly readGroupSnapshot: GroupRoomWsAuthorizerDependencies['readGroupSnapshot'];
+    /** Absent for a test that authorizes members topics only, which never read a publication authority. */
+    readonly readPublicationAuthority?: GroupRoomWsAuthorizerDependencies['readPublicationAuthority'];
     readonly readPreActivationAppData?: GroupRoomWsAuthorizerDependencies['readPreActivationAppData'];
     readonly nowEpochMs?: GroupRoomWsAuthorizerDependencies['nowEpochMs'];
 }
@@ -1042,6 +1098,8 @@ function createTestGroupRoomWsAuthorizer(
 ): RallarServerWsRoomAuthorizer {
     return createGroupRoomWsAuthorizer({
         readGroupSnapshot: dependencies.readGroupSnapshot,
+        readPublicationAuthority: dependencies.readPublicationAuthority ??
+            (() => Promise.reject(new Error('A members topic reads no publication authority.'))),
         readPreActivationAppData: dependencies.readPreActivationAppData ?? (() => 'allowed'),
         nowEpochMs: dependencies.nowEpochMs ?? Date.now
     });
@@ -1265,7 +1323,8 @@ function authorizedDecision(
         audience: {
             targets: message.targets,
             sessions: snapshot.activeSessions,
-            snapshotVersion: readGroupVersion(snapshot)
+            snapshotVersion: readGroupVersion(snapshot),
+            recipientConnectionGenerationIds: {}
         }
     };
 }

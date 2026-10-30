@@ -34,6 +34,7 @@ export function toAuthorizedRoomAudience(
             activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs) &&
             isALAudienceSession(session, narrowing) && isALAudienceSession(session, leader)
         ),
-        snapshotVersion: readGroupVersion(snapshot)
+        snapshotVersion: readGroupVersion(snapshot),
+        recipientConnectionGenerationIds: {}
     };
 }

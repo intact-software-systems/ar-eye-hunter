@@ -35,6 +35,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type {
+    CapturedWsRecipientEligibilityInputDto,
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -547,6 +548,52 @@ describe('QueueBoxPubSubBridge', () => {
         service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
 
         await expect.poll(() => held).toEqual(rows.map((row) => decodePersistedALMessage(row.resource).id.msgId));
+    });
+
+    it('the cluster send hands the re-check each captured generation, and a held row keeps that session\'s generation', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const rechecks: CapturedWsRecipientEligibilityInputDto[] = [];
+        const service = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            requiresFrozenAudience: () => true,
+            sendToTargetsWithResult: (message, recipientSessionIds) =>
+                recipientSessionIds?.length ? sentLiveResult(message) : noRecipientLiveSendResult(message)
+        });
+        service.socket.expectedConnections.expect({ id: 'late', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: service,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: async (input) => {
+                rechecks.push(input);
+                return input.candidateSessionIds;
+            }
+        });
+        const row = createCanonicalRoomOutboxEntry(Date.now());
+        const generations = { early: 'subscription-generation-early', late: 'subscription-generation-late' };
+        const committedPolicy: ALOutboundCapturedPolicy = {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            admittedAudience: ['early', 'late'],
+            admittedConnectionGenerationIds: generations
+        };
+
+        await outboxPublishers[0](decodePersistedALMessage(row.resource), row, { committedPolicy, deferObservation: undefined });
+        service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
+
+        await expect.poll(() =>
+            rechecks.map((input) => ({
+                candidateSessionIds: input.candidateSessionIds,
+                capturedConnectionGenerationIds: input.capturedConnectionGenerationIds
+            }))
+        ).toEqual([
+            { candidateSessionIds: ['early', 'late'], capturedConnectionGenerationIds: generations },
+            { candidateSessionIds: ['late'], capturedConnectionGenerationIds: { late: 'subscription-generation-late' } }
+        ]);
     });
 
     it('preserves an empty captured audience without falling back to current room members', async () => {

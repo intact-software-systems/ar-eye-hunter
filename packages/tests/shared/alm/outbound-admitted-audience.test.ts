@@ -28,7 +28,12 @@ import { IndexedDbAdmissionReadSession } from '@shared/alm/indexed-db-admission-
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { captureALOutboundPolicy, type ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import {
+    applyALOutboundCapturedPolicy,
+    captureALOutboundPolicy,
+    decodeALOutboundCapturedPolicy,
+    type ALStoredOutboundMessage
+} from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
 import {
     captureALOutboundCreationExpiry,
@@ -39,7 +44,10 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { toWsQueueBoxServerCapturedSendInput } from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-captured-send-input.ts';
+import {
+    toWsQueueBoxServerCapturedSendInput,
+    toWsQueueBoxServerHeldSessionPolicy
+} from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-captured-send-input.ts';
 import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
 import { WsQueueBoxServerLiveDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
@@ -590,6 +598,58 @@ describe('captured outbound audience read', () => {
             }
         });
         expect(JSON.stringify(events)).not.toContain('"value":1');
+    });
+
+    it('the captured policy round-trips admittedConnectionGenerationIds and refuses a key outside admittedAudience', async () => {
+        const fixture = await createFixture(['session-a', 'session-b']);
+        const plan = {
+            msg: fixture.message,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [],
+            admittedAudience: ['session-a', 'session-b'],
+            admittedConnectionGenerationIds: { 'session-a': 'generation-a', 'session-b': 'generation-b' }
+        } as const;
+        const captured = captureALOutboundPolicy(plan);
+        const { admittedConnectionGenerationIds: _generations, ...withoutGenerations } = plan;
+        const decode = (policy: object) => () => decodeALOutboundCapturedPolicy(JSON.parse(JSON.stringify(policy)));
+
+        expect(decodeALOutboundCapturedPolicy(JSON.parse(JSON.stringify(captured)))).toEqual(captured);
+        expect(applyALOutboundCapturedPolicy(withoutGenerations, captured).admittedConnectionGenerationIds)
+            .toEqual({ 'session-a': 'generation-a', 'session-b': 'generation-b' });
+        expect(captureALOutboundPolicy(withoutGenerations)).not.toHaveProperty('admittedConnectionGenerationIds');
+        expect(decode({ ...captured, admittedConnectionGenerationIds: { 'session-c': 'generation-c' } })).toThrow(TypeError);
+        expect(decode({ ...captured, admittedConnectionGenerationIds: { 'session-a': '' } })).toThrow(TypeError);
+        expect(decode({ ...captured, admittedConnectionGenerationIds: ['generation-a'] })).toThrow(TypeError);
+        const { admittedAudience: _audience, ...withoutAudience } = captured;
+        expect(decode(withoutAudience)).toThrow(TypeError);
+    });
+
+    it('a captured policy narrowed to one session keeps that session\'s generation alone', () => {
+        const policy = captureALOutboundPolicy({
+            msg: newALBroadcastMessage('server', newALRoute('room.topic', 'room-1', 'event-1'), 'room', 'room.topic', {}),
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [],
+            admittedAudience: ['session-a', 'session-b'],
+            admittedConnectionGenerationIds: { 'session-a': 'generation-a', 'session-b': 'generation-b' }
+        });
+        const members = captureALOutboundPolicy({
+            msg: newALBroadcastMessage('server', newALRoute('room.topic', 'room-1', 'event-1'), 'room', 'room.topic', {}),
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [],
+            admittedAudience: ['session-a', 'session-b']
+        });
+
+        expect(toWsQueueBoxServerHeldSessionPolicy(policy, 'session-b')).toEqual({
+            ...policy,
+            admittedAudience: ['session-b'],
+            admittedConnectionGenerationIds: { 'session-b': 'generation-b' }
+        });
+        expect(toWsQueueBoxServerHeldSessionPolicy({ ...policy, admittedConnectionGenerationIds: {} }, 'session-b'))
+            .toEqual({ ...policy, admittedAudience: ['session-b'], admittedConnectionGenerationIds: {} });
+        expect(toWsQueueBoxServerHeldSessionPolicy(members, 'session-a')).toEqual({ ...members, admittedAudience: ['session-a'] });
     });
 
     it('returns the captured set, including empty, and distinguishes a missing admission', async () => {

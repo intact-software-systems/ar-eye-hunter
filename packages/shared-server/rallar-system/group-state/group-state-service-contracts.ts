@@ -59,6 +59,7 @@ import type {
     GroupMutationReceipt,
     GroupMutationSnapshotRead
 } from './mutation/group-mutation-contracts.ts';
+import type { GroupPublicationAuthority } from './persistence/subscription/read-group-topic-subscriptions.ts';
 import type { GroupSessionCleanupInput } from './presence/group-session-cleanup.ts';
 import type { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import type { GroupRetentionService } from './retention/group-retention-service.ts';
@@ -256,6 +257,11 @@ export type GroupStateService =
             ref: GroupRef,
             sessionId: string
         ): Promise<readonly GroupTopicSubscription[]>;
+        /** A granted topic's subscription rows and its candidates' live generations, read fresh after the snapshot. */
+        readGroupTopicSubscriptionAuthority(
+            snapshot: GroupSnapshot,
+            topicId: string
+        ): Promise<Omit<GroupPublicationAuthority, 'snapshot'>>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
         listRecentEvents(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;

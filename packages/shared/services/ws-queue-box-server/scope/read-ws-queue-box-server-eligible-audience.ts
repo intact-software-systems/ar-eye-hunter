@@ -6,6 +6,7 @@ import { resolveWsQueueBoxServerRecipientScope } from './resolve-ws-queue-box-se
 export interface ReadWsQueueBoxServerEligibleAudienceInput {
     readonly message: ALMessage;
     readonly admittedAudience: readonly string[];
+    readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
     /** The scope the row's producer proved; a row whose targets name a group is scoped by that group. */
     readonly provenScope: StateScope | undefined;
     readonly filterEligibleCapturedSessionIds: WsCapturedRecipientEligibilityFilter;
@@ -19,7 +20,8 @@ export async function readWsQueueBoxServerEligibleAudience(
         await input.filterEligibleCapturedSessionIds({
             message: input.message,
             candidateSessionIds: input.admittedAudience,
-            recipientScope: resolveWsQueueBoxServerRecipientScope(input.message, input.provenScope)
+            recipientScope: resolveWsQueueBoxServerRecipientScope(input.message, input.provenScope),
+            capturedConnectionGenerationIds: input.admittedConnectionGenerationIds ?? null
         })
     );
     return input.admittedAudience.filter((sessionId) => eligible.has(sessionId));

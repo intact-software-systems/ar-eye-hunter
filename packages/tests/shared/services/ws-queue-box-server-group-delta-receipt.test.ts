@@ -47,6 +47,7 @@ describe('receipts of the group-state deltas the server publishes', () => {
 
         const enqueued = await local.service.enqueueOutboxIfAbsent(delta, {
             admittedAudience: STATE_SYNC_FIXTURE_SESSION_IDS,
+            admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
         });
 
@@ -101,6 +102,7 @@ describe('receipts of the group-state deltas the server publishes', () => {
 
         await local.service.enqueueOutboxIfAbsent(clientEvent.message, {
             admittedAudience: STATE_SYNC_FIXTURE_SESSION_IDS,
+            admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
         });
         for (let step = 0; step < 10; step += 1) {

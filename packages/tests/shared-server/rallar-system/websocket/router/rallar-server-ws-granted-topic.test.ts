@@ -1,5 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type {
@@ -17,7 +18,9 @@ import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -54,6 +57,8 @@ interface GrantedFixture {
     readonly authorizations: RallarServerWsRoomAuthorizationInput[];
     /** The snapshot each authority read answers, in read order; the last repeats. */
     readonly snapshots: GroupSnapshot[];
+    /** The sessions holding a live subscription to FEED asserted by their live generation; every session by default. */
+    readonly subscribed: Set<SessionId>;
 }
 
 describe('a granted WS topic (D486, D487)', () => {
@@ -305,6 +310,84 @@ describe('a granted WS topic (D486, D487)', () => {
         expect(readDelivered(fixture.sockets.bob, 'scope-less-peer', 'app.news')).toBe(0);
     });
 
+    it('a granted room broadcast with no subscribed session is admitted, reaches no session and its receipt completes with no expected recipients', async () => {
+        const fixture = createGrantedFixture('outbox');
+        fixture.subscribed.clear();
+        const message = { ...roomBroadcast('alice', FEED, 'nobody-subscribed'), delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'alice')).right).toEqual({ kind: 'admitted' });
+
+        await expect.poll(() => readOriginReceipts(fixture.sockets.alice, 'nobody-subscribed'))
+            .toEqual([{ phase: 'admitted', expected: [], confirmed: [] }]);
+        await settle();
+        expect(readDeliveredBy(fixture, 'nobody-subscribed')).toEqual({ alice: 0, 'alice-2': 0, bob: 0, carol: 0, dan: 0 });
+        expect(readNacks(fixture.sockets.alice)).toEqual([]);
+    });
+
+    it('a group-leader ack whose leader is not subscribed is NACKed no-leader', async () => {
+        const fixture = createGrantedFixture('live-only');
+        fixture.snapshots.push(withDirector(createSnapshot(), 'bob'));
+        fixture.subscribed.delete('bob');
+        const unsubscribedLeader = {
+            ...roomBroadcast('alice', FEED, 'to-unsubscribed-leader'),
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+        } as const;
+
+        const refused = await fixture.service.acceptIncomingMessage(unsubscribedLeader, 'alice');
+        fixture.subscribed.add('bob');
+        const admitted = await fixture.service.acceptIncomingMessage(
+            { ...unsubscribedLeader, id: { ...unsubscribedLeader.id, msgId: 'to-subscribed-leader' } },
+            'alice'
+        );
+
+        expect(refused.left?.code).toBe('unauthorized');
+        await expect.poll(() => readNacks(fixture.sockets.alice)).toEqual([{ msgId: 'to-unsubscribed-leader', reason: 'no-leader' }]);
+        expect(admitted.right).toEqual({ kind: 'admitted' });
+        await expect.poll(() => readDelivered(fixture.sockets.bob, 'to-subscribed-leader')).toBe(1);
+        expect(readDelivered(fixture.sockets.bob, 'to-unsubscribed-leader')).toBe(0);
+    });
+
+    it('a room unicast to an unsubscribed session is NACKed unauthorized', async () => {
+        const fixture = createGrantedFixture('live-only');
+        fixture.subscribed.delete('bob');
+        const toBob = { ...roomBroadcast('alice', FEED, 'unicast-to-bob'), targets: { mode: 'unicast', toPeerId: 'bob', groupRef: ROOM } } as const;
+
+        const refused = await fixture.service.acceptIncomingMessage(toBob, 'alice');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        await expect.poll(() => readNacks(fixture.sockets.alice)).toEqual([{ msgId: 'unicast-to-bob', reason: 'unauthorized' }]);
+        await settle();
+        expect(readDelivered(fixture.sockets.bob, 'unicast-to-bob')).toBe(0);
+    });
+
+    it('a server producer\'s publication reaches subscribed sessions only', async () => {
+        const fixture = createGrantedFixture('live-only');
+        fixture.subscribed.clear();
+        fixture.subscribed.add('alice').add('bob').add('carol');
+
+        const result = await fixture.router.publish({
+            message: roomBroadcast(fixture.router.serverPeerId, FEED, 'produced-for-subscribers'),
+            producerId: PRODUCER
+        });
+
+        expect(result.status).toBe('sent-live');
+        expect(readDeliveredBy(fixture, 'produced-for-subscribers')).toEqual({ alice: 1, 'alice-2': 0, bob: 1, carol: 0, dan: 0 });
+    });
+
+    it('a proxy relay reaches subscribed sessions only', async () => {
+        const fixture = createGrantedFixture('live-only');
+        relayChatOntoFeed(fixture);
+        fixture.subscribed.clear();
+        fixture.subscribed.add('bob');
+
+        await fixture.service.acceptIncomingMessage(roomBroadcast('alice', 'room.chat', 'relay-for-subscribers'), 'alice');
+
+        await expect.poll(() => readDelivered(fixture.sockets.bob, 'relay-for-subscribers', FEED)).toBe(1);
+        await settle();
+        expect(readDelivered(fixture.sockets['alice-2'], 'relay-for-subscribers', FEED)).toBe(0);
+        expect(readDelivered(fixture.sockets.dan, 'relay-for-subscribers', FEED)).toBe(0);
+    });
+
     it('a demoted spectator keeps subscribe and is refused publish', async () => {
         const fixture = createGrantedFixture('live-only');
 
@@ -337,6 +420,8 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const snapshots: GroupSnapshot[] = [];
     const readSnapshot = (): GroupSnapshot => snapshots.length > 1 ? snapshots.shift()! : snapshots[0] ?? createSnapshot();
+    const subscribed = new Set(Object.keys(SESSIONS) as SessionId[]);
+    const readPublicationAuthority = async (_ref: GroupRef, topicId: string) => toSubscribedAuthority(readSnapshot(), topicId, subscribed);
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: outboundStores.workQueue,
@@ -354,6 +439,7 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
     const authorizations: RallarServerWsRoomAuthorizationInput[] = [];
     const authorizeGroupRoom = createGroupRoomWsAuthorizer({
         readGroupSnapshot: () => readSnapshot(),
+        readPublicationAuthority,
         readPreActivationAppData: () => 'allowed',
         nowEpochMs: Date.now
     });
@@ -365,7 +451,11 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
         },
         readServerPublishAudience: options.composesServerPublishAudience === false
             ? undefined
-            : createServerPublishRoomAudienceReader({ readGroupSnapshot: () => Promise.resolve(readSnapshot()), nowEpochMs: Date.now }),
+            : createServerPublishRoomAudienceReader({
+                readGroupSnapshot: () => Promise.resolve(readSnapshot()),
+                readPublicationAuthority,
+                nowEpochMs: Date.now
+            }),
         livePublication: options.livePublication
     }).install().defineTopic({
         topicId: FEED,
@@ -374,7 +464,33 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
         serverProducerIds: [PRODUCER],
         fanout
     });
-    return { service, router, socketServer, grantedTopics, outboundStores, sockets, authorizations, snapshots };
+    return { service, router, socketServer, grantedTopics, outboundStores, sockets, authorizations, snapshots, subscribed };
+}
+
+/** Each subscribed session's live row on the topic, asserted by its one live client generation. */
+function toSubscribedAuthority(
+    snapshot: GroupSnapshot,
+    topicId: string,
+    subscribed: ReadonlySet<SessionId>
+): GroupPublicationAuthority {
+    const sessionIds = [...subscribed];
+    return {
+        snapshot,
+        subscriptions: sessionIds.map((sessionId): GroupTopicSubscription => ({
+            sessionId,
+            principalId: SESSIONS[sessionId],
+            topicId,
+            connectionGenerationId: `client-generation-${sessionId}`,
+            leaseExpiresAtEpochMs: Date.now() + 120_000,
+            admittedAtGroupRevision: snapshot.group.snapshotVersion
+        })),
+        liveSessionGenerations: Object.fromEntries(sessionIds.map((sessionId) => [sessionId, [`client-generation-${sessionId}`]]))
+    };
+}
+
+function withDirector(snapshot: GroupSnapshot, sessionId: SessionId): GroupSnapshot {
+    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: SESSIONS[sessionId], sessionId }, now: Date.now() });
+    return { ...snapshot, group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) } };
 }
 
 function relayChatOntoFeed(fixture: GrantedFixture): void {
@@ -458,6 +574,15 @@ function readDeliveredBy(fixture: GrantedFixture, msgId: string): Readonly<Recor
     return Object.fromEntries(
         Object.entries(fixture.sockets).map(([sessionId, socket]) => [sessionId, readDelivered(socket, msgId)])
     ) as Record<SessionId, number>;
+}
+
+function readOriginReceipts(socket: TestWebSocket, msgId: string) {
+    return socket.sent.map(decodePersistedALMessage).flatMap((sent) => {
+        const control = parseALControlMessage(sent);
+        return control?.type === 'receipt' && control.payload.msgId === msgId
+            ? [{ phase: control.payload.phase, expected: control.payload.expectedRecipientPeerIds, confirmed: control.payload.confirmedRecipientPeerIds }]
+            : [];
+    });
 }
 
 function readNacks(socket: TestWebSocket): readonly Readonly<{ msgId: string; reason: string; }>[] {
