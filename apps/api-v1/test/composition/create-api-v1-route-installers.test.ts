@@ -58,6 +58,9 @@ Deno.test('route installers mount representative API and websocket behavior in o
         401
     );
     assert.equal((await app.request('/api/crdt/catch-up', { method: 'POST' })).status, 401);
+    const movePath = '/api/state/apps/app/workspaces/workspace/group-moves';
+    assert.equal((await app.request(movePath)).status, 401);
+    assert.equal((await app.request(`${movePath}/requests/request-1`, { method: 'POST' })).status, 401);
     assert.equal((await app.request('/api/docs')).status, 200);
 });
 
@@ -143,7 +146,8 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
         },
         groupStateInboxService: {
             processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
-            processQuickJoinUntilCompletion: rejectUnusedOperation
+            processQuickJoinUntilCompletion: rejectUnusedOperation,
+            processGroupMoveUntilCompletion: rejectUnusedOperation
         },
         topologyInboxService: {
             processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
@@ -160,6 +164,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
             readSnapshot: rejectUnusedOperation
         },
         groupStateService: {
+            move: { listForPrincipal: rejectUnusedOperation },
             listEventPage: rejectUnusedOperation,
             listEvents: rejectUnusedOperation,
             listRecentEvents: rejectUnusedOperation,

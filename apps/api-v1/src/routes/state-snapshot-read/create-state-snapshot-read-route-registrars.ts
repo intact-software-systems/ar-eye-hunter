@@ -48,17 +48,20 @@ export interface ApiV1StateSnapshotRouteRuntime {
         | 'readPresenceSnapshot'
         | 'readSnapshot'
     >;
-    readonly groupStateService: Pick<
-        ApiV1Runtime['groupStateService'],
-        | 'move'
-        | 'listEventPage'
-        | 'listEvents'
-        | 'listRecentEvents'
-        | 'listSnapshots'
-        | 'listSnapshotsForPrincipal'
-        | 'readCurrentSnapshot'
-        | 'readSnapshot'
-    >;
+    readonly groupStateService:
+        & Pick<
+            ApiV1Runtime['groupStateService'],
+            | 'listEventPage'
+            | 'listEvents'
+            | 'listRecentEvents'
+            | 'listSnapshots'
+            | 'listSnapshotsForPrincipal'
+            | 'readCurrentSnapshot'
+            | 'readSnapshot'
+        >
+        & Readonly<{
+            move: Pick<ApiV1Runtime['groupStateService']['move'], 'listForPrincipal'>;
+        }>;
     readonly clientRestSnapshotReadSelector: Pick<ApiV1Runtime['clientRestSnapshotReadSelector'], 'read'>;
     readonly groupRestSnapshotReadSelector: Pick<ApiV1Runtime['groupRestSnapshotReadSelector'], 'read'>;
 }
