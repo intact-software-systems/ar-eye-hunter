@@ -351,6 +351,7 @@ function registerBlackBoxBrowserRallarLifecycle(
         lifecycle: input.foundation.lifecycle,
         messageSubscriptions: input.messaging.messagesController.subscriptions,
         wsInbox: input.stateEvents.wsInbox,
+        topicSubscriptions: input.messaging.topicSubscriptions,
         wsController: input.realtime.wsController,
         realtimeReceive: input.realtime.realtimeReceive,
         rtcLifecycle: input.realtime.rtcController.lifecycle

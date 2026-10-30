@@ -31,6 +31,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
@@ -67,6 +68,7 @@ import type {
     RallarRoomState,
     RallarRoomSummary,
     RallarRoomTargetInput,
+    RallarRoomTopicMember,
     RallarSetRoomMemberRoleInput,
     RallarUpdateRoomInput
 } from './rallar-room-contracts.ts';
@@ -94,6 +96,7 @@ import { waitForRoomPresence } from './room-presence.ts';
 import { captureRoomSession } from './room-session-fence.ts';
 import { createRoomSession } from './room-session.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
+import { grantRoomTopic, revokeRoomTopic } from './topic-grants/room-topic-grant-workflows.ts';
 import { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } from './update-room.ts';
 
 export interface CreateBrowserRallarRoomsInput {
@@ -175,6 +178,13 @@ export interface BrowserRallarRooms {
         options?: RallarRoomGovernanceOptions
     ): Promise<GroupSnapshot>;
     setMemberRole(input: RallarSetRoomMemberRoleInput): Promise<GroupSnapshot>;
+    grantTopic(
+        member: RallarRoomTopicMember,
+        topicId: string,
+        permissions: GroupPublicationTopicPermissions
+    ): Promise<GroupSnapshot>;
+    /** Revokes both permissions on the topic; a partial revocation is the REST route's. */
+    revokeTopic(member: RallarRoomTopicMember, topicId: string): Promise<GroupSnapshot>;
     transferOwnership(
         room: string | GroupRef | RallarRoomTargetInput,
         principalId: string,
@@ -241,7 +251,8 @@ export function createBrowserRallarRooms(
             realtime: input.realtime,
             leaveRoom: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
             refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
-            createFormation
+            createFormation,
+            readPrincipalId: () => input.requireSession().clientId
         });
 
     return {
@@ -361,6 +372,8 @@ function createRoomMembershipOperations(
     | 'banMember'
     | 'unbanMember'
     | 'setMemberRole'
+    | 'grantTopic'
+    | 'revokeTopic'
     | 'transferOwnership'
 > {
     return {
@@ -384,6 +397,10 @@ function createRoomMembershipOperations(
                 role: memberRoleInput.role,
                 options: memberRoleInput.options ?? {}
             }),
+        grantTopic: async (member, topicId, permissions) =>
+            await grantRoomTopic({ ...input, ...member, topicId, permissions }),
+        revokeTopic: async (member, topicId) =>
+            await revokeRoomTopic({ ...input, ...member, topicId, permissions: { publish: true, subscribe: true } }),
         transferOwnership: async (room, principalId, options = {}) =>
             await transferRoomOwnership({ ...input, room, principalId, options })
     };

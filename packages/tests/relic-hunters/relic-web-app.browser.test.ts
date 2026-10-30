@@ -1001,7 +1001,8 @@ function roomState(onlineMemberCount: number): RallarRoomState {
             status: member.status,
             isOwner: member.role === 'owner',
             isOnline: true,
-            sessionIds: snapshot.activeSessions.filter((presence) => presence.principalId === member.principalId).map((presence) => presence.sessionId)
+            sessionIds: snapshot.activeSessions.filter((presence) => presence.principalId === member.principalId).map((presence) => presence.sessionId),
+            topicGrants: {}
         }))
     };
 }

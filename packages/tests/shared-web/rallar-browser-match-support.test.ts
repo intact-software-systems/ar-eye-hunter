@@ -322,7 +322,8 @@ function fakeRallarFacade(): RallarGameRallarFacade {
         status: 'active',
         isOwner: true,
         isOnline: true,
-        sessionIds: ['session-a']
+        sessionIds: ['session-a'],
+        topicGrants: {}
     }]);
     return {
         ...base,

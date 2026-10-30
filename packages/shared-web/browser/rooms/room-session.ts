@@ -5,6 +5,7 @@ import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-f
 import { throwIfRallarValidationIssues } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { GroupTopologyReadThroughOutcome } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
+import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
@@ -13,10 +14,12 @@ import type {
     RallarRoomSession,
     RallarRoomSessionMessageDefinition,
     RallarRoomSessionRealtimeInput,
-    RallarRoomSummary
+    RallarRoomSummary,
+    RallarRoomTopicRole
 } from './rallar-room-contracts.ts';
 import type { GroupRef, GroupSnapshot } from './room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
+import { toRoomTopicRole } from './topic-grants/room-topic-roles.ts';
 
 export interface CreateRoomSessionInput {
     readonly roomRef: GroupRef;
@@ -31,6 +34,7 @@ export interface CreateRoomSessionInput {
         input?: RallarScopedOperationOptions
     ) => Promise<GroupTopologyReadThroughOutcome | undefined>;
     readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
+    readonly readPrincipalId: () => string;
 }
 
 export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSession {
@@ -58,8 +62,16 @@ export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSess
         realtime: <T>(options?: RallarRoomSessionRealtimeInput) =>
             input.realtime.room<T>(toRoomSessionRealtimeDefaults(options, input.roomRef)),
         message: <T>(definition: RallarRoomSessionMessageDefinition) =>
-            input.messages.room<T>(toRoomSessionMessageDefinition(definition, input.roomRef))
+            input.messages.room<T>(toRoomSessionMessageDefinition(definition, input.roomRef)),
+        topicRole: (topicId) => readRoomTopicRole(input, topicId)
     };
+}
+
+function readRoomTopicRole(input: CreateRoomSessionInput, topicId: string): RallarRoomTopicRole {
+    const snapshot = input.stateStore.findGroupSnapshot(input.roomRef);
+    return snapshot === undefined
+        ? 'none'
+        : toRoomTopicRole(resolveGroupPublicationPermissions(snapshot, input.readPrincipalId(), topicId));
 }
 
 export function toRoomSessionRealtimeDefaults(

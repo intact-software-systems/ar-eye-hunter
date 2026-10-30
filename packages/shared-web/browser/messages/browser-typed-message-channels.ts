@@ -7,13 +7,16 @@ import {
 } from '@shared-web/browser/messages/publication/validate-browser-live-send.ts';
 import type {
     RallarRoomMessageChannelDefinition,
+    RallarTopicSubscription,
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
     RallarTypedMessageSendOptions,
+    RallarTypedPayloadHandler,
     RallarTypedRtcSendOptions,
     RallarTypedWsSendOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/subscription/browser-topic-subscriptions.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -25,6 +28,7 @@ export namespace BrowserTypedMessageChannels {
         readonly rtc: Pick<RallarMessagesOperations['rtc'], 'onMessage'>;
         readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage'>;
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
+        readonly topicSubscriptions: Pick<BrowserTopicSubscriptions, 'hold'>;
     }
 }
 
@@ -73,7 +77,8 @@ export class BrowserTypedMessageChannels {
             onWs: (handler) =>
                 this.input.ws.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
-                })
+                }),
+            subscribe: () => throwUnsupportedSubscribe()
         };
     }
 
@@ -110,7 +115,29 @@ export class BrowserTypedMessageChannels {
                     ...options
                 }),
             onRtc: (handler) => channel.onRtc(handler),
-            onWs: (handler) => channel.onWs(handler)
+            onWs: (handler) => channel.onWs(handler),
+            subscribe: (handler) => this.subscribeRoomTopic(definition, channel, handler)
+        };
+    }
+
+    private subscribeRoomTopic<T>(
+        definition: RallarRoomMessageChannelDefinition,
+        channel: RallarTypedMessageChannel<T>,
+        handler: RallarTypedPayloadHandler<T>
+    ): RallarTopicSubscription {
+        const { roomRef, topicId } = definition;
+        if (definition.access !== 'granted' || roomRef === undefined || topicId === undefined) {
+            return throwUnsupportedSubscribe();
+        }
+        const token = this.input.topicSubscriptions.hold({ roomRef, topicId });
+        const removeHandler = channel.onWs(handler);
+        return {
+            status: () => token.status(),
+            wait: async () => await token.wait(),
+            unsubscribe: async () => {
+                removeHandler();
+                await token.unsubscribe();
+            }
         };
     }
 }
@@ -122,6 +149,15 @@ function toChannelSend<TSend extends BrowserLiveSendOptions>(send: TSend, policy
         throwRallarValidation(issues);
     }
     return send;
+}
+
+/** The server holds an election per room and topic, and only a granted topic's audience asks for one. */
+function throwUnsupportedSubscribe(): never {
+    return throwRallarValidation([{
+        path: '$.access',
+        code: 'unsupported',
+        message: 'Only a granted room channel with a roomRef subscribes: an election is held per room and topic.'
+    }]);
 }
 
 /** No server stands on the RTC path to check a publication grant, so a granted channel neither sends nor listens there. */

@@ -91,7 +91,14 @@ function createFacadeDouble() {
                 handlers.splice(0);
             };
         };
-        return { send: unusedByTheChannel, sendRtc: unusedByTheChannel, sendWs: unusedByTheChannel, onRtc: unusedByTheChannel, onWs };
+        return {
+            send: unusedByTheChannel,
+            sendRtc: unusedByTheChannel,
+            sendWs: unusedByTheChannel,
+            onRtc: unusedByTheChannel,
+            onWs,
+            subscribe: unusedByTheChannel
+        };
     }
     const unusedLane = { send: unusedByTheChannel, onMessage: unusedByTheChannel };
     const facade: RelicHunterEventFacade = {

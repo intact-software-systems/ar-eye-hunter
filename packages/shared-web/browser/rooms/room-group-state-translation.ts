@@ -21,10 +21,12 @@ import type {
     CreateStateGroupBody,
     CreateStateGroupInviteBody,
     DisconnectStateGroupPresenceSessionBody,
+    GrantStateGroupPublicationBody,
     JoinStateGroupBody,
     ReconfigureStateGroupLifecycleBody,
     RemoveStateGroupMemberBody,
     RevokeStateGroupInviteBody,
+    RevokeStateGroupPublicationBody,
     RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
@@ -35,6 +37,7 @@ import type {
 } from '../api/state-mutation-http-contracts.ts';
 
 import type { RallarCreateRoomInput, RallarRoomState, RallarRoomSummary } from './rallar-room-contracts.ts';
+import { toRoomTopicGrants } from './topic-grants/room-topic-roles.ts';
 
 export type {
     GroupEvent,
@@ -356,6 +359,30 @@ export function toSetRoomMemberRoleGroupStateRequest(
     };
 }
 
+export function toGrantRoomTopicGroupStateRequest(
+    input: RoomGroupStateRequestInput<GrantStateGroupPublicationBody>
+): GrantStateGroupPublicationBody {
+    return {
+        topicId: input.request.topicId,
+        publish: input.request.publish,
+        subscribe: input.request.subscribe,
+        ...toMutationAuditFields(input.request),
+        ...toActorRequest(input)
+    };
+}
+
+export function toRevokeRoomTopicGroupStateRequest(
+    input: RoomGroupStateRequestInput<RevokeStateGroupPublicationBody>
+): RevokeStateGroupPublicationBody {
+    return {
+        topicId: input.request.topicId,
+        publish: input.request.publish,
+        subscribe: input.request.subscribe,
+        ...toMutationAuditFields(input.request),
+        ...toActorRequest(input)
+    };
+}
+
 export function toTransferRoomOwnershipGroupStateRequest(
     input: RoomGroupStateRequestInput<TransferStateGroupOwnershipBody>
 ): TransferStateGroupOwnershipBody {
@@ -475,7 +502,8 @@ function toRallarRoomMembers(
                 isOwner: member.role === 'owner',
                 isOnline: sessionIds.length > 0,
                 sessionIds,
-                client
+                client,
+                topicGrants: toRoomTopicGrants(currentRoom, member.principalId)
             };
         })
         .sort((left, right) => (left.displayName ?? left.username).localeCompare(right.displayName ?? right.username));

@@ -9,6 +9,8 @@ import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resy
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import { createBrowserTopicSubscriptionHttpApi } from '@shared-web/browser/messages/subscription/browser-topic-subscription-http-api.ts';
+import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/subscription/browser-topic-subscriptions.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
@@ -19,6 +21,7 @@ import { BrowserRoomRealtimeRuntime } from '@shared-web/browser/realtime/browser
 import { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
 import { BrowserRallarRtcController } from '@shared-web/browser/rtc/browser-rallar-rtc-controller.ts';
 import type { RallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
+import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import {
     BrowserRallarWsController,
     type RallarWsController
@@ -35,6 +38,7 @@ import { readSession } from '@shared/api/auth.ts';
 import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type {
     RallarBrowserFacadeRuntimeContext
 } from './browser-facade-runtime-state.ts';
@@ -45,6 +49,7 @@ const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 
 export interface BrowserMessagingComposition {
+    readonly topicSubscriptions: BrowserTopicSubscriptions;
     readonly messagesController: BrowserRallarMessagesController;
     readonly messages: RallarMessagesOperations;
 }
@@ -111,6 +116,11 @@ export function createBrowserResyncRecoveryComposition(
 export function createBrowserMessagingComposition(
     input: CreateBrowserMessagingCompositionInput
 ): BrowserMessagingComposition {
+    const topicSubscriptions = new BrowserTopicSubscriptions({
+        http: createBrowserTopicSubscriptionHttpApi(),
+        timers: createDefaultTimers(),
+        newRequestId: toApiMutationWorkflowRequestId
+    });
     const messagesController = new BrowserRallarMessagesController({
         creation: {
             createUnicast: newALUnicastMessage,
@@ -125,6 +135,7 @@ export function createBrowserMessagingComposition(
         publicationStages: input.publicationStages,
         nowMs: input.nowMs,
         recoveryOwners: input.recoveryOwners,
+        topicSubscriptions,
         connect: input.session.acquireConnection,
         readMiddleware: input.session.readMiddleware,
         requireMiddleware: input.session.requireMiddleware,
@@ -146,6 +157,7 @@ export function createBrowserMessagingComposition(
         }
     });
     return {
+        topicSubscriptions,
         messagesController,
         messages: messagesController.operations
     };

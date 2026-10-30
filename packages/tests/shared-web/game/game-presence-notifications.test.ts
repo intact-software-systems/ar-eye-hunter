@@ -18,7 +18,8 @@ it('awaits the configured presence handler before sequential subscribers and pro
         status: 'active',
         isOwner: false,
         isOnline: true,
-        sessionIds: ['peer-a']
+        sessionIds: ['peer-a'],
+        topicGrants: {}
     }]);
     const facade = createRallarFacade();
     const status = new RallarGameMatchStatusRuntime({
