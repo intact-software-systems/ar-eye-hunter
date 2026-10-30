@@ -5,6 +5,10 @@ inputs:
     description: Install Deno and restore its cache.
     required: false
     default: 'false'
+  deno-version:
+    description: Deno version required by this lane.
+    required: false
+    default: v2.x
   playwright:
     description: Install Playwright Chromium and its system dependencies.
     required: false
@@ -27,7 +31,12 @@ runs:
       if: ${{ inputs.deno == 'true' }}
       uses: denoland/setup-deno@v2
       with:
-        deno-version: v2.x
+        deno-version: ${{ inputs.deno-version }}
+
+    - name: Isolate Deno from npm workspace tooling
+      if: ${{ inputs.deno == 'true' }}
+      shell: bash
+      run: echo 'DENO_NO_PACKAGE_JSON=1' >> "$GITHUB_ENV"
 
     - name: Restore Deno cache without save permission
       if: ${{ inputs.deno == 'true' && inputs.save-deno-cache != 'true' }}

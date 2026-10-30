@@ -2,7 +2,7 @@
   "nodeModulesDir": "manual",
   "tasks": {
     "lint": "deno lint",
-    "test:debug": "deno run -A --unstable-temporal npm:vitest@4.0.17 run"
+    "test:debug": "npm run test:unit --"
   },
   "imports": {
     "@js-temporal/polyfill": "npm:@js-temporal/polyfill@^0.5.1",
@@ -15,13 +15,15 @@
     "@std/assert": "jsr:@std/assert@^1.0.18",
     "@std/path": "jsr:@std/path@^1.0.9",
     "graphology": "npm:graphology@0.26.0",
-    "postgres": "npm:postgres@^3.4.9",
-    "prisma": "npm:prisma@^7.8.0"
+    "postgres": "npm:postgres@^3.4.9"
   },
   "compilerOptions": {
     "erasableSyntaxOnly": true,
     "strict": true,
-    "lib": ["deno.ns", "dom"]
+    "lib": [
+      "deno.ns",
+      "dom"
+    ]
   },
   "lint": {
     "include": [
@@ -31,7 +33,9 @@
       "packages/shared-rtc-bench"
     ],
     "rules": {
-      "tags": ["recommended"]
+      "tags": [
+        "recommended"
+      ]
     }
   }
 }
