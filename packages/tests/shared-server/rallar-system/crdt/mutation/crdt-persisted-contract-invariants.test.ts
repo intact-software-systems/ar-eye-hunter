@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -158,7 +159,7 @@ describe('CRDT persisted mutation contract invariants', () => {
             name: 'server-1'
         });
         onTestFinished(() => service.dispose());
-        const bridge = installRallarCrdtWsTopics(new RallarServerWsRouter(service));
+        const bridge = installRallarCrdtWsTopics(new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() }));
 
         expect(
             bridge.definitions

@@ -421,10 +421,10 @@ describe('Relic Hunters browser app', () => {
     it('shows the rule text of a refused command where the command error shows', async () => {
         writeSession(session());
         rallarMock.roomState = roomState(2);
-        stubSnapshotFetch(snapshotWithPlayers(2, 'planning'));
+        stubSnapshotFetch({ ...snapshotWithPlayers(2, 'planning'), roundStartedAtEpochMs: Date.now() });
 
         await renderApp();
-        await waitFor(() => rallarMock.hunterEventHandler !== undefined);
+        await waitFor(() => rallarMock.hunterEventHandler !== undefined && submitPlanButton() !== undefined);
         expect(container.querySelector('.error-panel')).toBeNull();
         await act(async () => {
             await rallarMock.hunterEventHandler?.(REFUSED, toHunterEventMessage(REFUSED));

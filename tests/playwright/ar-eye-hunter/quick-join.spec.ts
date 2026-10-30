@@ -259,7 +259,7 @@ roomBrowserTest('a local player does not appear as a remote avatar without a ses
     await expect(canvas).toHaveAttribute('data-arena-avatar-count', '0');
 });
 
-roomBrowserTest('a director canvas shot adopts a match accepted between animation frames', async ({ page }) => {
+roomBrowserTest('director canvas shots keep current room state and reuse shaders until unmount', async ({ page }) => {
     roomBrowserTest.skip(
         process.env.RALLAR_ARENA_FULL_STACK === '1',
         'Component integration uses the Vite source server.'
@@ -291,11 +291,13 @@ roomBrowserTest('a director canvas shot adopts a match accepted between animatio
     await page.getByRole('button', { name: 'Change player' }).click();
     await expect(canvas).toHaveAttribute('data-arena-pointer-down-count', '0');
     await page.getByRole('button', { name: 'Inspect renderer' }).click();
-    // interaction: the canvas owns one engine and one live scene/render loop after identity and room replacement.
+    // interaction: room replacement releases scene state but reuses compiled terrain shaders and the canvas engine.
     expect(JSON.parse(await page.getByTestId('renderer-inspection').innerText())).toEqual({
         sameEngine: true,
         originalEngineDisposed: false,
         originalSceneDisposed: true,
+        originalFloorEffectDisposed: false,
+        sameFloorEffect: true,
         scenes: 1,
         loops: 1
     });
@@ -306,6 +308,8 @@ roomBrowserTest('a director canvas shot adopts a match accepted between animatio
         sameEngine: false,
         originalEngineDisposed: true,
         originalSceneDisposed: true,
+        originalFloorEffectDisposed: true,
+        sameFloorEffect: false,
         scenes: 0,
         loops: 0
     });

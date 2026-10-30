@@ -1,0 +1,1398 @@
+{
+  "description": "No-browser API-v1 publication grants across a three-node cluster. A grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, since group snapshots are served through a node-local cache; a revoke written on the secondary is read back on the primary and the tertiary. Replaying the primary's grant requestId on the tertiary answers the first result -- the granted row at the grant's group revision -- although the grant has since been revoked. Over the configured granted topic room.bb-granted-feed, Bob is granted subscribe and Alice publish on the primary while Carol joins with no grant; on the tertiary Alice's at-least-once room broadcast reaches Bob alone, its admitted receipt expecting Bob alone. Revoking Alice's publish on the secondary makes her next publish on the tertiary refused with a no-publish-grant NACK, and every node reads the remaining grant back.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_PUBGRANTCL_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-pubgrantcl"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_PUBGRANTCL_WORKSPACE_ID",
+      "default": "workspace-pubgrantcl-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_PUBGRANTCL_GROUP_ID",
+      "default": "pubgrantcl-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_PUBGRANTCL_PASSWORD",
+      "default": "api-v1-pubgrantcl-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "rallarWsBaseUrlTertiary": {
+      "env": "RALLAR_WS_BASE_URL_TERTIARY",
+      "default": "ws://127.0.0.1:18082"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "wsAliceTertiary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "wsBobTertiary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "wsCarolTertiary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrantcl-register-alice-{runId}",
+        "body": {
+          "username": "pubgrantcl-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrantcl-login-user-alice-{runId}",
+        "body": {
+          "username": "pubgrantcl-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrantcl-register-bob-{runId}",
+        "body": {
+          "username": "pubgrantcl-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrantcl-login-user-bob-{runId}",
+        "body": {
+          "username": "pubgrantcl-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroupOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/pubgrantcl-create-group-room-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Publication grants cluster {runId}",
+          "kind": "room",
+          "joinMode": "open"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoinsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/pubgrantcl-join-member-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrantcl-grant-bob-feed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrantcl-feed",
+          "publish": true,
+          "subscribe": true
+        },
+        "outputs": {
+          "groupRevisionAfterGrant": "body.causalRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrantcl-feed": {
+                  "publish": true,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readGrantOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrantcl-feed": {
+                  "publish": true,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readGrantOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrantcl-feed": {
+                  "publish": true,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "revokeOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/revoke/requests/pubgrantcl-revoke-bob-feed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrantcl-feed",
+          "publish": true,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": []
+        }
+      }
+    },
+    {
+      "name": "readRevokeOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": []
+        }
+      }
+    },
+    {
+      "name": "readRevokeOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": []
+        }
+      }
+    },
+    {
+      "name": "replayGrantOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrantcl-grant-bob-feed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrantcl-feed",
+          "publish": true,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "causalRevision": {
+            "groupRevision": "{groupRevisionAfterGrant}"
+          },
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrantcl-feed": {
+                  "publish": true,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrantcl-register-carol-{runId}",
+        "body": {
+          "username": "pubgrantcl-carol-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "carol client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrantcl-login-user-carol-{runId}",
+        "body": {
+          "username": "pubgrantcl-carol-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolSessionId": "body.sessionId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "carolJoinsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{carolClientId}/requests/pubgrantcl-join-member-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantBobSubscribeOnTheGrantedFeedOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrantcl-grant-bob-subscribe-granted-feed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.bb-granted-feed",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": false,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantAlicePublishOnTheGrantedFeedOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{aliceClientId}/grant/requests/pubgrantcl-grant-alice-publish-granted-feed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.bb-granted-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": false,
+                  "subscribe": true
+                }
+              }
+            },
+            {
+              "principalId": "{aliceClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": true,
+                  "subscribe": false
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "alicePresenceOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/pubgrantcl-presence-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "pubgrantcl-generation-alice-{runId}",
+          "connectionGenerationId": "pubgrantcl-connection-generation-alice-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bobPresenceOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/pubgrantcl-presence-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "pubgrantcl-generation-bob-{runId}",
+          "connectionGenerationId": "pubgrantcl-connection-generation-bob-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "carolPresenceOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{carolSessionId}/requests/pubgrantcl-presence-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "generationId": "pubgrantcl-generation-carol-{runId}",
+          "connectionGenerationId": "pubgrantcl-connection-generation-carol-{runId}",
+          "principalId": "{carolClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createAliceWsTicketOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/pubgrantcl-ws-ticket-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceTertiaryWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlTertiary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openAliceSocketOnTheTertiary",
+      "type": "ws.open",
+      "connection": "wsAliceTertiary",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "createBobWsTicketOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/pubgrantcl-ws-ticket-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobTertiaryWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlTertiary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openBobSocketOnTheTertiary",
+      "type": "ws.open",
+      "connection": "wsBobTertiary",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "createCarolWsTicketOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/pubgrantcl-ws-ticket-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "outputs": {
+          "carolWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolTertiaryWsUrl",
+      "type": "set",
+      "output": "carolWsUrl",
+      "secret": true,
+      "redactAs": "carolWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlTertiary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.carolSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.carolWsTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openCarolSocketOnTheTertiary",
+      "type": "ws.open",
+      "connection": "wsCarolTertiary",
+      "request": {
+        "url": "{carolWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "alicePublishesOnTheGrantedFeedOnTheTertiary",
+      "type": "ws.send",
+      "connection": "wsAliceTertiary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "pubgrantcl-granted-item-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "pubgrantcl-granted-item-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.bb-granted-feed",
+            "resourceId": "pubgrantcl-granted-item-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            },
+            "exceptPeerIds": [
+              "{aliceSessionId}"
+            ]
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          },
+          "payload": {
+            "typeId": "pubgrantcl.feed.v1",
+            "contentType": "application/json",
+            "resource": "{\"item\":\"granted-item\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "grantedReceiptResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAliceTertiary",
+        "withinMs": 10000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.receipt.v1"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseGrantedAdmittedReceipt",
+      "type": "set",
+      "output": "grantedReceipt",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.grantedReceiptResource"
+        }
+      }
+    },
+    {
+      "name": "assertTheAdmittedReceiptExpectsBobAlone",
+      "type": "assert",
+      "actual": {
+        "msgId": "{grantedReceipt.msgId}",
+        "phase": "{grantedReceipt.phase}",
+        "firstExpected": "{grantedReceipt.expectedRecipientPeerIds.0}",
+        "secondExpected": "{grantedReceipt.expectedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "pubgrantcl-granted-item-{runId}",
+          "phase": "admitted",
+          "firstExpected": "{bobSessionId}",
+          "secondExpected": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "bobReceivesTheGrantedPublication",
+      "type": "ws.wait",
+      "connection": "wsBobTertiary",
+      "expect": {
+        "connection": "wsBobTertiary",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "pubgrantcl-granted-item-{runId}"
+          },
+          "route": {
+            "topicId": "room.bb-granted-feed"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobAcknowledgesTheGrantedPublication",
+      "type": "ws.send",
+      "connection": "wsBobTertiary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "ack-pubgrantcl-granted-item-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "traceId": "trace-api-v1-group-publication-grants-cluster"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "pubgrantcl-granted-item-{runId}",
+            "contextId": "{aliceSessionId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "qos": {
+            "delivery": {
+              "algo": "best-effort"
+            },
+            "durability": {
+              "algo": "volatile"
+            },
+            "ack": {
+              "algo": "none",
+              "opts": {
+                "timeoutMs": 250
+              }
+            }
+          },
+          "payload": {
+            "typeId": "al.control.ack.v2",
+            "contentType": "application/json",
+            "resource": "{\"ackedMsgId\":\"pubgrantcl-granted-item-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceReceivesTheCompleteReceipt",
+      "type": "ws.wait",
+      "connection": "wsAliceTertiary",
+      "request": {
+        "outputs": {
+          "completeReceiptResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAliceTertiary",
+        "withinMs": 10000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.receipt.v1"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseCompleteReceipt",
+      "type": "set",
+      "output": "completeReceipt",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.completeReceiptResource"
+        }
+      }
+    },
+    {
+      "name": "assertBobsAckCompletesTheReceipt",
+      "type": "assert",
+      "actual": {
+        "msgId": "{completeReceipt.msgId}",
+        "phase": "{completeReceipt.phase}",
+        "firstConfirmed": "{completeReceipt.confirmedRecipientPeerIds.0}",
+        "secondConfirmed": "{completeReceipt.confirmedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "pubgrantcl-granted-item-{runId}",
+          "phase": "complete",
+          "firstConfirmed": "{bobSessionId}",
+          "secondConfirmed": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "carolNeverReceivesTheGrantedPublication",
+      "type": "ws.wait",
+      "connection": "wsCarolTertiary",
+      "expect": {
+        "connection": "wsCarolTertiary",
+        "withinMs": 4000,
+        "absent": {
+          "id": {
+            "msgId": "pubgrantcl-granted-item-{runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "revokeAlicePublishOnTheGrantedFeedOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{aliceClientId}/revoke/requests/pubgrantcl-revoke-alice-publish-granted-feed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.bb-granted-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": false,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "aliceNextPublishOnTheTertiaryIsNackedNoPublishGrant",
+      "type": "ws.send",
+      "connection": "wsAliceTertiary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "pubgrantcl-revoked-item-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "pubgrantcl-revoked-item-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.bb-granted-feed",
+            "resourceId": "pubgrantcl-revoked-item-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            },
+            "exceptPeerIds": [
+              "{aliceSessionId}"
+            ]
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          },
+          "payload": {
+            "typeId": "pubgrantcl.feed.v1",
+            "contentType": "application/json",
+            "resource": "{\"item\":\"revoked-item\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "revokedNackResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAliceTertiary",
+        "withinMs": 10000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.nack.v2"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseNoPublishGrantNack",
+      "type": "set",
+      "output": "revokedNack",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.revokedNackResource"
+        }
+      }
+    },
+    {
+      "name": "assertTheNackNamesNoPublishGrant",
+      "type": "assert",
+      "actual": {
+        "msgId": "{revokedNack.msgId}",
+        "reason": "{revokedNack.reason}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "pubgrantcl-revoked-item-{runId}",
+          "reason": "no-publish-grant"
+        }
+      }
+    },
+    {
+      "name": "bobNeverReceivesTheRefusedPublication",
+      "type": "ws.wait",
+      "connection": "wsBobTertiary",
+      "expect": {
+        "connection": "wsBobTertiary",
+        "withinMs": 4000,
+        "absent": {
+          "id": {
+            "msgId": "pubgrantcl-revoked-item-{runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "readTheRemainingFeedGrantOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": false,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readTheRemainingFeedGrantOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": false,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readTheRemainingFeedGrantOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.bb-granted-feed": {
+                  "publish": false,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "closeCarolSocket",
+      "type": "ws.close",
+      "connection": "wsCarolTertiary",
+      "request": {
+        "code": 1000,
+        "reason": "publication grants cluster recipe done"
+      }
+    },
+    {
+      "name": "closeBobSocket",
+      "type": "ws.close",
+      "connection": "wsBobTertiary",
+      "request": {
+        "code": 1000,
+        "reason": "publication grants cluster recipe done"
+      }
+    },
+    {
+      "name": "closeAliceSocket",
+      "type": "ws.close",
+      "connection": "wsAliceTertiary",
+      "request": {
+        "code": 1000,
+        "reason": "publication grants cluster recipe done"
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

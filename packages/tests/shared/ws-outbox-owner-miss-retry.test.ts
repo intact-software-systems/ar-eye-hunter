@@ -83,7 +83,7 @@ describe('durable WS outbox owner misses', () => {
             outboundStores,
             socket: nonOwnerSocket.socket,
             name: 'server-without-target',
-            targetResolver: { resolvePeerRecipients: () => [] },
+            targetResolver: { requiresFrozenAudience: () => false, resolvePeerRecipients: () => [] },
             outboundDeliveryOutcome: (outcome) => misses.push(outcome),
             queueEngine: nonOwnerEngine
         });
@@ -97,6 +97,7 @@ describe('durable WS outbox owner misses', () => {
             name: 'server-with-target',
             readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             },
             queueEngine: ownerEngine
@@ -140,6 +141,7 @@ describe('durable WS outbox owner misses', () => {
             name: 'server',
             readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolvePeerRecipients: (peerId) => peerId === 'writer-session' ? [{ peerId, connectionId: peerId }] : []
             },
             dequeueResilience: createResilience(),
@@ -202,6 +204,7 @@ describe('durable WS outbox owner misses', () => {
             name: 'server-with-target',
             readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             },
             outboundStores: { admissionStore, workQueue: backend.workQueue },
@@ -582,6 +585,7 @@ function createService(input: CreateWsOutboxServiceInput): WsOutboxServiceFixtur
         name: input.name,
         readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: input.resolveRecipients,
             resolveBroadcastRecipients: input.resolveRecipients
         },

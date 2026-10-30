@@ -67,7 +67,8 @@ export function createRallarMiddlewareInfrastructure(
         createWsServerTargetResolver(webSocketServer, {
             findGroupSnapshotByRef: options.findGroupSnapshotByRef,
             findClientSnapshotByRef: options.findClientSnapshotByRef,
-            now: options.now
+            now: options.now,
+            grantedTopics: options.grantedTopics
         });
     const wsQBoxServerService = createMiddlewareWsQueueBoxServer({
         options,
@@ -78,6 +79,7 @@ export function createRallarMiddlewareInfrastructure(
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
+            filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
             wsQBoxServerService,
             receiptObserver: options.wsReceiptObserver,
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite(PUB_SUB_REQUEUE_TYPES)
@@ -176,6 +178,7 @@ function createMiddlewareWsQueueBoxServer(
         name: options.wsRuntimeName ?? 'default-qbox-server',
         targetResolver,
         readProducerProvenance: options.readWsOutboxProducerProvenance,
+        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         inboundVolatileStores: options.inboundVolatileStores,

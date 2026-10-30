@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
+import { GROUP_PUBLICATION_GRANT_LIMITS } from '@shared/api/group-publication/group-publication-grants.ts';
+import { RALLAR_ROUTE_ID_MAX_LENGTH, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 const repoRoot = process.cwd();
 
@@ -11,7 +14,11 @@ const apiReference = readRepoFile('docs/rallar-api-reference.md');
 const quickstart = readRepoFile('docs/rallar-quickstart-and-recipes.md');
 const environmentVariables = readRepoFile('docs/environment-variables.md');
 const openApi = readRepoFile('apps/api-v1/resources/api-v1-openapi.yaml');
-const openApiDocument = parseOpenApiDocument(loadYaml(openApi));
+const loadedOpenApi = loadYaml(openApi);
+if (!isOpenApiRecord(loadedOpenApi)) {
+    throw new TypeError('OpenAPI document must be an object');
+}
+const openApiDocument = requireOpenApiDocument(loadedOpenApi);
 
 describe('Rallar group public contracts', () => {
     it('documents browser-safe room workflows and switch recovery', () => {
@@ -51,6 +58,34 @@ describe('Rallar group public contracts', () => {
         const published = schema('GroupPolicyReasonCode').enum ?? [];
 
         expect([...published].sort()).toEqual([...GROUP_POLICY_REASON_CODES].sort());
+    });
+
+    it('constrains granted topic keys and request topic ids to the WS user topic rule', () => {
+        const topicId = schema('RallarWsUserTopicId');
+        const pattern = new RegExp(topicId.pattern ?? '', 'u');
+        const candidates = [
+            'app.scores',
+            'room.feed',
+            'room.a:b_c-d.e',
+            'room.',
+            'rallar.state',
+            'group-state.event',
+            'feed',
+            'room.a b',
+            ' room.feed',
+            'room.\u00fc'
+        ];
+
+        expect(schema('GroupPublicationTopicGrants').propertyNames?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
+        expect(schema('GroupPublicationTopicGrants').maxProperties).toBe(GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal);
+        expect(topicId.maxLength).toBe(RALLAR_ROUTE_ID_MAX_LENGTH);
+        expect(candidates.map((candidate) => [candidate, pattern.test(candidate)])).toEqual(
+            candidates.map((candidate) => [candidate, validateRallarWsUserTopicId(candidate).ok])
+        );
+        for (const request of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
+            expect(schema(request).properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
+            expectSchemaRequired(request, ['topicId', 'publish', 'subscribe']);
+        }
     });
 
     it('documents stable policy reasons and the strict read rollout switch', () => {
@@ -174,8 +209,22 @@ describe('Rallar group public contracts', () => {
             'members',
             'activeSessions',
             'memberCount',
-            'onlineMemberCount'
+            'onlineMemberCount',
+            'publicationGrants'
         ]);
+        expectSchemaRequired('GroupPublicationGrant', [
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'principalId',
+            'topics',
+            'updated'
+        ]);
+        expectSchemaRequired('GroupPublicationTopicPermissions', ['publish', 'subscribe']);
+        expect(schema('CreateGroupRequest').required).not.toContain('publicationGrants');
+        expect(schema('CreateGroupRequest').properties?.publicationGrants?.$ref).toBe(
+            '#/components/schemas/GroupPublicationTopicGrants'
+        );
         expectSchemaRequired('GroupMember', [
             'applicationId',
             'workspaceId',
@@ -409,10 +458,14 @@ interface OpenApiSchema {
     readonly required?: readonly string[];
     readonly properties?: Readonly<Record<string, OpenApiSchema>>;
     readonly nullable?: boolean;
-    readonly enum?: readonly unknown[];
+    readonly enum?: readonly ApiJsonValue[];
     readonly allOf?: readonly OpenApiSchema[];
     readonly oneOf?: readonly OpenApiSchema[];
     readonly discriminator?: OpenApiDiscriminator;
+    readonly pattern?: string;
+    readonly maxLength?: number;
+    readonly maxProperties?: number;
+    readonly propertyNames?: OpenApiSchema;
 }
 
 interface OpenApiDiscriminator {
@@ -435,38 +488,37 @@ function schema(name: string): OpenApiSchema {
     return value;
 }
 
-function parseOpenApiDocument(value: unknown): OpenApiDocument {
-    const document = requireRecord(value, 'OpenAPI document');
-    const components = requireRecord(
+function requireOpenApiDocument(document: ApiJsonObject): OpenApiDocument {
+    const components = requireOpenApiRecord(
         document.components,
         'OpenAPI components'
     );
-    const schemaValues = requireRecord(
+    const schemaValues = requireOpenApiRecord(
         components.schemas,
         'OpenAPI component schemas'
     );
     const schemas: Record<string, OpenApiSchema> = {};
     for (const [name, schemaValue] of Object.entries(schemaValues)) {
-        schemas[name] = parseOpenApiSchema(schemaValue, name);
+        schemas[name] = requireOpenApiSchema(schemaValue, name);
     }
     return { components: { schemas } };
 }
 
-function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
-    const source = requireRecord(value, `OpenAPI schema ${label}`);
+function requireOpenApiSchema(value: ApiJsonValue, label: string): OpenApiSchema {
+    const source = requireOpenApiRecord(value, `OpenAPI schema ${label}`);
     const properties: Record<string, OpenApiSchema> = {};
     if (source.properties !== undefined) {
-        const propertyValues = requireRecord(
+        const propertyValues = requireOpenApiRecord(
             source.properties,
             `OpenAPI schema ${label} properties`
         );
         for (const [name, propertyValue] of Object.entries(propertyValues)) {
-            properties[name] = parseOpenApiSchema(propertyValue, `${label}.${name}`);
+            properties[name] = requireOpenApiSchema(propertyValue, `${label}.${name}`);
         }
     }
     const discriminator = source.discriminator === undefined
         ? undefined
-        : requireRecord(
+        : requireOpenApiRecord(
             source.discriminator,
             `OpenAPI schema ${label} discriminator`
         );
@@ -475,27 +527,25 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         throw new TypeError(`OpenAPI schema ${label} discriminator is invalid`);
     }
     return {
-        ...(typeof source.type === 'string' ? { type: source.type } : {}),
-        ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
+        ...toOpenApiSchemaKeywords(source),
         ...(source.required === undefined
             ? {}
-            : { required: requireStringArray(source.required, `${label}.required`) }),
+            : { required: requireOpenApiStringArray(source.required, `${label}.required`) }),
         ...(source.properties === undefined ? {} : { properties }),
-        ...(typeof source.nullable === 'boolean'
-            ? { nullable: source.nullable }
-            : {}),
-        ...(Array.isArray(source.enum) ? { enum: [...source.enum] } : {}),
+        ...(source.propertyNames === undefined
+            ? {}
+            : { propertyNames: requireOpenApiSchema(source.propertyNames, `${label}.propertyNames`) }),
         ...(source.allOf === undefined
             ? {}
             : {
-                allOf: requireArray(source.allOf, `${label}.allOf`)
-                    .map((item, index) => parseOpenApiSchema(item, `${label}.allOf[${index}]`))
+                allOf: requireOpenApiArray(source.allOf, `${label}.allOf`)
+                    .map((item, index) => requireOpenApiSchema(item, `${label}.allOf[${index}]`))
             }),
         ...(source.oneOf === undefined
             ? {}
             : {
-                oneOf: requireArray(source.oneOf, `${label}.oneOf`)
-                    .map((item, index) => parseOpenApiSchema(item, `${label}.oneOf[${index}]`))
+                oneOf: requireOpenApiArray(source.oneOf, `${label}.oneOf`)
+                    .map((item, index) => requireOpenApiSchema(item, `${label}.oneOf[${index}]`))
             }),
         ...(propertyName === undefined
             ? {}
@@ -503,29 +553,39 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
     };
 }
 
-function requireRecord(
-    value: unknown,
-    label: string
-): Record<string, unknown> {
-    if (!isUnknownRecord(value)) {
+function toOpenApiSchemaKeywords(source: ApiJsonObject): OpenApiSchema {
+    return {
+        ...(typeof source.type === 'string' ? { type: source.type } : {}),
+        ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
+        ...(typeof source.nullable === 'boolean' ? { nullable: source.nullable } : {}),
+        ...(Array.isArray(source.enum) ? { enum: [...source.enum] } : {}),
+        ...(typeof source.pattern === 'string' ? { pattern: source.pattern } : {}),
+        ...(typeof source.maxLength === 'number' ? { maxLength: source.maxLength } : {}),
+        ...(typeof source.maxProperties === 'number' ? { maxProperties: source.maxProperties } : {})
+    };
+}
+
+function requireOpenApiRecord(value: ApiJsonValue, label: string): ApiJsonObject {
+    if (!isOpenApiRecord(value)) {
         throw new TypeError(`${label} must be an object`);
     }
     return value;
 }
 
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+// js-yaml loads the document as plain JSON-compatible values.
+function isOpenApiRecord(value: unknown): value is ApiJsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function requireArray(value: unknown, label: string): readonly unknown[] {
+function requireOpenApiArray(value: ApiJsonValue, label: string): readonly ApiJsonValue[] {
     if (!Array.isArray(value)) {
         throw new TypeError(`${label} must be an array`);
     }
     return value;
 }
 
-function requireStringArray(value: unknown, label: string): readonly string[] {
-    const items = requireArray(value, label);
+function requireOpenApiStringArray(value: ApiJsonValue, label: string): readonly string[] {
+    const items = requireOpenApiArray(value, label);
     if (!items.every((item) => typeof item === 'string')) {
         throw new TypeError(`${label} must contain only strings`);
     }

@@ -79,6 +79,8 @@ const mutationRoutes: readonly MutationRoutePattern[] = [
         `members/${segment}/remove`,
         `members/${segment}/ban`,
         `members/${segment}/unban`,
+        `publication-grants/${segment}/grant`,
+        `publication-grants/${segment}/revoke`,
         'owner/transfer',
         `sessions/${segment}/heartbeat`,
         `sessions/${segment}/disconnect`,
@@ -180,6 +182,18 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
         file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
         kind: 'sequential-replay',
         requestId: 'idem-contract-group-replay-{runId}'
+    },
+    {
+        actionNames: ['changedBodySameRequestId', 'grantBobPublish', 'replayGrantSameBody'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-publication-grants.json`,
+        kind: 'sequential-replay',
+        requestId: 'pubgrant-grant-bob-publish-{runId}'
+    },
+    {
+        actionNames: ['grantOnPrimary', 'replayGrantOnTertiary'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-publication-grants-cluster.json`,
+        kind: 'sequential-replay',
+        requestId: 'pubgrantcl-grant-bob-feed-{runId}'
     },
     {
         actionNames: ['firstLogout', 'replayLogout'],

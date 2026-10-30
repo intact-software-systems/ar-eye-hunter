@@ -143,7 +143,12 @@ it.each([true, false])('binds actual SDK inbound recovery to the originating sto
     });
     const storage: ALStorageEvent[] = [];
     const invocations: number[] = [];
-    facade.messages.channel({ typeId: 'test.recovery', purpose: 'command', recovery: { onResyncRequired: (cursor) => invocations.push(cursor.observedSeq) } });
+    facade.messages.channel({
+        typeId: 'test.recovery',
+        purpose: 'command',
+        access: 'members',
+        recovery: { onResyncRequired: (cursor) => invocations.push(cursor.observedSeq) }
+    });
     facade.setDefaults({
         applicationId: 'app',
         diagnosticsPorts: {

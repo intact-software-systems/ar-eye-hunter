@@ -84,6 +84,11 @@ The configuration reader recognizes only these operational overrides:
   The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
   All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.
 - CRDT: `RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON`.
+- Granted WS topics: `RALLAR_GRANTED_WS_TOPICS_JSON`, overriding the top-level `grantedWsTopics` (empty by default).
+  Each entry is exactly `{ topicId, typeId?, fanout, serverProducerIds }`: an `app.` or `room.` topic id, a fanout of
+  `live-only`, `outbox` or `none`, and the server producers that may publish on it. api-v1 installs each as a
+  room-scoped `participation: 'granted'` topic (D499): only principals holding a publication grant publish and
+  receive, and an invalid entry rejects startup.
 - Black-box token issue: `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`,
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
 

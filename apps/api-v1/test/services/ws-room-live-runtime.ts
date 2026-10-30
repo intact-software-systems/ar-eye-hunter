@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -74,11 +75,13 @@ export function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
                 : undefined,
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(socket, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: (ref) => state.cache.findByRef(ref),
             now: () => deliveryClock.atEpochMs
         })
     });
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage: createApiV1RoomWsAuthorizer(state.groupStateService, {
             readLifecyclePolicy: async () => ({ status: 'absent' })
         }),

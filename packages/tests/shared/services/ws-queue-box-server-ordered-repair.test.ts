@@ -235,6 +235,7 @@ async function createOrderedServer(): Promise<OrderedServer> {
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: recipients
         }

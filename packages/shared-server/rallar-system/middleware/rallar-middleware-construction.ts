@@ -12,6 +12,7 @@ import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/re
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type {
+    WsCapturedRecipientEligibilityFilter,
     WsDeliveryDiagnosticsSink,
     WsServerInboundConnectionScopeReader,
     WsServerTargetResolver
@@ -104,6 +105,9 @@ export interface CreateRallarMiddlewareOptions {
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
+    readonly grantedTopics: WsServerTargetResolutionOptions['grantedTopics'];
+    /** The per-attempt re-check of captured outbox audiences, handed to the WS server and the cluster bridge (D498). */
+    readonly filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter;
     readonly inboundStores?: ALInboundRuntimeStores;
     /**
      * The instance-local memory pair a volatile message is admitted and delivered from; `undefined` keeps every
@@ -141,7 +145,10 @@ export interface CreateRallarMiddlewareOptions {
     readonly rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
     readonly rtcTopologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
-    readonly queuePubSubBridge?: Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
+    readonly queuePubSubBridge?: Omit<
+        InstallQueueBoxPubSubBridgeOptions,
+        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'
+    >;
     readonly liveWsNoticeSubscriber?: Omit<
         InstallLiveWsNoticeSubscriberInput,
         'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'

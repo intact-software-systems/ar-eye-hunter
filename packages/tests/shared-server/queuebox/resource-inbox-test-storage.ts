@@ -27,16 +27,19 @@ export interface ResourceInboxTestRow {
     readonly expired?: boolean;
 }
 
+export type ResourceInboxTestBackend = 'memory' | 'postgres';
+
 /**
- * The API-v1 schema on PGlite, or on the integration PostgreSQL in its own schema when `RALLAR_POSTGRES_INTEGRATION=1`,
- * through a pool of `maxConnections` there.
+ * The API-v1 schema on PGlite, or on the integration PostgreSQL in its own schema, through a pool of `maxConnections`
+ * there. Without an explicit backend, PostgreSQL is chosen when `RALLAR_POSTGRES_INTEGRATION=1`.
  */
 export async function createResourceInboxTestStorage(
     schemaPrefix: string,
-    maxConnections = 1
+    maxConnections = 1,
+    backend: ResourceInboxTestBackend = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? 'postgres' : 'memory'
 ): Promise<ResourceInboxTestStorage> {
     const schemaSql = await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
-    if (process.env.RALLAR_POSTGRES_INTEGRATION !== '1') {
+    if (backend === 'memory') {
         const sql = createPGliteSqlClient(new PGlite());
         await sql.exec(schemaSql);
         return { sql, close: async () => await sql.close() };

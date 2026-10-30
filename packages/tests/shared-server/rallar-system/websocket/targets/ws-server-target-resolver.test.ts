@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -42,6 +43,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
         addOpenConnection(server, 'session-a');
         const message = newALMulticastMessage('session-a', newALEventRoute('room.chat', 'room', 'message'), snapshot.group, 'chat.message.v1', {});
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => ({ ...snapshot, group: { ...snapshot.group, [field]: 'another' } })
         });
 
@@ -69,6 +71,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             addOpenConnection(server, 'session-a');
             addOpenConnection(server, 'joined-after-publication');
             const resolver = createWsServerTargetResolver(server, {
+                grantedTopics: new WsGrantedTopicSet(),
                 findGroupSnapshotByRef: () =>
                     cacheState === 'cold'
                         ? undefined
@@ -105,6 +108,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
         const server = new JsonWebSocketServer();
         addOpenConnection(server, 'session-a');
         const resolver = createWsServerTargetResolver(server, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => current,
             findClientSnapshotByRef: source === 'provider' ? () => client : undefined
         });
@@ -153,7 +157,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 2
         });
         const message = createSnapshotPage(snapshot, AppTopics.clientStateSnapshot);
-        const resolver = createWsServerTargetResolver(webSocketServer);
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
         expect(
             resolver
@@ -207,7 +211,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 2
         });
         const message = createSnapshotPage(snapshot, AppTopics.groupStateSnapshot);
-        const resolver = createWsServerTargetResolver(webSocketServer);
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
         expect(
             resolver
@@ -259,7 +263,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 2
         });
         const message = createSnapshotPage(snapshot, AppTopics.groupDirectorySnapshot);
-        const resolver = createWsServerTargetResolver(webSocketServer);
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
         expect(
             resolver
@@ -340,7 +344,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             ]
         };
         const message = createSnapshotPage(snapshot, AppTopics.groupStateSnapshot);
-        const resolver = createWsServerTargetResolver(webSocketServer);
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
         expect(
             resolver
@@ -399,7 +403,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             envelope,
             { groupRef: event }
         );
-        const resolver = createWsServerTargetResolver(webSocketServer);
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
         expect(
             resolver
@@ -430,6 +434,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             { text: 'workspace-b' }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -465,6 +470,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -487,7 +493,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             { version: 1 },
             { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-a', groupId: 'room-a' } }
         );
-        const resolver = createWsServerTargetResolver(server);
+        const resolver = createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet() });
         expect(
             resolver.resolveBroadcastRecipients?.('room', {
                 ...message,
@@ -527,6 +533,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             }
         };
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => laggingSnapshot
         });
 
@@ -567,6 +574,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             }
         };
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => snapshot
         });
 
@@ -606,7 +614,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 principalRef: { applicationId: 'app-1', workspaceId: 'workspace-a', principalId: 'alice' }
             }
         };
-        const resolver = createWsServerTargetResolver(webSocketServer, { findGroupSnapshotByRef: () => snapshot });
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet(), findGroupSnapshotByRef: () => snapshot });
 
         expect(resolver.resolveBroadcastRecipients?.('principal', message).map((recipient) => recipient.connectionId))
             .toEqual(['session-a1', 'session-a2']);
@@ -636,7 +644,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             }),
             targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, recipientPeerIds: ['session-c', 'session-x'] }
         };
-        const resolver = createWsServerTargetResolver(webSocketServer, { findGroupSnapshotByRef: () => snapshot });
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet(), findGroupSnapshotByRef: () => snapshot });
 
         expect(resolver.resolveBroadcastRecipients?.('room', message).map((recipient) => recipient.connectionId))
             .toEqual(['session-c']);
@@ -669,6 +677,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             )
         };
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -721,6 +730,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             { groupRef: event }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -746,7 +756,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             AppTopics.clientStateSnapshot,
             'not-a-client-snapshot'
         );
-        const resolver = createWsServerTargetResolver(webSocketServer);
+        const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
         expect(resolver.resolveBroadcastRecipients?.('all', message)).toEqual([]);
     });
@@ -785,6 +795,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             { groupRef: group.group }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
+            grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => group,
             now: () => now
         });
@@ -945,7 +956,8 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
             expiresAtEpochMs
         })),
         memberCount: activeMembers.length,
-        onlineMemberCount: activeMembers.length
+        onlineMemberCount: activeMembers.length,
+        publicationGrants: []
     };
 }
 
@@ -987,7 +999,9 @@ function createGroupEventEnvelope(
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        audienceSessionIds
+        audienceSessionIds,
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
 }
 

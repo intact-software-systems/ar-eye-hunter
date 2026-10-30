@@ -32,6 +32,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
 import type {
@@ -136,7 +137,13 @@ export function createBrowserMessagingComposition(
         readMessageMaxPayloadBytes: () =>
             input.state.readDefaults()?.messages?.maxPayloadBytes ??
                 RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
-        readInboundDiagnostics: input.readInboundDiagnostics
+        readInboundDiagnostics: input.readInboundDiagnostics,
+        readPublicationPermissions: (roomRef, topicId) => {
+            const snapshot = input.state.roomStateStore.findGroupSnapshot(roomRef);
+            return snapshot === undefined
+                ? undefined
+                : resolveGroupPublicationPermissions(snapshot, input.session.requireSession().clientId, topicId);
+        }
     });
     return {
         messagesController,

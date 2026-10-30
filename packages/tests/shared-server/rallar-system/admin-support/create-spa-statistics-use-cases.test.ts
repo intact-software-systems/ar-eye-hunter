@@ -568,7 +568,8 @@ function createGroupSnapshot(
         members: groupMembers,
         activeSessions,
         memberCount: groupMembers.length,
-        onlineMemberCount: new Set(activeSessions.map((session) => session.principalId)).size
+        onlineMemberCount: new Set(activeSessions.map((session) => session.principalId)).size,
+        publicationGrants: []
     };
 }
 

@@ -143,6 +143,7 @@ export function createGroupAuthorityRead(
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
+        targetPublicationGrant: null,
         lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'optimistic'),
         activeMembers: (options.activeMemberPrincipalIds ?? (options.actorIsMember === false ? [] : [actorPrincipalId])).map((principalId) => ({
             ...createGroupAuthorityActorMember(principalId),

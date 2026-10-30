@@ -68,6 +68,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -101,6 +102,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -135,6 +137,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'principal-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -166,6 +169,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message: listed,
+            topic: { participation: 'members' },
             roomId: 'listed-room',
             senderId: 'session-a',
             topicId: 'room.chat',
@@ -299,6 +303,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -363,6 +368,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -421,6 +427,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         await expect(Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -500,6 +507,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         await expect(Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: group.group.groupId,
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -549,6 +557,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
                 await expect(Promise.resolve(authorizer({
                     message,
+                    topic: { participation: 'members' },
                     roomId: haltedSnapshot.group.groupId,
                     senderId: 'session-b',
                     topicId: 'room.chat',
@@ -590,6 +599,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         await expect(Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: haltedSnapshot.group.groupId,
             senderId: 'session-b',
             topicId: 'room.crdt',
@@ -624,6 +634,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
             const decision = await Promise.resolve(authorizer({
                 message,
+                topic: { participation: 'members' },
                 roomId: snapshot.group.groupId,
                 senderId: 'session-b',
                 topicId: 'room.chat',
@@ -699,6 +710,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
             const decision = await Promise.resolve(authorizer({
                 message,
+                topic: { participation: 'members' },
                 roomId: snapshot.group.groupId,
                 senderId: 'session-b',
                 topicId: 'room.chat',
@@ -766,6 +778,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -815,6 +828,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -848,6 +862,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: snapshot.group.groupId,
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -884,6 +899,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: group.groupId,
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -924,6 +940,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const decision = await Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: snapshot.group.groupId,
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -964,6 +981,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
             const decision = await Promise.resolve(authorizer({
                 message,
+                topic: { participation: 'members' },
                 roomId: snapshot.group.groupId,
                 senderId: 'session-b',
                 topicId: 'room.chat',
@@ -1000,6 +1018,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         await expect(Promise.resolve(authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: formingSnapshot.group.groupId,
             senderId: 'session-b',
             topicId: 'room.chat',
@@ -1183,7 +1202,8 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
         })),
         activeSessions: createGroupSessions(input),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 
@@ -1275,5 +1295,12 @@ function leaderRoomMessage(snapshot: GroupSnapshot, senderId: string): ALMessage
 }
 
 function leaderAuthorizationInput(message: ALMessage): RallarServerWsRoomAuthorizationInput {
-    return { message, roomId: 'leader-room', senderId: message.id.senderId, topicId: 'room.command', typeId: 'command.v1' };
+    return {
+        message,
+        topic: { participation: 'members' },
+        roomId: 'leader-room',
+        senderId: message.id.senderId,
+        topicId: 'room.command',
+        typeId: 'command.v1'
+    };
 }

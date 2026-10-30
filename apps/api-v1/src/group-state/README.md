@@ -8,8 +8,8 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
 ## Read First
 
 1. [registerGroupStateRoutes](./register-group-state-routes.ts#registerGroupStateRoutes) installs
-   the five cohesive route families once: read, aggregate mutation, admission, membership, and
-   presence.
+   the cohesive route families once: read, Quick Join, aggregate mutation, lifecycle, admission,
+   membership, presence, and publication grants.
 2. [toGroupStateCommand](./to-group-state-command.ts#toGroupStateCommand) is the canonical HTTP
    request-to-AppInbox command boundary for all authenticated group mutations.
 3. [registerGroupAdmissionRoutes](./register-group-admission-routes.ts#registerGroupAdmissionRoutes)
@@ -33,6 +33,8 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
 9. [toGroupStateErrorResponse](./group-state-route-errors.ts#toGroupStateErrorResponse) maps typed
    policy denials (including `group-full`), admission rate limits, and inbox failures to HTTP
    responses.
+10. [registerGroupPublicationRoutes](./register-group-publication-routes.ts#registerGroupPublicationRoutes)
+    owns the publication grant and revoke routes.
 
 ## Boundaries
 

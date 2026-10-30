@@ -58,7 +58,8 @@ describe('the Relic hunter channel', () => {
             topicId: RELIC_TOPICS.hunter,
             typeId: RELIC_TYPES.hunter,
             roomRef: ROOM_REF,
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         }]);
         expect(double.subscribed()).toBe(true);
         unsubscribe();

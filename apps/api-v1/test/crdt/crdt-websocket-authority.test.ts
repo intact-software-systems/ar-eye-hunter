@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -256,7 +257,7 @@ async function createCrdtWebSocketAuthorityFixture(
                 : undefined,
         name: 'server-1'
     });
-    const router = new RallarServerWsRouter(wsService).install();
+    const router = new RallarServerWsRouter(wsService, { grantedTopics: new WsGrantedTopicSet() }).install();
     installRallarCrdtWsTopics(router, {
         mutationIngress: createCrdtWsMutationIngress(service),
         allowAppDocuments: true,

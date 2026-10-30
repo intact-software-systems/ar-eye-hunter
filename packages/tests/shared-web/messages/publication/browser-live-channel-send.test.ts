@@ -44,7 +44,7 @@ function createLiveSendFixture(): LiveSendFixture {
 }
 
 function toLiveChannel(publication: ALPublicationPolicy): BrowserTypedChannelPolicy {
-    return { purpose: 'live', durability: undefined, onStorageUnavailable: 'refuse', publication };
+    return { purpose: 'live', access: 'members', durability: undefined, onStorageUnavailable: 'refuse', publication };
 }
 
 function toPoseSend(resourceId: string, seq: number, text = 'pose') {

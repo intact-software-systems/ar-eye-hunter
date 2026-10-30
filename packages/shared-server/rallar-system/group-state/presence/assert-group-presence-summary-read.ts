@@ -1,4 +1,6 @@
+import { decodeGroupPublicationGrantList } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 
 import {
     assertExactKeys,
@@ -12,6 +14,7 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '../persistence/presence/group-presence-storage-keys.ts';
+import { groupStatePublicationGrantStorageKey } from '../persistence/publication/group-publication-grant-storage-key.ts';
 import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,
@@ -35,22 +38,23 @@ export interface GroupPresenceSummaryReadInconsistency {
     readonly message: string;
 }
 
+const GROUP_PRESENCE_SUMMARY_READ_KEYS = [
+    'group',
+    'members',
+    'admissions',
+    'presenceSessions',
+    'current',
+    'publicationGrants'
+] as const;
+
 /** The per-record shape of the read; the facts across its rows are `validateGroupPresenceSummaryReadConsistency`'s. */
 export function assertGroupPresenceSummaryRead(
     ref: GroupRef,
     read: GroupPresenceSummaryRead
 ): void {
     requireJsonSafe(read, 'Group presence summary read');
-    assertExactKeys(
-        read,
-        ['group', 'members', 'admissions', 'presenceSessions', 'current'],
-        'Group presence summary read'
-    );
-    assertRequiredKeys(
-        read,
-        ['group', 'members', 'admissions', 'presenceSessions', 'current'],
-        'Group presence summary read'
-    );
+    assertExactKeys(read, GROUP_PRESENCE_SUMMARY_READ_KEYS, 'Group presence summary read');
+    assertRequiredKeys(read, GROUP_PRESENCE_SUMMARY_READ_KEYS, 'Group presence summary read');
     validateGroupStateRuntimeEntry(
         read.group,
         'Stored summary group',
@@ -86,7 +90,8 @@ function assertGroupPresenceSummaryCollections(
         const [label, values] of [
             ['members', read.members],
             ['admissions', read.admissions],
-            ['presence sessions', read.presenceSessions]
+            ['presence sessions', read.presenceSessions],
+            ['publication grants', read.publicationGrants]
         ] as const
     ) {
         if (!Array.isArray(values)) {
@@ -96,6 +101,24 @@ function assertGroupPresenceSummaryCollections(
     assertGroupPresenceSummaryMembers(ref, read);
     assertGroupPresenceSummaryAdmissions(ref, read.admissions);
     assertGroupPresenceSummarySessions(ref, read.presenceSessions);
+    assertGroupPresenceSummaryPublicationGrants(ref, read.publicationGrants);
+}
+
+function assertGroupPresenceSummaryPublicationGrants(
+    ref: GroupRef,
+    publicationGrants: GroupPresenceSummaryRead['publicationGrants']
+): void {
+    for (const stored of publicationGrants) {
+        validateGroupStateRuntimeEntry(
+            stored,
+            'Stored summary publication grant',
+            groupStatePublicationGrantStorageKey(ref, stored.value.principalId)
+        );
+    }
+    const issues = decodeGroupPublicationGrantList(publicationGrants.map(({ value }) => value), ref).left;
+    if (issues !== undefined) {
+        throw new TypeError(`Group presence summary publication grants are invalid: ${formatRallarValidation(issues)}`);
+    }
 }
 
 function assertGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSummaryRead): void {

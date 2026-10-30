@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import { toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
@@ -166,7 +167,7 @@ export function createRelicTestApplication(
         repositories: new RepositoryManager(),
         appDataRepository: new PSqlAppDataRepository(mutation.database),
         nowEpochMs: Date.now,
-        ws: {},
+        ws: { grantedTopics: new WsGrantedTopicSet() },
         systemInstallers: { installSystemTopics: () => {}, installWebSocketLifecycle: () => {} },
         routeInstallers: { webSocket: () => {}, rest: [] }
     });
@@ -235,7 +236,8 @@ async function connectRelicTestSession(
             members: observed.members,
             admissions: observed.admissions,
             presenceSessions: observed.presenceSessions,
-            current: observed.current
+            current: observed.current,
+            publicationGrants: observed.publicationGrants
         }
     });
     if (computed.outcome === 'write' && computed.operation === 'update') {

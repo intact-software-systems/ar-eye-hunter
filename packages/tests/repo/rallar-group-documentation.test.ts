@@ -42,7 +42,10 @@ describe('Rallar group documentation', () => {
 
         expect(start).toBeGreaterThan(-1);
         expect(end).toBeGreaterThan(start);
-        expect([...toBacktickedKebabTokens(apiReference.slice(start, end))].sort())
+        const section = apiReference.slice(start, end);
+        // `capacity` (D495) is the one single-word code, so it is matched by name beside the kebab tokens.
+        const singleWordCodes = section.includes('`capacity`') ? ['capacity'] : [];
+        expect([...toBacktickedKebabTokens(section), ...singleWordCodes].sort())
             .toEqual([...GROUP_POLICY_REASON_CODES].sort());
     });
 

@@ -3,6 +3,7 @@ import {
     type RallarServerAiWebSocketConfig,
     type RallarServerAiWebSocketPort
 } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { newALBroadcastMessage, newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -181,11 +182,12 @@ function createRouterWithSessions(sessionIds: readonly string[]) {
         name: 'rallar-ai-server',
         readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolveBroadcastRecipients: () => [...sockets.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         }
     });
     onTestFinished(() => service.dispose());
-    return { router: new RallarServerWsRouter(service, { sendNacks: false }), sockets };
+    return { router: new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), sendNacks: false }), sockets };
 }
 
 function worldRequest() {

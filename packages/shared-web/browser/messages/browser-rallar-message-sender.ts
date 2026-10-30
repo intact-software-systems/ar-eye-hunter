@@ -1,8 +1,7 @@
 import { toBrowserRtcCaptureIntent } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
-import {
-    isExclusiveSendInput,
-    type BrowserMessageInputValidator,
-    type ResolvedWsMessageInput
+import type {
+    BrowserMessageInputValidator,
+    ResolvedWsMessageInput
 } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageHandle,
@@ -15,6 +14,8 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
+    isBrowserWsOnlySend,
+    resolveBrowserChannelAccess,
     resolveBrowserStorageUnavailablePolicy,
     toBrowserMessageSendDefaults,
     type BrowserMessageSendDefaults,
@@ -63,9 +64,9 @@ interface ResolvedRtcMessageTarget {
     readonly roomRef: GroupRef;
 }
 
-/** A send's first leg before its channel decides what storage may refuse and, on a live channel, its publication. */
+/** A send's first leg before its channel decides its access, what storage may refuse and, on a live channel, its publication. */
 interface BrowserDeliveryStart
-    extends Omit<BrowserRallarMessageDispatch.Delivery, 'onStorageUnavailable' | 'publication'> {
+    extends Omit<BrowserRallarMessageDispatch.Delivery, 'access' | 'onStorageUnavailable' | 'publication'> {
     readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
@@ -251,15 +252,16 @@ export class BrowserRallarMessageSender {
     }
 
     /**
-     * Only the WS server arbitrates a claim, so an exclusive send, room- or peer-addressed, and a world send go over WS
-     * under every strategy but `rtc`, whose own carrier refuses them as unsupported.
+     * Only the WS server arbitrates a claim and checks a publication grant, so an exclusive send, room- or
+     * peer-addressed, a granted channel's send and a world send go over WS under every strategy but `rtc`, whose own
+     * carrier refuses them as unsupported.
      */
     public async sendTyped<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const strategy = input.strategy ?? 'rtc-with-ws-fallback';
-        if (isExclusiveSendInput(input) && strategy !== 'rtc') {
+        if (isBrowserWsOnlySend(input, channel) && strategy !== 'rtc') {
             return await this.sendWs(input, channel);
         }
         if (input.peerId !== undefined && strategy !== 'ws') {
@@ -382,6 +384,7 @@ export class BrowserRallarMessageSender {
         const delivery: BrowserRallarMessageDispatch.Delivery = {
             ...leg,
             ...toBrowserPublicationDelivery(leg.message, channel),
+            access: resolveBrowserChannelAccess(channel),
             onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
         };
         const handle = this.input.deliveries.open(delivery.message, delivery.carrier, delivery.rtcCapture);

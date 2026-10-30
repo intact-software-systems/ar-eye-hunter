@@ -1,6 +1,6 @@
 export interface GroupInputFieldRule {
     readonly key: string;
-    readonly kind: 'string' | 'positive-integer' | 'nonnegative-integer' | 'object' | 'enum';
+    readonly kind: 'string' | 'boolean' | 'positive-integer' | 'nonnegative-integer' | 'object' | 'enum';
     readonly required?: boolean;
     readonly nullable?: boolean;
     readonly allowed?: readonly string[];
@@ -40,6 +40,8 @@ function resolveGroupInputFieldIssue(value: unknown, rule: GroupInputFieldRule, 
     switch (rule.kind) {
         case 'string':
             return typeof value === 'string' && value.length > 0 ? undefined : `${label} must be a non-empty string`;
+        case 'boolean':
+            return typeof value === 'boolean' ? undefined : `${label} must be a boolean`;
         case 'positive-integer':
             return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
                 ? undefined

@@ -92,6 +92,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
             typeId: 'test',
             topicId: 'app.capture',
             purpose: 'command',
+            access: 'members',
             durability: 'local-outbox',
             onStorageUnavailable: 'volatile'
         });
@@ -165,6 +166,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
             typeId: 'test',
             topicId: 'app.capture',
             purpose: 'command',
+            access: 'members',
             durability: 'local-outbox',
             onStorageUnavailable: 'volatile'
         });
@@ -218,7 +220,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         await facade.connect({ rtcCaptureMode: 'native' });
-        const channel = facade.messages.channel({ typeId: 'test', topicId: 'app.capture', purpose: 'command' });
+        const channel = facade.messages.channel({ typeId: 'test', topicId: 'app.capture', purpose: 'command', access: 'members' });
         try {
             await expect(channel.send({}, {
                 strategy,
@@ -284,7 +286,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
             rtc: { captureMode: 'native' },
             diagnosticsPorts: { signalingDiagnostics: (event) => recorded.push(event) }
         });
-        const channel = facade.messages.channel({ typeId: 'test', topicId: 'app.capture', purpose: 'notification' });
+        const channel = facade.messages.channel({ typeId: 'test', topicId: 'app.capture', purpose: 'notification', access: 'members' });
         try {
             const handle = await channel.send({ text: 'scoped' }, {
                 scope,

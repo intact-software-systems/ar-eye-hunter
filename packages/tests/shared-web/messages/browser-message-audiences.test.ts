@@ -475,7 +475,8 @@ function createRoomChannel(facade = createRallarTestFacade(), topicId = 'room.ch
         topicId,
         typeId: 'chat.message.v1',
         roomRef: ROOM_REF,
-        purpose: 'notification'
+        purpose: 'notification',
+        access: 'members'
     });
 }
 

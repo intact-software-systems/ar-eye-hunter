@@ -63,6 +63,10 @@ export function toGroupStateCommand(
             return toUnbanGroupMemberCommand(input);
         case 'set-group-member-role':
             return toSetGroupMemberRoleCommand(input);
+        case 'grant-group-publication':
+            return toGrantGroupPublicationCommand(input);
+        case 'revoke-group-publication':
+            return toRevokeGroupPublicationCommand(input);
         case 'transfer-group-ownership':
             return toTransferGroupOwnershipCommand(input);
         case 'upsert-group-member':
@@ -537,6 +541,46 @@ function toSetGroupMemberRoleCommand(
     return {
         type: AppInboxType.GROUP_MEMBER_ROLE_SET,
         topicId: AppInboxType.GROUP_MEMBER_ROLE_SET,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        traceId: input.traceId,
+        data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
+    };
+}
+
+function toGrantGroupPublicationCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'grant-group-publication'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_PUBLICATION_GRANT> {
+    const request = withActor(input);
+    const issues = validateGroupMutationRequest('grantGroupPublication', request);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+
+    return {
+        type: AppInboxType.GROUP_PUBLICATION_GRANT,
+        topicId: AppInboxType.GROUP_PUBLICATION_GRANT,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        traceId: input.traceId,
+        data: { scope: input.scope, groupId: input.groupId, principalId: input.principalId, request }
+    };
+}
+
+function toRevokeGroupPublicationCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'revoke-group-publication'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_PUBLICATION_REVOKE> {
+    const request = withActor(input);
+    const issues = validateGroupMutationRequest('revokeGroupPublication', request);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+
+    return {
+        type: AppInboxType.GROUP_PUBLICATION_REVOKE,
+        topicId: AppInboxType.GROUP_PUBLICATION_REVOKE,
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,

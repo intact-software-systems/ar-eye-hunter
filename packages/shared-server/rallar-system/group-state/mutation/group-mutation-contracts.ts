@@ -8,6 +8,10 @@ import type {
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
+    GroupPublicationGrant,
+    GroupPublicationTopicGrants
+} from '@shared/api/group-publication/group-publication-grants.ts';
+import type {
     AuditStamp,
     Group,
     GroupEvent,
@@ -23,6 +27,7 @@ import type {
     GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
+import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import type {
     RuntimeStateGuardedBatchEffect,
@@ -54,6 +59,8 @@ interface GroupMutationCommandBase {
     readonly requestId: string | null;
 }
 
+export type GroupPublicationGrantOperation = 'grantGroupPublication' | 'revokeGroupPublication';
+
 export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
@@ -77,6 +84,8 @@ export type GroupMutationCommand =
                     expiresAtEpochMs: number | null;
                     purgeAfterEpochMs: number | null;
                     lifecyclePolicy?: GroupLifecyclePolicy;
+                    /** The creator's declared initial grant; `{}` declares none. */
+                    publicationGrants: GroupPublicationTopicGrants;
                 }>;
         }>
     )
@@ -309,6 +318,20 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
+            operation: GroupPublicationGrantOperation;
+            targetPrincipalId: string;
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    topicId: RallarWsUserTopicId;
+                    publish: boolean;
+                    subscribe: boolean;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
             operation: 'transferGroupOwnership';
             targetPrincipalId: string;
             input: NullableActorInput;
@@ -437,6 +460,8 @@ export interface GroupMutationRead {
     readonly authorityPresenceSessions: readonly GroupPresenceSession[];
     readonly authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     readonly presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
+    /** The target's publication-grant row, loaded only for the grant commands and departures the read scope names. */
+    readonly targetPublicationGrant: RuntimeStateEntryValue<GroupPublicationGrant> | null;
     /** Loaded only for the operations the read scope's policy rule names. */
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     /**
@@ -569,6 +594,12 @@ export type PresenceAdmissionCandidate =
         expectedRevision: number;
     }>;
 
+/** A change to one principal's publication-grant row, guarded by the row revision the read observed. */
+export type GroupPublicationGrantEffect =
+    | Readonly<{ operation: 'insert'; value: GroupPublicationGrant; }>
+    | Readonly<{ operation: 'update'; value: GroupPublicationGrant; expectedRevision: number; }>
+    | Readonly<{ operation: 'delete'; value: GroupPublicationGrant; expectedRevision: number; }>;
+
 export interface GroupMutationDomainWrite {
     readonly outcome: 'write';
     readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
@@ -586,6 +617,7 @@ export interface GroupMutationDomainWrite {
     readonly plannedLayoutFence: GroupPlannedLayoutRow | null;
     readonly layoutTombstones: GroupLayoutTombstones | null;
     readonly connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
+    readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
 }
 
 export interface GroupMutationPersistence {

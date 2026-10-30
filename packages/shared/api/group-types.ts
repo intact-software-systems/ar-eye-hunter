@@ -7,6 +7,7 @@ import type {
     GroupMemberPolicy,
     GroupTransportState
 } from './group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupPublicationGrant } from './group-publication/group-publication-grants.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
 export type ApplicationId = string;
@@ -291,6 +292,8 @@ export interface GroupSnapshot {
 
     readonly memberCount: number;
     readonly onlineMemberCount: number;
+    /** One row per granted principal, in principal order. */
+    readonly publicationGrants: readonly GroupPublicationGrant[];
 }
 
 export type GroupEventType =
@@ -308,6 +311,7 @@ export type GroupEventType =
     | 'member-unbanned'
     | 'member-role-changed'
     | 'ownership-transferred'
+    | 'publication-grant-changed'
     | 'session-connected'
     | 'session-heartbeat'
     | 'session-disconnected';

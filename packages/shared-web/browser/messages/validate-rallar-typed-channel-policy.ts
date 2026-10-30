@@ -3,11 +3,16 @@ import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-p
 import { AL_CHANNEL_PURPOSES } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
-import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
+import type {
+    RallarStorageUnavailablePolicy,
+    RallarTypedMessageChannelDefinition
+} from './rallar-message-contracts.ts';
 
 /** The definition as a JavaScript caller may pass it: any string, or nothing, in each field. */
 export interface RallarTypedChannelPolicyInput {
+    readonly topicId?: string;
     readonly purpose?: string;
+    readonly access?: string;
     readonly durability?: string;
     readonly onStorageUnavailable?: string;
     readonly recovery?: unknown;
@@ -15,6 +20,7 @@ export interface RallarTypedChannelPolicyInput {
 }
 
 const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
+const RALLAR_TYPED_CHANNEL_ACCESSES: readonly RallarTypedMessageChannelDefinition['access'][] = ['members', 'granted'];
 
 /** A realtime purpose belongs to `rallar.realtime` (D15, D52). */
 export function validateRallarTypedChannelPolicy(
@@ -36,6 +42,7 @@ export function validateRallarTypedChannelPolicy(
             message: 'Purpose must be command, notification or live.'
         });
     }
+    issues.push(...validateRallarChannelAccess(definition));
     issues.push(...validateRallarChannelDurability(definition));
     if (
         definition.onStorageUnavailable !== undefined &&
@@ -50,6 +57,16 @@ export function validateRallarTypedChannelPolicy(
     issues.push(...validateRallarChannelRecovery(definition.recovery));
     issues.push(...validateRallarChannelPublication(definition));
     return issues;
+}
+
+/** Grants are per exact topic, so a granted channel names the topic it publishes on (D500). */
+function validateRallarChannelAccess(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
+    if (!RALLAR_TYPED_CHANNEL_ACCESSES.some((candidate) => candidate === definition.access)) {
+        return [{ path: '$.access', code: 'invalid-access', message: 'Access must be members or granted.' }];
+    }
+    return definition.access === 'granted' && definition.topicId === undefined
+        ? [{ path: '$.topicId', code: 'missing-topic-id', message: 'A granted channel names its topicId.' }]
+        : [];
 }
 
 /** A live channel's values never wait in storage, so it declares no durability but `volatile` (D466). */

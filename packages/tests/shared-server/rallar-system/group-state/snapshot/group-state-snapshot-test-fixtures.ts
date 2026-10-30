@@ -48,7 +48,8 @@ export function createGroupSnapshot(
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 

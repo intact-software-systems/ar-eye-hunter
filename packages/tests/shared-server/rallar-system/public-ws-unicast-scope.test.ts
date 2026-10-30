@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -17,7 +18,7 @@ describe('public WS publication scope', () => {
             outbox
         });
         onTestFinished(() => service.dispose());
-        const router = new RallarServerWsRouter(service);
+        const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
         const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
             ttlMs: 30_000
         });
@@ -36,7 +37,7 @@ describe('public WS publication scope', () => {
                 outbox
             });
             onTestFinished(() => service.dispose());
-            const router = new RallarServerWsRouter(service);
+            const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
 
             await expect(Reflect.apply(router.publish, router, [publication])).rejects.toBeInstanceOf(TypeError);
             expect(await outbox.getAllKeys()).toEqual([]);
@@ -54,7 +55,7 @@ describe('public WS publication scope', () => {
                 outbox
             });
             onTestFinished(() => service.dispose());
-            const router = new RallarServerWsRouter(service);
+            const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
             const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
                 ttlMs: 30_000
             });
@@ -78,7 +79,7 @@ describe('public WS publication scope', () => {
             outbox
         });
         onTestFinished(() => service.dispose());
-        const router = new RallarServerWsRouter(service);
+        const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
 
         const result = await router.publish({ message: createRoomUnicast(), scope: SCOPE, fanout: 'outbox' });
 
@@ -95,7 +96,7 @@ describe('public WS publication scope', () => {
             outbox
         });
         onTestFinished(() => service.dispose());
-        const router = new RallarServerWsRouter(service);
+        const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
 
         const result = await router.publish({ message: createRoomUnicast(), fanout: 'outbox' });
 

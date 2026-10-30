@@ -385,6 +385,7 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => sockets[peerId] === undefined ? [] : [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => input.peerIds.map((peerId) => ({ peerId, connectionId: peerId }))
         },

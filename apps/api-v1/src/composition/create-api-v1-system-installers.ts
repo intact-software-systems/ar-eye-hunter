@@ -25,6 +25,7 @@ import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from
 import type { EnqueueResourceEntryController } from '@shared/queuebox/queue-box-types.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
+import type { ApiV1GrantedWsTopicConfiguration } from '../configuration/api-v1-configuration.ts';
 import { toAuthorisedWsClientDisconnectInput, toGroupPresenceSessionCleanupInput } from '../routes/ws-routes.ts';
 import {
     hasAuthorisedWsCloseFacts,
@@ -42,6 +43,7 @@ export interface CreateApiV1SystemInstallersInput {
     readonly topology: ApiV1TopologyServices;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
+    readonly grantedWsTopics: readonly ApiV1GrantedWsTopicConfiguration[];
     readonly livePublication: RallarServerWsRouterOptions['livePublication'];
     readonly timing: RallarTimingSink;
     /** The topology recompute decision line's sink, present only while timing is on. */
@@ -95,6 +97,9 @@ function installApiV1SystemTopics(
         allowAppDocuments: true,
         policies: input.crdtPolicies
     });
+    for (const topic of input.grantedWsTopics) {
+        ws.defineTopic({ ...topic, scope: 'room', participation: 'granted' });
+    }
     ws.install();
 }
 

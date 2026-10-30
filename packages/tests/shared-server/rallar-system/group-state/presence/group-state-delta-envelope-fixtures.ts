@@ -72,7 +72,8 @@ export function createDeltaEnvelopeFixtureGroupSnapshot(
         members: members.map((member) => toFixtureActiveMember(member, groupId)),
         activeSessions: members.map((member) => toFixtureActiveSession(member, groupId)),
         memberCount: members.length,
-        onlineMemberCount: members.length
+        onlineMemberCount: members.length,
+        publicationGrants: []
     };
 }
 
@@ -99,7 +100,9 @@ export function createDeltaEnvelopeFixture(
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        audienceSessionIds: input.audienceSessionIds
+        audienceSessionIds: input.audienceSessionIds,
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
 }
 

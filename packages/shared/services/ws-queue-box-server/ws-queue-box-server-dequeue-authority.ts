@@ -6,12 +6,15 @@ import type { ALOutboundDequeueAuthority } from '../../alm/outbound/al-outbound-
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { readWsQueueBoxServerEligibleAudience } from './scope/read-ws-queue-box-server-eligible-audience.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import {
     isWsQueueBoxServerProducerRow,
     validateWsQueueBoxServerProducerAuthority
 } from './scope/validate-ws-queue-box-server-producer-authority.ts';
+import type { WsCapturedRecipientEligibilityFilter } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
+import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 /** Auth invalidation is a separate session-global authority from ordinary scoped delivery. */
 export type WsOutboxProducerAuthority =
@@ -61,7 +64,15 @@ export namespace WsQueueBoxServerDequeueAuthority {
     export interface Dependencies {
         readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
+        /** Says whether a row reaches only its frozen audience, which each attempt then re-checks (a granted topic). */
+        readonly targetResolution: Pick<WsQueueBoxServerTargetResolution, 'requiresFrozenAudience'>;
+        readonly filterEligibleCapturedSessionIds: WsCapturedRecipientEligibilityFilter | undefined;
     }
+
+    export type AudienceAuthority = Pick<
+        ALOutboundCapturedPolicy,
+        'admittedAudience' | 'recipientScope' | 'sessionInvalidation'
+    >;
 }
 
 /**
@@ -85,7 +96,7 @@ export class WsQueueBoxServerDequeueAuthority {
         if (facts.sentAdmission) {
             const policy = await this.readCapturedPolicy(message, entry, undefined);
             return {
-                admittedAudience: policy.admittedAudience,
+                admittedAudience: await this.readCurrentAudience(message, policy),
                 recipientScope: policy.recipientScope,
                 principalTargetId: policy.principalTargetId,
                 sessionInvalidation: policy.sessionInvalidation
@@ -101,7 +112,35 @@ export class WsQueueBoxServerDequeueAuthority {
         if (validateWsQueueBoxServerProducerAuthority(message, authority, entry.key).length > 0) {
             throw toDequeueCorruption(entry, 'Producer authority differs from final WS target');
         }
-        return authority;
+        return { ...authority, admittedAudience: await this.readCurrentAudience(message, authority) };
+    }
+
+    /**
+     * The row's admitted audience as this attempt finds it (D498): a frozen-audience row's sessions the re-check still
+     * finds eligible, rejecting when the re-check cannot read so the row waits for its retry, and nobody when no
+     * re-check is wired; any other row's as captured. A session the re-check drops stays expected in the receipt its
+     * admission wrote.
+     */
+    async readCurrentAudience(
+        message: ALMessage,
+        authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority
+    ): Promise<readonly string[] | undefined> {
+        const { targetResolution, filterEligibleCapturedSessionIds } = this.dependencies;
+        if (
+            authority.admittedAudience === undefined || authority.sessionInvalidation !== undefined ||
+            !targetResolution.requiresFrozenAudience(message)
+        ) {
+            return authority.admittedAudience;
+        }
+        if (filterEligibleCapturedSessionIds === undefined) {
+            return [];
+        }
+        return await readWsQueueBoxServerEligibleAudience({
+            message,
+            admittedAudience: authority.admittedAudience,
+            provenScope: authority.recipientScope,
+            filterEligibleCapturedSessionIds
+        });
     }
 
     /**

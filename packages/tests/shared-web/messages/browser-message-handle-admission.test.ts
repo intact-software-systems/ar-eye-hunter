@@ -181,7 +181,7 @@ describe('message handle admission', () => {
                 peerId: 'director',
                 strategy: 'rtc-with-ws-fallback'
             },
-            { purpose: 'command', durability: undefined, onStorageUnavailable: 'refuse', publication: undefined }
+            { purpose: 'command', access: 'members', durability: undefined, onStorageUnavailable: 'refuse', publication: undefined }
         );
 
         const message = envelope.mock.calls[0][0];

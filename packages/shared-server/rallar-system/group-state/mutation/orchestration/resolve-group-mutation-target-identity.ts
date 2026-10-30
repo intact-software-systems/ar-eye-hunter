@@ -6,6 +6,9 @@ export function resolveGroupMutationTargetPrincipalId(
     if ('targetPrincipalId' in command) {
         return command.targetPrincipalId;
     }
+    if (command.operation === 'createGroup') {
+        return command.input.createdByPrincipalId;
+    }
     if (command.operation === 'connectPresence') {
         return command.input.principalId;
     }

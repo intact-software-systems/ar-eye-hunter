@@ -152,6 +152,7 @@
       }
     ]
   },
+  "grantedWsTopics": [],
   "blackBox": {
     "operatorToken": {
       "mode": "disabled",

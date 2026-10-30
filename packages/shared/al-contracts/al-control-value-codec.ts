@@ -282,7 +282,7 @@ function decodeNackReason(value: unknown): ALNackReason {
         value !== 'duplicate' && value !== 'gap' && value !== 'resync-required' && value !== 'expired' &&
         value !== 'unauthorized' && value !== 'no-route' && value !== 'overloaded' && value !== 'stale' &&
         value !== 'not-yet-in-sync' && value !== 'membership-fenced' && value !== 'no-leader' &&
-        value !== 'held-by-other' && value !== 'unsupported'
+        value !== 'held-by-other' && value !== 'unsupported' && value !== 'no-publish-grant'
     ) {
         throw new TypeError('Control NACK reason is invalid');
     }

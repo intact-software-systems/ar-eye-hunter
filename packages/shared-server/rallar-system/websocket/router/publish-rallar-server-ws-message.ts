@@ -11,7 +11,9 @@ import {
     isAuthorizedRoomAudience,
     readRallarServerWsPublicationAudience,
     resolveAuthorizedRoomSessionIds,
-    type RallarServerWsPublicationAudience
+    type RallarServerWsPublicationAudience,
+    type RallarServerWsPublicationRefusal,
+    type ReadRallarServerWsPublicationAudienceInput
 } from './rallar-server-ws-publication-audience.ts';
 import {
     toRallarServerWsLivePublishResult,
@@ -22,7 +24,8 @@ import type {
     RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsRoomAudience,
-    RallarServerWsRouterOptions
+    RallarServerWsRouterOptions,
+    RallarServerWsTopicAccess
 } from './rallar-server-ws-router-contracts.ts';
 import { validateRallarServerWsPublishScope } from './validate-rallar-server-ws-publish-scope.ts';
 
@@ -40,6 +43,10 @@ export interface PublishRallarServerWsMessageInput {
     readonly readServerPublishAudience?: RallarServerWsRouterOptions['readServerPublishAudience'];
     readonly inbound?: LiveWsInboundReference;
     readonly origin?: 'server' | 'proxy' | 'admitted';
+    readonly definition: ReadRallarServerWsPublicationAudienceInput['definition'];
+    readonly topic: RallarServerWsTopicAccess;
+    readonly senderId: string;
+    readonly producerId: string | undefined;
     readonly authorizeRoomMessage?: RallarServerWsRouterOptions['authorizeRoomMessage'];
 }
 
@@ -63,12 +70,16 @@ export async function publishRallarServerWsMessage(
     if (input.audience !== undefined) {
         return await publishAuthorizedRallarServerWsMessage(input);
     }
-    let audience: Either<string, RallarServerWsPublicationAudience>;
+    let audience: Either<RallarServerWsPublicationRefusal, RallarServerWsPublicationAudience>;
     try {
         audience = await readRallarServerWsPublicationAudience({
             message: input.message,
             fanout: input.fanout,
             origin: input.origin,
+            definition: input.definition,
+            topic: input.topic,
+            senderId: input.senderId,
+            producerId: input.producerId,
             authorizeRoomMessage: input.authorizeRoomMessage,
             readServerPublishAudience: input.readServerPublishAudience
         });
@@ -81,7 +92,16 @@ export async function publishRallarServerWsMessage(
         return toFailedPublishResult(input, error instanceof Error ? error.message : String(error));
     }
     if (audience.left !== undefined) {
-        return toFailedPublishResult(input, audience.left);
+        return audience.left.refusal === undefined
+            ? toFailedPublishResult(input, audience.left.reason)
+            : {
+                fanout: input.fanout,
+                status: 'refused',
+                message: input.message,
+                entries: [],
+                reason: audience.left.reason,
+                refusal: audience.left.refusal
+            };
     }
     return await publishAuthorizedRallarServerWsMessage({ ...input, audience: audience.right!.frozen });
 }

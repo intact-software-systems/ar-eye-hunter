@@ -138,6 +138,7 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
         }),
         outboundSettlements: input.recorder?.settlements,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: recipients
         }
@@ -172,6 +173,7 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
         queueEngine: engine,
         forwardsRoomScopedMessages: false,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => openRecipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: () => openRecipients().filter((recipient) => ['a', 'b', 'c'].includes(recipient.peerId))
         }

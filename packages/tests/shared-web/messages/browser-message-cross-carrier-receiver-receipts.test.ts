@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     beforeEach,
     describe,
@@ -402,6 +403,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
         forwardsRoomScopedMessages: false,
         receiptObserver: (observation) => receiptObservations.push(observation),
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveGroupRecipients: () => ['a', 'b', 'c'].map((peerId) => ({ peerId, connectionId: peerId }))
@@ -413,6 +415,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
     });
     registerReceiptLoopCleanup([() => service.dispose()]);
     new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage: createGroupRoomWsAuthorizer({
             readGroupSnapshot: (ref) => {
                 expect(ref).toEqual(ORIGIN_ROOM);
@@ -549,7 +552,8 @@ function createReceiptLoopOrigin(
         deliveries: owners.registry,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => undefined
     });
     const message = createReceiptLoopMessage(expectation);
     const delivery: BrowserRallarMessageDispatch.Delivery = {
@@ -560,6 +564,7 @@ function createReceiptLoopOrigin(
         message,
         canFallback: true,
         payloadIssues: [],
+        access: 'members',
         onStorageUnavailable: 'refuse',
         publication: undefined
     };

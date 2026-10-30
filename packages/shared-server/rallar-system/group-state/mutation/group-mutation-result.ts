@@ -31,6 +31,8 @@ import type {
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
     GroupMutationReceipt,
+    GroupPublicationGrantEffect,
+    GroupPublicationGrantOperation,
     PresenceAdmissionCandidate,
     PresenceGuardCandidate
 } from './group-mutation-contracts.ts';
@@ -63,6 +65,7 @@ export interface GroupMutationWriteInput {
     readonly connectTriggerLatchEffect?: RuntimeStateGuardedBatchEffect | null;
     readonly layoutTombstones?: GroupLayoutTombstones | null;
     readonly lifecyclePolicy: GroupLifecyclePolicy | null;
+    readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
 }
 
 export interface RejectedGroupMutationInput {
@@ -80,6 +83,7 @@ interface GroupMutationEventInput {
     readonly command: GroupMutationCommand;
     readonly facts: GroupMutationFacts;
     readonly members: readonly GroupMember[];
+    readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
 }
 
 interface MaterializedGroupJoinCode {
@@ -130,7 +134,8 @@ export function computeGroupMutationWriteResult(
         causalRevision,
         command,
         facts,
-        members: input.members
+        members: input.members,
+        publicationGrantEffects: input.publicationGrantEffects
     });
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
@@ -159,7 +164,8 @@ export function computeGroupMutationWriteResult(
         acceptedLayoutPromotion,
         plannedLayoutFence,
         layoutTombstones,
-        connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
+        connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null,
+        publicationGrantEffects: input.publicationGrantEffects
     };
     return { ...computed, persistence: computeGroupMutationPersistence(computed, facts, read) };
 }
@@ -357,7 +363,7 @@ function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
         reason: command.input.reason,
         traceId: facts.traceId,
         requestId: command.requestId,
-        payload: toGroupEventPayload(eventType, input.members, command)
+        payload: toGroupEventPayload(input)
     };
 }
 
@@ -365,12 +371,13 @@ function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
 // member it is about itself: a manager's grant emits member-joined with the
 // manager as actor and the admitted member only here.
 function toGroupEventPayload(
-    eventType: GroupEventType,
-    members: readonly GroupMember[],
-    command: GroupMutationCommand
+    { eventType, members, command, publicationGrantEffects }: GroupMutationEventInput
 ): GroupEvent['payload'] {
     if (command.operation === 'reconfigureGroup' || command.operation === 'resetGroupFormation') {
         return { topologyReplanOrigin: 'commanded' };
+    }
+    if (command.operation === 'grantGroupPublication' || command.operation === 'revokeGroupPublication') {
+        return toPublicationGrantChangedPayload(command, publicationGrantEffects);
     }
     if (eventType === 'ownership-transferred') {
         const nextOwner = members.find((member) => member.role === 'owner');
@@ -384,6 +391,22 @@ function toGroupEventPayload(
         return { principalId: members[0].principalId };
     }
     return {};
+}
+
+/** The topic's permissions after the write; a deleted row leaves the principal holding neither. */
+function toPublicationGrantChangedPayload(
+    command: Extract<GroupMutationCommand, { operation: GroupPublicationGrantOperation; }>,
+    effects: readonly GroupPublicationGrantEffect[]
+): GroupEvent['payload'] {
+    const effect = effects.find((candidate) => candidate.value.principalId === command.targetPrincipalId);
+    const permissions = effect === undefined || effect.operation === 'delete'
+        ? undefined
+        : effect.value.topics[command.input.topicId];
+    return {
+        principalId: command.targetPrincipalId,
+        topicId: command.input.topicId,
+        permissions: { publish: permissions?.publish ?? false, subscribe: permissions?.subscribe ?? false }
+    };
 }
 
 function computeMutationFollowupEntries(

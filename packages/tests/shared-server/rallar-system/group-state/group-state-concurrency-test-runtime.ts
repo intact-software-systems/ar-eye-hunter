@@ -85,6 +85,17 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         });
     }
 
+    /** Holds the next group-row read of `key` after it is served, so a writer that reads later commits first. */
+    holdNextGroupReadFor(key: string): ManualRepositoryGateControl {
+        const control = this.holdGroupReadsFor(key);
+        void control.firstArrival.then(() => {
+            if (this.heldGroupRead?.key === key) {
+                this.heldGroupRead = undefined;
+            }
+        });
+        return control;
+    }
+
     resetGuards(): void {
         this.groupGuards = 0;
         this.presenceGuards = 0;

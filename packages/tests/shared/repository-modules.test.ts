@@ -1048,7 +1048,8 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
         })),
         activeSessions: createGroupSessions(input),
         memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length
+        onlineMemberCount: memberSessionIds.length,
+        publicationGrants: []
     };
 }
 

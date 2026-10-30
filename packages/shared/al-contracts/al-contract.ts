@@ -406,7 +406,7 @@ export function isRoomScopedALMessage(message: ALMessage): boolean {
             (targets.scope === 'room' || (targets.scope === 'principal' && targets.groupRef !== undefined)));
 }
 
-export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
+export function readALTargetGroupRef(message: Pick<ALMessage, 'targets'>): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode === 'unicast') {
         return targets.groupRef === undefined ? undefined : toALGroupRef(targets.groupRef);

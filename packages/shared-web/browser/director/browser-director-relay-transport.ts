@@ -73,7 +73,8 @@ export class BrowserDirectorRelayTransport {
                     topicId: input.topicId,
                     typeId: input.typeId,
                     roomRef,
-                    purpose: 'command'
+                    purpose: 'command',
+                    access: 'members'
                 })
                 .send(createEnvelope(input), {
                     ack: 'group-leader',
@@ -148,7 +149,8 @@ export class BrowserDirectorRelayTransport {
                 topicId: input.topicId,
                 typeId: input.typeId,
                 roomRef,
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
             .send(createEnvelope(input), {
                 strategy: 'rtc-with-ws-fallback',

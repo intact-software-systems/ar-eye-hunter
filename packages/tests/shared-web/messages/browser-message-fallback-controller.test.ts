@@ -68,7 +68,8 @@ function createFallbackFixture(
         deliveries,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => undefined
     });
     return {
         admissions,
@@ -92,6 +93,7 @@ function createFallbackFixture(
                 message,
                 canFallback,
                 payloadIssues: [],
+                access: 'members',
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             });

@@ -48,6 +48,7 @@ const GROUP_MUTATION_READ_KEYS = [
     'authorityPresenceSessions',
     'authorityPresenceSessionEntries',
     'presenceSummary',
+    'targetPublicationGrant',
     'lifecyclePolicy',
     'activeMemberPrincipalIds',
     'activeMembers',

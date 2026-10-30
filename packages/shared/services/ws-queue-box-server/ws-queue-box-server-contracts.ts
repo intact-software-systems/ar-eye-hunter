@@ -77,7 +77,27 @@ export interface WsServerTargetResolver {
         connectionId: string,
         message: ALMessage
     ) => string | undefined;
+    /**
+     * Whether the message reaches only the audience frozen at its admission: its recipients are never resolved from
+     * its targets, and with no admitted audience it reaches nobody (a granted topic, D487).
+     */
+    readonly requiresFrozenAudience: (message: ALMessage) => boolean;
 }
+
+/** The sessions a dispatch step re-checks for the row it sends: the row's captured audience, in its scope. */
+export interface CapturedWsRecipientEligibilityInputDto {
+    readonly message: ALMessage;
+    readonly candidateSessionIds: readonly string[];
+    readonly recipientScope: StateScope | undefined;
+}
+
+/**
+ * The per-attempt re-check of a captured audience (D498): the candidates still eligible as of one durable read. It
+ * rejects when the read fails or finds no room, so the row is kept for its retry.
+ */
+export type WsCapturedRecipientEligibilityFilter = (
+    input: CapturedWsRecipientEligibilityInputDto
+) => Promise<readonly string[]>;
 
 export type WsOutboxDeliveryOutcome =
     | Readonly<{

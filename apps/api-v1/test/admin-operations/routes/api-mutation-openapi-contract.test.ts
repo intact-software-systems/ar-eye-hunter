@@ -90,6 +90,14 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
         method: 'put',
         path: `${GROUP_ITEM_PATH}/members/{principalId}/role${REQUEST_PATH}`
     },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/publication-grants/{principalId}/grant${REQUEST_PATH}`
+    },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/publication-grants/{principalId}/revoke${REQUEST_PATH}`
+    },
     { method: 'post', path: `${GROUP_ITEM_PATH}/owner/transfer${REQUEST_PATH}` },
     {
         method: 'put',

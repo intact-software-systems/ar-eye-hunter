@@ -8,6 +8,7 @@ import { createBrowserMessageSenderFixture } from './browser-message-sender-fixt
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const COMMAND_CHANNEL = {
     purpose: 'command',
+    access: 'members',
     durability: undefined,
     onStorageUnavailable: 'refuse',
     publication: undefined

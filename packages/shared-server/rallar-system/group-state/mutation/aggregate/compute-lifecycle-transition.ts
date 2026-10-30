@@ -401,6 +401,7 @@ function computeLifecycleTransitionWrite(
         read,
         facts,
         lifecyclePolicy: null,
+        publicationGrantEffects: [],
         guard: {
             kind: 'group',
             operation: 'update',

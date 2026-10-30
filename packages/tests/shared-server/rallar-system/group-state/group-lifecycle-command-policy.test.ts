@@ -40,7 +40,8 @@ function snapshot(overrides: Partial<Group>, members: readonly GroupMember[]): G
         members,
         activeSessions: [],
         memberCount: members.length,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 

@@ -29,6 +29,7 @@ export async function sendRelicWsCommand(
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command,
             purpose: 'command',
+            access: 'members',
             roomId,
             durability: 'local-checkpoint',
             onStorageUnavailable: 'refuse'

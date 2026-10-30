@@ -113,6 +113,7 @@ export function computeUpdateGroupActivationStatus(
         presenceAdmission: null,
         eventType: 'group-activation-status-changed',
         lifecyclePolicy: null,
+        publicationGrantEffects: [],
         presenceSummaryWork: 'enqueue'
     });
 }

@@ -187,7 +187,7 @@ export class WsQueueBoxServerOutboundPlanning {
             allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
             audience,
             capturedSessions: directBroadcast || request.principalTargetId !== undefined ||
-                request.sessionInvalidation !== undefined
+                request.sessionInvalidation !== undefined || this.#targetResolution.requiresFrozenAudience(message)
         });
         if (resolved.right === undefined) {
             return toNoRouteDispatchPlan(
@@ -256,7 +256,7 @@ export class WsQueueBoxServerOutboundPlanning {
             ? requested
             : requested.filter((peerId) => request.admittedAudience?.includes(peerId));
         const recipients = directBroadcast || request.principalTargetId !== undefined ||
-                request.sessionInvalidation !== undefined
+                request.sessionInvalidation !== undefined || this.#targetResolution.requiresFrozenAudience(message)
             ? this.#targetResolution.resolveCapturedSessionRecipients(
                 message,
                 eligibleRequested

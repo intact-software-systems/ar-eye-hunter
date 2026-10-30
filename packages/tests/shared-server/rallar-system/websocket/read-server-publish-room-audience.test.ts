@@ -23,23 +23,63 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
             }
         );
 
-        const audience = await reader(message);
+        const audience = await reader({ message, topic: MEMBERS, producerId: undefined });
 
-        expect(audience?.sessions.map((session) => session.sessionId)).toEqual([
+        expect(audience?.right?.sessions.map((session) => session.sessionId)).toEqual([
             'session-1',
             'session-2'
         ]);
-        expect(audience?.targets).toEqual(message.targets);
+        expect(audience?.right?.targets).toEqual(message.targets);
         expect(
             await reader({
-                ...message,
-                targets: {
-                    mode: 'broadcast',
-                    scope: 'room',
-                    groupRef: { ...snapshot.group, groupId: 'other' }
-                }
+                message: {
+                    ...message,
+                    targets: {
+                        mode: 'broadcast',
+                        scope: 'room',
+                        groupRef: { ...snapshot.group, groupId: 'other' }
+                    }
+                },
+                topic: MEMBERS,
+                producerId: undefined
             })
         )
             .toBeUndefined();
     });
+
+    it('admits a listed producer on a granted topic to the subscribe-granted sessions and refuses an unlisted one (D496)', async () => {
+        const base = createGroupSnapshot(3, ['session-1', 'session-2']);
+        const snapshot = {
+            ...base,
+            publicationGrants: [{
+                applicationId: base.group.applicationId,
+                workspaceId: base.group.workspaceId,
+                groupId: base.group.groupId,
+                principalId: 'principal-session-2',
+                topics: { 'room.snapshot': { publish: false, subscribe: true } },
+                updated: base.group.updated
+            }]
+        };
+        const reader = createServerPublishRoomAudienceReader({
+            readGroupSnapshot: async () => snapshot,
+            nowEpochMs: Date.now
+        });
+        const message = newALBroadcastMessage(
+            'server',
+            newALRoute('room.snapshot', snapshot.group.groupId, 'r1'),
+            'room',
+            'snapshot.v1',
+            {},
+            { groupRef: snapshot.group }
+        );
+        const topic = { participation: 'granted', serverProducerIds: ['snapshot-producer'] } as const;
+
+        const listed = await reader({ message, topic, producerId: 'snapshot-producer' });
+        const unlisted = await reader({ message, topic, producerId: 'other-producer' });
+
+        expect(listed?.right?.sessions.map((session) => session.sessionId)).toEqual(['session-2']);
+        expect(unlisted?.left?.code).toBe('topic-not-granted');
+    });
 });
+
+const MEMBERS = { participation: 'members' } as const;

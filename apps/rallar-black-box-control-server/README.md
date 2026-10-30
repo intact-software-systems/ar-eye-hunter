@@ -23,6 +23,31 @@ change detection skips a flush whose content did not move; the write streams in 
 are handled between slices. Each flush logs a `rallar.timing` line with `operation` `snapshot.flush` (`bytes`,
 `serializeMs`, `writeMs`).
 
+## Snapshot startup and recovery
+
+When storage is configured, the server restores `control-snapshot.json` before starting HTTP,
+completion work or deadline sweeps. A genuinely absent snapshot starts a new store. An existing
+snapshot that cannot be read, parsed, decoded or applied refuses startup with a non-zero exit and
+`Could not restore control snapshot from <path>: <cause>`. A dangling snapshot symlink is an error,
+not an absent snapshot. The failed process does not rewrite the snapshot, run retention, or remove
+its artifact files. Deployment health checks consequently fail instead of accepting an empty history.
+
+For recovery:
+
+1. Stop the control service and preserve a copy of the entire storage directory, including the
+   rejected snapshot and `runs/`. Diagnose the reported cause before modifying anything.
+2. Repair access or restore a known valid snapshot and its corresponding artifacts from backup.
+   Keep the rejected bytes separately for investigation. The server does not strip fields, skip
+   rejected rows, convert older formats, or reconstruct the index from loose artifacts.
+3. Restart, verify the expected runs and their artifact exports, then verify that new activity
+   persists and survives another restart. A healthy new run alone does not prove historical recovery.
+
+Starting with a new empty storage directory is an explicit operator decision, not automatic recovery;
+it does not restore the retained history. Keep the original directory intact. Restoring a backup
+may omit activity newer than that backup; inventory that gap before declaring recovery complete.
+
+## Completed run storage
+
 A run's rows leave the live snapshot once the run is **completed**: every distributed run it hosts is terminal,
 every agent has disconnected, and nothing changed it for `quietMs` (five seconds). The completion sweep
 (`control-run-completion.ts`, one pass per second) then:

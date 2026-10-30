@@ -48,6 +48,11 @@ validation.
    resolves a session role only from an active, unexpired group and session with
    active membership; browser game authority uses this reader rather than cached
    member session identifiers.
+8. [GroupPublicationGrant](./group-publication/group-publication-grants.ts#GroupPublicationGrant)
+   is one principal's exact-topic publish and subscribe rights in one group,
+   stored beside membership; absence means no rights.
+   [decodeGroupPublicationGrant](./group-publication/group-publication-grants.ts#decodeGroupPublicationGrant)
+   decodes a row at a trust boundary and reports every issue.
 
 ## Boundaries
 

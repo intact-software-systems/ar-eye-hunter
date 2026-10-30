@@ -161,7 +161,8 @@ const GAME_PUBLICATION_STATUS = {
     'no-route': 'failed',
     'rate-limited': 'failed',
     'circuit-open': 'failed',
-    failed: 'failed'
+    failed: 'failed',
+    refused: 'failed'
 } as const satisfies Record<RallarServerWsPublishResult['status'], RallarGameAuthoritySendResult['status']>;
 
 export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
@@ -203,6 +204,7 @@ class RallarGameAuthorityServer<TCommand, TSnapshot, TEvent>
             topicId: this.config.topicId,
             typeId: this.typeIds.command,
             scope: 'room',
+            participation: 'members',
             fanout: 'none',
             validate: (value, context) => this.isIncomingEnvelope(value, context, 'command')
         });
@@ -210,6 +212,7 @@ class RallarGameAuthorityServer<TCommand, TSnapshot, TEvent>
             topicId: this.config.topicId,
             typeId: this.typeIds.syncRequest,
             scope: 'room',
+            participation: 'members',
             fanout: 'none',
             validate: (value, context) => this.isIncomingEnvelope(value, context, 'sync-request')
         });

@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { publishRallarServerWsMessage } from '@shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts';
@@ -23,6 +24,7 @@ import {
     type ALOutboundAdmissionStore
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -52,6 +54,13 @@ const NOTIFICATION = newALBroadcastMessage(
         ttlMs: 15_000
     }
 );
+/** A publish on a `members` topic, for the sender or producer its message names. */
+const MEMBERS_PUBLICATION = {
+    definition: undefined,
+    topic: { participation: 'members' },
+    senderId: NOTIFICATION.id.senderId,
+    producerId: undefined
+} as const;
 const AUDIENCE: RallarServerWsRoomAudience = {
     targets: NOTIFICATION.targets!,
     sessions: [liveSession('b'), liveSession('c')],
@@ -66,6 +75,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
             message: NOTIFICATION,
             fanout: 'outbox',
             origin: 'server',
+            ...MEMBERS_PUBLICATION,
             authorizeRoomMessage: undefined,
             readServerPublishAudience: reader.read
         });
@@ -87,6 +97,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
             message,
             fanout,
             origin: 'server',
+            ...MEMBERS_PUBLICATION,
             authorizeRoomMessage: undefined,
             readServerPublishAudience: reader.read
         });
@@ -118,6 +129,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 message,
                 fanout,
                 origin,
+                ...MEMBERS_PUBLICATION,
                 authorizeRoomMessage: (input) => {
                     authorizations.push(input);
                     return { authorized: true, audience: AUDIENCE };
@@ -135,6 +147,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 message: NOTIFICATION,
                 fanout: 'outbox',
                 origin: 'server',
+                ...MEMBERS_PUBLICATION,
                 authorizeRoomMessage: undefined,
                 readServerPublishAudience: undefined
             })
@@ -144,6 +157,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 message: NOTIFICATION,
                 fanout: 'outbox',
                 origin: 'server',
+                ...MEMBERS_PUBLICATION,
                 authorizeRoomMessage: undefined,
                 readServerPublishAudience: async () => undefined
             })
@@ -157,6 +171,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 message: NOTIFICATION,
                 fanout: 'outbox',
                 origin: 'proxy',
+                ...MEMBERS_PUBLICATION,
                 authorizeRoomMessage: () =>
                     authorized
                         ? { authorized: true, audience: AUDIENCE }
@@ -165,7 +180,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
             });
 
         expect(await read(true)).toEqual({ right: { frozen: AUDIENCE } });
-        expect(await read(false)).toEqual({ left: 'not a member of room-1' });
+        expect(await read(false)).toEqual({ left: { reason: 'not a member of room-1', refusal: undefined } });
         expect(reader.reads).toEqual([]);
     });
 
@@ -180,6 +195,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 fanout,
                 nowEpochMs: Date.now(),
                 origin: 'proxy',
+                ...MEMBERS_PUBLICATION,
                 authorizeRoomMessage: () => ({ authorized: false, logMessage: 'not a member of room-1' })
             });
             await drainEngine(fixture.engine);
@@ -195,8 +211,9 @@ describe('the audience a server or proxy publish is frozen to', () => {
     it('sends the server\'s outbox room notification to the frozen sessions only, and its receipt expects exactly them', async () => {
         const fixture = createServerFixture(['b', 'c', 'late-joiner']);
         const router = new RallarServerWsRouter(fixture.service, {
+            grantedTopics: new WsGrantedTopicSet(),
             nowEpochMs: Date.now,
-            readServerPublishAudience: async () => AUDIENCE
+            readServerPublishAudience: async () => Either.ofRight(AUDIENCE)
         });
 
         const result = await router.publish({ message: NOTIFICATION, fanout: 'outbox' });
@@ -253,7 +270,7 @@ function createServerFixture(roomPeerIds: readonly string[]): ServerFixture {
         outbox: backend.workQueue,
         outboundStores: { admissionStore: store, workQueue: backend.workQueue },
         queueEngine: engine,
-        targetResolver: { resolveGroupRecipients: () => roomRecipients }
+        targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => roomRecipients }
     });
     onTestFinished(() => service.dispose());
     return { service, store, engine, sockets };
@@ -268,9 +285,9 @@ function createAudienceReader(): AudienceReader {
     const reads: ALMessage[] = [];
     return {
         reads,
-        read: async (message) => {
+        read: async ({ message }) => {
             reads.push(message);
-            return AUDIENCE;
+            return Either.ofRight(AUDIENCE);
         }
     };
 }

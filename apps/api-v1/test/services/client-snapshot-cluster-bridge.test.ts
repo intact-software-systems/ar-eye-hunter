@@ -112,7 +112,9 @@ for (
                         channel: 'snapshot',
                         publisherId: id,
                         filterEligibleCapturedSessionIds: (captured) =>
-                            filterEligibleDurableWsSessionIds({ ...captured, socketServer: socket, nowMs: Date.now() })
+                            Promise.resolve(
+                                filterEligibleDurableWsSessionIds({ ...captured, socketServer: socket, nowMs: Date.now() })
+                            )
                     });
                 }
                 await stores.workQueue.enqueue(entry);
@@ -126,6 +128,10 @@ for (
                     assert.equal(native.sent.length, 0);
                     registerRecipientConnection(recipientSocket, recipient, native);
                     native.open();
+                    // The held send re-checks its session through the asynchronous eligibility port first (D498).
+                    for (let attempt = 0; attempt < 100 && native.sent.length === 0; attempt++) {
+                        await new Promise((resolve) => setTimeout(resolve, 5));
+                    }
                 }
                 assert.equal(native.sent.length, 1);
             }

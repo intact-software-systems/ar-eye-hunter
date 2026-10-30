@@ -106,6 +106,7 @@ export class BlackBoxRallarTypedChannels {
             roomId: config.roomId,
             roomRef: route.roomRef,
             purpose: route.purpose,
+            access: 'members',
             ...(route.publication === undefined ? {} : { publication: route.publication }),
             ...(route.durability === undefined ? {} : { durability: route.durability }),
             ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable }),

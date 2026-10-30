@@ -1,3 +1,4 @@
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RuntimeStateReadBatchSelection,
@@ -16,14 +17,18 @@ import {
     MEMBERS_NAMESPACE,
     PRESENCE_ADMISSIONS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
+import { canonicalStoredPublicationGrants } from './publication/group-publication-grant-codec.ts';
 
 export interface GroupStateAuthorityBatchRead {
     readonly group: RuntimeStateEntryValue<JsonWireValue> | undefined;
     readonly members: readonly RuntimeStateEntryValue<JsonWireValue>[];
     readonly summary: RuntimeStateEntryValue<JsonWireValue> | undefined;
     readonly sessions: readonly RuntimeStateEntryValue<JsonWireValue>[];
+    /** Decoded, in principal order: a corrupt grant row fails the whole read. */
+    readonly publicationGrants: readonly RuntimeStateEntryValue<GroupPublicationGrant>[];
 }
 
 export interface VersionedGroupStateSnapshotBatchRead {
@@ -38,11 +43,12 @@ export async function readGroupStateAuthorityBatch(
     observedAtEpochMs: number
 ): Promise<GroupStateAuthorityBatchRead> {
     const selectors = toGroupStateAuthoritySelectors(ref);
-    return toGroupStateAuthorityBatchRead(
+    return toGroupStateAuthorityBatchRead({
+        ref,
         selectors,
-        await repository.readRuntimeStateBatch(selectors),
+        selections: await repository.readRuntimeStateBatch(selectors),
         observedAtEpochMs
-    );
+    });
 }
 
 export interface ReadVersionedGroupStateSnapshotBatchInput {
@@ -58,26 +64,35 @@ export async function readVersionedGroupStateSnapshotBatch(
     const selectors = toGroupStateSnapshotSelectors(input.ref, input.observedAtEpochMs);
     const batch = await input.reader.readRuntimeStateBatchWithVersion(selectors);
     return {
-        read: toGroupStateAuthorityBatchRead(selectors, batch.selections, input.observedAtEpochMs),
+        read: toGroupStateAuthorityBatchRead({
+            ref: input.ref,
+            selectors,
+            selections: batch.selections,
+            observedAtEpochMs: input.observedAtEpochMs
+        }),
         version: batch.version
     };
 }
 
-function toGroupStateAuthorityBatchRead(
-    selectors: readonly RuntimeStateReadBatchSelector[],
-    selections: readonly RuntimeStateReadBatchSelection[],
-    observedAtEpochMs: number
-): GroupStateAuthorityBatchRead {
-    const [group, members, summary, sessions] = toGroupStateReadBatchLiveSelections(
-        selectors,
-        selections,
-        observedAtEpochMs
+interface GroupStateAuthorityBatchSelections {
+    readonly ref: GroupRef;
+    readonly selectors: readonly RuntimeStateReadBatchSelector[];
+    readonly selections: readonly RuntimeStateReadBatchSelection[];
+    readonly observedAtEpochMs: number;
+}
+
+function toGroupStateAuthorityBatchRead(input: GroupStateAuthorityBatchSelections): GroupStateAuthorityBatchRead {
+    const [group, members, summary, sessions, publicationGrants] = toGroupStateReadBatchLiveSelections(
+        input.selectors,
+        input.selections,
+        input.observedAtEpochMs
     );
     return {
         group: group.entries[0],
         members: members.entries,
         summary: summary.entries[0],
-        sessions: sessions.entries
+        sessions: sessions.entries,
+        publicationGrants: canonicalStoredPublicationGrants(publicationGrants.entries, input.ref)
     };
 }
 
@@ -104,13 +119,11 @@ function toGroupStateSnapshotSelectors(
     ref: GroupRef,
     observedAtEpochMs: number
 ): readonly RuntimeStateReadBatchSelector[] {
-    const [group, members, summary] = toGroupStateAuthoritySelectors(ref);
-    return [
-        group,
-        members,
-        summary,
-        toLivePresenceSessionsSelector(`${groupStateGroupStorageKey(ref)}:`, observedAtEpochMs)
-    ];
+    return toGroupStateAuthoritySelectors(ref).map((selector) =>
+        selector.namespace === SESSIONS_NAMESPACE
+            ? toLivePresenceSessionsSelector(`${groupStateGroupStorageKey(ref)}:`, observedAtEpochMs)
+            : selector
+    );
 }
 
 /** The presence sessions under the key prefix, a group's or a scope's, whose lease outlasts the instant. */
@@ -141,8 +154,9 @@ export function toGroupPresenceSummarySelectors(ref: GroupRef): readonly Runtime
 }
 
 /**
- * Every row of the group's authority: the group, its roster, its presence summary and all its presence sessions, which
- * the mutation, authority-guard and presence-summary reads need. A snapshot reads `toGroupStateSnapshotSelectors`.
+ * Every row of the group's authority: the group, its roster, its presence summary, all its presence sessions and its
+ * publication grants, which the mutation, authority-guard and presence-summary reads need. A snapshot reads
+ * `toGroupStateSnapshotSelectors`.
  */
 export function toGroupStateAuthoritySelectors(ref: GroupRef): readonly RuntimeStateReadBatchSelector[] {
     const groupKey = groupStateGroupStorageKey(ref);
@@ -170,6 +184,12 @@ export function toGroupStateAuthoritySelectors(ref: GroupRef): readonly RuntimeS
             selectorId: 'presence-sessions',
             kind: 'prefix',
             namespace: SESSIONS_NAMESPACE,
+            keyPrefix: childPrefix
+        },
+        {
+            selectorId: 'publication-grants',
+            kind: 'prefix',
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
             keyPrefix: childPrefix
         }
     ];

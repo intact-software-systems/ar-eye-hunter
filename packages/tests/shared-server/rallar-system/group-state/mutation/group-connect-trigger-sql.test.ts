@@ -366,7 +366,8 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string): P
         members: [member],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
     const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
     const topology = createGroupTopologyRuntimeOwners({

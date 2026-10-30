@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -545,7 +546,7 @@ describe('installRallarCrdtWsTopics', () => {
     });
 });
 
-function createRouter(options?: ConstructorParameters<typeof RallarServerWsRouter>[1]) {
+function createRouter(options?: Omit<ConstructorParameters<typeof RallarServerWsRouter>[1], 'grantedTopics'>) {
     const socket = new RecordingJsonWebSocketServer();
     const native = new TestWebSocket('ws://crdt-peer');
     native.open();
@@ -563,7 +564,7 @@ function createRouter(options?: ConstructorParameters<typeof RallarServerWsRoute
         })
     });
     onTestFinished(() => service.dispose());
-    const router = new RallarServerWsRouter(service, options);
+    const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), ...options });
 
     return {
         router,
@@ -598,6 +599,7 @@ function createTargetResolver(): WsServerTargetResolver {
         }));
 
     return {
+        requiresFrozenAudience: () => false,
         resolvePeerRecipients: (peerId: string) => {
             const connectionId = connectionIdByPeerId[peerId];
             return connectionId

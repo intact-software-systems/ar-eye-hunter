@@ -9,6 +9,8 @@ import {
     type GroupMemberBanAppInboxPayload,
     type GroupMemberRemoveAppInboxPayload,
     type GroupMemberUnbanAppInboxPayload,
+    type GroupPublicationGrantAppInboxPayload,
+    type GroupPublicationRevokeAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
@@ -18,6 +20,31 @@ describe('authenticated group mutation enqueue payload contract', () => {
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_REMOVE]>().toEqualTypeOf<GroupMemberRemoveAppInboxPayload>();
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_BAN]>().toEqualTypeOf<GroupMemberBanAppInboxPayload>();
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_UNBAN]>().toEqualTypeOf<GroupMemberUnbanAppInboxPayload>();
+        expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_PUBLICATION_GRANT]>().toEqualTypeOf<
+            GroupPublicationGrantAppInboxPayload
+        >();
+        expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_PUBLICATION_REVOKE]>().toEqualTypeOf<
+            GroupPublicationRevokeAppInboxPayload
+        >();
+    });
+
+    it('decodes a persisted publication grant or revoke and refuses one naming neither permission', () => {
+        for (const type of [AppInboxType.GROUP_PUBLICATION_GRANT, AppInboxType.GROUP_PUBLICATION_REVOKE] as const) {
+            const command = {
+                scope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupId: 'group',
+                principalId: 'member',
+                request: { requestId: 'request-1', topicId: 'room.feed', publish: true, subscribe: false }
+            } as const;
+
+            expect(decodeGroupStateAppInboxCommand(type, command)).toEqual(command);
+            expect(() =>
+                decodeGroupStateAppInboxCommand(type, {
+                    ...command,
+                    request: { ...command.request, publish: false }
+                })
+            ).toThrow('publish or subscribe');
+        }
     });
 
     it('rejects malformed persisted payloads before group mutation handling', () => {

@@ -35,6 +35,7 @@ import { createBrowserMessageSenderFixture } from './browser-message-sender-fixt
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const COMMAND_CHANNEL = {
     purpose: 'command',
+    access: 'members',
     durability: undefined,
     onStorageUnavailable: 'refuse',
     publication: undefined
@@ -127,7 +128,8 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
             topicId: 'room.director.intent',
             typeId: 'room.director.intent.v1',
             roomId: 'room',
-            purpose: 'command'
+            purpose: 'command',
+            access: 'members'
         });
 
         await intents.send({ intent: 'pickup' }, { peerId: DIRECTOR });
@@ -449,7 +451,8 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
             deliveries,
             sessionDeliveries,
             publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-            nowMs: Date.now
+            nowMs: Date.now,
+            readPublicationPermissions: () => undefined
         }),
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 }),
         connect: async () => context,

@@ -674,6 +674,7 @@ function createFakeGameAuthorityWebSocket(
                 topicId: definition.topicId,
                 typeId: definition.typeId,
                 scope: definition.scope,
+                participation: 'members',
                 maxPayloadBytes: definition.maxPayloadBytes,
                 fanout: definition.fanout,
                 validate: definition.validate
@@ -800,9 +801,7 @@ async function emitFakeGameAuthorityMessage<TPayload extends JsonWireValue>(
     );
 }
 
-interface StoredTopicDefinition extends RallarServerWsTopicMetadata {
-    readonly validate?: RallarServerWsValidator;
-}
+type StoredTopicDefinition = RallarServerWsTopicMetadata & Readonly<{ validate?: RallarServerWsValidator; }>;
 
 interface HandlerSubscription {
     readonly selector: RallarServerWsSelector;

@@ -32,6 +32,7 @@ import {
 import { computeConnectGroupPresence } from '../presence/compute-connect-group-presence.ts';
 import { computeDisconnectGroupPresence } from '../presence/compute-disconnect-group-presence.ts';
 import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-group-presence.ts';
+import { computeGroupPublicationGrantMutation } from '../publication/compute-group-publication-grant-mutation.ts';
 import { assertGroupMutationFacts } from '../state-validation/assert-group-mutation-facts.ts';
 import { assertGroupMutationRead } from '../state-validation/assert-group-mutation-read.ts';
 
@@ -118,6 +119,9 @@ function computeFreshGroupMutation(
         case 'unbanGroupMember':
         case 'setGroupMemberRole':
             return computeGovernedMember(command, read, facts);
+        case 'grantGroupPublication':
+        case 'revokeGroupPublication':
+            return computeGroupPublicationGrantMutation(command, read, facts);
         case 'transferGroupOwnership':
             return computeTransfer(command, read, facts);
         case 'upsertMember':

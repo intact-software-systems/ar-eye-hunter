@@ -163,7 +163,7 @@ Requirements:
 - Check the returned room send status and diagnostics.
 - Use rtc.waitForRoomLane(..., { expect }) only for low-level peer targeting or
   custom readiness diagnostics.
-- Use rallar.messages.room<T>({ ..., purpose: 'notification' }) when important messages need typed RTC/WS fallback behavior.
+- Use rallar.messages.room<T>({ ..., purpose: 'notification', access: 'members' }) when important messages need typed RTC/WS fallback behavior.
 - Add tests for open, partial, timeout, over-capacity, and no-peer readiness.
 ```
 
@@ -173,7 +173,7 @@ Requirements:
 Wrap a domain payload in a typed Rallar message channel.
 
 Requirements:
-- Use rallar.messages.channel<T> with a stable topicId/typeId and a required purpose ('command' or 'notification').
+- Use rallar.messages.channel<T> with a stable topicId/typeId, a required purpose ('command' or 'notification') and a required access ('members', or 'granted' for a topic restricted by publication grants, which sends over WS only).
 - Expose sendWs, sendRtc, onWs, and onRtc through a small domain module.
 - Add tests that verify topic/type selectors and payload forwarding.
 ```
@@ -249,6 +249,8 @@ Implement a Rallar Server websocket topic.
 
 Requirements:
 - Use rallarServer.ws.defineTopic or rallarServer.ws.on.
+- Declare participation: 'members', or 'granted' with serverProducerIds for a
+  room topic restricted to principals holding publication grants.
 - Validate payloads.
 - Authorize room messages using the room authorization path.
 - Decide fanout: live-only, outbox, or none.

@@ -33,6 +33,7 @@ import {
     groupStateUpdatePresenceDescriptor,
     groupStateUpdatePresenceSummaryDescriptor
 } from '../../persistence/presence/group-presence-write-descriptors.ts';
+import { toPublicationGrantBatchEffect } from '../../persistence/publication/group-publication-grant-write-descriptors.ts';
 import type {
     GroupMutationDomainWrite,
     GroupMutationFacts,
@@ -90,6 +91,7 @@ function computeGroupMutationGuardedBatch(
     if (computed.connectTriggerLatchEffect) {
         effects.push(computed.connectTriggerLatchEffect);
     }
+    effects.push(...computed.publicationGrantEffects.map(toPublicationGrantBatchEffect));
     if (computed.idempotency) {
         effects.push({
             effectId: 'receipt',

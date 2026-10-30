@@ -1,4 +1,5 @@
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
     GroupMember,
@@ -16,6 +17,8 @@ export type GroupStateSnapshotAssemblyInput = Readonly<{
     members: readonly GroupMember[];
     summary: GroupPresenceSummary | undefined;
     authoritativeSessions: readonly GroupPresenceSession[];
+    /** In principal order; a row for a principal the group does not list fails the assembly. */
+    publicationGrants: readonly GroupPublicationGrant[];
     groupRevision: number;
     observedAtEpochMs: number;
     /**
@@ -34,6 +37,7 @@ export interface GroupStateScopeSnapshotRead {
     readonly membersByGroupId: ReadonlyMap<string, readonly GroupMember[]>;
     readonly summariesByGroupId: ReadonlyMap<string, GroupPresenceSummary>;
     readonly sessionsByGroupId: ReadonlyMap<string, readonly GroupPresenceSession[]>;
+    readonly publicationGrantsByGroupId: ReadonlyMap<string, readonly GroupPublicationGrant[]>;
 }
 
 export interface GroupStateSnapshotPageGroup {
@@ -92,7 +96,8 @@ export function assembleGroupStateSnapshot(
         activeSessions,
         memberCount: activeMembers.length,
         onlineMemberCount: activeMembers.filter((member) => activePrincipals.has(member.principalId))
-            .length
+            .length,
+        publicationGrants: input.publicationGrants
     };
     assertValidSnapshot(snapshot, input.group, invariantContext);
     return snapshot;

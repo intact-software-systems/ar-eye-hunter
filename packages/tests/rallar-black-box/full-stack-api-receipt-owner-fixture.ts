@@ -187,10 +187,12 @@ class ReceiptOwnerFixture {
             receiptObserver: this.observe,
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
+                requiresFrozenAudience: () => false,
                 resolveBroadcastRecipients: () => [{ peerId: 'recipient', connectionId: 'recipient' }],
                 resolvePeerRecipients: (peerId) => this.socket.connections.get(peerId)?.isOpen ? [{ peerId, connectionId: peerId }] : []
             },
             readProducerProvenance: undefined,
+            filterEligibleCapturedSessionIds: undefined,
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             inboundDiagnostics: undefined,

@@ -18,6 +18,46 @@ describe('group mutation request validation', () => {
             expect(validateGroupMutationRequest('updateGroup', { ...request, metadata })).toEqual(expect.arrayContaining([expect.any(TypeError)]));
         }
     });
+    it('a grant naming neither permission is refused', () => {
+        const request = {
+            topicId: 'room.feed',
+            publish: false,
+            subscribe: false,
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+            requestId: 'grant-request'
+        };
+
+        for (const operation of ['grantGroupPublication', 'revokeGroupPublication'] as const) {
+            expect(validateGroupMutationRequest(operation, { ...request, subscribe: true })).toEqual([]);
+            expect(validateGroupMutationRequest(operation, request).map((issue) => issue.message)).toEqual([
+                `Group ${operation} request must name publish or subscribe`
+            ]);
+        }
+        const { publish: _publish, ...withoutPublish } = request;
+        expect(
+            validateGroupMutationRequest('grantGroupPublication', { ...withoutPublish, subscribe: 'yes' })
+                .map((issue) => issue.message)
+        ).toEqual([
+            'Group grantGroupPublication publish must be a boolean',
+            'Group grantGroupPublication subscribe must be a boolean'
+        ]);
+    });
+
+    it('a reserved topic id is refused', () => {
+        const request = { publish: true, subscribe: false, actorPrincipalId: 'owner-1', actorSessionId: 'owner-session', requestId: 'grant-request' };
+
+        for (const topicId of ['rallar.feed', 'feed', '', 'room.feed/../x']) {
+            expect(validateGroupMutationRequest('grantGroupPublication', { ...request, topicId }), topicId).not.toEqual([]);
+        }
+        expect(
+            validateGroupMutationRequest('grantGroupPublication', { ...request, topicId: 'rallar.feed' })
+                .map((issue) => issue.message)
+        ).toEqual([
+            'Group grantGroupPublication topicId is invalid: Rallar WS topic is reserved: rallar.feed.'
+        ]);
+    });
+
     it('returns all independent external-input issues without throwing', () => {
         const issues = validateGroupMutationRequest('updateGroup', { displayName: '', maxMembers: -1 });
         expect(issues).toEqual([

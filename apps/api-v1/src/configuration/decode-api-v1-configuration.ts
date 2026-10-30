@@ -39,6 +39,7 @@ import {
     readApiV1ConfigurationSecrets,
     type ApiV1ConfigurationSecrets
 } from './decode-api-v1-configuration-values.ts';
+import { decodeApiV1GrantedWsTopics } from './decode-api-v1-granted-ws-topics.ts';
 import { validateApiV1ConfigurationInvariants } from './validate-api-v1-configuration-invariants.ts';
 
 export type { DecodeApiV1ConfigurationInput } from './decode-api-v1-configuration-source.ts';
@@ -74,6 +75,7 @@ export function decodeApiV1Configuration(
         appInbox: decodeAppInbox(decoder),
         ice: decodeIce(decoder, secrets),
         crdt: decodeCrdt(decoder),
+        grantedWsTopics: decodeGrantedWsTopics(decoder),
         blackBox: decodeBlackBox(decoder, structuredValues, secrets),
         observability: decodeObservability(decoder)
     };
@@ -509,7 +511,11 @@ function decodeAppInbox(
         retry: {
             maxAttempts: decoder.integer('appInbox.retry.maxAttempts', 1),
             maxDelayMs: decoder.integer('appInbox.retry.maxDelayMs', 1, MAX_APP_INBOX_FINISHED_RETENTION_MS),
-            conflictMaxDelayMs: decoder.integer('appInbox.retry.conflictMaxDelayMs', 1, MAX_APP_INBOX_FINISHED_RETENTION_MS)
+            conflictMaxDelayMs: decoder.integer(
+                'appInbox.retry.conflictMaxDelayMs',
+                1,
+                MAX_APP_INBOX_FINISHED_RETENTION_MS
+            )
         },
         phaseTiming: decoder.boolean('appInbox.phaseTiming'),
         newLaneConcurrency,
@@ -612,6 +618,21 @@ function decodeCrdt(
         );
         return { documentTypePolicies: [] };
     }
+}
+
+function decodeGrantedWsTopics(
+    decoder: ApiV1ConfigurationValueDecoder
+): ApiV1Configuration['grantedWsTopics'] {
+    const decoded = decodeApiV1GrantedWsTopics(decoder.sourceValue('grantedWsTopics'));
+    if (decoded.left) {
+        decoder.sourceIssue(
+            'grantedWsTopics',
+            'invalid-granted-ws-topic',
+            `Granted WS topics are invalid: ${decoded.left.map((issue) => `${issue.path} ${issue.code}`).join(', ')}.`
+        );
+        return [];
+    }
+    return decoded.right!;
 }
 
 function toCrdtPolicyKey(

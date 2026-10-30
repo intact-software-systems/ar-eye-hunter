@@ -1,42 +1,37 @@
-import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
 import {
     blocksGroupPreActivationData,
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
-import {
-    isALAudienceSession,
-    toALAudienceNarrowing,
-    toALLeaderNarrowing
-} from '@shared/al-contracts/al-audience-narrowing.ts';
 import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
+import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
-import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied, GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
+import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
-import { isGroupSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import { filterLiveWsRoomRecipientSessionIds } from '../queue-pubsub/live-ws-audience.ts';
+import {
+    computeRoomPublicationAdmission,
+    type RoomPublicationAdmission
+} from './room-publication/compute-room-publication-admission.ts';
 import type {
+    RallarServerWsPublishAudienceInputDto,
     RallarServerWsRoomAudience,
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizationDenied,
     RallarServerWsRoomAuthorizationInput,
-    RallarServerWsRoomAuthorizer
+    RallarServerWsRoomAuthorizer,
+    RallarServerWsTopicAccess
 } from './router/rallar-server-ws-router-contracts.ts';
 
 type MaybePromise<T> = T | Promise<T>;
-
-/** What a room message's authorized audience reads of it: whom it names, and the receipt it asks for. */
-export interface AuthorizedRoomAudienceMessage {
-    readonly targets: ALTargets;
-    readonly delivery?: ALMessage['delivery'];
-}
 
 type ReadRoomAuthorizationSnapshotResult =
     | {
@@ -65,11 +60,16 @@ export function createGroupRoomWsAuthorizer(
     return (input) => authorizeGroupRoomMessage(dependencies, input);
 }
 
+export interface ComputeServerRoomPublicationAudienceInput extends RallarServerWsPublishAudienceInputDto {
+    readonly snapshot: GroupSnapshot | undefined;
+    readonly nowEpochMs: number;
+}
+
+/** A server producer's room audience, or its topic's refusal of the producer; undefined when the room is not live. */
 export function computeServerRoomPublicationAudience(
-    snapshot: GroupSnapshot | undefined,
-    message: ALMessage,
-    nowEpochMs: number
-): RallarServerWsRoomAudience | undefined {
+    input: ComputeServerRoomPublicationAudienceInput
+): Either<RoomPublicationAdmission.Refusal, RallarServerWsRoomAudience> | undefined {
+    const { snapshot, message, nowEpochMs } = input;
     const groupRef = readALTargetGroupRef(message);
     if (
         !snapshot || !groupRef || !message.targets ||
@@ -79,7 +79,13 @@ export function computeServerRoomPublicationAudience(
     ) {
         return undefined;
     }
-    return toAuthorizedRoomAudience(snapshot, { ...message, targets: message.targets }, nowEpochMs);
+    return computeRoomPublicationAdmission({
+        snapshot,
+        topic: { ...input.topic, topicId: message.route.topicId },
+        publisher: { kind: 'server-producer', producerId: input.producerId },
+        message: { ...message, targets: message.targets },
+        nowEpochMs
+    });
 }
 
 async function authorizeGroupRoomMessage(
@@ -127,11 +133,11 @@ async function readRoomPolicyDenial(
         ...(preActivationAppData === undefined ? {} : { preActivationAppData })
     });
     if (!policyResult.allowed) {
-        return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
+        return toPolicyDeniedDecision(input, policyResult, serverSnapshotVersion);
     }
     if (!isCrdtTopic && snapshot.group.transportState === 'halted') {
         return toPolicyDeniedDecision(
-            input.roomId,
+            input,
             denyGroupPolicy(
                 'group-policy-denied',
                 'Group transport is halted for room application data.'
@@ -149,10 +155,30 @@ interface ToRoomAuthorizationDecisionInput {
     readonly nowEpochMs: number;
 }
 
+/** The sender passed the room's policy, so its session is live in the snapshot; its topic's admission decides the rest. */
 function toRoomAuthorizationDecision(
     { input, targets, snapshot, nowEpochMs }: ToRoomAuthorizationDecisionInput
 ): RallarServerWsRoomAuthorizationDecision {
-    const audience = toAuthorizedRoomAudience(snapshot, { ...input.message, targets }, nowEpochMs);
+    const sender = snapshot.activeSessions.find((session) => session.sessionId === input.senderId);
+    if (!sender) {
+        return false;
+    }
+    const admission = computeRoomPublicationAdmission({
+        snapshot,
+        topic: { ...input.topic, topicId: input.topicId },
+        publisher: { kind: 'session', sessionId: sender.sessionId, principalId: sender.principalId },
+        message: { ...input.message, targets },
+        nowEpochMs
+    });
+    if (admission.left) {
+        return {
+            authorized: false,
+            reason: toRoomPublicationNackReason(admission.left.code),
+            logMessage: `Rejected room message for ${input.roomId}: ${admission.left.logMessage}`,
+            serverSnapshotVersion: readGroupVersion(snapshot)
+        };
+    }
+    const audience = admission.right!;
     if (isLeaderlessRoomAudience(input.message, audience)) {
         return {
             authorized: false,
@@ -165,25 +191,8 @@ function toRoomAuthorizationDecision(
     return { authorized: true, audience };
 }
 
-export function toAuthorizedRoomAudience(
-    snapshot: GroupSnapshot,
-    message: AuthorizedRoomAudienceMessage,
-    nowEpochMs: number
-): RallarServerWsRoomAudience {
-    const { targets } = message;
-    const narrowing = toALAudienceNarrowing(targets);
-    const leader = toALLeaderNarrowing(message, resolveRallarGroupLeaderSessionId(snapshot));
-    const activePrincipals = new Set(
-        snapshot.members.filter((member) => member.status === 'active').map((member) => member.principalId)
-    );
-    return {
-        targets,
-        sessions: snapshot.activeSessions.filter((session) =>
-            activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs) &&
-            isALAudienceSession(session, narrowing) && isALAudienceSession(session, leader)
-        ),
-        snapshotVersion: readGroupVersion(snapshot)
-    };
+function toRoomPublicationNackReason(code: RoomPublicationAdmission.RefusalCode): ALNackReason {
+    return code === 'topic-not-granted' ? 'unauthorized' : code;
 }
 
 /**
@@ -298,20 +307,27 @@ async function readRoomMessagePreActivationAppData(
 }
 
 function toPolicyDeniedDecision(
-    roomId: string,
+    input: RallarServerWsRoomAuthorizationInput,
     denial: GroupPolicyDenied,
     serverSnapshotVersion?: number
 ): RallarServerWsRoomAuthorizationDenied {
-    const reason = resolveRoomPolicyDenialReason(denial.code);
+    const reason = resolveRoomPolicyDenialReason(denial.code, input.topic);
     return {
         authorized: false,
         reason,
-        logMessage: `Rejected room message for ${roomId}: ${reason}: ${denial.code}: ${denial.message}`,
+        logMessage: `Rejected room message for ${input.roomId}: ${reason}: ${denial.code}: ${denial.message}`,
         serverSnapshotVersion
     };
 }
 
-function resolveRoomPolicyDenialReason(code: GroupPolicyReasonCode): 'membership-fenced' | 'unauthorized' {
+/** The only `forbidden-role` a sender meets here is the spectator's, and a spectator never publishes a granted topic. */
+function resolveRoomPolicyDenialReason(
+    code: GroupPolicyReasonCode,
+    topic: RallarServerWsTopicAccess
+): 'membership-fenced' | 'unauthorized' | 'no-publish-grant' {
+    if (code === 'forbidden-role' && topic.participation === 'granted') {
+        return 'no-publish-grant';
+    }
     return code === 'member-not-active' || code === 'member-removed' || code === 'member-banned'
         ? 'membership-fenced'
         : 'unauthorized';

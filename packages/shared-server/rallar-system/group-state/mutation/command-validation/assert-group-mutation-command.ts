@@ -15,7 +15,11 @@ import {
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
-import { validateGroupDirectoryListingMetadata } from './validate-group-mutation-operation-input.ts';
+import {
+    validateCreationPublicationGrants,
+    validateGroupDirectoryListingMetadata,
+    validateGroupMutationOperationInput
+} from './validate-group-mutation-operation-input.ts';
 
 export function assertGroupMutationCommand(
     command: unknown
@@ -150,6 +154,10 @@ function assertCreateGroupInput(input: JsonWireObject): void {
     if (input.lifecyclePolicy !== undefined) {
         requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
     }
+    const declarationIssue = validateCreationPublicationGrants(input.publicationGrants)[0];
+    if (declarationIssue !== undefined) {
+        throw declarationIssue;
+    }
 }
 
 function assertUpdateGroupInput(input: JsonWireObject): void {
@@ -194,6 +202,14 @@ function assertMembershipOperationInput(
         case 'setGroupMemberRole':
             requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
             return;
+        case 'grantGroupPublication':
+        case 'revokeGroupPublication': {
+            const issue = validateGroupMutationOperationInput({ operation, input })[0];
+            if (issue !== undefined) {
+                throw issue;
+            }
+            return;
+        }
         case 'upsertMember':
             if (input.role !== null) {
                 requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
@@ -286,6 +302,8 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'banGroupMember',
     'unbanGroupMember',
     'setGroupMemberRole',
+    'grantGroupPublication',
+    'revokeGroupPublication',
     'transferGroupOwnership',
     'upsertMember',
     'connectPresence',
@@ -304,6 +322,8 @@ const TARGET_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation
     'banGroupMember',
     'unbanGroupMember',
     'setGroupMemberRole',
+    'grantGroupPublication',
+    'revokeGroupPublication',
     'transferGroupOwnership',
     'upsertMember'
 ]);
@@ -346,7 +366,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'createdByPrincipalId',
         'expiresAtEpochMs',
         'purgeAfterEpochMs',
-        'lifecyclePolicy'
+        'lifecyclePolicy',
+        'publicationGrants'
     ],
     updateGroup: [
         ...ACTOR_INPUT_KEYS,
@@ -394,6 +415,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     banGroupMember: ACTOR_INPUT_KEYS,
     unbanGroupMember: ACTOR_INPUT_KEYS,
     setGroupMemberRole: [...ACTOR_INPUT_KEYS, 'role'],
+    grantGroupPublication: [...ACTOR_INPUT_KEYS, 'topicId', 'publish', 'subscribe'],
+    revokeGroupPublication: [...ACTOR_INPUT_KEYS, 'topicId', 'publish', 'subscribe'],
     transferGroupOwnership: ACTOR_INPUT_KEYS,
     upsertMember: [
         ...ACTOR_INPUT_KEYS,

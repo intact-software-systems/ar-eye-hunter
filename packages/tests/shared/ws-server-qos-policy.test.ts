@@ -949,6 +949,7 @@ function createTargetResolver(): WsServerTargetResolver {
     };
 
     return {
+        requiresFrozenAudience: () => false,
         resolvePeerRecipients: (peerId: string) => {
             const connectionId = connectionIdByPeerId[peerId];
             return connectionId

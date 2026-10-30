@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import {
     describe,
     expect,
@@ -147,6 +148,7 @@ describe('RallarServerWsRouter', () => {
         const expiresAtMs = nowMs + 1_000;
         const fixture = createIngressRouter({ defaultFanout: 'none', nowEpochMs: () => nowMs });
         fixture.router.defineTopic({
+            participation: 'members',
             topicId: 'app.deadline',
             authorize: async () => {
                 await Promise.resolve();
@@ -255,6 +257,7 @@ describe('RallarServerWsRouter', () => {
     it('uses lightweight validators for registered topics', async () => {
         const { router, socket } = createRouter();
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             validate: (value) => typeof value === 'object' && value !== null && 'title' in value
@@ -278,6 +281,7 @@ describe('RallarServerWsRouter', () => {
         const { router, socket } = createRouter();
         const handledPayloads: JsonWireValue[] = [];
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'none',
@@ -314,6 +318,7 @@ describe('RallarServerWsRouter', () => {
             }
         });
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'outbox'
@@ -348,7 +353,7 @@ describe('RallarServerWsRouter', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         onTestFinished(() => warn.mockRestore());
         const { router, socket, outboundStores } = createRouter();
-        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        router.defineTopic({ participation: 'members', topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
         const handled: string[] = [];
         router.on({ topicId: 'app.command' }, async (message) => {
             handled.push(message.raw.id.msgId);
@@ -380,7 +385,7 @@ describe('RallarServerWsRouter', () => {
 
     it('keeps the default fanout for a unicast addressed to another peer, in a room or on an outbox topic (R-S3c-i-5)', async () => {
         const { router, socket, outboundStores } = createRouter({ authorizeRoomMessage: () => true });
-        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        router.defineTopic({ participation: 'members', topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
         const handled: string[] = [];
         router.on({ topicId: 'room.command' }, async (message) => {
             handled.push(message.raw.id.msgId);
@@ -458,7 +463,7 @@ describe('RallarServerWsRouter', () => {
             { text: 'scoped delivery' },
             { reliability: 'at-least-once', ack: 'receiver' }
         );
-        router.defineTopic({ topicId: 'app.proxy', fanout: 'none' });
+        router.defineTopic({ participation: 'members', topicId: 'app.proxy', fanout: 'none' });
         router.on({ topicId: 'app.proxy' }, async (_message, context) => {
             await context.proxy.toRoom(roomRef, message, {
                 fanout: 'outbox',
@@ -488,12 +493,14 @@ describe('RallarServerWsRouter', () => {
         const { router } = createRouter({ allowImplicitUserTopics: false });
 
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1'
         });
 
         expect(() =>
             router.defineTopic({
+                participation: 'members',
                 topicId: 'custom.todo',
                 typeId: 'todo.item.updated.v1'
             })
@@ -1259,7 +1266,7 @@ const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspac
 const AUDIENCE_SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 function createRouter(
-    options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
+    options?: Omit<ConstructorParameters<typeof RallarServerWsRouter>[1], 'grantedTopics'>
 ): RouterFixture {
     const socket = createRecordingWsServer();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
@@ -1278,7 +1285,7 @@ function createRouter(
                 : undefined,
         targetResolver: createTargetResolver()
     });
-    const router = new RallarServerWsRouter(service, options);
+    const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), ...options });
     onTestFinished(() => service.dispose());
 
     return {
@@ -1297,7 +1304,7 @@ interface IngressRouterFixture {
 }
 
 function createIngressRouter(
-    options: ConstructorParameters<typeof RallarServerWsRouter>[1],
+    options: Omit<ConstructorParameters<typeof RallarServerWsRouter>[1], 'grantedTopics'>,
     inboundStores?: ALInboundRuntimeStores,
     qosProvider?: ALQosInputProvider
 ): IngressRouterFixture {
@@ -1316,6 +1323,7 @@ function createIngressRouter(
         inboundStores,
         qosProvider,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: () => 'peer-1',
             resolvePeerRecipients: (peerId) =>
                 peerId === 'peer-1'
@@ -1325,7 +1333,7 @@ function createIngressRouter(
         }
     });
     onTestFinished(() => service.dispose());
-    return { router: new RallarServerWsRouter(service, options), service, socket };
+    return { router: new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), ...options }), service, socket };
 }
 
 interface AudienceRouterFixture {
@@ -1373,6 +1381,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
                 }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => input.fanout === 'outbox' ? Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId })) : []
@@ -1381,6 +1390,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
     onTestFinished(() => service.dispose());
     let authorizations = 0;
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         nowEpochMs: () => 1,
         authorizeRoomMessage: ({ message }) => {
             authorizations += 1;
@@ -1400,7 +1410,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
             };
         }
     });
-    router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
+    router.install().defineTopic({ participation: 'members', topicId: 'room.chat', fanout: input.fanout });
     return { router, service, sockets, outboundStores };
 }
 
@@ -1423,6 +1433,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
                 ? { scope: AUDIENCE_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => sessionIds.map((peerId) => ({ peerId, connectionId: peerId }))
@@ -1430,6 +1441,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
     });
     onTestFinished(() => service.dispose());
     const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
         nowEpochMs: () => 1,
         authorizeRoomMessage: ({ message }) =>
             message.targets === undefined ? false : {
@@ -1441,7 +1453,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
                 }
             }
     });
-    router.install().defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+    router.install().defineTopic({ participation: 'members', topicId: 'room.chat', fanout: 'outbox' });
     return { router, service, sockets };
 }
 
@@ -1567,6 +1579,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     onTestFinished(() => service.dispose());
     const server = {
         ws: new RallarServerWsRouter(service, {
+            grantedTopics: new WsGrantedTopicSet(),
             wakeOutbox: () => qboxEngine.wake()
         })
     };
@@ -1622,6 +1635,7 @@ function createTargetResolver(): WsServerTargetResolver {
     };
 
     return {
+        requiresFrozenAudience: () => false,
         resolvePeerRecipients: (peerId: string) => {
             const connectionId = connectionIdByPeerId[peerId];
             return connectionId
@@ -1672,7 +1686,8 @@ function createGroupSnapshot(
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: activeSessions.length
+        onlineMemberCount: activeSessions.length,
+        publicationGrants: []
     };
 }
 

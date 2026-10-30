@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -204,7 +205,7 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
     const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
-        runtime.router.defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+        runtime.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout: 'outbox' });
         const enqueued: ALMessage[] = [];
         const enqueue = runtime.service.enqueueOutboxIfAbsent.bind(runtime.service);
         runtime.service.enqueueOutboxIfAbsent = (message) => {
@@ -322,11 +323,11 @@ Deno.test('generic custom authorization retains its configured resolver without 
         outbox: new InMemoryQueueBox(),
         socket: runtime.socket,
         readAuthenticatedConnectionScope: () => undefined,
-        targetResolver: { resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
+        targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
     });
     const router = new RallarServerWsRouter(
         service,
-        { authorizeRoomMessage: () => true }
+        { grantedTopics: new WsGrantedTopicSet(), authorizeRoomMessage: () => true }
     );
     try {
         await router.route(roomMessage(createGroupSnapshot(2, ['session-1'])));

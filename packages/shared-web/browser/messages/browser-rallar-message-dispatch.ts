@@ -3,7 +3,7 @@ import {
     type BrowserALStorageAvailability
 } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
@@ -23,6 +23,8 @@ import {
     type ALOutboundEnqueueResult
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
+import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -33,7 +35,10 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 import type { BrowserPublicationRequest, BrowserPublicationStages } from './publication/browser-publication-stages.ts';
-import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
+import type {
+    RallarStorageUnavailablePolicy,
+    RallarTypedMessageChannelDefinition
+} from './rallar-message-contracts.ts';
 
 /** What the strategy does after one carrier leg: hand the send to the fallback carrier, stop, or expire it. */
 export type BrowserFallbackDisposition = 'retry' | 'stop' | 'expired';
@@ -64,6 +69,8 @@ export namespace BrowserRallarMessageDispatch {
         readonly message: ALMessage;
         readonly canFallback: boolean;
         readonly payloadIssues: readonly RallarValidationIssue[];
+        /** A lane send's is `members`; a `granted` send is checked against the room's cached grants before its leg. */
+        readonly access: RallarTypedMessageChannelDefinition['access'];
         readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
         /** Defined exactly for a live channel's send, which is staged and paced before its first leg (D471). */
         readonly publication: BrowserPublicationRequest | undefined;
@@ -75,6 +82,8 @@ export namespace BrowserRallarMessageDispatch {
         /** Built before `deliveries`, whose cancel reaches them before the carriers (D479); its owner stops them at session end. */
         readonly publicationStages: BrowserPublicationStages;
         readonly nowMs: () => number;
+        /** The session principal's effective permissions on a topic in the room's cached snapshot; none cached, undefined. */
+        readPublicationPermissions(roomRef: GroupRef, topicId: string): GroupPublicationTopicPermissions | undefined;
     }
 }
 
@@ -287,6 +296,10 @@ export class BrowserRallarMessageDispatch {
                     detail: 'Message deadline elapsed before carrier admission.'
                 });
             }
+            const publicationRefusal = this.readPublicationRefusal(delivery);
+            if (publicationRefusal !== undefined) {
+                return toUnadmittedAdmission(message, publicationRefusal);
+            }
             this.verifyCapture(delivery);
             return undefined;
         }
@@ -296,6 +309,29 @@ export class BrowserRallarMessageDispatch {
             }
             return toUnadmittedAdmission(delivery.message, { kind: 'failed', detail: toError(caught).message });
         }
+    }
+
+    /**
+     * Only the WS server checks a publication grant, so a granted send names its room and takes WS. The cached snapshot's
+     * refusal is advisory and spares the carrier; without one the server decides (D500).
+     */
+    private readPublicationRefusal(
+        delivery: BrowserRallarMessageDispatch.Delivery
+    ): ALDeliveryAdmissionVerdict | undefined {
+        if (delivery.access === 'members') {
+            return undefined;
+        }
+        if (delivery.carrier === 'rtc') {
+            return { kind: 'refused', reason: 'unsupported', detail: 'RTC carries no publication grant.' };
+        }
+        const roomRef = readALTargetGroupRef(delivery.message);
+        if (roomRef === undefined) {
+            return { kind: 'refused', reason: 'unsupported', detail: 'A granted channel\'s send names a room.' };
+        }
+        const permissions = this.input.readPublicationPermissions(roomRef, delivery.message.route.topicId);
+        return permissions === undefined || permissions.publish
+            ? undefined
+            : { kind: 'refused', reason: 'no-publish-grant', detail: 'The room grants this principal no publish.' };
     }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { toAuthorizedRoomAudience } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { toAuthorizedRoomAudience } from '@shared-server/rallar-system/websocket/room-publication/to-authorized-room-audience.ts';
 import { isALAudienceSession, isALLeaderRoomBroadcast, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import {
     newALBroadcastMessage,

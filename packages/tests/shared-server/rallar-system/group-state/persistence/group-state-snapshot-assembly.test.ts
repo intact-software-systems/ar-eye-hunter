@@ -8,10 +8,17 @@ import {
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
+import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+import {
+    applyPublicationMutation,
+    GRANT_ROOM,
+    seedGrantRoom,
+    writeGrantRow
+} from '../mutation/group-publication-grant-test-runtime.ts';
 import { createSnapshotAssemblyMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
@@ -317,7 +324,54 @@ describe('GroupStateRepository persistence', () => {
             code: 'group-state-repository-invariant-corruption'
         });
     });
+
+    it('every snapshot read carries the group\'s grant rows in principal order', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedGrantRoom(runtime);
+        for (const targetPrincipalId of ['erin', 'bob']) {
+            await applyPublicationMutation(runtime, {
+                operation: 'grantGroupPublication',
+                actorPrincipalId: 'alice',
+                targetPrincipalId,
+                topicId: 'room.feed',
+                publish: true,
+                subscribe: true,
+                requestId: `grant-${targetPrincipalId}-feed-in-order`
+            });
+        }
+
+        for (const read of snapshotReads(createTestGroupStateRepository(runtime))) {
+            const snapshot = await read();
+            expect(snapshot?.publicationGrants.map((grant) => grant.principalId)).toEqual(['bob', 'erin']);
+        }
+    });
+
+    it('assembly refuses a grant row for a principal the group does not list', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedGrantRoom(runtime);
+        await writeGrantRow(runtime, 'zed', { 'room.feed': { publish: true, subscribe: true } });
+
+        for (const read of snapshotReads(createTestGroupStateRepository(runtime))) {
+            await expect(read()).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: groupStateGroupStorageKey(groupRef(GRANT_ROOM))
+            });
+        }
+    });
 });
+
+/** Each public read that assembles the grant room's snapshot. */
+function snapshotReads(repository: GroupStateRepository): readonly (() => Promise<GroupSnapshot | undefined>)[] {
+    const ref = groupRef(GRANT_ROOM);
+    const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
+    const inRoom = (snapshots: readonly GroupSnapshot[]) => snapshots.find((snapshot) => snapshot.group.groupId === GRANT_ROOM);
+    return [
+        () => repository.readSnapshot(ref),
+        async () => inRoom(await repository.listSnapshots(scope)),
+        async () => inRoom((await repository.listSnapshotsPage(scope, { limit: 10 })).snapshots),
+        async () => inRoom(await repository.listSnapshotsForPrincipal(scope, 'alice'))
+    ];
+}
 
 function requireMutationGroupAndActor(read: GroupMutationRead): asserts read is
     & GroupMutationRead

@@ -94,6 +94,8 @@ export function toGroupFormationOperationKind(operation: string): GroupFormation
         case 'unbanGroupMember':
         case 'setGroupMemberRole':
         case 'transferGroupOwnership':
+        case 'grantGroupPublication':
+        case 'revokeGroupPublication':
             return 'membership';
         case 'updateGroupActivationStatus':
             return 'activationStatus';

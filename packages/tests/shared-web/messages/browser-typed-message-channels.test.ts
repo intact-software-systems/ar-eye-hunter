@@ -102,7 +102,8 @@ describe('Rallar typed message channel', () => {
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.sendRtc(
@@ -145,7 +146,7 @@ describe('Rallar typed message channel', () => {
     });
 
     it('reports channel definition problems through the public validation-error boundary', () => {
-        expect(() => createFacade().messages.channel({ topicId: 'bad topic', typeId: '', purpose: 'notification' })).toThrow(
+        expect(() => createFacade().messages.channel({ topicId: 'bad topic', typeId: '', purpose: 'notification', access: 'members' })).toThrow(
             expect.objectContaining({
                 name: 'RallarValidationError',
                 issues: expect.arrayContaining([
@@ -162,7 +163,8 @@ describe('Rallar typed message channel', () => {
                 roomId: 'bad room',
                 topicId: 'bad topic',
                 typeId: 'bad type',
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
         ).toThrow(
             expect.objectContaining({
@@ -183,7 +185,8 @@ describe('Rallar typed message channel', () => {
             facade.messages.channel({
                 topicId: 'room chat',
                 typeId: 'chat.message.v1',
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
         ).toThrow('$.topicId');
         expect(() =>
@@ -191,7 +194,8 @@ describe('Rallar typed message channel', () => {
                 topicId: 'room.chat',
                 typeId: 'chat message',
                 roomId: 'room-1',
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
         ).toThrow('$.typeId');
         expect(() =>
@@ -199,7 +203,8 @@ describe('Rallar typed message channel', () => {
                 topicId: 'room.chat',
                 typeId: 'chat.message.v1',
                 roomId: 'bad room',
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
         ).toThrow('$.roomId');
     });
@@ -211,7 +216,8 @@ describe('Rallar typed message channel', () => {
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         const result = await channel.send(
@@ -250,7 +256,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.sendRtc(
@@ -280,7 +287,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'command'
+            purpose: 'command',
+            access: 'members'
         });
 
         await channel.sendWs({ text: 'to the server' }, { peerId: 'server-peer' });
@@ -304,7 +312,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         const result = await channel.send(
@@ -335,7 +344,8 @@ describe('Rallar typed message channel', () => {
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         const result = await channel.send(
@@ -377,7 +387,8 @@ describe('Rallar typed message channel', () => {
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
         const received: ReceivedChatMessage[] = [];
         const unsubscribeRtc = channel.onRtc((payload, event) => {
@@ -431,7 +442,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         const handle = await channel.send({ text: 'default' }, { resourceId: 'purpose-default-1' });
@@ -454,6 +466,7 @@ describe('Rallar typed message channel', () => {
             typeId: 'room.command.v1',
             roomId: 'room-1',
             purpose: 'command',
+            access: 'members',
             durability: 'local-outbox'
         });
 
@@ -470,7 +483,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.sendRtc({ text: 'override' }, {
@@ -494,7 +508,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.sendRtc({ text: 'fire and forget' }, { resourceId: 'best-effort-1', reliability: 'best-effort' });
@@ -513,7 +528,8 @@ describe('Rallar typed message channel', () => {
         const channel = createFacade().messages.channel<ChatMessage>({
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.sendWs({ text: 'everyone' }, { scope: 'world', resourceId: 'purpose-all-1' });
@@ -525,7 +541,8 @@ describe('Rallar typed message channel', () => {
 
     it('refuses a realtime, a missing or an unknown purpose and an unknown durability at the channel', () => {
         const facade = createFacade();
-        const define = (definition: object) => () => facade.messages.channel(definition as Parameters<typeof facade.messages.channel>[0]);
+        const define = (definition: object) => () =>
+            facade.messages.channel({ access: 'members', ...definition } as Parameters<typeof facade.messages.channel>[0]);
 
         expect(define({ typeId: 'chat.message.v1', purpose: 'realtime' })).toThrow(
             expect.objectContaining({
@@ -564,7 +581,8 @@ describe('Rallar typed message channel', () => {
 
     it('refuses a live channel without a publication, a publication on another purpose and a live durability other than volatile', () => {
         const facade = createFacade();
-        const define = (definition: object) => () => facade.messages.channel(definition as Parameters<typeof facade.messages.channel>[0]);
+        const define = (definition: object) => () =>
+            facade.messages.channel({ access: 'members', ...definition } as Parameters<typeof facade.messages.channel>[0]);
         const refusing = (path: string, code: string) => expect.objectContaining({ issues: [expect.objectContaining({ path, code })] });
 
         expect(define({ typeId: 'arena.pose.v1', purpose: 'live' })).toThrow(refusing('$.publication', 'missing-publication'));
@@ -588,6 +606,7 @@ describe('Rallar typed message channel', () => {
             typeId: 'arena.pose.v1',
             roomId: 'room-1',
             purpose: 'live',
+            access: 'members',
             publication: LIVE_PUBLICATION
         });
         const unsupported = (path: string) => expect.objectContaining({ path, code: 'unsupported' });
@@ -643,6 +662,7 @@ describe('Rallar typed message channel', () => {
             typeId: 'arena.pose.v1',
             roomId: 'room-1',
             purpose: 'live',
+            access: 'members',
             publication: LIVE_PUBLICATION
         });
 
@@ -672,6 +692,7 @@ describe('Rallar typed message channel', () => {
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
             purpose: 'command',
+            access: 'members',
             durability: 'local-outbox'
         } as const;
         const refusing = facade.messages.channel<ChatMessage>(definition);
@@ -692,13 +713,15 @@ describe('Rallar typed message channel', () => {
         const channelDefinition: RallarTypedMessageChannelDefinition = {
             topicId: 'room.command',
             typeId: 'room.command.v1',
-            purpose: 'command'
+            purpose: 'command',
+            access: 'members'
         };
         const roomDefinition: RallarRoomMessageChannelDefinition = {
             topicId: 'room.command',
             typeId: 'room.command.v1',
             roomId: 'room-1',
             purpose: 'command',
+            access: 'members',
             durability: 'local-outbox'
         };
         const channel = facade.messages.channel<ChatMessage>(channelDefinition);
@@ -723,7 +746,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.command',
             typeId: 'room.command.v1',
             roomId: 'room-1',
-            purpose: 'command'
+            purpose: 'command',
+            access: 'members'
         });
 
         const first = await channel.send({ text: 'ask' }, { resourceId: 'corr-1' });
@@ -755,7 +779,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.command',
             typeId: 'room.command.v1',
             roomId: 'room-1',
-            purpose: 'command'
+            purpose: 'command',
+            access: 'members'
         });
         const received: string[] = [];
         channel.onWs(async (payload, message) => {
@@ -800,7 +825,8 @@ describe('Rallar typed message channel', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1',
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await expect(channel.send({ text: 'x' }, { strategy: 'realtime' as never })).rejects

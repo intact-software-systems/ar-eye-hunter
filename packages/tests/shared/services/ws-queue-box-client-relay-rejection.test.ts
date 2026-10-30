@@ -5,6 +5,7 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 import {
     newALNackControlMessage,
     newALReceiptControlMessage,
+    type ALNackReason,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -302,6 +303,25 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
+    it('a no-publish-grant NACK after the admitted receipt settles relay-rejected', async () => {
+        const origin = await createOriginClient();
+        const publication = { ...exclusiveRoomBroadcast('granted-revoked', 'a'), delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
+        expect((await origin.service.enqueueOutboxIfAbsent(publication)).verdict.kind).toBe('admitted');
+
+        await origin.service.acceptIncomingMessage(serverReceipt('granted-revoked', 'admitted'));
+        // A revoke committed after socket admission: route refuses the held dispatch after its admitted receipt.
+        await origin.service.acceptIncomingMessage(serverNack('granted-revoked', 'no-publish-grant'));
+
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'granted-revoked')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('granted-revoked', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'no-publish-grant' });
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'granted-revoked' })
+        ).toBeUndefined();
+    });
+
     it('states the server refusing a live publication on an outbox topic unsupported; the receipt-less handle stays transport-accepted with the rejection as evidence (D482)', async () => {
         const fixture = await createRelayFixture(async () => ({
             authorized: false,
@@ -453,6 +473,7 @@ async function createRelayFixture(
         queueEngine: engine,
         forwardsRoomScopedMessages: false,
         targetResolver: {
+            requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: recipients
         }
@@ -560,6 +581,15 @@ function serverReceipt(msgId: string, phase: ALReceiptPayload['phase']): ALMessa
             phase,
             observedAtEpochMs
         }
+    );
+}
+
+/** The server's NACK of an origin message of `a`, as `route` sends it after admission. */
+function serverNack(msgId: string, reason: ALNackReason): ALMessage {
+    const observedAtEpochMs = Date.now();
+    return newALNackControlMessage(
+        { v: 4, msgId: `nack-${msgId}`, senderId: 'server-1', ts: observedAtEpochMs, traceId: 'trace-ws-queue-box-client-relay-rejection' },
+        { msgId, fromPeerId: 'server-1', toPeerId: 'a', reason, observedAtEpochMs }
     );
 }
 

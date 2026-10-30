@@ -8,7 +8,11 @@ import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-se
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 import { computeSha256CanonicalJson, serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
-import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
+import {
+    toAggregateMutationCommand,
+    toMembershipMutationCommand,
+    toPublicationMutationCommand
+} from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
     type AuthorizedGroupMutation,
@@ -293,6 +297,9 @@ export function toDescriptorCommand(
         case 'heartbeatPresence':
         case 'disconnectPresence':
             return toPresenceMutationCommand(descriptor, randomId);
+        case 'grantGroupPublication':
+        case 'revokeGroupPublication':
+            return toPublicationMutationCommand(descriptor, randomId);
         default:
             return toMembershipMutationCommand(descriptor, randomId);
     }

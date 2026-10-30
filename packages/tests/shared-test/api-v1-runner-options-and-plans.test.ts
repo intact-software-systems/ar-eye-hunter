@@ -175,8 +175,24 @@ describe('API-v1 runner options and process plans', () => {
             RALLAR_LOGIN_USER_RATE_LIMIT: '100',
             RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'local-api-v1-black-box-operator-secret',
             RALLAR_AUTH_CREDENTIAL_SECRET: 'local-api-v1-black-box-auth-credential-secret-v1',
-            RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON: '[{"documentType":"black-box-map","rollout":"production"}]'
+            RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON: '[{"documentType":"black-box-map","rollout":"production"}]',
+            RALLAR_GRANTED_WS_TOPICS_JSON: '[{"topicId":"room.bb-granted-feed","fanout":"outbox","serverProducerIds":[]}]'
         });
+    });
+
+    it('configures the black-box granted topic by default, preserves an explicit one and passes it to every managed server', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--port=18080',
+            '--secondary-port=18081',
+            '--tertiary-port=18082'
+        ]);
+        const topics = '[{"topicId":"room.custom-feed","fanout":"live-only","serverProducerIds":["feed"]}]';
+        const env = toApiV1BlackBoxEnvironment(options, { RALLAR_GRANTED_WS_TOPICS_JSON: topics });
+
+        expect(env.RALLAR_GRANTED_WS_TOPICS_JSON).toBe(topics);
+        expect(toManagedApiServerPlans(options, env, '/tmp/api-v1-bb').map((plan) => plan.env.RALLAR_GRANTED_WS_TOPICS_JSON))
+            .toEqual([topics, topics, topics]);
     });
 
     it('creates a bounded execution token independently of caller-provided run IDs', () => {

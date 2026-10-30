@@ -257,7 +257,7 @@ describe('captured outbound audience read', () => {
             clock,
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket,
-                targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'session-a', connectionId: 'session-a' }] }
+                targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'session-a', connectionId: 'session-a' }] }
             }),
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({}),
             readAuthenticatedConnectionScope: () => ({

@@ -1,3 +1,4 @@
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -345,7 +346,7 @@ Deno.test('generic custom authorization retains its explicit resolver-owned audi
         let bodyFailed = false;
         try {
             const frames = addRecordingConnection(harness.server, 'bob');
-            const router = new RallarServerWsRouter(harness.service, { authorizeRoomMessage: () => decision });
+            const router = new RallarServerWsRouter(harness.service, { grantedTopics: new WsGrantedTopicSet(), authorizeRoomMessage: () => decision });
             const message = roomMessage();
 
             await router.route(message);
@@ -464,7 +465,7 @@ Deno.test('a WS-carried receiver room multicast queues durable delivery to the o
         const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
         harness.state.current = snapshot;
         harness.state.cached = snapshot;
-        harness.router.defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+        harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout: 'outbox' });
         harness.router.install();
         const senderFrames = addRecordingConnection(harness.server, 'alice');
         const bobFrames = addRecordingConnection(harness.server, 'bob');
@@ -548,7 +549,7 @@ Deno.test('a principal broadcast in a room reaches the live sessions of that pri
         try {
             harness.state.current = createSecondSessionSnapshot();
             harness.state.cached = createSecondSessionSnapshot();
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(
                 ['alice', 'alice-2', 'alice-elsewhere', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
@@ -591,7 +592,7 @@ Deno.test('a principal broadcast to the sender\'s own principal reaches that pri
         try {
             harness.state.current = createSecondSessionSnapshot();
             harness.state.cached = createSecondSessionSnapshot();
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(
                 ['alice', 'alice-2', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
@@ -631,7 +632,7 @@ Deno.test('a principal broadcast whose principal has no live session in the room
         try {
             const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.principalId !== 'carol') };
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
             const message = audienceMessage('bob', {
@@ -667,7 +668,7 @@ Deno.test('a principal broadcast stamped beyond the server roster is retained at
         try {
             harness.state.current = createSecondSessionSnapshot();
             harness.state.cached = createSecondSessionSnapshot();
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(
                 ['alice', 'alice-2', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
@@ -709,7 +710,7 @@ Deno.test('a room broadcast from a client reaches the other live sessions in the
         try {
             harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
             const message = audienceMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
@@ -740,7 +741,7 @@ Deno.test('a room broadcast with a fixed list reaches the listed sessions in the
         try {
             harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(
                 ['alice', 'bob', 'carol', 'outsider'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
@@ -772,7 +773,7 @@ Deno.test('a world broadcast reaches each live connection of the authenticated s
         const harness = createRoomDeliveryHarness();
         let bodyFailed = false;
         try {
-            harness.router.defineTopic({ topicId: 'app.news', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'app.news', fanout });
             harness.router.install();
             harness.connectionScopes.set('foreign', { applicationId: 'app-2', workspaceId: ROOM.workspaceId });
             const frames = Object.fromEntries(
@@ -841,7 +842,7 @@ Deno.test('a group-leader room send reaches the appointed director alone, and it
             harness.state.current = withDirector(createRoomSnapshot(['alice', 'bob', 'carol']), 'carol');
             // The local cache predates the appointment: the audience admitted from current authority decides delivery.
             harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
-            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.defineTopic({ participation: 'members', topicId: 'room.chat', fanout });
             harness.router.install();
             const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
             const message = leaderMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
@@ -973,7 +974,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
         name: 'room-authority-delivery',
         receiptObserver,
         forwardsRoomScopedMessages: false,
-        targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => state.cached })
+        targetResolver: createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet(), findGroupSnapshotByRef: () => state.cached })
     });
     const authorizeRoomMessage = createApiV1RoomWsAuthorizer({
         readCurrentSnapshot: (ref) => {
@@ -982,7 +983,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
             return Promise.resolve(state.current);
         }
     }, { readLifecyclePolicy: () => Promise.resolve(state.policy) });
-    const router = new RallarServerWsRouter(service, { authorizeRoomMessage, nowEpochMs });
+    const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet(), authorizeRoomMessage, nowEpochMs });
     return { state, connectionScopes, server, service, router, outbox };
 }
 
@@ -1142,6 +1143,7 @@ function createRoomSnapshot(principalIds: readonly string[] = ['alice', 'bob']):
             disconnectReason: null
         })),
         memberCount: principalIds.length,
-        onlineMemberCount: principalIds.length
+        onlineMemberCount: principalIds.length,
+        publicationGrants: []
     };
 }

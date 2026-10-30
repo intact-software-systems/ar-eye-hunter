@@ -39,6 +39,7 @@ async function authorize(resource: object, typeId = sync.typeId) {
     });
     return authorizer({
         message: newALMulticastMessage('watcher', newALEventRoute('game.match', 'group-1', 'request'), roomRef, typeId, resource),
+        topic: { participation: 'members' },
         roomId: 'group-1',
         roomRef,
         senderId: 'watcher',

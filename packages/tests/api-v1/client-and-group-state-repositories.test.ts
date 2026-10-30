@@ -684,7 +684,8 @@ describe('GroupStateRepository', () => {
             members: [activeMember, invitedMember],
             activeSessions: [activeSession],
             memberCount: 1,
-            onlineMemberCount: 1
+            onlineMemberCount: 1,
+            publicationGrants: []
         });
 
         expect(
@@ -849,12 +850,13 @@ describe('GroupStateRepository', () => {
         expect(snapshots[0].memberCount).toBe(1);
         expect(snapshots[0].onlineMemberCount).toBe(1);
         expect(repository.findEntryCalls).toBe(0);
-        expect(repository.readRuntimeStateBatchCalls).toBe(5);
+        expect(repository.readRuntimeStateBatchCalls).toBe(6);
         expect(repository.readRuntimeStateBatchSelectors.flat().map((selector) => selector.namespace)).toEqual([
             'group-state:groups',
             'group-state:members',
             'group-state:presence-summaries',
             'group-state:sessions',
+            'group-state:publication-grants',
             'group-state:groups'
         ]);
         expect(repository.maxRowsReturnedPerBatchSelection).toBe(groupCount);
@@ -901,7 +903,7 @@ describe('GroupStateRepository', () => {
                 expect.objectContaining({ principalId: 'principal-new' })
             ])
         });
-        expect(repository.readRuntimeStateBatchCalls).toBe(6);
+        expect(repository.readRuntimeStateBatchCalls).toBe(7);
         expect(repository.findEntryCalls).toBe(0);
     });
 
@@ -949,7 +951,7 @@ describe('GroupStateRepository', () => {
                 limit: 3
             }
         ]);
-        expect(repository.readRuntimeStateBatchCalls).toBe(5);
+        expect(repository.readRuntimeStateBatchCalls).toBe(7);
         expect(repository.findEntryCalls).toBe(2);
         expect(repository.maxRowsReturnedPerBatchSelection).toBe(1);
     });
@@ -1042,7 +1044,7 @@ describe('GroupStateRepository', () => {
                 expect.objectContaining({ principalId: 'principal-new' })
             ])
         });
-        expect(repository.readRuntimeStateBatchCalls).toBe(4);
+        expect(repository.readRuntimeStateBatchCalls).toBe(5);
         expect(repository.findEntryCalls).toBe(1);
     });
 
