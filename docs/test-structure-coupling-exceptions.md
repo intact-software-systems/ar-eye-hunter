@@ -4961,6 +4961,66 @@ moved or changed test.
         "requiredConstraint": "No task failure is reported for an opportunity whose submit rejected, because the stage already settled each selected value.",
         "failureRationale": "A stage that settled each value and then rethrew would still produce the expected admission failed settlement; only the absent reporter call shows the failure stayed with the stage."
       }
+    },
+    {
+      "id": "group-move-retains-memberships",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Moving the active session must not revoke source or destination account membership.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#connects destination presence and disconnects source without removing either membership",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "leaveStateGroup",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Moving the active session must not revoke source or destination account membership.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "group-move-protects-third-room",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Retrying an old move from a third room must not emit HTTP effects.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the current third room unchanged when an old move is explicitly retried",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Browser fetch HTTP request transport",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Retrying an old move from a third room must not emit HTTP effects.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "group-move-retains-source-after-failure",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Failed destination presence must not revoke membership in the source.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the source selected when destination presence fails",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "leaveStateGroup",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Failed destination presence must not revoke membership in the source.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "group-move-rejects-uncommitted-authority",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Uncommitted or other-account moves must be rejected before any HTTP effect.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#refuses an uncommitted or other-account move before any HTTP effect",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Browser fetch HTTP request transport",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Uncommitted or other-account moves must be rejected before any HTTP effect.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
     }
   ],
   "entries": [
@@ -10507,6 +10567,50 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent task failure report is the witness that the rejected submit stayed with the stage after it settled the value failed.",
       "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#settles each selected value failed when submit throws and keeps the engine task healthy"
+    },
+    {
+      "id": "test-structure-coupling-ff2b94d5e880ebcb",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-retains-memberships",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Moving the active session must not revoke source or destination account membership. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#connects destination presence and disconnects source without removing either membership"
+    },
+    {
+      "id": "test-structure-coupling-72efb33fdb10edc1",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-protects-third-room",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Retrying an old move from a third room must not emit HTTP effects. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the current third room unchanged when an old move is explicitly retried"
+    },
+    {
+      "id": "test-structure-coupling-eb881cb29c937149",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-retains-source-after-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Failed destination presence must not revoke membership in the source. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the source selected when destination presence fails"
+    },
+    {
+      "id": "test-structure-coupling-354f33252f92dd47",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-rejects-uncommitted-authority",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Uncommitted or other-account moves must be rejected before any HTTP effect. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#refuses an uncommitted or other-account move before any HTTP effect"
     }
   ]
 }

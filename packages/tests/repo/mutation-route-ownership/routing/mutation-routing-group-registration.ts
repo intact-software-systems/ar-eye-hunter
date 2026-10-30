@@ -34,11 +34,18 @@ interface RootFamilyRegistration {
     readonly name: string;
     readonly sourcePath: string;
     readonly requiresAuthorization: boolean;
+    readonly readRoutePaths?: readonly string[];
 }
 
 const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
     { name: 'registerGroupStateReadRoutes', sourcePath: './register-group-state-read-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupQuickJoinRoute', sourcePath: './register-group-quick-join-route.ts', requiresAuthorization: false },
+    {
+        name: 'registerGroupMoveRoutes',
+        sourcePath: './register-group-move-routes.ts',
+        requiresAuthorization: false,
+        readRoutePaths: ['/api/state/apps/:applicationId/workspaces/:workspaceId/group-moves']
+    },
     { name: 'registerGroupStateMutationRoutes', sourcePath: './register-group-state-mutation-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupLifecycleRoutes', sourcePath: './register-group-lifecycle-routes.ts', requiresAuthorization: false },
     { name: 'registerGroupAdmissionRoutes', sourcePath: './register-group-admission-routes.ts', requiresAuthorization: false },
@@ -66,18 +73,18 @@ export function hasExactGroupRegistrationRoot({
         return false;
     }
     const root = roots[0]!;
-    const parameters = readParameterNames(root);
+    const parameters = toParameterNames(root);
     if (parameters.length !== 2 || parameters.some((name) => !name)) {
         return false;
     }
-    const statements = readBlockStatements(asNode(root.body)).filter((statement) => !isInertStatement(statement));
-    const authorization = readAuthorizationBinding(program, statements[0], parameters[1]!);
+    const statements = getBlockStatements(asNode(root.body)).filter((statement) => !isInertStatement(statement));
+    const authorization = findAuthorizationBinding(program, statements[0], parameters[1]!);
     if (!authorization) {
         return false;
     }
     const calls = statements.slice(1);
     return calls.length === ROOT_FAMILY_CALLS.length && ROOT_FAMILY_CALLS.every(({ name, sourcePath, requiresAuthorization }) => {
-        const binding = readNamedImportBinding(program, name, sourcePath);
+        const binding = findNamedImportBinding(program, name, sourcePath);
         const arguments_ = requiresAuthorization ? [...parameters, authorization] : parameters;
         return binding !== undefined && calls.filter((statement) => isExactDirectCall(statement, binding, arguments_)).length === 1;
     });
@@ -95,18 +102,22 @@ export function findDirectGroupRouteHandler({
         return undefined;
     }
     const familyOwner = familyOwners[0]!;
-    const familyParameters = readParameterNames(familyOwner);
+    const familyParameters = toParameterNames(familyOwner);
     if (familyParameters.length !== expectedFamilyParameterCount(familyOwnerName) || familyParameters.some((name) => !name)) {
         return undefined;
     }
-    const direct = readDirectRegistration(program, familyOwner);
+    const readRoutePaths = ROOT_FAMILY_CALLS.find(({ name }) => name === familyOwnerName)?.readRoutePaths;
+    if (readRoutePaths) {
+        return findInlineFamilyHandler({ program, owner: familyOwner, method, routePath, expectedFamilyRouteCount, readRoutePaths });
+    }
+    const direct = findDirectRegistration(program, familyOwner);
     if (direct) {
         return (expectedFamilyRouteCount === undefined || expectedFamilyRouteCount === 1) &&
                 direct.method === method && direct.routePath === routePath
             ? direct.handler
             : undefined;
     }
-    const calledOwners = readDirectFamilyOwnerCalls(familyOwner);
+    const calledOwners = collectDirectFamilyOwnerCalls(familyOwner);
     if (!calledOwners || new Set(calledOwners.map((call) => call.ownerName)).size !== calledOwners.length) {
         return undefined;
     }
@@ -119,7 +130,7 @@ export function findDirectGroupRouteHandler({
     if (!hasOnlyDirectRouteOwners(program, calledOwners, familyParameters)) {
         return undefined;
     }
-    const exact = readAllDirectRegistrations(program).filter(
+    const exact = collectDirectRegistrations(program).filter(
         (registration) => registration.method === method && registration.routePath === routePath
     );
     return exact.length === 1 && calledOwners.some((call) => call.ownerName === exact[0]?.ownerName)
@@ -127,7 +138,75 @@ export function findDirectGroupRouteHandler({
         : undefined;
 }
 
-function readNamedImportBinding(
+interface InlineFamilyHandlerInput {
+    readonly program: MutationRoutingAstNode;
+    readonly owner: MutationRoutingAstNode;
+    readonly method: string;
+    readonly routePath: string;
+    readonly expectedFamilyRouteCount: number | undefined;
+    readonly readRoutePaths: readonly string[];
+}
+
+function findInlineFamilyHandler(input: InlineFamilyHandlerInput): MutationRoutingAstNode | undefined {
+    const registrations = collectInlineRegistrations(input.program, input.owner);
+    if (!registrations) {
+        return undefined;
+    }
+    const reads = registrations.filter((entry) => entry.method === 'get');
+    const mutations = registrations.filter((entry) => entry.method !== 'get');
+    if (
+        reads.length !== input.readRoutePaths.length ||
+        !input.readRoutePaths.every((routePath) => reads.filter((entry) => entry.routePath === routePath).length === 1) ||
+        (input.expectedFamilyRouteCount !== undefined && mutations.length !== input.expectedFamilyRouteCount)
+    ) {
+        return undefined;
+    }
+    const matched = registrations.filter((entry) => entry.method === input.method && entry.routePath === input.routePath);
+    return matched.length === 1 ? matched[0]?.handler : undefined;
+}
+
+function collectInlineRegistrations(program: MutationRoutingAstNode, owner: MutationRoutingAstNode): readonly DirectRouteRegistration[] | undefined {
+    const registrations: DirectRouteRegistration[] = [];
+    const bindings: MutationRoutingAstNode[] = [];
+    for (const statement of getBlockStatements(asNode(owner.body))) {
+        if (isInertStatement(statement)) {
+            bindings.unshift(statement);
+            continue;
+        }
+        const scopedProgram = { ...program, body: [...bindings, ...asNodes(program.body)] };
+        const registration = toInlineRegistration(scopedProgram, owner, statement);
+        if (!registration) {
+            return undefined;
+        }
+        registrations.push(registration);
+    }
+    return registrations.length > 0 ? registrations : undefined;
+}
+
+function toInlineRegistration(
+    program: MutationRoutingAstNode,
+    owner: MutationRoutingAstNode,
+    statement: MutationRoutingAstNode
+): DirectRouteRegistration | undefined {
+    if (statement.type !== 'ExpressionStatement') {
+        return undefined;
+    }
+    const call = asNode(statement.expression);
+    const callee = asNode(call?.callee);
+    if (
+        call?.type !== 'CallExpression' || callee?.type !== 'MemberExpression' || callee.computed ||
+        getName(asNode(callee.object)) !== toParameterNames(owner)[0] || asNodes(call.arguments).length !== 2
+    ) {
+        return undefined;
+    }
+    const handler = resolveDirectHandler(program, asNodes(call.arguments)[1], toParameterNames(owner).slice(1));
+    const routePath = resolveModuleString(program, asNodes(call.arguments)[0]);
+    const method = getName(asNode(callee.property));
+    const ownerName = getName(asNode(owner.id));
+    return handler && routePath && method && ownerName ? { handler, method, ownerName, routePath } : undefined;
+}
+
+function findNamedImportBinding(
     program: MutationRoutingAstNode,
     expectedName: string,
     expectedSourcePath: string
@@ -136,16 +215,16 @@ function readNamedImportBinding(
         if (statement.type !== 'ImportDeclaration') {
             return [];
         }
-        const sourcePath = readString(asNode(statement.source));
+        const sourcePath = getString(asNode(statement.source));
         return asNodes(statement.specifiers)
-            .filter((specifier) => readName(asNode(specifier.imported)) === expectedName && sourcePath === expectedSourcePath)
+            .filter((specifier) => getName(asNode(specifier.imported)) === expectedName && sourcePath === expectedSourcePath)
             .map((specifier) => ({ sourcePath, specifier }));
     });
     if (bindings.length !== 1) {
         return undefined;
     }
     const binding = bindings[0]!;
-    return binding.specifier.type === 'ImportSpecifier' ? readName(asNode(binding.specifier.local)) : undefined;
+    return binding.specifier.type === 'ImportSpecifier' ? getName(asNode(binding.specifier.local)) : undefined;
 }
 
 function relativeImportPath(rootSourcePath: string, familySourcePath: string): string {
@@ -153,9 +232,9 @@ function relativeImportPath(rootSourcePath: string, familySourcePath: string): s
     return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
-function readDirectFamilyOwnerCalls(owner: MutationRoutingAstNode): readonly DirectOwnerCall[] | undefined {
+function collectDirectFamilyOwnerCalls(owner: MutationRoutingAstNode): readonly DirectOwnerCall[] | undefined {
     const calledOwners: DirectOwnerCall[] = [];
-    for (const statement of readBlockStatements(asNode(owner.body))) {
+    for (const statement of getBlockStatements(asNode(owner.body))) {
         if (isInertStatement(statement)) {
             continue;
         }
@@ -170,11 +249,11 @@ function readDirectFamilyOwnerCalls(owner: MutationRoutingAstNode): readonly Dir
         if (callee?.type !== 'Identifier') {
             return undefined;
         }
-        const argumentNames = asNodes(call.arguments).map(readName);
+        const argumentNames = asNodes(call.arguments).map(getName);
         if (argumentNames.some((name) => !name)) {
             return undefined;
         }
-        calledOwners.push({ argumentNames, ownerName: readName(callee) });
+        calledOwners.push({ argumentNames, ownerName: getName(callee) });
     }
     return calledOwners.length > 0 ? calledOwners : undefined;
 }
@@ -189,16 +268,16 @@ function hasOnlyDirectRouteOwners(
         if (owners.length !== 1) {
             return false;
         }
-        const parameters = readParameterNames(owners[0]!);
+        const parameters = toParameterNames(owners[0]!);
         return (
             parameters.length === call.argumentNames.length &&
             sameNames(call.argumentNames, familyParameters.slice(0, parameters.length)) &&
-            readDirectRegistration(program, owners[0]!) !== undefined
+            findDirectRegistration(program, owners[0]!) !== undefined
         );
     });
 }
 
-function readAuthorizationBinding(program: MutationRoutingAstNode, statement: MutationRoutingAstNode | undefined, dependencyName: string): string | undefined {
+function findAuthorizationBinding(program: MutationRoutingAstNode, statement: MutationRoutingAstNode | undefined, dependencyName: string): string | undefined {
     if (statement?.type !== 'VariableDeclaration' || statement.kind !== 'const') {
         return undefined;
     }
@@ -206,9 +285,9 @@ function readAuthorizationBinding(program: MutationRoutingAstNode, statement: Mu
     if (declarations.length !== 1) {
         return undefined;
     }
-    const factory = readNamedImportBinding(program, 'createGroupStateRouteAuthorization', './group-state-route-authorization.ts');
+    const factory = findNamedImportBinding(program, 'createGroupStateRouteAuthorization', './group-state-route-authorization.ts');
     const call = asNode(declarations[0]?.init);
-    return factory && isExactCall(call, factory, [dependencyName]) ? readName(asNode(declarations[0]?.id)) : undefined;
+    return factory && isExactCall(call, factory, [dependencyName]) ? getName(asNode(declarations[0]?.id)) : undefined;
 }
 
 function isInertStatement(statement: MutationRoutingAstNode): boolean {
@@ -244,8 +323,8 @@ function isExactCall(
     return (
         call?.type === 'CallExpression' &&
         asNode(call.callee)?.type === 'Identifier' &&
-        readName(asNode(call.callee)) === callName &&
-        sameNames(asNodes(call.arguments).map(readName), argumentNames)
+        getName(asNode(call.callee)) === callName &&
+        sameNames(asNodes(call.arguments).map(getName), argumentNames)
     );
 }
 
@@ -254,10 +333,10 @@ function expectedFamilyParameterCount(familyOwnerName: string): number | undefin
     return family ? (family.requiresAuthorization ? 3 : 2) : undefined;
 }
 
-function readParameterNames(owner: MutationRoutingAstNode): readonly string[] {
+function toParameterNames(owner: MutationRoutingAstNode): readonly string[] {
     return asNodes(owner.params).map((parameter) => {
         const binding = parameter.type === 'AssignmentPattern' ? asNode(parameter.left) : parameter;
-        return readName(binding);
+        return getName(binding);
     });
 }
 
@@ -267,37 +346,23 @@ function sameNames(actual: readonly string[], expected: readonly string[]): bool
     );
 }
 
-function readAllDirectRegistrations(program: MutationRoutingAstNode): readonly DirectRouteRegistration[] {
+function collectDirectRegistrations(program: MutationRoutingAstNode): readonly DirectRouteRegistration[] {
     return asNodes(program.body)
-        .map(readTopLevelDeclaration)
+        .map(toTopLevelDeclaration)
         .filter((node): node is MutationRoutingAstNode => node?.type === 'FunctionDeclaration')
-        .map((owner) => readDirectRegistration(program, owner))
+        .map((owner) => findDirectRegistration(program, owner))
         .filter((registration): registration is DirectRouteRegistration => registration !== undefined);
 }
 
-function readDirectRegistration(
+function findDirectRegistration(
     program: MutationRoutingAstNode,
     owner: MutationRoutingAstNode
 ): DirectRouteRegistration | undefined {
-    const statements = readBlockStatements(asNode(owner.body)).filter((statement) => !isInertStatement(statement));
+    const statements = getBlockStatements(asNode(owner.body)).filter((statement) => !isInertStatement(statement));
     if (statements.length !== 1 || statements[0]?.type !== 'ExpressionStatement') {
         return undefined;
     }
-    const call = asNode(statements[0].expression);
-    const callee = asNode(call?.callee);
-    if (call?.type !== 'CallExpression' || callee?.type !== 'MemberExpression') {
-        return undefined;
-    }
-    if (readName(asNode(callee.object)) !== readParameterNames(owner)[0]) {
-        return undefined;
-    }
-    const handler = resolveDirectHandler(program, asNodes(call.arguments)[1], readParameterNames(owner).slice(1));
-    const routePath = resolveModuleString(program, asNodes(call.arguments)[0]);
-    const method = readName(asNode(callee.property));
-    const ownerName = readName(asNode(owner.id));
-    return handler && routePath && method && ownerName
-        ? { handler, method, ownerName, routePath }
-        : undefined;
+    return toInlineRegistration(program, owner, statements[0]);
 }
 
 function resolveDirectHandler(
@@ -309,13 +374,13 @@ function resolveDirectHandler(
         return undefined;
     }
     if (handler.type === 'Identifier') {
-        const targets = findTopLevelFunctions(program, readName(handler));
+        const targets = findTopLevelFunctions(program, getName(handler));
         return targets.length === 1 ? targets[0] : undefined;
     }
     if (handler.type !== 'ArrowFunctionExpression' && handler.type !== 'FunctionExpression') {
         return handler;
     }
-    const call = readDirectWrapperCall(handler);
+    const call = findDirectWrapperCall(handler);
     if (!call) {
         return handler;
     }
@@ -323,23 +388,23 @@ function resolveDirectHandler(
     if (callee?.type !== 'Identifier') {
         return undefined;
     }
-    const targets = findTopLevelFunctions(program, readName(callee));
+    const targets = findTopLevelFunctions(program, getName(callee));
     if (targets.length !== 1) {
         return undefined;
     }
     const target = targets[0]!;
-    return sameNames(asNodes(call.arguments).map(readName), [...readParameterNames(handler), ...capturedParameters]) &&
-            asNodes(call.arguments).length === readParameterNames(target).length
+    return sameNames(asNodes(call.arguments).map(getName), [...toParameterNames(handler), ...capturedParameters]) &&
+            asNodes(call.arguments).length === toParameterNames(target).length
         ? target
         : undefined;
 }
 
-function readDirectWrapperCall(handler: MutationRoutingAstNode): MutationRoutingAstNode | undefined {
+function findDirectWrapperCall(handler: MutationRoutingAstNode): MutationRoutingAstNode | undefined {
     const body = asNode(handler.body);
     if (body?.type === 'CallExpression') {
         return body;
     }
-    const statements = readBlockStatements(body);
+    const statements = getBlockStatements(body);
     if (statements.length !== 1 || statements[0]?.type !== 'ReturnStatement') {
         return undefined;
     }
@@ -352,31 +417,31 @@ function findExportedFunctions(program: MutationRoutingAstNode, name: string): r
         .filter((statement) => statement.type === 'ExportNamedDeclaration')
         .map((statement) => asNode(statement.declaration))
         .filter(
-            (node): node is MutationRoutingAstNode => node?.type === 'FunctionDeclaration' && readName(asNode(node.id)) === name
+            (node): node is MutationRoutingAstNode => node?.type === 'FunctionDeclaration' && getName(asNode(node.id)) === name
         );
 }
 
 function findTopLevelFunctions(program: MutationRoutingAstNode, name: string): readonly MutationRoutingAstNode[] {
     return asNodes(program.body)
-        .map(readTopLevelDeclaration)
+        .map(toTopLevelDeclaration)
         .filter(
-            (node): node is MutationRoutingAstNode => node?.type === 'FunctionDeclaration' && readName(asNode(node.id)) === name
+            (node): node is MutationRoutingAstNode => node?.type === 'FunctionDeclaration' && getName(asNode(node.id)) === name
         );
 }
 
-function readTopLevelDeclaration(statement: MutationRoutingAstNode): MutationRoutingAstNode | undefined {
+function toTopLevelDeclaration(statement: MutationRoutingAstNode): MutationRoutingAstNode | undefined {
     return statement.type === 'ExportNamedDeclaration' ? asNode(statement.declaration) : statement;
 }
 
-function readBlockStatements(block: MutationRoutingAstNode | undefined): readonly MutationRoutingAstNode[] {
+function getBlockStatements(block: MutationRoutingAstNode | undefined): readonly MutationRoutingAstNode[] {
     return block?.type === 'BlockStatement' ? asNodes(block.body) : [];
 }
 
-function readName(node: MutationRoutingAstNode | undefined): string {
+function getName(node: MutationRoutingAstNode | undefined): string {
     return node && typeof node.name === 'string' ? node.name : '';
 }
 
-function readString(node: MutationRoutingAstNode | undefined): string | undefined {
+function getString(node: MutationRoutingAstNode | undefined): string | undefined {
     return node && typeof node.value === 'string' ? node.value : undefined;
 }
 

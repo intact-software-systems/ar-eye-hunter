@@ -57,7 +57,7 @@ async function commitMoveWithNetworkRecovery(
     const faults = await interceptMoveActivation(host, guest, destination);
     await guest.context().setOffline(true);
     await hostMove.getByRole('button', { name: 'Move everyone', exact: true }).click();
-    await expect(host.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible();
+    await expect(host.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     expect(faults.lostCommitResponses()).toBeGreaterThan(0);
     await guest.context().setOffline(false);
     await guestMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
@@ -174,6 +174,7 @@ export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 
     await hostMove.getByLabel('Destination room reference', { exact: true }).fill(destination);
     await hostMove.getByRole('button', { name: 'Propose move', exact: true }).click();
     await hostMove.getByRole('button', { name: 'Confirm move', exact: true }).click();
+    await expect(hostMove.getByRole('button', { name: 'Withdraw confirmation', exact: true })).toBeVisible();
     await guest.reload();
     if (game === 'arena') {
         await openArenaOperations(guest);

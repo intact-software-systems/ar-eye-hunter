@@ -7539,19 +7539,18 @@ components:
     GroupMove:
       type: object
       additionalProperties: false
-      required: [
-        moveId,
-        source,
-        destination,
-        organizerSessionId,
-        participants,
-        createdAtEpochMs,
-        expiresAtEpochMs,
-        completedAtEpochMs,
-        status,
-        reason,
-        admissionFailure,
-      ]
+      required:
+        - moveId
+        - source
+        - destination
+        - organizerSessionId
+        - participants
+        - createdAtEpochMs
+        - expiresAtEpochMs
+        - completedAtEpochMs
+        - status
+        - reason
+        - admissionFailure
       properties:
         moveId:
           type: string

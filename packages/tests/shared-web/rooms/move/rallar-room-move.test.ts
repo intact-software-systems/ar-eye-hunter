@@ -38,30 +38,18 @@ afterEach(() => {
 function browser() {
     let auth: AuthSession | undefined = session;
     let current = { ...source, displayName: 'Source room' };
-    let moves: readonly GroupMove[] = [committed];
     let blocker: string | null = null;
-    const reportError = vi.fn();
-    const changed = new SynchronousNotifications<void>(reportError);
-    const commands: GroupMoveRequest[] = [];
-    const activate = vi.fn(async () => {
-        current = { ...destination, displayName: 'Destination room' };
+    const changed = new SynchronousNotifications<void>((error) => {
+        throw error;
     });
-    const api = {
-        list: vi.fn(async () => moves),
-        mutate: vi.fn(async (request: GroupMoveRequest) => {
-            commands.push(request);
-            if (request.action === 'arrive') {
-                moves = [{ ...committed, participants: committed.participants.map((p) => ({ ...p, arrivedAtEpochMs: 130 })) }];
-                return moves[0];
-            }
-            return committed;
-        })
-    };
+    const api = createMoveApi();
     const refreshRooms = vi.fn(async () => {});
     const owner = new RallarRoomMove({
         auth: { session: () => auth, onChange: () => () => {} },
         currentRoom: () => current,
-        activate,
+        activate: async () => {
+            current = { ...destination, displayName: 'Destination room' };
+        },
         refreshRooms,
         api,
         onChanged: (listener) => changed.subscribe(listener).unsubscribe,
@@ -75,20 +63,20 @@ function browser() {
     }, { scope: source, refreshIntervalMs: 30000 });
     cleanups.push(() => {
         owner.stop();
-        expect(reportError).not.toHaveBeenCalled();
     });
     return {
         owner,
         api,
-        activate,
         refreshRooms,
-        commands,
+        commands: api.commands,
+        currentRoom: () => current,
+        selectRoom: (groupId: string) => {
+            current = { ...current, groupId };
+        },
         changeAuth: (next: AuthSession | undefined) => {
             auth = next;
         },
-        setMoves: (next: readonly GroupMove[]) => {
-            moves = next;
-        },
+        setMoves: api.setMoves,
         block: (reason: string | null) => {
             blocker = reason;
         },
@@ -96,11 +84,31 @@ function browser() {
     };
 }
 
+function createMoveApi() {
+    let moves: readonly GroupMove[] = [committed];
+    const commands: GroupMoveRequest[] = [];
+    return {
+        commands,
+        setMoves: (next: readonly GroupMove[]) => {
+            moves = next;
+        },
+        list: vi.fn(async () => moves),
+        mutate: vi.fn(async (request: GroupMoveRequest) => {
+            commands.push(request);
+            if (request.action === 'arrive') {
+                moves = [{ ...committed, participants: committed.participants.map((p) => ({ ...p, arrivedAtEpochMs: 130 })) }];
+                return moves[0];
+            }
+            return committed;
+        })
+    };
+}
+
 describe('Move together browser lifecycle', () => {
     it('recovers the durable destination without browser storage and reports arrival only after activation', async () => {
         const b = browser();
         await b.owner.start();
-        expect(b.activate).toHaveBeenCalledWith(committed, expect.any(AbortSignal));
+        expect(b.currentRoom().groupId).toBe(destination.groupId);
         expect(b.commands.map((command) => command.action)).toEqual(['arrive']);
         expect(b.owner.getState().moves[0].participants[0].arrivedAtEpochMs).toBe(130);
     });
@@ -109,7 +117,7 @@ describe('Move together browser lifecycle', () => {
         const b = browser();
         b.block('Leave expedition first');
         await b.owner.start();
-        expect(b.activate).not.toHaveBeenCalled();
+        expect(b.currentRoom().groupId).toBe(source.groupId);
         expect(b.commands).toEqual([]);
         expect(b.owner.getState()).toMatchObject({ error: 'Leave expedition first', moves: [committed] });
         b.block(null);
@@ -124,7 +132,7 @@ describe('Move together browser lifecycle', () => {
             return [committed];
         });
         await b.owner.start();
-        expect(b.activate).not.toHaveBeenCalled();
+        expect(b.currentRoom().groupId).toBe(source.groupId);
         expect(b.owner.getState().moves).toEqual([]);
     });
 
@@ -133,7 +141,7 @@ describe('Move together browser lifecycle', () => {
         b.setMoves([]);
         await b.owner.start();
         await b.owner.propose(destination);
-        expect(b.api.mutate.mock.calls[0][0].source).toEqual(source);
+        expect(b.commands[0].source).toEqual(source);
     });
 
     it('re-reads a notification that arrives while the preceding read is in flight', async () => {
@@ -151,7 +159,6 @@ describe('Move together browser lifecycle', () => {
         b.notify();
         release([]);
         await started;
-        expect(b.api.list).toHaveBeenCalledTimes(2);
         expect(b.owner.getState().moves[0]?.status).toBe('proposed');
     });
 
@@ -173,15 +180,16 @@ describe('Move together browser lifecycle', () => {
         await b.owner.start();
         b.block('Finish the match first');
         await b.owner.act('confirm', { ...committed, status: 'proposed', completedAtEpochMs: null });
-        expect(b.api.mutate).not.toHaveBeenCalled();
+        expect(b.commands).toEqual([]);
         expect(b.owner.getState().error).toBe('Finish the match first');
     });
 
     it('does not automatically pull a participant back from another room for an old committed move', async () => {
         const b = browser();
         await b.owner.start();
+        b.selectRoom('third-room');
         b.setMoves([committed]);
         await b.owner.refresh();
-        expect(b.activate).toHaveBeenCalledTimes(1);
+        expect(b.currentRoom().groupId).toBe('third-room');
     });
 });

@@ -240,6 +240,9 @@ class RelicBrowserBackend {
             this.rooms = [created];
             await route.fulfill({ status: 201, json: created });
         }
+        else if (path.endsWith('/group-moves') && route.request().method() === 'GET') {
+            await route.fulfill({ json: [] });
+        }
         else if (path.endsWith('/groups') && route.request().method() === 'GET') {
             await route.fulfill({ json: this.rooms });
         }
