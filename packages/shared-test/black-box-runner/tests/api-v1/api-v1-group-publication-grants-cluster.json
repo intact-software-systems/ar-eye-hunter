@@ -1002,20 +1002,6 @@
       }
     },
     {
-      "name": "carolNeverReceivesTheGrantedPublication",
-      "type": "ws.wait",
-      "connection": "wsCarolTertiary",
-      "expect": {
-        "connection": "wsCarolTertiary",
-        "withinMs": 4000,
-        "absent": {
-          "id": {
-            "msgId": "pubgrantcl-granted-item-{runId}"
-          }
-        }
-      }
-    },
-    {
       "name": "bobAcknowledgesTheGrantedPublication",
       "type": "ws.send",
       "connection": "wsBobTertiary",
@@ -1112,6 +1098,20 @@
           "phase": "complete",
           "firstConfirmed": "{bobSessionId}",
           "secondConfirmed": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "carolNeverReceivesTheGrantedPublication",
+      "type": "ws.wait",
+      "connection": "wsCarolTertiary",
+      "expect": {
+        "connection": "wsCarolTertiary",
+        "withinMs": 4000,
+        "absent": {
+          "id": {
+            "msgId": "pubgrantcl-granted-item-{runId}"
+          }
         }
       }
     },
