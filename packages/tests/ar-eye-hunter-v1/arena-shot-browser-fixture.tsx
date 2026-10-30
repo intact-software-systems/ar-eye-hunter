@@ -16,7 +16,7 @@ import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-h
 
 interface FixtureSceneInput {
     readonly snapshot: ArenaSnapshot;
-    readonly sessionId: string;
+    readonly sessionId: string | undefined;
     readonly onShot: BabylonArenaProps['onLocalShot'];
     readonly onSnapshot: BabylonArenaProps['onArenaSnapshot'];
 }
@@ -30,7 +30,7 @@ function ShotRegressionScene() {
     const [snapshot, setSnapshot] = useState(() => createFixtureSnapshot('shot-arena'));
     const [published, setPublished] = useState<ArenaSnapshot>();
     const [hit, setHit] = useState(false);
-    const [sessionId, setSessionId] = useState('host');
+    const [sessionId, setSessionId] = useState<string | undefined>('host');
     const [mounted, setMounted] = useState(true);
     const props = createFixtureSceneProps({
         snapshot,
@@ -54,6 +54,14 @@ function ShotRegressionScene() {
                 Change room
             </button>
             <button onClick={() => setSessionId('replacement-player')}>Change player</button>
+            <button
+                onClick={() => {
+                    setSnapshot(createFixtureSnapshot('shot-arena'));
+                    setSessionId(undefined);
+                }}
+            >
+                Play without session
+            </button>
             <button onClick={() => setMounted(false)}>Unmount arena</button>
             <RendererInspection />
             <output data-testid="accepted-match">{snapshot.match?.matchId ?? 'none'}</output>
@@ -108,11 +116,11 @@ function createFixtureSnapshot(roomId: string): ArenaSnapshot {
 function createFixtureSceneProps({ snapshot, sessionId, onShot, onSnapshot }: FixtureSceneInput): BabylonArenaProps {
     return {
         localSessionId: sessionId,
-        localUsername: sessionId,
+        localUsername: sessionId ?? 'local',
         localColor: '#00ff88',
         roomId: snapshot.roomId,
         roomReady: true,
-        networkEnabled: true,
+        networkEnabled: sessionId !== undefined,
         spectating: false,
         authority: {
             roomId: snapshot.roomId,
