@@ -35,7 +35,7 @@ export function assertGroupMutationCommand(
     }
     const operation = value.operation as GroupMutationCommand['operation'];
     const hasTarget = TARGET_GROUP_MUTATION_OPERATIONS.has(operation);
-    const hasSession = SESSION_GROUP_MUTATION_OPERATIONS.has(operation);
+    const hasSession = isGroupSessionMutationOperation(operation);
     assertExactKeys(
         value,
         [
@@ -72,6 +72,15 @@ export function assertGroupMutationCommand(
         requireNonEmptyString(input.generationId, 'Group presence generationId');
     }
     assertOperationInput(operation, input);
+}
+
+/**
+ * The commands that name the session they act for: presence and topic subscriptions. Each is bound to the
+ * authenticated session, so a caller never acts for another session, its own included.
+ */
+export function isGroupSessionMutationOperation(operation: GroupMutationCommand['operation']): boolean {
+    return operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence' ||
+        operation === 'subscribeGroupTopic' || operation === 'unsubscribeGroupTopic';
 }
 
 function assertOperationInput(
@@ -336,12 +345,6 @@ const PRESENCE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operati
     'connectPresence',
     'heartbeatPresence',
     'disconnectPresence'
-]);
-
-const SESSION_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation']>([
-    ...PRESENCE_GROUP_MUTATION_OPERATIONS,
-    'subscribeGroupTopic',
-    'unsubscribeGroupTopic'
 ]);
 
 const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation']>([

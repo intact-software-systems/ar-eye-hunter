@@ -7,7 +7,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import { canMutateActiveGroup } from '../../policy/group-lifecycle-policy.ts';
-import { canSubscribeGroupTopic, isLiveClientSession } from '../../policy/group-topic-subscription-policy.ts';
+import { canSubscribeGroupTopic, holdsLiveGeneration } from '../../policy/group-topic-subscription-policy.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -100,7 +100,7 @@ function resolveSubscribeDenial(
             member: read.targetMember,
             grant: read.targetPublicationGrant?.value ?? null,
             topicId: command.input.topicId,
-            clientSession: read.targetClientSession?.value ?? null,
+            clientSessions: (read.targetClientSessions ?? []).map(({ value }) => value),
             connectionGenerationId: command.input.connectionGenerationId,
             nowEpochMs: facts.attemptAtEpochMs
         })
@@ -115,11 +115,11 @@ function computeUnsubscribe(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const current = read.targetTopicSubscription;
-    const session = read.targetClientSession?.value ?? null;
+    const sessions = (read.targetClientSessions ?? []).map(({ value }) => value);
     const generation = command.input.connectionGenerationId;
     if (
         current === null || current.value.connectionGenerationId !== generation ||
-        !isLiveClientSession(session, facts.attemptAtEpochMs) || session.generationId !== generation
+        !holdsLiveGeneration(sessions, generation, facts.attemptAtEpochMs)
     ) {
         return notSubscribed(command, read, facts);
     }

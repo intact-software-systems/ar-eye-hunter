@@ -355,10 +355,13 @@ function computeMutationFollowupEntries(
     event: GroupEvent | null
 ): readonly ResourceEntry[] {
     const { command, facts } = input;
-    if (input.presenceSummaryWork === 'enqueue' && event === null) {
-        throw new TypeError('Presence-summary work expands an event, and this write records none');
+    if (event === null) {
+        if (input.presenceSummaryWork === 'enqueue') {
+            throw new TypeError('Presence-summary work expands an event, and this write records none');
+        }
+        return input.extraOutboxEntries ?? [];
     }
-    const summaryOutboxEntries = input.presenceSummaryWork === 'none' || event === null
+    const summaryOutboxEntries = input.presenceSummaryWork === 'none'
         ? []
         : [
             computeGroupPresenceSummaryEntry(

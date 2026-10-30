@@ -1,4 +1,3 @@
-import type { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type {
     GroupStateMutationExactEntries,
     GroupStateMutationExactReadInput
@@ -15,7 +14,7 @@ export type GroupMutationSubscriptionReadInput = Pick<
 
 export type GroupMutationSubscriptionRead = Pick<
     GroupMutationRead,
-    'targetTopicSubscription' | 'targetClientSession' | 'targetPrincipalSubscriptions'
+    'targetTopicSubscription' | 'targetClientSessions' | 'targetPrincipalSubscriptions'
 >;
 
 /** The subscription identities the command's read scope names; empty lists for every other command. */
@@ -55,38 +54,9 @@ export function toGroupMutationSubscriptionRead(
     return {
         targetTopicSubscription: read.topicSubscriptions.find(({ identity }) => identity === subscriptionKey)?.entry ??
             null,
-        targetClientSession: clientSession?.entry ?? null,
+        targetClientSessions: readsTopicSubscriptionTarget(command) ? (clientSession?.entries ?? []) : null,
         targetPrincipalSubscriptions: input.subscriptionPrincipalIds.length === 0
             ? null
             : principalSubscriptions?.entries ?? []
     };
-}
-
-/** The sequential path's subscription rows, read in one statement of their own. */
-export async function readSequentialGroupMutationSubscriptionEntries(
-    repository: GroupStateRepository,
-    command: GroupMutationCommand
-): Promise<GroupMutationSubscriptionRead> {
-    const input = toGroupMutationSubscriptionReadInput(command);
-    if (
-        input.topicSubscriptions.length === 0 && input.clientSessions.length === 0 &&
-        input.subscriptionPrincipalIds.length === 0
-    ) {
-        return { targetTopicSubscription: null, targetClientSession: null, targetPrincipalSubscriptions: null };
-    }
-    const read = await repository.readMutationExactEntries({
-        aggregateRef: command.aggregateRef,
-        includeGroup: false,
-        includePresenceSummary: false,
-        includeLifecyclePolicy: false,
-        includeGroupSnapshot: false,
-        authSessionId: null,
-        requestIds: [],
-        memberPrincipalIds: [],
-        presenceSessionIds: [],
-        admissionPrincipalIds: [],
-        publicationGrantPrincipalIds: [],
-        ...input
-    });
-    return toGroupMutationSubscriptionRead(command, read);
 }

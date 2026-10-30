@@ -57,7 +57,7 @@ const SUBSCRIBE: CanSubscribeGroupTopicInput = {
         updated: { atEpochMs: 1, actor: { kind: 'principal', principalId: 'alice' }, reason: null, traceId: null, requestId: null }
     },
     topicId: 'room.feed',
-    clientSession: SUBSCRIBE_SESSION,
+    clientSessions: [SUBSCRIBE_SESSION],
     connectionGenerationId: SUBSCRIBE_SESSION.generationId,
     nowEpochMs: NOW
 };
@@ -673,7 +673,7 @@ describe('group policy helpers', () => {
                 })
             ),
             expectCode(canHoldGroupPublicationTopics(topicGrants(65))),
-            expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, clientSession: null })),
+            expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, clientSessions: [] })),
             expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, connectionGenerationId: 'bob-ws-generation-0' })),
             expectCode(canSubscribeGroupTopic({ ...SUBSCRIBE, grant: null }))
         ]);

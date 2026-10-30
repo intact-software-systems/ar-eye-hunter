@@ -51,7 +51,7 @@ import {
 import { groupStatePublicationGrantStorageKey } from './publication/group-publication-grant-storage-key.ts';
 import { toGroupStateAuthoritySelectors, type GroupStateAuthorityBatchRead } from './read-group-state-authority.ts';
 import {
-    canonicalStoredLiveClientSession,
+    canonicalStoredActiveClientSessions,
     canonicalStoredPrincipalTopicSubscriptions,
     canonicalStoredTopicSubscription
 } from './subscription/group-topic-subscription-codec.ts';
@@ -120,7 +120,7 @@ export interface GroupStateMutationExactEntries {
     readonly topicSubscriptions: readonly ExactEntry<string, GroupTopicSubscription>[];
     readonly clientSessions: readonly Readonly<{
         identity: GroupClientSessionIdentity;
-        entry: RuntimeStateEntryValue<ClientSession> | null;
+        entries: readonly RuntimeStateEntryValue<ClientSession>[];
     }>[];
     readonly principalSubscriptions: readonly Readonly<{
         principalId: string;
@@ -274,7 +274,7 @@ function toExactReadResult(
             slot.kind === 'client-session'
                 ? [{
                     identity: slot.identity,
-                    entry: canonicalStoredLiveClientSession(selection.entries, {
+                    entries: canonicalStoredActiveClientSessions(selection.entries, {
                         ...input.aggregateRef,
                         ...slot.identity
                     })

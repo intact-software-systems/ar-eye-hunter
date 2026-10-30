@@ -6,7 +6,7 @@ import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runti
 import { groupStateChildStorageKey } from '../aggregate/group-aggregate-storage-keys.ts';
 import { toGroupStateReadBatchLiveSelections } from '../group-state-persistence-contracts.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
-import { canonicalStoredTopicSubscriptions } from './group-topic-subscription-codec.ts';
+import { canonicalStoredTopicSubscription } from './group-topic-subscription-codec.ts';
 
 export interface ReadGroupSessionTopicSubscriptionsInput {
     readonly ref: GroupRef;
@@ -30,7 +30,7 @@ export async function readGroupSessionTopicSubscriptions(
         await repository.readRuntimeStateBatch(selectors),
         input.observedAtEpochMs
     );
-    return canonicalStoredTopicSubscriptions(selection.entries, input.ref)
-        .map(({ value }) => value)
+    return selection.entries
+        .map((entry) => canonicalStoredTopicSubscription(entry, input.ref).value)
         .sort((left, right) => (left.topicId < right.topicId ? -1 : left.topicId > right.topicId ? 1 : 0));
 }

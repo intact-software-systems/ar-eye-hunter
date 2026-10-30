@@ -152,7 +152,7 @@ export function createMutationRead(): GroupMutationRead {
         presenceSummary: null,
         targetPublicationGrant: null,
         targetTopicSubscription: null,
-        targetClientSession: null,
+        targetClientSessions: null,
         targetPrincipalSubscriptions: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,

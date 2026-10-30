@@ -78,9 +78,9 @@ describe('group mutation ingress capture', () => {
         await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', { publish: false, subscribe: true });
         await writeMatrixClientSession(harness, 'bob', 'bob-ws-generation-1');
 
-        const subscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_SUBSCRIBE);
+        const subscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_SUBSCRIBE, 'bob-session');
         const row = await readMatrixTopicSubscription(harness, 'publication-room', 'bob-session', 'room.feed');
-        const unsubscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE);
+        const unsubscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE, 'bob-session');
 
         expect(subscribed.right).toMatchObject({ outcome: 'applied', eventId: null, subscriptionOutcome: 'subscribed' });
         expect(row).toMatchObject({ principalId: 'bob', connectionGenerationId: 'bob-ws-generation-1' });
@@ -90,9 +90,39 @@ describe('group mutation ingress capture', () => {
         // The subscription writes record no event: the room holds only its creation, join and grant.
         expect(events.map((event) => event.eventType)).toEqual(['group-created', 'member-joined', 'publication-grant-changed']);
     });
+
+    it('a subscribe or unsubscribe naming a session other than the caller\'s is refused and writes no row', async () => {
+        const harness = await createAuthorityHarness(['owner', 'bob', 'carol']);
+        await createRoom(harness, 'publication-room', 'Publication room');
+        await joinPublicationRoom(harness, 'bob');
+        await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', { publish: false, subscribe: true });
+        await writeMatrixClientSession(harness, 'bob', 'bob-ws-generation-1');
+        await writeMatrixClientSession(harness, 'carol', 'bob-ws-generation-1');
+        const carolSession = harness.sessions.carol.sessionId;
+
+        for (const type of [AppInboxType.GROUP_TOPIC_SUBSCRIBE, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE] as const) {
+            await expectSessionRefused(harness, type, 'bob-other-session');
+            await expectSessionRefused(harness, type, carolSession);
+        }
+        for (const sessionId of ['bob-other-session', carolSession]) {
+            expect(await readMatrixTopicSubscription(harness, 'publication-room', sessionId, 'room.feed')).toBeUndefined();
+        }
+    });
 });
 
 const PUBLISH_ONLY = { publish: true, subscribe: false } as const;
+
+async function expectSessionRefused(
+    harness: AuthorityHarness,
+    type: typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE | typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
+    sessionId: string
+): Promise<void> {
+    const refusal = await processSubscriptionCommand(harness, type, sessionId).then(
+        (result) => result.left,
+        (error: Error) => error
+    );
+    expect(refusal, `${type} ${sessionId}`).toMatchObject({ code: 'group-mutation-authority-denied' });
+}
 
 const PUBLICATION_ROOM_CONTEXT = `${SCOPE.applicationId}:${SCOPE.workspaceId}:publication-room`;
 
@@ -154,10 +184,11 @@ async function processPublicationCommand(
 
 async function processSubscriptionCommand(
     harness: AuthorityHarness,
-    type: typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE | typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE
+    type: typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE | typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
+    sessionId: string
 ) {
     const bob = harness.sessions.bob;
-    const requestId = `${type}-bob-feed`;
+    const requestId = `${type}-bob-feed-${sessionId}`;
     return await processAuthenticated({
         service: harness.service,
         reader: harness.reader,
@@ -171,7 +202,7 @@ async function processSubscriptionCommand(
             data: {
                 scope: SCOPE,
                 groupId: 'publication-room',
-                sessionId: bob.sessionId,
+                sessionId,
                 request: {
                     topicId: 'room.feed',
                     connectionGenerationId: 'bob-ws-generation-1',

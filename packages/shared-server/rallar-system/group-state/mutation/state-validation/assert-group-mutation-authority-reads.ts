@@ -48,29 +48,32 @@ export function assertGroupMutationAuthorityReads({
     assertTargetPrincipalSubscriptionReads({ read, command, ref, identities });
 }
 
-/** Only subscribe and unsubscribe read their (session, topic) row and the session's client-state row, the target's. */
+/** Exactly subscribe and unsubscribe read their (session, topic) row and the session's client-state rows, the target's. */
 function assertTopicSubscriptionTargetReads({
     read,
     command,
     ref,
     identities
 }: AssertGroupMutationAuthorityReadsInput): void {
-    const { targetTopicSubscription: subscription, targetClientSession: session } = read;
-    if (subscription === null && session === null) {
+    const { targetTopicSubscription: subscription, targetClientSessions: sessions } = read;
+    if (!readsTopicSubscriptionTarget(command)) {
+        if (subscription !== null || sessions !== null) {
+            throw new TypeError('Topic subscription read differs from the command read scope');
+        }
         return;
     }
-    if (!readsTopicSubscriptionTarget(command) || identities.targetPrincipalId === null) {
+    if (sessions === null || identities.targetPrincipalId === null) {
         throw new TypeError('Topic subscription read differs from the command read scope');
     }
     if (subscription !== null) {
         const key = groupStateTopicSubscriptionStorageKey(ref, command.sessionId, command.input.topicId);
         assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
     }
-    if (
-        session !== null &&
-        (session.value.sessionId !== command.sessionId || session.value.principalId !== identities.targetPrincipalId ||
-            session.value.status !== 'active')
-    ) {
+    const principalId = identities.targetPrincipalId;
+    const foreign = sessions.find(({ value }) =>
+        value.sessionId !== command.sessionId || value.principalId !== principalId || value.status !== 'active'
+    );
+    if (foreign !== undefined) {
         throw new TypeError('Target client session differs from the command slot identity');
     }
 }

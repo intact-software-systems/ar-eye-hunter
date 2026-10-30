@@ -64,27 +64,28 @@ export function canonicalStoredPrincipalTopicSubscriptions(
 }
 
 /**
- * The session's one active client-state row, failing closed: a second active row for the session, or a row that
- * fails the client-state contract or its own key, is corruption rather than an absent session.
+ * The session's active client-state rows, in canonical storage-key order, failing closed: a row outside the requested
+ * session or one that fails the client-state contract is corruption rather than an absent session.
  */
-export function canonicalStoredLiveClientSession(
+export function canonicalStoredActiveClientSessions(
     stored: readonly RuntimeStateEntryValue<JsonWireValue>[],
     expected: GroupRef & Readonly<{ principalId: string; sessionId: string; }>
-): RuntimeStateEntryValue<ClientSession> | null {
-    const [session, ...others] = stored;
-    if (session === undefined) {
-        return null;
+): readonly RuntimeStateEntryValue<ClientSession>[] {
+    return stored
+        .map((session) => canonicalStoredActiveClientSession(session, expected))
+        .sort((left, right) => compareRuntimeStateKeys(left.entry.key, right.entry.key));
+}
+
+function canonicalStoredActiveClientSession(
+    session: RuntimeStateEntryValue<JsonWireValue>,
+    expected: GroupRef & Readonly<{ principalId: string; sessionId: string; }>
+): RuntimeStateEntryValue<ClientSession> {
+    const key = decodeStoredGroupStateKey(session.entry.key, decodeClientSessionStorageKey);
+    if (!isExpectedClientSessionKey(key, expected)) {
+        throwGroupStateIdentityCorruption(session.entry.key, 'client-state session');
     }
     try {
-        if (others.length > 0) {
-            throw new TypeError('A session has more than one active client-state row');
-        }
-        const key = decodeClientSessionStorageKey(session.entry.key);
-        if (!isExpectedClientSessionKey(key, expected)) {
-            throw new TypeError('Client-state session key differs from the requested session');
-        }
         validatePersistedClientSession(session.value, key);
-        return { entry: session.entry, value: session.value };
     }
     catch (error) {
         throw new GroupStateRepositoryInvariantCorruptionError(
@@ -92,6 +93,7 @@ export function canonicalStoredLiveClientSession(
             error instanceof Error ? error.message : 'Stored client-state session is invalid'
         );
     }
+    return { entry: session.entry, value: session.value };
 }
 
 function isExpectedClientSessionKey(

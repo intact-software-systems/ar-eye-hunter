@@ -1,5 +1,9 @@
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
-import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import {
+    MEMBERS_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-system/group-state/persistence/subscription/group-topic-subscription-storage-key.ts';
 import { GROUP_TOPIC_SUBSCRIPTION_LEASE_MS } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import { describe, expect, it } from 'vitest';
@@ -54,7 +58,7 @@ async function expectSubscribeDenial(
 }
 
 describe('group topic subscription mutation', () => {
-    it('a first subscribe is subscribed with the server-derived lease and writes guard, receipt and nothing else', async () => {
+    it('a first subscribe is subscribed with the server-derived lease and writes guard, the grant and member fences and receipt only', async () => {
         const runtime = await subscribableRoom();
         const { read, computed } = await computeSubscriptionMutation(runtime, BOB_SUBSCRIBE);
         const write = requireWrite(computed);
@@ -77,8 +81,21 @@ describe('group topic subscription mutation', () => {
             expireAtTimestamp: subscription.leaseExpiresAtEpochMs
         });
         expect(write.persistence.guardedBatch.effects.map((effect) => [effect.effectId, effect.operation])).toEqual([
+            ['subscription-grant-fence', 'update'],
+            ['subscription-member-fence', 'update'],
             ['receipt', 'insert']
         ]);
+        const [grantFence, memberFence] = write.persistence.guardedBatch.effects;
+        expect(grantFence).toMatchObject({
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            expectedRevision: read.targetPublicationGrant?.entry.revision,
+            value: read.targetPublicationGrant?.entry.value
+        });
+        expect(memberFence).toMatchObject({
+            namespace: MEMBERS_NAMESPACE,
+            expectedRevision: read.targetMemberEntry?.entry.revision,
+            value: read.targetMemberEntry?.entry.value
+        });
         expect(write.event).toBeNull();
         expect(write.persistence.eventWrite).toBeNull();
         expect(write.outboxWrites).toEqual([]);
@@ -147,6 +164,25 @@ describe('group topic subscription mutation', () => {
         await expectSubscribeDenial(
             runtime,
             { ...BOB_SUBSCRIBE, connectionGenerationId: 'bob-ws-generation-0' },
+            'stale-generation'
+        );
+    });
+
+    it('a session active under two client instances admits the row whose generation matches the body', async () => {
+        const runtime = await subscribableRoom();
+        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2', { clientInstanceId: 'bob-sdk-instance' });
+        const second = { ...BOB_SUBSCRIBE, connectionGenerationId: 'bob-ws-generation-2', requestId: 'subscribe-bob-feed-gen-2-x' };
+
+        const { read, computed } = await computeSubscriptionMutation(runtime, second);
+
+        expect(read.targetClientSessions?.map(({ value }) => value.generationId)).toEqual([
+            'bob-ws-generation-1',
+            'bob-ws-generation-2'
+        ]);
+        expect(requireWrite(computed).receipt.subscriptionOutcome).toBe('subscribed');
+        await expectSubscribeDenial(
+            runtime,
+            { ...BOB_SUBSCRIBE, connectionGenerationId: 'bob-ws-generation-3', requestId: 'subscribe-bob-feed-gen-3-x' },
             'stale-generation'
         );
     });
@@ -224,6 +260,7 @@ describe('group topic subscription mutation', () => {
             expectedRevision: read.targetTopicSubscription?.entry.revision
         });
         expect(write.persistence.guardedBatch.guard).toMatchObject({ operation: 'delete', namespace: SUBSCRIPTIONS_NAMESPACE });
+        expect(write.persistence.guardedBatch.effects.map((effect) => effect.effectId)).toEqual(['receipt']);
         expect(write.receipt).toMatchObject({ outcome: 'applied', eventId: null, subscriptionOutcome: 'unsubscribed' });
         await applySubscriptionMutation(runtime, BOB_UNSUBSCRIBE);
         expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
@@ -237,6 +274,19 @@ describe('group topic subscription mutation', () => {
 
         expect(computed).toMatchObject({ outcome: 'no-op', receipt: { outcome: 'no-op', subscriptionOutcome: 'not-subscribed' } });
         expect(await applySubscriptionMutation(runtime, stale)).toMatchObject({ subscriptionOutcome: 'not-subscribed' });
+        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toMatchObject({
+            connectionGenerationId: 'bob-ws-generation-1'
+        });
+    });
+
+    it('an unsubscribe asserting the row\'s generation after the live session moved on is not-subscribed and keeps the row', async () => {
+        const runtime = await subscribableRoom();
+        await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
+        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+        const { computed } = await computeSubscriptionMutation(runtime, BOB_UNSUBSCRIBE);
+
+        expect(computed).toMatchObject({ outcome: 'no-op', receipt: { subscriptionOutcome: 'not-subscribed' } });
+        expect(await applySubscriptionMutation(runtime, BOB_UNSUBSCRIBE)).toMatchObject({ subscriptionOutcome: 'not-subscribed' });
         expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toMatchObject({
             connectionGenerationId: 'bob-ws-generation-1'
         });

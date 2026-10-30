@@ -13,8 +13,10 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import type { RuntimeStateConditionalWriteResult } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
-import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
+
+import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import {
     applyPublicationMutation,
     GRANT_ROOM,
@@ -28,6 +30,7 @@ import {
     writeClientSessionRow,
     type TopicSubscriptionDescriptorInput
 } from '../mutation/group-topic-subscription-test-runtime.ts';
+import { createService } from '../presence/group-presence-test-runtime.ts';
 
 const BOB_SUBSCRIBE: TopicSubscriptionDescriptorInput = {
     operation: 'subscribeGroupTopic',
@@ -36,6 +39,18 @@ const BOB_SUBSCRIBE: TopicSubscriptionDescriptorInput = {
     connectionGenerationId: 'bob-ws-generation-1',
     requestId: 'subscribe-bob-feed-generation-1'
 };
+
+const REVOKE_BOB_SUBSCRIBE = {
+    operation: 'revokeGroupPublication',
+    actorPrincipalId: 'alice',
+    targetPrincipalId: 'bob',
+    topicId: 'room.feed',
+    publish: false,
+    subscribe: true,
+    requestId: 'revoke-bob-feed-subscribe-01'
+} as const;
+
+const BOB_LEAVES = { status: 'left', actorPrincipalId: 'bob', requestId: 'leave-bob-racing-a-subscribe' } as const;
 
 /** Refuses the next subscription-row insert as a lost compare-and-set, as a concurrent writer would. */
 class SubscriptionGuardConflictRepository extends GroupBarrierRepository {
@@ -89,22 +104,62 @@ describe('group topic subscription convergence', () => {
         expect(toGroupCommandExclusionKey(subscribe)).toBe(toGroupCommandExclusionKey(revoke));
     });
 
-    it('a subscribe queued behind a revoke of subscribe is refused no-subscribe-grant and writes no row', async () => {
+    it('a subscribe whose read completed before a revoke of subscribe committed conflicts and is then refused no-subscribe-grant with no row', async () => {
         const runtime = await subscribableRoom(new GroupBarrierRepository());
-        await applyPublicationMutation(runtime, {
-            operation: 'revokeGroupPublication',
-            actorPrincipalId: 'alice',
-            targetPrincipalId: 'bob',
-            topicId: 'room.feed',
-            publish: false,
-            subscribe: true,
-            requestId: 'revoke-bob-feed-subscribe-01'
-        });
+        const heldSubscribe = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
+        const subscribe = applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
+        void subscribe.catch(() => undefined);
+        await heldSubscribe.firstArrival;
 
-        await expect(applySubscriptionMutation(runtime, BOB_SUBSCRIBE)).rejects.toMatchObject({
+        await applyPublicationMutation(runtime, REVOKE_BOB_SUBSCRIBE);
+        heldSubscribe.release();
+
+        await expect(subscribe).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
+        await expect(applySubscriptionMutation(runtime, BOB_SUBSCRIBE, { attemptCount: 2 })).rejects.toMatchObject({
             denial: { code: 'no-subscribe-grant' }
         });
         expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
+    });
+
+    it('a subscribe whose read completed before a leave committed conflicts and is then refused member-not-active with no row', async () => {
+        const runtime = await subscribableRoom(new GroupBarrierRepository());
+        const heldSubscribe = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
+        const subscribe = applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
+        void subscribe.catch(() => undefined);
+        await heldSubscribe.firstArrival;
+
+        await createService(runtime, 3_000).upsertMember(SCOPE, GRANT_ROOM, 'bob', BOB_LEAVES);
+        heldSubscribe.release();
+
+        await expect(subscribe).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        await expect(applySubscriptionMutation(runtime, BOB_SUBSCRIBE, { attemptCount: 2 })).rejects.toMatchObject({
+            denial: { code: 'member-not-active' }
+        });
+        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
+    });
+
+    it('a revoke of subscribe or a leave whose read predates a committed subscribe conflicts and its fresh attempt deletes the row', async () => {
+        const races = [
+            (runtime: GroupBarrierRepository, attemptCount: number) => applyPublicationMutation(runtime, REVOKE_BOB_SUBSCRIBE, attemptCount),
+            (runtime: GroupBarrierRepository, attemptCount: number) =>
+                createService(runtime, 3_000, attemptCount).upsertMember(SCOPE, GRANT_ROOM, 'bob', BOB_LEAVES)
+        ];
+        for (const departOrRevoke of races) {
+            const runtime = await subscribableRoom(new GroupBarrierRepository());
+            const held = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
+            const racing = departOrRevoke(runtime, 1);
+            void racing.catch(() => undefined);
+            await held.firstArrival;
+
+            await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
+            held.release();
+
+            await expect(racing).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+            expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeDefined();
+            await departOrRevoke(runtime, 2);
+            expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
+        }
     });
 
     it('a CAS conflict injected at the subscription guard retries on a fresh read and converges', async () => {
@@ -142,11 +197,13 @@ describe('group topic subscription convergence', () => {
         const runtime = await subscribableRoom(new GroupBarrierRepository());
         await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
 
-        await expect(applySubscriptionMutation(runtime, { ...BOB_SUBSCRIBE, topicId: 'room.other' })).rejects.toMatchObject({
-            code: 'group-mutation-idempotency-conflict'
-        });
-        await expect(applySubscriptionMutation(runtime, { ...BOB_SUBSCRIBE, topicId: 'room.other' })).rejects
-            .toBeInstanceOf(GroupMutationIdempotencyConflictError);
+        const conflict = await applySubscriptionMutation(runtime, { ...BOB_SUBSCRIBE, topicId: 'room.other' }).then(
+            () => undefined,
+            (error: Error) => error
+        );
+
+        expect(conflict).toBeInstanceOf(GroupMutationIdempotencyConflictError);
+        expect(conflict).toMatchObject({ code: 'group-mutation-idempotency-conflict' });
     });
 });
 

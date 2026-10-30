@@ -12,30 +12,43 @@ export interface CanSubscribeGroupTopicInput {
     readonly member: GroupMember | null;
     readonly grant: GroupPublicationGrant | null;
     readonly topicId: string;
-    readonly clientSession: ClientSession | null;
+    /** The session's active client-state rows, one per client instance holding it. */
+    readonly clientSessions: readonly ClientSession[];
     readonly connectionGenerationId: string;
     readonly nowEpochMs: number;
 }
 
 /**
- * An active member subscribes one of its live sessions, asserted by that session's current connection generation, to
- * a topic it holds effective subscribe on.
+ * An active member subscribes one of its live sessions, asserted by the current connection generation of one of the
+ * session's live client-state rows, to a topic it holds effective subscribe on.
  */
 export function canSubscribeGroupTopic(input: CanSubscribeGroupTopicInput): GroupPolicyResult {
     if (input.member?.status !== 'active') {
         return denyGroupPolicy('member-not-active', 'Only an active member subscribes to a topic.');
     }
-    if (!isLiveClientSession(input.clientSession, input.nowEpochMs)) {
+    const live = input.clientSessions.filter((session) => isLiveClientSession(session, input.nowEpochMs));
+    if (live.length === 0) {
         return denyGroupPolicy('no-live-session', 'The subscribing session is not live.');
     }
-    if (input.clientSession.generationId !== input.connectionGenerationId) {
-        return denyGroupPolicy('stale-generation', 'The asserted connection generation is not the live one.');
+    if (!holdsLiveGeneration(live, input.connectionGenerationId, input.nowEpochMs)) {
+        return denyGroupPolicy('stale-generation', 'The asserted connection generation is not a live one.');
     }
     return resolveMemberPublicationPermissions(input.member, input.grant, input.topicId).subscribe
         ? GROUP_POLICY_ALLOWED
         : denyGroupPolicy('no-subscribe-grant', 'The principal holds no effective subscribe on the topic.');
 }
 
-export function isLiveClientSession(session: ClientSession | null, nowEpochMs: number): session is ClientSession {
-    return session !== null && session.status === 'active' && session.expiresAtEpochMs > nowEpochMs;
+/** True when a live client-state row of the session runs at the generation. */
+export function holdsLiveGeneration(
+    sessions: readonly ClientSession[],
+    generationId: string,
+    nowEpochMs: number
+): boolean {
+    return sessions.some((session) =>
+        isLiveClientSession(session, nowEpochMs) && session.generationId === generationId
+    );
+}
+
+function isLiveClientSession(session: ClientSession, nowEpochMs: number): boolean {
+    return session.status === 'active' && session.expiresAtEpochMs > nowEpochMs;
 }

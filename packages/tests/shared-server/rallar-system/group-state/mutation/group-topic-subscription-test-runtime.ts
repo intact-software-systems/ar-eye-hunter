@@ -86,12 +86,12 @@ export async function writeClientSessionRow(
     runtime: GroupBarrierRepository,
     principalId: string,
     generationId: string,
-    overrides: Partial<Pick<ClientSession, 'expiresAtEpochMs' | 'sessionId'>> = {}
+    overrides: Partial<Pick<ClientSession, 'expiresAtEpochMs' | 'sessionId' | 'clientInstanceId'>> = {}
 ): Promise<ClientSession> {
     const session: ClientSession = {
         ...SCOPE,
         principalId,
-        clientInstanceId: `${principalId}-instance`,
+        clientInstanceId: overrides.clientInstanceId ?? `${principalId}-instance`,
         sessionId: overrides.sessionId ?? sessionIdOf(principalId),
         generationId,
         generationVersion: 1,

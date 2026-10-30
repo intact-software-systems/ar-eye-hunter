@@ -11,6 +11,7 @@ import {
     publicResultIdentityMatches,
     type PublicResultReceiptIdentity
 } from './api-v1-state-write-group-causal-evidence.ts';
+import { isConsistentTopicSubscriptionReceipt } from './is-consistent-topic-subscription-receipt.ts';
 import { validateTopologyMutationResultPayload } from './validate-topology-mutation-result-payload.ts';
 
 interface ResultEvidence {
@@ -161,6 +162,9 @@ export function validatePersistedAppInboxResult(
             : invalid(result, 'malformed-group-session-cleanup-result');
     }
     if (GROUP_RECEIPT_RESULT_COMMAND_TYPES.has(input.commandType)) {
+        if (!isConsistentTopicSubscriptionReceipt(input.commandType, result)) {
+            return invalid(result, 'malformed-topic-subscription-receipt');
+        }
         return validateEmbeddedAuthoritativeReceipt(
             validateReceiptResult({
                 receipt: result,

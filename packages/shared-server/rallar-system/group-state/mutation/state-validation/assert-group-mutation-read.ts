@@ -50,7 +50,7 @@ const GROUP_MUTATION_READ_KEYS = [
     'presenceSummary',
     'targetPublicationGrant',
     'targetTopicSubscription',
-    'targetClientSession',
+    'targetClientSessions',
     'targetPrincipalSubscriptions',
     'lifecyclePolicy',
     'activeMemberPrincipalIds',

@@ -145,7 +145,7 @@ export function createGroupAuthorityRead(
         presenceSummary: null,
         targetPublicationGrant: null,
         targetTopicSubscription: null,
-        targetClientSession: null,
+        targetClientSessions: null,
         targetPrincipalSubscriptions: null,
         lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'optimistic'),
         activeMembers: (options.activeMemberPrincipalIds ?? (options.actorIsMember === false ? [] : [actorPrincipalId])).map((principalId) => ({

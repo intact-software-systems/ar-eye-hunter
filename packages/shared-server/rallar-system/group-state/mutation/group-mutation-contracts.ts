@@ -486,8 +486,11 @@ export interface GroupMutationRead {
     readonly targetPublicationGrant: RuntimeStateEntryValue<GroupPublicationGrant> | null;
     /** The live row for the command's (session, topic), loaded only for subscribe and unsubscribe. */
     readonly targetTopicSubscription: RuntimeStateEntryValue<GroupTopicSubscription> | null;
-    /** The command session's active client-state row, loaded only for subscribe and unsubscribe. */
-    readonly targetClientSession: RuntimeStateEntryValue<ClientSession> | null;
+    /**
+     * The command session's active client-state rows, one per client instance that holds the session, loaded only for
+     * subscribe and unsubscribe; the instance id is caller-supplied, so several rows are a valid state.
+     */
+    readonly targetClientSessions: readonly RuntimeStateEntryValue<ClientSession>[] | null;
     /** Every live subscription row of the target in the group, loaded only for a revoke of subscribe and departures. */
     readonly targetPrincipalSubscriptions: readonly RuntimeStateEntryValue<GroupTopicSubscription>[] | null;
     /** Loaded only for the operations the read scope's policy rule names. */

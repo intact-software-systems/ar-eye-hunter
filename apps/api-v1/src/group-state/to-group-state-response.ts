@@ -8,11 +8,11 @@ import {
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     requireGroupJoinCodeWritten,
-    requireGroupPresenceInboxDurableResult,
+    requireGroupReceiptInboxDurableResult,
     requireGroupStateWritten
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type {
-    GroupPresenceInboxDurableResult,
+    GroupReceiptInboxDurableResult,
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import {
@@ -63,7 +63,7 @@ export function toGroupStateResponse(
         case 'presence':
             return toGroupPresenceResponse({
                 ...input,
-                receipt: requireGroupPresenceInboxDurableResult(input.receipt)
+                receipt: requireGroupReceiptInboxDurableResult(input.receipt)
             });
     }
 }
@@ -79,7 +79,7 @@ function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeRe
 
 async function toGroupPresenceResponse(
     input: Omit<Extract<GroupStateResponseInput, { kind: 'presence'; }>, 'receipt'> & {
-        readonly receipt: GroupPresenceInboxDurableResult;
+        readonly receipt: GroupReceiptInboxDurableResult;
     }
 ): Promise<GroupSnapshot> {
     if ('commandId' in input.receipt && input.receipt.outcome === 'rejected') {

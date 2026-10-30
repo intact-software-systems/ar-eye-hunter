@@ -21,9 +21,9 @@ import { GroupStateRepositoryInvariantCorruptionError } from '../persistence/gro
 import { groupStateMemberStorageKey } from '../persistence/membership/group-membership-storage-key.ts';
 import type { InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
 
-export type GroupPresenceInboxDurableResult = GroupMutationReceipt | InactiveGroupPresenceResult;
+export type GroupReceiptInboxDurableResult = GroupMutationReceipt | InactiveGroupPresenceResult;
 
-export type GroupStateInboxDurableResult = GroupPresenceInboxDurableResult | GroupJoinCodeWritten | GroupStateWritten;
+export type GroupStateInboxDurableResult = GroupReceiptInboxDurableResult | GroupJoinCodeWritten | GroupStateWritten;
 
 export interface ComputeGroupStateInboxResultInput {
     readonly command: Pick<GroupStateMutationCommand, 'command' | 'facts'>;
