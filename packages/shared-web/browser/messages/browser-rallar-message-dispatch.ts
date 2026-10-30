@@ -321,13 +321,12 @@ export class BrowserRallarMessageDispatch {
         if (delivery.access === 'members') {
             return undefined;
         }
+        if (delivery.carrier === 'rtc') {
+            return { kind: 'refused', reason: 'unsupported', detail: 'RTC carries no publication grant.' };
+        }
         const roomRef = readALTargetGroupRef(delivery.message);
-        if (delivery.carrier === 'rtc' || roomRef === undefined) {
-            return {
-                kind: 'refused',
-                reason: 'unsupported',
-                detail: 'A granted channel publishes over WS in a room: RTC carries no publication grant.'
-            };
+        if (roomRef === undefined) {
+            return { kind: 'refused', reason: 'unsupported', detail: 'A granted channel\'s send names a room.' };
         }
         const permissions = this.input.readPublicationPermissions(roomRef, delivery.message.route.topicId);
         return permissions === undefined || permissions.publish

@@ -2,9 +2,12 @@ import type {
     RallarRoomMessageChannelDefinition,
     RallarTypedMessageSendStrategy
 } from '@shared-web/browser/rallar-messages.ts';
-import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuditStampFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -14,9 +17,22 @@ import {
     resetRallarFacadeTestRuntime,
     setRallarFacadeRoomSnapshots
 } from './rallar-facade-test-runtime.ts';
+// After the facade runtime: its mocks must be registered before the fixture loads the modules they replace.
+import { toQueuedMessageAdmission } from './browser-message-sender-fixture.ts';
 
 interface FeedItem {
     readonly text: string;
+}
+
+/** One carrier admission port a send reached: the effect log every test asserts as a value. */
+interface CarrierAdmission {
+    readonly carrier: ALDeliveryCarrier;
+    readonly message: ALMessage;
+}
+
+/** Either carrier's admission port; the RTC one also takes its carrier-gap mode, which these tests ignore. */
+interface CarrierAdmissionPort {
+    enqueueOutboxIfAbsent(message: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult>;
 }
 
 const ROOM_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
@@ -24,8 +40,7 @@ const GRANTED_TOPIC_ID = 'room.granted-feed';
 const SESSION_PRINCIPAL_ID = 'principal-1';
 
 const mocks = getRallarFacadeMocks();
-let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
-let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
+let admissions: CarrierAdmission[] = [];
 
 installFakeBroadcastChannelPerTest();
 
@@ -33,8 +48,7 @@ describe('a granted typed channel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resetRallarFacadeTestRuntime();
-        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
-        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
+        admissions = recordCarrierAdmissions();
     });
 
     it('a definition without access is refused at $.access with invalid-access', () => {
@@ -81,8 +95,7 @@ describe('a granted typed channel', () => {
                 evidence: { failure: { kind: 'refused', reason: 'unsupported' } }
             });
         }
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(admissions).toEqual([]);
     });
 
     it.each<[string, RallarTypedMessageSendStrategy]>([
@@ -95,9 +108,9 @@ describe('a granted typed channel', () => {
         const handle = await channel.send({ text: strategy }, { strategy });
 
         expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message.route.topicId))
-            .toEqual([GRANTED_TOPIC_ID]);
+        expect(admissions.map(({ carrier, message }) => [carrier, message.route.topicId])).toEqual([
+            ['ws', GRANTED_TOPIC_ID]
+        ]);
     });
 
     it('a send without a cached publish grant settles rejected with refused/no-publish-grant before any leg', async () => {
@@ -112,8 +125,7 @@ describe('a granted typed channel', () => {
                 evidence: { failure: { kind: 'refused', reason: 'no-publish-grant' } }
             });
         }
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(admissions).toEqual([]);
     });
 
     it('a send whose principal holds no grant row in the cached snapshot is refused no-publish-grant', async () => {
@@ -126,7 +138,7 @@ describe('a granted typed channel', () => {
             state: 'rejected',
             evidence: { failure: { kind: 'refused', reason: 'no-publish-grant' } }
         });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(admissions).toEqual([]);
     });
 
     it('a granted channel\'s world send names no room and is refused unsupported before any leg', async () => {
@@ -139,8 +151,7 @@ describe('a granted typed channel', () => {
             state: 'rejected',
             evidence: { failure: { kind: 'refused', reason: 'unsupported' } }
         });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(admissions).toEqual([]);
     });
 
     it('a send with a cached publish grant reaches the WS leg', async () => {
@@ -150,10 +161,10 @@ describe('a granted typed channel', () => {
         const handle = await channel.sendWs({ text: 'granted' });
 
         expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0]).toMatchObject({
-            route: { topicId: GRANTED_TOPIC_ID },
-            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM_REF }
-        });
+        expect(admissions).toMatchObject([{
+            carrier: 'ws',
+            message: { route: { topicId: GRANTED_TOPIC_ID }, targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM_REF } }
+        }]);
     });
 
     it('with no cached snapshot the send goes to the server', async () => {
@@ -162,8 +173,9 @@ describe('a granted typed channel', () => {
         const handle = await channel.send({ text: 'server decides' });
 
         expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(admissions.map(({ carrier, message }) => [carrier, message.route.topicId])).toEqual([
+            ['ws', GRANTED_TOPIC_ID]
+        ]);
     });
 });
 
@@ -191,4 +203,18 @@ function createRoomSnapshot(permissions: GroupPublicationTopicPermissions | unde
                 updated: createAuditStampFixture(2, 'creator')
             }]
     };
+}
+
+/** Both carriers' admission ports, admitting every send and logging it in the order the sends reached them. */
+function recordCarrierAdmissions(): CarrierAdmission[] {
+    const log: CarrierAdmission[] = [];
+    const record = (carrier: ALDeliveryCarrier, port: CarrierAdmissionPort) => {
+        port.enqueueOutboxIfAbsent = async (message) => {
+            log.push({ carrier, message });
+            return await Promise.resolve(toQueuedMessageAdmission(message));
+        };
+    };
+    record('rtc', mocks.apiMiddleware.middleware.rtcRxStreamer);
+    record('ws', mocks.apiMiddleware.middleware.webSocketQueueBox);
+    return log;
 }
