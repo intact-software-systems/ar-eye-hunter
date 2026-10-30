@@ -355,7 +355,8 @@ it.each(['messages.rtc', 'messages.ws'] as const)(
             topicId: 'chat',
             roomId: 'bb-group',
             roomRef,
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         }]);
         const wsHandler = facade.records.typedWsHandlers[0];
         const rtcHandler = facade.records.typedRtcHandlers[0];

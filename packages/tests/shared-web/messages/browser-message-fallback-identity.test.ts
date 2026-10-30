@@ -564,7 +564,8 @@ function createChannel(input: ChannelInput): ChannelFixture {
             deliveries,
             sessionDeliveries,
             publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-            nowMs: Date.now
+            nowMs: Date.now,
+            readPublicationPermissions: () => undefined
         }),
         inputValidator,
         connect: async () => context,
@@ -590,6 +591,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
             topicId: 'room.ready',
             typeId: 'ready',
             purpose: 'notification',
+            access: 'members',
             durability: input.durability,
             onStorageUnavailable: input.onStorageUnavailable
         })

@@ -235,7 +235,8 @@ describe('Rallar message send', () => {
         const channel = createRallarTestFacade().messages.room({
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
 
         await channel.send({ text: 'stated floor' }, { strategy: 'rtc', minSnapshotVersion: 42 });
@@ -268,7 +269,8 @@ describe('Rallar message send', () => {
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-            purpose: 'notification'
+            purpose: 'notification',
+            access: 'members'
         });
         const qos: ALQosPolicyRequest = { ack: { algo: 'hop' } };
 
@@ -468,6 +470,33 @@ describe('Rallar message send', () => {
             minSnapshotVersion: 11,
             rosterVersion: 5
         });
+    });
+
+    it('a members channel\'s sends are unchanged: no grant row is read, RTC legs open and WS legs admit', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createRallarTestFacade().messages.room<{ readonly text: string; }>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification',
+            access: 'members'
+        });
+
+        const handles = [
+            await channel.send({ text: 'fallback' }),
+            await channel.send({ text: 'rtc' }, { strategy: 'rtc' }),
+            await channel.sendRtc({ text: 'sendRtc' }),
+            await channel.sendWs({ text: 'sendWs' })
+        ];
+
+        for (const handle of handles) {
+            expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        }
+        const textOf = (message: ALMessage) => JSON.parse(message.payload.resource).text;
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => textOf(message)))
+            .toEqual(['fallback', 'rtc', 'sendRtc']);
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => textOf(message))).toEqual(['sendWs']);
+        expect(() => channel.onRtc(() => {})).not.toThrow();
     });
 
     it('uses roomRef scope for cached snapshotVersion and target groupRef on WS room sends', async () => {

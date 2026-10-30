@@ -45,6 +45,7 @@ async function sendRelicPlanningWs(
                     topicId: RELIC_TOPICS.aiPlanning,
                     typeId: RELIC_TYPES.aiPlanningRequest,
                     purpose: 'command',
+                    access: 'members',
                     roomId: input.roomId
                 })
                 .sendWs(input.request, { peerId: serverPeerId })

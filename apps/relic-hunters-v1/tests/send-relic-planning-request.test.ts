@@ -55,6 +55,7 @@ describe('a Relic planning request to the server (D444)', () => {
             topicId: RELIC_TOPICS.aiPlanning,
             typeId: RELIC_TYPES.aiPlanningRequest,
             purpose: 'command',
+            access: 'members',
             roomId: 'room-1'
         }]);
         expect(sendWs).toHaveBeenCalledWith(REQUEST, { peerId: 'default-qbox-server' });

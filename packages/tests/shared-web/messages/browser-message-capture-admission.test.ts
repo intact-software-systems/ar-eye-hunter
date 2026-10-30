@@ -79,7 +79,8 @@ describe('required capture at final message admission', () => {
                         replace();
                     }
                     return 1;
-                }
+                },
+                readPublicationPermissions: () => undefined
             });
             const message = newALBroadcastMessage(
                 context.session.sessionId,
@@ -100,6 +101,7 @@ describe('required capture at final message admission', () => {
                     rtcCapture,
                     canFallback: false,
                     payloadIssues: [],
+                    access: 'members',
                     onStorageUnavailable: 'refuse',
                     publication: undefined
                 })
@@ -140,7 +142,8 @@ describe('required capture at final message admission', () => {
                     throw new Error('admission clock failed');
                 }
                 return 1;
-            }
+            },
+            readPublicationPermissions: () => undefined
         });
         const message = newALBroadcastMessage(context.session.sessionId, { topicId: 'app.capture', contextId: 'all', resourceId: 'one' }, 'all', 'test', {}, {
             ttlMs: 100
@@ -155,6 +158,7 @@ describe('required capture at final message admission', () => {
                 rtcCapture: { status: 'unavailable', reason: 'absent' },
                 canFallback: false,
                 payloadIssues: [],
+                access: 'members',
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             })
@@ -231,7 +235,8 @@ describe('required capture at final message admission', () => {
                 deliveries,
                 sessionDeliveries,
                 publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-                nowMs: () => 1
+                nowMs: () => 1,
+                readPublicationPermissions: () => undefined
             });
             const message = newALMulticastMessage(
                 context.session.sessionId,
@@ -251,6 +256,7 @@ describe('required capture at final message admission', () => {
                 rtcCapture,
                 canFallback: true,
                 payloadIssues: [],
+                access: 'members',
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             });

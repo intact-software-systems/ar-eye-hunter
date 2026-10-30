@@ -3,6 +3,7 @@ import type { RallarMessagesOperations } from '@shared-web/browser/messages/rall
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { throwIfRallarValidationIssues } from '@shared-web/browser/rooms/rallar-room-validation.ts';
+import type { GroupTopologyReadThroughOutcome } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
@@ -28,7 +29,7 @@ export interface CreateRoomSessionInput {
     readonly refreshRoom: (
         roomRef: GroupRef,
         input?: RallarScopedOperationOptions
-    ) => Promise<unknown>;
+    ) => Promise<GroupTopologyReadThroughOutcome | undefined>;
     readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
 }
 
@@ -87,7 +88,13 @@ function toRoomSessionMessageDefinition(
     roomRef: GroupRef
 ): RallarRoomMessageChannelDefinition {
     if (typeof input === 'string') {
-        return { topicId: `room.${input}`, typeId: `room.${input}.v1`, roomRef, purpose: 'notification' };
+        return {
+            topicId: `room.${input}`,
+            typeId: `room.${input}.v1`,
+            roomRef,
+            purpose: 'notification',
+            access: 'members'
+        };
     }
     const issues: RallarValidationIssue[] = [];
     if (input.roomId && input.roomId !== roomRef.groupId) {
@@ -110,6 +117,7 @@ function toRoomSessionMessageDefinition(
         typeId: input.typeId,
         roomRef,
         purpose: input.purpose,
+        access: input.access,
         ...(input.durability === undefined ? {} : { durability: input.durability }),
         ...(input.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: input.onStorageUnavailable })
     };

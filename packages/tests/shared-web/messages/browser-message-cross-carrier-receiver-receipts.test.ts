@@ -552,7 +552,8 @@ function createReceiptLoopOrigin(
         deliveries: owners.registry,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => undefined
     });
     const message = createReceiptLoopMessage(expectation);
     const delivery: BrowserRallarMessageDispatch.Delivery = {
@@ -563,6 +564,7 @@ function createReceiptLoopOrigin(
         message,
         canFallback: true,
         payloadIssues: [],
+        access: 'members',
         onStorageUnavailable: 'refuse',
         publication: undefined
     };

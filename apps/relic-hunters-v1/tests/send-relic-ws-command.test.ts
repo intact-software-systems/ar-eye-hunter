@@ -51,6 +51,7 @@ describe('a Relic command to the server (D57 as applied, D72)', () => {
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command,
             purpose: 'command',
+            access: 'members',
             roomId: 'room-42',
             durability: 'local-checkpoint',
             onStorageUnavailable: 'refuse'

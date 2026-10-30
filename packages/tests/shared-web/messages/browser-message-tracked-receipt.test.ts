@@ -400,6 +400,28 @@ describe('the claim of an exclusive room send reaches its handle', () => {
         });
     });
 
+    it('ends a granted-topic send rejected by the server\'s no-publish-grant refusal after its admitted receipt, terminal', async () => {
+        const { ws, harness } = await createExclusiveWsLeg();
+        const handle = harness.send(createGrantedTopicSend());
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+        await ws.acceptIncomingMessage(createServerReceipt({
+            msgId: handle.msgId,
+            phase: 'admitted',
+            expectedRecipientPeerIds: ['b'],
+            confirmedRecipientPeerIds: [],
+            nowMs: Date.now
+        }));
+
+        await ws.acceptIncomingMessage(createServerNack(handle.msgId, 'no-publish-grant', Date.now));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('rejected');
+        expect(isALDeliveryTerminal(handle.lifecycle())).toBe(true);
+        expect(handle.lifecycle().evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'no-publish-grant' }
+        });
+    });
+
     it('keeps a receipt-less exclusive send transport-accepted and carries the server\'s held-by-other refusal as evidence', async () => {
         const { ws, harness } = await createExclusiveWsLeg();
         const handle = harness.send(createExclusiveSend('none'));
@@ -468,6 +490,16 @@ function createExclusiveSend(ack: 'receiver' | 'none'): ALMessage {
         reliability: 'at-least-once',
         ack,
         ownership: 'exclusive',
+        ttlMs: TTL_MS
+    });
+}
+
+/** A receipted room publication on a topic the server enforces publication grants on. */
+function createGrantedTopicSend(): ALMessage {
+    return newALBroadcastMessage(SESSION_ID, toRoute('feed-1'), 'room', 'chat.message.v1', { text: 'feed' }, {
+        groupRef: ORIGIN_ROOM,
+        reliability: 'at-least-once',
+        ack: 'receiver',
         ttlMs: TTL_MS
     });
 }
@@ -559,7 +591,8 @@ function createDispatchHarness(
         deliveries: registry,
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPublicationPermissions: () => undefined
     });
     const canFallback = admits.ws !== undefined && admits.rtc !== undefined;
     return {
@@ -574,6 +607,7 @@ function createDispatchHarness(
                 message,
                 canFallback,
                 payloadIssues: [],
+                access: 'members',
                 onStorageUnavailable: 'refuse',
                 publication: undefined
             });

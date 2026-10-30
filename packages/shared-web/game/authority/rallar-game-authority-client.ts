@@ -262,7 +262,8 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 typeId: input.typeId,
                 roomId: room.roomRef ? undefined : room.roomId,
                 roomRef: room.roomRef,
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
             .sendWs(envelope, {
                 resourceId: input.options.key,
@@ -320,7 +321,8 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 typeId,
                 roomId: room.roomRef ? undefined : room.roomId,
                 roomRef: room.roomRef,
-                purpose: 'notification'
+                purpose: 'notification',
+                access: 'members'
             })
             .sendRtc(envelope, {
                 reliability: 'best-effort',
