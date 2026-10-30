@@ -78,13 +78,13 @@ export interface PublicResultReceiptIdentity {
     readonly eventId?: string | null;
 }
 
-/** True exactly when the decoded result is a JSON object whose snapshot and event match the receipt. */
+/** The caller holds the parsed result as a record; it is decoded here before any field is compared. */
 export function publicResultIdentityMatches(
-    resultValue: unknown,
+    resultValue: object,
     receipt: PublicResultReceiptIdentity,
     kind: 'client' | 'group',
     commandType?: string
-): resultValue is ApiJsonObject {
+): boolean {
     const result = decodeJsonRecord(resultValue);
     const written = decodeJsonRecord(result?.result);
     const snapshot = decodeJsonRecord(written?.snapshot);

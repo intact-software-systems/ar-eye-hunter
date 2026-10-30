@@ -164,6 +164,7 @@ describe.each(['memory', 'postgres'] as const)('group publication grant rows (%s
             expect(await findGrantRow(fixture, 'bob')).toBeUndefined();
             expect(after.group.snapshotVersion).toBe(before.group.snapshotVersion + 3);
             expect(after.group.rosterVersion).toBe(before.group.rosterVersion);
+            expect(after.group.metadataVersion).toBe(before.group.metadataVersion);
             expect(events.filter((event) => event.eventType === 'publication-grant-changed')).toHaveLength(3);
         });
     }, 30_000);

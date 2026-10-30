@@ -1,5 +1,5 @@
-import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { readGroupStateAuthorityBatch } from '@shared-server/rallar-system/group-state/persistence/read-group-state-authority.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -9,10 +9,8 @@ import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import {
     applyPublicationMutation,
-    computeDescriptorMutation,
     GRANT_ROOM,
     readGrantRow,
-    requireWrite,
     seedGrantRoom,
     type PublicationDescriptorInput
 } from '../mutation/group-publication-grant-test-runtime.ts';
@@ -57,26 +55,17 @@ describe('group publication grant convergence', () => {
     it('a grant racing a leave converges to a left member with no grant row', async () => {
         const runtime = await seededRoom();
         const leaveRequest = { status: 'left', actorPrincipalId: 'bob', requestId: 'leave-bob-racing-a-grant' } as const;
-        const staleLeave = await computeDescriptorMutation(
-            runtime,
-            'bob',
-            mutationDescriptor({
-                operation: 'upsertMember',
-                scope: SCOPE,
-                groupId: GRANT_ROOM,
-                targetPrincipalId: 'bob',
-                request: leaveRequest
-            })
-        );
-        expect(staleLeave.read.targetPublicationGrant).toBeNull();
+        const heldLeave = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
+        const leave = createService(runtime, 3_000).upsertMember(SCOPE, GRANT_ROOM, 'bob', leaveRequest);
+        void leave.catch(() => undefined);
+        await heldLeave.firstArrival;
 
         await applyPublicationMutation(runtime, BOB_PUBLISH);
-        const write = requireWrite(staleLeave.computed);
-        expect(write.publicationGrantEffects).toEqual([]);
-        const result = await runtime.begin(async (transaction) => await transaction.writeGuardedBatch(write.persistence.guardedBatch));
-        expect(result.guard.status).toBe('conflict');
-        expect(await readGrantRow(runtime, 'bob')).toBeDefined();
+        heldLeave.release();
 
+        // The leave read no grant row; the grant's snapshotVersion bump makes its group-row CAS miss.
+        await expect(leave).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(await readGrantRow(runtime, 'bob')).toBeDefined();
         await createService(runtime, 3_000, 2).upsertMember(SCOPE, GRANT_ROOM, 'bob', leaveRequest);
         const snapshot = await createTestGroupStateRepository(runtime).readSnapshot(groupRef(GRANT_ROOM));
         expect(snapshot?.members.find((member) => member.principalId === 'bob')).toMatchObject({ status: 'left' });

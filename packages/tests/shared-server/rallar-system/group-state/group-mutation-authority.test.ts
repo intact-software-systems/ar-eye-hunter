@@ -55,22 +55,10 @@ describe('group mutation ingress capture', () => {
     it('grantGroupPublication and revokeGroupPublication run end to end through processAuthenticated', async () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         await createRoom(harness, 'publication-room', 'Publication room');
-        await processPublicationCommand(harness, {
-            type: AppInboxType.GROUP_JOIN,
-            principalId: null,
-            requestId: 'publication-join-bob'
-        });
+        await joinPublicationRoom(harness, 'bob');
 
-        const granted = await processPublicationCommand(harness, {
-            type: AppInboxType.GROUP_PUBLICATION_GRANT,
-            principalId: 'bob',
-            requestId: 'publication-grant-bob'
-        });
-        const revoked = await processPublicationCommand(harness, {
-            type: AppInboxType.GROUP_PUBLICATION_REVOKE,
-            principalId: 'bob',
-            requestId: 'publication-revoke-bob'
-        });
+        const granted = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob');
+        const revoked = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_REVOKE, 'bob');
 
         expect(granted.left, JSON.stringify(granted.left)).toBeUndefined();
         expect(revoked.left, JSON.stringify(revoked.left)).toBeUndefined();
@@ -83,59 +71,58 @@ describe('group mutation ingress capture', () => {
     });
 });
 
-interface PublicationCommandCase {
-    readonly type:
-        | typeof AppInboxType.GROUP_JOIN
-        | typeof AppInboxType.GROUP_PUBLICATION_GRANT
-        | typeof AppInboxType.GROUP_PUBLICATION_REVOKE;
-    readonly principalId: string | null;
-    readonly requestId: string;
+const PUBLICATION_ROOM_CONTEXT = `${SCOPE.applicationId}:${SCOPE.workspaceId}:publication-room`;
+
+async function joinPublicationRoom(harness: AuthorityHarness, principalId: string) {
+    const member = harness.sessions[principalId];
+    const requestId = `publication-join-${principalId}`;
+    return await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: member,
+        input: {
+            traceId: 'trace-test-fixture',
+            type: AppInboxType.GROUP_JOIN,
+            resourceId: requestId,
+            contextId: PUBLICATION_ROOM_CONTEXT,
+            senderId: member.clientId,
+            data: {
+                scope: SCOPE,
+                groupId: 'publication-room',
+                request: { actorPrincipalId: principalId, actorSessionId: member.sessionId, requestId }
+            }
+        }
+    });
 }
 
-async function processPublicationCommand(harness: AuthorityHarness, testCase: PublicationCommandCase) {
-    const base = {
-        traceId: 'trace-test-fixture',
-        resourceId: testCase.requestId,
-        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:publication-room`
-    };
-    if (testCase.type === AppInboxType.GROUP_JOIN || testCase.principalId === null) {
-        const bob = harness.sessions.bob;
-        return await processAuthenticated({
-            service: harness.service,
-            reader: harness.reader,
-            authority: bob,
-            input: {
-                ...base,
-                type: AppInboxType.GROUP_JOIN,
-                senderId: bob.clientId,
-                data: {
-                    scope: SCOPE,
-                    groupId: 'publication-room',
-                    request: { actorPrincipalId: 'bob', actorSessionId: bob.sessionId, requestId: testCase.requestId }
-                }
-            }
-        });
-    }
+async function processPublicationCommand(
+    harness: AuthorityHarness,
+    type: typeof AppInboxType.GROUP_PUBLICATION_GRANT | typeof AppInboxType.GROUP_PUBLICATION_REVOKE,
+    principalId: string
+) {
     const owner = harness.sessions.owner;
+    const requestId = `${type}-${principalId}`;
     return await processAuthenticated({
         service: harness.service,
         reader: harness.reader,
         authority: owner,
         input: {
-            ...base,
-            type: testCase.type,
+            traceId: 'trace-test-fixture',
+            type,
+            resourceId: requestId,
+            contextId: PUBLICATION_ROOM_CONTEXT,
             senderId: owner.clientId,
             data: {
                 scope: SCOPE,
                 groupId: 'publication-room',
-                principalId: testCase.principalId,
+                principalId,
                 request: {
                     topicId: 'room.feed',
                     publish: true,
                     subscribe: false,
                     actorPrincipalId: 'owner',
                     actorSessionId: owner.sessionId,
-                    requestId: testCase.requestId
+                    requestId
                 }
             }
         }

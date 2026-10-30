@@ -23,6 +23,7 @@ import {
 import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { toRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -330,7 +331,7 @@ describe('GroupStateService mutation exact reads', () => {
         ]);
     });
 
-    it('leave, remove and ban read the target grant row; join and role changes do not', async () => {
+    it('grant, revoke, leave, remove and ban read the target grant row; join and role changes do not', async () => {
         const { runtime, service } = await createSeededService('grant-scope');
         const ref = { ...SCOPE, groupId: 'grant-scope' };
         const grantSelectorsOf = async (mutate: () => Promise<GroupStateWritten>) => {
@@ -350,6 +351,11 @@ describe('GroupStateService mutation exact reads', () => {
         expect(
             await grantSelectorsOf(() => service.setGroupMemberRole(SCOPE, ref.groupId, 'bob', { role: 'admin', actorPrincipalId: 'owner' }))
         ).toEqual([]);
+        const feed = { topicId: 'room.feed', publish: true, subscribe: false, actorPrincipalId: 'owner' };
+        expect(await grantSelectorsOf(() => service.grantGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
+            .toEqual([grantSelector('bob')]);
+        expect(await grantSelectorsOf(() => service.revokeGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
+            .toEqual([grantSelector('bob')]);
         expect(
             await grantSelectorsOf(() => service.upsertMember(SCOPE, ref.groupId, 'bob', { status: 'left', actorPrincipalId: 'bob' }))
         ).toEqual([grantSelector('bob')]);
@@ -363,7 +369,7 @@ describe('GroupStateService mutation exact reads', () => {
         ).toEqual([grantSelector('carol')]);
     });
 
-    it('the sequential read loads the target grant row only for a departure', async () => {
+    it('the sequential read loads the target grant row for a grant command and a departure, never for a join', async () => {
         const { runtime, service } = await createSeededService('grant-sequential');
         const ref = { ...SCOPE, groupId: 'grant-sequential' };
         await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
@@ -383,8 +389,10 @@ describe('GroupStateService mutation exact reads', () => {
 
         const leave = await readSequentialGroupMutation({ repository, command: leaveCommand(ref, 'bob'), lifecyclePolicy: null });
         const join = await readSequentialGroupMutation({ repository, command: joinCommand(ref, 'bob'), lifecyclePolicy: null });
+        const revoke = await readSequentialGroupMutation({ repository, command: revokeCommand(ref, 'bob'), lifecyclePolicy: null });
 
         expect(leave.targetPublicationGrant?.value).toEqual(grant);
+        expect(revoke.targetPublicationGrant?.value).toEqual(grant);
         expect(join.targetPublicationGrant).toBeNull();
     });
 
@@ -490,6 +498,27 @@ function joinCommand(
             inviteToken: null,
             joinCode: null,
             actorPrincipalId: principalId,
+            actorSessionId: null,
+            reason: null
+        }
+    };
+}
+
+function revokeCommand(
+    aggregateRef: Readonly<StateScope & { groupId: string; }>,
+    principalId: string
+): GroupMutationCommand {
+    return {
+        operation: 'revokeGroupPublication',
+        aggregateRef,
+        commandId: `revoke-${principalId}`,
+        requestId: `revoke-${principalId}`,
+        targetPrincipalId: principalId,
+        input: {
+            topicId: toRallarWsUserTopicId('room.feed'),
+            publish: true,
+            subscribe: false,
+            actorPrincipalId: 'owner',
             actorSessionId: null,
             reason: null
         }

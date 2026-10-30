@@ -4,7 +4,7 @@ import {
 } from '@shared/api/group-director.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
-import { toRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type {
     CreateGroupRequest,
     JoinGroupRequest,
@@ -259,7 +259,8 @@ export function toPublicationMutationCommand(
         targetPrincipalId: requireTargetPrincipalId(descriptor),
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: {
-            topicId: toRallarWsUserTopicId(request.topicId),
+            // Unchecked here: assertGroupMutationCommand refuses an invalid id as a TypeError before any compute.
+            topicId: request.topicId as RallarWsUserTopicId,
             publish: request.publish,
             subscribe: request.subscribe,
             ...toGroupMutationActorInput(request)

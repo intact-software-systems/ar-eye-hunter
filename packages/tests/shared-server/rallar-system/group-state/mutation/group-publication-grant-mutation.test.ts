@@ -270,6 +270,23 @@ describe('group publication grant mutation', () => {
         await expectPolicyDenial(expiring, BOB_PUBLISH, 'group-not-active', 3_000);
     });
 
+    // A route maps a TypeError to 400; any other error at capture would answer 500.
+    it('a reserved or prefix-less topic id is refused with a TypeError at capture', async () => {
+        const runtime = await seededRoom();
+        for (const topicId of ['rallar.feed', 'feed']) {
+            const grant = createService(runtime, 3_000).grantGroupPublication(SCOPE, GRANT_ROOM, 'bob', {
+                topicId,
+                publish: true,
+                subscribe: false,
+                actorPrincipalId: 'alice',
+                requestId: `grant-bob-${topicId}`
+            });
+            await expect(grant, topicId).rejects.toBeInstanceOf(TypeError);
+            await expect(grant, topicId).rejects.toThrow(/topicId is invalid/);
+        }
+        expect(await readGrantRow(runtime, 'bob')).toBeUndefined();
+    });
+
     it('validate refuses a computed grant whose permissions were altered', async () => {
         const runtime = await seededRoom();
         const { service, command, read, computed } = await computePublicationMutation(runtime, BOB_PUBLISH);
