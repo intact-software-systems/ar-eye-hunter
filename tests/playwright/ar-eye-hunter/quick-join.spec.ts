@@ -245,7 +245,11 @@ function installAnimationFrameGate(): void {
     });
 }
 
-roomBrowserTest('a local player does not appear as a remote avatar without a session', async ({ page }) => {
+roomBrowserTest('director canvas shot fixture does not render the local player as a remote avatar without a session', async ({ page }) => {
+    roomBrowserTest.skip(
+        process.env.RALLAR_ARENA_FULL_STACK === '1',
+        'Component integration uses the Vite source server.'
+    );
     const fixturePath =
         new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url).pathname;
     await page.goto(`/@fs${fixturePath}`);
