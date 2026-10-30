@@ -1,4 +1,5 @@
 {
+  "nodeModulesDir": "manual",
   "imports": {
     "@shared-test/": "../shared-test/",
     "@shared-server/": "../shared-server/",
