@@ -61,11 +61,19 @@ async function commitMoveWithNetworkRecovery(
     expect(faults.lostCommitResponses()).toBeGreaterThan(0);
     await guest.context().setOffline(false);
     await guestMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
-    await expect(guestMove.getByRole('alert')).toContainText('403');
+    // Network restoration can precede the replacement socket opening. Exercise the visible retry
+    // until entry reaches the injected HTTP denial; a connection error alone does not prove that fault.
+    const retryEntry = guestMove.getByRole('button', { name: 'Retry destination entry', exact: true });
+    await expect(retryEntry).toBeEnabled();
+    await expect(async () => {
+        await retryEntry.click({ timeout: 1000 });
+        await expect(guestMove.getByRole('alert')).toContainText('403', { timeout: 1000 });
+    }).toPass({ timeout: 15000 });
+    expect(faults.deniedPresenceRequests()).toBeGreaterThan(0);
     await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(guestMove).toContainText('1 of 2 arrived');
     await guest.unroute(faults.destinationPresence);
-    await guestMove.getByRole('button', { name: 'Retry destination entry', exact: true }).click();
+    await retryEntry.click();
     for (const page of [host, guest]) {
         await expect(page.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
         await expect(page.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText(
@@ -145,7 +153,7 @@ async function playInDestination(host: Page, guest: Page, game: 'arena' | 'relic
     }
 }
 
-function groupId(link: string): string {
+function toGroupId(link: string): string {
     const id = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
     if (!id) {
         throw new Error('Room sharing did not expose a group identity');
@@ -224,10 +232,10 @@ async function prepareMoveRooms(
     const link = host.getByLabel('Room link', { exact: true });
     await expect(link).toHaveValue(/#rallar-room\?/);
     const destinationLink = await link.inputValue();
-    const destination = groupId(destinationLink);
+    const destination = toGroupId(destinationLink);
     await create.click();
     await expect(link).not.toHaveValue(destinationLink);
-    const source = groupId(await link.inputValue());
+    const source = toGroupId(await link.inputValue());
     await guest.getByLabel('Room reference', { exact: true }).fill(source);
     if (participation === 'spectator') {
         await guest.getByRole('combobox', { name: 'Participation', exact: true }).selectOption('spectator');
@@ -255,9 +263,11 @@ async function interceptMoveActivation(host: Page, guest: Page, destination: str
         await route.abort('connectionreset');
     });
     // Admission succeeds for both players even though one browser cannot establish destination presence.
+    let deniedPresenceRequests = 0;
     const destinationPresence = new RegExp(`/groups/${destination}/sessions/`);
     await guest.route(destinationPresence, async (route) => {
         if (route.request().method() === 'PUT') {
+            deniedPresenceRequests++;
             await route.fulfill({
                 status: 403,
                 contentType: 'text/plain',
@@ -268,7 +278,11 @@ async function interceptMoveActivation(host: Page, guest: Page, destination: str
             await route.continue();
         }
     });
-    return { lostCommitResponses: () => lostCommitResponses, destinationPresence };
+    return {
+        lostCommitResponses: () => lostCommitResponses,
+        deniedPresenceRequests: () => deniedPresenceRequests,
+        destinationPresence
+    };
 }
 
 async function registerDifferentAccount(page: Page): Promise<void> {
