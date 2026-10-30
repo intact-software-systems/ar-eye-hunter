@@ -42,7 +42,15 @@
       "npm:@ar-eye-hunter/shared-web@0.1.0": {
         "dependencies": [
           "npm:@js-temporal/polyfill@~0.5.1"
-        ]
+        ],
+        "peerDependencies": [
+          "npm:react@^19.2.7"
+        ],
+        "peerDependenciesMeta": {
+          "react": {
+            "optional": true
+          }
+        }
       },
       "npm:ar-eye-hunter-v1@0.1.0": {
         "dependencies": [
