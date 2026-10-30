@@ -64,7 +64,8 @@ const MEMBERS_PUBLICATION = {
 const AUDIENCE: RallarServerWsRoomAudience = {
     targets: NOTIFICATION.targets!,
     sessions: [liveSession('b'), liveSession('c')],
-    snapshotVersion: 4
+    snapshotVersion: 4,
+    recipientConnectionGenerationIds: {}
 };
 
 describe('the audience a server or proxy publish is frozen to', () => {

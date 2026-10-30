@@ -21,6 +21,7 @@ export function computeRtcExclusiveRefusal(
             dropReason: 'RTC cannot arbitrate an exclusive claim: an exclusive send is unsupported',
             dropReasonCode: 'unsupported',
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         });
 }

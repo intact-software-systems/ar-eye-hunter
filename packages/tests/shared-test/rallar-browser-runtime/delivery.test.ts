@@ -417,7 +417,13 @@ it('observes a retained pending admission without storage reads and wakes on the
         stores,
         carrier: 'ws',
         settlements: (settlement) => fixture.registry.record(settlement),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ kind: 'send' }],
+            admittedConnectionGenerationIds: undefined
+        }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();

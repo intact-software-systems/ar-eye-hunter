@@ -51,7 +51,8 @@ const planOutgoingMessage: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     dropReasonCode: undefined,
     lane: 'durable',
     preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-    repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
+    repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
+    admittedConnectionGenerationIds: undefined
 });
 
 async function planRepairMessage(msg: ALMessage): Promise<ALOutboundDispatchPlan<OutboundTestPayload>> {
@@ -59,7 +60,8 @@ async function planRepairMessage(msg: ALMessage): Promise<ALOutboundDispatchPlan
         msg,
         dropReasonCode: undefined,
         lane: 'durable',
-        preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
+        preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }],
+        admittedConnectionGenerationIds: undefined
     };
 }
 

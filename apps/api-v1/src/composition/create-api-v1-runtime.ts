@@ -498,7 +498,8 @@ function createSharedMiddleware(
                 }),
                 grantedTopics: input.grantedTopics,
                 serverPeerId: input.wsRuntimeName,
-                readCurrentSnapshot: (ref) => mutation.groupStateService.readCurrentSnapshot(ref),
+                readPublicationAuthority: (ref, topicId) =>
+                    mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
                 nowEpochMs: input.nowEpochMs()
             }),
         inboundStores,

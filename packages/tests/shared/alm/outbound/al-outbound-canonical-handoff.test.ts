@@ -106,7 +106,7 @@ describe('the canonical hand-off bound', () => {
             message: createOutboundMessage('bounded'),
             creationNow: () => Temporal.Now.instant(),
             clock: { nowMs: () => Date.now() },
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: peers })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: peers, admittedConnectionGenerationIds: undefined })
         });
         const sends = bundle.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared');
         expect(sends).toHaveLength(AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT + 1);

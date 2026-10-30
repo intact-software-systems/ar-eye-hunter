@@ -214,7 +214,8 @@ function createTwoTabSession(
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ transport: 'ws', msgId: msg.id.msgId }]
+                preparedMessages: [{ transport: 'ws', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async (prepared) => {
                 attempts.push({ tab, msgId: prepared.msgId! });

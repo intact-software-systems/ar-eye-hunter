@@ -183,6 +183,10 @@ async function invokeStateReadOperations(
         presenceRevision: 0
     });
     await expect(runtime.durable.readGroupSessionTopicSubscriptions(ref, 'owner-session')).resolves.toEqual([]);
+    await expect(runtime.durable.readGroupTopicSubscriptionAuthority(snapshot, 'room.timing')).resolves.toEqual({
+        subscriptions: [],
+        liveSessionGenerations: {}
+    });
     await expect(runtime.durable.readIssuedAuthSession('owner-session')).resolves.toMatchObject({
         clientId: 'owner',
         sessionId: 'owner-session'
@@ -207,6 +211,7 @@ function expectTimingInventory(timingEvents: readonly RallarTimingEvent[]): void
         'readSnapshot',
         'readCausalRevision',
         'readGroupSessionTopicSubscriptions',
+        'readGroupTopicSubscriptionAuthority',
         'readIssuedAuthSession',
         'listEvents',
         'listRecentEvents',
@@ -363,6 +368,7 @@ const SCOPE_TIMING_OPERATIONS: ReadonlySet<TimedAsyncOperation> = new Set([
     'readSnapshot',
     'readCausalRevision',
     'readGroupSessionTopicSubscriptions',
+    'readGroupTopicSubscriptionAuthority',
     'listEvents',
     'listRecentEvents',
     'listEventPage'

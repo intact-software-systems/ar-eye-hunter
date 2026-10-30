@@ -198,6 +198,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             ? applyALOutboundCapturedPolicy(
                 planner(msg, {
                     admittedAudience: stored.policy.admittedAudience,
+                    admittedConnectionGenerationIds: stored.policy.admittedConnectionGenerationIds,
                     recipientScope: stored.policy.recipientScope,
                     principalTargetId: stored.policy.principalTargetId,
                     sessionInvalidation: stored.policy.sessionInvalidation,

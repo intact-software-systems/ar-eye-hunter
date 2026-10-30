@@ -64,7 +64,8 @@ describe('director command browser storage volume (D60, D87)', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: resolveALOutboundStoreDurability(normalizeALQosPolicy(msg).effective.durability.algo),
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');

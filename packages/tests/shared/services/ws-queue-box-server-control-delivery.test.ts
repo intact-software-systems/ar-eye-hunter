@@ -168,7 +168,7 @@ function createHandOffFixture(): HandOffFixture {
         decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
         stores,
         nowMs: () => HAND_OFF_NOW_MS,
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const delivery = new WsQueueBoxServerControlDelivery({

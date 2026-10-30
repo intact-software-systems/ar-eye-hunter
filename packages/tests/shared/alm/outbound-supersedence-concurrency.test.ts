@@ -103,7 +103,8 @@ describe('outbound shared supersedence decisions', () => {
                 dropReasonCode: undefined,
                 lane: 'volatile',
                 preparedMessages: [],
-                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
+                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' },
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -152,7 +153,8 @@ async function readDecision(input: ReadSupersedenceDecisionInput): Promise<ALOut
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ text: input.message.id.msgId }],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: input.supersedenceKey ?? 'shared-topic' }
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: input.supersedenceKey ?? 'shared-topic' },
+            admittedConnectionGenerationIds: undefined
         }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'

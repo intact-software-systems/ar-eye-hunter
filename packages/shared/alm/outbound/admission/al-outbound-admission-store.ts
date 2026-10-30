@@ -103,6 +103,8 @@ export type ALOutboundPreparedMessageDecoder<TPrepared> = (
 export interface ALOutboundPlanningAuthority {
     readonly sessionInvalidation: ALOutboundDequeueAuthority['sessionInvalidation'] | undefined;
     readonly admittedAudience: readonly string[] | undefined;
+    /** The captured generations of a granted topic's row; undefined for every other row. */
+    readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
     readonly recipientScope: StateScope | undefined;
     readonly principalTargetId: string | undefined;
     readonly referenceKey: Key | undefined;

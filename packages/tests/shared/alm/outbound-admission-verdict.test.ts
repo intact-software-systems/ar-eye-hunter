@@ -40,7 +40,8 @@ describe('outbound admission verdict', () => {
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ resourceId: 'first-attempt' }]
+                preparedMessages: [{ resourceId: 'first-attempt' }],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -67,7 +68,8 @@ describe('outbound admission verdict', () => {
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ resourceId: 'first-attempt' }]
+                preparedMessages: [{ resourceId: 'first-attempt' }],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -92,7 +94,7 @@ describe('outbound admission verdict', () => {
         const message = createOutboundMessage('verdict-no-route');
         const read = await store.readOutgoingMessage({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
             observedCanonicalEntry: undefined,
             intent: 'dequeue'
         });
@@ -118,7 +120,7 @@ describe('outbound admission verdict', () => {
         const message = createOutboundMessage('verdict-expired', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -145,7 +147,8 @@ describe('outbound admission verdict', () => {
                 dropReason: 'Sender is not a room member',
                 dropReasonCode: 'unauthorized',
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -177,7 +180,8 @@ describe('outbound admission verdict', () => {
                 dropReason: 'The session is over its volatile bound.',
                 dropReasonCode: 'capacity',
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -211,7 +215,8 @@ describe('outbound admission verdict', () => {
                 dropReasonCode: 'capacity',
                 capacityLimit: 'tracks',
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -245,7 +250,8 @@ describe('outbound admission verdict', () => {
                 dropReasonCode: 'congested',
                 congestionDrop: { cause: 'backpressured', priority: 0 },
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -278,7 +284,8 @@ describe('outbound admission verdict', () => {
                 dropReason: 'Awaiting room snapshot authority',
                 dropReasonCode: 'not-yet-in-sync',
                 lane: 'volatile',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -307,7 +314,8 @@ describe('outbound admission verdict', () => {
             msg: message,
             dropReasonCode: undefined,
             lane: 'durable' as const,
-            preparedMessages: [] as readonly OutboundTestPayload[]
+            preparedMessages: [] as readonly OutboundTestPayload[],
+            admittedConnectionGenerationIds: undefined
         });
         const commitInput = { msg: message, planner, intent: 'enqueue' as const, phase: 'immediate' as const, origin: 'send' as const, options: {} };
 
@@ -330,7 +338,8 @@ describe('outbound admission verdict', () => {
             dropReasonCode: undefined,
             lane: 'durable' as const,
             preparedMessages: [] as readonly OutboundTestPayload[],
-            supersedenceTracking
+            supersedenceTracking,
+            admittedConnectionGenerationIds: undefined
         });
 
         const first = await admission.commit({
@@ -410,7 +419,8 @@ function toSupersedingCommit(
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'verdict-slot', replacesMsgId }
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'verdict-slot', replacesMsgId },
+            admittedConnectionGenerationIds: undefined
         }),
         intent,
         phase: intent === 'enqueue' ? 'immediate' : 'dequeue',

@@ -24,6 +24,7 @@ export function computeALOutboundOrderingRefusal<TPrepared>(
             dropReason: `A local-checkpoint send cannot carry sequence ${msg.ordering.seq}`,
             dropReasonCode: 'unsupported',
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         });
 }

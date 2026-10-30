@@ -28,7 +28,7 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
                 dequeueAuthority: { admittedAudience: ['carol', 'bob'], recipientScope: undefined },
                 planner: (msg, authority) => {
                     planned.push(authority);
-                    return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };
+                    return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [], admittedConnectionGenerationIds: undefined };
                 }
             },
             undefined,
@@ -53,7 +53,7 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
                 dequeueAuthority: { admittedAudience: ['bob'], recipientScope: undefined },
                 planner: (msg, authority) => {
                     planned.push(authority);
-                    return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };
+                    return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [], admittedConnectionGenerationIds: undefined };
                 }
             },
             undefined,

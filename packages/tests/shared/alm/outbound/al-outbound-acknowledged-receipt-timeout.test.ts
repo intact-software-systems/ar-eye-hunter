@@ -164,7 +164,8 @@ async function createReceiptedSendFixture(
             lane: 'durable',
             preparedMessages: [{ kind: 'send' }],
             ackTracking,
-            retryTracking: { enabled: true, maxAttempts: 3 }
+            retryTracking: { enabled: true, maxAttempts: 3 },
+            admittedConnectionGenerationIds: undefined
         }),
         sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
             // The dispatching batch reports its drain only when it ends, so the next drain is its own.

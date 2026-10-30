@@ -243,6 +243,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             principalTargetId: plan.principalTargetId,
             sessionInvalidation: plan.sessionInvalidation,
             admittedAudience: plan.admittedAudience,
+            admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds,
             referenceKey: read.storedMessage?.reference.key
         });
     }
@@ -271,6 +272,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 principalTargetId: plan.principalTargetId,
                 sessionInvalidation: plan.sessionInvalidation,
                 admittedAudience: plan.admittedAudience,
+                admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds,
                 referenceKey: read.storedMessage?.reference.key,
                 failedPeerIds: toFailedPeerIds(pending),
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),

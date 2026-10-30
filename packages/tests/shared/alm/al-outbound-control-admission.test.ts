@@ -508,7 +508,13 @@ describe('outbound control admission identity', () => {
             stores: { admissionStore, workQueue },
             decodePreparedMessage: decodeALOutboundTransportMessage,
             // The admitted policy carries the retry budget; the planner only re-plans the stored message.
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
@@ -531,7 +537,13 @@ describe('outbound control admission identity', () => {
             // An engine the runtime does not own never ticks, so a claim proves the commit woke a batch.
             queueEngine: new InboxOutboxEngine(),
             decodePreparedMessage: decodeALOutboundTransportMessage,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
@@ -601,7 +613,8 @@ describe('outbound control admission identity', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: []
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -992,7 +1005,7 @@ async function seedReceiptlessRoomObligation(
         message: msg,
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
-        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
     });
     await admissionStore.commitBundle(admission);
 }
@@ -1013,7 +1026,7 @@ async function seedReceiptlessUnicastObligation(
         message: msg,
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
-        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
     });
     await admissionStore.commitBundle(admission);
 }
@@ -1047,7 +1060,14 @@ async function seedObligation(
         message: msg,
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
-        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], retryTracking: input.retryTracking })
+        planner: (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [],
+            retryTracking: input.retryTracking,
+            admittedConnectionGenerationIds: undefined
+        })
     });
     await admissionStore.commitBundle({
         ...admission,

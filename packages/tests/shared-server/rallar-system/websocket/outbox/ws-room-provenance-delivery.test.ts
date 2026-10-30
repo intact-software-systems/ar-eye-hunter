@@ -61,7 +61,11 @@ describe('verified direct room row delivery', () => {
             qos: { durability: { algo: 'local-outbox' } }
         });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
-        const winner = await fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['winner-peer'], recipientScope: undefined });
+        const winner = await fixture.service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: ['winner-peer'],
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: undefined
+        });
         expect(winner.verdict.kind).toBe('admitted');
         const authorities: (ALOutboundPlanningAuthority | undefined)[] = [];
         await fixture.stores.admissionStore.readOutgoingMessage({
@@ -71,7 +75,7 @@ describe('verified direct room row delivery', () => {
             dequeueAuthority: { admittedAudience: ['session'], recipientScope: undefined },
             planner: (msg, authority) => {
                 authorities.push(authority);
-                return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };
+                return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [], admittedConnectionGenerationIds: undefined };
             }
         });
         expect(authorities).toEqual([{
@@ -110,7 +114,11 @@ describe('verified direct room row delivery', () => {
         const readProof = fixture.reader.readProducerProvenance.bind(fixture.reader);
         vi.spyOn(fixture.reader, 'readProducerProvenance').mockImplementationOnce(async (message, entry) => {
             const authority = await readProof(message, entry);
-            const winner = await winnerService.enqueueOutboxIfAbsent(message, { admittedAudience: ['session'], recipientScope: undefined });
+            const winner = await winnerService.enqueueOutboxIfAbsent(message, {
+                admittedAudience: ['session'],
+                admittedConnectionGenerationIds: undefined,
+                recipientScope: undefined
+            });
             expect(winner.verdict.kind).toBe('admitted');
             return authority;
         });
@@ -141,7 +149,11 @@ describe('verified direct room row delivery', () => {
             groupRef: ROOM,
             qos: { durability: { algo: 'local-outbox' } }
         });
-        await fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['session'], recipientScope: undefined });
+        await fixture.service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: ['session'],
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: undefined
+        });
         await fixture.engine.executeOnce();
         await expect.poll(() => bridge.published.length).toBe(1);
         expect(fixture.native.get('peer-socket')!.sent).toHaveLength(1);

@@ -41,12 +41,19 @@ describe('AL outbound repair policy', () => {
                 dropReasonCode: undefined,
                 lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                repairTracking: scenario.repair
+                repairTracking: scenario.repair,
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (msg) =>
                 scenario.noCurrentRecipient
                     ? undefined
-                    : { msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
+                    : {
+                        msg: msg,
+                        dropReasonCode: undefined,
+                        lane: 'volatile',
+                        preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }],
+                        admittedConnectionGenerationIds: undefined
+                    },
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
 
@@ -165,7 +172,8 @@ function createRoomSendRuntime(input: RoomSendRuntimeInput) {
             lane: 'volatile',
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
             ackTracking: input.ackTracking,
-            repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 3 }
+            repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
+            admittedConnectionGenerationIds: undefined
         }),
         sendPreparedMessage: async (prepared) => {
             input.sent.push(prepared);

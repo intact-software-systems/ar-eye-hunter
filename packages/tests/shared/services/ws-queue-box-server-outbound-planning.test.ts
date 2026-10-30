@@ -88,7 +88,11 @@ describe('WS server outbound planning', () => {
 
         await service.enqueueOutboxIfAbsent(message);
         expect(
-            (await service.enqueueOutboxIfAbsent(unicast, { admittedAudience: undefined, recipientScope: { applicationId: 'app', workspaceId: 'workspace' } }))
+            (await service.enqueueOutboxIfAbsent(unicast, {
+                admittedAudience: undefined,
+                admittedConnectionGenerationIds: undefined,
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            }))
                 .verdict
         ).toMatchObject({
             kind: 'refused',
@@ -172,7 +176,8 @@ describe('WS server outbound planning', () => {
             message,
             phase: 'dequeue',
             clusterPublisherRegistered: true,
-            admittedAudience: ['a', 'c']
+            admittedAudience: ['a', 'c'],
+            admittedConnectionGenerationIds: undefined
         });
 
         expect(plan.ackTracking).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'] });
@@ -228,7 +233,13 @@ describe('WS server outbound planning', () => {
             { ttlMs: 30_000, orderingKey: 'game-1' }
         );
         const planAt = (phase: 'immediate' | 'dequeue') =>
-            planning.planOutboundMessage({ message, phase, clusterPublisherRegistered: false, admittedAudience: ['b'] });
+            planning.planOutboundMessage({
+                message,
+                phase,
+                clusterPublisherRegistered: false,
+                admittedAudience: ['b'],
+                admittedConnectionGenerationIds: undefined
+            });
 
         expect(planAt('dequeue').mintsSequence).toBeUndefined();
         expect(planAt('immediate').mintsSequence).toBe(true);
@@ -258,7 +269,8 @@ describe('WS server outbound planning', () => {
             message,
             phase: 'immediate',
             clusterPublisherRegistered: false,
-            admittedAudience: undefined
+            admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined
         });
 
         expect(plan).toMatchObject({ dropReasonCode: undefined, lane: 'durable', preparedMessages: [] });
@@ -296,7 +308,8 @@ describe('WS server outbound planning', () => {
                 completedHopPeerIds: [],
                 missingRanges: [],
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
-                admittedAudience: ['b']
+                admittedAudience: ['b'],
+                admittedConnectionGenerationIds: undefined
             });
 
         expect(repairRequestedBy('late-joiner')).toBeUndefined();
@@ -329,7 +342,8 @@ describe('WS server outbound planning', () => {
             completedHopPeerIds: [],
             missingRanges: [],
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
-            admittedAudience: ['b', 'c']
+            admittedAudience: ['b', 'c'],
+            admittedConnectionGenerationIds: undefined
         });
 
         expect(repair?.ackTracking).toMatchObject({

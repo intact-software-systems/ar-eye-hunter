@@ -254,7 +254,7 @@ async function publishEvents(
     for (let index = 1; index <= count; index += 1) {
         const result = await server.service.enqueueOutboxIfAbsent(
             roundEvent(`event-${index}`),
-            { admittedAudience: audience, recipientScope: undefined }
+            { admittedAudience: audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
         );
         minted.push(result.message.ordering);
     }

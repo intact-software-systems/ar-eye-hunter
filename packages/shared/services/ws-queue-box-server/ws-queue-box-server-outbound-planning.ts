@@ -105,6 +105,8 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly clusterPublisherRegistered: boolean;
         /** The audience the router admitted the message to, carried beside it; absent for every other message. */
         readonly admittedAudience: readonly string[] | undefined;
+        /** The generations a granted topic's router captured for its admitted sessions; absent for every other message. */
+        readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
         readonly recipientScope?: StateScope;
         readonly principalTargetId?: string;
         readonly sessionInvalidation?: ALSessionInvalidationAuthority;
@@ -146,7 +148,8 @@ export class WsQueueBoxServerOutboundPlanning {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReasonCode: 'unauthorized',
-                dropReason: 'WS message has no verified scoped audience'
+                dropReason: 'WS message has no verified scoped audience',
+                admittedConnectionGenerationIds: undefined
             };
         }
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
@@ -212,6 +215,7 @@ export class WsQueueBoxServerOutboundPlanning {
             repairTracking: toRepairTrackingPlan(normalized.effective),
             supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
             ...(admittedAudience === undefined ? {} : { admittedAudience }),
+            admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
             ...(request.sessionInvalidation === undefined
                 ? {}
                 : { sessionInvalidation: request.sessionInvalidation }),
@@ -273,6 +277,7 @@ export class WsQueueBoxServerOutboundPlanning {
             lane: 'volatile',
             preparedMessages: this.toPreparedRecipients(message, recipients, request),
             admittedAudience: request.admittedAudience,
+            admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
             recipientScope: request.recipientScope,
             principalTargetId: request.principalTargetId,
             sessionInvalidation: request.sessionInvalidation,
@@ -355,7 +360,14 @@ function toNoRouteDispatchPlan(
     message: ALMessage,
     dropReason: string
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { msg: message, dropReason, dropReasonCode: 'no-route', lane: 'volatile', preparedMessages: [] };
+    return {
+        msg: message,
+        dropReason,
+        dropReasonCode: 'no-route',
+        lane: 'volatile',
+        preparedMessages: [],
+        admittedConnectionGenerationIds: undefined
+    };
 }
 
 /**

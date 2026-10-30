@@ -138,7 +138,13 @@ function createPendingAdmissionInput(store: ALOutboundAdmissionStore<OutboundTes
         payload: {
             kind: 'admit-message' as const,
             message: toALOutboundMessageReference(store.canonicalScope, canonicalEntry, message),
-            policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ peer: 'captured' }] }),
+            policy: captureALOutboundPolicy({
+                msg: message,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ peer: 'captured' }],
+                admittedConnectionGenerationIds: undefined
+            }),
             preparedMessages: [{ peer: 'captured' }]
         }
     };

@@ -444,7 +444,8 @@ export async function readOutboundTestAdmission<TPrepared>(
 ): Promise<ALOutboundCommitBundle<TPrepared>> {
     const read = await input.store.readOutgoingMessage({
         msg: input.message,
-        planner: input.planner ?? ((msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })),
+        planner: input.planner ??
+            ((msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });
@@ -526,7 +527,8 @@ export const OUTBOUND_TEST_SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> 
     msg,
     dropReasonCode: undefined,
     lane: 'durable',
-    preparedMessages: [{ peer: 'receiver' }]
+    preparedMessages: [{ peer: 'receiver' }],
+    admittedConnectionGenerationIds: undefined
 });
 
 /**

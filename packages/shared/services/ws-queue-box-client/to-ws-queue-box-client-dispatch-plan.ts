@@ -84,7 +84,8 @@ export function toWsQueueBoxClientDispatchPlan(
                 algo: normalized.effective.repair.algo,
                 maxAttempts: normalized.effective.repair.opts.maxRepairs
             },
-            supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, msg)
+            supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, msg),
+            admittedConnectionGenerationIds: undefined
         })
     );
 }
@@ -110,7 +111,8 @@ function computeCongestionRefusal(
         dropReasonCode: 'congested',
         congestionDrop,
         lane: 'volatile',
-        preparedMessages: []
+        preparedMessages: [],
+        admittedConnectionGenerationIds: undefined
     });
 }
 

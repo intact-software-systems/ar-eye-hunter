@@ -71,7 +71,13 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+            planner: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         onTestFinished(async () => {
             resume.resolve();
@@ -84,7 +90,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
         });
         const winningSnapshot = await store.readSentMessage(message.id.msgId);
         resume.resolve();
@@ -97,7 +103,13 @@ describe('outbound admission observation order', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'changed' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'changed' }],
+                admittedConnectionGenerationIds: undefined
+            }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
                 return { status: 'sent', submissionAttempted: true };
@@ -138,7 +150,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -155,7 +167,7 @@ describe('outbound admission observation order', () => {
         });
         const pending = store.readRepairMessage(
             message.id.msgId,
-            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }], admittedConnectionGenerationIds: undefined })
         );
         onTestFinished(async () => {
             resume.resolve();
@@ -207,7 +219,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -230,7 +242,7 @@ describe('outbound admission observation order', () => {
         });
         const pending = store.readRepairMessage(
             message.id.msgId,
-            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }], admittedConnectionGenerationIds: undefined })
         );
         onTestFinished(async () => {
             resume.resolve();

@@ -70,7 +70,8 @@ export function computeRtcBroadcastScopeRefusal(
             dropReason: `RTC carries room audiences only: a ${targets.scope} broadcast is unsupported`,
             dropReasonCode: 'unsupported',
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         });
 }
 
@@ -157,7 +158,8 @@ export function computeRtcFrozenAudienceRefusal(
                 `RTC room multicast audience of ${recipientCount} recipients exceeds the RTC room limit of ${limit}`,
             dropReasonCode: 'unsupported',
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         });
 }
 
@@ -178,7 +180,8 @@ export function computeRtcLeaderRefusal(
             dropReason: 'no-leader: the room has no active leader inside the audience the send names',
             dropReasonCode: 'no-leader',
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         });
 }
 
@@ -242,6 +245,7 @@ export function toRtcEmptyAudienceDispatchPlan(
         lane: resolveALOutboundStoreDurability(effective.durability.algo),
         msg: plan.msg,
         preparedMessages: [],
-        ackTracking: toRtcAckTrackingPlan(effective, [])
+        ackTracking: toRtcAckTrackingPlan(effective, []),
+        admittedConnectionGenerationIds: undefined
     };
 }

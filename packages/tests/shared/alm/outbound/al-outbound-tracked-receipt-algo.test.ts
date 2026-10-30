@@ -39,7 +39,8 @@ async function readTrackedReceiptAlgo(
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ message: 'frame' }],
-            ackTracking
+            ackTracking,
+            admittedConnectionGenerationIds: undefined
         }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'

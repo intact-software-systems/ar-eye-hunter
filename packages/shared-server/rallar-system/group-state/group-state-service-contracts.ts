@@ -71,6 +71,20 @@ import type {
     GroupReconfigureAppInboxPayload
 } from './inbox/group-state-inbox-contracts.ts';
 
+/** A granted topic's server-only subscription facts, read fresh after the snapshot probe and never cached. */
+export interface GroupTopicSubscriptionAuthority {
+    /** The topic's rows whose lease outlasts the read instant. */
+    readonly subscriptions: readonly GroupTopicSubscription[];
+    /** Each snapshot session's active, unexpired client-state generations; a session with none is absent. */
+    readonly liveSessionGenerations: Readonly<Record<string, readonly string[]>>;
+}
+
+/** What a granted topic's audience is decided on: the probed snapshot and the subscription facts read after it. */
+export interface GroupPublicationAuthority extends GroupTopicSubscriptionAuthority {
+    /** The probed snapshot, unchanged. */
+    readonly snapshot: GroupSnapshot;
+}
+
 export interface GroupWritten {
     readonly snapshot: GroupSnapshot;
     readonly event: GroupEvent;
@@ -262,6 +276,11 @@ export type GroupStateService =
             ref: GroupRef,
             sessionId: string
         ): Promise<readonly GroupTopicSubscription[]>;
+        /** A granted topic's subscription rows and its candidates' live generations, read fresh after the snapshot. */
+        readGroupTopicSubscriptionAuthority(
+            snapshot: GroupSnapshot,
+            topicId: string
+        ): Promise<GroupTopicSubscriptionAuthority>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
         listRecentEvents(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;

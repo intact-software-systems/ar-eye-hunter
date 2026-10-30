@@ -142,6 +142,7 @@ function replan(
         dropReasonCode: undefined,
         lane,
         preparedMessages: [],
+        admittedConnectionGenerationIds: undefined,
         ...overrides
     };
 }

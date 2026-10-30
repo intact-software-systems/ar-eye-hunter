@@ -69,7 +69,13 @@ describe('AL outbound durable effect lifecycle', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         await runtime.enqueueIfAbsent(createOutboundMessage('expires-during-receipt-read', { ttlMs: 1_000 }));
         await waitForSettledOutboundWork(stores.workQueue, stores.admissionStore.namespace);
@@ -89,7 +95,13 @@ describe('AL outbound durable effect lifecycle', () => {
                 sent.push(String(prepared.msgId));
                 return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent', submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         onTestFinished(() => settlement.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage('retained-completion-failure');
@@ -117,7 +129,13 @@ describe('AL outbound durable effect lifecycle', () => {
                 attempts.push(String(prepared.msgId));
                 return { status: 'queued', settled: settlement.promise };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         onTestFinished(() => settlement.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage(`retained-${status}`);
@@ -161,7 +179,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: plannedMsg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -193,13 +212,15 @@ describe('AL outbound durable effect lifecycle', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'repair', msgId: plannedMsg.id.msgId, trigger: request.trigger }]
+                preparedMessages: [{ kind: 'repair', msgId: plannedMsg.id.msgId, trigger: request.trigger }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         await runtime.ready();
@@ -262,7 +283,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: plannedMsg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -326,7 +348,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: plannedMsg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const runtime3 = createDefaultOutboundTestRuntime({
@@ -336,7 +359,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: plannedMsg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const drain = Promise.all([runtime2.ready(), runtime3.ready()]);
@@ -415,7 +439,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
@@ -427,7 +452,8 @@ describe('AL outbound durable effect lifecycle', () => {
                         msgId: plannedMsg.id.msgId,
                         trigger: request.trigger
                     }
-                ]
+                ],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -507,7 +533,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                }
+                },
+                admittedConnectionGenerationIds: undefined
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
@@ -519,7 +546,8 @@ describe('AL outbound durable effect lifecycle', () => {
                         msgId: plannedMsg.id.msgId,
                         trigger: request.trigger
                     }
-                ]
+                ],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -542,7 +570,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
@@ -607,7 +636,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         await runtime.dispose();
@@ -648,7 +678,13 @@ describe('AL outbound durable effect lifecycle', () => {
                     sent.push(String(prepared.msgId));
                     return { status: 'sent', submissionAttempted: true };
                 },
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+                planOutgoingMessage: (msg) => ({
+                    msg,
+                    dropReasonCode: undefined,
+                    lane: 'volatile',
+                    preparedMessages: [],
+                    admittedConnectionGenerationIds: undefined
+                })
             });
             const closing = runtime.dispose();
             onTestFinished(async () => {
@@ -679,7 +715,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 expect(
                     (await runtime.retransmitAdmittedMessage({
                         msg: message,
-                        plan: { msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] },
+                        plan: { msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined },
                         attemptIdentity: 'late-repair'
                     })).verdict
                 ).toMatchObject({ kind: 'skipped', reason: 'disposed' });
@@ -706,7 +742,13 @@ describe('AL outbound durable effect lifecycle', () => {
                 sent.push(String(prepared.msgId));
                 return { status: 'sent', submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         const message = newALReceiptControlMessage(
             { v: 4, msgId: 'overlapping-receipt', ts: 1, senderId: 'server', traceId: 'trace-al-outbound-durable-effects' },
@@ -743,7 +785,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
         const msg = createOutboundMessage('msg-control-conflict');
@@ -792,7 +835,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 msg: plannedMsg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                admittedConnectionGenerationIds: undefined
             })
         });
 
@@ -828,7 +872,13 @@ describe('AL outbound durable effect lifecycle', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(Math.max(0, retryAt - Date.now()));
@@ -873,7 +923,8 @@ function createUndrainedOutboundRuntime(
             msg: plannedMsg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
+            preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+            admittedConnectionGenerationIds: undefined
         })
     });
     return { runtime, claimedCounts };
