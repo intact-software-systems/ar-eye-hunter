@@ -698,8 +698,36 @@
         "status": 200,
         "body": {
           "causalRevision": {
-            "groupRevision": "{groupRevisionAfterGrant}"
+            "groupRevision": "{groupRevisionAfterGrant}",
+            "presenceRevision": 0
           }
+        }
+      }
+    },
+    {
+      "name": "bobSubscribesToAnUnknownGroupIsRejected",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/topicsub-missing-group-{runId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-missing-group-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Group not found: topicsub-missing-group-{runId}"
         }
       }
     },

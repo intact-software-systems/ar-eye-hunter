@@ -182,6 +182,9 @@ Deno.test('malformed bodies are refused before enqueue', async () => {
             }
         );
         assert.equal(bodyRequestId.status, 400, `${action} requestId in the body`);
+        const bodyRequestIdFailure = decodeApiMutationFailure(await bodyRequestId.json());
+        assert.equal(bodyRequestIdFailure?.code, 'api-mutation-request-invalid', `${action} requestId in the body`);
+        assert.match(bodyRequestIdFailure?.message ?? '', /requestId must be supplied only by the request path/);
     }
     assert.equal(enqueued.length, 0);
 });
@@ -239,28 +242,26 @@ Deno.test('the response is { outcome } from the receipt', async () => {
 });
 
 Deno.test('the subscriptions read lists the session\'s rows and refuses another session', async () => {
-    const rowsBySession = new Map<string, readonly GroupTopicSubscription[]>([
-        ['alice-session', [createSubscription('alice-session', 'app.scores'), createSubscription('alice-session', 'room.feed')]],
-        ['bob-session', [createSubscription('bob-session', 'room.feed')]]
-    ]);
+    const rows = [createSubscription('alice-session', 'app.scores'), createSubscription('alice-session', 'room.feed')];
+    const reads: (readonly [GroupRef, string])[] = [];
     const runtime = createGroupStateRouteTestRuntime({
         groupService: {
-            readGroupSessionTopicSubscriptions: (ref: GroupRef, sessionId: string) =>
-                Promise.resolve(ref.groupId === 'room-1' ? rowsBySession.get(sessionId) ?? [] : [])
+            readGroupSessionTopicSubscriptions: (ref: GroupRef, sessionId: string) => {
+                reads.push([ref, sessionId]);
+                return Promise.resolve(rows);
+            }
         }
     });
 
     const own = await runtime.app.request(`${SESSION_BASE}/subscriptions`);
     assert.equal(own.status, 200, await own.clone().text());
-    assert.deepEqual(await own.json(), { subscriptions: rowsBySession.get('alice-session') });
-
-    const unknownGroup = await runtime.app.request(
-        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-unknown/sessions/alice-session/subscriptions'
-    );
-    assert.equal(unknownGroup.status, 200);
-    assert.deepEqual(await unknownGroup.json(), { subscriptions: [] });
+    assert.deepEqual(await own.json(), { subscriptions: rows });
 
     const other = await runtime.app.request(`${GROUP_BASE}/sessions/bob-session/subscriptions`);
     assert.equal(other.status, 403);
     assert.match(JSON.stringify(await other.json()), /session id does not match/);
+
+    // The read is scoped by the path's application, workspace and group and the authenticated session; the refused
+    // read reaches no store.
+    assert.deepEqual(reads, [[{ ...SCOPE, groupId: 'room-1' }, 'alice-session']]);
 });

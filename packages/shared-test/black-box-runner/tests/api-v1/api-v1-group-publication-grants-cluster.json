@@ -915,6 +915,7 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "activeSessions": [
             {
