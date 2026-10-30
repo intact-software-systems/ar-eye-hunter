@@ -9,6 +9,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 it.for(['api-v1', 'relic-hunter-server-v1', 'rallar-black-box-control-server'])(
     'keeps the %s frozen cache and controller services independent of npm workspace dependencies',
+    { timeout: 30_000 },
     async (app, context) => {
         const serviceDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-deno-services-'));
         context.onTestFinished(() => rm(serviceDirectory, { recursive: true, force: true }));
@@ -32,6 +33,5 @@ it.for(['api-v1', 'relic-hunter-server-v1', 'rallar-black-box-control-server'])(
                 .resolves.toBe('[Service]\nEnvironment=DENO_NO_PACKAGE_JSON=1\n');
         }
         await expect(readFile(lockPath, 'utf8')).resolves.toBe(originalLock);
-    },
-    30_000
+    }
 );
