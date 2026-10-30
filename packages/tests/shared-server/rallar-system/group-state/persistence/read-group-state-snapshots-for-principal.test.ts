@@ -94,7 +94,7 @@ describe('group-state snapshots for a principal', () => {
         expect(runtime.batches.map((batch) => batch.map((selector) => selector.kind))).toEqual([
             ['prefix-suffix'],
             ['key', 'key'],
-            ['prefix', 'key', 'prefix', 'prefix', 'key', 'prefix'],
+            ['prefix', 'key', 'prefix', 'prefix', 'prefix', 'key', 'prefix', 'prefix'],
             ['prefix-suffix'],
             ['key', 'key']
         ]);

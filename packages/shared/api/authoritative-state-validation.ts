@@ -15,8 +15,10 @@ import {
     GROUP_TRANSPORT_STATES
 } from './group-lifecycle/group-lifecycle-policy.ts';
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalized-group-lifecycle-policy.ts';
+import { decodeGroupPublicationGrantList } from './group-publication/group-publication-grants.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
+import { formatRallarValidation } from './rallar-validation.ts';
 import type { StateEventPage } from './state-event-types.ts';
 import type { StateScope } from './state-types.ts';
 
@@ -419,7 +421,8 @@ export function validateAuthoritativeGroupSnapshot(
             'members',
             'activeSessions',
             'memberCount',
-            'onlineMemberCount'
+            'onlineMemberCount',
+            'publicationGrants'
         ],
         'GroupSnapshot'
     );
@@ -552,6 +555,7 @@ export function validateAuthoritativeGroupSnapshot(
             }
         }
     }
+    validateGroupSnapshotPublicationGrants(snapshot.publicationGrants, ref, memberIds);
     const sessions = decodeArray(snapshot.activeSessions, 'GroupSnapshot.activeSessions');
     const sessionIds = new Set<string>();
     const onlinePrincipalIds = new Set<string>();
@@ -608,6 +612,20 @@ export function validateAuthoritativeGroupSnapshot(
     }
     if (group.status !== 'active' && sessions.length !== 0) {
         fail('GroupSnapshot inactive group has active presence');
+    }
+}
+
+function validateGroupSnapshotPublicationGrants(
+    value: WireValue,
+    ref: GroupRef,
+    memberIds: ReadonlySet<string>
+): void {
+    const grants = decodeGroupPublicationGrantList(value, ref).fold(
+        (issues) => fail(`GroupSnapshot.publicationGrants is invalid: ${formatRallarValidation(issues)}`),
+        (decoded) => decoded
+    );
+    if (grants.some((grant) => !memberIds.has(grant.principalId))) {
+        fail('GroupSnapshot.publicationGrants principal is not a member');
     }
 }
 

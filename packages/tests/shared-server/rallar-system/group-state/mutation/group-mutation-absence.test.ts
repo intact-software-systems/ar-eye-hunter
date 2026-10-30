@@ -96,7 +96,8 @@ function createNewGroupCommand(): GroupMutationCommand {
             metadata: {},
             createdByPrincipalId: 'alice',
             expiresAtEpochMs: null,
-            purgeAfterEpochMs: null
+            purgeAfterEpochMs: null,
+            publicationGrants: {}
         }
     };
 }

@@ -186,7 +186,8 @@ export function createGroupStateRouteSnapshot(
         members: activePrincipalIds.map((principalId) => createGroupStateRouteMember(groupId, principalId)),
         activeSessions: [],
         memberCount: activePrincipalIds.length,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 

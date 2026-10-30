@@ -138,9 +138,25 @@ describe('RTC topology input fingerprint inputs', () => {
         const after = await requireSnapshot(runtime, GRANT_ROOM);
 
         expect(after.group.snapshotVersion).toBe(before.group.snapshotVersion + 1);
+        expect(after.publicationGrants.map((grant) => grant.principalId)).toEqual(['bob']);
         expect(computeRtcTopologyInputFingerprint({ ...fingerprintFacts({}), group: after })).toBe(
             computeRtcTopologyInputFingerprint({ ...fingerprintFacts({}), group: before })
         );
+    });
+
+    it('a snapshot differing only in publicationGrants has the same topology input fingerprint', () => {
+        const facts = fingerprintFacts({});
+        const granted = {
+            ...facts.group,
+            publicationGrants: [{
+                ...GROUP_REF,
+                principalId: 'peer-1',
+                topics: { 'room.feed': { publish: true, subscribe: true } },
+                updated: facts.group.group.updated
+            }]
+        };
+
+        expect(computeRtcTopologyInputFingerprint({ ...facts, group: granted })).toBe(computeRtcTopologyInputFingerprint(facts));
     });
 
     it('changes when a planning input changes', () => {
@@ -199,7 +215,8 @@ function fingerprintFacts(groupOverrides: Partial<Group>): RtcTopologyInputFinge
             members: [],
             activeSessions: [],
             memberCount: 0,
-            onlineMemberCount: 0
+            onlineMemberCount: 0,
+            publicationGrants: []
         },
         effectiveConfig: EFFECTIVE_CONFIG,
         kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },

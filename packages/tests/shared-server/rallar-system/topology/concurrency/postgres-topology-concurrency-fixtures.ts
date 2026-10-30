@@ -205,7 +205,8 @@ export function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
         ],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 
@@ -260,6 +261,6 @@ function spawnWorker<Output>(
     });
 }
 
-function isMissingFileError(error: unknown): boolean {
+function isMissingFileError(error: unknown): error is Error & Readonly<{ code: 'ENOENT'; }> {
     return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }

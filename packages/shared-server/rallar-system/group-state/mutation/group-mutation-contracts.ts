@@ -7,7 +7,10 @@ import type {
     GroupTopologyReconfigureLanding
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
-import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
+import type {
+    GroupPublicationGrant,
+    GroupPublicationTopicGrants
+} from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     AuditStamp,
     Group,
@@ -81,6 +84,8 @@ export type GroupMutationCommand =
                     expiresAtEpochMs: number | null;
                     purgeAfterEpochMs: number | null;
                     lifecyclePolicy?: GroupLifecyclePolicy;
+                    /** The creator's declared initial grant; `{}` declares none. */
+                    publicationGrants: GroupPublicationTopicGrants;
                 }>;
         }>
     )

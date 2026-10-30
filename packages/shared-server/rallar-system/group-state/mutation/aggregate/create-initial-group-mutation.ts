@@ -20,7 +20,8 @@ import type {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
-    GroupMutationRead
+    GroupMutationRead,
+    GroupPublicationGrantEffect
 } from '../group-mutation-contracts.ts';
 import {
     auditStamp,
@@ -103,6 +104,26 @@ export function createInitialOwner(
     };
 }
 
+/** D494: the creator's declared grant, written in the create batch; an empty declaration writes no row. */
+export function createInitialPublicationGrantEffects(
+    command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>,
+    audit: AuditStamp
+): readonly GroupPublicationGrantEffect[] {
+    const topics = command.input.publicationGrants;
+    if (Object.keys(topics).length === 0) {
+        return [];
+    }
+    return [{
+        operation: 'insert',
+        value: {
+            ...command.aggregateRef,
+            principalId: command.input.createdByPrincipalId,
+            topics: structuredClone(topics),
+            updated: audit
+        }
+    }];
+}
+
 interface CreateInitialPresenceSummaryInput {
     readonly command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>;
     readonly read: GroupMutationRead;
@@ -168,7 +189,7 @@ export function computeCreate(
         presenceAdmission: null,
         eventType: 'group-created',
         lifecyclePolicy: resolveCreateGroupLifecyclePolicy(command),
-        publicationGrantEffects: [],
+        publicationGrantEffects: createInitialPublicationGrantEffects(command, audit),
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: computeFormationTimerEntries({
             command,

@@ -1,3 +1,4 @@
+import { comparePublicationGrantPrincipalIds } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
     Group,
@@ -211,6 +212,7 @@ export function computeGroupPresenceSummaryState(
             members: read.presence.members.map((member) => member.value),
             summary: summary.summary,
             authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
+            publicationGrants: read.presence.publicationGrants.map((grant) => grant.value),
             groupRevision: summary.summary.causalRevision.groupRevision,
             observedAtEpochMs: summary.summary.computedAtEpochMs,
             sessionLeaseFields: 'authoritative'
@@ -445,7 +447,34 @@ export function computeGroupStateDeltaEnvelope(
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        audienceSessionIds: input.summary.summary.activeSessionIds
+        audienceSessionIds: input.summary.summary.activeSessionIds,
+        ...computeGroupStateDeltaPublicationGrants(sliceEvents, snapshot)
+    };
+}
+
+/**
+ * The rows of the principals the slice's events wrote: a grant change's principal, and every member an event wrote,
+ * which covers the creator on `group-created` and a departing holder; a written principal without a row is removed.
+ */
+function computeGroupStateDeltaPublicationGrants(
+    sliceEvents: readonly GroupEvent[],
+    snapshot: GroupSnapshot
+): Pick<GroupStateDeltaEnvelope, 'publicationGrants' | 'removedPublicationGrantPrincipalIds'> {
+    const written = new Set(sliceEvents.flatMap((event) => [
+        ...(event.eventType === 'publication-grant-changed' && typeof event.payload.principalId === 'string'
+            ? [event.payload.principalId]
+            : []),
+        ...snapshot.members.filter((member) => isGroupMemberWrittenByEvent(member, event)).map((member) =>
+            member.principalId
+        )
+    ]));
+    const publicationGrants = snapshot.publicationGrants.filter((grant) => written.has(grant.principalId));
+    const granted = new Set(publicationGrants.map((grant) => grant.principalId));
+    return {
+        publicationGrants,
+        removedPublicationGrantPrincipalIds: [...written].filter((principalId) => !granted.has(principalId)).sort(
+            comparePublicationGrantPrincipalIds
+        )
     };
 }
 

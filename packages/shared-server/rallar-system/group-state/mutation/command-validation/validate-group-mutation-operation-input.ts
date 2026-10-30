@@ -3,8 +3,9 @@ import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { decodeGroupPublicationTopicGrants } from '@shared/api/group-publication/group-publication-grants.ts';
 import { assertGroupRetentionIntent, GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
-import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import { formatRallarValidation, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
@@ -130,6 +131,9 @@ export function validateGroupMutationOperationInput(
             ...(input.lifecyclePolicy === undefined
                 ? []
                 : validateGroupLifecyclePolicyInputShape(input.lifecyclePolicy)),
+            ...(input.publicationGrants === undefined
+                ? []
+                : validateCreationPublicationGrants(input.publicationGrants)),
             ...validateGroupInputFields(input, [
                 { key: 'createdByPrincipalId', kind: 'string', required: true },
                 { key: 'expiresAtEpochMs', kind: 'positive-integer' },
@@ -160,6 +164,16 @@ function validatePublicationGrantIntent(
         ...topicIssues,
         ...(namesNone ? [new TypeError(`Group ${operation} request must name publish or subscribe`)] : [])
     ];
+}
+
+/** D494: the creator's declared grant, each key one exact user topic naming publish, subscribe or both, at most 64. */
+export function validateCreationPublicationGrants(value: JsonWireValue | undefined): readonly TypeError[] {
+    return decodeGroupPublicationTopicGrants(value).fold(
+        (
+            issues
+        ) => [new TypeError(`Group createGroup publicationGrants is invalid: ${formatRallarValidation(issues)}`)],
+        () => []
+    );
 }
 
 function validateRetentionCreationInput(input: JsonWireObject): readonly TypeError[] {

@@ -945,7 +945,8 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
             expiresAtEpochMs
         })),
         memberCount: activeMembers.length,
-        onlineMemberCount: activeMembers.length
+        onlineMemberCount: activeMembers.length,
+        publicationGrants: []
     };
 }
 
@@ -987,7 +988,9 @@ function createGroupEventEnvelope(
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        audienceSessionIds
+        audienceSessionIds,
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
 }
 

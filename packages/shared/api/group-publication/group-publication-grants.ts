@@ -1,6 +1,6 @@
 import { Either } from '../../resilience/Either.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
-import type { AuditStamp, GroupRef, PrincipalId } from '../group-types.ts';
+import type { AuditStamp, GroupRef, GroupSnapshot, PrincipalId } from '../group-types.ts';
 import { validateRallarWsUserTopicId, type RallarValidationIssue } from '../rallar-validation.ts';
 
 export interface GroupPublicationTopicPermissions {
@@ -45,24 +45,107 @@ export function validateGroupPublicationGrant(grant: GroupPublicationGrant): rea
     return decodeGroupPublicationGrant(grant).fold((issues) => issues, () => []);
 }
 
+/** A creation's declared grant: up to 64 exact user topics, each naming publish, subscribe or both; `{}` declares none. */
+export function decodeGroupPublicationTopicGrants(
+    value: unknown
+): Either<readonly RallarValidationIssue[], GroupPublicationTopicGrants> {
+    const issues = isJsonObject(value)
+        ? toTopicsIssues(value, '$', 0)
+        : [issue('$', 'invalid-topics', 'Publication grant topics must be an object.')];
+    return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as GroupPublicationTopicGrants);
+}
+
+/** A snapshot's or delta's grant rows: each a valid row of the group, listed once per principal in principal order. */
+export function decodeGroupPublicationGrantList(
+    value: unknown,
+    ref: GroupRef
+): Either<readonly RallarValidationIssue[], readonly GroupPublicationGrant[]> {
+    if (!Array.isArray(value)) {
+        return Either.ofLeft([issue('$', 'invalid-list', 'Publication grants must be an array.')]);
+    }
+    const issues = toGrantListIssues(value, ref);
+    return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as readonly GroupPublicationGrant[]);
+}
+
+function toGrantListIssues(grants: readonly ApiJsonValue[], ref: GroupRef): Issues {
+    return grants.flatMap((grant, index) => {
+        const path = `$[${index}]`;
+        return decodeGroupPublicationGrant(grant).fold(
+            (issues) => issues.map((found) => ({ ...found, path: found.path.replace(/^\$/u, path) })),
+            (row) => toListedGrantIssues({ row, previous: grants[index - 1], ref, path })
+        );
+    });
+}
+
+interface ListedGrant {
+    readonly row: GroupPublicationGrant;
+    readonly previous: ApiJsonValue | undefined;
+    readonly ref: GroupRef;
+    readonly path: string;
+}
+
+function toListedGrantIssues({ row, previous, ref, path }: ListedGrant): Issues {
+    const previousPrincipalId = isJsonObject(previous) ? previous.principalId : undefined;
+    return [
+        ...(isSameGroupRef(row, ref)
+            ? []
+            : [issue(path, 'foreign-group', 'Publication grant belongs to another group.')]),
+        ...(typeof previousPrincipalId !== 'string' ||
+                comparePublicationGrantPrincipalIds(previousPrincipalId, row.principalId) < 0
+            ? []
+            : [issue(path, 'unsorted', 'Publication grants are listed in strictly ascending principalId order.')])
+    ];
+}
+
+/** The one order of grant rows: code-unit order of the principal id. */
+export function comparePublicationGrantPrincipalIds(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
+ * What a principal may do on one topic: the row's permissions while it is an active member, and never publish as a
+ * spectator (D501). A demoted principal keeps its row, so the row and the effective permission can differ.
+ */
+export function resolveGroupPublicationPermissions(
+    snapshot: GroupSnapshot,
+    principalId: string,
+    topicId: string
+): GroupPublicationTopicPermissions {
+    const member = snapshot.members.find((candidate) => candidate.principalId === principalId);
+    const topics = member?.status === 'active'
+        ? snapshot.publicationGrants.find((grant) => grant.principalId === principalId)?.topics
+        : undefined;
+    const permissions = topics !== undefined && Object.hasOwn(topics, topicId) ? topics[topicId] : undefined;
+    return {
+        publish: member?.role !== 'spectator' && permissions?.publish === true,
+        subscribe: permissions?.subscribe === true
+    };
+}
+
 function toGrantIssues(grant: ApiJsonObject): Issues {
     return [
         ...toKeyIssues(grant, GRANT_KEYS, '$'),
         ...toNonEmptyStringIssues(grant, ['applicationId', 'workspaceId', 'groupId', 'principalId'], '$'),
-        ...(grant.topics === undefined ? [] : toTopicsIssues(grant.topics, '$.topics')),
+        ...(grant.topics === undefined ? [] : toTopicsIssues(grant.topics, '$.topics', 1)),
         ...(grant.updated === undefined ? [] : toAuditIssues(grant.updated, '$.updated'))
     ];
 }
 
-function toTopicsIssues(topics: ApiJsonValue, path: string): Issues {
+function toTopicsIssues(topics: ApiJsonValue, path: string, minimumTopics: 0 | 1): Issues {
     if (!isJsonObject(topics)) {
         return [issue(path, 'invalid-topics', 'Publication grant topics must be an object.')];
     }
     const entries = Object.entries(topics);
     const max = GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal;
     return [
-        ...(entries.length === 0 || entries.length > max
-            ? [issue(path, 'invalid-topic-count', `Publication grants hold 1 to ${max} topics per principal.`)]
+        ...(entries.length < minimumTopics || entries.length > max
+            ? [
+                issue(
+                    path,
+                    'invalid-topic-count',
+                    `Publication grants hold ${minimumTopics} to ${max} topics per principal.`
+                )
+            ]
             : []),
         ...entries.flatMap(([topicId, permissions]) =>
             toTopicIssues(`${path}[${JSON.stringify(topicId)}]`, topicId, permissions)
@@ -142,6 +225,11 @@ function presentKeys<Key extends string>(record: ApiJsonObject, keys: readonly K
 
 function issue(path: string, code: string, message: string): RallarValidationIssue {
     return { path, code, message };
+}
+
+function isSameGroupRef(left: GroupRef, right: GroupRef): boolean {
+    return left.applicationId === right.applicationId && left.workspaceId === right.workspaceId &&
+        left.groupId === right.groupId;
 }
 
 function isNonEmptyString(value: ApiJsonValue): boolean {

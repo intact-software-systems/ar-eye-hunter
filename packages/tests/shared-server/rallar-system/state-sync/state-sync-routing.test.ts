@@ -141,7 +141,9 @@ function createGroupEventEnvelope(
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
-        audienceSessionIds
+        audienceSessionIds,
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
 }
 
@@ -258,7 +260,8 @@ function createGroupSnapshot(members: readonly GroupRoutingFixtureMember[]): Gro
         members: members.map(toGroupMember),
         activeSessions: activeMembers.map(toGroupPresenceSession),
         memberCount: members.filter((member) => member.status === 'active').length,
-        onlineMemberCount: activeMembers.length
+        onlineMemberCount: activeMembers.length,
+        publicationGrants: []
     };
 }
 

@@ -1125,7 +1125,8 @@ function createGroupSnapshot(groupRevision: number): GroupSnapshot {
         ],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 

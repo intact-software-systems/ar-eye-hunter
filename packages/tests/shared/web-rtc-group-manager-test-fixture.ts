@@ -128,7 +128,8 @@ export function createGroupSnapshot(fixture: GroupSnapshotFixture): GroupSnapsho
         members: fixture.memberSessionIds.map((sessionId) => createGroupMember(group, sessionId)),
         activeSessions: fixture.memberSessionIds.map((sessionId) => createGroupPresenceSession(group, sessionId)),
         memberCount: fixture.memberSessionIds.length,
-        onlineMemberCount: fixture.memberSessionIds.length
+        onlineMemberCount: fixture.memberSessionIds.length,
+        publicationGrants: []
     };
 }
 

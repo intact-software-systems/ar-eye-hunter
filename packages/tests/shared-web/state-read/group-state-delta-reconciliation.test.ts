@@ -19,6 +19,10 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
+import type {
+    GroupPublicationGrant,
+    GroupPublicationTopicGrants
+} from '@shared/api/group-publication/group-publication-grants.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
     AuditStamp,
@@ -342,6 +346,46 @@ describe('browser group-state delta reconciliation', () => {
         expect(deltaApplyResults()).toEqual(['gap-pull']);
     });
 
+    it('the browser applies a grant delta and a removal to the cached snapshot', async () => {
+        const runtime = new StateCacheRuntime();
+        const roster = ['m-alpha', 'm-bravo', 'm-charlie'];
+        const base = createDeltaGroupSnapshot({
+            groupId: 'room-delta-grants',
+            memberPrincipalIds: roster,
+            activePrincipalIds: [],
+            causalRevision: { groupRevision: 3, presenceRevision: 0 }
+        });
+        const feed = { 'room.feed': { publish: true, subscribe: true } };
+        const predecessor: GroupSnapshot = {
+            ...base,
+            publicationGrants: [deltaGrant('room-delta-grants', 'm-bravo', feed), deltaGrant('room-delta-grants', 'm-charlie', feed)]
+        };
+        const updatedBravo = deltaGrant('room-delta-grants', 'm-bravo', { 'room.feed': { publish: false, subscribe: true } });
+        const addedAlpha = deltaGrant('room-delta-grants', 'm-alpha', feed);
+        const resulting: GroupSnapshot = {
+            ...createDeltaGroupSnapshot({
+                groupId: 'room-delta-grants',
+                memberPrincipalIds: roster,
+                activePrincipalIds: [],
+                causalRevision: { groupRevision: 4, presenceRevision: 0 }
+            }),
+            publicationGrants: [addedAlpha, updatedBravo]
+        };
+        const envelope = createDeltaEnvelope({
+            resulting,
+            predecessorCausalRevision: predecessor.causalRevision,
+            eventType: 'publication-grant-changed',
+            publicationGrants: [addedAlpha, updatedBravo],
+            removedPublicationGrantPrincipalIds: ['m-charlie']
+        });
+        await runtime.hydrate([predecessor]);
+
+        await runtime.receiveDeltaMessage(envelope);
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)).toEqual(resulting);
+        expect(deltaApplyResults()).toEqual(['applied']);
+    });
+
     function deltaApplyResults(): readonly string[] {
         return diagnostics
             .filter((event) => event.operation === 'delta-apply')
@@ -528,7 +572,8 @@ function createDeltaGroupSnapshot(input: DeltaGroupSnapshotInput): GroupSnapshot
         members: input.memberPrincipalIds.map((principalId) => createDeltaGroupMember(input.groupId, principalId, principalId === ownerPrincipalId)),
         activeSessions: input.activePrincipalIds.map((principalId) => createDeltaGroupSession(input.groupId, principalId)),
         memberCount: input.memberPrincipalIds.length,
-        onlineMemberCount: input.activePrincipalIds.length
+        onlineMemberCount: input.activePrincipalIds.length,
+        publicationGrants: []
     };
 }
 
@@ -540,6 +585,8 @@ interface DeltaEnvelopeInput {
     readonly eventType?: GroupEvent['eventType'];
     readonly members?: readonly GroupMember[];
     readonly sessions?: readonly GroupPresenceSession[];
+    readonly publicationGrants?: readonly GroupPublicationGrant[];
+    readonly removedPublicationGrantPrincipalIds?: readonly string[];
 }
 
 function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope {
@@ -572,7 +619,9 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
         group: resulting.group,
         memberCount: resulting.memberCount,
         onlineMemberCount: resulting.onlineMemberCount,
-        audienceSessionIds: activeSessionIds
+        audienceSessionIds: activeSessionIds,
+        publicationGrants: input.publicationGrants ?? [],
+        removedPublicationGrantPrincipalIds: input.removedPublicationGrantPrincipalIds ?? []
     };
     // Fixture self-check: hand-built envelopes must satisfy the landed wire
     // validator so the tests mirror the server's emission semantics.
@@ -621,6 +670,17 @@ function createDeltaGroupSession(
         expiresAtEpochMs: 60_000,
         disconnectedAtEpochMs: null,
         disconnectReason: null
+    };
+}
+
+function deltaGrant(groupId: string, principalId: string, topics: GroupPublicationTopicGrants): GroupPublicationGrant {
+    return {
+        applicationId: DEFAULT_STATE_APPLICATION_ID,
+        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+        groupId,
+        principalId,
+        topics,
+        updated: deltaAuditStamp()
     };
 }
 

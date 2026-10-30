@@ -605,7 +605,8 @@ function createGroupSnapshot(groupRevision: number, presenceRevision: number): G
             }
         ],
         memberCount: 1,
-        onlineMemberCount: 1
+        onlineMemberCount: 1,
+        publicationGrants: []
     };
 }
 

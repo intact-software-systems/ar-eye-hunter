@@ -16,6 +16,7 @@ import {
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import {
+    validateCreationPublicationGrants,
     validateGroupDirectoryListingMetadata,
     validateGroupMutationOperationInput
 } from './validate-group-mutation-operation-input.ts';
@@ -152,6 +153,10 @@ function assertCreateGroupInput(input: JsonWireObject): void {
     assertNullableInteger(input, 'purgeAfterEpochMs', true);
     if (input.lifecyclePolicy !== undefined) {
         requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
+    }
+    const declarationIssue = validateCreationPublicationGrants(input.publicationGrants)[0];
+    if (declarationIssue !== undefined) {
+        throw declarationIssue;
     }
 }
 
@@ -361,7 +366,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'createdByPrincipalId',
         'expiresAtEpochMs',
         'purgeAfterEpochMs',
-        'lifecyclePolicy'
+        'lifecyclePolicy',
+        'publicationGrants'
     ],
     updateGroup: [
         ...ACTOR_INPUT_KEYS,

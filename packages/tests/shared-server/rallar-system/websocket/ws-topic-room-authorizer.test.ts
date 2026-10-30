@@ -1183,7 +1183,8 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
         })),
         activeSessions: createGroupSessions(input),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 

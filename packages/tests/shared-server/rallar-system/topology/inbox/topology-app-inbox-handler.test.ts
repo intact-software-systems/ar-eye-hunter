@@ -649,6 +649,7 @@ function groupSnapshot(): GroupSnapshot {
         members: [],
         activeSessions: [],
         memberCount: 0,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }

@@ -159,7 +159,8 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
             disconnectReason: null
         })),
         memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length
+        onlineMemberCount: memberSessionIds.length,
+        publicationGrants: []
     };
 }
 

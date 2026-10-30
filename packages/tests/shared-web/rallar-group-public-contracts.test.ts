@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
 
 const repoRoot = process.cwd();
@@ -11,7 +12,7 @@ const apiReference = readRepoFile('docs/rallar-api-reference.md');
 const quickstart = readRepoFile('docs/rallar-quickstart-and-recipes.md');
 const environmentVariables = readRepoFile('docs/environment-variables.md');
 const openApi = readRepoFile('apps/api-v1/resources/api-v1-openapi.yaml');
-const openApiDocument = parseOpenApiDocument(loadYaml(openApi));
+const openApiDocument = decodeOpenApiDocument(loadYaml(openApi));
 
 describe('Rallar group public contracts', () => {
     it('documents browser-safe room workflows and switch recovery', () => {
@@ -174,8 +175,22 @@ describe('Rallar group public contracts', () => {
             'members',
             'activeSessions',
             'memberCount',
-            'onlineMemberCount'
+            'onlineMemberCount',
+            'publicationGrants'
         ]);
+        expectSchemaRequired('GroupPublicationGrant', [
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'principalId',
+            'topics',
+            'updated'
+        ]);
+        expectSchemaRequired('GroupPublicationTopicPermissions', ['publish', 'subscribe']);
+        expect(schema('CreateGroupRequest').required).not.toContain('publicationGrants');
+        expect(schema('CreateGroupRequest').properties?.publicationGrants?.$ref).toBe(
+            '#/components/schemas/GroupPublicationTopicGrants'
+        );
         expectSchemaRequired('GroupMember', [
             'applicationId',
             'workspaceId',
@@ -409,7 +424,7 @@ interface OpenApiSchema {
     readonly required?: readonly string[];
     readonly properties?: Readonly<Record<string, OpenApiSchema>>;
     readonly nullable?: boolean;
-    readonly enum?: readonly unknown[];
+    readonly enum?: readonly ApiJsonValue[];
     readonly allOf?: readonly OpenApiSchema[];
     readonly oneOf?: readonly OpenApiSchema[];
     readonly discriminator?: OpenApiDiscriminator;
@@ -435,38 +450,38 @@ function schema(name: string): OpenApiSchema {
     return value;
 }
 
-function parseOpenApiDocument(value: unknown): OpenApiDocument {
-    const document = requireRecord(value, 'OpenAPI document');
-    const components = requireRecord(
+function decodeOpenApiDocument(value: unknown): OpenApiDocument {
+    const document = decodeOpenApiRecord(value, 'OpenAPI document');
+    const components = decodeOpenApiRecord(
         document.components,
         'OpenAPI components'
     );
-    const schemaValues = requireRecord(
+    const schemaValues = decodeOpenApiRecord(
         components.schemas,
         'OpenAPI component schemas'
     );
     const schemas: Record<string, OpenApiSchema> = {};
     for (const [name, schemaValue] of Object.entries(schemaValues)) {
-        schemas[name] = parseOpenApiSchema(schemaValue, name);
+        schemas[name] = decodeOpenApiSchema(schemaValue, name);
     }
     return { components: { schemas } };
 }
 
-function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
-    const source = requireRecord(value, `OpenAPI schema ${label}`);
+function decodeOpenApiSchema(value: unknown, label: string): OpenApiSchema {
+    const source = decodeOpenApiRecord(value, `OpenAPI schema ${label}`);
     const properties: Record<string, OpenApiSchema> = {};
     if (source.properties !== undefined) {
-        const propertyValues = requireRecord(
+        const propertyValues = decodeOpenApiRecord(
             source.properties,
             `OpenAPI schema ${label} properties`
         );
         for (const [name, propertyValue] of Object.entries(propertyValues)) {
-            properties[name] = parseOpenApiSchema(propertyValue, `${label}.${name}`);
+            properties[name] = decodeOpenApiSchema(propertyValue, `${label}.${name}`);
         }
     }
     const discriminator = source.discriminator === undefined
         ? undefined
-        : requireRecord(
+        : decodeOpenApiRecord(
             source.discriminator,
             `OpenAPI schema ${label} discriminator`
         );
@@ -479,7 +494,7 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
         ...(source.required === undefined
             ? {}
-            : { required: requireStringArray(source.required, `${label}.required`) }),
+            : { required: decodeOpenApiStringArray(source.required, `${label}.required`) }),
         ...(source.properties === undefined ? {} : { properties }),
         ...(typeof source.nullable === 'boolean'
             ? { nullable: source.nullable }
@@ -488,14 +503,14 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         ...(source.allOf === undefined
             ? {}
             : {
-                allOf: requireArray(source.allOf, `${label}.allOf`)
-                    .map((item, index) => parseOpenApiSchema(item, `${label}.allOf[${index}]`))
+                allOf: decodeOpenApiArray(source.allOf, `${label}.allOf`)
+                    .map((item, index) => decodeOpenApiSchema(item, `${label}.allOf[${index}]`))
             }),
         ...(source.oneOf === undefined
             ? {}
             : {
-                oneOf: requireArray(source.oneOf, `${label}.oneOf`)
-                    .map((item, index) => parseOpenApiSchema(item, `${label}.oneOf[${index}]`))
+                oneOf: decodeOpenApiArray(source.oneOf, `${label}.oneOf`)
+                    .map((item, index) => decodeOpenApiSchema(item, `${label}.oneOf[${index}]`))
             }),
         ...(propertyName === undefined
             ? {}
@@ -503,29 +518,27 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
     };
 }
 
-function requireRecord(
-    value: unknown,
-    label: string
-): Record<string, unknown> {
-    if (!isUnknownRecord(value)) {
+function decodeOpenApiRecord(value: unknown, label: string): ApiJsonObject {
+    if (!isOpenApiRecord(value)) {
         throw new TypeError(`${label} must be an object`);
     }
     return value;
 }
 
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+// js-yaml loads the document as plain JSON-compatible values.
+function isOpenApiRecord(value: unknown): value is ApiJsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function requireArray(value: unknown, label: string): readonly unknown[] {
+function decodeOpenApiArray(value: unknown, label: string): readonly ApiJsonValue[] {
     if (!Array.isArray(value)) {
         throw new TypeError(`${label} must be an array`);
     }
     return value;
 }
 
-function requireStringArray(value: unknown, label: string): readonly string[] {
-    const items = requireArray(value, label);
+function decodeOpenApiStringArray(value: unknown, label: string): readonly string[] {
+    const items = decodeOpenApiArray(value, label);
     if (!items.every((item) => typeof item === 'string')) {
         throw new TypeError(`${label} must contain only strings`);
     }

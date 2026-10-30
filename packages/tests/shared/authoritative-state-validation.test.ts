@@ -490,6 +490,35 @@ describe('authoritative network state validation', () => {
             .toThrow();
     });
 
+    it('validateAuthoritativeGroupSnapshot accepts publicationGrants and rejects an extra grant key, an unsorted list, a duplicate principal and a grant for another GroupRef', () => {
+        const group = createGroupSnapshotFixture({ ...scope, groupId: 'room-grants', sessionIds: ['alice', 'bob'] });
+        const grantOf = (principalId: string) => ({
+            ...scope,
+            groupId: 'room-grants',
+            principalId,
+            topics: { 'room.feed': { publish: true, subscribe: true } },
+            updated: createAuditStampFixture(2, 'alice')
+        });
+        const granted = { ...group, publicationGrants: [grantOf('alice'), grantOf('bob')] };
+
+        expect(() => validateAuthoritativeGroupSnapshot(granted, scope)).not.toThrow();
+        for (
+            const [publicationGrants, message] of [
+                [[{ ...grantOf('alice'), extra: true }], /\$\[0\]\.extra/],
+                [[grantOf('bob'), grantOf('alice')], /\$\[1\]: .*ascending principalId/],
+                [[grantOf('alice'), grantOf('alice')], /ascending principalId/],
+                [[{ ...grantOf('alice'), groupId: 'room-other' }], /another group/],
+                [[grantOf('zed')], /not a member/],
+                [[{ ...grantOf('alice'), topics: {} }], /publicationGrants/]
+            ] as const
+        ) {
+            expect(() => validateAuthoritativeGroupSnapshot({ ...group, publicationGrants }, scope)).toThrow(message);
+        }
+        const { publicationGrants: omitted, ...withoutGrants } = granted;
+        expect(omitted).toHaveLength(2);
+        expect(() => validateAuthoritativeGroupSnapshot(withoutGrants, scope)).toThrow(/publicationGrants/);
+    });
+
     it.each([
         {
             defect: 'a noncanonical overlay identity',

@@ -174,7 +174,8 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'createdByPrincipalId',
         'expiresAtEpochMs',
         'purgeAfterEpochMs',
-        'lifecyclePolicy'
+        'lifecyclePolicy',
+        'publicationGrants'
     ],
     updateGroup: [
         ...MUTATION_REQUEST_KEYS,

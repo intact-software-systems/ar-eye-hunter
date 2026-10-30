@@ -1,4 +1,5 @@
 import {
+    comparePublicationGrantPrincipalIds,
     decodeGroupPublicationGrant,
     type GroupPublicationGrant
 } from '@shared/api/group-publication/group-publication-grants.ts';
@@ -48,9 +49,5 @@ export function canonicalStoredPublicationGrants(
 ): readonly RuntimeStateEntryValue<GroupPublicationGrant>[] {
     return stored
         .map((entry) => canonicalStoredPublicationGrant(entry, ref))
-        .sort((left, right) => comparePrincipalIds(left.value.principalId, right.value.principalId));
-}
-
-function comparePrincipalIds(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
+        .sort((left, right) => comparePublicationGrantPrincipalIds(left.value.principalId, right.value.principalId));
 }

@@ -72,6 +72,21 @@ describe('group publication grant convergence', () => {
         expect(await readGrantRow(runtime, 'bob')).toBeUndefined();
     });
 
+    it('the grant and revoke results carry the resulting grant rows on their snapshot', async () => {
+        const runtime = await seededRoom();
+        const granted = await applyPublicationMutation(runtime, BOB_PUBLISH);
+        const grantedRow = await readGrantRow(runtime, 'bob');
+        const revoked = await applyPublicationMutation(runtime, {
+            ...BOB_PUBLISH,
+            operation: 'revokeGroupPublication',
+            requestId: 'revoke-bob-feed-publish'
+        });
+
+        expect(grantedRow).toBeDefined();
+        expect(granted.result.snapshot.publicationGrants).toEqual([grantedRow]);
+        expect(revoked.result.snapshot.publicationGrants).toEqual([]);
+    });
+
     it('an idempotent replay returns the first result and a changed body is group-mutation-idempotency-conflict', async () => {
         const runtime = await seededRoom();
         const first = await applyPublicationMutation(runtime, BOB_PUBLISH);

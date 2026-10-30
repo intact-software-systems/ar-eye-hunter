@@ -281,7 +281,8 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
         members: createGroupSnapshotMembers(input),
         activeSessions: createGroupSnapshotSessions(input),
         memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length
+        onlineMemberCount: memberSessionIds.length,
+        publicationGrants: []
     };
 }
 

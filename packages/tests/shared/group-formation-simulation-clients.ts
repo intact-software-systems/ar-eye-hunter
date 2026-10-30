@@ -164,7 +164,8 @@ export function createSimulationGroupSnapshot(
         })),
         activeSessions: createSimulationGroupSessions(groupId, snapshotVersion, sessionIds),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 

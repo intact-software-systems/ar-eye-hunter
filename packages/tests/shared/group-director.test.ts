@@ -283,7 +283,8 @@ function createSnapshot(
             disconnectReason: null
         }],
         memberCount: 1,
-        onlineMemberCount: 1
+        onlineMemberCount: 1,
+        publicationGrants: []
     };
 }
 
@@ -352,7 +353,8 @@ function createPolicySnapshot(
             disconnectReason: null
         })),
         memberCount: input.members.length,
-        onlineMemberCount: input.activeSessions.length
+        onlineMemberCount: input.activeSessions.length,
+        publicationGrants: []
     };
 }
 

@@ -120,6 +120,7 @@ function toCreateCommand(
             createdByPrincipalId: request.createdByPrincipalId,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
+            publicationGrants: structuredClone(request.publicationGrants ?? {}),
             ...toGroupMutationActorInput(request),
             actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId
         }

@@ -6,6 +6,7 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
 import { assertGroupPresenceSummaryRead } from '@shared-server/rallar-system/group-state/presence/assert-group-presence-summary-read.ts';
 import {
     computeGroupPresenceSummary,
@@ -195,7 +196,8 @@ describe('group presence summary evaluation time', () => {
             members: [member],
             admissions: [],
             presenceSessions: [],
-            current
+            current,
+            publicationGrants: []
         };
         const canonical = computeGroupPresenceSummary({
             ref: groupRef('pure-room'),
@@ -282,6 +284,32 @@ describe('group presence summary evaluation time', () => {
         ).toThrow(/canonical|key/i);
     });
 
+    it('the summary read carries its grant rows and refuses one stored under another principal\'s key', () => {
+        const read = { ...createExpiryCrossingRead(), admissions: [] };
+        const grant = {
+            ...REF,
+            principalId: 'alice',
+            topics: { 'room.feed': { publish: true, subscribe: true } },
+            updated: read.group.value.created
+        };
+        const aliceKey = groupStatePublicationGrantStorageKey(REF, 'alice');
+
+        expect(() => assertGroupPresenceSummaryRead(REF, { ...read, publicationGrants: [stored(aliceKey, grant)] }))
+            .not.toThrow();
+        expect(() =>
+            assertGroupPresenceSummaryRead(REF, {
+                ...read,
+                publicationGrants: [stored(groupStatePublicationGrantStorageKey(REF, 'bob'), grant)]
+            })
+        ).toThrow(/canonical|key/i);
+        expect(() =>
+            assertGroupPresenceSummaryRead(REF, {
+                ...read,
+                publicationGrants: [stored(aliceKey, { ...grant, topics: {} })]
+            })
+        ).toThrow(/publication grant/i);
+    });
+
     it('collects coordinated evaluation-time substitution and independent summary issues', () => {
         const read = { ...createExpiryCrossingRead(), current: null };
         const computed = computeGroupPresenceSummary({ ref: REF, read, nowEpochMs: 2_000 });
@@ -347,7 +375,8 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
                 presence.session
             )
         ],
-        current: stored(groupStatePresenceSummaryStorageKey(REF), current)
+        current: stored(groupStatePresenceSummaryStorageKey(REF), current),
+        publicationGrants: []
     };
 }
 

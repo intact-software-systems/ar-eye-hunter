@@ -810,7 +810,8 @@ function snapshot(options: SnapshotOptions = {}): GroupSnapshot {
         members,
         activeSessions,
         memberCount: members.filter((entry) => entry.status === 'active').length,
-        onlineMemberCount: new Set(activeSessions.map((entry) => entry.principalId)).size
+        onlineMemberCount: new Set(activeSessions.map((entry) => entry.principalId)).size,
+        publicationGrants: []
     };
 }
 

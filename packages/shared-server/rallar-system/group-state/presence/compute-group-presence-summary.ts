@@ -1,3 +1,4 @@
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
     GroupMember,
@@ -18,6 +19,8 @@ export interface GroupPresenceSummaryRead {
     readonly admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
     readonly presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     readonly current: RuntimeStateEntryValue<GroupPresenceSummary> | null;
+    /** No summary input; the summary worker's snapshot and delta carry them (D488). */
+    readonly publicationGrants: readonly RuntimeStateEntryValue<GroupPublicationGrant>[];
 }
 
 export type GroupPresenceSummaryComputed =

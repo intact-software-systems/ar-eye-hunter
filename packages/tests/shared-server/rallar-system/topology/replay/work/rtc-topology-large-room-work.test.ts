@@ -164,7 +164,8 @@ function createLargeGroupSnapshot(): GroupSnapshot {
         members: createMembers(principalIds, audit),
         activeSessions: createActiveSessions(principalIds),
         memberCount: 1500,
-        onlineMemberCount: 1500
+        onlineMemberCount: 1500,
+        publicationGrants: []
     };
 }
 

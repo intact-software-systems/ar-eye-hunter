@@ -4,17 +4,29 @@ import {
     it
 } from 'vitest';
 
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { assertGroupMutationOperationReads } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-operation-reads.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 
+import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import {
     createMutationCommand,
     createMutationFacts,
     createMutationRead
 } from '../group-state-concurrency-test-fixtures.ts';
-import { createGroupAuthorityRead, transitionCommand } from './group-mutation-test-runtime.ts';
+
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { createService } from '../presence/group-presence-test-runtime.ts';
+import { createGroupAuthorityRead, SCOPE, transitionCommand } from './group-mutation-test-runtime.ts';
+import {
+    computeDescriptorMutation,
+    GRANT_ROOM,
+    readGrantRow,
+    requireWrite,
+    toTopicGrants
+} from './group-publication-grant-test-runtime.ts';
 
 describe('group aggregate mutation computation', () => {
     it('keeps pure mutation computation synchronous, deterministic, and input preserving', () => {
@@ -165,6 +177,60 @@ describe('group mutation roster read contract', () => {
         );
     });
 });
+
+describe('group creation with a declared publication grant', () => {
+    const createRequest = (publicationGrants?: CreateGroupRequest['publicationGrants']): CreateGroupRequest => ({
+        groupId: GRANT_ROOM,
+        displayName: GRANT_ROOM,
+        kind: 'room',
+        createdByPrincipalId: 'alice',
+        requestId: 'create-grant-room-declared',
+        ...(publicationGrants === undefined ? {} : { publicationGrants })
+    });
+
+    it('create with publicationGrants writes the creator\'s row in the create batch; absent or {} writes none', async () => {
+        const declared = { 'room.feed': { publish: true, subscribe: true } };
+        const runtime = new GroupBarrierRepository();
+        const { computed } = await computeDescriptorMutation(
+            runtime,
+            'alice',
+            mutationDescriptor({ operation: 'createGroup', scope: SCOPE, groupId: GRANT_ROOM, request: createRequest(declared) })
+        );
+        const write = requireWrite(computed);
+        const createStamp = write.guard.kind === 'group' ? write.guard.value.created : null;
+        const created = (await createService(runtime, 3_000).createGroup(SCOPE, createRequest(declared))).result;
+
+        expect(write.publicationGrantEffects).toEqual([
+            { operation: 'insert', value: { ...GRANT_ROOM_REF, principalId: 'alice', topics: declared, updated: createStamp } }
+        ]);
+        expect(write.persistence.guardedBatch.effects.map((effect) => effect.effectId)).toContain('publication-grant:alice');
+        expect(await readGrantRow(runtime, 'alice')).toMatchObject({ topics: declared, updated: created.snapshot.group.created });
+        expect(created.snapshot.publicationGrants).toEqual([await readGrantRow(runtime, 'alice')]);
+        for (const publicationGrants of [undefined, {}]) {
+            const empty = new GroupBarrierRepository();
+            const { result } = await createService(empty, 3_000).createGroup(SCOPE, createRequest(publicationGrants));
+            expect(await readGrantRow(empty, 'alice')).toBeUndefined();
+            expect(result.snapshot.publicationGrants).toEqual([]);
+        }
+    });
+
+    it('create refuses a 65-topic or both-false declaration', async () => {
+        for (
+            const publicationGrants of [
+                toTopicGrants(65),
+                { 'room.feed': { publish: false, subscribe: false } },
+                { feed: { publish: true, subscribe: true } }
+            ]
+        ) {
+            const runtime = new GroupBarrierRepository();
+            await expect(createService(runtime, 3_000).createGroup(SCOPE, createRequest(publicationGrants))).rejects
+                .toBeInstanceOf(TypeError);
+            expect(await readGrantRow(runtime, 'alice')).toBeUndefined();
+        }
+    });
+});
+
+const GRANT_ROOM_REF = { ...SCOPE, groupId: GRANT_ROOM };
 
 function deepFreeze<T>(value: T): T {
     if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {

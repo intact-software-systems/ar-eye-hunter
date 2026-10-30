@@ -13,7 +13,12 @@ import {
     GROUP_TRANSPORT_STATES
 } from './group-lifecycle/group-lifecycle-policy.ts';
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalized-group-lifecycle-policy.ts';
+import {
+    decodeGroupPublicationGrantList,
+    type GroupPublicationGrant
+} from './group-publication/group-publication-grants.ts';
 import type { Group, GroupEvent, GroupMember, GroupPresenceSession, GroupStateCausalRevision } from './group-types.ts';
+import { formatRallarValidation } from './rallar-validation.ts';
 import type { StateScope } from './state-types.ts';
 
 /**
@@ -40,6 +45,10 @@ export interface GroupStateDeltaEnvelope {
     readonly memberCount: number;
     readonly onlineMemberCount: number;
     readonly audienceSessionIds: readonly string[];
+    /** The resulting rows of the principals the slice's events wrote that still hold one, in principal order. */
+    readonly publicationGrants: readonly GroupPublicationGrant[];
+    /** The principals the slice's events wrote that hold no row in the resulting snapshot. */
+    readonly removedPublicationGrantPrincipalIds: readonly string[];
 }
 
 const ENVELOPE_KEYS = [
@@ -54,7 +63,9 @@ const ENVELOPE_KEYS = [
     'group',
     'memberCount',
     'onlineMemberCount',
-    'audienceSessionIds'
+    'audienceSessionIds',
+    'publicationGrants',
+    'removedPublicationGrantPrincipalIds'
 ];
 const GROUP_KEYS = [
     'applicationId',
@@ -152,6 +163,7 @@ export function validateGroupStateDeltaEnvelope(
     }
     const group = validateDeltaGroup(envelope.group, ref, resulting);
     validateDeltaMembers(envelope, ref);
+    validateDeltaPublicationGrants(envelope, ref);
     const activeSessionIds = validateDeltaSessionIdentitySets(envelope, ref);
     nonNegativeInteger(envelope.memberCount, 'GroupStateDeltaEnvelope.memberCount');
     nonNegativeInteger(envelope.onlineMemberCount, 'GroupStateDeltaEnvelope.onlineMemberCount');
@@ -317,6 +329,24 @@ function validateDeltaMembers(
         if (memberPrincipalIds.has(principalId)) {
             fail('GroupStateDeltaEnvelope removed member is also carried as a member');
         }
+    }
+}
+
+function validateDeltaPublicationGrants(
+    envelope: WireObject,
+    ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
+): void {
+    const grants = decodeGroupPublicationGrantList(envelope.publicationGrants, ref).fold(
+        (issues) => fail(`GroupStateDeltaEnvelope.publicationGrants is invalid: ${formatRallarValidation(issues)}`),
+        (decoded) => decoded
+    );
+    const removed = uniqueStringArray(
+        envelope.removedPublicationGrantPrincipalIds,
+        'GroupStateDeltaEnvelope.removedPublicationGrantPrincipalIds'
+    );
+    const granted = new Set(grants.map((grant) => grant.principalId));
+    if (removed.some((principalId) => granted.has(principalId))) {
+        fail('GroupStateDeltaEnvelope removed publication grant principal is also carried as a grant');
     }
 }
 

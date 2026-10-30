@@ -138,7 +138,8 @@ function snapshotIn(lifecycleState: GroupLifecycleState): GroupSnapshot {
         members: [member('alice', 'owner'), member('bob', 'member')],
         activeSessions: [],
         memberCount: 2,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 

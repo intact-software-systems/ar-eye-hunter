@@ -103,7 +103,8 @@ function createAssemblyInput(
         authoritativeSessions: [authoritativeSession],
         groupRevision: 1,
         observedAtEpochMs: IDLE_OBSERVED_AT_EPOCH_MS,
-        sessionLeaseFields: input.sessionLeaseFields
+        sessionLeaseFields: input.sessionLeaseFields,
+        publicationGrants: []
     };
 }
 

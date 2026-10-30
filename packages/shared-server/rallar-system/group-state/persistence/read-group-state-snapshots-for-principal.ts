@@ -1,3 +1,4 @@
+import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
     GroupMember,
@@ -32,6 +33,7 @@ import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
+    PUBLICATION_GRANTS_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { canonicalStoredMember } from './membership/group-membership-repository.ts';
@@ -43,6 +45,7 @@ import {
     canonicalStoredSession,
     canonicalStoredSummary
 } from './presence/group-presence-repository.ts';
+import { canonicalStoredPublicationGrants } from './publication/group-publication-grant-codec.ts';
 
 export interface ReadGroupStateSnapshotsForPrincipalInput {
     readonly repository: RuntimeStateRepositoryLike;
@@ -62,6 +65,7 @@ interface PrincipalGroupChildren {
     readonly members: readonly GroupMember[];
     readonly summary: GroupPresenceSummary | undefined;
     readonly sessions: readonly GroupPresenceSession[];
+    readonly publicationGrants: readonly GroupPublicationGrant[];
 }
 
 /** A principal's groups and what the read cost: one statement per selection, revision probe, full read and fallback. */
@@ -74,6 +78,8 @@ export interface GroupStatePrincipalSnapshotList {
     /** The groups read again from current authority because a selected row moved between the two selections. */
     readonly fallbackReads: number;
 }
+
+const PRINCIPAL_GROUP_CHILD_SELECTOR_COUNT = 4;
 
 /** The statements one list issued, accumulated as it reads. */
 interface PrincipalListTally {
@@ -284,41 +290,40 @@ async function readPrincipalGroupChildren(
     }
     const read = await readLiveSelections(
         repository,
-        selections.flatMap(({ group }, index) => {
-            const groupKey = groupStateGroupStorageKey(group.value);
-            return [
-                {
-                    selectorId: `members:${index}`,
-                    kind: 'prefix',
-                    namespace: MEMBERS_NAMESPACE,
-                    keyPrefix: `${groupKey}:`
-                },
-                {
-                    selectorId: `summary:${index}`,
-                    kind: 'key',
-                    namespace: PRESENCE_SUMMARIES_NAMESPACE,
-                    key: groupKey
-                },
-                {
-                    selectorId: `sessions:${index}`,
-                    kind: 'prefix',
-                    namespace: SESSIONS_NAMESPACE,
-                    keyPrefix: `${groupKey}:`
-                }
-            ] satisfies RuntimeStateReadBatchSelector[];
-        }),
+        selections.flatMap(({ group }, index) => toPrincipalGroupChildSelectors(group.value, index)),
         tally
     );
     return selections.map(({ group }, index) => {
-        const [summary] = read[index * 3 + 1];
+        const [members, [summary], sessions, publicationGrants] = read.slice(
+            index * PRINCIPAL_GROUP_CHILD_SELECTOR_COUNT,
+            (index + 1) * PRINCIPAL_GROUP_CHILD_SELECTOR_COUNT
+        );
         return {
-            members: read[index * 3].map((entry) => canonicalStoredMember(entry, group.value).value),
+            members: members.map((entry) => canonicalStoredMember(entry, group.value).value),
             summary: summary === undefined
                 ? undefined
                 : canonicalStoredSummary(summary, group.value).value,
-            sessions: read[index * 3 + 2].map((entry) => canonicalStoredSession(entry, group.value).value)
+            sessions: sessions.map((entry) => canonicalStoredSession(entry, group.value).value),
+            publicationGrants: canonicalStoredPublicationGrants(publicationGrants, group.value).map((entry) =>
+                entry.value
+            )
         };
     });
+}
+
+function toPrincipalGroupChildSelectors(ref: GroupRef, index: number): readonly RuntimeStateReadBatchSelector[] {
+    const groupKey = groupStateGroupStorageKey(ref);
+    return [
+        { selectorId: `members:${index}`, kind: 'prefix', namespace: MEMBERS_NAMESPACE, keyPrefix: `${groupKey}:` },
+        { selectorId: `summary:${index}`, kind: 'key', namespace: PRESENCE_SUMMARIES_NAMESPACE, key: groupKey },
+        { selectorId: `sessions:${index}`, kind: 'prefix', namespace: SESSIONS_NAMESPACE, keyPrefix: `${groupKey}:` },
+        {
+            selectorId: `publication-grants:${index}`,
+            kind: 'prefix',
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            keyPrefix: `${groupKey}:`
+        }
+    ];
 }
 
 async function readLiveSelections(
@@ -358,6 +363,7 @@ function toPrincipalGroupSnapshot(
             members: children.members,
             summary: children.summary,
             authoritativeSessions: children.sessions,
+            publicationGrants: children.publicationGrants,
             groupRevision: group.snapshotVersion,
             observedAtEpochMs,
             sessionLeaseFields: 'authoritative'

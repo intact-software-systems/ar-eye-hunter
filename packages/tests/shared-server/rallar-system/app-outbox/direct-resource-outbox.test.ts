@@ -782,7 +782,8 @@ function createGroupSnapshot(): GroupSnapshot {
         ],
         activeSessions: [createGroupPresenceSession()],
         memberCount: 1,
-        onlineMemberCount: 1
+        onlineMemberCount: 1,
+        publicationGrants: []
     };
 }
 

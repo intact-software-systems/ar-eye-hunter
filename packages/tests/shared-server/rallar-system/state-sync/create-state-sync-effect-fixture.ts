@@ -82,7 +82,9 @@ function createDeltaEnvelope(): GroupStateDeltaEnvelope {
         group: createRoom(),
         memberCount: 1,
         onlineMemberCount: 1,
-        audienceSessionIds: STATE_SYNC_FIXTURE_SESSION_IDS
+        audienceSessionIds: STATE_SYNC_FIXTURE_SESSION_IDS,
+        publicationGrants: [],
+        removedPublicationGrantPrincipalIds: []
     };
 }
 
@@ -105,7 +107,8 @@ function createGroupSnapshot(): GroupSnapshot {
         }],
         activeSessions: [],
         memberCount: 1,
-        onlineMemberCount: 0
+        onlineMemberCount: 0,
+        publicationGrants: []
     };
 }
 

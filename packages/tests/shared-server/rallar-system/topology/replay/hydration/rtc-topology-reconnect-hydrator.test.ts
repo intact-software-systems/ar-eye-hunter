@@ -610,7 +610,8 @@ function createGroupSnapshot(
             }
         ],
         memberCount: 1,
-        onlineMemberCount: sessionStatus === 'active' ? 1 : 0
+        onlineMemberCount: sessionStatus === 'active' ? 1 : 0,
+        publicationGrants: []
     };
 }
 

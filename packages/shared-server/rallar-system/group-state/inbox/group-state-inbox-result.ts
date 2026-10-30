@@ -1,3 +1,7 @@
+import {
+    comparePublicationGrantPrincipalIds,
+    type GroupPublicationGrant
+} from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -9,7 +13,8 @@ import type { GroupJoinCodeWritten, GroupStateWritten } from '../group-state-ser
 import type {
     GroupMutationComputed,
     GroupMutationRead,
-    GroupMutationReceipt
+    GroupMutationReceipt,
+    GroupPublicationGrantEffect
 } from '../mutation/group-mutation-contracts.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
 import { GroupStateRepositoryInvariantCorruptionError } from '../persistence/group-state-persistence-contracts.ts';
@@ -178,6 +183,10 @@ function assembleCommittedSnapshot(
             members: mergeMembers(input.currentSnapshot?.members ?? [], computed.members),
             summary: computed.initialPresenceSummary?.value ?? input.read.presenceSummary?.value,
             authoritativeSessions: input.currentSnapshot?.activeSessions ?? [],
+            publicationGrants: toCommittedPublicationGrants(
+                input.currentSnapshot?.publicationGrants ?? [],
+                computed.publicationGrantEffects
+            ),
             groupRevision: computed.guard.value.snapshotVersion,
             observedAtEpochMs: input.command.facts.attemptAtEpochMs,
             sessionLeaseFields: 'authoritative'
@@ -197,6 +206,24 @@ function mergeMembers(
     return [...members.entries()]
         .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
         .map(([, member]) => member);
+}
+
+function toCommittedPublicationGrants(
+    current: readonly GroupPublicationGrant[],
+    effects: readonly GroupPublicationGrantEffect[]
+): readonly GroupPublicationGrant[] {
+    const grants = new Map(current.map((grant) => [grant.principalId, grant]));
+    for (const effect of effects) {
+        if (effect.operation === 'delete') {
+            grants.delete(effect.value.principalId);
+        }
+        else {
+            grants.set(effect.value.principalId, effect.value);
+        }
+    }
+    return [...grants.values()].sort((left, right) =>
+        comparePublicationGrantPrincipalIds(left.principalId, right.principalId)
+    );
 }
 
 function readRecordedEvent(

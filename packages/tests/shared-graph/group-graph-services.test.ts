@@ -345,7 +345,8 @@ function createGroupStateSnapshot(
         })),
         activeSessions,
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        onlineMemberCount: sessionIds.length,
+        publicationGrants: []
     };
 }
 

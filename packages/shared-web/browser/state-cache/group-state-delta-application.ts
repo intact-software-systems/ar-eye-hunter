@@ -1,5 +1,9 @@
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
+import {
+    comparePublicationGrantPrincipalIds,
+    type GroupPublicationGrant
+} from '@shared/api/group-publication/group-publication-grants.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -90,7 +94,8 @@ export function toGroupSnapshotFromDeltaEnvelope(
         members: toDeltaMembers(cached.members, envelope.members),
         activeSessions,
         memberCount: envelope.memberCount,
-        onlineMemberCount: envelope.onlineMemberCount
+        onlineMemberCount: envelope.onlineMemberCount,
+        publicationGrants: toDeltaPublicationGrants(cached.publicationGrants, envelope)
     };
     return isAuthoritativeGroupSnapshot(snapshot, envelope.group)
         ? Either.ofRight(snapshot)
@@ -195,6 +200,22 @@ function compareCanonicalGroupMemberOrder(left: GroupMember, right: GroupMember)
         return -1;
     }
     return leftKey > rightKey ? 1 : 0;
+}
+
+function toDeltaPublicationGrants(
+    cached: readonly GroupPublicationGrant[],
+    envelope: GroupStateDeltaEnvelope
+): readonly GroupPublicationGrant[] {
+    const removed = new Set(envelope.removedPublicationGrantPrincipalIds);
+    const merged = new Map(
+        cached.filter((grant) => !removed.has(grant.principalId)).map((grant) => [grant.principalId, grant])
+    );
+    for (const grant of envelope.publicationGrants) {
+        merged.set(grant.principalId, grant);
+    }
+    return [...merged.values()].sort((left, right) =>
+        comparePublicationGrantPrincipalIds(left.principalId, right.principalId)
+    );
 }
 
 function toDeltaActiveSessions(

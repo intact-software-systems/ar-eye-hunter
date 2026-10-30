@@ -1,12 +1,16 @@
 import {
     decodeGroupPublicationGrant,
     GROUP_PUBLICATION_GRANT_LIMITS,
+    resolveGroupPublicationPermissions,
     validateGroupPublicationGrant,
     type GroupPublicationGrant,
     type GroupPublicationTopicGrants
 } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { describe, expect, it } from 'vitest';
+
+import { createActiveGroupMemberFixture, createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 const GRANT: GroupPublicationGrant = {
     applicationId: 'app-1',
@@ -105,5 +109,53 @@ describe('group publication grant contract', () => {
         const issues = decodeIssues({ ...GRANT, updated: { ...GRANT.updated, requestId: '', reason: '' } });
 
         expect(issues.map((issue) => issue.path)).toEqual(['$.updated.reason', '$.updated.requestId']);
+    });
+});
+
+describe('resolveGroupPublicationPermissions returns the row for an active member, both false for an absent row, topic or non-active member, and publish false for a spectator', () => {
+    const ref = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+
+    function memberOf(principalId: string, role: GroupMember['role']): GroupMember {
+        return createActiveGroupMemberFixture({ ...ref, principalId, role, actorPrincipalId: 'creator' });
+    }
+
+    function grantOf(principalId: string, topics: GroupPublicationTopicGrants): GroupPublicationGrant {
+        return { ...GRANT, ...ref, principalId, topics };
+    }
+
+    const lee = memberOf('lee', 'member');
+    if (lee.status !== 'active') {
+        throw new Error('Expected the active member fixture');
+    }
+    const snapshot: GroupSnapshot = {
+        ...createGroupSnapshotFixture({ ...ref, sessionIds: [] }),
+        members: [
+            memberOf('bob', 'member'),
+            memberOf('creator', 'owner'),
+            memberOf('dana', 'spectator'),
+            memberOf('erin', 'member'),
+            { ...lee, status: 'left', left: lee.updated },
+            memberOf('sam', 'spectator')
+        ],
+        publicationGrants: [
+            grantOf('bob', { 'room.feed': { publish: true, subscribe: false } }),
+            // dana held publish as a member and was demoted to spectator; the row is kept (D501).
+            grantOf('dana', { 'room.feed': { publish: true, subscribe: true } }),
+            grantOf('lee', { 'room.feed': { publish: true, subscribe: true } }),
+            grantOf('sam', { 'room.feed': { publish: false, subscribe: true } })
+        ]
+    };
+
+    it.each([
+        { principalId: 'bob', topicId: 'room.feed', expected: { publish: true, subscribe: false } },
+        { principalId: 'bob', topicId: 'room.other', expected: { publish: false, subscribe: false } },
+        { principalId: 'bob', topicId: 'constructor', expected: { publish: false, subscribe: false } },
+        { principalId: 'erin', topicId: 'room.feed', expected: { publish: false, subscribe: false } },
+        { principalId: 'lee', topicId: 'room.feed', expected: { publish: false, subscribe: false } },
+        { principalId: 'zed', topicId: 'room.feed', expected: { publish: false, subscribe: false } },
+        { principalId: 'sam', topicId: 'room.feed', expected: { publish: false, subscribe: true } },
+        { principalId: 'dana', topicId: 'room.feed', expected: { publish: false, subscribe: true } }
+    ])('returns $expected for $principalId on $topicId', ({ principalId, topicId, expected }) => {
+        expect(resolveGroupPublicationPermissions(snapshot, principalId, topicId)).toEqual(expected);
     });
 });

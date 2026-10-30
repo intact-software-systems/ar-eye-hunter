@@ -6533,6 +6533,7 @@ components:
         - activeSessions
         - memberCount
         - onlineMemberCount
+        - publicationGrants
       properties:
         causalRevision:
           $ref: '#/components/schemas/GroupStateCausalRevision'
@@ -6552,6 +6553,55 @@ components:
         onlineMemberCount:
           type: integer
           format: int64
+        publicationGrants:
+          type: array
+          description: One row per principal holding a publication grant, in principal order. A principal without a row holds no grant.
+          items:
+            $ref: '#/components/schemas/GroupPublicationGrant'
+
+    GroupPublicationGrant:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - workspaceId
+        - groupId
+        - principalId
+        - topics
+        - updated
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        groupId:
+          type: string
+        principalId:
+          type: string
+        topics:
+          allOf:
+            - $ref: '#/components/schemas/GroupPublicationTopicGrants'
+          minProperties: 1
+        updated:
+          $ref: '#/components/schemas/AuditStamp'
+
+    GroupPublicationTopicGrants:
+      type: object
+      description: Exact user topic ids (app.* or room.*) mapped to their permissions; at most 64 topics per principal.
+      maxProperties: 64
+      additionalProperties:
+        $ref: '#/components/schemas/GroupPublicationTopicPermissions'
+
+    GroupPublicationTopicPermissions:
+      type: object
+      additionalProperties: false
+      description: At least one permission is true.
+      required: [publish, subscribe]
+      properties:
+        publish:
+          type: boolean
+        subscribe:
+          type: boolean
 
     GroupEvent:
       type: object
@@ -6955,6 +7005,9 @@ components:
           description: Absolute storage expiry for persistent rooms; rejected for temporary rooms.
         lifecyclePolicy:
           $ref: '#/components/schemas/GroupLifecyclePolicyInput'
+        publicationGrants:
+          $ref: '#/components/schemas/GroupPublicationTopicGrants'
+          description: "The creator's own initial publication grant, written with the group. Absent: the creator holds no grant."
         reason:
           type: string
     UpdateGroupRequest:

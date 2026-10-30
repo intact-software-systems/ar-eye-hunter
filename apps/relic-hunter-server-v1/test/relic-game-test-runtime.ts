@@ -235,7 +235,8 @@ async function connectRelicTestSession(
             members: observed.members,
             admissions: observed.admissions,
             presenceSessions: observed.presenceSessions,
-            current: observed.current
+            current: observed.current,
+            publicationGrants: observed.publicationGrants
         }
     });
     if (computed.outcome === 'write' && computed.operation === 'update') {

@@ -32,7 +32,8 @@ export function createRtcGroupCoordinationSnapshot(
         members: createMembers(input),
         activeSessions: createSessions(input),
         memberCount: input.memberSessionIds.length,
-        onlineMemberCount: input.memberSessionIds.length
+        onlineMemberCount: input.memberSessionIds.length,
+        publicationGrants: []
     };
 }
 

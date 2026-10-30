@@ -9,6 +9,7 @@ import type {
 import type { GroupDirectoryListing } from './group-directory/group-directory-listing.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupPublicationTopicGrants } from './group-publication/group-publication-grants.ts';
 import type { GroupRetentionIntent } from './group-retention.ts';
 import type {
     Group,
@@ -96,6 +97,8 @@ export interface CreateGroupRequest extends MutationActorInput {
     readonly expiresAtEpochMs?: number;
     readonly purgeAfterEpochMs?: number;
     readonly lifecyclePolicy?: GroupLifecyclePolicyInput;
+    /** The creator's own initial grant (D494); absence means the creator holds none. */
+    readonly publicationGrants?: GroupPublicationTopicGrants;
 }
 
 export interface UpdateGroupRequest extends MutationActorInput {

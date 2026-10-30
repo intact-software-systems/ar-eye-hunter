@@ -1142,6 +1142,7 @@ function createRoomSnapshot(principalIds: readonly string[] = ['alice', 'bob']):
             disconnectReason: null
         })),
         memberCount: principalIds.length,
-        onlineMemberCount: principalIds.length
+        onlineMemberCount: principalIds.length,
+        publicationGrants: []
     };
 }

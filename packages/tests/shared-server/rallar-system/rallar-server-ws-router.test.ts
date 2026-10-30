@@ -1672,7 +1672,8 @@ function createGroupSnapshot(
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: activeSessions.length
+        onlineMemberCount: activeSessions.length,
+        publicationGrants: []
     };
 }
 
