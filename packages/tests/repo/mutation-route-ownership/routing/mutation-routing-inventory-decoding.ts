@@ -8,6 +8,7 @@ const PATHS = {
     ga: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
     gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
+    gpub: 'apps/api-v1/src/group-state/register-group-publication-routes.ts',
     quickJoin: 'apps/api-v1/src/group-state/register-group-quick-join-route.ts',
     groupRetentionReconciliation: 'packages/shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts',
     gr: 'apps/api-v1/src/group-state/register-group-state-routes.ts',

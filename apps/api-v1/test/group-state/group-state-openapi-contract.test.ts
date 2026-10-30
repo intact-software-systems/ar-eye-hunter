@@ -172,6 +172,20 @@ const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
         responseSchema: { reference: 'GroupSnapshot' }
     },
     {
+        path: `${GROUP_ID_PATH}/publication-grants/{principalId}/grant`,
+        method: 'post',
+        requestSchema: 'GrantGroupPublicationRequest',
+        status: '200',
+        responseSchema: { reference: 'GroupSnapshot' }
+    },
+    {
+        path: `${GROUP_ID_PATH}/publication-grants/{principalId}/revoke`,
+        method: 'post',
+        requestSchema: 'RevokeGroupPublicationRequest',
+        status: '200',
+        responseSchema: { reference: 'GroupSnapshot' }
+    },
+    {
         path: `${GROUP_ID_PATH}/owner/transfer`,
         method: 'post',
         requestSchema: 'TransferGroupOwnershipRequest',
@@ -231,6 +245,30 @@ Deno.test(
         }
     }
 );
+
+Deno.test('publication grant requests name every permission field and admit no other', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    for (const name of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
+        const request = document.components.schemas[name];
+        assert.equal(request.additionalProperties, false, name);
+        assert.deepEqual(request.required, ['topicId', 'publish', 'subscribe'], name);
+        assert.deepEqual(Object.keys(request.properties ?? {}), ['topicId', 'publish', 'subscribe', 'reason'], name);
+        assert.equal(request.properties?.topicId.$ref, '#/components/schemas/RallarWsUserTopicId', name);
+        for (const permission of ['publish', 'subscribe']) {
+            assert.equal(request.properties?.[permission].type, 'boolean', `${name}.${permission}`);
+            assert.equal(request.properties?.[permission].default, undefined, `${name}.${permission}`);
+        }
+    }
+    for (const action of ['grant', 'revoke']) {
+        const path = `${GROUP_ID_PATH}/publication-grants/{principalId}/${action}/requests/{requestId}`;
+        assert.deepEqual(
+            Object.keys(document.paths[path]?.post?.responses ?? {}),
+            ['200', '400', '401', '403', '404', '409'],
+            path
+        );
+    }
+});
 
 Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable RTT', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');

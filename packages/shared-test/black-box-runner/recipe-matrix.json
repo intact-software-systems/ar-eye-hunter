@@ -2771,6 +2771,32 @@
       "description": "No-browser API-v1 browser-director appointment: the route no recipe calls, and every denial it raises shares one code so only the reason separates them. A non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason that names the branch. Each accepted appointment advances the director epoch and the metadata version by exactly one, pins the heartbeat TTL default, and leaves the group fields and the seeded metadata entry it must not touch unchanged."
     },
     {
+      "id": "api-v1-group-publication-grants",
+      "recipe": "tests/api-v1/api-v1-group-publication-grants.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-publication-grants",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 publication grants over REST: the creator's declared initial grant, an owner's grant read back on the snapshot and named by publication-grant-changed, an equal replay and a changed-body idempotency conflict, forbidden-role for an admin granting an admin and a member granting itself, the 65th topic refused capacity with limit topics-per-principal, a revoke removing the row, and a member who leaves or is banned and rejoins coming back holding no grant."
+    },
+    {
       "id": "api-v1-group-join-code-admission",
       "recipe": "tests/api-v1/api-v1-group-join-code-admission.json",
       "category": "api-v1-black-box",
@@ -3254,6 +3280,41 @@
         ]
       },
       "description": "No-browser API-v1 group governance fencing across three nodes. Ban, unban, removal and the two admission decisions are each written on one node and enforced or read back on the nodes that never saw the write; group snapshots are served through a node-local cache, so a fence that is only correct on the writing node is the regression this catches, and no existing recipe crosses a node with any of these. Every denial names its code rather than its status: member-banned on both non-writing nodes, member-removed after a removal written elsewhere, and an unban that lets the rejoin through on a third node. The admission half parks a request on one node, decides it on another, and requires the decision visible on the node that parked it."
+    },
+    {
+      "id": "api-v1-group-publication-grants-cluster",
+      "recipe": "tests/api-v1/api-v1-group-publication-grants-cluster.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-publication-grants-cluster",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 publication grants across three nodes: a grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, a revoke written on the secondary is read back on the primary and the tertiary, and replaying the primary's grant requestId on the tertiary answers the first result."
     },
     {
       "id": "api-v1-group-reconnect-across-stages",

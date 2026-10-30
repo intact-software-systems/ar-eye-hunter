@@ -1,0 +1,980 @@
+{
+  "description": "No-browser API-v1 publication grants over REST. The creator's declared initial grant is on the 201 snapshot; an owner grants a member publish on one exact topic, the 200 snapshot and a later read carry the row, the group revision advances, and the event log names publication-grant-changed with the resulting permissions. An equal replay answers the first result and a changed body under the same requestId is an idempotency conflict. An admin cannot grant an admin and a member cannot grant itself (forbidden-role); a principal holds at most 64 topics, so the 65th is refused capacity with limit topics-per-principal. A revoke removes the row, and a member who leaves, or is banned, unbanned and rejoins, comes back holding no grant.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_PUBGRANT_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-pubgrant"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_PUBGRANT_WORKSPACE_ID",
+      "default": "workspace-pubgrant-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_PUBGRANT_GROUP_ID",
+      "default": "pubgrant-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_PUBGRANT_PASSWORD",
+      "default": "api-v1-pubgrant-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrant-register-alice-{runId}",
+        "body": {
+          "username": "pubgrant-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrant-login-user-alice-{runId}",
+        "body": {
+          "username": "pubgrant-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrant-register-bob-{runId}",
+        "body": {
+          "username": "pubgrant-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrant-login-user-bob-{runId}",
+        "body": {
+          "username": "pubgrant-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrant-register-carol-{runId}",
+        "body": {
+          "username": "pubgrant-carol-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "carol client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrant-login-user-carol-{runId}",
+        "body": {
+          "username": "pubgrant-carol-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolSessionId": "body.sessionId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerDave",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/pubgrant-register-dave-{runId}",
+        "body": {
+          "username": "pubgrant-dave-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "dave client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginDave",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/pubgrant-login-user-dave-{runId}",
+        "body": {
+          "username": "pubgrant-dave-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "daveClientId": "body.clientId",
+          "daveSessionId": "body.sessionId",
+          "daveAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveDaveAuthHeader",
+      "type": "set",
+      "output": "daveAuthHeader",
+      "secret": true,
+      "redactAs": "daveAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.daveAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroupWithDeclaredGrant",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/pubgrant-create-group-room-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Publication grants {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "publicationGrants": {
+            "room.pubgrant-feed": {
+              "publish": true,
+              "subscribe": true
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "comparison": "compatible-complete",
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}",
+              "topics": {
+                "room.pubgrant-feed": {
+                  "publish": true,
+                  "subscribe": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/pubgrant-join-member-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "carolJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{carolClientId}/requests/pubgrant-join-member-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "daveJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{daveClientId}/requests/pubgrant-join-member-dave-{runId}",
+        "headers": {
+          "Authorization": "{daveAuthHeader}",
+          "x-client-id": "{daveClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{daveClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "daveIsPromotedToAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{daveClientId}/role/requests/pubgrant-promote-dave-admin-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "role": "admin"
+        },
+        "outputs": {
+          "groupRevisionBeforeGrant": "body.causalRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{daveClientId}",
+              "role": "admin"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantBobPublish",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": false
+        },
+        "outputs": {
+          "groupRevisionAfterGrant": "body.causalRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrant-feed": {
+                  "publish": true,
+                  "subscribe": false
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theGrantAdvancesTheGroupRevision",
+      "type": "assert",
+      "actual": {
+        "before": "{groupRevisionBeforeGrant}",
+        "after": "{groupRevisionAfterGrant}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "after",
+            "gt": "{groupRevisionBeforeGrant}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "readBackGrant",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}",
+              "topics": {
+                "room.pubgrant-feed": {
+                  "publish": true,
+                  "subscribe": true
+                }
+              }
+            },
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrant-feed": {
+                  "publish": true,
+                  "subscribe": false
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantEmitsPublicationGrantChanged",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "eventType": "publication-grant-changed",
+            "requestId": "pubgrant-grant-bob-publish-{runId}",
+            "payload": {
+              "principalId": "{bobClientId}",
+              "topicId": "room.pubgrant-feed",
+              "permissions": {
+                "publish": true,
+                "subscribe": false
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "replayGrantSameBody",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "causalRevision": {
+            "groupRevision": "{groupRevisionAfterGrant}"
+          },
+          "publicationGrants": [
+            {
+              "principalId": "{bobClientId}",
+              "topics": {
+                "room.pubgrant-feed": {
+                  "publish": true,
+                  "subscribe": false
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "changedBodySameRequestId",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "app-inbox-idempotency-conflict",
+          "status": 409
+        }
+      }
+    },
+    {
+      "name": "adminGrantsAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{daveClientId}/grant/requests/pubgrant-admin-grants-admin-{runId}",
+        "headers": {
+          "Authorization": "{daveAuthHeader}",
+          "x-client-id": "{daveClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "memberSelfGrants",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-member-self-grants-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "grantSixtyFourTopicsToCarol",
+      "type": "loop",
+      "count": 64,
+      "steps": [
+        {
+          "name": "grantCarolTopic{loop.iteration}",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "POST",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{carolClientId}/grant/requests/pubgrant-carol-capacity-{loop.iteration}-{runId}",
+            "headers": {
+              "Authorization": "{aliceAuthHeader}",
+              "x-client-id": "{aliceClientId}"
+            },
+            "body": {
+              "topicId": "room.pubgrant-capacity-{loop.iteration}",
+              "publish": false,
+              "subscribe": true
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "publicationGrants": [
+                {
+                  "principalId": "{carolClientId}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "grantSixtyFifthTopic",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{carolClientId}/grant/requests/pubgrant-carol-capacity-overflow-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-capacity-overflow",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "capacity",
+          "status": 403,
+          "denial": {
+            "code": "capacity",
+            "details": {
+              "limit": "topics-per-principal",
+              "max": 64
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "revokeBobPublish",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/revoke/requests/pubgrant-revoke-bob-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            },
+            {
+              "principalId": "{carolClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantBobSubscribeBeforeLeaving",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-subscribe-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            },
+            {
+              "principalId": "{bobClientId}"
+            },
+            {
+              "principalId": "{carolClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobLeaves",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/pubgrant-leave-member-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            },
+            {
+              "principalId": "{carolClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobLeavesThenRejoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/pubgrant-rejoin-member-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            },
+            {
+              "principalId": "{carolClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "carolIsBanned",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{carolClientId}/ban/requests/pubgrant-ban-member-carol-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "carolIsUnbanned",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{carolClientId}/unban/requests/pubgrant-unban-member-carol-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "banCarolUnbanRejoin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{carolClientId}/requests/pubgrant-rejoin-member-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "publicationGrants": [
+            {
+              "principalId": "{aliceClientId}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

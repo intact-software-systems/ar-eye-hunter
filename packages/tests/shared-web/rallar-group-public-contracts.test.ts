@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
+import { GROUP_PUBLICATION_GRANT_LIMITS } from '@shared/api/group-publication/group-publication-grants.ts';
+import { RALLAR_ROUTE_ID_MAX_LENGTH, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 const repoRoot = process.cwd();
 
@@ -56,6 +58,34 @@ describe('Rallar group public contracts', () => {
         const published = schema('GroupPolicyReasonCode').enum ?? [];
 
         expect([...published].sort()).toEqual([...GROUP_POLICY_REASON_CODES].sort());
+    });
+
+    it('constrains granted topic keys and request topic ids to the WS user topic rule', () => {
+        const topicId = schema('RallarWsUserTopicId');
+        const pattern = new RegExp(topicId.pattern ?? '', 'u');
+        const candidates = [
+            'app.scores',
+            'room.feed',
+            'room.a:b_c-d.e',
+            'room.',
+            'rallar.state',
+            'group-state.event',
+            'feed',
+            'room.a b',
+            ' room.feed',
+            'room.\u00fc'
+        ];
+
+        expect(schema('GroupPublicationTopicGrants').propertyNames?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
+        expect(schema('GroupPublicationTopicGrants').maxProperties).toBe(GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal);
+        expect(topicId.maxLength).toBe(RALLAR_ROUTE_ID_MAX_LENGTH);
+        expect(candidates.map((candidate) => [candidate, pattern.test(candidate)])).toEqual(
+            candidates.map((candidate) => [candidate, validateRallarWsUserTopicId(candidate).ok])
+        );
+        for (const request of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
+            expect(schema(request).properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
+            expectSchemaRequired(request, ['topicId', 'publish', 'subscribe']);
+        }
     });
 
     it('documents stable policy reasons and the strict read rollout switch', () => {
@@ -432,6 +462,10 @@ interface OpenApiSchema {
     readonly allOf?: readonly OpenApiSchema[];
     readonly oneOf?: readonly OpenApiSchema[];
     readonly discriminator?: OpenApiDiscriminator;
+    readonly pattern?: string;
+    readonly maxLength?: number;
+    readonly maxProperties?: number;
+    readonly propertyNames?: OpenApiSchema;
 }
 
 interface OpenApiDiscriminator {
@@ -493,16 +527,14 @@ function requireOpenApiSchema(value: ApiJsonValue, label: string): OpenApiSchema
         throw new TypeError(`OpenAPI schema ${label} discriminator is invalid`);
     }
     return {
-        ...(typeof source.type === 'string' ? { type: source.type } : {}),
-        ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
+        ...toOpenApiSchemaKeywords(source),
         ...(source.required === undefined
             ? {}
             : { required: requireOpenApiStringArray(source.required, `${label}.required`) }),
         ...(source.properties === undefined ? {} : { properties }),
-        ...(typeof source.nullable === 'boolean'
-            ? { nullable: source.nullable }
-            : {}),
-        ...(Array.isArray(source.enum) ? { enum: [...source.enum] } : {}),
+        ...(source.propertyNames === undefined
+            ? {}
+            : { propertyNames: requireOpenApiSchema(source.propertyNames, `${label}.propertyNames`) }),
         ...(source.allOf === undefined
             ? {}
             : {
@@ -518,6 +550,18 @@ function requireOpenApiSchema(value: ApiJsonValue, label: string): OpenApiSchema
         ...(propertyName === undefined
             ? {}
             : { discriminator: { propertyName } })
+    };
+}
+
+function toOpenApiSchemaKeywords(source: ApiJsonObject): OpenApiSchema {
+    return {
+        ...(typeof source.type === 'string' ? { type: source.type } : {}),
+        ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
+        ...(typeof source.nullable === 'boolean' ? { nullable: source.nullable } : {}),
+        ...(Array.isArray(source.enum) ? { enum: [...source.enum] } : {}),
+        ...(typeof source.pattern === 'string' ? { pattern: source.pattern } : {}),
+        ...(typeof source.maxLength === 'number' ? { maxLength: source.maxLength } : {}),
+        ...(typeof source.maxProperties === 'number' ? { maxProperties: source.maxProperties } : {})
     };
 }
 

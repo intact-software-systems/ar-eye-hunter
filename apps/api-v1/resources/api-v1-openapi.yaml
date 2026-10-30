@@ -1330,6 +1330,101 @@ paths:
         '404':
           $ref: '#/components/responses/ApiMutationFailure'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{principalId}/grant/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Grant a member publication rights on one topic
+      description: >
+        Adds the named permissions on one exact user topic (`app.*` or `room.*`)
+        to an active member's publication grant. Only owners and admins may
+        grant, an admin only to a regular member; a spectator is never granted
+        publish (`forbidden-role`), and a principal holds at most 64 topics
+        (`capacity`, limit `topics-per-principal`). The body names at least one
+        permission; a grant that changes nothing is a no-op.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantGroupPublicationRequest'
+      responses:
+        '200':
+          description: Updated group snapshot whose `publicationGrants` carries the resulting row.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{principalId}/revoke/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Revoke a member's publication rights on one topic
+      description: >
+        Removes the named permissions on one exact user topic from a member's
+        publication grant; a topic left with neither permission leaves the row,
+        and a row left with no topic is deleted. Only owners and admins may
+        revoke, an admin only from a regular member. The body names at least
+        one permission; a revoke that changes nothing is a no-op.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeGroupPublicationRequest'
+      responses:
+        '200':
+          description: Updated group snapshot whose `publicationGrants` no longer carries the revoked permissions.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove/requests/{requestId}:
     post:
       tags: [Group State]
@@ -6589,8 +6684,19 @@ components:
       type: object
       description: Exact user topic ids (app.* or room.*) mapped to their permissions; at most 64 topics per principal.
       maxProperties: 64
+      propertyNames:
+        $ref: '#/components/schemas/RallarWsUserTopicId'
       additionalProperties:
         $ref: '#/components/schemas/GroupPublicationTopicPermissions'
+
+    RallarWsUserTopicId:
+      type: string
+      description: >
+        One exact user WebSocket topic: `app.` or `room.` followed by letters,
+        digits, dot, underscore, colon or hyphen; never a reserved `rallar.*`
+        topic.
+      maxLength: 128
+      pattern: '^(?:app|room)\.[A-Za-z0-9._:-]*$'
 
     GroupPublicationTopicPermissions:
       type: object
@@ -7138,6 +7244,34 @@ components:
     DeclineGroupAdmissionRequest:
       type: object
       properties:
+        reason:
+          type: string
+    GrantGroupPublicationRequest:
+      type: object
+      additionalProperties: false
+      description: At least one of `publish` and `subscribe` is true; each true permission is added.
+      required: [topicId, publish, subscribe]
+      properties:
+        topicId:
+          $ref: '#/components/schemas/RallarWsUserTopicId'
+        publish:
+          type: boolean
+        subscribe:
+          type: boolean
+        reason:
+          type: string
+    RevokeGroupPublicationRequest:
+      type: object
+      additionalProperties: false
+      description: At least one of `publish` and `subscribe` is true; each true permission is removed.
+      required: [topicId, publish, subscribe]
+      properties:
+        topicId:
+          $ref: '#/components/schemas/RallarWsUserTopicId'
+        publish:
+          type: boolean
+        subscribe:
+          type: boolean
         reason:
           type: string
     AcceptGroupInviteRequest:

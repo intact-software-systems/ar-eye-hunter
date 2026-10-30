@@ -184,6 +184,18 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
         requestId: 'idem-contract-group-replay-{runId}'
     },
     {
+        actionNames: ['changedBodySameRequestId', 'grantBobPublish', 'replayGrantSameBody'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-publication-grants.json`,
+        kind: 'sequential-replay',
+        requestId: 'pubgrant-grant-bob-publish-{runId}'
+    },
+    {
+        actionNames: ['grantOnPrimary', 'replayGrantOnTertiary'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-publication-grants-cluster.json`,
+        kind: 'sequential-replay',
+        requestId: 'pubgrantcl-grant-bob-feed-{runId}'
+    },
+    {
         actionNames: ['firstLogout', 'replayLogout'],
         file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
         kind: 'sequential-replay',
