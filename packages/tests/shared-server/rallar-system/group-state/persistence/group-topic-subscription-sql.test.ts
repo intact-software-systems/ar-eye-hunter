@@ -12,8 +12,10 @@ import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-
 import { GroupStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { readGroupStateSnapshotVersions } from '@shared-server/rallar-system/group-state/persistence/read-group-state-authority.ts';
 import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-system/group-state/persistence/subscription/group-topic-subscription-storage-key.ts';
 import { readGroupSessionTopicSubscriptions } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
+import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
@@ -55,6 +57,27 @@ describe.each(['memory', 'postgres'] as const)('group topic subscription rows (%
             expect(JSON.parse(entry?.value ?? 'null')).toMatchObject({ sessionId: 'bob-session', connectionGenerationId: GENERATION });
             expect(await fixture.repository.listEvents(REF)).toEqual(eventsBefore);
             expect((await fixture.repository.readSnapshot(REF))?.group).toEqual(snapshotBefore?.group);
+        });
+    }, 30_000);
+
+    sqlIt('a renewal leaves the group\'s version probe and the cached snapshot untouched', async () => {
+        await withSubscriptionSql(backend, async (fixture) => {
+            await seedSubscribableRoom(fixture);
+            await runMutation(fixture, subscribeDescriptor('room.feed', 'subscribe-bob-feed-before-renew'));
+            const current = new GroupStateCurrentSnapshotCache({
+                repository: fixture.repository,
+                versionReader: fixture.runtime,
+                nowEpochMs: () => fixture.nowEpochMs,
+                maxEntries: 4
+            });
+            const [probeBefore] = await readGroupStateSnapshotVersions(fixture.runtime, [REF], fixture.nowEpochMs);
+            const cachedBefore = await current.readSnapshot(REF);
+
+            const renewal = await runMutation(fixture, subscribeDescriptor('room.feed', 'renew-bob-feed-after-subscribe'));
+
+            expect(renewal).toMatchObject({ receipt: { subscriptionOutcome: 'renewed' } });
+            expect(await readGroupStateSnapshotVersions(fixture.runtime, [REF], fixture.nowEpochMs)).toEqual([probeBefore]);
+            expect(await current.readSnapshot(REF)).toBe(cachedBefore);
         });
     }, 30_000);
 

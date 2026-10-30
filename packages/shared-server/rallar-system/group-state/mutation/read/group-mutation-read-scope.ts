@@ -104,12 +104,16 @@ export function readsTopicSubscriptionTarget(
 }
 
 /**
- * Every subscription row of the target is read exactly by the commands that delete them in their own batch: a revoke
- * naming subscribe and every departure.
+ * Every subscription row of the target is read exactly by the group-row writes that may delete them in their own
+ * batch: a grant or revoke naming subscribe, every departure, and every activation (a join or an upsert). Those are the
+ * writes after which an orphan row a cross-server race left behind must not survive.
  */
 export function readsTargetPrincipalSubscriptions(command: GroupMutationCommand): boolean {
-    return (command.operation === 'revokeGroupPublication' && command.input.subscribe) ||
+    return ((command.operation === 'grantGroupPublication' || command.operation === 'revokeGroupPublication') &&
+        command.input.subscribe) ||
         command.operation === 'removeGroupMember' ||
         command.operation === 'banGroupMember' ||
-        (command.operation === 'upsertMember' && command.input.status !== 'active');
+        command.operation === 'joinGroup' ||
+        command.operation === 'acceptGroupInvite' ||
+        command.operation === 'upsertMember';
 }

@@ -361,4 +361,36 @@ describe('group publication grant mutation', () => {
         expect(read.targetPrincipalSubscriptions).toBeNull();
         expect(requireWrite(computed).subscriptionEffects).toEqual([]);
     });
+
+    it('a grant that adds subscribe deletes the principal\'s existing rows for that topic in the grant batch', async () => {
+        const runtime = await seededRoom();
+        const ref = groupRef(GRANT_ROOM);
+        await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: true, subscribe: false } });
+        const orphan = subscriptionRowFor('bob', 'bob-session', 'room.feed');
+        const key = await writeSubscriptionRow(runtime, ref, orphan);
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('bob', 'bob-session', 'app.scores'));
+
+        const { computed } = await computePublicationMutation(runtime, {
+            ...BOB_PUBLISH,
+            publish: false,
+            subscribe: true,
+            requestId: 'grant-bob-feed-subscribe-over-orphan'
+        });
+        const write = requireWrite(computed);
+
+        expect(write.subscriptionEffects).toEqual([{ ref, value: orphan, expectedRevision: 0 }]);
+        expect(write.persistence.guardedBatch.effects.filter((effect) => effect.namespace === SUBSCRIPTIONS_NAMESPACE))
+            .toEqual([expect.objectContaining({ operation: 'delete', key })]);
+    });
+
+    it('a grant of publish only reads and deletes no subscription row', async () => {
+        const runtime = await seededRoom();
+        await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: false, subscribe: true } });
+        await writeSubscriptionRow(runtime, groupRef(GRANT_ROOM), subscriptionRowFor('bob', 'bob-session', 'room.feed'));
+
+        const { read, computed } = await computePublicationMutation(runtime, BOB_PUBLISH);
+
+        expect(read.targetPrincipalSubscriptions).toBeNull();
+        expect(requireWrite(computed).subscriptionEffects).toEqual([]);
+    });
 });

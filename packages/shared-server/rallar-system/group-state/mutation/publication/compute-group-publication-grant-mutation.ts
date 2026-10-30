@@ -129,19 +129,23 @@ function computePublicationGrantWrite(
         // mints is a no-op.
         presenceSummaryWork: 'enqueue',
         publicationGrantEffects: [toPublicationGrantEffect(read.targetPublicationGrant, next)],
-        subscriptionEffects: computeRevokedSubscriptionEffects(command, read, topics),
+        subscriptionEffects: computeTopicSubscriptionEffects(command, read, topics),
         subscriptionOutcome: null
     });
 }
 
-/** A topic left without subscribe deletes the principal's rows on it in the grant batch: a re-grant revives none. */
-function computeRevokedSubscriptionEffects(
+/**
+ * Rows on the topic survive only while subscribe is held across the write. A revoke of it deletes them, and a grant
+ * that adds it deletes any orphan a cross-server race left, so a re-grant never revives an old subscription.
+ */
+function computeTopicSubscriptionEffects(
     command: GroupPublicationGrantCommand,
     read: GroupMutationRead,
     topics: GroupPublicationTopicGrants
 ): readonly GroupTopicSubscriptionDeleteEffect[] {
     const { topicId } = command.input;
-    if (topics[topicId]?.subscribe === true) {
+    const heldBefore = read.targetPublicationGrant?.value.topics[topicId]?.subscribe === true;
+    if (heldBefore && topics[topicId]?.subscribe === true) {
         return [];
     }
     const rows = (read.targetPrincipalSubscriptions ?? []).filter((row) => row.value.topicId === topicId);

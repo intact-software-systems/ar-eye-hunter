@@ -120,6 +120,13 @@ describe('GroupStateService mutation exact reads', () => {
                     })
                 },
                 {
+                    selectorId: 'principal-subscriptions:0',
+                    kind: 'prefix-containing',
+                    namespace: SUBSCRIPTIONS_NAMESPACE,
+                    keyPrefix: `${groupStateGroupStorageKey(ref)}:`,
+                    storedValueContains: { principalId: 'bob' }
+                },
+                {
                     selectorId: 'auth-session',
                     kind: 'key',
                     namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
@@ -152,6 +159,7 @@ describe('GroupStateService mutation exact reads', () => {
                 'idempotency:0',
                 'member:0',
                 'admission:0',
+                'principal-subscriptions:0',
                 'auth-session'
             ]]);
         expect(runtime.readBatchCalls).toHaveLength(1);
@@ -381,7 +389,7 @@ describe('GroupStateService mutation exact reads', () => {
         ).toEqual([{ ...grantSelector('owner'), key: groupStatePublicationGrantStorageKey(created, 'owner') }]);
     });
 
-    it('subscribe reads member, grant, subscription and client session; revoke of subscribe and departures read the principal\'s subscriptions; join and role changes do not', async () => {
+    it('subscribe reads member, grant, subscription and client session; a grant or revoke naming subscribe, departures and activations read the principal\'s subscriptions; role changes and publish-only grants do not', async () => {
         const { runtime, service } = await createSeededService('subscription-scope');
         const ref = { ...SCOPE, groupId: 'subscription-scope' };
         const subscriptionSelectorsOf = async (mutate: () => Promise<object>) => {
@@ -431,7 +439,11 @@ describe('GroupStateService mutation exact reads', () => {
         ).toEqual(['member:0', 'subscription:0', 'client-session:0']);
         await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' });
         const feed = { topicId: 'room.feed', publish: true, subscribe: true, actorPrincipalId: 'owner' };
-        await service.grantGroupPublication(SCOPE, ref.groupId, 'bob', feed);
+        expect(await subscriptionSelectorsOf(() => service.grantGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
+            .toContainEqual(principalSubscriptions('bob'));
+        expect(
+            await subscriptionSelectorsOf(() => service.grantGroupPublication(SCOPE, ref.groupId, 'bob', { ...feed, topicId: 'room.other', subscribe: false }))
+        ).not.toContainEqual(principalSubscriptions('bob'));
         expect(await subscriptionSelectorsOf(() => service.revokeGroupPublication(SCOPE, ref.groupId, 'bob', { ...feed, subscribe: false })))
             .not.toContainEqual(principalSubscriptions('bob'));
         expect(await subscriptionSelectorsOf(() => service.revokeGroupPublication(SCOPE, ref.groupId, 'bob', feed)))
@@ -443,12 +455,15 @@ describe('GroupStateService mutation exact reads', () => {
             await subscriptionSelectorsOf(() => service.upsertMember(SCOPE, ref.groupId, 'bob', { status: 'left', actorPrincipalId: 'bob' }))
         ).toContainEqual(principalSubscriptions('bob'));
         expect(await subscriptionSelectorsOf(() => service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'bob' })))
-            .toEqual([{
-                selectorId: 'member:0',
-                kind: 'key',
-                namespace: 'group-state:members',
-                key: groupStateMemberStorageKey({ ...ref, principalId: 'bob' })
-            }]);
+            .toEqual([
+                {
+                    selectorId: 'member:0',
+                    kind: 'key',
+                    namespace: 'group-state:members',
+                    key: groupStateMemberStorageKey({ ...ref, principalId: 'bob' })
+                },
+                principalSubscriptions('bob')
+            ]);
         for (const remove of [service.removeGroupMember, service.banGroupMember]) {
             await service.joinGroup(SCOPE, ref.groupId, { actorPrincipalId: 'carol' });
             expect(await subscriptionSelectorsOf(() => remove(SCOPE, ref.groupId, 'carol', { actorPrincipalId: 'owner' })))

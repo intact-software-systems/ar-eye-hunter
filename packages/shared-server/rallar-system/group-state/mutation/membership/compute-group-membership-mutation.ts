@@ -93,7 +93,7 @@ export function computeJoin(
         members: [member],
         eventType: existing?.status === 'active' ? 'member-role-changed' : groupMemberEventType(status),
         publicationGrantEffects: [],
-        subscriptionEffects: []
+        subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, member)
     });
 }
 
@@ -227,7 +227,7 @@ export function computeGovernedMember(
         members: [member],
         eventType,
         publicationGrantEffects: computeDepartureGrantEffects(read, member),
-        subscriptionEffects: computeDepartureSubscriptionEffects(command.aggregateRef, read, member)
+        subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, member)
     });
 }
 
@@ -322,7 +322,7 @@ export function computeUpsertMember(
         members: [member],
         eventType: groupMemberEventType(member.status),
         publicationGrantEffects: computeDepartureGrantEffects(read, member),
-        subscriptionEffects: computeDepartureSubscriptionEffects(command.aggregateRef, read, member)
+        subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, member)
     });
 }
 
@@ -337,13 +337,16 @@ function computeDepartureGrantEffects(
         : [{ operation: 'delete', value: grant.value, expectedRevision: grant.entry.revision }];
 }
 
-/** A departure deletes every live subscription row of the target in the same batch, across its sessions and topics. */
-function computeDepartureSubscriptionEffects(
+/**
+ * The target's rows survive only while it stays an active member across the write: a departure deletes them, and an
+ * activation deletes any orphan a cross-server race left, so a rejoin never revives an old subscription.
+ */
+function computeMembershipSubscriptionEffects(
     ref: GroupRef,
     read: GroupMutationRead,
     member: GroupMember
 ): readonly GroupTopicSubscriptionDeleteEffect[] {
-    return member.status === 'active'
+    return read.targetMember?.status === 'active' && member.status === 'active'
         ? []
         : toTopicSubscriptionDeleteEffects(ref, read.targetPrincipalSubscriptions ?? []);
 }

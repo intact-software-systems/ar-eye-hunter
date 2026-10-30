@@ -1,9 +1,5 @@
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
-import {
-    MEMBERS_NAMESPACE,
-    PUBLICATION_GRANTS_NAMESPACE,
-    SUBSCRIPTIONS_NAMESPACE
-} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-system/group-state/persistence/subscription/group-topic-subscription-storage-key.ts';
 import { GROUP_TOPIC_SUBSCRIPTION_LEASE_MS } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import { describe, expect, it } from 'vitest';
@@ -58,7 +54,7 @@ async function expectSubscribeDenial(
 }
 
 describe('group topic subscription mutation', () => {
-    it('a first subscribe is subscribed with the server-derived lease and writes guard, the grant and member fences and receipt only', async () => {
+    it('a first subscribe is subscribed with the server-derived lease and writes guard, receipt and nothing else', async () => {
         const runtime = await subscribableRoom();
         const { read, computed } = await computeSubscriptionMutation(runtime, BOB_SUBSCRIBE);
         const write = requireWrite(computed);
@@ -81,21 +77,8 @@ describe('group topic subscription mutation', () => {
             expireAtTimestamp: subscription.leaseExpiresAtEpochMs
         });
         expect(write.persistence.guardedBatch.effects.map((effect) => [effect.effectId, effect.operation])).toEqual([
-            ['subscription-grant-fence', 'update'],
-            ['subscription-member-fence', 'update'],
             ['receipt', 'insert']
         ]);
-        const [grantFence, memberFence] = write.persistence.guardedBatch.effects;
-        expect(grantFence).toMatchObject({
-            namespace: PUBLICATION_GRANTS_NAMESPACE,
-            expectedRevision: read.targetPublicationGrant?.entry.revision,
-            value: read.targetPublicationGrant?.entry.value
-        });
-        expect(memberFence).toMatchObject({
-            namespace: MEMBERS_NAMESPACE,
-            expectedRevision: read.targetMemberEntry?.entry.revision,
-            value: read.targetMemberEntry?.entry.value
-        });
         expect(write.event).toBeNull();
         expect(write.persistence.eventWrite).toBeNull();
         expect(write.outboxWrites).toEqual([]);

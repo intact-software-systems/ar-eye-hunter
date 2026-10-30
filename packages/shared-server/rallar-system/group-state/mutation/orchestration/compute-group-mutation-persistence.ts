@@ -33,10 +33,7 @@ import {
     groupStateUpdatePresenceDescriptor,
     groupStateUpdatePresenceSummaryDescriptor
 } from '../../persistence/presence/group-presence-write-descriptors.ts';
-import {
-    groupStateUpdatePublicationGrantDescriptor,
-    toPublicationGrantBatchEffect
-} from '../../persistence/publication/group-publication-grant-write-descriptors.ts';
+import { toPublicationGrantBatchEffect } from '../../persistence/publication/group-publication-grant-write-descriptors.ts';
 import {
     groupStateDeleteTopicSubscriptionDescriptor,
     groupStateInsertTopicSubscriptionDescriptor,
@@ -104,7 +101,6 @@ function computeGroupMutationGuardedBatch(
     }
     effects.push(...computed.publicationGrantEffects.map(toPublicationGrantBatchEffect));
     effects.push(...computed.subscriptionEffects.map(toTopicSubscriptionDeleteBatchEffect));
-    effects.push(...computeSubscriptionFenceEffects(computed, read));
     if (computed.idempotency) {
         effects.push({
             effectId: 'receipt',
@@ -132,38 +128,6 @@ function computeGroupMutationGuardedBatch(
         });
     }
     return validateRuntimeStateGuardedBatch({ guard, effects });
-}
-
-/**
- * A subscribe rewrites, unchanged, the grant and member rows its decision read, at the revisions it read: the
- * subscription row is its only guard and the group row is untouched, so these compare-and-sets are what make a revoke,
- * grant or departure committed on another server since the read conflict it, and make such a command whose read
- * predates the subscribe conflict in turn, so one side always recomputes from a fresh read.
- */
-function computeSubscriptionFenceEffects(
-    computed: GroupMutationDomainWrite,
-    read: GroupMutationRead
-): readonly RuntimeStateGuardedBatchEffect[] {
-    if (computed.guard.kind !== 'subscription' || computed.guard.operation === 'delete') {
-        return [];
-    }
-    const grant = read.targetPublicationGrant;
-    const member = read.targetMemberEntry;
-    if (grant === null || member === null) {
-        throw new TypeError('A subscribe fences the grant and member rows it read');
-    }
-    return [
-        {
-            effectId: 'subscription-grant-fence',
-            ...groupStateUpdatePublicationGrantDescriptor(grant.value, grant.entry.revision)
-        },
-        {
-            effectId: 'subscription-member-fence',
-            ...groupStateMemberPutDescriptor(member.value),
-            operation: 'update',
-            expectedRevision: member.entry.revision
-        }
-    ];
 }
 
 function computeGroupMutationGuard(

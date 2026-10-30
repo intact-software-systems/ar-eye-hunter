@@ -290,6 +290,58 @@ describe('group membership mutation computation', () => {
         }
     });
 
+    it('a join or an upsert that activates the member deletes its subscription rows in the same batch', async () => {
+        const activations = [
+            { actor: 'bob', descriptor: (groupId: string) => joinDescriptor(groupId, 'bob') },
+            { actor: 'alice', descriptor: (groupId: string) => activateDescriptor(groupId, 'bob') }
+        ];
+        for (const [index, activation] of activations.entries()) {
+            const runtime = new GroupBarrierRepository();
+            const ref = groupRef(`subscription-activation-room-${index}`);
+            await seedOpenGroup(runtime, ref.groupId);
+            await joinBob(runtime, ref.groupId);
+            await createService(runtime, 2_500).upsertMember(SCOPE, ref.groupId, 'bob', {
+                status: 'left',
+                actorPrincipalId: 'bob',
+                requestId: `leave-bob-${ref.groupId}`
+            });
+            const orphan = subscriptionRowFor('bob', 'bob-session', 'room.feed');
+            const key = await writeSubscriptionRow(runtime, ref, orphan);
+
+            const { computed } = await computeMutation(runtime, activation.actor, activation.descriptor(ref.groupId));
+
+            expect(computed.outcome === 'write' && computed.subscriptionEffects, activation.actor).toEqual([
+                { ref, value: orphan, expectedRevision: 0 }
+            ]);
+            expect(computed.outcome === 'write' && subscriptionBatchEffects(computed)).toEqual([
+                expect.objectContaining({ operation: 'delete', key })
+            ]);
+        }
+    });
+
+    it('a role change of an active member reads and deletes no subscription row', async () => {
+        const runtime = new GroupBarrierRepository();
+        const ref = groupRef('subscription-role-room');
+        await seedOpenGroup(runtime, ref.groupId);
+        await joinBob(runtime, ref.groupId);
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('bob', 'bob-session', 'room.feed'));
+
+        const { read, computed } = await computeMutation(
+            runtime,
+            'alice',
+            mutationDescriptor({
+                operation: 'setGroupMemberRole',
+                scope: SCOPE,
+                groupId: ref.groupId,
+                targetPrincipalId: 'bob',
+                request: { role: 'admin', actorPrincipalId: 'alice', requestId: 'promote-bob-subscription-room' }
+            })
+        );
+
+        expect(read.targetPrincipalSubscriptions).toBeNull();
+        expect(computed.outcome === 'write' && computed.subscriptionEffects).toEqual([]);
+    });
+
     it('a principal with no rows adds no effect', async () => {
         const runtime = new GroupBarrierRepository();
         const ref = groupRef('subscription-empty-room');
@@ -340,6 +392,25 @@ async function joinBob(runtime: GroupBarrierRepository, groupId: string): Promis
     await createService(runtime, 2_000).joinGroup(SCOPE, groupId, {
         actorPrincipalId: 'bob',
         requestId: `join-bob-${groupId}`
+    });
+}
+
+function joinDescriptor(groupId: string, principalId: string): GroupMutationDescriptor {
+    return mutationDescriptor({
+        operation: 'joinGroup',
+        scope: SCOPE,
+        groupId,
+        request: { actorPrincipalId: principalId, requestId: `rejoin-${principalId}-${groupId}` }
+    });
+}
+
+function activateDescriptor(groupId: string, principalId: string): GroupMutationDescriptor {
+    return mutationDescriptor({
+        operation: 'upsertMember',
+        scope: SCOPE,
+        groupId,
+        targetPrincipalId: principalId,
+        request: { status: 'active', actorPrincipalId: 'alice', requestId: `activate-${principalId}-${groupId}` }
     });
 }
 

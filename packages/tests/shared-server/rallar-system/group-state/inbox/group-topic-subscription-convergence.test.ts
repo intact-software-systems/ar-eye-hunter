@@ -9,6 +9,7 @@ import {
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-state/inbox/to-group-command-exclusion-key.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { readGroupSessionTopicSubscriptions } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateConditionalWriteResult } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -49,6 +50,8 @@ const REVOKE_BOB_SUBSCRIBE = {
     subscribe: true,
     requestId: 'revoke-bob-feed-subscribe-01'
 } as const;
+
+const RENEW_BOB_SUBSCRIBE: TopicSubscriptionDescriptorInput = { ...BOB_SUBSCRIBE, requestId: 'renew-bob-feed-after-race' };
 
 const BOB_LEAVES = { status: 'left', actorPrincipalId: 'bob', requestId: 'leave-bob-racing-a-subscribe' } as const;
 
@@ -104,62 +107,36 @@ describe('group topic subscription convergence', () => {
         expect(toGroupCommandExclusionKey(subscribe)).toBe(toGroupCommandExclusionKey(revoke));
     });
 
-    it('a subscribe whose read completed before a revoke of subscribe committed conflicts and is then refused no-subscribe-grant with no row', async () => {
+    // Exclusion keys order one server's flight only. Across servers a subscribe whose read preceded a revoke or a
+    // departure may commit after it: the orphan lives at most its lease, its renewals are refused, and the next grant
+    // of subscribe or activation of the member deletes it.
+    it('a subscribe racing a revoke of subscribe leaves an orphan whose renewal is refused and which a re-grant deletes', async () => {
         const runtime = await subscribableRoom(new GroupBarrierRepository());
-        const heldSubscribe = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
-        const subscribe = applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
-        void subscribe.catch(() => undefined);
-        await heldSubscribe.firstArrival;
+        await raceSubscribeAgainst(runtime, () => applyPublicationMutation(runtime, REVOKE_BOB_SUBSCRIBE));
 
-        await applyPublicationMutation(runtime, REVOKE_BOB_SUBSCRIBE);
-        heldSubscribe.release();
-
-        await expect(subscribe).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
-        await expect(applySubscriptionMutation(runtime, BOB_SUBSCRIBE, { attemptCount: 2 })).rejects.toMatchObject({
+        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeDefined();
+        await expect(applySubscriptionMutation(runtime, RENEW_BOB_SUBSCRIBE)).rejects.toMatchObject({
             denial: { code: 'no-subscribe-grant' }
         });
-        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
+        await applyPublicationMutation(runtime, { ...REVOKE_BOB_SUBSCRIBE, operation: 'grantGroupPublication', requestId: 'regrant-bob-feed-01' });
+
+        expect(await readSessionSubscriptions(runtime)).toEqual([]);
     });
 
-    it('a subscribe whose read completed before a leave committed conflicts and is then refused member-not-active with no row', async () => {
+    it('a subscribe racing a leave leaves an orphan whose renewal is refused and which a rejoin deletes', async () => {
         const runtime = await subscribableRoom(new GroupBarrierRepository());
-        const heldSubscribe = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
-        const subscribe = applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
-        void subscribe.catch(() => undefined);
-        await heldSubscribe.firstArrival;
+        await raceSubscribeAgainst(
+            runtime,
+            () => createService(runtime, 3_000).upsertMember(SCOPE, GRANT_ROOM, 'bob', BOB_LEAVES)
+        );
 
-        await createService(runtime, 3_000).upsertMember(SCOPE, GRANT_ROOM, 'bob', BOB_LEAVES);
-        heldSubscribe.release();
-
-        await expect(subscribe).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-        await expect(applySubscriptionMutation(runtime, BOB_SUBSCRIBE, { attemptCount: 2 })).rejects.toMatchObject({
+        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeDefined();
+        await expect(applySubscriptionMutation(runtime, RENEW_BOB_SUBSCRIBE)).rejects.toMatchObject({
             denial: { code: 'member-not-active' }
         });
-        expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
-    });
+        await createService(runtime, 3_000).joinGroup(SCOPE, GRANT_ROOM, { actorPrincipalId: 'bob', requestId: 'rejoin-bob-after-race' });
 
-    it('a revoke of subscribe or a leave whose read predates a committed subscribe conflicts and its fresh attempt deletes the row', async () => {
-        const races = [
-            (runtime: GroupBarrierRepository, attemptCount: number) => applyPublicationMutation(runtime, REVOKE_BOB_SUBSCRIBE, attemptCount),
-            (runtime: GroupBarrierRepository, attemptCount: number) =>
-                createService(runtime, 3_000, attemptCount).upsertMember(SCOPE, GRANT_ROOM, 'bob', BOB_LEAVES)
-        ];
-        for (const departOrRevoke of races) {
-            const runtime = await subscribableRoom(new GroupBarrierRepository());
-            const held = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
-            const racing = departOrRevoke(runtime, 1);
-            void racing.catch(() => undefined);
-            await held.firstArrival;
-
-            await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
-            held.release();
-
-            await expect(racing).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeDefined();
-            await departOrRevoke(runtime, 2);
-            expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeUndefined();
-        }
+        expect(await readSessionSubscriptions(runtime)).toEqual([]);
     });
 
     it('a CAS conflict injected at the subscription guard retries on a fresh read and converges', async () => {
@@ -211,5 +188,23 @@ function toEntry(enqueue: AppInboxEnqueueInput): ResourceEntry {
     return createAppInboxResourceEntry(enqueue, 'server-1', {
         createMessage: createDefaultAppInboxQueueMessage,
         creationNow: Temporal.Now.instant
+    });
+}
+
+/** Holds the subscribe after its read, commits the racing command, then lets the stale subscribe commit. */
+async function raceSubscribeAgainst(runtime: GroupBarrierRepository, racing: () => Promise<object>): Promise<void> {
+    const held = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
+    const subscribe = applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
+    await held.firstArrival;
+    await racing();
+    held.release();
+    expect(await subscribe).toMatchObject({ subscriptionOutcome: 'subscribed' });
+}
+
+async function readSessionSubscriptions(runtime: GroupBarrierRepository) {
+    return await readGroupSessionTopicSubscriptions(runtime, {
+        ref: groupRef(GRANT_ROOM),
+        sessionId: 'bob-session',
+        observedAtEpochMs: Date.now()
     });
 }
