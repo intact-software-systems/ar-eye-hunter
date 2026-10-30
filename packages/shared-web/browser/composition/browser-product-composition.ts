@@ -80,6 +80,7 @@ export function createBrowserRoomsComposition(
         realtime: input.realtime.realtime,
         connect: input.session.acquireConnection,
         requireSession: input.session.requireSession,
+        readSession,
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveOperationScope: input.session.resolveOperationScope,
         resolveDefaultRoom: input.state.resolveDefaultRoom,

@@ -17,6 +17,7 @@ import type { RallarMessagesOperations } from '@shared-web/browser/messages/rall
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { BrowserMessageReplyInbox } from '@shared-web/browser/messages/reply/browser-message-reply-inbox.ts';
 import type { RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
+import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
@@ -40,6 +41,8 @@ export namespace BrowserRallarMessagesController {
         readonly wsInbox: BrowserWebSocketInbox;
         /** Where `channel(...)` registers a definition's recovery owner, for the resync recovery to find. */
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
+        /** Where a granted room channel's `subscribe` holds the session's election to receive its topic. */
+        readonly topicSubscriptions: BrowserTopicSubscriptions;
         connect(capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>): Promise<ApiMiddleware>;
         readMiddleware(): ApiMiddleware | undefined;
         requireMiddleware(): ApiMiddleware;
@@ -85,7 +88,7 @@ export class BrowserRallarMessagesController {
 
         this.operations = this.createOperations(
             inputValidator,
-            input.recoveryOwners,
+            input,
             () => {
                 const context = input.requireMiddleware();
                 return {
@@ -100,7 +103,7 @@ export class BrowserRallarMessagesController {
 
     private createOperations(
         inputValidator: BrowserMessageInputValidator,
-        recoveryOwners: BrowserChannelRecoveryOwners,
+        channelOwners: Pick<BrowserRallarMessagesController.Input, 'recoveryOwners' | 'topicSubscriptions'>,
         readUsage: RallarMessagesOperations['readUsage']
     ): RallarMessagesOperations {
         const rtc: RallarMessagesOperations['rtc'] = {
@@ -122,7 +125,8 @@ export class BrowserRallarMessagesController {
             sender: this.sender,
             rtc,
             ws,
-            recoveryOwners
+            recoveryOwners: channelOwners.recoveryOwners,
+            topicSubscriptions: channelOwners.topicSubscriptions
         });
         return {
             rtc,

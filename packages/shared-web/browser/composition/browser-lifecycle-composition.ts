@@ -2,6 +2,7 @@ import type { BrowserDirectorRelayRuntime } from '@shared-web/browser/director/b
 import type { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import type { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
+import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
 import type { BrowserRtcLifecycleRuntime } from '@shared-web/browser/rtc/browser-rtc-lifecycle-runtime.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
@@ -19,6 +20,7 @@ export interface RegisterBrowserTransportLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly messageSubscriptions: BrowserRallarMessageSubscriptions;
     readonly wsInbox: BrowserWebSocketInbox;
+    readonly topicSubscriptions: BrowserTopicSubscriptions;
     readonly wsController: RallarWsController;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
     readonly rtcLifecycle: BrowserRtcLifecycleRuntime;
@@ -61,6 +63,7 @@ export function registerBrowserTransportLifecycle(
         attach: (context) => input.wsInbox.attach(context),
         detach: (context) => input.wsInbox.detach(context)
     });
+    input.lifecycle.register(input.topicSubscriptions);
     input.lifecycle.register({
         id: 'ws-status',
         order: 50,

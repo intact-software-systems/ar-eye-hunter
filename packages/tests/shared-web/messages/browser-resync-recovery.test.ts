@@ -229,7 +229,12 @@ describe('a typed channel\'s recovery owner', () => {
             sender: createBrowserMessageSenderFixture().sender,
             rtc: { onMessage: () => () => {} },
             ws: { onMessage: () => () => {} },
-            recoveryOwners: owners
+            recoveryOwners: owners,
+            topicSubscriptions: {
+                hold: () => {
+                    throw new Error('No channel in this test subscribes.');
+                }
+            }
         });
 
         channels.channel({ ...CHAT_ROUTE, purpose: 'command', access: 'members', recovery });

@@ -278,8 +278,8 @@ export async function transferStateGroupOwnership(
         }));
 }
 
-async function runGroupSnapshotCommand(
-    input: RoomActorWorkflowInput,
+export async function runGroupSnapshotCommand(
+    input: Pick<RoomActorWorkflowInput, 'policies' | 'assertCurrent'>,
     operation: (requestId: string, signal?: AbortSignal) => Promise<GroupSnapshot>
 ): Promise<GroupSnapshot> {
     const requestId = toApiMutationWorkflowRequestId();

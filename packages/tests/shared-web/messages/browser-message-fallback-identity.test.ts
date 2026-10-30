@@ -606,7 +606,12 @@ function createChannel(input: ChannelInput): ChannelFixture {
         sender,
         rtc: { onMessage: () => () => {} },
         ws: { onMessage: () => () => {} },
-        recoveryOwners: new BrowserChannelRecoveryOwners()
+        recoveryOwners: new BrowserChannelRecoveryOwners(),
+        topicSubscriptions: {
+            hold: () => {
+                throw new Error('No channel in this test subscribes.');
+            }
+        }
     });
     return {
         originalRoom: admission.originalRoom,

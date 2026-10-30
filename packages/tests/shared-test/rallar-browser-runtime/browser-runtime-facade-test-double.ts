@@ -680,7 +680,8 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
             return () => {
                 facadeRecords.typedUnsubscribeCount += 1;
             };
-        }
+        },
+        subscribe: unsupported
     };
 }
 

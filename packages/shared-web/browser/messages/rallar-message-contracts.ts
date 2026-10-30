@@ -234,6 +234,27 @@ export interface RallarTypedMessageChannel<T> {
     sendWs(payload: T, options?: RallarTypedWsSendOptions<T>): Promise<RallarMessageHandle>;
     onRtc(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
     onWs(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
+    /**
+     * Elects this session to receive a granted room channel's topic and registers the handler; the server delivers
+     * only to a session holding `subscribe` that elected to receive. A members channel and a channel without a
+     * `roomRef` throw the `unsupported` issue.
+     */
+    subscribe(handler: RallarTypedPayloadHandler<T>): RallarTopicSubscription;
+}
+
+/**
+ * `pending` until the server first answers; `active` while the election holds; `refused` when the server denies it
+ * (no `subscribe` grant, not an active member, no such room); `lapsed` once it ended without a refusal (unsubscribed,
+ * the session ended or was replaced, or no renewal succeeded within the lease).
+ */
+export type RallarTopicSubscriptionStatus = 'pending' | 'active' | 'refused' | 'lapsed';
+
+export interface RallarTopicSubscription {
+    status(): RallarTopicSubscriptionStatus;
+    /** Settles when the status first leaves `pending`. */
+    wait(): Promise<RallarTopicSubscriptionStatus>;
+    /** Detaches the handler; the last token of its room and topic releases the election remotely. */
+    unsubscribe(): Promise<void>;
 }
 
 export interface RallarRoomMessageChannelDefinition extends RallarTypedMessageChannelDefinition {

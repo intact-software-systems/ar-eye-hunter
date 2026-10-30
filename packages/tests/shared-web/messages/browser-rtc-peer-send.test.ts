@@ -122,7 +122,12 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
             sender: fixture.sender,
             rtc: { onMessage: () => () => {} },
             ws: { onMessage: () => () => {} },
-            recoveryOwners: new BrowserChannelRecoveryOwners()
+            recoveryOwners: new BrowserChannelRecoveryOwners(),
+            topicSubscriptions: {
+                hold: () => {
+                    throw new Error('No channel in this test subscribes.');
+                }
+            }
         });
         const intents = channels.room<{ intent: string; }>({
             topicId: 'room.director.intent',

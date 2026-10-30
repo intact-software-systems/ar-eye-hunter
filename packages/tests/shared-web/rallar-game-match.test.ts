@@ -1237,7 +1237,8 @@ function createFakeRallarRoomState(options: FakeRallarOptions): RallarRoomState 
         status: options.localStatus ?? 'active',
         isOwner: (options.localRole ?? 'owner') === 'owner',
         isOnline: (options.localSessionIds ?? ['peer-a']).length > 0,
-        sessionIds: options.localSessionIds ?? ['peer-a']
+        sessionIds: options.localSessionIds ?? ['peer-a'],
+        topicGrants: {}
     };
     const remoteMember: RallarRoomMember = {
         principalId: 'principal-b',
@@ -1246,7 +1247,8 @@ function createFakeRallarRoomState(options: FakeRallarOptions): RallarRoomState 
         status: 'active',
         isOwner: false,
         isOnline: true,
-        sessionIds: ['peer-b']
+        sessionIds: ['peer-b'],
+        topicGrants: {}
     };
     return createGameRoomStateFixture(roomRef, [
         ...(options.localMemberKnown === false ? [] : [localMember]),

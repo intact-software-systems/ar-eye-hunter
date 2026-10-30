@@ -25,6 +25,7 @@ import type {
     UpdateStateGroupBody
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { QuickJoinGroupRequest } from '@shared/api/mutation/group-quick-join.ts';
 
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
@@ -53,6 +54,15 @@ export interface RallarRoomMember {
     readonly isOnline: boolean;
     readonly sessionIds: readonly string[];
     readonly client?: ClientSnapshot;
+    /** The member's effective permission on each topic its grant row names; `{}` without a row. */
+    readonly topicGrants: Readonly<Record<string, RallarRoomTopicGrant>>;
+}
+
+export type RallarRoomTopicRole = 'publisher' | 'subscriber' | 'publisher-subscriber' | 'none';
+
+/** Effective, as the server decides: only an active member holds a permission, and a spectator never publishes. */
+export interface RallarRoomTopicGrant extends GroupPublicationTopicPermissions {
+    readonly role: RallarRoomTopicRole;
 }
 
 export interface RallarRoomState {
@@ -139,6 +149,12 @@ export interface RallarSetRoomMemberRoleInput {
     readonly room: string | GroupRef | RallarRoomTargetInput;
     readonly principalId: string;
     readonly role: GroupRole;
+    readonly options?: RallarRoomGovernanceOptions;
+}
+
+export interface RallarRoomTopicMember {
+    readonly room: string | GroupRef | RallarRoomTargetInput;
+    readonly principalId: string;
     readonly options?: RallarRoomGovernanceOptions;
 }
 
@@ -232,4 +248,6 @@ export interface RallarRoomSession {
     message<T>(
         nameOrDefinition: RallarRoomSessionMessageDefinition
     ): RallarTypedMessageChannel<T>;
+    /** The session principal's effective role on the topic in the cached snapshot; `none` with no snapshot cached. */
+    topicRole(topicId: string): RallarRoomTopicRole;
 }
