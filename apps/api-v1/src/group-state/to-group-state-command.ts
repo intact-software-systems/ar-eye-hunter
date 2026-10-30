@@ -77,6 +77,10 @@ export function toGroupStateCommand(
             return toHeartbeatGroupPresenceCommand(input);
         case 'disconnect-group-presence':
             return toDisconnectGroupPresenceCommand(input);
+        case 'subscribe-group-topic':
+            return toSubscribeGroupTopicCommand(input);
+        case 'unsubscribe-group-topic':
+            return toUnsubscribeGroupTopicCommand(input);
     }
 }
 
@@ -682,6 +686,46 @@ function toDisconnectGroupPresenceCommand(
     return {
         type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
         topicId: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        traceId: input.traceId,
+        data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request }
+    };
+}
+
+function toSubscribeGroupTopicCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'subscribe-group-topic'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE> {
+    const request = withActor(input);
+    const issues = validateGroupMutationRequest('subscribeGroupTopic', request);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+
+    return {
+        type: AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+        topicId: AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        traceId: input.traceId,
+        data: { scope: input.scope, groupId: input.groupId, sessionId: input.sessionId, request }
+    };
+}
+
+function toUnsubscribeGroupTopicCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'unsubscribe-group-topic'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE> {
+    const request = withActor(input);
+    const issues = validateGroupMutationRequest('unsubscribeGroupTopic', request);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+
+    return {
+        type: AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
+        topicId: AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,

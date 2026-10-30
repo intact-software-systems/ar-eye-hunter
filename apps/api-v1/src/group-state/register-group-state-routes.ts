@@ -10,6 +10,7 @@ import { registerGroupPublicationRoutes } from './register-group-publication-rou
 import { registerGroupQuickJoinRoute } from './register-group-quick-join-route.ts';
 import { registerGroupStateMutationRoutes } from './register-group-state-mutation-routes.ts';
 import { registerGroupStateReadRoutes } from './register-group-state-read-routes.ts';
+import { registerGroupTopicSubscriptionRoutes } from './register-group-topic-subscription-routes.ts';
 
 export function registerGroupStateRoutes(
     app: Hono,
@@ -25,4 +26,5 @@ export function registerGroupStateRoutes(
     registerGroupMembershipRoutes(app, dependencies, authorization);
     registerGroupPresenceRoutes(app, dependencies, authorization);
     registerGroupPublicationRoutes(app, dependencies);
+    registerGroupTopicSubscriptionRoutes(app, dependencies, authorization);
 }

@@ -54,6 +54,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
         | 'listSnapshots'
         | 'listSnapshotsForPrincipal'
         | 'readCurrentSnapshot'
+        | 'readGroupSessionTopicSubscriptions'
         | 'readSnapshot'
     >;
     readonly clientRestSnapshotReadSelector: Pick<ApiV1Runtime['clientRestSnapshotReadSelector'], 'read'>;

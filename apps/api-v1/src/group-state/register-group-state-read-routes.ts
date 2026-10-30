@@ -14,6 +14,7 @@ import { readStateEventListQuery } from '@shared-server/rallar-system/state-even
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
+import type { GroupTopicSubscriptionList } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { isGroupSnapshotCausalRevisionCovered } from '@shared/repository/group-state-snapshot-revision.ts';
@@ -80,6 +81,10 @@ export function registerGroupStateReadRoutes(
         `${GROUP_PATH}/events/page`,
         (context) => readGroupEventPage(context, dependencies, authorization)
     );
+    app.get(
+        `${GROUP_PATH}/sessions/:sessionId/subscriptions`,
+        (context) => readGroupTopicSubscriptionList(context, dependencies, authorization)
+    );
 }
 
 async function revalidateGroupDirectory(context: Context, next: Next): Promise<void> {
@@ -109,6 +114,27 @@ async function readGroupSnapshotList(
         hydrateGroupSnapshots(dependencies, snapshots);
 
         return context.json(snapshots);
+    }
+    catch (error) {
+        return toGroupStateErrorResponse(context, error);
+    }
+}
+
+/** Always authenticated, whatever the strict read switch says: a session reads only its own subscriptions. */
+async function readGroupTopicSubscriptionList(
+    context: Context,
+    dependencies: GroupStateRouteDependencies,
+    authorization: GroupStateRouteAuthorization
+): Promise<Response> {
+    try {
+        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const sessionId = context.req.param('sessionId');
+        authorization.assertSelfSession(authSession, sessionId);
+        const subscriptions = await dependencies.groupStateService.readGroupSessionTopicSubscriptions(
+            { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') },
+            sessionId
+        );
+        return context.json({ subscriptions } satisfies GroupTopicSubscriptionList);
     }
     catch (error) {
         return toGroupStateErrorResponse(context, error);

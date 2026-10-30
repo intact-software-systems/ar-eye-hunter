@@ -84,6 +84,8 @@ const mutationRoutes: readonly MutationRoutePattern[] = [
         'owner/transfer',
         `sessions/${segment}/heartbeat`,
         `sessions/${segment}/disconnect`,
+        `sessions/${segment}/subscribe`,
+        `sessions/${segment}/unsubscribe`,
         'topology/reconfigure'
     ].map((suffix) => ({ method: 'POST' as const, path: exact(`${group}/${suffix}`) })),
     { method: 'PUT', path: exact(`${group}/members/${segment}/role`) },
@@ -188,6 +190,12 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
         file: `${apiV1RecipeDirectory}/api-v1-group-publication-grants.json`,
         kind: 'sequential-replay',
         requestId: 'pubgrant-grant-bob-publish-{runId}'
+    },
+    {
+        actionNames: ['bobSubscribes', 'changedBodySameRequestId', 'replayBobSubscribe'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-topic-subscriptions.json`,
+        kind: 'sequential-replay',
+        requestId: 'topicsub-subscribe-bob-gen-1-{runId}'
     },
     {
         actionNames: ['grantOnPrimary', 'replayGrantOnTertiary'],

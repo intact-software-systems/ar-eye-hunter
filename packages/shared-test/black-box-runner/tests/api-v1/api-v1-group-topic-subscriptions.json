@@ -1,0 +1,1080 @@
+{
+  "description": "No-browser API-v1 WS topic subscriptions over REST. A member's session subscribes to a granted topic only with a live client-state session (no-live-session), effective subscribe (no-subscribe-grant) and the session's current connection generation (stale-generation). A subscribe answers subscribed, its replay answers subscribed again, a changed body under its requestId is an idempotency conflict and the same subscribe under a new requestId is renewed; the self-session read lists the one leased row at the grant's group revision, the group revision is unchanged, and another session's read is forbidden. A reconnect under a new generation re-subscribes, and an unsubscribe asserting the old generation is not-subscribed and keeps the row. A revoke of subscribe deletes the row and a re-grant does not revive it; an unsubscribe answers unsubscribed then not-subscribed, and a member who leaves holds no subscription.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_TOPICSUB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-topicsub"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_TOPICSUB_WORKSPACE_ID",
+      "default": "workspace-topicsub-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_TOPICSUB_GROUP_ID",
+      "default": "topicsub-group-{runId}"
+    },
+    "clientInstanceId": {
+      "env": "RALLAR_BB_TOPICSUB_CLIENT_INSTANCE_ID",
+      "default": "topicsub-instance-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_TOPICSUB_PASSWORD",
+      "default": "api-v1-topicsub-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/topicsub-register-alice-{runId}",
+        "body": {
+          "username": "topicsub-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/topicsub-login-user-alice-{runId}",
+        "body": {
+          "username": "topicsub-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/topicsub-register-bob-{runId}",
+        "body": {
+          "username": "topicsub-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/topicsub-login-user-bob-{runId}",
+        "body": {
+          "username": "topicsub-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/topicsub-register-carol-{runId}",
+        "body": {
+          "username": "topicsub-carol-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "carol client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/topicsub-login-user-carol-{runId}",
+        "body": {
+          "username": "topicsub-carol-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolSessionId": "body.sessionId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/topicsub-create-group-room-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Topic subscriptions {runId}",
+          "kind": "room",
+          "joinMode": "open"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/topicsub-join-member-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "carolJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{carolClientId}/requests/topicsub-join-member-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobSubscribesWithoutSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-no-session-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "no-live-session",
+          "status": 403,
+          "denial": {
+            "code": "no-live-session"
+          }
+        }
+      }
+    },
+    {
+      "name": "upsertBobPrincipal",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/principal/requests/topicsub-upsert-principal-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "username": "topicsub-bob-{runId}",
+          "displayName": "Bob topic subscriptions {runId}",
+          "status": "active",
+          "roles": [
+            "black-box"
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{bobClientId}",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "upsertBobInstance",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/instances/{clientInstanceId}/requests/topicsub-upsert-instance-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active",
+          "platform": "server",
+          "deviceLabel": "API-v1 black-box runner",
+          "appVersion": "black-box-{runId}",
+          "capabilities": [
+            "http",
+            "ws"
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{bobClientId}"
+          },
+          "instances": [
+            {
+              "clientInstanceId": "{clientInstanceId}",
+              "status": "active",
+              "platform": "server"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectBobClientSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/instances/{clientInstanceId}/sessions/{bobSessionId}/requests/topicsub-connect-session-bob-gen-1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "topicsub-bob-gen-1-{runId}",
+          "presenceState": "online",
+          "transport": "ws",
+          "connectionId": "topicsub-bob-connection-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{bobClientId}"
+          },
+          "activeSessions": [
+            {
+              "clientInstanceId": "{clientInstanceId}",
+              "sessionId": "{bobSessionId}",
+              "generationId": "topicsub-bob-gen-1-{runId}",
+              "presenceState": "online",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobSubscribesWithoutGrant",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-no-grant-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "no-subscribe-grant",
+          "status": 403,
+          "denial": {
+            "code": "no-subscribe-grant"
+          }
+        }
+      }
+    },
+    {
+      "name": "grantBobSubscribe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/topicsub-grant-bob-subscribe-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "publish": false,
+          "subscribe": true
+        },
+        "outputs": {
+          "groupRevisionAfterGrant": "body.causalRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bobSubscribesStaleGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-gen-0-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-0-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "stale-generation",
+          "status": 403,
+          "denial": {
+            "code": "stale-generation"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobSubscribes",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-gen-1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "subscribed"
+        }
+      }
+    },
+    {
+      "name": "replayBobSubscribe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-gen-1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "subscribed"
+        }
+      }
+    },
+    {
+      "name": "changedBodySameRequestId",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-gen-1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-other-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "app-inbox-idempotency-conflict",
+          "status": 409
+        }
+      }
+    },
+    {
+      "name": "bobRenews",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-renew-bob-gen-1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "renewed"
+        }
+      }
+    },
+    {
+      "name": "readBackBobSubscriptions",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscriptions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobLeaseExpiresAtEpochMs": "body.subscriptions.0.leaseExpiresAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "subscriptions": [
+            {
+              "sessionId": "{bobSessionId}",
+              "principalId": "{bobClientId}",
+              "topicId": "room.topicsub-feed",
+              "connectionGenerationId": "topicsub-bob-gen-1-{runId}",
+              "leaseExpiresAtEpochMs": "integer",
+              "admittedAtGroupRevision": "{groupRevisionAfterGrant}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theLeaseIsPositive",
+      "type": "assert",
+      "actual": {
+        "leaseExpiresAtEpochMs": "{bobLeaseExpiresAtEpochMs}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "leaseExpiresAtEpochMs",
+            "gt": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "groupRevisionUnchanged",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "causalRevision": {
+            "groupRevision": "{groupRevisionAfterGrant}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobReadsAliceSubscriptions",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/subscriptions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "Forbidden: session id does not match authenticated session"
+        }
+      }
+    },
+    {
+      "name": "captureBobGen2ConnectedAt",
+      "type": "set",
+      "output": "bobGen2ConnectedAtEpochMs",
+      "transform": {
+        "timestamp": true
+      }
+    },
+    {
+      "name": "reconnectBobClientSessionGen2",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/instances/{clientInstanceId}/sessions/{bobSessionId}/requests/topicsub-connect-session-bob-gen-2-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "topicsub-bob-gen-2-{runId}",
+          "presenceState": "online",
+          "transport": "ws",
+          "connectionId": "topicsub-bob-connection-{runId}",
+          "connectedAtEpochMs": "{bobGen2ConnectedAtEpochMs}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{bobClientId}"
+          },
+          "activeSessions": [
+            {
+              "clientInstanceId": "{clientInstanceId}",
+              "sessionId": "{bobSessionId}",
+              "generationId": "topicsub-bob-gen-2-{runId}",
+              "presenceState": "online",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobSubscribesGen2",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-gen-2-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-2-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "subscribed"
+        }
+      }
+    },
+    {
+      "name": "unsubscribeWithGen1",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/unsubscribe/requests/topicsub-unsubscribe-bob-gen-1-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-1-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "not-subscribed"
+        }
+      }
+    },
+    {
+      "name": "readBackStillGen2",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscriptions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "subscriptions": [
+            {
+              "sessionId": "{bobSessionId}",
+              "principalId": "{bobClientId}",
+              "topicId": "room.topicsub-feed",
+              "connectionGenerationId": "topicsub-bob-gen-2-{runId}",
+              "leaseExpiresAtEpochMs": "integer",
+              "admittedAtGroupRevision": "{groupRevisionAfterGrant}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "revokeBobSubscribe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/revoke/requests/topicsub-revoke-bob-subscribe-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "readBackEmptyAfterRevoke",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscriptions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "subscriptions": []
+        }
+      }
+    },
+    {
+      "name": "regrantBobSubscribe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{bobClientId}/grant/requests/topicsub-regrant-bob-subscribe-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "readBackStillEmptyAfterRegrant",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscriptions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "subscriptions": []
+        }
+      }
+    },
+    {
+      "name": "bobSubscribesAgain",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-again-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-2-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "subscribed"
+        }
+      }
+    },
+    {
+      "name": "bobUnsubscribes",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/unsubscribe/requests/topicsub-unsubscribe-bob-gen-2-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-2-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "unsubscribed"
+        }
+      }
+    },
+    {
+      "name": "bobUnsubscribesTwice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/unsubscribe/requests/topicsub-unsubscribe-bob-twice-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-2-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "not-subscribed"
+        }
+      }
+    },
+    {
+      "name": "bobSubscribesThenLeaves",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/topicsub-subscribe-bob-before-leave-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.topicsub-feed",
+          "connectionGenerationId": "topicsub-bob-gen-2-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "subscribed"
+        }
+      }
+    },
+    {
+      "name": "bobLeaves",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/topicsub-leave-member-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readBackEmptyAfterLeave",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscriptions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "subscriptions": []
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

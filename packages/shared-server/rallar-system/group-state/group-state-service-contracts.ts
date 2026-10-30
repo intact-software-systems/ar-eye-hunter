@@ -1,3 +1,4 @@
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -250,6 +251,11 @@ export type GroupStateService =
         ): Promise<GroupSnapshotPage>;
         readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
         readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
+        /** One session's live topic subscription rows, in topicId order; a server-only fact never on the snapshot. */
+        readGroupSessionTopicSubscriptions(
+            ref: GroupRef,
+            sessionId: string
+        ): Promise<readonly GroupTopicSubscription[]>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
         listRecentEvents(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;

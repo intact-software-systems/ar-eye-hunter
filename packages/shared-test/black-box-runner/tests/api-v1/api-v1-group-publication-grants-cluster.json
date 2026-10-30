@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 publication grants across a three-node cluster. A grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, since group snapshots are served through a node-local cache; a revoke written on the secondary is read back on the primary and the tertiary. Replaying the primary's grant requestId on the tertiary answers the first result -- the granted row at the grant's group revision -- although the grant has since been revoked. Over the configured granted topic room.bb-granted-feed, Bob is granted subscribe and Alice publish on the primary while Carol joins with no grant; on the tertiary Alice's at-least-once room broadcast reaches Bob alone, its admitted receipt expecting Bob alone. Revoking Alice's publish on the secondary makes her next publish on the tertiary refused with a no-publish-grant NACK, and every node reads the remaining grant back.",
+  "description": "No-browser API-v1 publication grants across a three-node cluster. A grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, since group snapshots are served through a node-local cache; a revoke written on the secondary is read back on the primary and the tertiary. Replaying the primary's grant requestId on the tertiary answers the first result -- the granted row at the grant's group revision -- although the grant has since been revoked. Over the configured granted topic room.bb-granted-feed, Bob is granted subscribe and Alice publish on the primary while Carol joins with no grant; once Bob's socket is open on the tertiary his session subscribes on the primary under the connection generation read back from his client state, and on the tertiary Alice's at-least-once room broadcast reaches Bob alone, its admitted receipt expecting Bob alone. Revoking Alice's publish on the secondary makes her next publish on the tertiary refused with a no-publish-grant NACK, and every node reads the remaining grant back.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -890,6 +890,63 @@
       "request": {
         "url": "{carolWsUrl}",
         "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "readBobClientGeneration",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "bobClientGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{bobSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "subscribeBobOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/subscribe/requests/pubgrantcl-subscribe-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "topicId": "room.bb-granted-feed",
+          "connectionGenerationId": "{bobClientGenerationId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "outcome": "subscribed"
+        }
       }
     },
     {
