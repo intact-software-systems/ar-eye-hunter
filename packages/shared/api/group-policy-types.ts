@@ -25,7 +25,10 @@ export const GROUP_POLICY_REASON_CODES = [
     'capacity',
     // Product decision 37: the attempt budget bounds one formation series, so
     // a spent series denies `start` until an explicit `reset` clears it.
-    'formation-attempts-exhausted'
+    'formation-attempts-exhausted',
+    'no-subscribe-grant',
+    'stale-generation',
+    'no-live-session'
 ] as const;
 
 export type GroupPolicyReasonCode = typeof GROUP_POLICY_REASON_CODES[number];

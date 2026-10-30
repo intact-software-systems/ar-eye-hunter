@@ -26,8 +26,10 @@ import type {
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
+    SubscribeGroupTopicRequest,
     TransferGroupOwnershipRequest,
     UnbanGroupMemberRequest,
+    UnsubscribeGroupTopicRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
@@ -150,6 +152,8 @@ interface GroupMutationRequests {
     readonly setGroupMemberRole: SetGroupMemberRoleRequest;
     readonly grantGroupPublication: GrantGroupPublicationRequest;
     readonly revokeGroupPublication: RevokeGroupPublicationRequest;
+    readonly subscribeGroupTopic: SubscribeGroupTopicRequest;
+    readonly unsubscribeGroupTopic: UnsubscribeGroupTopicRequest;
     readonly transferGroupOwnership: TransferGroupOwnershipRequest;
     readonly upsertMember: UpsertGroupMemberRequest;
     readonly rotateGroupJoinCode: RotateGroupJoinCodeRequest;

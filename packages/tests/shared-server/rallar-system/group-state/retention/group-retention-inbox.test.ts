@@ -160,7 +160,7 @@ describe('retention through the registered AppInbox capability', () => {
         expect(computed.outboxWrites.map((write) => decodePersistedALMessage(write.entry.resource).id.traceId))
             .toEqual(computed.outboxWrites.map(() => 'trace-group-retention-inbox'));
         // The autonomous retention write stamps its event and its audit with the envelope trace, never null.
-        expect(computed.persistence.eventWrite.event.traceId).toBe('trace-group-retention-inbox');
+        expect(computed.persistence.eventWrite?.event.traceId).toBe('trace-group-retention-inbox');
         expect(computed.group.updated.traceId).toBe('trace-group-retention-inbox');
         if (fault === 'outbox') {
             await fixture.storage.sql.begin((transaction) => writeAppOutboxInsert(transaction, computed.outboxWrites[0]));

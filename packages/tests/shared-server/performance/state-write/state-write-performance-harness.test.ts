@@ -967,6 +967,7 @@ function groupIdempotencyRecord(
             outboxIds: [],
             joinCode: null,
             joinCodeExpiresAtEpochMs: null,
+            subscriptionOutcome: null,
             rejection: null
         }
     };

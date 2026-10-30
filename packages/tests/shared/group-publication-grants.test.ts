@@ -2,6 +2,7 @@ import {
     decodeGroupPublicationGrant,
     GROUP_PUBLICATION_GRANT_LIMITS,
     resolveGroupPublicationPermissions,
+    resolveMemberPublicationPermissions,
     validateGroupPublicationGrant,
     type GroupPublicationGrant,
     type GroupPublicationTopicGrants
@@ -157,5 +158,35 @@ describe('resolveGroupPublicationPermissions returns the row for an active membe
         { principalId: 'dana', topicId: 'room.feed', expected: { publish: false, subscribe: true } }
     ])('returns $expected for $principalId on $topicId', ({ principalId, topicId, expected }) => {
         expect(resolveGroupPublicationPermissions(snapshot, principalId, topicId)).toEqual(expected);
+    });
+});
+
+describe('resolveMemberPublicationPermissions', () => {
+    const ref = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+    const active = createActiveGroupMemberFixture({ ...ref, principalId: 'bob', role: 'member', actorPrincipalId: 'creator' });
+    if (active.status !== 'active') {
+        throw new Error('Expected the active member fixture');
+    }
+    const spectator = createActiveGroupMemberFixture({ ...ref, principalId: 'bob', role: 'spectator', actorPrincipalId: 'creator' });
+    const left: GroupMember = { ...active, status: 'left', left: active.updated };
+    const grant: GroupPublicationGrant = { ...GRANT, ...ref, principalId: 'bob', topics: { 'room.feed': { publish: true, subscribe: true } } };
+
+    it.each([
+        { label: 'active', member: active, row: grant },
+        { label: 'left', member: left, row: grant },
+        { label: 'spectator', member: spectator, row: grant },
+        { label: 'absent member', member: null, row: grant },
+        { label: 'absent row', member: active, row: null }
+    ])('matches resolveGroupPublicationPermissions for the $label case', ({ member, row }) => {
+        const snapshot: GroupSnapshot = {
+            ...createGroupSnapshotFixture({ ...ref, sessionIds: [] }),
+            members: member === null ? [] : [member],
+            publicationGrants: row === null ? [] : [row]
+        };
+
+        for (const topicId of ['room.feed', 'room.other']) {
+            expect(resolveMemberPublicationPermissions(member, row, topicId))
+                .toEqual(resolveGroupPublicationPermissions(snapshot, 'bob', topicId));
+        }
     });
 });

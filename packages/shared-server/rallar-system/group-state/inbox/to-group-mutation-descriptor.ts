@@ -42,6 +42,9 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_PRESENCE_HEARTBEAT:
         case AppInboxType.GROUP_PRESENCE_DISCONNECT:
             return toPresenceMutationDescriptor(enqueue);
+        case AppInboxType.GROUP_TOPIC_SUBSCRIBE:
+        case AppInboxType.GROUP_TOPIC_UNSUBSCRIBE:
+            return toTopicSubscriptionMutationDescriptor(enqueue);
         case AppInboxType.GROUP_TRANSPORT_PAUSE:
         case AppInboxType.GROUP_TRANSPORT_RESUME:
             return toTransportMutationDescriptor(enqueue);
@@ -71,6 +74,9 @@ export function toGroupMutationDescriptorTargetIdentity(
                 targetPrincipalId: command.input.principalId ?? null,
                 sessionId: command.sessionId
             };
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
+            return { targetPrincipalId: null, sessionId: command.sessionId };
         case 'createGroupInvite':
         case 'revokeGroupInvite':
         case 'removeGroupMember':
@@ -364,6 +370,24 @@ function toTransportMutationDescriptor(
             throw new TypeError(`Unsupported transport AppInbox type: ${enqueueType}`);
         }
     }
+}
+
+function toTopicSubscriptionMutationDescriptor(
+    enqueue: Extract<
+        AuthenticatedGroupMutationEnqueue,
+        | { readonly type: typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE; }
+        | { readonly type: typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE; }
+    >
+): GroupMutationDescriptor {
+    return mutationDescriptor({
+        operation: enqueue.type === AppInboxType.GROUP_TOPIC_SUBSCRIBE
+            ? 'subscribeGroupTopic'
+            : 'unsubscribeGroupTopic',
+        scope: enqueue.data.scope,
+        groupId: enqueue.data.groupId,
+        request: enqueue.data.request,
+        sessionId: enqueue.data.sessionId
+    });
 }
 
 function toPresenceMutationDescriptor(

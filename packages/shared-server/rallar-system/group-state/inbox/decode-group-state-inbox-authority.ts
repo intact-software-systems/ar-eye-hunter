@@ -230,6 +230,8 @@ function decodeGroupMutationOperation(
         case 'connectPresence':
         case 'heartbeatPresence':
         case 'disconnectPresence':
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
             return value;
         default:
             throw new TypeError('Group mutation descriptor operation is invalid');

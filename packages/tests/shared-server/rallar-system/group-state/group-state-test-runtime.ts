@@ -61,6 +61,8 @@ export type GroupStateTestService =
         heartbeatPresenceSessionReceipt: GroupStateTestReceiptMethod;
         disconnectPresenceSession: GroupStateTestMutationMethod;
         disconnectPresenceSessionReceipt: GroupStateTestReceiptMethod;
+        subscribeGroupTopicReceipt: GroupStateTestReceiptMethod;
+        unsubscribeGroupTopicReceipt: GroupStateTestReceiptMethod;
     }>;
 
 export interface TestGroupStateMaintenanceService {
@@ -212,7 +214,7 @@ function createAuthenticatedTestGroupStateService({
                     });
                 const request = args.at(-1) as GroupMutationDescriptor['request'];
                 const principalId = readPrincipalId(request);
-                const sessionId = PRESENCE_MUTATIONS.has(method)
+                const sessionId = SESSION_MUTATIONS.has(method)
                     ? String(args[2])
                     : String(request.actorSessionId ?? `${principalId}-session`);
                 const authority = createTestAuthSession(principalId, sessionId);
@@ -324,7 +326,7 @@ function descriptorForMethod(
     const scope = args[0] as GroupMutationDescriptor['scope'];
     const groupId = method === 'createGroup' ? String((args[1] as { groupId: string; }).groupId) : String(args[1]);
     const isTarget = TARGET_MUTATIONS.has(method);
-    const isPresence = PRESENCE_MUTATIONS.has(method);
+    const isPresence = SESSION_MUTATIONS.has(method);
     const requestIndex = method === 'createGroup' ? 1 : isTarget || isPresence ? 3 : 2;
     const request = args[requestIndex] as GroupMutationDescriptor['request'];
     const operation = METHOD_OPERATION[method];
@@ -380,7 +382,9 @@ const METHOD_OPERATION: Readonly<Record<string, GroupMutationDescriptor['operati
     heartbeatPresenceSession: 'heartbeatPresence',
     heartbeatPresenceSessionReceipt: 'heartbeatPresence',
     disconnectPresenceSession: 'disconnectPresence',
-    disconnectPresenceSessionReceipt: 'disconnectPresence'
+    disconnectPresenceSessionReceipt: 'disconnectPresence',
+    subscribeGroupTopicReceipt: 'subscribeGroupTopic',
+    unsubscribeGroupTopicReceipt: 'unsubscribeGroupTopic'
 };
 
 const USER_MUTATIONS = Object.keys(METHOD_OPERATION);
@@ -397,12 +401,14 @@ const TARGET_MUTATIONS = new Set([
     'revokeGroupPublication',
     'upsertMember'
 ]);
-const PRESENCE_MUTATIONS = new Set([
+const SESSION_MUTATIONS = new Set([
     'connectPresenceSession',
     'connectPresenceSessionReceipt',
     'heartbeatPresenceSession',
     'heartbeatPresenceSessionReceipt',
     'disconnectPresenceSession',
-    'disconnectPresenceSessionReceipt'
+    'disconnectPresenceSessionReceipt',
+    'subscribeGroupTopicReceipt',
+    'unsubscribeGroupTopicReceipt'
 ]);
 const TEST_OUTBOX_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;

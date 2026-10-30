@@ -41,7 +41,10 @@ export class GroupSessionDirectory {
             memberPrincipalIds: [],
             presenceSessionIds: [],
             admissionPrincipalIds: [],
-            publicationGrantPrincipalIds: []
+            publicationGrantPrincipalIds: [],
+            topicSubscriptions: [],
+            clientSessions: [],
+            subscriptionPrincipalIds: []
         });
         return toGroupSessionPreview({ ref, principalId, entries, nowEpochMs: this.dependencies.now() });
     }

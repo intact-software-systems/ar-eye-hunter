@@ -12,10 +12,19 @@ import {
     type GroupMemberUnbanAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
-import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
+import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
+import {
+    PUBLICATION_GRANTS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
+import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-system/group-state/persistence/subscription/group-topic-subscription-storage-key.ts';
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { processAuthenticated, SCOPE, type AuthorityHarness } from './group-state-inbox-test-runtime.ts';
 
@@ -24,8 +33,8 @@ export interface OperationMatrixCase {
     readonly operation: string;
     readonly authority: IssuedAuthSession;
     readonly data: JsonWireValue;
-    /** Outbox rows the operation writes beside its presence summary; absent means the summary alone. */
-    readonly extraOutboxEntries?: number;
+    /** Outbox rows the operation writes; absent means its presence summary alone. */
+    readonly outboxEntries?: number;
     assertDomain(): Promise<void>;
 }
 
@@ -125,6 +134,51 @@ export async function readMatrixPublicationGrant(
     return entry === undefined ? undefined : JSON.parse(entry.value) as GroupPublicationGrant;
 }
 
+/** The principal's live client-state session at the WS connection generation a subscribe asserts. */
+export async function writeMatrixClientSession(
+    harness: AuthorityHarness,
+    principalId: string,
+    generationId: string
+): Promise<void> {
+    const session: ClientSession = {
+        ...SCOPE,
+        principalId,
+        clientInstanceId: `${principalId}-instance`,
+        sessionId: harness.sessions[principalId].sessionId,
+        generationId,
+        generationVersion: 1,
+        status: 'active',
+        presenceState: 'online',
+        transport: 'ws',
+        connectionId: null,
+        authenticatedAtEpochMs: harness.nowEpochMs,
+        connectedAtEpochMs: harness.nowEpochMs,
+        lastHeartbeatAtEpochMs: harness.nowEpochMs,
+        expiresAtEpochMs: harness.nowEpochMs + 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    };
+    await harness.runtimeRepository.upsert(
+        CLIENT_STATE_SESSIONS_NAMESPACE,
+        clientStateSessionStorageKey(session),
+        JSON.stringify(session),
+        NEVER_EXPIRE_AT_TIMESTAMP
+    );
+}
+
+export async function readMatrixTopicSubscription(
+    harness: AuthorityHarness,
+    groupId: string,
+    sessionId: string,
+    topicId: string
+): Promise<GroupTopicSubscription | undefined> {
+    const entry = await harness.runtimeRepository.findEntry(
+        SUBSCRIPTIONS_NAMESPACE,
+        groupStateTopicSubscriptionStorageKey({ ...SCOPE, groupId }, sessionId, topicId)
+    );
+    return entry === undefined ? undefined : JSON.parse(entry.value) as GroupTopicSubscription;
+}
+
 export async function runOperationMatrix(
     harness: AuthorityHarness,
     groupId: string,
@@ -158,7 +212,7 @@ export async function runOperationMatrix(
         expect(
             harness.database.outboxEntries.size,
             `${testCase.operation} outbox entry`
-        ).toBe(previousOutboxCount + 1 + (testCase.extraOutboxEntries ?? 0));
+        ).toBe(previousOutboxCount + (testCase.outboxEntries ?? 1));
         expect(
             (await harness.queueEntries()).some(
                 (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 1

@@ -19,10 +19,12 @@ const TARGET_PRINCIPAL_TYPES = new Set<AuthenticatedGroupMutationInboxType>([
     AppInboxType.GROUP_MEMBER_UPSERT
 ]);
 
-const PRESENCE_TYPES = new Set<AuthenticatedGroupMutationInboxType>([
+const SESSION_TYPES = new Set<AuthenticatedGroupMutationInboxType>([
     AppInboxType.GROUP_PRESENCE_CONNECT,
     AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-    AppInboxType.GROUP_PRESENCE_DISCONNECT
+    AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+    AppInboxType.GROUP_TOPIC_UNSUBSCRIBE
 ]);
 
 export function decodeGroupStateAppInboxCommand(
@@ -54,7 +56,7 @@ export function decodeGroupStateAppInboxCommand(
         );
         requireString(command.principalId, `Group ${type} target principal id`);
     }
-    else if (PRESENCE_TYPES.has(type)) {
+    else if (SESSION_TYPES.has(type)) {
         requireExactKeys(
             command,
             ['scope', 'groupId', 'sessionId', 'request'],
@@ -152,6 +154,8 @@ const GROUP_MUTATION_OPERATIONS: Record<AuthenticatedGroupMutationInboxType, Gro
     [AppInboxType.GROUP_MEMBER_ROLE_SET]: 'setGroupMemberRole',
     [AppInboxType.GROUP_PUBLICATION_GRANT]: 'grantGroupPublication',
     [AppInboxType.GROUP_PUBLICATION_REVOKE]: 'revokeGroupPublication',
+    [AppInboxType.GROUP_TOPIC_SUBSCRIBE]: 'subscribeGroupTopic',
+    [AppInboxType.GROUP_TOPIC_UNSUBSCRIBE]: 'unsubscribeGroupTopic',
     [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: 'transferGroupOwnership',
     [AppInboxType.GROUP_MEMBER_UPSERT]: 'upsertMember',
     [AppInboxType.GROUP_PRESENCE_CONNECT]: 'connectPresence',

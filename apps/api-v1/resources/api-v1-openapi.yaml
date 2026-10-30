@@ -5123,6 +5123,9 @@ components:
         - group-admission-capacity-reached
         - group-data-blocked-until-active
         - capacity
+        - no-subscribe-grant
+        - stale-generation
+        - no-live-session
 
     ErrorResponse:
       type: object

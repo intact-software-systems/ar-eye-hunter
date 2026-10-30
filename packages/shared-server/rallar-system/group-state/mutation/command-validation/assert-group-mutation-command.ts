@@ -36,7 +36,7 @@ export function assertGroupMutationCommand(
     }
     const operation = value.operation as GroupMutationCommand['operation'];
     const hasTarget = TARGET_GROUP_MUTATION_OPERATIONS.has(operation);
-    const hasSession = PRESENCE_GROUP_MUTATION_OPERATIONS.has(operation);
+    const hasSession = isGroupSessionMutationOperation(operation);
     assertExactKeys(
         value,
         [
@@ -63,16 +63,25 @@ export function assertGroupMutationCommand(
             requireNonEmptyString(input[key], `Group mutation ${key}`);
         }
     }
-    if ('sessionId' in value) {
+    if (hasSession) {
         requireNonEmptyString(value.sessionId, 'Group session id');
     }
     if ('targetPrincipalId' in value) {
         requireNonEmptyString(value.targetPrincipalId, 'Group target principal id');
     }
-    if (hasSession) {
+    if (PRESENCE_GROUP_MUTATION_OPERATIONS.has(operation)) {
         requireNonEmptyString(input.generationId, 'Group presence generationId');
     }
     assertOperationInput(operation, input);
+}
+
+/**
+ * The commands that name the session they act for: presence and topic subscriptions. Each is bound to the
+ * authenticated session, so a caller never acts for another session, its own included.
+ */
+export function isGroupSessionMutationOperation(operation: GroupMutationCommand['operation']): boolean {
+    return operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence' ||
+        operation === 'subscribeGroupTopic' || operation === 'unsubscribeGroupTopic';
 }
 
 function assertOperationInput(
@@ -207,7 +216,9 @@ function assertMembershipOperationInput(
             requireOneOf(input.role, ['owner', 'admin', 'member', 'spectator'], 'Group role');
             return;
         case 'grantGroupPublication':
-        case 'revokeGroupPublication': {
+        case 'revokeGroupPublication':
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic': {
             const issue = validateGroupMutationOperationInput({ operation, input })[0];
             if (issue !== undefined) {
                 throw issue;
@@ -313,7 +324,9 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'upsertMember',
     'connectPresence',
     'heartbeatPresence',
-    'disconnectPresence'
+    'disconnectPresence',
+    'subscribeGroupTopic',
+    'unsubscribeGroupTopic'
 ]);
 
 const TARGET_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation']>([
@@ -423,6 +436,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     setGroupMemberRole: [...ACTOR_INPUT_KEYS, 'role'],
     grantGroupPublication: [...ACTOR_INPUT_KEYS, 'topicId', 'publish', 'subscribe'],
     revokeGroupPublication: [...ACTOR_INPUT_KEYS, 'topicId', 'publish', 'subscribe'],
+    subscribeGroupTopic: [...ACTOR_INPUT_KEYS, 'topicId', 'connectionGenerationId'],
+    unsubscribeGroupTopic: [...ACTOR_INPUT_KEYS, 'topicId', 'connectionGenerationId'],
     transferGroupOwnership: ACTOR_INPUT_KEYS,
     upsertMember: [
         ...ACTOR_INPUT_KEYS,
