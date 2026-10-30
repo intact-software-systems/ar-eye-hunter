@@ -2273,6 +2273,8 @@ paths:
         session (`no-live-session`). The row is deleted when `subscribe` is
         revoked and on every departure; a re-grant or rejoin never revives
         it. The write bumps no group revision.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -2305,8 +2307,6 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
-        '404':
-          $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/unsubscribe/requests/{requestId}:
@@ -2318,6 +2318,8 @@ paths:
         the generation that holds the row and is still the session's live one
         releases it (`unsubscribed`); any other generation, or no row, is
         `not-subscribed` and deletes nothing.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -2349,8 +2351,6 @@ paths:
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/ApiMutationFailure'
-        '404':
           $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
