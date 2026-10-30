@@ -43,6 +43,7 @@ import {
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import type { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -90,6 +91,7 @@ import {
     filterEligibleDurableWsSessionIds,
     filterEligibleLiveWsSessionIds
 } from '../services/filter-eligible-live-ws-session-ids.ts';
+import { filterGrantedWsRecipientSessionIds } from '../services/filter-granted-ws-recipient-session-ids.ts';
 import {
     runRuntimeStateExpiryStartupBarrier,
     type RuntimeStateExpiryStartupGeneration
@@ -142,6 +144,8 @@ export interface CreateApiV1RuntimeInput {
     readonly rtcTopologyOptions: CreateApiV1TopologyServicesInput['rtcTopologyOptions'];
     readonly rttRefinementGateConfig: CreateApiV1TopologyServicesInput['rttRefinementGateConfig'];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
+    /** The router's granted topics, read by the target resolver and the outbox re-check (D498). */
+    readonly grantedTopics: WsGrantedTopicSet;
     readonly resilience: CreateApiV1MutationRuntimeInput['resilience'];
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
 }
@@ -176,6 +180,7 @@ interface CreateSharedMiddlewareInput {
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
     readonly inboundStores: ALInboundRuntimeStores;
+    readonly grantedTopics: WsGrantedTopicSet;
     readonly nowEpochMs: () => number;
 }
 
@@ -256,6 +261,7 @@ export function constructApiV1Runtime(
         wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
         inboundStores,
+        grantedTopics: input.grantedTopics,
         nowEpochMs
     });
     const appInbox = operations.createAppInbox({ mutation, runtime, timing });
@@ -481,6 +487,20 @@ function createSharedMiddleware(
         wsRuntimeName: input.wsRuntimeName,
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
+        grantedTopics: input.grantedTopics,
+        filterEligibleCapturedSessionIds: async (captured) =>
+            await filterGrantedWsRecipientSessionIds({
+                ...captured,
+                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
+                    ...captured,
+                    socketServer: mutation.webSocketServer,
+                    nowMs: input.nowEpochMs()
+                }),
+                grantedTopics: input.grantedTopics,
+                serverPeerId: input.wsRuntimeName,
+                readCurrentSnapshot: (ref) => mutation.groupStateService.readCurrentSnapshot(ref),
+                nowEpochMs: input.nowEpochMs()
+            }),
         inboundStores,
         inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
@@ -547,13 +567,7 @@ function createApiV1QueuePubSubBridge(
         channel: input.queuePubSubChannel,
         publisherId: input.queuePubSubPublisherId,
         timing: input.outboxStageTiming,
-        wakeReplay: () => input.rtcTopology.topologyReplay.wake('notification'),
-        filterEligibleCapturedSessionIds: (captured) =>
-            filterEligibleDurableWsSessionIds({
-                ...captured,
-                socketServer: input.mutation.webSocketServer,
-                nowMs: input.nowEpochMs()
-            })
+        wakeReplay: () => input.rtcTopology.topologyReplay.wake('notification')
     });
 }
 

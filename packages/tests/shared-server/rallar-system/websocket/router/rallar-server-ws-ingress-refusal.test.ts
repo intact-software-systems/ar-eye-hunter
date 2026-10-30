@@ -156,7 +156,7 @@ function createIngressFixture(fanout: RallarServerWsFanout): IngressFixture {
         }
     });
     onTestFinished(() => service.dispose());
-    const router = new RallarServerWsRouter(service, {}).install().defineTopic({ topicId: TOPIC_ID, fanout });
+    const router = new RallarServerWsRouter(service, {}).install().defineTopic({ participation: 'members', topicId: TOPIC_ID, fanout });
     return { service, router, outboundStores, sockets };
 }
 

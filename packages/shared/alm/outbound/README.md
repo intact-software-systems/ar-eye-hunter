@@ -715,6 +715,10 @@ pure pre-admission check: a suppressing rule whose `authorize` or `targets` skip
 the publication even when it would itself have skipped (over-refusal). Neither is reachable in the product today, which
 declares no proxy rule and no client topic with an `outbox` fanout. The origin states it as a trusted-server `relay-rejected` with that reason whatever the receipt; a live
 handle tracks none, so it keeps `transport-accepted` and names the refusal in `relayRejection` alone.
+A publication on a granted topic whose sender holds no effective `publish` grant is refused with a
+`no-publish-grant` NACK at whichever WS pass reads the revocation first: socket admission, pending replay, inbox
+dispatch or `route` (D487). Like `held-by-other` it refuses the whole send whatever the receipt and ends it: a held
+dispatch already has its `admitted` receipt when `route` re-reads the grant.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).

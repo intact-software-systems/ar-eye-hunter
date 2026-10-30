@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
+import { readApiV1ConfigurationEnvironment } from '../../src/configuration/read-api-v1-configuration-environment.ts';
 import {
     CONFIGURATION_SECRET_SENTINELS,
     validConfigurationProfileSource,
@@ -415,6 +416,42 @@ Deno.test('configuration decoder validates URLs, origins, enums, set duplicates,
         invalidDatabaseUrlError.message.includes('database-url-secret-sentinel'),
         false
     );
+});
+
+Deno.test('grantedWsTopics defaults to empty, decodes the JSON environment value and refuses an unknown key, a reserved topic id and an unknown fanout', () => {
+    assert.deepEqual(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).grantedWsTopics, []);
+
+    const environment = readApiV1ConfigurationEnvironment(
+        new Map([[
+            'RALLAR_GRANTED_WS_TOPICS_JSON',
+            '[{"topicId":"room.bb-granted-feed","fanout":"outbox","serverProducerIds":["feed"]},' +
+            '{"topicId":"app.scores","typeId":"scores.v1","fanout":"live-only","serverProducerIds":[]}]'
+        ]])
+    );
+    const configured = decodeApiV1Configuration({
+        ...validDecodeApiV1ConfigurationInput(),
+        environmentSource: environment.environmentSource
+    });
+    assert.deepEqual(configured.grantedWsTopics, [
+        { topicId: 'room.bb-granted-feed', fanout: 'outbox', serverProducerIds: ['feed'] },
+        { topicId: 'app.scores', typeId: 'scores.v1', fanout: 'live-only', serverProducerIds: [] }
+    ]);
+    assert.deepEqual(environment.appliedEnvironmentOverrideNames, ['RALLAR_GRANTED_WS_TOPICS_JSON']);
+
+    for (
+        const topic of [
+            { topicId: 'room.feed', fanout: 'outbox', serverProducerIds: [], scope: 'room' },
+            { topicId: 'rallar.feed', fanout: 'outbox', serverProducerIds: [] },
+            { topicId: 'room.feed', fanout: 'broadcast', serverProducerIds: [] }
+        ]
+    ) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'grantedWsTopics', [topic]);
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+        assert.deepEqual(error.issues.map((issue) => [issue.source, issue.path, issue.code]), [
+            ['defaults', 'grantedWsTopics', 'invalid-granted-ws-topic']
+        ], JSON.stringify(topic));
+    }
 });
 
 Deno.test('configuration decoder reports malformed CRDT and topology values instead of defaulting', () => {

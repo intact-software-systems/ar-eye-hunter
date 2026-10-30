@@ -9,6 +9,7 @@ import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -737,11 +738,12 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
-            readServerPublishAudience: async (message) => ({
-                targets: message.targets!,
-                sessions: snapshot.activeSessions,
-                snapshotVersion: 2
-            }),
+            readServerPublishAudience: async ({ message }) =>
+                Either.ofRight({
+                    targets: message.targets!,
+                    sessions: snapshot.activeSessions,
+                    snapshotVersion: 2
+                }),
             livePublication: {
                 transport,
                 channel: 'ws-channel',
@@ -802,11 +804,12 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
-            readServerPublishAudience: async (message) => ({
-                targets: message.targets!,
-                sessions: snapshot.activeSessions,
-                snapshotVersion: 2
-            })
+            readServerPublishAudience: async ({ message }) =>
+                Either.ofRight({
+                    targets: message.targets!,
+                    sessions: snapshot.activeSessions,
+                    snapshotVersion: 2
+                })
         });
         const message = newALBroadcastMessage(
             'game-server',
@@ -849,11 +852,12 @@ describe('Rallar server WS live cluster publication', () => {
         let notices = 0;
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
-            readServerPublishAudience: async (message) => ({
-                targets: message.targets!,
-                sessions: snapshot.activeSessions,
-                snapshotVersion: 2
-            }),
+            readServerPublishAudience: async ({ message }) =>
+                Either.ofRight({
+                    targets: message.targets!,
+                    sessions: snapshot.activeSessions,
+                    snapshotVersion: 2
+                }),
             livePublication: {
                 transport: {
                     publish: async () => {
@@ -1068,11 +1072,12 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
-            readServerPublishAudience: async (message) => ({
-                targets: { ...message.targets!, exceptPeerIds: ['different'] },
-                sessions: snapshot.activeSessions,
-                snapshotVersion: 2
-            }),
+            readServerPublishAudience: async ({ message }) =>
+                Either.ofRight({
+                    targets: { ...message.targets!, exceptPeerIds: ['different'] },
+                    sessions: snapshot.activeSessions,
+                    snapshotVersion: 2
+                }),
             livePublication: {
                 transport,
                 channel: 'ws-channel',

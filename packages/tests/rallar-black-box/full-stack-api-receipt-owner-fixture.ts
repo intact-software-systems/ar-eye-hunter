@@ -191,6 +191,7 @@ class ReceiptOwnerFixture {
                 resolvePeerRecipients: (peerId) => this.socket.connections.get(peerId)?.isOpen ? [{ peerId, connectionId: peerId }] : []
             },
             readProducerProvenance: undefined,
+            filterEligibleCapturedSessionIds: undefined,
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             inboundDiagnostics: undefined,

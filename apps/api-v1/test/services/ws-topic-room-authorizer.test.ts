@@ -43,6 +43,7 @@ Deno.test('API room authorization reads the current scoped group snapshot', asyn
 
     const decision = await authorizer({
         message,
+        topic: { participation: 'members' },
         roomId: 'group-1',
         roomRef: snapshot.group,
         senderId: 'session-1',
@@ -95,6 +96,7 @@ Deno.test('API room authorization fails closed without a scoped group reference'
 
     const decision = await authorizer({
         message,
+        topic: { participation: 'members' },
         roomId: 'group-1',
         senderId: 'session-1',
         topicId: 'room.chat',
@@ -294,6 +296,7 @@ Deno.test('API room authorization exempts the CRDT topics from the data-policy g
 
     const decision = await authorizer({
         message,
+        topic: { participation: 'members' },
         roomId: 'group-1',
         roomRef: snapshot.group,
         senderId: 'session-1',
@@ -331,6 +334,7 @@ Deno.test('API room authorization allows CRDT while transport is halted without 
     assertAuthorized(
         await authorizer({
             message,
+            topic: { participation: 'members' },
             roomId: 'group-1',
             roomRef: snapshot.group,
             senderId: 'session-1',
@@ -350,6 +354,7 @@ function roomChatInput(snapshot: GroupSnapshot): RallarServerWsRoomAuthorization
             'chat.message.v1',
             { text: 'hello' }
         ),
+        topic: { participation: 'members' },
         roomId: 'group-1',
         roomRef: snapshot.group,
         senderId: 'session-1',

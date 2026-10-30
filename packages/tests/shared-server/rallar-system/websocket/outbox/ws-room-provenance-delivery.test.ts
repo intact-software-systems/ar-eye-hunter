@@ -45,7 +45,7 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
         await fixture.publish(['session', 'late'], 'excluded');
         await fixture.engine.executeOnce();
@@ -88,7 +88,7 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
         const winnerEngine = new InboxOutboxEngine();
         const winnerService = createDefaultWsQueueBoxServerService({
@@ -134,7 +134,7 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
         const message = newALBroadcastMessage('server', { topicId: 'snapshot', resourceId: 'room', contextId: 'event' }, 'room', 'snapshot.v1', {}, {
             ttlMs: 30_000,
@@ -232,7 +232,7 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
         const { message, entry } = await fixture.publish(['session']);
         const decodes = countMessageDecodes(message);
@@ -255,7 +255,7 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (input) => {
+            filterEligibleCapturedSessionIds: async (input) => {
                 captured.push({ audience: input.candidateSessionIds, scope: input.recipientScope });
                 return input.candidateSessionIds;
             }

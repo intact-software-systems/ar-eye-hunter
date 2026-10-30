@@ -147,6 +147,7 @@ describe('RallarServerWsRouter', () => {
         const expiresAtMs = nowMs + 1_000;
         const fixture = createIngressRouter({ defaultFanout: 'none', nowEpochMs: () => nowMs });
         fixture.router.defineTopic({
+            participation: 'members',
             topicId: 'app.deadline',
             authorize: async () => {
                 await Promise.resolve();
@@ -255,6 +256,7 @@ describe('RallarServerWsRouter', () => {
     it('uses lightweight validators for registered topics', async () => {
         const { router, socket } = createRouter();
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             validate: (value) => typeof value === 'object' && value !== null && 'title' in value
@@ -278,6 +280,7 @@ describe('RallarServerWsRouter', () => {
         const { router, socket } = createRouter();
         const handledPayloads: JsonWireValue[] = [];
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'none',
@@ -314,6 +317,7 @@ describe('RallarServerWsRouter', () => {
             }
         });
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'outbox'
@@ -348,7 +352,7 @@ describe('RallarServerWsRouter', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         onTestFinished(() => warn.mockRestore());
         const { router, socket, outboundStores } = createRouter();
-        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        router.defineTopic({ participation: 'members', topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
         const handled: string[] = [];
         router.on({ topicId: 'app.command' }, async (message) => {
             handled.push(message.raw.id.msgId);
@@ -380,7 +384,7 @@ describe('RallarServerWsRouter', () => {
 
     it('keeps the default fanout for a unicast addressed to another peer, in a room or on an outbox topic (R-S3c-i-5)', async () => {
         const { router, socket, outboundStores } = createRouter({ authorizeRoomMessage: () => true });
-        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        router.defineTopic({ participation: 'members', topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
         const handled: string[] = [];
         router.on({ topicId: 'room.command' }, async (message) => {
             handled.push(message.raw.id.msgId);
@@ -458,7 +462,7 @@ describe('RallarServerWsRouter', () => {
             { text: 'scoped delivery' },
             { reliability: 'at-least-once', ack: 'receiver' }
         );
-        router.defineTopic({ topicId: 'app.proxy', fanout: 'none' });
+        router.defineTopic({ participation: 'members', topicId: 'app.proxy', fanout: 'none' });
         router.on({ topicId: 'app.proxy' }, async (_message, context) => {
             await context.proxy.toRoom(roomRef, message, {
                 fanout: 'outbox',
@@ -488,12 +492,14 @@ describe('RallarServerWsRouter', () => {
         const { router } = createRouter({ allowImplicitUserTopics: false });
 
         router.defineTopic({
+            participation: 'members',
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1'
         });
 
         expect(() =>
             router.defineTopic({
+                participation: 'members',
                 topicId: 'custom.todo',
                 typeId: 'todo.item.updated.v1'
             })
@@ -1400,7 +1406,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
             };
         }
     });
-    router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
+    router.install().defineTopic({ participation: 'members', topicId: 'room.chat', fanout: input.fanout });
     return { router, service, sockets, outboundStores };
 }
 
@@ -1441,7 +1447,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
                 }
             }
     });
-    router.install().defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+    router.install().defineTopic({ participation: 'members', topicId: 'room.chat', fanout: 'outbox' });
     return { router, service, sockets };
 }
 

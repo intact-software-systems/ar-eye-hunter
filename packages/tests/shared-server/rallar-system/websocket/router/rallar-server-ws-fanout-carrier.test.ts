@@ -20,6 +20,7 @@ import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-run
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
@@ -200,7 +201,7 @@ describe('Rallar server WS fanout carriers', () => {
                 },
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
-        router.defineTopic({ topicId: 'room.carrier' });
+        router.defineTopic({ participation: 'members', topicId: 'room.carrier' });
         const message = createRoomBroadcast('sender', 'admitted-remote', QOS_CASES[1]);
 
         await router.route(message, {
@@ -301,11 +302,12 @@ function createCarrierFixture(
     const recording = createRecordingLiveWsPublication();
     const router = new RallarServerWsRouter(createCarrierService(socketServer, outboundStores), {
         defaultFanout,
-        readServerPublishAudience: async (message) => ({
-            targets: message.targets!,
-            sessions: [roomSession('receiver')],
-            snapshotVersion: 3
-        }),
+        readServerPublishAudience: async ({ message }) =>
+            Either.ofRight({
+                targets: message.targets!,
+                sessions: [roomSession('receiver')],
+                snapshotVersion: 3
+            }),
         livePublication: cluster ? recording.livePublication : undefined
     });
     return { router, receiver, notices: recording.notices, outboundStores };

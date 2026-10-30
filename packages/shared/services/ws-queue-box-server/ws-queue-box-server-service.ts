@@ -64,6 +64,7 @@ import { toWsQueueBoxServerCapturedSendInput } from './scope/to-ws-queue-box-ser
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
+    type WsCapturedRecipientEligibilityFilter,
     type WsDeliveryDiagnosticsSink,
     type WsOutboxDeliveryOutcome,
     type WsServerInboundAuthorizer,
@@ -131,6 +132,8 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider?: ALQosInputProvider;
         readonly targetResolver?: WsServerTargetResolver;
         readonly readProducerProvenance?: WsOutboxProducerProvenanceReader;
+        /** Re-checks a frozen-audience row's captured sessions at each dequeue, repair and awaited send (D498). */
+        readonly filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter;
         readonly inboundStores?: ALInboundRuntimeStores;
         /** The memory pair a volatile message is admitted and delivered from; `undefined`, every message takes `inboundStores`. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
@@ -171,6 +174,12 @@ export namespace WsQueueBoxServerService {
         readonly currentnessRejection?: WsQueueBoxServerInboundAuthority.CurrentnessRejection;
     }
 
+    export interface HeldRowSend {
+        readonly message: ALMessage;
+        readonly entry: ResourceEntry;
+        readonly policy: ALOutboundCapturedPolicy;
+    }
+
     export interface EnqueueAuthority {
         /**
          * The room audience a router admitted the message to. It travels with the outbound row, never on
@@ -188,6 +197,7 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider: ALQosInputProvider;
         readonly targetResolver: WsServerTargetResolver;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
+        readonly filterEligibleCapturedSessionIds: WsCapturedRecipientEligibilityFilter | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
@@ -265,7 +275,9 @@ export class WsQueueBoxServerService {
         });
         this.dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
             admissionStore: this.admissionStore,
-            readProducerProvenance: dependencies.readProducerProvenance
+            readProducerProvenance: dependencies.readProducerProvenance,
+            targetResolution: this.targetResolution,
+            filterEligibleCapturedSessionIds: dependencies.filterEligibleCapturedSessionIds
         });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);
         const receiptRouting = this.createReceiptRouting(dependencies);
@@ -409,8 +421,11 @@ export class WsQueueBoxServerService {
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
-            planRepairMessage: (message, request) =>
-                Promise.resolve(this.outboundPlanning.planRepairMessage(message, request))
+            planRepairMessage: async (message, request) =>
+                this.outboundPlanning.planRepairMessage(message, {
+                    ...request,
+                    admittedAudience: await this.dequeueAuthority.readCurrentAudience(message, request)
+                })
         });
     }
 
@@ -723,6 +738,11 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargets(message);
     }
 
+    /** Whether the message reaches only the audience frozen at its admission (a granted topic, D487). */
+    requiresFrozenAudience(message: ALMessage): boolean {
+        return this.targetResolution.requiresFrozenAudience(message);
+    }
+
     /** The policy the row's own commit handed over, when there is one, is checked instead of read back. */
     async readCapturedPolicy(
         message: ALMessage,
@@ -751,13 +771,10 @@ export class WsQueueBoxServerService {
         const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry, committedPolicy);
         const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
             expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
-            send: (sessionId) =>
-                this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
-                    message,
-                    key: entry.key,
-                    policy: { ...policy, admittedAudience: [sessionId] },
-                    eligibleSessionIds: undefined
-                }))
+            send: (sessionId) => {
+                void this.sendHeldRow({ message, entry, policy: { ...policy, admittedAudience: [sessionId] } })
+                    .catch((error) => console.error('Held WebSocket send failed:', error));
+            }
         });
         if (awaited.evictedCount > 0) {
             console.warn('WS outbox hold evicted older rows for awaited sessions', {
@@ -765,6 +782,19 @@ export class WsQueueBoxServerService {
                 evictedCount: awaited.evictedCount
             });
         }
+    }
+
+    /** A held send re-checks its one session when the session's socket opens, as every other attempt does (D498). */
+    private async sendHeldRow(
+        { message, entry, policy }: WsQueueBoxServerService.HeldRowSend
+    ): Promise<void> {
+        const admittedAudience = await this.dequeueAuthority.readCurrentAudience(message, policy);
+        this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+            message,
+            key: entry.key,
+            policy: { ...policy, admittedAudience },
+            eligibleSessionIds: undefined
+        }));
     }
 
     private async sendPreparedMessage(
@@ -899,6 +929,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, input.qosProvider),
         targetResolver: input.targetResolver ?? {},
         readProducerProvenance: input.readProducerProvenance,
+        filterEligibleCapturedSessionIds: input.filterEligibleCapturedSessionIds,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,

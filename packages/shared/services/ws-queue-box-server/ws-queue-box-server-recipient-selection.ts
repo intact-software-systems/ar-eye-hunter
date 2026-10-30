@@ -37,9 +37,11 @@ export class WsQueueBoxServerRecipientSelection {
     resolveLiveRecipients(input: WsServerLiveSendInputDto): readonly WsServerResolvedRecipient[] {
         const { message, recipientSessionIds, admittedPeerIds, inboundScope, recipientPrincipalId } = input;
         // Explicit authority, including an empty audience, replaces cache-based target resolution.
-        const currentRecipients = recipientSessionIds === undefined
+        const frozenSessionIds = recipientSessionIds ??
+            (this.#targetResolution.requiresFrozenAudience(message) ? admittedPeerIds ?? [] : undefined);
+        const currentRecipients = frozenSessionIds === undefined
             ? this.#targetResolution.resolveOutboundRecipients(message)
-            : this.#targetResolution.resolveCapturedSessionRecipients(message, recipientSessionIds);
+            : this.#targetResolution.resolveCapturedSessionRecipients(message, frozenSessionIds);
         const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
         const admittedRecipients = admitted === undefined
             ? currentRecipients

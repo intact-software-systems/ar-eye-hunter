@@ -122,6 +122,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
             ]
         },
         readProducerProvenance: undefined,
+        filterEligibleCapturedSessionIds: undefined,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             selfPeerId: 'server',
             nowMs: () => fixture.clock.nowMs(),

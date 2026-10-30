@@ -6,6 +6,7 @@ import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistenc
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
@@ -88,7 +89,8 @@ function constructDefaultRallarServer(
     const database = input.databaseLifecycle.database;
     const nowEpochMs = Date.now;
     const timing = startConfiguredApiTiming(configuration.observability, backgroundTasks);
-    const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing });
+    const grantedTopics = new WsGrantedTopicSet();
+    const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing, grantedTopics });
 
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {
         policies: configuration.crdt.documentTypePolicies
@@ -105,7 +107,7 @@ function constructDefaultRallarServer(
         crdtLogRepository
     });
 
-    const wsOptions = createDefaultRallarServerWsOptions(input, runtime, nowEpochMs);
+    const wsOptions = createDefaultRallarServerWsOptions({ input, runtime, nowEpochMs, grantedTopics });
     const systemInstallers = createApiV1SystemInstallers({
         database,
         serviceId: myServerId,
@@ -114,6 +116,7 @@ function constructDefaultRallarServer(
         topology,
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
+        grantedWsTopics: configuration.grantedWsTopics,
         livePublication: wsOptions.livePublication,
         timing,
         recomputeTiming: toTimingOnSink(configuration.observability, timing)
@@ -161,12 +164,18 @@ function startConfiguredApiTiming(
     return timing;
 }
 
+interface DefaultRallarServerWsOptionsInput {
+    readonly input: CreateDefaultRallarServerInput;
+    readonly runtime: ApiV1Runtime;
+    readonly nowEpochMs: () => number;
+    readonly grantedTopics: WsGrantedTopicSet;
+}
+
 function createDefaultRallarServerWsOptions(
-    input: CreateDefaultRallarServerInput,
-    runtime: ApiV1Runtime,
-    nowEpochMs: () => number
+    { input, runtime, nowEpochMs, grantedTopics }: DefaultRallarServerWsOptionsInput
 ): RallarServerWsRouterOptions {
     return {
+        grantedTopics,
         authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
             readLifecyclePolicy: (ref) => runtime.topologyServices.groupStateRepository.readLifecyclePolicy(ref)
         }),
@@ -189,10 +198,11 @@ interface ConfiguredApiV1RuntimeInput {
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly grantedTopics: WsGrantedTopicSet;
 }
 
 function createConfiguredApiV1Runtime(
-    { input, backgroundTasks, nowEpochMs, timing }: ConfiguredApiV1RuntimeInput
+    { input, backgroundTasks, nowEpochMs, timing, grantedTopics }: ConfiguredApiV1RuntimeInput
 ): ApiV1Runtime {
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
@@ -249,7 +259,11 @@ function createConfiguredApiV1Runtime(
         rtcTopologyOptions,
         rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        resilience: createApiV1MiddlewareResilience(configuration.topology.queueResilience, configuration.appInbox.retry),
+        grantedTopics,
+        resilience: createApiV1MiddlewareResilience(
+            configuration.topology.queueResilience,
+            configuration.appInbox.retry
+        ),
         backgroundTasks
     });
 }

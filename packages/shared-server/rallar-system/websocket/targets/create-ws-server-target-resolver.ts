@@ -50,7 +50,8 @@ export function createWsServerTargetResolver(
         resolveGroupRecipients,
         resolveBroadcastRecipients: (scope, message) =>
             resolveBroadcastRecipients({ scope, message, webSocketServer, options }),
-        resolvePeerIdForConnection: (connectionId) => connectionId
+        resolvePeerIdForConnection: (connectionId) => connectionId,
+        requiresFrozenAudience: (message) => options.grantedTopics?.has(message.route.topicId) ?? false
     };
 }
 

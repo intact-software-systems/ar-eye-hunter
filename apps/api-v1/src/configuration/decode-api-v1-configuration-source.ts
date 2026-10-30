@@ -74,6 +74,7 @@ const DEFAULT_TOP_LEVEL_KEYS = new Set([
     'appInbox',
     'ice',
     'crdt',
+    'grantedWsTopics',
     'blackBox',
     'observability'
 ]);
@@ -252,6 +253,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'ice.appName': 'METERED_APP_NAME',
     'ice.region': 'METERED_REGION',
     'crdt.documentTypePolicies': 'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
+    grantedWsTopics: 'RALLAR_GRANTED_WS_TOPICS_JSON',
     'blackBox.operatorToken.allowedClientIds': 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS',
     'blackBox.operatorToken.ttlMs': 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS',
     'blackBox.pgliteEvidence.directory': 'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR',

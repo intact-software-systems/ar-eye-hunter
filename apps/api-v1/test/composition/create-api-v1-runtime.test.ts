@@ -8,6 +8,7 @@ import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middl
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 
 import type { ALOutboundCapturedPolicyTiming } from '@shared/alm/outbound/admission/al-outbound-captured-policy-timing.ts';
@@ -335,6 +336,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
             vivaldiDeltaThresholdMs: 0
         },
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
+        grantedTopics: new WsGrantedTopicSet(),
         resilience: {
             inbox: createApiV1TestQueueResilience(),
             outbox: createApiV1TestQueueResilience(),

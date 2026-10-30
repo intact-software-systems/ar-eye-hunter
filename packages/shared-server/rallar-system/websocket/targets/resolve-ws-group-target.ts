@@ -24,7 +24,9 @@ export function resolveWsGroupTargetRecipients(
     input: ResolveWsGroupTargetInput
 ): readonly WsServerResolvedRecipient[] {
     const groupRef = readALTargetGroupRef(input.message);
-    if (!groupRef || groupRef.groupId !== input.groupId) {
+    if (
+        !groupRef || groupRef.groupId !== input.groupId || input.options.grantedTopics?.has(input.message.route.topicId)
+    ) {
         return [];
     }
     const decoded = decodeStateSyncMessage(input.message);

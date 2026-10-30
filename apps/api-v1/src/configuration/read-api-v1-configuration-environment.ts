@@ -448,6 +448,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.crdt.documentTypePolicies = value
     },
     {
+        name: 'RALLAR_GRANTED_WS_TOPICS_JSON',
+        decode: decodeJson,
+        apply: (source, value) => source.grantedWsTopics = value
+    },
+    {
         name: 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS',
         decode: decodeCsv,
         apply: (source, value) => source.blackBox.operatorToken.allowedClientIds = value

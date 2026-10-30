@@ -5,6 +5,7 @@ import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import type {
     WsServerLiveSendFailure,
     WsServerResolvedRecipient
@@ -12,6 +13,8 @@ import type {
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { LiveWsNoticeTransport } from '../../queue-pubsub/live-ws-notice.ts';
+import type { RoomPublicationAdmission } from '../room-publication/compute-room-publication-admission.ts';
+import type { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
@@ -20,6 +23,8 @@ export interface RallarServerWsPublishInputDto {
     /** Required for a unicast that names no group and for a world broadcast; refused beside targets that name a group. */
     readonly scope?: StateScope;
     readonly fanout?: RallarServerWsFanout;
+    /** The server producer publishing; a granted topic admits only the producers its definition lists (D496). */
+    readonly producerId?: string;
 }
 
 export interface RallarServerWsUnicastInputDto extends RallarServerWsPublishInputDto {
@@ -41,7 +46,8 @@ export type RallarServerWsPublishStatus =
     | 'no-route'
     | 'rate-limited'
     | 'circuit-open'
-    | 'failed';
+    | 'failed'
+    | 'refused';
 
 export interface RallarServerWsPublishResult {
     readonly fanout: RallarServerWsFanout;
@@ -57,6 +63,8 @@ export interface RallarServerWsPublishResult {
     /** Undefined for a `live-only` or `none` fanout: only outbox admission ever produces a verdict. */
     readonly verdict?: ALDeliveryAdmissionVerdict;
     readonly reason?: string;
+    /** Present exactly when the status is `refused`: the topic's publication policy refused the producer. */
+    readonly refusal?: RoomPublicationAdmission.RefusalCode;
 }
 
 export type RallarServerWsTopicScope = 'app' | 'room' | 'world';
@@ -88,17 +96,29 @@ export type RallarServerWsAuthorizer<T extends RallarServerWsPayload> = (
     context: RallarServerWsMessageContext
 ) => boolean | Promise<boolean>;
 
-export interface RallarServerWsTopicMetadata {
-    readonly topicId: string;
-    readonly typeId?: string;
-    readonly scope?: RallarServerWsTopicScope;
-    readonly maxPayloadBytes?: number;
-    readonly fanout?: RallarServerWsFanout;
-}
+/**
+ * Who a topic's room publications reach: every live session of the room's active members, or only the sessions of
+ * the principals a publication grant names, published only by grant holders and the listed server producers (D486).
+ */
+export type RallarServerWsTopicAccess =
+    | Readonly<{ participation: 'members'; }>
+    | Readonly<{ participation: 'granted'; serverProducerIds: readonly string[]; }>;
+
+export type RallarServerWsTopicMetadata =
+    & Readonly<{
+        topicId: string;
+        typeId?: string;
+        scope?: RallarServerWsTopicScope;
+        maxPayloadBytes?: number;
+        fanout?: RallarServerWsFanout;
+    }>
+    & RallarServerWsTopicAccess;
 
 export interface RallarServerWsRoomAuthorizationInput {
     readonly message: ALMessage;
     readonly definition?: RallarServerWsTopicMetadata;
+    /** The access of the message's topic, read from the router's registry: `members` for an implicit topic. */
+    readonly topic: RallarServerWsTopicAccess;
     readonly roomId: string;
     readonly roomRef?: GroupRef;
     readonly senderId: string;
@@ -138,20 +158,31 @@ export type RallarServerWsRoomAuthorizer = (
     input: RallarServerWsRoomAuthorizationInput
 ) => RallarServerWsRoomAuthorizationDecision | Promise<RallarServerWsRoomAuthorizationDecision>;
 
-/** The room's live sessions a server-originated publish freezes as its audience; undefined when there is no room to read. */
+export interface RallarServerWsPublishAudienceInputDto {
+    readonly message: ALMessage;
+    readonly topic: RallarServerWsTopicAccess;
+    readonly producerId: string | undefined;
+}
+
+/**
+ * The room sessions a server-originated publish freezes as its audience, or the topic policy's refusal of its producer;
+ * undefined when there is no room to read.
+ */
 export type RallarServerWsPublishAudienceReader = (
-    message: ALMessage
-) => Promise<RallarServerWsRoomAudience | undefined>;
+    input: RallarServerWsPublishAudienceInputDto
+) => Promise<Either<RoomPublicationAdmission.Refusal, RallarServerWsRoomAudience> | undefined>;
 
 export type RallarServerWsHandler<T extends RallarServerWsPayload> = (
     message: RallarServerWsMessage<T>,
     context: RallarServerWsMessageContext
 ) => void | Promise<void>;
 
-export interface RallarServerWsTopicDefinition<T extends RallarServerWsPayload> extends RallarServerWsTopicMetadata {
-    readonly validate?: RallarServerWsValidator;
-    readonly authorize?: RallarServerWsAuthorizer<T>;
-}
+export type RallarServerWsTopicDefinition<T extends RallarServerWsPayload> =
+    & RallarServerWsTopicMetadata
+    & Readonly<{
+        validate?: RallarServerWsValidator;
+        authorize?: RallarServerWsAuthorizer<T>;
+    }>;
 
 export interface RallarServerWsProxyRule<T extends RallarServerWsPayload> {
     readonly id?: string;
@@ -176,6 +207,8 @@ export interface RallarServerWsRouterOptions {
     readonly defaultFanout?: RallarServerWsFanout;
     readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
     readonly readServerPublishAudience?: RallarServerWsPublishAudienceReader;
+    /** The composition root's set, shared with the target resolver; absent, the router keeps its own. */
+    readonly grantedTopics?: WsGrantedTopicSet;
     readonly wakeOutbox?: () => void;
     readonly nowEpochMs?: () => number;
     readonly livePublication?: {

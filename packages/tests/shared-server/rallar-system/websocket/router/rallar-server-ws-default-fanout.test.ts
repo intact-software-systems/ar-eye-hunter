@@ -179,7 +179,7 @@ function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only'
     });
     onTestFinished(() => service.dispose());
     if (input.routerFanout !== undefined) {
-        new RallarServerWsRouter(service, {}).install().defineTopic({ topicId: 'app.news', fanout: input.routerFanout });
+        new RallarServerWsRouter(service, {}).install().defineTopic({ participation: 'members', topicId: 'app.news', fanout: input.routerFanout });
     }
     return { service, sockets };
 }
@@ -221,7 +221,7 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
                 }
             }
     });
-    router.install().defineTopic({ topicId: 'room.chat' });
+    router.install().defineTopic({ participation: 'members', topicId: 'room.chat' });
     return { service, origin, receivers, outboundStores };
 }
 

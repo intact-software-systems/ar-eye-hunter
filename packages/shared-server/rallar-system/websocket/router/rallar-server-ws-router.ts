@@ -1,4 +1,8 @@
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    AL_MESSAGE_ENVELOPE_VERSION,
+    isRoomScopedALMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -22,6 +26,7 @@ import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-serv
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
+import { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
 import {
     authorizeRallarServerWsIngress,
     computeAdmittedRallarServerWsMessage,
@@ -76,6 +81,12 @@ export namespace RallarServerWsRouter {
         readonly serverSnapshotVersion?: number;
     }
 
+    export interface MessageProxyInput {
+        readonly fanout: RallarServerWsFanout;
+        readonly inboundScope: StateScope | null | undefined;
+        readonly senderId: string;
+    }
+
     export interface PublishAudience {
         readonly current: RallarServerWsRoomAudience | undefined;
         readonly admittedPeerIds: readonly string[] | undefined;
@@ -88,11 +99,14 @@ export namespace RallarServerWsRouter {
         readonly inboundScope?: StateScope | null;
         readonly origin?: 'server' | 'proxy' | 'admitted';
         readonly inbound?: LiveWsInboundReference;
+        /** The session a proxy rule's result is published for; the message's own sender otherwise. */
+        readonly senderId?: string;
+        readonly producerId?: string;
     }
 }
 
 export class RallarServerWsRouter {
-    private readonly registry = new RallarServerWsTopicRegistry();
+    private readonly registry: RallarServerWsTopicRegistry;
     private readonly maxPayloadBytes: number;
     private readonly sendNacks: boolean;
     private readonly allowImplicitUserTopics: boolean;
@@ -113,6 +127,7 @@ export class RallarServerWsRouter {
     ) {
         this.service = service;
         this.serverPeerId = service.name;
+        this.registry = new RallarServerWsTopicRegistry(options.grantedTopics ?? new WsGrantedTopicSet());
         this.maxPayloadBytes = options.maxPayloadBytes ??
             RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;
@@ -172,7 +187,8 @@ export class RallarServerWsRouter {
             message: input.message,
             fanout: input.fanout ?? this.defaultFanout,
             inboundScope: input.scope,
-            origin: 'server'
+            origin: 'server',
+            producerId: input.producerId
         });
     }
 
@@ -199,7 +215,13 @@ export class RallarServerWsRouter {
             context,
             topicFanout,
             publish: async (targetMessage, fanout) =>
-                await this.publishToFanout({ message: targetMessage, fanout, inboundScope, origin: 'proxy' })
+                await this.publishToFanout({
+                    message: targetMessage,
+                    fanout,
+                    inboundScope,
+                    origin: 'proxy',
+                    senderId: message.id.senderId
+                })
         });
         if (!suppressDefaultFanout && this.publishesTopicFanout(message)) {
             await this.publishToFanout({
@@ -260,6 +282,8 @@ export class RallarServerWsRouter {
         const authorization = await authorizeRallarServerWsIngress({
             message,
             definition: ingress.definition,
+            topic: this.registry.resolveAccess(message),
+            senderId: message.id.senderId,
             authorizeRoomMessage: this.authorizeRoomMessage
         });
         if (!authorization.authorized) {
@@ -311,6 +335,13 @@ export class RallarServerWsRouter {
                 code: 'unsupported',
                 reason: 'no-route',
                 logMessage: `Rejected unknown WS topic: ${message.route.topicId}`
+            };
+        }
+        if (definition?.participation === 'granted' && !isRoomScopedALMessage(message)) {
+            return {
+                code: 'unsupported',
+                reason: 'unsupported',
+                logMessage: `Rejected a granted WS topic publication that names no room: ${message.route.topicId}`
             };
         }
         if (!message.targets) {
@@ -390,6 +421,10 @@ export class RallarServerWsRouter {
             service: this.service,
             message,
             fanout,
+            definition: this.registry.find(message),
+            topic: this.registry.resolveAccess(message),
+            senderId: input.senderId ?? message.id.senderId,
+            producerId: input.producerId,
             audience: audience?.current,
             admittedPeerIds: audience?.admittedPeerIds,
             inboundScope,
@@ -417,7 +452,11 @@ export class RallarServerWsRouter {
             roomRef: readRallarServerWsRoomRef(message),
             senderId: message.id.senderId,
             authenticatedScope: inboundScope ?? undefined,
-            proxy: this.toMessageProxy(resolveRallarServerWsTopicFanout(definition, this.defaultFanout), inboundScope)
+            proxy: this.toMessageProxy({
+                fanout: resolveRallarServerWsTopicFanout(definition, this.defaultFanout),
+                inboundScope,
+                senderId: message.id.senderId
+            })
         };
     }
 
@@ -427,30 +466,30 @@ export class RallarServerWsRouter {
     }
 
     private toMessageProxy(
-        fanout: RallarServerWsFanout,
-        inboundScope: StateScope | null | undefined
+        { fanout, inboundScope, senderId }: RallarServerWsRouter.MessageProxyInput
     ): RallarServerWsMessageContext['proxy'] {
+        const publish = async (
+            message: ALMessage,
+            selectedFanout: RallarServerWsFanout | undefined,
+            scope = inboundScope
+        ) => await this.publishToFanout({
+            message,
+            fanout: selectedFanout ?? fanout,
+            inboundScope: scope,
+            origin: 'proxy',
+            senderId
+        });
         return {
-            toTargets: async (targetMessage, selectedFanout) =>
-                await this.publishToFanout({
-                    message: targetMessage,
-                    fanout: selectedFanout ?? fanout,
-                    inboundScope,
-                    origin: 'proxy'
-                }),
+            toTargets: async (targetMessage, selectedFanout) => await publish(targetMessage, selectedFanout),
             toPeer: async (input) =>
-                await this.publishToFanout({
-                    message: {
-                        ...input.message,
-                        targets: { mode: 'unicast', toPeerId: input.peerId }
-                    },
-                    fanout: input.fanout ?? fanout,
-                    inboundScope: input.scope,
-                    origin: 'proxy'
-                }),
+                await publish(
+                    { ...input.message, targets: { mode: 'unicast', toPeerId: input.peerId } },
+                    input.fanout,
+                    input.scope
+                ),
             toRoom: async (roomRef, targetMessage, options) =>
-                await this.publishToFanout({
-                    message: {
+                await publish(
+                    {
                         ...targetMessage,
                         route: { ...targetMessage.route, contextId: roomRef.groupId },
                         targets: {
@@ -460,24 +499,16 @@ export class RallarServerWsRouter {
                             exceptPeerIds: options?.exceptPeerIds
                         }
                     },
-                    fanout: options?.fanout ?? fanout,
-                    inboundScope,
-                    origin: 'proxy'
-                }),
+                    options?.fanout
+                ),
             toAll: async (targetMessage, options) =>
-                await this.publishToFanout({
-                    message: {
+                await publish(
+                    {
                         ...targetMessage,
-                        targets: {
-                            mode: 'broadcast',
-                            scope: 'all',
-                            exceptPeerIds: options?.exceptPeerIds
-                        }
+                        targets: { mode: 'broadcast', scope: 'all', exceptPeerIds: options?.exceptPeerIds }
                     },
-                    fanout: options?.fanout ?? fanout,
-                    inboundScope,
-                    origin: 'proxy'
-                })
+                    options?.fanout
+                )
         };
     }
 
@@ -491,8 +522,9 @@ export class RallarServerWsRouter {
         return decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message);
     }
 
+    /** A granted topic id is always a defined topic: a type its definitions do not name is unknown, never implicit. */
     private isImplicitUserTopic(topicId: string): boolean {
-        return this.allowImplicitUserTopics &&
+        return this.allowImplicitUserTopics && !this.registry.isGrantedTopic(topicId) &&
             RALLAR_USER_WS_TOPIC_PREFIXES.some((prefix) => topicId.startsWith(prefix));
     }
 
