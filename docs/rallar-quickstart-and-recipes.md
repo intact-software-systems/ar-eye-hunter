@@ -777,6 +777,7 @@ server.ws.defineTopic<{ text: string; }>({
     topicId: 'room.chat',
     typeId: 'room.chat.v1',
     scope: 'room',
+    participation: 'members',
     validate: (payload) =>
         typeof payload === 'object' &&
         payload !== null &&
@@ -784,3 +785,28 @@ server.ws.defineTopic<{ text: string; }>({
     fanout: 'outbox'
 });
 ```
+
+`participation: 'members'` lets every active member publish and reaches every
+live member session. A room topic that only some members may publish on, or
+receive, is declared `participation: 'granted'` with the server producers that
+may publish on it; owners and admins then grant members `publish` and
+`subscribe` on that exact topic through the publication-grant routes, the
+browser channel on it declares `access: 'granted'`, and a server publish of a
+room message on it names its `producerId`:
+
+```ts
+server.ws.defineTopic<{ headline: string; }>({
+    topicId: 'room.feed',
+    typeId: 'feed.item.v1',
+    scope: 'room',
+    participation: 'granted',
+    serverProducerIds: ['feed-service'],
+    fanout: 'outbox'
+});
+
+await server.ws.publish({ message: feedMessage, producerId: 'feed-service' });
+```
+
+A member without a `publish` grant is refused `no-publish-grant`, and a granted
+topic does not travel over RTC (see `docs/rallar-api-reference.md`, Group Policy
+And State Routes and WS And RTC Messages).

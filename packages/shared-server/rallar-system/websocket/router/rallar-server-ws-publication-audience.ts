@@ -35,10 +35,16 @@ export interface RallarServerWsPublicationAudience {
     readonly frozen: RallarServerWsRoomAudience | undefined;
 }
 
-/** Why a publish sends nothing: the room authorizer refused a proxy publish, or the topic refused a server producer. */
+/**
+ * Why a publish sends nothing: a granted topic refused a server or proxy publish that names no room, the topic refused
+ * a server producer, or the room authorizer refused a proxy publish.
+ */
 export interface RallarServerWsPublicationRefusal {
     readonly reason: string;
-    /** The topic policy's refusal of a server producer; undefined for a proxy publish the room authorizer refused. */
+    /**
+     * The topic policy's refusal: `unsupported` for a server or proxy publish on a granted topic that names no room, or
+     * the server producer's refusal; undefined for a proxy publish the room authorizer refused.
+     */
     readonly refusal: RoomPublicationAdmission.RefusalCode | undefined;
 }
 

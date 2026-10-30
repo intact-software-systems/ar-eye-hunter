@@ -28,6 +28,7 @@ export function installRoomDiagnosticsTopic(
         topicId: 'room.demo.ping',
         typeId: 'room.demo.ping.v1',
         scope: 'room',
+        participation: 'members',
         fanout: 'none',
         maxPayloadBytes: 1024,
         validate: (value, context) =>
@@ -106,3 +107,28 @@ targets and resolvers that carry `GroupRef` instead of a bare room ID.
 
 Use `fanout: 'none'` when the server fully handles the message, `live-only` for
 ephemeral replies, and `outbox` for at-least-once WS delivery through QueueBox.
+
+Every topic declares its `participation`. `members` lets every active member of
+the room publish and reaches every live member session. `granted` restricts the
+topic to the room's publication grants: only principals an owner or admin
+granted `publish` on this exact topic may publish, only the live sessions of
+principals granted `subscribe` receive, and only the server producers listed in
+`serverProducerIds` may publish from the server, naming themselves as
+`producerId`:
+
+```ts
+rallar.ws.defineTopic<Headline>({
+    topicId: 'room.demo.feed',
+    typeId: 'room.demo.feed.v1',
+    scope: 'room',
+    participation: 'granted',
+    serverProducerIds: ['demo-feed'],
+    fanout: 'outbox'
+});
+```
+
+A granted topic needs `scope: 'room'`, and one `topicId` has one
+participation. The server refuses a publication without a grant with the NACK
+reason `no-publish-grant`, and a server publish whose producer the topic does
+not list with `status: 'refused'`. A granted topic does not travel over RTC, so
+the browser channel on it declares `access: 'granted'` and sends over WS.

@@ -495,6 +495,44 @@ mutation request id only as the trailing `/requests/{requestId}` path segment
 - `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban/requests/{requestId}`
 - `PUT /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role/requests/{requestId}`
 - `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{principalId}/grant/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{principalId}/revoke/requests/{requestId}`
+
+Publication grants decide who publishes on, and who receives, a room topic
+declared `participation: 'granted'` (see `ws.defineTopic` under Server
+Application). A grant is exact: one group, one principal, one `app.*` or
+`room.*` topic, never a wildcard, an implicit topic or a role. The grant and
+revoke bodies are `{ topicId, publish, subscribe, reason? }`: `topicId` is one
+exact user topic (`app.` or `room.` followed by letters, digits, `.`, `_`, `:`
+or `-`, at most 128 characters, never `rallar.*`), at least one permission is
+`true`, and any other key, a body `requestId` included, is a `400` before
+enqueue. The actor is the authenticated session. A grant adds the named
+permissions and a revoke removes them; a topic left with neither leaves the
+principal's row, and a row left with no topic is deleted. A command that changes
+nothing is a no-op: the same snapshot, no event and no version bump. Only an
+active owner or admin grants or revokes, an admin to a regular member only;
+an owner may grant itself. The target must be an active member
+(`member-not-active`), a spectator may be granted `subscribe` but never
+`publish` (`forbidden-role`), the group must be active, and a principal holds at
+most 64 topics (`capacity`). Both routes answer `200` with the written
+`GroupSnapshot`; a reused `requestId` with a changed body is `409`.
+
+`GroupSnapshot.publicationGrants` lists one row per principal holding a grant,
+`{ applicationId, workspaceId, groupId, principalId, topics, updated }`, in
+`principalId` order, where `topics` maps each topic id to
+`{ publish, subscribe }`; a principal without a row holds no grant. A grant or
+revoke bumps `snapshotVersion` only, never `rosterVersion`, and writes one
+`publication-grant-changed` event whose payload is
+`{ principalId, topicId, permissions: { publish, subscribe } }`, the resulting
+permissions. The group-state delta carries `publicationGrants`, the rows of the
+principals its events wrote, and `removedPublicationGrantPrincipalIds`, those
+of them left with no row. Leave, remove, ban and any membership write out of
+`active` delete the principal's row in the same write, so a rejoin starts with
+no grant; an archived, expired or deleted group keeps its rows and grants
+nothing. `CreateGroupRequest.publicationGrants` declares the creator's own
+initial grant, `{ [topicId]: { publish, subscribe } }`; absent, the creator
+holds none. Grants are currently exposed through these REST routes; the browser
+room facade has no grant workflow yet.
 
 Join-code rotation is currently exposed through lower-level API integration and
 workflow helpers. The plaintext code is returned only by the rotation response;
@@ -940,7 +978,8 @@ interface ChatMessage {
 const chat = rallar.messages.channel<ChatMessage>({
     topicId: 'room.chat',
     typeId: 'chat.message.v1',
-    purpose: 'notification'
+    purpose: 'notification',
+    access: 'members'
 });
 
 chat.onWs((payload) => console.log(payload.text));
@@ -964,6 +1003,52 @@ and a `best-effort` send ask for no receipt unless the send states `ack`; a
 `unsupported`, since `world` names no logical audience (see Message Audiences
 below). `recovery` names the channel's owner of
 resynchronization (see Ordering, Repair And Resynchronization below).
+
+`access` is required too: `members` lets every active member of the room publish
+and reaches the room's audience; `granted` restricts the channel's topic to the
+room's publication grants (see Group Policy And State Routes above), and the
+server's topic must be declared `participation: 'granted'`. A
+`room.message<T>('name')` binding fills `members`. Any other value is refused
+`$.access` `invalid-access`, and a granted channel without a `topicId`
+`$.topicId` `missing-topic-id`. A granted channel is WS-only: `ws-then-rtc` and
+`rtc-with-ws-fallback` sends go to WS at once and never open an RTC leg, a
+`sendRtc` or a `send` with `strategy: 'rtc'` ends `rejected` with
+`failure: { kind: 'refused', reason: 'unsupported' }`, and `onRtc` throws the
+`unsupported` issue at `$.access`. A granted send names its room; one that names
+none is refused `unsupported`. Before any carrier, the send reads the room's
+cached snapshot: when it grants this principal no effective `publish` (none for a
+spectator or a member that is not active), the send ends `rejected` with
+`failure: { kind: 'refused', reason: 'no-publish-grant' }`. With no snapshot
+cached, the server decides. The server refuses a publication without effective
+`publish` at socket admission or at `route` with the NACK reason
+`no-publish-grant`, terminal whatever the receipt: the handle ends `rejected`
+with `failure: { kind: 'relay-rejected', rejection }`, `rejection.reason`
+`no-publish-grant`. A pending replay or an inbox dispatch that refuses it sends
+no NACK, and a receipted handle then reads its recipients unconfirmed. The
+cached check is advisory: a cache older than a grant refuses the send until the
+grant's delta lands.
+
+```ts
+interface FeedItem {
+    readonly headline: string;
+}
+
+const feed = rallar.messages.room<FeedItem>({
+    topicId: 'room.feed',
+    typeId: 'feed.item.v1',
+    purpose: 'notification',
+    access: 'granted'
+});
+
+const handle = await feed.send({ headline: 'goal' });
+const outcome = await handle.wait({ until: ['acknowledged'], timeoutMs: 30_000 });
+const failure = outcome.lifecycle.evidence.failure;
+const notGranted = (failure?.kind === 'refused' && failure.reason === 'no-publish-grant') ||
+    (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'no-publish-grant');
+if (notGranted) {
+    showPublishNotGranted();
+}
+```
 
 A `live` channel declares a required `publication` policy,
 `{ cadenceMs, retainNewest, drain: { messages, bytes } }`: every field is a
@@ -1278,6 +1363,7 @@ const asks = rallar.messages.room<AskPayload>({
     topicId: 'room.assist',
     typeId: 'assist.ask.v1',
     purpose: 'command',
+    access: 'members',
     roomId
 });
 const handle = await asks.sendWs({ question: 'where next?' }, { peerId: serverPeerId });
@@ -1396,7 +1482,8 @@ interface PartyNote {
 const notes = rallar.messages.room<PartyNote>({
     topicId: 'room.party.note',
     typeId: 'party.note.v1',
-    purpose: 'notification'
+    purpose: 'notification',
+    access: 'members'
 });
 
 await notes.send({ text: 'for my other devices' }, {
@@ -1480,7 +1567,8 @@ interface MoveIntent {
 const intents = rallar.messages.room<MoveIntent>({
     topicId: 'room.match.intent',
     typeId: 'match.intent.v1',
-    purpose: 'command'
+    purpose: 'command',
+    access: 'members'
 });
 
 const handle = await intents.send({ dx: 1 }, { ack: 'group-leader' });
@@ -1581,7 +1669,8 @@ interface PickupIntent {
 const pickups = rallar.messages.room<PickupIntent>({
     topicId: 'room.match.pickup',
     typeId: 'match.pickup.v1',
-    purpose: 'command'
+    purpose: 'command',
+    access: 'members'
 });
 
 const handle = await pickups.send({ pickupId }, { ownership: 'exclusive', resourceId: pickupId });
@@ -1646,6 +1735,7 @@ const rounds = rallar.messages.channel<RoundState>({
     topicId: 'match.rounds',
     typeId: 'match.round.v1',
     purpose: 'notification',
+    access: 'members',
     recovery: {
         onResyncRequired: (cursor) => {
             void refreshMatchSnapshot(cursor.orderingKey);
@@ -2391,6 +2481,8 @@ Required:
 - `resilience.appOutbox`: independent resilience policy for app-outbox work.
 - `clientsRepository`: client snapshot repository.
 - `groupsRepository`: group snapshot repository.
+- `grantedTopics`: the `WsGrantedTopicSet` the router's granted topic
+  definitions fill, shared with the target resolver.
 
 Optional:
 
@@ -2409,6 +2501,10 @@ Optional:
 - `rtcTopologyPublicationRepository`, `rtcTopologyExecutionRepository`,
   `rtcTopologyDelivery`, `rtcTopologyReplay`.
 - `queuePubSubBridge`, `readiness`, `healthFailure`.
+- `filterEligibleCapturedSessionIds`: the asynchronous re-check of a captured
+  outbox audience at each dequeue, cluster send, repair and awaited-connection
+  send, handed to the WS server and the cluster bridge. Without it a granted
+  topic's row reaches nobody.
 
 ### Construction And Queue Ownership
 
@@ -2658,7 +2754,7 @@ bearer tokens and raw payloads.
 
 ### Target Resolver
 
-`createWsServerTargetResolver(webSocketServer, options?)` creates the default target resolver.
+`createWsServerTargetResolver(webSocketServer, options)` creates the default target resolver.
 
 It supports:
 
@@ -2667,6 +2763,10 @@ It supports:
 - Broadcast routing to the room, narrowed to the principal's sessions for a principal broadcast that names its room and to the listed sessions for a room broadcast with `recipientPeerIds`; to state-sync recipients; or to all open sockets, from which a client's `world` broadcast reaches only the sender's authenticated scope.
 - CRDT principal routing through the principal's live client sessions.
 - Overlay topology broadcasts to the open sockets of their recorded `recipientPeerIds`.
+
+A topic in `options.grantedTopics` resolves no recipients on any branch:
+`requiresFrozenAudience(message)` is true for it, and only the audience frozen
+at admission is sent to.
 
 Group and room-scoped messages must carry `groupRef` in their targets. The
 default resolver returns no recipients for a group target without a
@@ -2705,11 +2805,17 @@ The server application exposes:
 - the real WebSocket router as `ws`
 - the real app-data owner as `appData`
 - `ws.install()`
-- `ws.defineTopic(definition)`
+- `ws.defineTopic(definition)`; `participation` is required: `'members'` reaches
+  every live session of the room's active members, as every implicit topic does,
+  and `'granted'`, which requires `scope: 'room'` and `serverProducerIds`, admits
+  only principals holding effective `publish`, and the server producers it lists,
+  and reaches only the live sessions of principals holding `subscribe`. Defining
+  one `topicId` with two participations, or a granted topic without a room scope,
+  throws.
 - `ws.removeTopic(selector)`
 - `ws.on(selector, handler)`
 - `ws.proxy(rule)`
-- `ws.publish({ message, scope?, fanout? })`; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
+- `ws.publish({ message, scope?, fanout?, producerId? })`; on a granted topic a publish whose `producerId` the topic does not list returns `status: 'refused'` with `refusal: 'topic-not-granted'`, one that names no room `refusal: 'unsupported'`, and writes nothing; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
 - `ws.status()`
 - `appData.define/open/lookup/close(...)`
 - the repository manager as `repositories`

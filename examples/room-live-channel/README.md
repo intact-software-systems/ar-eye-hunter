@@ -49,6 +49,7 @@ const poseChannel = rallar.messages.room<Pose>({
     topicId: 'arena.pose',
     typeId: 'arena.pose.v1',
     purpose: 'live',
+    access: 'members',
     publication: {
         cadenceMs: 50,
         retainNewest: 1,
