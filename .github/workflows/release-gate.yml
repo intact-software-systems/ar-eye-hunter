@@ -184,6 +184,20 @@ jobs:
       - name: Run in-memory full-stack browser tests
         run: npm run test:full-stack:memory
 
+      - name: Validate reopened member readiness windows
+        env:
+          DENO_NO_PACKAGE_JSON: '1'
+        run: npm run test:rallar:full-stack:memory:live-rtc-3:lifecycle -- --grep 'monotonic readiness' --workers=1 --trace=retain-on-failure
+
+      - name: Upload reopening readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reopening-readiness
+          path: apps/rallar-black-box/test-results
+          if-no-files-found: warn
+          retention-days: 7
+
   e2e-game-rooms:
     name: Browser tests (game rooms ${{ matrix.lane }})
     runs-on: ubuntu-latest
