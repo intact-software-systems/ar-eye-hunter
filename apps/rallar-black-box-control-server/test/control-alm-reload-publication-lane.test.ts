@@ -38,6 +38,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
         ]);
         const opportunities = readOpportunities(ports);
         assertEquals(opportunities.map(({ selected }) => selected), [1, 1]);
+        assertEquals(opportunities[0].atMs, carrier === 'ws' ? 1_000 : 4_500, 'RTC setup observes the accepted hold before live admission');
         assertEquals(opportunities[0].atMs, readStagingEvents(ports, sent[0])[0]?.atMs, 'the idle lane admits the lead when it stages');
         assertEquals(opportunities[1].atMs - opportunities[0].atMs, CADENCE_MS, 'the second value waits one cadence');
     });
@@ -177,11 +178,16 @@ function toCatalogInput(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]): Cre
     };
 }
 
+interface PacedCellResult {
+    readonly ports: AlmReloadPorts;
+    readonly sent: readonly PortMessage[];
+}
+
 /** Runs the cell's sender recipe to its end, then its receiver's, as the reload test orders a trailing segment. */
 async function runPacedCell(
     carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number],
     scenarioId: string
-): Promise<{ ports: AlmReloadPorts; sent: readonly PortMessage[]; }> {
+): Promise<PacedCellResult> {
     const scenario = createAlmConformanceRecipes(toCatalogInput(carrier)).find((candidate) => candidate.scenarioId === scenarioId);
     assert(scenario, `${scenarioId} over ${carrier}`);
     const ports = new AlmReloadPorts(true, PARTICIPANTS);

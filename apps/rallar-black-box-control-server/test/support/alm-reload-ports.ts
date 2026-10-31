@@ -215,6 +215,8 @@ export class AlmReloadPorts {
     private readonly receiverBarrierFaults = new Map<string, readonly RallarBlackBoxTestFaultInjectCommand[]>();
     private readonly publicationLane: AlmReloadPublicationLane;
     private readonly liveArrivals = new AlmReloadLiveArrivals();
+    /** This transport fixture has a fixed ready cohort; each connect starts its page's observation clock. */
+    private readonly acceptedLayoutSince = new Map<PortRole, number>();
 
     constructor(replacesDocument: boolean, participants: readonly AlmReloadParticipant[]) {
         this.participants = [...participants];
@@ -266,6 +268,7 @@ export class AlmReloadPorts {
         if (this.replacesDocument) {
             this.senderDocument += 100;
         }
+        this.acceptedLayoutSince.delete('sender');
         this.handles.clear();
         this.holds.clear();
         this.writes.sender = 1;
@@ -311,6 +314,7 @@ export class AlmReloadPorts {
             case 'http.request':
                 return this.requestGroup(role, command);
             case 'rtc.connect':
+                this.acceptedLayoutSince.set(role, this.now);
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
@@ -322,6 +326,8 @@ export class AlmReloadPorts {
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
                 return { status: 'ok', value: { document, ...session } };
+            case 'formation.readiness':
+                return this.readFormationReadiness(role);
             case 'health':
                 return { status: 'ok', value: { rallar: { document, session } } };
             case 'storage.counters':
@@ -335,6 +341,7 @@ export class AlmReloadPorts {
             case 'messages.received':
                 return this.executeMessagesPort(role, command);
             case 'close':
+                this.acceptedLayoutSince.delete(role);
                 if (role === 'sender') {
                     this.publicationLane.close();
                 }
@@ -348,6 +355,20 @@ export class AlmReloadPorts {
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
+    }
+
+    private readFormationReadiness(role: PortRole): RallarBlackBoxTestCommandOutcome {
+        const acceptedHeldSinceEpochMs = this.acceptedLayoutSince.get(role);
+        assert(acceptedHeldSinceEpochMs !== undefined, 'readiness requires a connected participant');
+        return {
+            status: 'ok',
+            value: {
+                readyAtEpochMs: this.now,
+                acceptedHeldSinceEpochMs,
+                acceptedHeldForMs: this.now - acceptedHeldSinceEpochMs,
+                formation: {}
+            }
+        };
     }
 
     private async releaseBarrier(role: PortRole, barrierId: string): Promise<RallarBlackBoxTestCommandOutcome> {
