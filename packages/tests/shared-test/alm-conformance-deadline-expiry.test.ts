@@ -5,8 +5,13 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import {
+    ALM_CONFORMANCE_LANE_FAMILIES,
+    type CreateAlmConformanceRecipesInput
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+
+import { CONFORMANCE_PRINCIPAL_IDS } from './alm-conformance-test-input.ts';
 
 const MINIMUM_DEADLINE_MS = 17_000;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
@@ -21,7 +26,9 @@ function conformanceInput(
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs
+        deadlineMs,
+        laneFamilies: ALM_CONFORMANCE_LANE_FAMILIES,
+        principalIdsByRole: CONFORMANCE_PRINCIPAL_IDS
     };
 }
 
@@ -92,7 +99,9 @@ describe('ALM conformance deadline expiry', () => {
             const commands = deadline?.sender.commands ?? [];
             const expiredAt = commands.findIndex((command) => command.kind === 'assert' && command.commandId?.endsWith('assert-expired-1') === true);
             const faultsOf = (from: number, to: number) =>
-                commands.slice(from, to).flatMap((command) => command.kind === 'fault.inject' ? [`${command.faultId}:${String(command.remaining)}`] : []);
+                commands.slice(from, to).flatMap((command) =>
+                    command.kind === 'fault.inject' && command.carrier !== 'product-socket' ? [`${command.faultId}:${String(command.remaining)}`] : []
+                );
             const faultIds = carrier === 'rtc-with-ws-fallback'
                 ? ['drop-rtc', 'drop-ws']
                 : [`drop-${carrier}`];

@@ -1167,7 +1167,9 @@ it('keeps the authored bounded-rejection cancellation probe aligned with a real 
         typeId: 'alm.conformance',
         senderConnection: 'aliceAlm',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     })
         .find((entry) => entry.scenarioId === 'bounded-rejection');
     if (!scenario) {
@@ -1561,7 +1563,9 @@ it.each(
         typeId: 'alm.conformance',
         senderConnection: 'aliceAlm',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     }).find((entry) => entry.scenarioId === scenarioId)!;
     const commands = scenario.sender.commands.filter((command) =>
         command.kind === 'messages.send' ||

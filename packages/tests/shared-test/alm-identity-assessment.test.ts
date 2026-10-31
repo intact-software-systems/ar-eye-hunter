@@ -299,7 +299,7 @@ describe('ALM recipe identity assessment', () => {
         (defect) => {
             const transcript = new IdentityTranscript('reload', 'rtc-with-ws-fallback');
             const hold = transcript.sender.command('fault.inject', 1);
-            if (hold.carrier === 'storage') {
+            if (hold.carrier === 'storage' || hold.carrier === 'product-socket') {
                 throw new Error('The reload hold is a transport fault.');
             }
             if (defect === 'missing') {
@@ -337,6 +337,9 @@ describe('ALM recipe identity assessment', () => {
             if (defect === 'nested-release-before-reload' || defect === 'close-before-reload') {
                 const assertion = sender.commands.find((command) => command.commandId?.endsWith('assert-storage-write'))!;
                 const hold = sender.command('fault.inject');
+                if (hold.carrier === 'product-socket') {
+                    throw new Error('The reload hold is a transport fault.');
+                }
                 sender.replaceCommand(
                     defect === 'close-before-reload'
                         ? { kind: 'close', commandId: assertion.commandId }
@@ -790,7 +793,9 @@ function toGeneratedScenario(scenarioId: string, carrier: AlmConformanceCarrier)
         typeId: 'identity',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent', 'addressed'],
+        principalIdsByRole: {}
     }).find((candidate) => candidate.scenarioId === scenarioId);
     if (!scenario) {
         throw new Error('Generated identity scenario missing.');

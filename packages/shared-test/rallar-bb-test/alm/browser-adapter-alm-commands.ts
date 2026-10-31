@@ -1,4 +1,5 @@
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BrowserCommandAbortScope } from '../browser/browser-command-cancellation.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '../browser/browser-command-contracts.ts';
@@ -25,6 +26,10 @@ import {
     decodeAlmStorageCountersResultValue,
     toAlmInvalidRuntimeResultError
 } from './decode-alm-runtime-result.ts';
+import {
+    decodeAlmMessagesSubscribeResultValue,
+    decodeAlmMessagesSubscriptionsResultValue
+} from './decode-alm-topic-subscription-result.ts';
 import type {
     AlmReceivedMessageIdentity,
     RallarBlackBoxTestMessagesObserveResultValue,
@@ -116,10 +121,17 @@ interface AlmReceivedOutcomeInput {
 
 type AlmDeliveryKind = 'messages.observe' | 'messages.cancel' | 'messages.receipts';
 
+type AlmTopicSubscriptionKind = 'messages.subscribe' | 'messages.unsubscribe';
+
 const ALM_DELIVERY_TOPICS: Readonly<Record<AlmDeliveryKind, string>> = {
     'messages.observe': 'rallar.bb.messages.observed',
     'messages.cancel': 'rallar.bb.messages.cancelled',
     'messages.receipts': 'rallar.bb.messages.receipts'
+};
+
+const ALM_TOPIC_SUBSCRIPTION_TOPICS: Readonly<Record<AlmTopicSubscriptionKind, string>> = {
+    'messages.subscribe': 'rallar.bb.messages.subscribed',
+    'messages.unsubscribe': 'rallar.bb.messages.unsubscribed'
 };
 
 const ALM_ERROR_CODES = {
@@ -160,10 +172,10 @@ const ALM_INBOUND_MESSAGE_TOPICS: readonly string[] = [
 const ALM_RECEIVED_POLL_INTERVAL_MS = 10;
 
 /**
- * The page ends a reply wait this long before the command's own budget, so a timeout comes back as the command's
- * value instead of losing the race to the adapter's abort.
+ * The page ends a reply or subscription wait this long before the command's own budget, so a timeout comes back as
+ * the command's value instead of losing the race to the adapter's abort.
  */
-export const ALM_REPLY_WAIT_RESPONSE_MARGIN_MS = 250;
+export const ALM_PAGE_WAIT_RESPONSE_MARGIN_MS = 250;
 
 const ALM_DIAGNOSTIC_SOURCE = 'browser-adapter';
 
@@ -187,6 +199,11 @@ export async function dispatchAlmBrowserCommand(
             return await awaitAlmReply({ port, command, context });
         case 'messages.reply':
             return await replyToAlmMessage({ port, command, context });
+        case 'messages.subscribe':
+        case 'messages.unsubscribe':
+            return await changeAlmTopicSubscription({ port, command, context });
+        case 'messages.subscriptions':
+            return await readAlmTopicSubscriptions({ port, command, context });
         case 'fault.inject':
             return await injectAlmFault({ port, command, context });
         case 'storage.counters':
@@ -252,7 +269,7 @@ function awaitAlmReply(
     const wait = {
         ...input.port.resolveCommandFields(input.command, input.context),
         connection,
-        timeoutMs: Math.max(0, readAlmWaitTimeoutMs(input.command, input.port.now) - ALM_REPLY_WAIT_RESPONSE_MARGIN_MS)
+        timeoutMs: Math.max(0, readAlmWaitTimeoutMs(input.command, input.port.now) - ALM_PAGE_WAIT_RESPONSE_MARGIN_MS)
     };
     return runAlmRuntimeCommand({
         port: input.port,
@@ -276,6 +293,48 @@ function replyToAlmMessage(
         connection,
         topic: 'rallar.bb.messages.replied',
         invoke: async (runtime) => decodeAlmMessagesReplyResultValue(await runtime.reply(reply))
+    });
+}
+
+/** A subscribe returns once its token leaves `pending` or the page's share of the budget ends, whichever is first. */
+function changeAlmTopicSubscription(
+    input: AlmBrowserCommandInput<AlmTopicSubscriptionKind>
+): Promise<RallarBlackBoxTestCommandOutcome> {
+    const kind = input.command.kind;
+    const connection = input.port.resolveConnection(input.command, input.context);
+    const token = {
+        ...input.port.resolveCommandFields(input.command, input.context),
+        connection,
+        timeoutMs: Math.max(0, readAlmWaitTimeoutMs(input.command, input.port.now) - ALM_PAGE_WAIT_RESPONSE_MARGIN_MS)
+    };
+    return runAlmRuntimeCommand({
+        port: input.port,
+        command: input.command,
+        context: input.context,
+        connection,
+        topic: ALM_TOPIC_SUBSCRIPTION_TOPICS[kind],
+        invoke: async (runtime) =>
+            decodeAlmMessagesSubscribeResultValue(
+                kind === 'messages.subscribe'
+                    ? await runtime.subscribeTopic(token)
+                    : await runtime.unsubscribeTopic(token),
+                `${kind} result`
+            )
+    });
+}
+
+function readAlmTopicSubscriptions(
+    input: AlmBrowserCommandInput<'messages.subscriptions'>
+): Promise<RallarBlackBoxTestCommandOutcome> {
+    const connection = input.port.resolveConnection(input.command, input.context);
+    const read = { ...input.port.resolveCommandFields(input.command, input.context), connection };
+    return runAlmRuntimeCommand({
+        port: input.port,
+        command: input.command,
+        context: input.context,
+        connection,
+        topic: 'rallar.bb.messages.subscriptions',
+        invoke: async (runtime) => decodeAlmMessagesSubscriptionsResultValue(await runtime.readTopicSubscriptions(read))
     });
 }
 
@@ -324,12 +383,15 @@ async function readAlmDeliveryObservation(
 function injectAlmFault(
     input: AlmBrowserCommandInput<'fault.inject'>
 ): Promise<RallarBlackBoxTestCommandOutcome> {
-    const fault = input.port.resolveCommandFields(input.command, input.context);
-    const match = resolveAlmFaultMatchReferences(input.command, input.context.state().resultCache);
-    const faultId = input.command.faultId;
+    const command = input.command;
+    const fault = input.port.resolveCommandFields(command, input.context);
+    const match = command.carrier === 'product-socket'
+        ? Either.ofRight<string, RallarBlackBoxTestRecord>({})
+        : resolveAlmFaultMatchReferences(command, input.context.state().resultCache)
+            .mapRight((resolved): RallarBlackBoxTestRecord => ({ match: resolved }));
     return runAlmRuntimeCommand({
         port: input.port,
-        command: input.command,
+        command,
         context: input.context,
         connection: undefined,
         topic: 'rallar.bb.fault.injected',
@@ -337,8 +399,8 @@ function injectAlmFault(
             match.fold(
                 (message) => Promise.reject(new TypeError(message)),
                 async (resolved) => {
-                    await runtime.injectFault({ ...fault, match: resolved });
-                    return { faultId, injected: true };
+                    await runtime.injectFault({ ...fault, ...resolved });
+                    return { faultId: command.faultId, injected: true };
                 }
             )
     });

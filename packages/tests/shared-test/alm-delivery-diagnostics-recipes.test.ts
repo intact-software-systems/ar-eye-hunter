@@ -322,6 +322,15 @@ class DeliveryLane {
             reply: async () => {
                 throw new Error('The delivery diagnostics pair sends no reply.');
             },
+            subscribeTopic: async () => {
+                throw new Error('The delivery diagnostics pair elects no granted topic.');
+            },
+            unsubscribeTopic: async () => {
+                throw new Error('The delivery diagnostics pair elects no granted topic.');
+            },
+            readTopicSubscriptions: async () => {
+                throw new Error('The delivery diagnostics pair elects no granted topic.');
+            },
             submitControl: async () => undefined,
             injectFault: async () => undefined,
             readStorageCounters: async () => ({ total: 0, byOwner: { 'al-admission': 0, 'al-work': 0 }, byKind: {} }),

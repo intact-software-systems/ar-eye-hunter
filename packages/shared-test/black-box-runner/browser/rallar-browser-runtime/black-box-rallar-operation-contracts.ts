@@ -10,7 +10,6 @@ import type {
     RallarDefaults,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
-    RallarMessageSelectorInput,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
     RallarRtcDiagnostics,
@@ -89,6 +88,16 @@ export interface BlackBoxRallarRoomRef {
     readonly groupId: string;
 }
 
+/**
+ * A connect's selector: the topic or type its lanes hear. `access` names the room channel the page opens on the
+ * selector's topic, `members` unless the recipe names `granted`.
+ */
+export interface BlackBoxRallarMessageSelector {
+    readonly topicId: string | undefined;
+    readonly typeId: string | undefined;
+    readonly access: 'members' | 'granted';
+}
+
 export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly apiBaseUrl: string;
     /** Host settings are distinct from the per-operation rtcCaptureMode above. */
@@ -111,7 +120,7 @@ export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcC
     readonly topicId?: string;
     readonly contextId?: string;
     readonly resourceId?: string;
-    readonly messageSelector?: RallarMessageSelectorInput;
+    readonly messageSelector?: BlackBoxRallarMessageSelector;
     /** The RTC message types a topic-only selector must also hear: the product registers RTC inbox callbacks per type. */
     readonly messageTypeIds?: readonly string[];
     readonly ttlHops?: number;
@@ -504,6 +513,13 @@ export interface BlackBoxRallarReplyDiagnostics {
 
 export interface BlackBoxRallarStorageCountersInput {
     readonly reset: boolean;
+}
+
+/** An action on the page's own product socket; it matches no frame, so it names no match and no count. */
+export interface BlackBoxRallarProductSocketFault {
+    readonly faultId: string;
+    readonly carrier: 'product-socket';
+    readonly action: 'close' | 'reopen';
 }
 
 export interface BlackBoxRallarCloseDiagnostics {

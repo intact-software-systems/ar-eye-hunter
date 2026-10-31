@@ -81,6 +81,20 @@ const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as c
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
+/** A granted topic is WS-only: the topic subscription cells run over ws and the fallback cell, on four roles. */
+const FOUR_ROLE_KEYS_BY_CARRIER = {
+    ws: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-held', 'subscription-reconnect'],
+    rtc: [],
+    'rtc-with-ws-fallback': [
+        'subscription-delivery',
+        'subscription-token-count',
+        'subscription-revoke-held',
+        'subscription-reconnect'
+    ]
+} as const;
+
+const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
+
 const CARRIER_CONNECT_TRANSPORTS = {
     ws: 'messages.ws',
     rtc: 'messages.rtc',
@@ -113,7 +127,9 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
                     : toAdmissionOutcomeTypeIds(command.match.contains)
                 : [];
         case 'fault.inject':
-            return command.carrier === 'storage' || command.match.typeId === undefined ? [] : [command.match.typeId];
+            return command.carrier === 'storage' || command.carrier === 'product-socket' || command.match.typeId === undefined
+                ? []
+                : [command.match.typeId];
         default:
             return [];
     }
@@ -123,6 +139,15 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
 function toAdmissionOutcomeTypeIds(contains: string | undefined): readonly string[] {
     const typeId = contains?.match(/^"typeId":"([^"]+)"/)?.[1];
     return typeId === undefined || typeId.startsWith('al.control.') ? [] : [typeId];
+}
+
+/** A cell's topics: the world cell's own app topic, the topic subscription cells' granted one, or the members one. */
+function toTopicCell(scenario: AlmConformanceScenario): 'world' | 'granted' | 'members' {
+    return scenario.scenarioId === 'world-routing'
+        ? 'world'
+        : scenario.scenarioId.startsWith('subscription-')
+        ? 'granted'
+        : 'members';
 }
 
 /** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
@@ -270,7 +295,8 @@ function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonl
         scenario.receiver,
         ...(scenario.recipientB ? [scenario.recipientB] : []),
         ...(scenario.successor ? [scenario.successor] : []),
-        ...(scenario.sibling ? [scenario.sibling] : [])
+        ...(scenario.sibling ? [scenario.sibling] : []),
+        ...(scenario.publisherB ? [scenario.publisherB] : [])
     ]);
 }
 
@@ -279,9 +305,12 @@ describe('alm-conformance recipe family', () => {
         const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
 
         for (const scenario of scenarios) {
+            const fourRole = scenario.roles.includes('publisher-b');
             expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(scenario.roles.includes('recipient-b'));
             expect(scenario.laneFamily === 'same-context', scenario.scenarioKey).toBe(scenario.roles.includes('successor'));
-            expect(scenario.laneFamily === 'same-principal', scenario.scenarioKey).toBe(scenario.roles.includes('sibling'));
+            expect(scenario.laneFamily === 'four-role', scenario.scenarioKey).toBe(fourRole);
+            expect(scenario.laneFamily === 'same-principal', scenario.scenarioKey)
+                .toBe(scenario.roles.includes('sibling') && !fourRole);
         }
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
@@ -319,12 +348,18 @@ describe('alm-conformance recipe family', () => {
                     ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
                     ...(carrier === 'rtc-with-ws-fallback'
                         ? []
-                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-flush-on-hide-${role}`))
+                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-flush-on-hide-${role}`)),
+                    ...FOUR_ROLE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
+                        ['sender', 'receiver', 'sibling', 'publisher-b'].map((role) => `alm-${carrier}-${key}-${role}`)
+                    ),
+                    ...(carrier === 'rtc'
+                        ? []
+                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`))
                 ]);
         }
     });
 
-    it('declares recipient-b on the receipted-audience, membership fence, leader, claim, reply-first-wins and paced-isolation-lists scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience, membership fence, leader, claim, reply-first-wins and paced-isolation-lists scenarios, successor on durable-takeover, flush-on-hide and subscription-successor, sibling on the audiences and publisher-b with sibling on the four-role cells; every other scenario keeps one sender and one receiver', () => {
         const threeAgentIds = [
             'receipted-audience',
             'fenced-delivery',
@@ -342,13 +377,16 @@ describe('alm-conformance recipe family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
-                const twoPages = scenario.scenarioId === 'durable-takeover' || scenario.scenarioId === 'flush-on-hide';
-                const twoSessions = AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
+                const twoPages = ['durable-takeover', 'flush-on-hide', 'subscription-successor'].includes(scenario.scenarioId);
+                const fourRoles = FOUR_ROLE_KEYS_BY_CARRIER.ws.some((scenarioId) => scenarioId === scenario.scenarioId);
+                const twoSessions = fourRoles || AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
                         ? ['sender', 'receiver', 'recipient-b']
                         : twoPages
                         ? ['sender', 'receiver', 'successor']
+                        : fourRoles
+                        ? ['sender', 'publisher-b', 'receiver', 'sibling']
                         : twoSessions
                         ? ['sender', 'receiver', 'sibling']
                         : ['sender', 'receiver']
@@ -362,6 +400,9 @@ describe('alm-conformance recipe family', () => {
                 expect(scenario.successor?.recipeId).toBe(twoPages ? `alm-${carrier}-${scenario.scenarioKey}-successor` : undefined);
                 expect(toAlmConformanceRoleRecipe(scenario, 'sibling')).toBe(scenario.sibling);
                 expect(scenario.sibling?.recipeId).toBe(twoSessions ? `alm-${carrier}-${scenario.scenarioKey}-sibling` : undefined);
+                expect(toAlmConformanceRoleRecipe(scenario, 'publisher-b')).toBe(scenario.publisherB);
+                expect(scenario.publisherB?.recipeId)
+                    .toBe(fourRoles ? `alm-${carrier}-${scenario.scenarioKey}-publisher-b` : undefined);
             }
         }
     });
@@ -467,18 +508,21 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('routes every carrier over one room WS topic the product admits, and the world cell over its own app topic', () => {
+    it('routes every carrier over one room WS topic the product admits, the world cell over its own app topic and the topic subscription cells over the granted topic', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
-            const topicIdsOf = (world: boolean) =>
-                toAllRoleRecipes(scenarios.filter((scenario) => (scenario.scenarioId === 'world-routing') === world))
+            const topicIdsOf = (cell: 'world' | 'granted' | 'members') =>
+                toAllRoleRecipes(scenarios.filter((scenario) => toTopicCell(scenario) === cell))
                     .flatMap((recipe) => recipe.commands.flatMap(toRoutedTopicIds));
 
-            expect(topicIdsOf(false).length).toBeGreaterThan(0);
-            expect(new Set(topicIdsOf(false))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
-            expect(new Set(topicIdsOf(true))).toEqual(new Set([WORLD_TOPIC_ID]));
+            expect(topicIdsOf('members').length).toBeGreaterThan(0);
+            expect(new Set(topicIdsOf('members'))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
+            expect(new Set(topicIdsOf('world'))).toEqual(new Set([WORLD_TOPIC_ID]));
+            // A cell's cues travel on the members topic, beside its granted publications.
+            expect(new Set(topicIdsOf('granted')))
+                .toEqual(carrier === 'rtc' ? new Set() : new Set([GRANTED_TOPIC_ID, CONFORMANCE_TOPIC_ID]));
         }
-        for (const topicId of [CONFORMANCE_TOPIC_ID, WORLD_TOPIC_ID]) {
+        for (const topicId of [CONFORMANCE_TOPIC_ID, WORLD_TOPIC_ID, GRANTED_TOPIC_ID]) {
             expect(validateRallarWsUserTopicId(topicId).errors).toEqual([]);
         }
     });
@@ -622,7 +666,9 @@ describe('alm-conformance recipe family', () => {
             ...AUDIENCE_KEYS,
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
-            'durable-takeover'
+            'durable-takeover',
+            ...FOUR_ROLE_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
+            'subscription-successor'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
@@ -873,7 +919,7 @@ describe('alm-conformance recipe family', () => {
             recipe.commands.slice(recipe.commands.findIndex((command) => command.kind === 'rtc.connect') + 1, -1);
         const shapeOf = (command: RallarBlackBoxTestCommand) =>
             command.kind === 'fault.inject'
-                ? `fault.inject:${command.carrier}:${String(command.remaining)}`
+                ? `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`
                 : command.kind === 'wait'
                 ? `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`
                 : command.kind === 'messages.received'
@@ -1043,7 +1089,7 @@ describe('alm-conformance recipe family', () => {
                         const label = `${carrier} ${scenario.scenarioKey}`;
                         const last = bodyOf(scenario.recipientB!).at(-1);
                         const clearsHoldExplicitly = last?.kind === 'close' ||
-                            (last?.kind === 'fault.inject' && last.remaining === 0);
+                            (last?.kind === 'fault.inject' && last.carrier !== 'product-socket' && last.remaining === 0);
                         const endsWithLongEnoughAbsence = last?.kind === 'messages.received' &&
                             last.absent === true && (last.timeoutMs ?? 0) >= (senderWindow.timeoutMs ?? 0);
 

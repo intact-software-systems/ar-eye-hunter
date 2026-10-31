@@ -40,7 +40,7 @@ function toScenarioCommands(commands: readonly RallarBlackBoxTestCommand[]): rea
 function toShape(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String(command.remaining)}`;
+            return `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`;
         case 'messages.send':
             return 'replayOnCarrier' in command
                 ? 'replay'
@@ -97,7 +97,7 @@ describe('storage-unavailable conformance scenario', () => {
     // A work write that commits during the hold would record a recovery point and read healthy before the release.
     it('holds a quota on the admission and the work writes, each under its own fault id, and releases both', () => {
         const faults = findScenario('rtc', 'storage-unavailable').sender.commands
-            .filter((command) => command.kind === 'fault.inject')
+            .filter((command) => command.kind === 'fault.inject' && command.carrier === 'storage')
             .map((fault) => ({ faultId: fault.faultId, match: fault.match, action: fault.action, remaining: fault.remaining }));
 
         expect(faults).toEqual([

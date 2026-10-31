@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     closeBrowserControlAgentPage,
+    hasPassedCommandEvent,
     openBrowserControlAgentInContext,
     readFullStackConfig,
     runRecipeOnAgent,
@@ -16,6 +17,7 @@ import {
     type RecipePairRun,
     type RecipeRunAgent,
     type RecipeRunOutcome,
+    type StartedRecipeRun,
     type TwoAgentRun,
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
@@ -31,6 +33,11 @@ export interface SameContextPages {
     readonly owner: SameContextRecipeOwner;
     readonly successor: RecipeRunAgent;
     readonly ownerEnd: SameContextOwnerEnd;
+    /**
+     * The owner's command after which the successor starts while the owner's recipe still runs, its page ended once
+     * both are done; undefined runs the owner's recipe to its end and ends its page before the successor starts.
+     */
+    readonly successorGate: string | undefined;
 }
 
 export interface SameContextRecipes extends RecipePair {
@@ -53,6 +60,10 @@ export interface SameContextRecipeOwner extends RecipeRunAgent {
 
 /** Well under the checkpoint interval: the flush's one readwrite commits in milliseconds on an idle page. */
 const FLUSH_COMMIT_SETTLE_MS = 250;
+
+/** The owner's prologue and its gate: a connect, which may wait for ready RTC peers, and the steps before the gate. */
+const SUCCESSOR_GATE_TIMEOUT_MS = 90_000;
+const SUCCESSOR_GATE_POLL_INTERVAL_MS = 250;
 
 /**
  * A second page of the owner's browser context: the same storage and auth session, an agent of its own. The owner is
@@ -77,6 +88,7 @@ export async function openSuccessorPage(input: OpenSuccessorPageInput): Promise<
         return {
             agentId,
             actor: input.owner.actor,
+            principalId: opened.session.clientId,
             connection: input.owner.connection,
             context: input.owner.context,
             page: opened.page,
@@ -97,8 +109,9 @@ export async function openSuccessorPage(input: OpenSuccessorPageInput): Promise<
 }
 
 /**
- * The server keeps one socket per auth session and a second one replaces the first, which reconnects in turn, so the
- * two pages never connect at once: the owner runs the sender recipe and closes, and only then does the successor run.
+ * The server keeps one socket per auth session and a second one replaces the first. Without a gate the two pages never
+ * connect at once: the owner runs the sender recipe and ends, and only then does the successor run. With one, the
+ * successor's connect replaces the running owner's socket, which stays closed, as a replaced tab's does.
  */
 export async function runRecipeTrioOnSameContext(
     run: RecipePairRun,
@@ -106,20 +119,64 @@ export async function runRecipeTrioOnSameContext(
     recipes: SameContextRecipes
 ): Promise<SameContextOutcome> {
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
-    const sender = await runRecipeOnAgent(run, pages.owner, recipes.sender);
-    await endOwnerPage(pages.owner.page, pages.ownerEnd);
-    const successorRun = await startRecipeRun(run, pages.successor, recipes.successor);
-    const [successor, receiver] = await Promise.allSettled([
-        successorRun.readOutcome(),
+    const pageRuns = pages.successorGate === undefined
+        ? await runOwnerThenSuccessor(run, pages, recipes)
+        : await runSuccessorBesideOwner(run, { ...pages, successorGate: pages.successorGate }, recipes);
+    const [sender, successor, receiver] = await Promise.allSettled([
+        pageRuns.sender,
+        pageRuns.successor.readOutcome(),
         receiverRun.readOutcome()
     ]);
-    if (successor.status === 'rejected') {
-        throw successor.reason;
+    if (pages.successorGate !== undefined) {
+        await endOwnerPage(pages.owner.page, pages.ownerEnd);
     }
-    if (receiver.status === 'rejected') {
-        throw receiver.reason;
+    return { sender: requireOutcome(sender), receiver: requireOutcome(receiver), successor: requireOutcome(successor) };
+}
+
+interface SameContextPageRuns {
+    readonly sender: Promise<RecipeRunOutcome>;
+    readonly successor: StartedRecipeRun;
+}
+
+async function runOwnerThenSuccessor(
+    run: RecipePairRun,
+    pages: SameContextPages,
+    recipes: SameContextRecipes
+): Promise<SameContextPageRuns> {
+    const sender = await runRecipeOnAgent(run, pages.owner, recipes.sender);
+    await endOwnerPage(pages.owner.page, pages.ownerEnd);
+    return {
+        sender: Promise.resolve(sender),
+        successor: await startRecipeRun(run, pages.successor, recipes.successor)
+    };
+}
+
+/** The successor starts once the owner's gate command passed, or at once when the owner's recipe already ended. */
+async function runSuccessorBesideOwner(
+    run: RecipePairRun,
+    pages: SameContextPages & Readonly<{ successorGate: string; }>,
+    recipes: SameContextRecipes
+): Promise<SameContextPageRuns> {
+    const ownerRun = await startRecipeRun(run, pages.owner, recipes.sender);
+    const deadlineEpochMs = Date.now() + SUCCESSOR_GATE_TIMEOUT_MS;
+    while (Date.now() < deadlineEpochMs) {
+        const snapshot = await run.readSnapshot();
+        if (
+            hasPassedCommandEvent(snapshot, pages.successorGate) ||
+            snapshot.results.some((result) => result.commandId === ownerRun.commandId)
+        ) {
+            break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SUCCESSOR_GATE_POLL_INTERVAL_MS));
     }
-    return { sender, receiver: receiver.value, successor: successor.value };
+    return { sender: ownerRun.readOutcome(), successor: await startRecipeRun(run, pages.successor, recipes.successor) };
+}
+
+function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): RecipeRunOutcome {
+    if (outcome.status === 'rejected') {
+        throw outcome.reason;
+    }
+    return outcome.value;
 }
 
 /**

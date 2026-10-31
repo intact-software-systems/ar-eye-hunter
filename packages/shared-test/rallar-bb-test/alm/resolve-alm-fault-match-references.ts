@@ -1,8 +1,9 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import type {
-    RallarBlackBoxTestFaultInjectCommand,
-    RallarBlackBoxTestState
+    RallarBlackBoxTestState,
+    RallarBlackBoxTestStorageFaultInjectCommand,
+    RallarBlackBoxTestTransportFaultInjectCommand
 } from '../rallar-black-box-test-contracts.ts';
 import { resolveResultReferencesInText } from '../wait/resolve-wait-match-result-references.ts';
 
@@ -11,9 +12,12 @@ import { resolveResultReferencesInText } from '../wait/resolve-wait-match-result
  * `{resultCache.<commandId>.<path>}` token. A storage fault's match names no message and passes through.
  */
 export function resolveAlmFaultMatchReferences(
-    fault: RallarBlackBoxTestFaultInjectCommand,
+    fault: RallarBlackBoxTestTransportFaultInjectCommand | RallarBlackBoxTestStorageFaultInjectCommand,
     resultCache: RallarBlackBoxTestState['resultCache']
-): Either<string, RallarBlackBoxTestFaultInjectCommand['match']> {
+): Either<
+    string,
+    RallarBlackBoxTestTransportFaultInjectCommand['match'] | RallarBlackBoxTestStorageFaultInjectCommand['match']
+> {
     if (fault.carrier === 'storage' || fault.match.msgId === undefined) {
         return Either.ofRight(fault.match);
     }

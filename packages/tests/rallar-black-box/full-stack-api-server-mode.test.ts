@@ -36,6 +36,36 @@ import { loadLiveRtcPerformanceAttempt } from '../../../tests/playwright/rallar-
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 const CONFIG_LOADER_TEST_TIMEOUT_MS = 30_000;
+
+/** The block as the shell reads it: space-separated assignments, each value at most once single-quoted. */
+function toProfileEnvironment(): ReadonlyMap<string, string> {
+    return new Map(
+        createFullStackApiProfileEnvBlock().split(' ').map((entry) => {
+            const separator = entry.indexOf('=');
+            const value = entry.slice(separator + 1);
+            const unquoted = value.length > 1 && value.startsWith('\'') && value.endsWith('\'') ? value.slice(1, -1) : value;
+            return [entry.slice(0, separator), unquoted];
+        })
+    );
+}
+
+async function readProfileConfiguration(): Promise<Awaited<ReturnType<typeof readApiV1Configuration>>> {
+    const profileEnvironment = toProfileEnvironment();
+    const resource = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
+    return await readApiV1Configuration({
+        environment: { get: (name) => profileEnvironment.get(name) },
+        hardwareConcurrency: 4,
+        readTextFile: (url) => readFile(url, 'utf8'),
+        defaultsUrl: resource('configuration/defaults-config.json'),
+        profileUrls: {
+            dev: resource('configuration/dev-config.json'),
+            prod: resource('configuration/prod-config.json'),
+            'prod-in-memory': resource('configuration/prod-in-memory-config.json'),
+            'prod-hardened': resource('configuration/prod-hardened-config.json')
+        },
+        staticClientsUrl: resource('authorised-clients.json')
+    });
+}
 const LARGEST_CO_LOCATED_ALM_COHORT = 50;
 const captureProbeEnvironment: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
@@ -296,27 +326,7 @@ describe('rallar-black-box full-stack API server mode', () => {
     });
 
     it('admits the largest co-located ALM cohort through one IP per registration and login window', async () => {
-        const profileEnvironment = new Map(
-            createFullStackApiProfileEnvBlock().split(' ').map((entry) => {
-                const separator = entry.indexOf('=');
-                return [entry.slice(0, separator), entry.slice(separator + 1)];
-            })
-        );
-        const resource = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
-
-        const configuration = await readApiV1Configuration({
-            environment: { get: (name) => profileEnvironment.get(name) },
-            hardwareConcurrency: 4,
-            readTextFile: (url) => readFile(url, 'utf8'),
-            defaultsUrl: resource('configuration/defaults-config.json'),
-            profileUrls: {
-                dev: resource('configuration/dev-config.json'),
-                prod: resource('configuration/prod-config.json'),
-                'prod-in-memory': resource('configuration/prod-in-memory-config.json'),
-                'prod-hardened': resource('configuration/prod-hardened-config.json')
-            },
-            staticClientsUrl: resource('authorised-clients.json')
-        });
+        const configuration = await readProfileConfiguration();
 
         const { rateLimits } = configuration.authentication;
         expect(configuration.profile.name).toBe('prod-in-memory');
@@ -324,6 +334,14 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(rateLimits.registrationIp).toBeGreaterThanOrEqual(LARGEST_CO_LOCATED_ALM_COHORT);
         expect(rateLimits.loginIp).toBeGreaterThanOrEqual(LARGEST_CO_LOCATED_ALM_COHORT);
         expect(rateLimits.loginUsername).toBe(100);
+    });
+
+    it('the profile block configures the granted conformance topic', async () => {
+        const configuration = await readProfileConfiguration();
+
+        expect(configuration.grantedWsTopics).toEqual([
+            { topicId: 'room.alm-conformance-granted', fanout: 'outbox', serverProducerIds: [] }
+        ]);
     });
 
     it.each([

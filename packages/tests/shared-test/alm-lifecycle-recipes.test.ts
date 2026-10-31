@@ -18,7 +18,9 @@ describe('ALM lifecycle recipe evidence', () => {
                 typeId: 'probe',
                 senderConnection: 'sender',
                 receiverConnection: 'receiver',
-                deadlineMs: 18_000
+                deadlineMs: 18_000,
+                laneFamilies: ['two-agent'],
+                principalIdsByRole: {}
             }).find((candidate) => candidate.scenarioId === 'delivery-lifecycle');
             expect(scenario).toBeDefined();
             const replaceable = scenario!.sender.commands
@@ -58,7 +60,9 @@ describe('ALM lifecycle recipe evidence', () => {
                 typeId: 'probe',
                 senderConnection: 'sender',
                 receiverConnection: 'receiver',
-                deadlineMs: 18_000
+                deadlineMs: 18_000,
+                laneFamilies: ['two-agent'],
+                principalIdsByRole: {}
             }).find((candidate) => candidate.scenarioId === 'delivery-lifecycle')!.sender.commands;
             const receiptsIndex = commands.findIndex((command) => command.commandId?.endsWith('receipts-1'));
             const ackAdmitted = commands.filter((command) => command.commandId?.endsWith('ack-admitted-1'));
@@ -97,7 +101,9 @@ describe('ALM lifecycle recipe evidence', () => {
             typeId: 'probe',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((candidate) => candidate.scenarioId === 'delivery-lifecycle')!.sender.commands;
         const acknowledged: RallarBlackBoxTestMessagesObserveResultValue = {
             handleId: 'send-1',
@@ -134,7 +140,9 @@ describe('ALM lifecycle recipe evidence', () => {
             typeId: 'probe',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((candidate) => candidate.scenarioId === 'deadline-expiry')!;
         const observe = scenario.sender.commands.find((command) => command.commandId?.endsWith('observe-expired-1'));
         const assertion = scenario.sender.commands.find((command) => command.commandId?.endsWith('assert-expired-1'));

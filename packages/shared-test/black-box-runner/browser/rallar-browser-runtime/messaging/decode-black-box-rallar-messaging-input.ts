@@ -14,6 +14,7 @@ import type {
 import type {
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObserveInput,
+    BlackBoxRallarProductSocketFault,
     BlackBoxRallarStorageCountersInput
 } from '../black-box-rallar-operation-contracts.ts';
 import {
@@ -28,6 +29,8 @@ const FAULT_CARRIERS: readonly TransportFaultCarrier[] = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES: readonly NonNullable<TransportFaultMatch['controlType']>[] = ['ack', 'nack', 'repair'];
 
 const FAULT_RTC_ACTIONS: readonly ScriptedTransportFault['action'][] = ['drop', 'backpressure'];
+
+const PRODUCT_SOCKET_ACTIONS: readonly BlackBoxRallarProductSocketFault['action'][] = ['close', 'reopen'];
 
 /**
  * The RTC data channel treats a delay decision as pass and has no submission readiness port, so arming
@@ -76,11 +79,31 @@ export function decodeBlackBoxRallarDeliveryObserveInput(
 
 export function decodeBlackBoxRallarFaultInput(
     value: unknown
-): Either<BlackBoxRallarInputIssue, ScriptedTransportFault | ScriptedStorageFault> {
+): Either<BlackBoxRallarInputIssue, ScriptedTransportFault | ScriptedStorageFault | BlackBoxRallarProductSocketFault> {
     if (!isBlackBoxCommandRecord(value)) {
         return toInputIssue('fault.inject input must be an object.');
     }
-    return value.carrier === 'storage' ? decodeStorageFault(value) : decodeTransportFault(value);
+    switch (value.carrier) {
+        case 'storage':
+            return decodeStorageFault(value);
+        case 'product-socket':
+            return decodeProductSocketFault(value);
+        default:
+            return decodeTransportFault(value);
+    }
+}
+
+function decodeProductSocketFault(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarProductSocketFault> {
+    const faultId = decodeBlackBoxCommandString(value.faultId);
+    if (faultId === undefined) {
+        return toInputIssue('fault.inject.faultId is required.');
+    }
+    const action = PRODUCT_SOCKET_ACTIONS.find((candidate) => candidate === value.action);
+    return action === undefined
+        ? toInputIssue('fault.inject.action must be close or reopen on the product-socket carrier.')
+        : Either.ofRight({ faultId, carrier: 'product-socket', action });
 }
 
 function decodeTransportFault(
@@ -88,7 +111,7 @@ function decodeTransportFault(
 ): Either<BlackBoxRallarInputIssue, ScriptedTransportFault> {
     const carrier = value.carrier;
     if (!isFaultCarrier(carrier)) {
-        return toInputIssue('fault.inject.carrier must be ws, rtc or storage.');
+        return toInputIssue('fault.inject.carrier must be ws, rtc, storage or product-socket.');
     }
     return decodeFaultAction(value.action).flatMap(
         (issue) => Either.ofLeft(issue),

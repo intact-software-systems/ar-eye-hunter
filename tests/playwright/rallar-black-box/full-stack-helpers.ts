@@ -93,6 +93,8 @@ export type ExhaustiveWorkspace = 'rallar' | 'black-box-runner';
 
 export interface TwoAgentRunParticipant extends RecipeRunAgent {
     readonly actor: string;
+    /** The client id the page signed in as: the principal a recipe's grants name. */
+    readonly principalId: string;
     readonly connection: string;
     readonly context: BrowserContext;
     readonly page: Page;
@@ -903,6 +905,22 @@ function toBrowserControlAgentQuery(agent: BrowserControlAgentInput): URLSearchP
     });
 }
 
+/**
+ * The user each role signs in as: the sender's pages and its sibling are user A, the receiver user B, and the third
+ * roles, `recipient-b` and `publisher-b`, user C.
+ */
+export function toParticipantUser(config: FullStackConfig, role: AlmConformanceRole): FullStackUser {
+    switch (role) {
+        case 'receiver':
+            return config.userB;
+        case 'recipient-b':
+        case 'publisher-b':
+            return config.userC;
+        default:
+            return config.userA;
+    }
+}
+
 function toParticipantInput(
     base: ParticipantBaseInput,
     role: 'sender' | 'receiver'
@@ -912,7 +930,7 @@ function toParticipantInput(
         testInfo: base.testInfo,
         runId: base.runId,
         config: base.config,
-        user: role === 'sender' ? base.config.userA : base.config.userB,
+        user: toParticipantUser(base.config, role),
         role,
         groupId: base.groupId
     };
@@ -933,10 +951,22 @@ function hasConnectedEvent(
 }
 
 function isConnectedEventPayload(payload: unknown): boolean {
-    return isJsonRecordValue(payload) && (
-        payload.topic === RTC_READINESS_WAIT_TOPIC ||
-        (payload.topic === COMMAND_RESULT_TOPIC && isJsonRecordValue(payload.payload) && payload.payload.ok === true)
-    );
+    return isJsonRecordValue(payload) && (payload.topic === RTC_READINESS_WAIT_TOPIC || isPassedResultEvent(payload));
+}
+
+/** A command nested in a recipe reports only through its result event: the run records results of roots alone. */
+export function hasPassedCommandEvent(snapshot: ControlRunSnapshot, commandId: string): boolean {
+    return snapshot.events.some((event) => event.commandId === commandId && isPassedResultEvent(event.payload));
+}
+
+interface PassedResultEvent {
+    readonly topic: typeof COMMAND_RESULT_TOPIC;
+    readonly payload: Readonly<{ ok: true; }>;
+}
+
+function isPassedResultEvent(value: unknown): value is PassedResultEvent {
+    return isJsonRecordValue(value) && value.topic === COMMAND_RESULT_TOPIC && isJsonRecordValue(value.payload) &&
+        value.payload.ok === true;
 }
 
 function toReloadRecipeRoot(
@@ -1058,6 +1088,7 @@ async function openTwoAgentParticipant(
     return {
         agentId,
         actor: input.user.actor,
+        principalId: opened.session.clientId,
         connection,
         context: opened.context,
         page: opened.page,

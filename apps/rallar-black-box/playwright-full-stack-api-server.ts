@@ -4,6 +4,7 @@ import {
     readFullStackRtcIceFixtureRequests,
     type ReadFullStackRtcIceFixtureRequestsInput
 } from '../../packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts';
+import { ALM_CONFORMANCE_GRANTED_TOPIC_ID } from '../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-step-identities.ts';
 
 export type FullStackApiServerMode = typeof FULL_STACK_API_SERVER_MODES[number];
 
@@ -249,7 +250,12 @@ export async function evaluateFullStackConfiguredServiceEvidence(
         : 'ready';
 }
 
+/**
+ * Space-separated assignments the shell command prefixes. The granted topic's JSON holds no space, and its single
+ * quotes keep the shell from expanding its braces or removing its double quotes.
+ */
 export function createFullStackApiProfileEnvBlock(): string {
+    const grantedTopics = [{ topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, fanout: 'outbox', serverProducerIds: [] }];
     return [
         'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
         'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON=[]',
@@ -257,7 +263,8 @@ export function createFullStackApiProfileEnvBlock(): string {
         `RALLAR_REGISTRATION_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
         `RALLAR_LOGIN_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
         'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1',
-        'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1'
+        'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1',
+        `RALLAR_GRANTED_WS_TOPICS_JSON='${JSON.stringify(grantedTopics)}'`
     ].join(' ');
 }
 

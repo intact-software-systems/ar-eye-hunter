@@ -6,10 +6,7 @@ import {
 
 import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type {
-    AlmConformanceTag,
-    CreateAlmConformanceRecipesInput
-} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type { AlmConformanceTag } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -20,6 +17,8 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
+import { toConformanceInput } from './alm-conformance-test-input.ts';
+
 /**
  * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
@@ -29,7 +28,16 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
+ * A granted topic is WS-only, so the topic subscription cells run over ws and the fallback cell.
  */
+const TOPIC_SUBSCRIPTION_IDS = [
+    'subscription-delivery',
+    'subscription-token-count',
+    'subscription-revoke-held',
+    'subscription-reconnect',
+    'subscription-successor'
+] as const;
+
 const CARRIER_SCENARIO_IDS = {
     ws: [
         'volatile-default',
@@ -79,7 +87,8 @@ const CARRIER_SCENARIO_IDS = {
         'claim-expires-reclaims',
         'reply-first-wins',
         'durable-takeover',
-        'flush-on-hide'
+        'flush-on-hide',
+        ...TOPIC_SUBSCRIPTION_IDS
     ],
     rtc: [
         'volatile-default',
@@ -165,26 +174,14 @@ const CARRIER_SCENARIO_IDS = {
         'world-routing',
         'leader-confirms',
         'claim-first-wins',
-        'durable-takeover'
+        'durable-takeover',
+        ...TOPIC_SUBSCRIPTION_IDS
     ]
 } as const;
 
-function toConformanceInput(
-    carrier: CreateAlmConformanceRecipesInput['carrier']
-): CreateAlmConformanceRecipesInput {
-    return {
-        group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
-        carrier,
-        typeId: 'alm.conformance',
-        senderConnection: 'sender',
-        receiverConnection: 'receiver',
-        deadlineMs: 18_000
-    };
-}
-
 function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) =>
-        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor, scenario.sibling]
+        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor, scenario.sibling, scenario.publisherB]
             .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined)
     );
 }
@@ -208,11 +205,22 @@ const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = [
 /**
  * A counted fault runs out after a number of frames, not after a time: a quick retry loop spends it before
  * the window the scenario means it to cover. So every fault holds until a later command of its own recipe
- * releases it with `0` or reloads the page, which replaces the page's fault port.
+ * releases it with `0` or reloads the page, which replaces the page's fault port. A closed product socket counts
+ * nothing: a later reopen of its own recipe releases it.
  */
 function toUnreleasedFaults(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return recipe.commands.flatMap((command, index) => {
-        if (command.kind !== 'fault.inject' || command.remaining === 0) {
+        if (command.kind !== 'fault.inject') {
+            return [];
+        }
+        if (command.carrier === 'product-socket') {
+            const reopened = command.action === 'reopen' ||
+                recipe.commands.slice(index + 1).some((later) =>
+                    later.kind === 'fault.inject' && later.carrier === 'product-socket' && later.action === 'reopen'
+                );
+            return reopened ? [] : [`${recipe.recipeId} ${command.faultId} never reopens its product socket`];
+        }
+        if (command.remaining === 0) {
             return [];
         }
         if (command.remaining !== 'until-cleared') {
@@ -220,7 +228,8 @@ function toUnreleasedFaults(recipe: RallarBlackBoxTestRecipe): readonly string[]
         }
         const released = recipe.commands.slice(index + 1).some((later) =>
             later.kind === 'agent.reload' ||
-            (later.kind === 'fault.inject' && later.faultId === command.faultId && later.remaining === 0)
+            (later.kind === 'fault.inject' && later.carrier !== 'product-socket' && later.faultId === command.faultId &&
+                later.remaining === 0)
         );
         const heldUntilPageEnds = HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES.some((suffix) => recipe.recipeId.endsWith(suffix));
         return released || heldUntilPageEnds ? [] : [`${recipe.recipeId} ${command.faultId} is never released`];

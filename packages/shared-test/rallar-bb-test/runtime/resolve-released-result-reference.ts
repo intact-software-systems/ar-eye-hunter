@@ -143,7 +143,11 @@ function toReferenceTexts(command: RallarBlackBoxTestCommand): readonly string[]
         case 'messages.control':
             return [command.msgId, command.ackedMsgId, command.toPeerId];
         case 'fault.inject':
-            return command.carrier === 'storage' || command.match?.msgId === undefined ? [] : [command.match.msgId];
+            return (command.carrier === 'ws' || command.carrier === 'rtc') && command.match?.msgId !== undefined
+                ? [command.match.msgId]
+                : [];
+        case 'http.request':
+            return command.request.body === undefined ? [] : [JSON.stringify(command.request.body)];
         default:
             return [];
     }

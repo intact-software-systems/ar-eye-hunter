@@ -127,6 +127,19 @@ it('applies a command-injected hold through the configured readiness owner and r
     await runtime.close();
 });
 
+it('closes and reopens the product socket of the connection and refuses any other product-socket action', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.ws');
+
+    await runtime.injectFault({ faultId: 'drop-socket', carrier: 'product-socket', action: 'close' });
+    await runtime.injectFault({ faultId: 'drop-socket', carrier: 'product-socket', action: 'reopen' });
+
+    expect(facade.records.productSocketActions).toEqual(['close', 'reopen']);
+    await expect(runtime.injectFault({ faultId: 'drop-socket', carrier: 'product-socket', action: 'drop' })).rejects
+        .toThrow('fault.inject.action must be close or reopen on the product-socket carrier.');
+    expect(facade.rallar.diagnostics.faults.getObservations()).toEqual([]);
+    await runtime.close();
+});
+
 // The storage counters count the operation the fault then fails, so a counted window still sees it.
 it('routes a storage fault to the IndexedDB interceptor after the counting observer', async () => {
     const { runtime } = await loadConnectedMessageRuntime('messages.ws');
