@@ -14,7 +14,10 @@ export namespace BlackBoxRallarConnectionSubscriptions {
     export interface Input {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
-        readonly messagingResources: Pick<BlackBoxRallarMessagingResourceController, 'cleanupWsSubscriptions'>;
+        readonly messagingResources: Pick<
+            BlackBoxRallarMessagingResourceController,
+            'cleanupWsSubscriptions' | 'cleanupTopicSubscriptions'
+        >;
     }
 
     export interface Subscription {
@@ -105,6 +108,7 @@ export class BlackBoxRallarConnectionSubscriptions {
         }
         state?.unsubscribeConsoleDiagnostics?.();
         unsubscribed += this.#input.messagingResources.cleanupWsSubscriptions();
+        unsubscribed += this.#input.messagingResources.cleanupTopicSubscriptions();
         if (unsubscribed > 0 && config) {
             this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.unsubscribe_completed', {
                 unsubscribed

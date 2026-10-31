@@ -496,6 +496,27 @@ const storageFaultActionSchema: JsonSchema = {
     ]
 };
 
+/** A transport or storage fault matches frames or operations and counts them down, so both fields are required. */
+function toMatchedFaultSchema(properties: CommandPropertySchemas<'fault.inject'>): JsonSchema {
+    return {
+        ...strictCommandSchema('fault.inject', properties),
+        required: ['kind', ...RALLAR_BLACK_BOX_COMMAND_FIELDS['fault.inject'].required, 'match', 'remaining']
+    };
+}
+
+/** The page's one product socket: no frame to match and no count, so neither field is allowed. */
+const productSocketFaultSchema: JsonSchema = {
+    type: 'object',
+    required: ['kind', ...RALLAR_BLACK_BOX_COMMAND_FIELDS['fault.inject'].required],
+    properties: {
+        ...commandBaseProperties('fault.inject'),
+        faultId: stringSchema,
+        carrier: { const: 'product-socket' },
+        action: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.productSocketFaultAction }
+    },
+    additionalProperties: false
+};
+
 function toPositiveIntegerSchema(maximum: number): JsonSchema {
     return { type: 'integer', minimum: 1, maximum };
 }
@@ -743,10 +764,21 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         payload: anySchema,
         handleId: stringSchema
     }),
+    'messages.subscribe': strictCommandSchema('messages.subscribe', {
+        connection: stringSchema,
+        subscriptionId: stringSchema
+    }),
+    'messages.unsubscribe': strictCommandSchema('messages.unsubscribe', {
+        connection: stringSchema,
+        subscriptionId: stringSchema
+    }),
+    'messages.subscriptions': strictCommandSchema('messages.subscriptions', {
+        connection: stringSchema
+    }),
     'fault.inject': {
         oneOf: [
             ...['ws', 'rtc'].map((carrier) =>
-                strictCommandSchema('fault.inject', {
+                toMatchedFaultSchema({
                     faultId: stringSchema,
                     carrier: { const: carrier },
                     match: faultMatchSchema,
@@ -754,13 +786,14 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                     remaining: faultRemainingSchema
                 })
             ),
-            strictCommandSchema('fault.inject', {
+            toMatchedFaultSchema({
                 faultId: stringSchema,
                 carrier: { const: 'storage' },
                 match: storageFaultMatchSchema,
                 action: storageFaultActionSchema,
                 remaining: faultRemainingSchema
-            })
+            }),
+            productSocketFaultSchema
         ]
     },
     'storage.counters': strictCommandSchema('storage.counters', {

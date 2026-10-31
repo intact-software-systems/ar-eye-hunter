@@ -13,6 +13,7 @@ import {
     type BlackBoxBrowserDirectorDependency,
     type BlackBoxBrowserMessagesDependency,
     type BlackBoxBrowserPeersDependency,
+    type BlackBoxBrowserProductSocketDependency,
     type BlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRealtimeDependency,
     type BlackBoxBrowserRoomsDependency,
@@ -30,6 +31,8 @@ import type {
     RallarMessageHandler,
     RallarMessagePayload,
     RallarRoomMessageChannelDefinition,
+    RallarTopicSubscription,
+    RallarTopicSubscriptionStatus,
     RallarTypedMessageChannel,
     RallarTypedMessageSendOptions,
     RallarTypedPayloadHandler
@@ -109,6 +112,8 @@ export interface BrowserRuntimeFacadeRecords {
     readonly crdtOpens: Array<Parameters<BlackBoxBrowserCrdtDependency['open']>>;
     readonly directorAppointments: Array<Parameters<BlackBoxBrowserDirectorDependency['appoint']>>;
     readonly cancelledMessageIds: string[];
+    /** Each product-socket action in the order the page took it. */
+    readonly productSocketActions: Array<'close' | 'reopen'>;
 }
 
 export const facadeRecords: BrowserRuntimeFacadeRecords = {
@@ -143,7 +148,8 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
     rtcRoomWaits: [],
     crdtOpens: [],
     directorAppointments: [],
-    cancelledMessageIds: []
+    cancelledMessageIds: [],
+    productSocketActions: []
 };
 
 const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
@@ -229,7 +235,10 @@ export const facadeBehavior = {
     resolveRoomSendFence: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomSendFence']>(),
     serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
     getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>(),
-    getRoomLeaderSessionId: vi.fn<BlackBoxBrowserPeersDependency['getRoomLeaderSessionId']>()
+    getRoomLeaderSessionId: vi.fn<BlackBoxBrowserPeersDependency['getRoomLeaderSessionId']>(),
+    /** The status the server's first answer settles a new token to. */
+    typedSubscribeAnswer: vi.fn<() => RallarTopicSubscriptionStatus>(),
+    readConnectionGenerationId: vi.fn<BlackBoxBrowserProductSocketDependency['readConnectionGenerationId']>()
 };
 
 let connectState: ReturnType<BlackBoxBrowserRallarRuntimeDependency['status']> = 'idle';
@@ -408,6 +417,16 @@ export function getFacadeDeliveryRegistry(): BrowserRallarDeliveryRegistry {
     return deliveryRegistry;
 }
 
+const productSocket: BlackBoxBrowserProductSocketDependency = {
+    close: () => {
+        facadeRecords.productSocketActions.push('close');
+    },
+    reopen: async () => {
+        facadeRecords.productSocketActions.push('reopen');
+    },
+    readConnectionGenerationId: async () => await facadeBehavior.readConnectionGenerationId()
+};
+
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get faults(): ScriptedTransportFaultPort {
         return scriptedFaults;
@@ -485,7 +504,8 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     director,
     diagnostics,
     deliveries,
-    peers
+    peers,
+    productSocket
 };
 
 export function resetBrowserRuntimeFacadeTestDouble(): void {
@@ -507,6 +527,8 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.disconnect.mockResolvedValue(undefined);
     facadeBehavior.isConnected.mockReturnValue(true);
     facadeBehavior.readUsage.mockReturnValue(IDLE_SESSION_REPORT);
+    facadeBehavior.typedSubscribeAnswer.mockReturnValue('active');
+    facadeBehavior.readConnectionGenerationId.mockResolvedValue('generation-1');
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);
@@ -636,7 +658,8 @@ function clearRecords(): void {
             facadeRecords.rtcRoomWaits,
             facadeRecords.crdtOpens,
             facadeRecords.directorAppointments,
-            facadeRecords.cancelledMessageIds
+            facadeRecords.cancelledMessageIds,
+            facadeRecords.productSocketActions
         ]
     ) {
         entries.length = 0;
@@ -681,7 +704,19 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
                 facadeRecords.typedUnsubscribeCount += 1;
             };
         },
-        subscribe: unsupported
+        subscribe: () => createTopicSubscriptionTestDouble(facadeBehavior.typedSubscribeAnswer())
+    };
+}
+
+/** A token the server answered at once; its release lapses it, as the product owner's does. */
+function createTopicSubscriptionTestDouble(answer: RallarTopicSubscriptionStatus): RallarTopicSubscription {
+    let status = answer;
+    return {
+        status: () => status,
+        wait: async () => status,
+        unsubscribe: async () => {
+            status = 'lapsed';
+        }
     };
 }
 

@@ -3,10 +3,7 @@ import type {
     RallarMessagePayload,
     RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import {
-    normalizeRallarMessageSelector,
-    type RallarMessageSelector
-} from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import type { RallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
 import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
@@ -16,13 +13,21 @@ import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
-import type { BlackBoxRallarConnectionConfig, BlackBoxRallarEvent } from '../black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarEvent,
+    BlackBoxRallarMessageSelector
+} from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf, blackBoxRallarScopeDiagnosticsOf } from '../black-box-rallar-operation-policy.ts';
 import type { BlackBoxBrowserMessagesDependency } from '../browser-rallar-runtime-composition.ts';
 import {
     resolveBlackBoxRallarTopicId,
     resolveBlackBoxRallarTypeId
 } from '../connection/black-box-rallar-connection-policy.ts';
+import {
+    resolveBlackBoxRallarChannelAccess,
+    toRallarMessageSelector
+} from '../connection/black-box-rallar-message-selector.ts';
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
 
@@ -30,6 +35,8 @@ export interface TypedChannelRoute {
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly roomRef: GroupRef | undefined;
+    /** `granted` only on the connect's granted selector topic, whose channel is WS-only. */
+    readonly access: 'members' | 'granted';
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;
     readonly purpose: ALChannelPurpose;
@@ -106,15 +113,13 @@ export class BlackBoxRallarTypedChannels {
             roomId: config.roomId,
             roomRef: route.roomRef,
             purpose: route.purpose,
-            access: 'members',
+            access: route.access,
             ...(route.publication === undefined ? {} : { publication: route.publication }),
             ...(route.durability === undefined ? {} : { durability: route.durability }),
             ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable }),
             ...(route.recovery === undefined ? {} : { recovery: route.recovery })
         });
-        const selector = config.rallar.messageSelector
-            ? normalizeRallarMessageSelector(config.rallar.messageSelector)
-            : undefined;
+        const selector = config.rallar.messageSelector;
         if (
             selector && (selector.typeId === undefined || selector.typeId === route.typeId) &&
             (selector.topicId === undefined || selector.topicId === route.topicId)
@@ -127,7 +132,7 @@ export class BlackBoxRallarTypedChannels {
             const unsubscribeWs = channel.onWs((_payload, message) => {
                 this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
             });
-            const unsubscribeRtc = channel.onRtc((_payload, message) => {
+            const unsubscribeRtc = route.access === 'granted' ? () => undefined : channel.onRtc((_payload, message) => {
                 this.#recordMessage({
                     config,
                     topic: 'rallar.browser.messages.rtc.message',
@@ -150,13 +155,15 @@ export class BlackBoxRallarTypedChannels {
      */
     subscribe(config: BlackBoxRallarConnectionConfig): void {
         if (config.rallar.messageSelector) {
-            this.#subscribeSelector(config, normalizeRallarMessageSelector(config.rallar.messageSelector));
+            this.#subscribeSelector(config, config.rallar.messageSelector);
             return;
         }
+        const topicId = resolveBlackBoxRallarTopicId(config);
         this.open(config, {
             typeId: resolveBlackBoxRallarTypeId(config),
-            topicId: resolveBlackBoxRallarTopicId(config),
+            topicId,
             roomRef: blackBoxRallarRoomRefOf(config),
+            access: resolveBlackBoxRallarChannelAccess(config, topicId),
             durability: undefined,
             onStorageUnavailable: undefined,
             purpose: 'notification',
@@ -176,9 +183,13 @@ export class BlackBoxRallarTypedChannels {
         };
     }
 
-    /** A combined recipe keeps its authored topic selector on WS; RTC subscribes once per type it must hear. */
-    #subscribeSelector(config: BlackBoxRallarConnectionConfig, selector: RallarMessageSelector): void {
-        const rtcTypeIds = resolveRtcSelectorTypeIds(config, selector);
+    /**
+     * A combined recipe keeps its authored topic selector on WS; RTC subscribes once per type it must hear, and not at
+     * all on a granted topic, which never rides RTC.
+     */
+    #subscribeSelector(config: BlackBoxRallarConnectionConfig, connectSelector: BlackBoxRallarMessageSelector): void {
+        const selector = toRallarMessageSelector(connectSelector);
+        const rtcTypeIds = connectSelector.access === 'granted' ? [] : resolveRtcSelectorTypeIds(config, selector);
         const key = JSON.stringify({ kind: 'selector', selector, rtcTypeIds });
         this.#input.resources.ensureWsSubscription(key, () => {
             const unsubscribeWs = this.#input.messages.ws.onMessage<RallarMessagePayload>(selector, (message) => {

@@ -9,7 +9,8 @@ import type {
     RallarBlackBoxTestMessagesReplayCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRuntime,
-    RallarBlackBoxTestRuntimeEventInput
+    RallarBlackBoxTestRuntimeEventInput,
+    RallarBlackBoxTestTransportFaultInjectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -649,6 +650,9 @@ export class AlmReloadPorts {
     }
 
     private injectFault(command: RallarBlackBoxTestFaultInjectCommand): RallarBlackBoxTestCommandOutcome {
+        if (command.carrier === 'product-socket') {
+            throw new Error('The fixture holds no product socket to drop.');
+        }
         if (command.carrier === 'storage') {
             if (command.match.owner === 'al-admission') {
                 this.storageQuotaFaultId = command.remaining === 0 ? undefined : command.faultId;
@@ -1215,7 +1219,7 @@ export class AlmReloadPorts {
      * The browser adapter resolves a `match.msgId` token against the recipe's result cache before it arms the fault;
      * this port reads the same identity from the send the token names.
      */
-    private toPortHold(command: RallarBlackBoxTestFaultInjectCommand): PortHold {
+    private toPortHold(command: RallarBlackBoxTestTransportFaultInjectCommand): PortHold {
         const { match } = command;
         if ('msgId' in match && typeof match.msgId === 'string') {
             const sendCommandId = HOLD_MSG_ID_REFERENCE.exec(match.msgId)?.[1];

@@ -32,8 +32,8 @@ import {
     type RecipeRun
 } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 
+import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
-import { runRecipeTrioOnThreeAgents } from '../../../tests/playwright/rallar-black-box/full-stack-three-agent-run.ts';
 
 let browser: Playwright.Browser;
 
@@ -275,7 +275,9 @@ describe('recipient recipe promise ownership', () => {
             typeId: 'lifetime',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const participant = { agentId: 'recipient', actor: 'recipient', connection: 'recipient', context, page };
         const run: RecipeRun = {
@@ -351,7 +353,9 @@ describe('recipient barrier failure', () => {
             typeId: 'lifetime',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const participant = { agentId: 'recipient', actor: 'recipient', connection: 'recipient', context, page };
         let reads = 0;
@@ -456,9 +460,9 @@ it('validates the mandatory auth handoff at actual browser storage', async () =>
 describe('recipient outcome ownership after its connect barrier', () => {
     it.each(
         [
-            { runner: 'three-agent', fault: 'snapshot', held: 'third enqueue' },
+            { runner: 'agents', fault: 'snapshot', held: 'third enqueue' },
             { runner: 'same-context', fault: 'snapshot', held: 'owner enqueue' },
-            { runner: 'three-agent', fault: 'operation', held: 'third enqueue' },
+            { runner: 'agents', fault: 'operation', held: 'third enqueue' },
             { runner: 'same-context', fault: 'operation', held: 'owner enqueue' },
             { runner: 'same-context', fault: 'page end', held: 'owner page close' },
             { runner: 'pair', fault: 'operation', held: 'sender enqueue' }
@@ -470,7 +474,9 @@ describe('recipient outcome ownership after its connect barrier', () => {
             typeId: 'outcome-owner',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline');
         if (baseline === undefined) {
             throw new Error('Expected the real delivery-baseline recipes.');
@@ -559,7 +565,7 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 }
             });
             const post = request.post.bind(request);
-            const heldCommandId = runner === 'three-agent' ? `${third.recipeId}-run` : senderCommandId;
+            const heldCommandId = runner === 'agents' ? `${third.recipeId}-run` : senderCommandId;
             vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
                 const data = options?.data;
                 if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
@@ -589,17 +595,17 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 receiver: { agentId: 'recipient' },
                 readSnapshot: () => readControlRun(request, 'outcome-owner')
             };
-            const running = runner === 'three-agent'
-                ? runRecipeTrioOnThreeAgents({ ...run, third: { agentId: 'third' } }, {
-                    sender: baseline.sender,
-                    receiver: baseline.receiver,
-                    third
-                })
+            const running = runner === 'agents'
+                ? runRecipesOnAgents({
+                    ...run,
+                    agents: new Map([['sender', run.sender], ['receiver', run.receiver], ['recipient-b', { agentId: 'third' }]])
+                }, new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['recipient-b', third]]))
                 : runner === 'same-context'
                 ? runRecipeTrioOnSameContext(run, {
                     owner: { ...run.sender, page },
                     successor: { agentId: 'successor' },
-                    ownerEnd: 'close'
+                    ownerEnd: 'close',
+                    successorGate: undefined
                 }, { sender: baseline.sender, receiver: baseline.receiver, successor })
                 : runRecipePairOnTwoAgents(run, { sender: baseline.sender, receiver: baseline.receiver });
             const observed = running.then(() => undefined, (error: unknown) => error);

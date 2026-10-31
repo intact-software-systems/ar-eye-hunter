@@ -34,6 +34,7 @@ import {
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
+import { resolveAlmConformancePrincipals } from './resolve-alm-conformance-principals.ts';
 import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
 import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
 import { worldRouting } from './scenarios/audiences/world-routing.ts';
@@ -86,6 +87,11 @@ import { replyUndelivered } from './scenarios/reply/reply-undelivered.ts';
 import { serverCommand } from './scenarios/server-command.ts';
 import { serverOriginated } from './scenarios/server-originated.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
+import { subscriptionDelivery } from './scenarios/topic-subscription/subscription-delivery.ts';
+import { subscriptionReconnect } from './scenarios/topic-subscription/subscription-reconnect.ts';
+import { subscriptionRevokeHeld } from './scenarios/topic-subscription/subscription-revoke-held.ts';
+import { subscriptionSuccessor } from './scenarios/topic-subscription/subscription-successor.ts';
+import { subscriptionTokenCount } from './scenarios/topic-subscription/subscription-token-count.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
 import { capacityAge } from './scenarios/volatile-bound/capacity-age.ts';
 import { capacityTracks } from './scenarios/volatile-bound/capacity-tracks.ts';
@@ -108,6 +114,8 @@ export interface AlmConformanceScenario {
     readonly successor: RallarBlackBoxTestRecipe | undefined;
     /** The second session of the sender's principal; undefined exactly when `roles` does not declare `sibling`. */
     readonly sibling: RallarBlackBoxTestRecipe | undefined;
+    /** The second producer's recipe; undefined exactly when `roles` does not declare `publisher-b`. */
+    readonly publisherB: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
 }
 
@@ -203,7 +211,12 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     claimRefusedOnRtc,
     replyFirstWins,
     durableTakeover,
-    flushOnHide
+    flushOnHide,
+    subscriptionDelivery,
+    subscriptionTokenCount,
+    subscriptionRevokeHeld,
+    subscriptionReconnect,
+    subscriptionSuccessor
 ];
 
 export function createAlmConformanceRecipes(
@@ -216,7 +229,9 @@ export function createAlmConformanceRecipes(
     }
 
     return ALM_CONFORMANCE_SCENARIOS
-        .filter((definition) => definition.carriers.includes(input.carrier))
+        .filter((definition) =>
+            definition.carriers.includes(input.carrier) && input.laneFamilies.includes(definition.laneFamily)
+        )
         .map((definition) =>
             toAlmConformanceScenario(input, definition, { almDiagnostics: true, deliveryDiagnostics: false })
         );
@@ -237,7 +252,14 @@ export function toAlmConformanceRoleRecipe(
     scenario: AlmConformanceScenario,
     role: AlmConformanceRole
 ): RallarBlackBoxTestRecipe | undefined {
-    return role === 'recipient-b' ? scenario.recipientB : scenario[role];
+    switch (role) {
+        case 'recipient-b':
+            return scenario.recipientB;
+        case 'publisher-b':
+            return scenario.publisherB;
+        default:
+            return scenario[role];
+    }
 }
 
 function toAlmConformanceScenario(
@@ -254,12 +276,15 @@ function toAlmConformanceScenario(
             roles: definition.roles,
             messageSelector: definition.messageSelector
         };
-        const commands = role === 'sender' || role === 'successor'
+        const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
             ? definition.toSenderCommands(step)
             : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
         const reloadCheckpoint = definition.toReloadCheckpoint?.(step);
-        return toAlmConformanceRecipe({ ...step, ...diagnostics, commands, receiptRoles, reloadCheckpoint });
+        return resolveAlmConformancePrincipals(
+            toAlmConformanceRecipe({ ...step, ...diagnostics, commands, receiptRoles, reloadCheckpoint }),
+            input.principalIdsByRole
+        );
     };
     return {
         scenarioId: definition.scenarioId,
@@ -271,7 +296,8 @@ function toAlmConformanceScenario(
         receiver: toRoleRecipe('receiver'),
         recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
         successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined,
-        sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined
+        sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined,
+        publisherB: definition.roles.includes('publisher-b') ? toRoleRecipe('publisher-b') : undefined
     };
 }
 

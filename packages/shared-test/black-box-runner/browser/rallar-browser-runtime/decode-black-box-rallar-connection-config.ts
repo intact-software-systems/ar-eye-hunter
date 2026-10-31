@@ -1,4 +1,3 @@
-import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { toRallarRtcCaptureContext } from '@shared-web/browser/rallar-operation-options.ts';
 import {
     decodeALPublicationStageLimits,
@@ -14,7 +13,11 @@ import type { RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-c
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
-import type { BlackBoxRallarConfig, BlackBoxRallarConnectionConfig } from './black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarConfig,
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarMessageSelector
+} from './black-box-rallar-operation-contracts.ts';
 import { decodeBlackBoxCommandRoomRef, isBlackBoxCommandRecord } from './decode-black-box-rallar-command-input.ts';
 
 export function decodeBlackBoxRallarConnectionConfig(value: unknown): BlackBoxRallarConnectionConfig {
@@ -154,12 +157,20 @@ function registration(value: unknown): boolean | 'if-needed' | undefined {
     return value === 'if-needed' ? value : optionalBoolean(value);
 }
 
-function messageSelector(value: unknown): RallarMessageSelectorInput | undefined {
-    if (value === undefined || typeof value === 'string') {
-        return value;
+/** A string selector names a type; a recipe that names no access opens a members channel on the topic. */
+function messageSelector(value: unknown): BlackBoxRallarMessageSelector | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value === 'string') {
+        return { topicId: undefined, typeId: value, access: 'members' };
     }
     const record = configRecord(value);
-    return { topicId: optionalString(record.topicId), typeId: optionalString(record.typeId) };
+    return {
+        topicId: optionalString(record.topicId),
+        typeId: optionalString(record.typeId),
+        access: optionalChoice(record.access, ['members', 'granted']) ?? 'members'
+    };
 }
 
 function dataChannelInit(value: unknown): RTCDataChannelInit | undefined {

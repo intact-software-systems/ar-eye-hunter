@@ -70,7 +70,8 @@ type AlmConformanceFamily = 'two-agent' | 'three-agent';
  * The lane families each hosted entry carries. The addressed sends ride the 2-agent entry; a same-context scenario
  * needs two pages of one browser context, which no hosted agent has, so no entry carries it. The same-principal
  * audience cells are withheld as the membership fence cells are: their lane evidence is local and the hosted full
- * read's, so manifests 18 and 22 stay as recorded.
+ * read's, so manifests 18 and 22 stay as recorded. The four-role topic subscription cells name each role's principal,
+ * which a static manifest cannot, and their four-agent manifest is deferred (S2ii-R3), so no entry carries them.
  */
 const HOSTED_ALM_LANE_FAMILIES: Readonly<Record<AlmConformanceFamily, readonly AlmConformanceLaneFamily[]>> = {
     'two-agent': ['two-agent', 'addressed'],
@@ -211,9 +212,11 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
             typeId: ALM_CONFORMANCE_TYPE_ID,
             senderConnection: ALM_CONFORMANCE_SENDER_CONNECTION,
             receiverConnection: ALM_CONFORMANCE_RECEIVER_CONNECTION,
-            deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
+            deadlineMs: ALM_CONFORMANCE_DEADLINE_MS,
+            laneFamilies: HOSTED_ALM_LANE_FAMILIES[family],
+            principalIdsByRole: {}
         }).filter((scenario) => !isHetznerWithheldAlmScenario(scenario.scenarioKey, carrier))
-    ).filter((scenario) => HOSTED_ALM_LANE_FAMILIES[family].includes(scenario.laneFamily));
+    );
     // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a block
     // whose sender closes reconnects it under its own limits, so nothing but another such block follows it.
     const isReconnecting = (scenario: AlmConformanceScenario) =>

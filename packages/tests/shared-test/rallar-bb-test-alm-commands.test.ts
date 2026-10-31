@@ -6,7 +6,7 @@ import {
 
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
-import { ALM_REPLY_WAIT_RESPONSE_MARGIN_MS } from '../../shared-test/rallar-bb-test/alm/browser-adapter-alm-commands.ts';
+import { ALM_PAGE_WAIT_RESPONSE_MARGIN_MS } from '../../shared-test/rallar-bb-test/alm/browser-adapter-alm-commands.ts';
 import {
     createRallarBlackBoxRtcClient,
     createRallarBlackBoxRtcProvider
@@ -38,6 +38,9 @@ const ALM_COMMAND_KINDS = [
     'messages.control',
     'messages.awaitReply',
     'messages.reply',
+    'messages.subscribe',
+    'messages.unsubscribe',
+    'messages.subscriptions',
     'fault.inject',
     'storage.counters',
     'agent.reload'
@@ -71,6 +74,9 @@ interface AlmRuntimeCaptures {
     readonly readStorageCounters: RallarBlackBoxTestRecord[];
     readonly awaitReply: RallarBlackBoxTestRecord[];
     readonly reply: RallarBlackBoxTestRecord[];
+    readonly subscribeTopic: RallarBlackBoxTestRecord[];
+    readonly unsubscribeTopic: RallarBlackBoxTestRecord[];
+    readonly readTopicSubscriptions: RallarBlackBoxTestRecord[];
 }
 
 const RAW_CONTROL_COMMAND = {
@@ -153,6 +159,14 @@ const REPLY_SUBMISSION = {
     corrId: 'msg-1'
 };
 
+const TOPIC_SUBSCRIPTIONS = {
+    connectionGenerationId: 'generation-2',
+    subscriptions: [
+        { subscriptionId: 't1', topicId: 'room.alm-conformance-granted', status: 'lapsed' },
+        { subscriptionId: 't2', topicId: 'room.alm-conformance-granted', status: 'active' }
+    ]
+};
+
 const STORAGE_COUNTS = {
     total: 7,
     byOwner: { 'al-admission': 3, 'al-work': 4 },
@@ -169,7 +183,10 @@ function createAlmRuntimeCaptures(): AlmRuntimeCaptures {
         injectFault: [],
         readStorageCounters: [],
         awaitReply: [],
-        reply: []
+        reply: [],
+        subscribeTopic: [],
+        unsubscribeTopic: [],
+        readTopicSubscriptions: []
     };
 }
 
@@ -215,6 +232,18 @@ function createAlmBrowserRuntimeFake(
         reply: async (input) => {
             captures.reply.push(input);
             return REPLY_SUBMISSION;
+        },
+        subscribeTopic: async (input) => {
+            captures.subscribeTopic.push(input);
+            return { subscriptionId: input.subscriptionId, status: 'active' };
+        },
+        unsubscribeTopic: async (input) => {
+            captures.unsubscribeTopic.push(input);
+            return { subscriptionId: input.subscriptionId, status: 'lapsed' };
+        },
+        readTopicSubscriptions: async (input) => {
+            captures.readTopicSubscriptions.push(input);
+            return TOPIC_SUBSCRIPTIONS;
         },
         readAlmUsage: async () => undefined,
         readCongestionCounters: async () => undefined,
@@ -707,6 +736,61 @@ describe('ALM recipe commands', () => {
             expect(control.ok, `${command.kind} without a valid ${field}`).toBe(false);
             expect(control.ok ? '' : control.error, command.kind).toContain(field);
         }
+    });
+
+    it('messages.subscribe, messages.unsubscribe and messages.subscriptions validate and refuse an unknown field', () => {
+        const accepted = [
+            { kind: 'messages.subscribe', connection: 'bob', subscriptionId: 't1' },
+            { kind: 'messages.unsubscribe', subscriptionId: 't1' },
+            { kind: 'messages.subscriptions', connection: 'bob' },
+            { kind: 'messages.subscriptions' }
+        ];
+        for (const command of accepted) {
+            const schema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toReplyRecipe(command));
+            expect(schema.ok, schema.ok ? command.kind : formatJsonSchemaValidationErrors(schema.errors)).toBe(true);
+            expect(validateRallarBlackBoxTestCommand({ commandId: 'subscription-command', ...command }), command.kind)
+                .toEqual({ ok: true });
+        }
+
+        const refused = [
+            { command: { kind: 'messages.subscribe' }, field: 'subscriptionId' },
+            { command: { kind: 'messages.subscribe', subscriptionId: 7 }, field: 'subscriptionId' },
+            { command: { kind: 'messages.unsubscribe', subscriptionId: 't1', topicId: 'room.x' }, field: 'topicId' },
+            { command: { kind: 'messages.subscriptions', subscriptionId: 't1' }, field: 'subscriptionId' }
+        ];
+        for (const { command, field } of refused) {
+            const schema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toReplyRecipe(command));
+            const control = validateRallarBlackBoxTestCommand({ commandId: 'subscription-command', ...command });
+            expect(schema.ok, `${command.kind} with ${field}`).toBe(false);
+            expect(control.ok ? '' : control.error, `${command.kind} with ${field}`).toContain(field);
+        }
+    });
+
+    it('fault.inject product-socket accepts close and reopen only', () => {
+        for (const action of ['close', 'reopen']) {
+            const command = { kind: 'fault.inject', faultId: 'drop-socket', carrier: 'product-socket', action };
+            const schema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toReplyRecipe(command));
+            expect(schema.ok, schema.ok ? action : formatJsonSchemaValidationErrors(schema.errors)).toBe(true);
+            expect(validateRallarBlackBoxTestCommand({ commandId: 'socket-fault', ...command }), action)
+                .toEqual({ ok: true });
+        }
+
+        const base = { kind: 'fault.inject', faultId: 'drop-socket', carrier: 'product-socket' };
+        const refused = [
+            { command: { ...base, action: 'drop' }, field: 'action' },
+            { command: base, field: 'action' },
+            { command: { ...base, action: 'close', match: {} }, field: 'match' },
+            { command: { ...base, action: 'close', remaining: 1 }, field: 'remaining' }
+        ];
+        for (const { command, field } of refused) {
+            const schema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toReplyRecipe(command));
+            const control = validateRallarBlackBoxTestCommand({ commandId: 'socket-fault', ...command });
+            expect(schema.ok, `product-socket with ${field}`).toBe(false);
+            expect(control.ok ? '' : control.error, `product-socket with ${field}`).toContain(field);
+        }
+        const transport = { kind: 'fault.inject', faultId: 'drop-ack', carrier: 'ws', match: {}, action: 'drop' };
+        const control = validateRallarBlackBoxTestCommand({ commandId: 'transport-fault', ...transport });
+        expect(control.ok ? '' : control.error, 'a transport fault still names remaining').toContain('remaining');
     });
 
     it('rejects a control-protocol messages.send without a carrier', () => {
@@ -1349,8 +1433,8 @@ describe('ALM browser adapter execution', () => {
         expect(timedOut.value).toEqual({ handleId: 'handle-2', status: 'timeout', state: 'acknowledged', corrId: 'msg-2' });
         expect(captures.awaitReply[0]).toMatchObject({ connection: 'default', handleId: 'handle-1' });
         const pageTimeoutMs = Number(captures.awaitReply[0]?.timeoutMs);
-        expect(pageTimeoutMs).toBeLessThanOrEqual(2_000 - ALM_REPLY_WAIT_RESPONSE_MARGIN_MS);
-        expect(pageTimeoutMs).toBeGreaterThan(2_000 - ALM_REPLY_WAIT_RESPONSE_MARGIN_MS - 500);
+        expect(pageTimeoutMs).toBeLessThanOrEqual(2_000 - ALM_PAGE_WAIT_RESPONSE_MARGIN_MS);
+        expect(pageTimeoutMs).toBeGreaterThan(2_000 - ALM_PAGE_WAIT_RESPONSE_MARGIN_MS - 500);
         expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.reply_awaited');
     });
 
@@ -1427,6 +1511,76 @@ describe('ALM browser adapter execution', () => {
         expect(topicsOf(runtime.state())).toEqual(
             expect.arrayContaining(['rallar.bb.messages.receipts', 'rallar.bb.messages.cancelled'])
         );
+    });
+
+    it('subscribes, reads and unsubscribes a topic token and drops the product socket through the page runtime', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(captures)
+        });
+
+        const subscribed = await runtime.execute({ kind: 'messages.subscribe', commandId: 'subscribe-t1', subscriptionId: 't1' });
+        const read = await runtime.execute({ kind: 'messages.subscriptions', commandId: 'read-subscriptions' });
+        const unsubscribed = await runtime.execute({ kind: 'messages.unsubscribe', commandId: 'unsubscribe-t1', subscriptionId: 't1' });
+        const dropped = await runtime.execute({
+            kind: 'fault.inject',
+            commandId: 'drop-socket',
+            faultId: 'drop-product-socket',
+            carrier: 'product-socket',
+            action: 'close'
+        });
+
+        expect([subscribed.value, unsubscribed.value]).toEqual([
+            { subscriptionId: 't1', status: 'active' },
+            { subscriptionId: 't1', status: 'lapsed' }
+        ]);
+        expect(read.value).toEqual(TOPIC_SUBSCRIPTIONS);
+        expect(dropped.value).toEqual({ faultId: 'drop-product-socket', injected: true });
+        expect(captures.subscribeTopic[0]).toMatchObject({ connection: 'default', subscriptionId: 't1' });
+        expect(Number(captures.subscribeTopic[0]?.timeoutMs)).toBeGreaterThan(0);
+        expect(captures.unsubscribeTopic[0]).toMatchObject({ connection: 'default', subscriptionId: 't1' });
+        expect(captures.readTopicSubscriptions[0]).toMatchObject({ connection: 'default' });
+        expect(captures.injectFault[0]).toMatchObject({
+            faultId: 'drop-product-socket',
+            carrier: 'product-socket',
+            action: 'close'
+        });
+        expect(captures.injectFault[0]).not.toHaveProperty('match');
+        expect(topicsOf(runtime.state())).toEqual(expect.arrayContaining([
+            'rallar.bb.messages.subscribed',
+            'rallar.bb.messages.subscriptions',
+            'rallar.bb.messages.unsubscribed'
+        ]));
+    });
+
+    it.each([
+        { kind: 'messages.subscribe' as const, value: { subscriptionId: 't1', status: 'gone' }, field: 'status' },
+        {
+            kind: 'messages.subscriptions' as const,
+            value: { connectionGenerationId: 7, subscriptions: [] },
+            field: 'connectionGenerationId'
+        },
+        {
+            kind: 'messages.subscriptions' as const,
+            value: { connectionGenerationId: null, subscriptions: [{ subscriptionId: 't1', status: 'active' }] },
+            field: 'subscriptions'
+        }
+    ])('fails a $kind whose page-runtime result carries an unusable $field', async ({ kind, value }) => {
+        const fake = createAlmBrowserRuntimeFake(createAlmRuntimeCaptures());
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: { ...fake, subscribeTopic: async () => value, readTopicSubscriptions: async () => value }
+        });
+
+        const result = await runtime.execute(
+            kind === 'messages.subscribe'
+                ? { kind, commandId: 'malformed-subscription', subscriptionId: 't1' }
+                : { kind: 'messages.subscriptions', commandId: 'malformed-subscription' }
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT');
     });
 
     it('fails a command whose page-runtime result is missing a field instead of defaulting it', async () => {

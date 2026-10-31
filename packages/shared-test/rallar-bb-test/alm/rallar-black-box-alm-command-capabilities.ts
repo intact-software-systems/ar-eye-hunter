@@ -180,6 +180,53 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         }
     },
     {
+        kind: 'messages.subscribe',
+        title: 'Subscribe Granted Topic',
+        description:
+            'Elects the page\'s session to receive the granted room topic its connection\'s message selector ' +
+            'names (access granted) and keeps the token under subscriptionId. Returns once the token leaves pending ' +
+            'or 250 ms before timeoutMs: status pending, active, refused or lapsed. The token\'s handler does nothing; ' +
+            'the connect\'s own subscription records every delivery, which messages.received counts.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['subscriptionId and the token status'],
+        example: {
+            kind: 'messages.subscribe',
+            commandId: 'subscribe-granted-topic',
+            subscriptionId: 'granted-1'
+        }
+    },
+    {
+        kind: 'messages.unsubscribe',
+        title: 'Unsubscribe Granted Topic',
+        description: 'Releases the token the page holds under subscriptionId and returns its status, lapsed once ' +
+            'released; the last token of a topic releases the session\'s subscription on the server.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['subscriptionId and the token status'],
+        example: {
+            kind: 'messages.unsubscribe',
+            commandId: 'unsubscribe-granted-topic',
+            subscriptionId: 'granted-1'
+        }
+    },
+    {
+        kind: 'messages.subscriptions',
+        title: 'Read Granted Topic Subscriptions',
+        description: 'Reads every token the page holds, each with its subscriptionId, topicId and status, and the ' +
+            'open product socket\'s connection generation, null while the socket is closed.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['connectionGenerationId and the held tokens'],
+        example: {
+            kind: 'messages.subscriptions',
+            commandId: 'read-granted-subscriptions'
+        }
+    },
+    {
         kind: 'fault.inject',
         title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
@@ -190,7 +237,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'messages.send returned, so one message is held while every other frame of its type passes. ' +
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +
             'optionally match.kind: fail, quota (writes only) or a delay. ' +
-            'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it.',
+            'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it. ' +
+            'carrier product-socket names neither match nor remaining: action close closes the page\'s product socket ' +
+            'with reconnect disabled, and reopen enables reconnect and opens a new authorised socket, whose connection ' +
+            'generation is new.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],

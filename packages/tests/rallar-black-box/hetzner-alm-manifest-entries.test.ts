@@ -47,7 +47,9 @@ describe('ALM conformance combined recipe', () => {
             typeId: 'alm.conformance',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).filter((scenario) => ['delivery-baseline', 'not-yet-in-sync-expires'].includes(scenario.scenarioKey));
 
         const requests = toAlmConformanceCombinedRecipe([baseline!, withInScenarioRequest(expires!)], 'sender', 'two-agent').commands
@@ -158,9 +160,10 @@ function toFamilyCells(families: readonly AlmConformanceLaneFamily[]): readonly 
             typeId: 'alm.conformance',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
-        }).filter((scenario) => families.includes(scenario.laneFamily))
-            .map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
+            deadlineMs: 18_000,
+            laneFamilies: families,
+            principalIdsByRole: { sender: 'principal-alice', receiver: 'principal-bob', 'publisher-b': 'principal-charlie' }
+        }).map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
     );
 }
 
@@ -237,7 +240,9 @@ describe('ALM conformance hosted lane families', () => {
                 typeId: 'alm.conformance',
                 senderConnection: 'sender',
                 receiverConnection: 'receiver',
-                deadlineMs: 18_000
+                deadlineMs: 18_000,
+                laneFamilies: ['two-agent', 'addressed', 'three-agent'],
+                principalIdsByRole: {}
             }).filter((scenario) => scenario.sender.commands.some((command) => command.kind === 'close'))
                 .map((scenario) => scenario.scenarioKey)
         ));

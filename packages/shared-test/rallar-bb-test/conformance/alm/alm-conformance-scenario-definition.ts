@@ -14,6 +14,14 @@ export interface CreateAlmConformanceRecipesInput {
     /** Every recipient role's recipe uses it; each agent names its own connections, so recipients share the label. */
     readonly receiverConnection: string;
     readonly deadlineMs: number;
+    /** The lane families whose scenarios the call creates; a caller that runs no family creates none of its cells. */
+    readonly laneFamilies: readonly AlmConformanceLaneFamily[];
+    /**
+     * The principal each role signs in as, which a step names as `{principal:<role>}` and creation substitutes. The lane
+     * passes its opened agents' client ids; a caller whose agents are not known when it creates passes `{}` and creates
+     * no family whose cells name a principal.
+     */
+    readonly principalIdsByRole: Readonly<Partial<Record<AlmConformanceRole, string>>>;
     /**
      * Absent, no connect installs a recovery owner and no cell waits for one: the hosted combined recipe shares one
      * connect across its cells, so it names no channel's owner. `record` installs the harness's recording owner on each
@@ -77,6 +85,11 @@ export type AlmConformanceScenarioId =
     | 'server-command'
     | 'server-originated'
     | 'storage-unavailable'
+    | 'subscription-delivery'
+    | 'subscription-reconnect'
+    | 'subscription-revoke-held'
+    | 'subscription-successor'
+    | 'subscription-token-count'
     | 'unicast-fallback'
     | 'volatile-default'
     | 'world-routing'
@@ -84,9 +97,13 @@ export type AlmConformanceScenarioId =
 
 export type AlmConformanceTag = 'smoke' | 'full';
 
-/** A connect's `RallarMessageSelector`, which this Deno-loaded catalog cannot import: the topic its lanes subscribe. */
+/**
+ * A connect's `RallarMessageSelector`, which this Deno-loaded catalog cannot import: the topic its lanes subscribe.
+ * `granted` names the room channel the page opens on that topic, which `messages.subscribe` elects; absent, members.
+ */
 export interface AlmConformanceMessageSelector {
     readonly topicId: string;
+    readonly access?: 'granted';
 }
 
 export interface AlmConformanceStepInput {
@@ -107,9 +124,19 @@ export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput 
 /**
  * The addressed sends run on their own two agents, so the baseline cell keeps its wall time. A `same-context`
  * scenario runs its sender and its successor as two pages of one browser context, which only the Playwright lane has.
- * A `same-principal` scenario signs the sender's user in a second time on an agent of its own.
+ * A `same-principal` scenario signs the sender's user in a second time on an agent of its own. A `four-role` scenario
+ * adds a second producer of a third principal to those three.
  */
-export type AlmConformanceLaneFamily = 'two-agent' | 'addressed' | 'three-agent' | 'same-context' | 'same-principal';
+export const ALM_CONFORMANCE_LANE_FAMILIES = [
+    'two-agent',
+    'addressed',
+    'three-agent',
+    'same-context',
+    'same-principal',
+    'four-role'
+] as const;
+
+export type AlmConformanceLaneFamily = typeof ALM_CONFORMANCE_LANE_FAMILIES[number];
 
 export interface AlmConformanceScenarioDefinition {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -118,12 +145,14 @@ export interface AlmConformanceScenarioDefinition {
     readonly carriers: readonly AlmConformanceCarrier[];
     /**
      * Every scenario declares the sender and the receiver; a three-agent scenario adds `recipient-b`, a same-context
-     * scenario adds `successor`, a same-principal scenario adds `sibling`.
+     * scenario adds `successor`, a same-principal scenario adds `sibling`, a four-role scenario adds `publisher-b` and
+     * `sibling`.
      */
     readonly roles: readonly AlmConformanceRole[];
     /**
      * The lane test that runs it: `three-agent` exactly when `roles` declares `recipient-b`, `same-context` exactly
-     * when it declares `successor`, `same-principal` exactly when it declares `sibling`.
+     * when it declares `successor`, `four-role` exactly when it declares `publisher-b`, and `same-principal` exactly
+     * when it declares `sibling` without `publisher-b`.
      */
     readonly laneFamily: AlmConformanceLaneFamily;
     /**
@@ -131,7 +160,7 @@ export interface AlmConformanceScenarioDefinition {
      * this selector instead, so its pages hear the server's own publications on that topic.
      */
     readonly messageSelector?: AlmConformanceMessageSelector;
-    /** Called once per page of the sender's session: the sender, and the successor a scenario declares. */
+    /** Called once per producer page: the sender, the successor and `publisher-b` a scenario declares. */
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
     /** Called once per recipient role the scenario declares; the step's role tells the recipients apart. */
     readonly toRecipientCommands: (recipient: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];

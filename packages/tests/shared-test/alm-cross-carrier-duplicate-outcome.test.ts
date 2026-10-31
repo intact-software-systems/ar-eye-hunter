@@ -46,7 +46,9 @@ function toCrossCarrierScenario(order: CrossCarrierOrder): AlmConformanceScenari
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     }).find((candidate) => candidate.scenarioKey === `cross-carrier-duplicate-${order}`);
     if (!scenario) {
         throw new Error(`The generator produced no cross-carrier-duplicate-${order} pair.`);

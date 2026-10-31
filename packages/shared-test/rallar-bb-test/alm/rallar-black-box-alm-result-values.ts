@@ -1,3 +1,4 @@
+import type { RallarTopicSubscriptionStatus } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
@@ -118,4 +119,20 @@ export interface RallarBlackBoxTestStorageCountersResultValue {
     readonly workNonProbeCount: number;
     /** Whether this reading reset the counter after reading it, so the next reading counts from zero. */
     readonly reset: boolean;
+}
+
+/** One token the page holds under the recipe's `subscriptionId`, read with its status as the product reports it. */
+export interface RallarBlackBoxTestMessagesSubscribeResultValue {
+    readonly subscriptionId: string;
+    readonly status: RallarTopicSubscriptionStatus;
+}
+
+export interface AlmTopicSubscriptionEntry extends RallarBlackBoxTestMessagesSubscribeResultValue {
+    readonly topicId: string;
+}
+
+export interface RallarBlackBoxTestMessagesSubscriptionsResultValue {
+    /** The open product socket's connection generation; null while the socket is closed or its generation unread. */
+    readonly connectionGenerationId: string | null;
+    readonly subscriptions: readonly AlmTopicSubscriptionEntry[];
 }

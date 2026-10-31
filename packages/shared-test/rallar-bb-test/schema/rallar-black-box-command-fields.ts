@@ -137,7 +137,11 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     },
     'messages.awaitReply': { required: ['handleId', 'timeoutMs'], optional: ['connection'] },
     'messages.reply': { required: ['typeId', 'index', 'payload', 'handleId'], optional: ['connection'] },
-    'fault.inject': { required: ['faultId', 'carrier', 'match', 'action', 'remaining'], optional: [] },
+    'messages.subscribe': { required: ['subscriptionId'], optional: ['connection'] },
+    'messages.unsubscribe': { required: ['subscriptionId'], optional: ['connection'] },
+    'messages.subscriptions': { required: [], optional: ['connection'] },
+    /** A transport or storage fault also requires `match` and `remaining`; a product-socket fault names neither. */
+    'fault.inject': { required: ['faultId', 'carrier', 'action'], optional: ['match', 'remaining'] },
     'storage.counters': { required: [], optional: ['reset'] },
     'agent.reload': { required: ['readyTimeoutMs'], optional: [] },
     'ws.open': { required: [], optional: ['connection', 'url', 'protocols', 'headers'] },
@@ -321,7 +325,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesOwnership: ['shared', 'exclusive'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
-    faultCarrier: ['ws', 'rtc', 'storage'],
+    faultCarrier: ['ws', 'rtc', 'storage', 'product-socket'],
+    productSocketFaultAction: ['close', 'reopen'],
     faultControlType: ['ack', 'nack', 'repair'],
     storageFaultOwner: INDEXED_DB_OPERATION_OWNERS,
     storageFaultKind: INDEXED_DB_OPERATION_KINDS,

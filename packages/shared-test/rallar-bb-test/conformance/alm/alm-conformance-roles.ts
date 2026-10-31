@@ -3,8 +3,16 @@
  * in the sender's own browser context: the same storage and auth session under an agent of its own. `sibling` is a
  * second session of the sender's principal: a browser context and sign-in of its own as the sender's user. Room
  * membership is per principal, so a sibling shares the sender's membership; no same-principal scenario leaves the room.
+ * `publisher-b` is a second producer of a third principal, the principal `recipient-b` signs in as.
  */
-export const ALM_CONFORMANCE_ROLES = ['sender', 'receiver', 'recipient-b', 'successor', 'sibling'] as const;
+export const ALM_CONFORMANCE_ROLES = [
+    'sender',
+    'receiver',
+    'recipient-b',
+    'successor',
+    'sibling',
+    'publisher-b'
+] as const;
 
 export type AlmConformanceRole = typeof ALM_CONFORMANCE_ROLES[number];
 
@@ -13,6 +21,14 @@ export const ALM_CONFORMANCE_THREE_AGENT_ROLES: readonly AlmConformanceRole[] = 
 
 /** The sender's principal twice and another principal once: every `same-principal` scenario declares these roles. */
 export const ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES: readonly AlmConformanceRole[] = ['sender', 'receiver', 'sibling'];
+
+/** Two producers of two principals, the receiver, and a second session of the sender's principal (`four-role`). */
+export const ALM_CONFORMANCE_FOUR_ROLE_ROLES: readonly AlmConformanceRole[] = [
+    'sender',
+    'publisher-b',
+    'receiver',
+    'sibling'
+];
 
 export function isAlmConformanceRole(value: string): value is AlmConformanceRole {
     return (ALM_CONFORMANCE_ROLES as readonly string[]).includes(value);

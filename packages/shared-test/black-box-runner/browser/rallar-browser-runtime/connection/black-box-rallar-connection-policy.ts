@@ -1,4 +1,4 @@
-import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import type { RallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarTransport
@@ -12,6 +12,7 @@ import {
 } from '../black-box-rallar-operation-policy.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import { toRallarMessageSelector } from './black-box-rallar-message-selector.ts';
 const DEFAULT_LANE_ID = 'realtime';
 export function resolveBlackBoxRallarTransport(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport {
     return config.rallar.transport ?? 'realtime';
@@ -69,9 +70,9 @@ export function toBlackBoxRallarDefaults(
 }
 export function resolveBlackBoxRallarMessageSelector(
     config: BlackBoxRallarConnectionConfig
-): RallarMessageSelectorInput {
+): RallarMessageSelector {
     if (config.rallar.messageSelector) {
-        return config.rallar.messageSelector;
+        return toRallarMessageSelector(config.rallar.messageSelector);
     }
 
     return {

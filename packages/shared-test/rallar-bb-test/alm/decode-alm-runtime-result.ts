@@ -349,7 +349,7 @@ function requireAlmCarrierLegField(record: RallarBlackBoxTestRecord, path: strin
     return carrier;
 }
 
-function requireAlmStringField(
+export function requireAlmStringField(
     record: RallarBlackBoxTestRecord,
     path: string,
     key: string

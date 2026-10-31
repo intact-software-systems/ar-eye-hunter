@@ -48,7 +48,7 @@ function toScenarioCommands(commands: readonly RallarBlackBoxTestCommand[]): rea
 function toShape(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String(command.remaining)}`;
+            return `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`;
         case 'messages.send':
             return 'replayOnCarrier' in command ? 'replay' : `send:${command.durability ?? 'volatile'}:${command.ack ?? 'none'}`;
         case 'messages.observe':

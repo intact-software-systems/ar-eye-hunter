@@ -37,6 +37,9 @@ import {
 import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
+/** The same-context family's topic subscription cell grants the sender's and the receiver's principals. */
+const SUCCESSOR_PRINCIPAL_IDS = { sender: 'principal-alice', receiver: 'principal-bob' } as const;
+
 for (const replacesDocument of [true, false]) {
     Deno.test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
         const manifest = createAlmConformance2AgentEntry().manifest;
@@ -159,7 +162,9 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             typeId: 'alm.conformance',
             senderConnection: 'almConformanceSender',
             receiverConnection: 'almConformanceReceiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent', 'three-agent', 'same-context'],
+            principalIdsByRole: SUCCESSOR_PRINCIPAL_IDS
         }).find((candidate) => candidate.scenarioId === 'durable-takeover');
         assert(scenario?.successor);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
@@ -190,7 +195,9 @@ Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never han
         typeId: 'alm.conformance',
         senderConnection: 'almConformanceSender',
         receiverConnection: 'almConformanceReceiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent', 'three-agent', 'same-context'],
+        principalIdsByRole: SUCCESSOR_PRINCIPAL_IDS
     }).find((candidate) => candidate.scenarioId === 'durable-takeover');
     assert(scenario);
     const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
@@ -208,7 +215,9 @@ function toCatalogInput(carrier: AlmConformanceCarrier): CreateAlmConformanceRec
         typeId: 'alm.conformance',
         senderConnection: 'almConformanceSender',
         receiverConnection: 'almConformanceReceiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent', 'three-agent', 'same-context'],
+        principalIdsByRole: SUCCESSOR_PRINCIPAL_IDS
     };
 }
 
