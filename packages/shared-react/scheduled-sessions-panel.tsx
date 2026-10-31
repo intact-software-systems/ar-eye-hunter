@@ -42,25 +42,7 @@ export function ScheduledSessionsPanel({ owner, connected, defaultName, maxPlaye
                 time.
             </p>
             <ScheduleForm owner={owner} disabled={disabled} defaultName={defaultName} maxPlayers={maxPlayers} />
-            <div className="stack" aria-label="Your scheduled sessions">
-                {state.sessions.length === 0 && <p>No scheduled sessions saved for this account.</p>}
-                {state.sessions.map((session) => (
-                    <button
-                        type="button"
-                        key={session.roomRef.groupId}
-                        disabled={disabled}
-                        onClick={() => void owner.select(session.roomRef)}
-                    >
-                        {session.displayName} · {formatInstant(session.schedule.startsAtEpochMs)}
-                        {session.timing.phase === 'cancelled' ? ' · Cancelled' : ''}
-                    </button>
-                ))}
-                {state.hasMore && (
-                    <button type="button" disabled={disabled} onClick={() => void owner.loadMore()}>
-                        More sessions
-                    </button>
-                )}
-            </div>
+            <SessionList state={state} owner={owner} disabled={disabled} />
             {state.selected && (
                 <SessionCard
                     key={`${state.selected.roomRef.groupId}:${state.selected.schedule.revision}`}
@@ -84,6 +66,35 @@ export function ScheduledSessionsPanel({ owner, connected, defaultName, maxPlaye
                 Refresh sessions
             </button>
         </section>
+    );
+}
+
+interface SessionListProps extends Pick<ScheduledSessionsPanelProps, 'owner'> {
+    readonly state: RallarScheduledSessions.State;
+    readonly disabled: boolean;
+}
+
+function SessionList({ state, owner, disabled }: SessionListProps) {
+    return (
+        <div className="stack" aria-label="Your scheduled sessions">
+            {state.sessions.length === 0 && <p>No scheduled sessions saved for this account.</p>}
+            {state.sessions.map((session) => (
+                <button
+                    type="button"
+                    key={session.roomRef.groupId}
+                    disabled={disabled}
+                    onClick={() => void owner.select(session.roomRef)}
+                >
+                    {session.displayName} · {formatInstant(session.schedule.startsAtEpochMs)}
+                    {session.timing.phase === 'cancelled' ? ' · Cancelled' : ''}
+                </button>
+            ))}
+            {state.hasMore && (
+                <button type="button" disabled={disabled} onClick={() => void owner.loadMore()}>
+                    More sessions
+                </button>
+            )}
+        </div>
     );
 }
 
@@ -119,6 +130,7 @@ function ScheduleForm({ owner, disabled, defaultName, maxPlayers }: ScheduleForm
                     Session start<input
                         required
                         type="datetime-local"
+                        step={1}
                         value={date}
                         onChange={(event) => setDate(event.target.value)}
                     />
@@ -155,23 +167,6 @@ interface SessionCardProps extends Pick<ScheduleFormProps, 'owner' | 'disabled'>
 }
 
 function SessionCard({ session, owner, disabled }: SessionCardProps) {
-    const [copyStatus, setCopyStatus] = useState<string | null>(null);
-    const link = toRoomEntryUrl(window.location.href, {
-        intent: 'preview-session',
-        roomRef: session.roomRef,
-        joinCode: null,
-        participation: 'player'
-    });
-    const shareUrl = link.right ?? '';
-    const copy = async () => {
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            setCopyStatus('Session link copied.');
-        }
-        catch {
-            setCopyStatus('Copy failed. Select and copy the session link below.');
-        }
-    };
     return (
         <article className="stack" aria-label="Session details">
             <h4>{session.displayName}</h4>
@@ -179,16 +174,7 @@ function SessionCard({ session, owner, disabled }: SessionCardProps) {
             <p>Lobby opens {formatInstant(session.timing.lobbyOpensAtEpochMs)}</p>
             <p>{session.availableSeats} of {session.maxPlayers} player seats available.</p>
             <p role="status">{sessionStatus(session)}</p>
-            <label>
-                Session share link<input
-                    aria-label="Session share link"
-                    readOnly
-                    value={shareUrl}
-                    onFocus={(event) => event.target.select()}
-                />
-            </label>
-            <button type="button" disabled={!shareUrl} onClick={() => void copy()}>Copy session link</button>
-            {copyStatus && <p role="status">{copyStatus}</p>}
+            <SessionShareLink roomRef={session.roomRef} />
             {(session.participation === 'none' || session.participation === 'needs-confirmation') && (
                 <button
                     type="button"
@@ -217,6 +203,40 @@ function SessionCard({ session, owner, disabled }: SessionCardProps) {
     );
 }
 
+function SessionShareLink({ roomRef }: Pick<GroupSessionPreview, 'roomRef'>) {
+    const [copyStatus, setCopyStatus] = useState<string | null>(null);
+    const link = toRoomEntryUrl(window.location.href, {
+        intent: 'preview-session',
+        roomRef,
+        joinCode: null,
+        participation: 'player'
+    });
+    const shareUrl = link.right ?? '';
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopyStatus('Session link copied.');
+        }
+        catch {
+            setCopyStatus('Copy failed. Select and copy the session link below.');
+        }
+    };
+    return (
+        <>
+            <label>
+                Session share link<input
+                    aria-label="Session share link"
+                    readOnly
+                    value={shareUrl}
+                    onFocus={(event) => event.target.select()}
+                />
+            </label>
+            <button type="button" disabled={!shareUrl} onClick={() => void copy()}>Copy session link</button>
+            {copyStatus && <p role="status">{copyStatus}</p>}
+        </>
+    );
+}
+
 function ScheduleChanges({ session, owner, disabled }: SessionCardProps) {
     const [date, setDate] = useState(() => toLocalDateInput(session.schedule.startsAtEpochMs));
     const startsAtEpochMs = new Date(date).getTime();
@@ -230,6 +250,7 @@ function ScheduleChanges({ session, owner, disabled }: SessionCardProps) {
             <label>
                 New session start<input
                     type="datetime-local"
+                    step={1}
                     value={date}
                     onChange={(event) => setDate(event.target.value)}
                 />
@@ -284,5 +305,5 @@ function formatInstant(epochMs: number): string {
 
 function toLocalDateInput(epochMs: number): string {
     const date = new Date(epochMs);
-    return new Date(epochMs - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    return new Date(epochMs - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 }

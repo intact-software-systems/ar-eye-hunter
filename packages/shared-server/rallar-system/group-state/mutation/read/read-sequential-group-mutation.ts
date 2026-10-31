@@ -159,37 +159,14 @@ function assembleSequentialGroupMutationRead({
     activeMembers
 }: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
     const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
-    const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
     const group = groupRead.value;
     const targetPresence = targetPresenceRead.value;
-    const resolvedTargetMemberEntry = targetPrincipalId === actorPrincipalId
-        ? related.actorMemberEntry
-        : related.targetMemberEntry;
-    const resolvedAuthorityMemberEntry = ownerPrincipalId === actorPrincipalId
-        ? related.actorMemberEntry
-        : ownerPrincipalId === targetPrincipalId
-        ? related.targetMemberEntry
-        : related.authorityMemberEntry;
-    const resolvedDirectorMemberEntry = director?.principalId === actorPrincipalId
-        ? related.actorMemberEntry
-        : director?.principalId === targetPrincipalId
-        ? related.targetMemberEntry
-        : director?.principalId === ownerPrincipalId
-        ? related.authorityMemberEntry
-        : related.directorMemberEntry;
     return {
         idempotency: idempotency ?? null,
         group: group ?? null,
         retiredGroup: groupRead.retiredGroup,
         expiredGroupEntry: groupRead.expiredEntry ?? null,
-        actorMember: related.actorMemberEntry?.value ?? null,
-        targetMember: resolvedTargetMemberEntry?.value ?? null,
-        authorityMember: resolvedAuthorityMemberEntry?.value ?? null,
-        directorMember: resolvedDirectorMemberEntry?.value ?? null,
-        actorMemberEntry: related.actorMemberEntry ?? null,
-        targetMemberEntry: resolvedTargetMemberEntry ?? null,
-        authorityMemberEntry: resolvedAuthorityMemberEntry ?? null,
-        directorMemberEntry: resolvedDirectorMemberEntry ?? null,
+        ...resolveSequentialMembers(identities, related),
         targetPresence: targetPresence ?? null,
         expiredTargetPresenceEntry: targetPresenceRead.expiredEntry ?? null,
         targetAdmission: related.targetAdmission ?? null,
@@ -209,6 +186,48 @@ function assembleSequentialGroupMutationRead({
         connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null
+    };
+}
+
+function resolveSequentialMembers(
+    identities: SequentialIdentities,
+    related: SequentialRelatedEntries
+): Pick<
+    GroupMutationRead,
+    | 'actorMember'
+    | 'targetMember'
+    | 'authorityMember'
+    | 'directorMember'
+    | 'actorMemberEntry'
+    | 'targetMemberEntry'
+    | 'authorityMemberEntry'
+    | 'directorMemberEntry'
+> {
+    const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
+    const resolvedTargetMemberEntry = targetPrincipalId === actorPrincipalId
+        ? related.actorMemberEntry
+        : related.targetMemberEntry;
+    const resolvedAuthorityMemberEntry = ownerPrincipalId === actorPrincipalId
+        ? related.actorMemberEntry
+        : ownerPrincipalId === targetPrincipalId
+        ? related.targetMemberEntry
+        : related.authorityMemberEntry;
+    const resolvedDirectorMemberEntry = director?.principalId === actorPrincipalId
+        ? related.actorMemberEntry
+        : director?.principalId === targetPrincipalId
+        ? related.targetMemberEntry
+        : director?.principalId === ownerPrincipalId
+        ? related.authorityMemberEntry
+        : related.directorMemberEntry;
+    return {
+        actorMember: related.actorMemberEntry?.value ?? null,
+        targetMember: resolvedTargetMemberEntry?.value ?? null,
+        authorityMember: resolvedAuthorityMemberEntry?.value ?? null,
+        directorMember: resolvedDirectorMemberEntry?.value ?? null,
+        actorMemberEntry: related.actorMemberEntry ?? null,
+        targetMemberEntry: resolvedTargetMemberEntry ?? null,
+        authorityMemberEntry: resolvedAuthorityMemberEntry ?? null,
+        directorMemberEntry: resolvedDirectorMemberEntry ?? null
     };
 }
 

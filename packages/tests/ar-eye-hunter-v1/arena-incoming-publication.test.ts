@@ -65,6 +65,7 @@ interface IncomingFixture {
     readonly matchRef: RefObject<Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot' | 'status'> | undefined>;
     readonly snapshotRef: RefObject<ArenaSnapshot | undefined>;
     readonly roomIdRef: RefObject<string | undefined>;
+    error: string | undefined;
     clock: number;
 }
 
@@ -334,14 +335,25 @@ describe('accepted match-start lifetime', () => {
         await mounted.acceptance.acceptMatchStartIntent(intent, () => true);
         expect(snapshots).toEqual([]);
         expect(fixture.snapshotRef.current?.match).toBeUndefined();
+        expect(fixture.error).toBe('Wait until the scheduled start time before starting gameplay.');
         const early = await read.mock.results[0]?.value;
         if (!early) {
             throw new Error('Expected a checked scheduled-session preview');
         }
-        read.mockResolvedValue({ ...early, serverNowEpochMs: 3_600_000, timing: toGroupSessionTiming(schedule, 3_600_000) });
-        await mounted.acceptance.acceptMatchStartIntent(intent, () => true);
+        const delayed = Promise.withResolvers<typeof early>();
+        read.mockReturnValueOnce(delayed.promise);
+        const starting = mounted.acceptance.acceptMatchStartIntent(intent, () => true);
+        const current = fixture.snapshotRef.current;
+        if (!current) {
+            throw new Error('Expected current lobby state');
+        }
+        // Ordinary movement changes simulation while server-time permission is in flight.
+        fixture.snapshotRef.current = { ...current, revision: 100 };
+        delayed.resolve({ ...early, serverNowEpochMs: 3_600_000, timing: toGroupSessionTiming(schedule, 3_600_000) });
+        await starting;
         expect(snapshots).toHaveLength(1);
         expect(fixture.snapshotRef.current?.match?.matchId).toBe('scheduled-start');
+        expect(fixture.snapshotRef.current?.revision).toBeGreaterThan(100);
     });
 
     it('rejects a match-start against an explicitly prior-room snapshot', async () => {
@@ -380,6 +392,7 @@ function incomingFixture(snapshot: ArenaSnapshot): IncomingFixture {
         matchRef: { current: undefined },
         snapshotRef: { current: snapshot },
         roomIdRef: { current: 'arena-1' },
+        error: undefined,
         clock: 5000
     };
 }
@@ -391,7 +404,9 @@ async function mountIncoming(fixture: IncomingFixture): Promise<IncomingOwners> 
     let owners: Omit<IncomingOwners, 'unmount'> | undefined;
     function Harness() {
         const input = {
-            setError: () => {},
+            setError: (next: SetStateAction<string | undefined>) => {
+                fixture.error = typeof next === 'function' ? next(fixture.error) : next;
+            },
             nowMs: () => fixture.clock,
             publishMatchLifecycleOutput: async (
                 match: Pick<ArenaRallarGameMatchHandle, 'publishEvent'>,

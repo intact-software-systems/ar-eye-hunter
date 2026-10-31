@@ -7,7 +7,10 @@ import {
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { groupStateScopeStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+import {
+    decodeGroupStateChildStorageKey,
+    groupStateScopeStorageKey
+} from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import {
     assertGroupRefIdentity,
     decodeStoredGroupStateValue,
@@ -29,6 +32,19 @@ export function groupSessionIntentPrincipalPrefix(scope: GroupScope, principalId
 
 export function groupSessionIntentKey(ref: GroupRef, principalId: string): string {
     return groupSessionIntentPrincipalPrefix(ref, principalId) + encodeURIComponent(ref.groupId);
+}
+
+/** The private index orders principal before group; reuse the canonical child-key decoder. */
+export function decodeGroupSessionIntentKey(key: string): GroupRef & Readonly<{ principalId: string; }> {
+    const parts = key.split(':');
+    if (parts.length !== 4) {
+        throw new TypeError('Session interest key has invalid arity');
+    }
+    return decodeGroupStateChildStorageKey(
+        [parts[0], parts[1], parts[3], parts[2]].join(':'),
+        'principal',
+        'principalId'
+    );
 }
 
 export function canonicalStoredGroupSessionIntent(

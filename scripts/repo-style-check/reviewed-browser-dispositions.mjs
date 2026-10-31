@@ -1164,12 +1164,13 @@ export const reviewedBrowserDispositions = Object.freeze([
     }),
     // Private entry owns one destination lifecycle: capture, authenticated admission, replacement,
     // cancellation, and persistence. The pure codecs remain next to that stateful owner, while
-    // membership transport and server admission policy stay in their existing owners.
+    // membership transport and server admission policy stay in their existing owners. Schedule preview
+    // extends this same destination lifecycle; it does not create a second admission owner.
     Object.freeze({
         path: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 107
+        maximumMagnitude: 112
     }),
     // Tab storage is untrusted JSON. The decoder narrows the record, principal, scoped reference,
     // and credential state before constructing a SavedEntry; unchecked values never reach join.

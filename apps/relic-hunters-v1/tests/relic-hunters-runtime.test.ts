@@ -507,6 +507,7 @@ describe('RelicHuntersRuntime', () => {
         const started = runtime.start();
         await reading.promise;
         backend.roomEntry.enter({
+            intent: 'join',
             roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'new-private-room' },
             joinCode: 'new-room-code',
             participation: 'preserve'
@@ -830,6 +831,7 @@ describe('RelicHuntersRuntime', () => {
         await runtime.getState().watchRoom('room-1');
         expect(admission).not.toHaveBeenCalled();
         backend.roomEntry.enter({
+            intent: 'join',
             roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'other-room' },
             joinCode: null,
             participation: 'spectator'
@@ -859,6 +861,7 @@ describe('RelicHuntersRuntime', () => {
         await runtime.getState().joinRoom('other-room');
         expect(backend.roomState().currentRoomId).toBe('room-1');
         backend.roomEntry.enter({
+            intent: 'join',
             roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'other-room' },
             joinCode: null,
             participation: 'preserve'

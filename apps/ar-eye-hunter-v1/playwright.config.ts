@@ -79,7 +79,8 @@ export default defineConfig({
                 '**/private-room-entry.spec.ts',
                 '**/room-entry-recovery.spec.ts',
                 '**/quick-join.spec.ts',
-                '**/move-together.spec.ts'
+                '**/move-together.spec.ts',
+                '**/scheduled-sessions.spec.ts'
             ],
             use: {
                 ...devices['Desktop Chrome'],

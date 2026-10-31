@@ -13,7 +13,9 @@ import {
     assertGroupSessionSchedule,
     toGroupSessionTiming,
     type GroupSessionPage,
-    type GroupSessionPreview
+    type GroupSessionPreview,
+    type GroupSessionSchedule,
+    type GroupSessionTiming
 } from './group-session-schedule.ts';
 
 /** Decode only the public projection; private reservation or membership rows are never accepted. */
@@ -39,12 +41,7 @@ export function decodeGroupSessionPreview(value: unknown): GroupSessionPreview {
     requireString(preview.displayName, 'Session name');
     assertGroupSessionSchedule(preview.schedule);
     requireEpoch(preview.serverNowEpochMs, 'Session server clock');
-    const timing = toGroupSessionTiming(preview.schedule, preview.serverNowEpochMs);
-    const receivedTiming = requireRecord(preview.timing, 'Session timing');
-    requireExactKeys(receivedTiming, Object.keys(timing), 'Session timing');
-    if (Object.entries(timing).some(([key, expected]) => receivedTiming[key] !== expected)) {
-        throw new TypeError('Session timing differs from its schedule and server clock');
-    }
+    const timing = decodeSessionTiming(preview.timing, preview.schedule, preview.serverNowEpochMs);
     requireEpoch(preview.maxPlayers, 'Session capacity');
     requirePositiveInteger(preview.maxPlayers, 'Session capacity');
     requireEpoch(preview.availableSeats, 'Session available seats');
@@ -77,6 +74,16 @@ export function decodeGroupSessionPreview(value: unknown): GroupSessionPreview {
             ? null
             : requireOneOf(preview.admissionDenial, GROUP_POLICY_REASON_CODES, 'Session admission denial')
     };
+}
+
+function decodeSessionTiming(value: unknown, schedule: GroupSessionSchedule, nowEpochMs: number): GroupSessionTiming {
+    const timing = toGroupSessionTiming(schedule, nowEpochMs);
+    const receivedTiming = requireRecord(value, 'Session timing');
+    requireExactKeys(receivedTiming, Object.keys(timing), 'Session timing');
+    if (Object.entries(timing).some(([key, expected]) => receivedTiming[key] !== expected)) {
+        throw new TypeError('Session timing differs from its schedule and server clock');
+    }
+    return timing;
 }
 
 export function decodeGroupSessionPage(value: unknown): GroupSessionPage {

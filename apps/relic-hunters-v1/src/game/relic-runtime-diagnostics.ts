@@ -1,4 +1,4 @@
-import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import type { RelicPublicSnapshot, RelicRoundTransitionEvent } from '@relic-hunters/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { ALDeliveryState } from '@shared-web/browser/rallar.ts';
@@ -151,5 +151,16 @@ export function toIgnoredRelicSnapshotDiagnostics(
         ignoredSnapshotCount: diagnostics.ignoredSnapshotCount + 1,
         lastIgnoredSnapshotReason: reason,
         lastIgnoredSnapshot: toRelicRuntimeSnapshotSummary(snapshot, source)
+    };
+}
+
+/** Retain a bounded presentation history alongside the other runtime observations. */
+export function toRelicRoundTransitionDiagnostics(
+    diagnostics: RelicRuntimeDiagnostics,
+    event: RelicRoundTransitionEvent
+): RelicRuntimeDiagnostics {
+    return {
+        ...diagnostics,
+        roundTransitionCues: [...diagnostics.roundTransitionCues, `${event.round}:${event.transition}`].slice(-16)
     };
 }

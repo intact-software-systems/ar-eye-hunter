@@ -11,7 +11,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import {
     canonicalStoredGroupSessionIntent,
-    decodeSessionIntent,
+    decodeGroupSessionIntentKey,
     GROUP_SESSION_INTENTS_NAMESPACE,
     groupSessionIntentKey,
     groupSessionIntentPrincipalPrefix,
@@ -348,12 +348,8 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             if (stored === undefined) {
                 continue;
             }
-            const decoded = decodeSessionIntent(stored.value);
-            const intent = canonicalStoredGroupSessionIntent(stored, { ...scope, groupId: decoded.groupId }).value;
-            if (intent.principalId !== principalId) {
-                throw new TypeError('Session interest principal differs from its index');
-            }
-            intents.push(intent);
+            const identity = decodeStoredGroupStateKey(stored.entry.key, decodeGroupSessionIntentKey);
+            intents.push(canonicalStoredGroupSessionIntent(stored, identity).value);
         }
         return { intents, nextKey: entries.length === 32 ? entries[entries.length - 1].key : null };
     }

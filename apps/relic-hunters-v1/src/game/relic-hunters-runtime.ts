@@ -41,6 +41,7 @@ import {
     toAcceptedRelicSnapshotDiagnostics,
     toIgnoredRelicSnapshotDiagnostics,
     toRelicRoomDiagnostics,
+    toRelicRoundTransitionDiagnostics,
     type RelicRuntimeDiagnostics
 } from './relic-runtime-diagnostics.ts';
 import {
@@ -64,7 +65,6 @@ import type { RelicRoundTransitionSubscription } from './subscribe-relic-round-t
 import { toRelicCommandPhase } from './to-relic-command-phase.ts';
 
 const SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
-const ROUND_TRANSITION_CUE_LOG_SIZE = 16;
 
 export type RelicHuntersRuntimePhase =
     | 'signed-out'
@@ -478,7 +478,8 @@ export class RelicHuntersRuntime {
         this.bootstrap = new AbortController();
         try {
             const started = await this.deps.start({
-                refreshRooms: this.deps.roomEntry.getState().status === 'idle',
+                refreshRooms: this.deps.roomEntry.getState().status === 'idle' ||
+                    this.deps.roomEntry.getState().destination?.intent === 'preview-session',
                 signal: this.bootstrap.signal
             });
             if (!this.current(attempt)) {
@@ -499,7 +500,7 @@ export class RelicHuntersRuntime {
             const entry = this.deps.roomEntry.getState();
             const roomState = entry.status === 'entered'
                 ? this.deps.roomState()
-                : entry.status !== 'idle'
+                : entry.status !== 'idle' && entry.destination?.intent !== 'preview-session'
                 ? { rooms: [], currentRoomId: undefined, members: [] }
                 : started.roomState ?? await this.deps.refreshRooms();
             if (!this.current(attempt)) {
@@ -656,13 +657,7 @@ export class RelicHuntersRuntime {
         }
         this.publish({
             roundTransition: event,
-            diagnostics: {
-                ...this.connection.diagnostics,
-                roundTransitionCues: [
-                    ...this.connection.diagnostics.roundTransitionCues,
-                    `${event.round}:${event.transition}`
-                ].slice(-ROUND_TRANSITION_CUE_LOG_SIZE)
-            }
+            diagnostics: toRelicRoundTransitionDiagnostics(this.connection.diagnostics, event)
         });
     }
 

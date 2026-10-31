@@ -46,6 +46,7 @@ export interface ArenaStateAcceptance {
 }
 
 interface ArenaStateAcceptanceInput extends Pick<ArenaMatchDelivery, 'publishMatchLifecycleOutput'> {
+    readonly setError: Dispatch<SetStateAction<string | undefined>>;
     readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<
         Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot' | 'status'> | undefined
@@ -87,6 +88,7 @@ export function useArenaStateAcceptance(input: ArenaStateAcceptanceInput): Arena
         acceptMatchStartIntent: (intent: MatchStartIntent, isCurrent: () => boolean) =>
             acceptArenaMatchStart(input, intent, isCurrent)
     }), [
+        input.setError,
         input.nowMs,
         input.publishMatchLifecycleOutput,
         input.arenaMatchRef,
@@ -166,32 +168,21 @@ async function acceptArenaMatchStart(
     }
     const isCurrentOwner = () =>
         isCurrent() && input.arenaMatchRef.current === match && input.roomIdRef.current === roomId;
-    const room = rallar.rooms.state().currentRoom;
-    if (!room || room.group.groupId !== roomId) {
+    if (!await canStartScheduledArenaMatch(input, roomId, isCurrentOwner) || !isCurrentOwner()) {
         return;
     }
-    if (readGroupSessionSchedule(room.group.metadata) !== null) {
-        const session = rallar.session();
-        if (!session || room.group.groupId !== roomId) {
-            return;
-        }
-        const preview = await scheduledSessionHttpApi.read(room.group, session, AbortSignal.timeout(10_000));
-        if (
-            !isCurrentOwner() || input.arenaSnapshotRef.current !== previous || preview === null ||
-            !isSameGroupRef(preview.roomRef, room.group) || !preview.canEnter || preview.participation !== 'admitted' ||
-            groupSessionStartRefusal({ rallarSessionSchedule: { ...preview.schedule } }, preview.serverNowEpochMs) !==
-                null
-        ) {
-            return;
-        }
+    // Movement continues while permission is read; start from the latest state in this same match owner.
+    const current = input.arenaSnapshotRef.current;
+    if ((current?.roomId !== undefined && current.roomId !== roomId) || current?.match !== undefined) {
+        return;
     }
     const nowEpochMs = input.nowMs();
-    const state = previous ? hydrateArenaSnapshot(previous) : createInitialArenaState(undefined, nowEpochMs);
+    const state = current ? hydrateArenaSnapshot(current) : createInitialArenaState(undefined, nowEpochMs);
     const result = startArenaMatch(state, intent, nowEpochMs);
     if (!result.accepted) {
         return;
     }
-    const snapshot = toArenaSnapshot(result.state, previous?.roomId ?? roomId, nowEpochMs);
+    const snapshot = toArenaSnapshot(result.state, current?.roomId ?? roomId, nowEpochMs);
     input.arenaSnapshotRef.current = snapshot;
     input.setArenaSnapshot((current) => isCurrentOwner() ? snapshot : current);
     publishAcceptedArenaEvents(input, snapshot, isCurrentOwner);
@@ -202,6 +193,43 @@ async function acceptArenaMatchStart(
     });
     if (isCurrentOwner()) {
         await match.publishSnapshot(snapshot, { reliable: false });
+    }
+}
+
+async function canStartScheduledArenaMatch(
+    input: ArenaStateAcceptanceInput,
+    roomId: string,
+    isCurrentOwner: () => boolean
+): Promise<boolean> {
+    const room = rallar.rooms.state().currentRoom;
+    if (!room || room.group.groupId !== roomId) {
+        return false;
+    }
+    if (readGroupSessionSchedule(room.group.metadata) === null) {
+        return true;
+    }
+    const session = rallar.session();
+    if (!session) {
+        return false;
+    }
+    try {
+        const preview = await scheduledSessionHttpApi.read(room.group, session, AbortSignal.timeout(10_000));
+        if (!isCurrentOwner()) {
+            return false;
+        }
+        const refusal = preview === null || !isSameGroupRef(preview.roomRef, room.group) ||
+                !preview.canEnter || preview.participation !== 'admitted'
+            ? 'This scheduled lobby is not available to your account.'
+            : groupSessionStartRefusal({ rallarSessionSchedule: { ...preview.schedule } }, preview.serverNowEpochMs)
+                ?.message;
+        input.setError((error) => isCurrentOwner() ? refusal : error);
+        return refusal === undefined;
+    }
+    catch (error) {
+        input.setError((previous) =>
+            isCurrentOwner() ? (error instanceof Error ? error.message : String(error)) : previous
+        );
+        return false;
     }
 }
 

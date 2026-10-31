@@ -5,6 +5,76 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Whole-file review: bounded all-or-none admission keeps staged group, roster and reservation predecessors visible together.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/move/compute-group-move-admission.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    // Whole-file review: canonical outcome, receipt, event privacy and outbox assembly; scheduling membership policy remains in its existing owner.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
+    // Whole-file review: persisted group/member shapes share identity and audit invariants; formation and transport have named subchecks.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // Whole-file review: admission credentials, timing and capacity are one pure policy family without a persistence or lifecycle shell.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 66
+    }),
+    // Whole-file review: one account-bound lifecycle owns current reads, action state, replacement fencing and ambiguous request replay.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 73
+    }),
+    // Whole-file review: inbound simulation acceptance shares one projection and publication owner; fresh start authorization is a named gate.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 57
+    }),
+    // Untrusted persisted account arrays are checked for bounded length, strings and uniqueness before entering reservation computation.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/schedule/group-session-reservations.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP JSON is immediately decoded as an exact bounded account-specific session page.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/scheduled-session-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: 'listSessions',
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP JSON is immediately decoded as a complete scoped session preview with exact timing and permissions.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/scheduled-session-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readSession',
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP acknowledgement must contain exactly accepted:true; no private command or snapshot data is admitted.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/scheduled-session-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: 'changeSession',
+        maximumMagnitude: 1
+    }),
     // Reviewed cohesive optional view: proposal, consent, history and room-presence rendering.
     Object.freeze({
         path: 'packages/shared-react/room-move-panel.tsx',

@@ -65,6 +65,7 @@ describe('Relic recent-room recovery', () => {
         }
         else {
             backend.roomEntry.enter({
+                intent: 'join',
                 roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'new-invitation' },
                 joinCode: 'fresh-code',
                 participation: 'preserve'

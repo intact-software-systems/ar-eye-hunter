@@ -284,7 +284,7 @@ jobs:
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-continuity.spec.ts --trace=retain-on-failure
 
-      - name: Run Move together browser tests in both games
+      - name: Run Move together and scheduling browser tests in both games
         if: ${{ matrix.lane == 'move-together' }}
         env:
           RALLAR_ARENA_FULL_STACK: '1'
@@ -292,9 +292,11 @@ jobs:
           RELIC_HUNTERS_BUILT_PREVIEW: '1'
         run: |
           npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/move-together.spec.ts --project=desktop-delivery
+            tests/playwright/ar-eye-hunter/move-together.spec.ts \
+            tests/playwright/ar-eye-hunter/scheduled-sessions.spec.ts --project=desktop-delivery
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-move-together.spec.ts --trace=retain-on-failure
+            tests/playwright/relic-hunters/full-stack-move-together.spec.ts \
+            tests/playwright/relic-hunters/full-stack-scheduled-sessions.spec.ts --trace=retain-on-failure
 
       - name: Upload room journey observations
         if: always()

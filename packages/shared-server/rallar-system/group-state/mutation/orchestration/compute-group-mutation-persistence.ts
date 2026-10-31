@@ -82,6 +82,52 @@ function computeGroupMutationGuardedBatch(
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
+    effects.push(...computeSessionEffects(computed));
+    if (computed.acceptedLayoutPromotion) {
+        effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
+    }
+    if (computed.layoutTombstones) {
+        effects.push(...toGroupLayoutTombstoneEffects(computed.layoutTombstones));
+    }
+    if (computed.plannedLayoutFence) {
+        effects.push(toPlannedLayoutFenceEffect(computed.plannedLayoutFence));
+    }
+    if (computed.connectTriggerLatchEffect) {
+        effects.push(computed.connectTriggerLatchEffect);
+    }
+    effects.push(...computed.publicationGrantEffects.map(toPublicationGrantBatchEffect));
+    if (computed.idempotency) {
+        effects.push({
+            effectId: 'receipt',
+            ...groupStateInsertIdempotencyDescriptor({
+                ref: computed.idempotency.aggregateRef,
+                requestId: computed.idempotency.requestId,
+                record: computed.idempotency,
+                expireAtTimestamp: facts.expireAtEpochMs
+            })
+        });
+    }
+    const guard = computeGroupMutationGuard(computed);
+    if (computed.guard.kind === 'presence' && computed.presenceAdmission?.operation === 'insert') {
+        // Retirement deletes the member too, so this exact revision fences an admission that was
+        // absent before archival without making unrelated members contend on the group row.
+        const member = read.targetMemberEntry;
+        if (member === null) {
+            throw new TypeError('Initial presence admission requires its observed member');
+        }
+        effects.push({
+            effectId: 'presence-member-fence',
+            ...groupStateMemberPutDescriptor(member.value),
+            operation: 'update',
+            expectedRevision: member.entry.revision
+        });
+    }
+    return validateRuntimeStateGuardedBatch({ guard, effects });
+}
+
+/** Private scheduling rows commit atomically behind the same room guard. */
+function computeSessionEffects(computed: GroupMutationDomainWrite): RuntimeStateGuardedBatchEffect[] {
+    const effects: RuntimeStateGuardedBatchEffect[] = [];
     if (computed.guard.kind === 'group' && computed.guard.operation === 'insert') {
         const schedule = readGroupSessionSchedule(computed.guard.value.metadata);
         if (schedule !== null) {
@@ -125,46 +171,7 @@ function computeGroupMutationGuardedBatch(
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
     }
-    if (computed.acceptedLayoutPromotion) {
-        effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
-    }
-    if (computed.layoutTombstones) {
-        effects.push(...toGroupLayoutTombstoneEffects(computed.layoutTombstones));
-    }
-    if (computed.plannedLayoutFence) {
-        effects.push(toPlannedLayoutFenceEffect(computed.plannedLayoutFence));
-    }
-    if (computed.connectTriggerLatchEffect) {
-        effects.push(computed.connectTriggerLatchEffect);
-    }
-    effects.push(...computed.publicationGrantEffects.map(toPublicationGrantBatchEffect));
-    if (computed.idempotency) {
-        effects.push({
-            effectId: 'receipt',
-            ...groupStateInsertIdempotencyDescriptor({
-                ref: computed.idempotency.aggregateRef,
-                requestId: computed.idempotency.requestId,
-                record: computed.idempotency,
-                expireAtTimestamp: facts.expireAtEpochMs
-            })
-        });
-    }
-    const guard = computeGroupMutationGuard(computed);
-    if (computed.guard.kind === 'presence' && computed.presenceAdmission?.operation === 'insert') {
-        // Retirement deletes the member too, so this exact revision fences an admission that was
-        // absent before archival without making unrelated members contend on the group row.
-        const member = read.targetMemberEntry;
-        if (member === null) {
-            throw new TypeError('Initial presence admission requires its observed member');
-        }
-        effects.push({
-            effectId: 'presence-member-fence',
-            ...groupStateMemberPutDescriptor(member.value),
-            operation: 'update',
-            expectedRevision: member.entry.revision
-        });
-    }
-    return validateRuntimeStateGuardedBatch({ guard, effects });
+    return effects;
 }
 
 function computeGroupMutationGuard(

@@ -302,6 +302,23 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
     },
     {
         transport: 'HTTP',
+        entrypoint: `POST ${GROUP_ITEM_ROUTE}/session${MUTATION_REQUEST_ROUTE}`,
+        type: 'GROUP_SESSION_CHANGE',
+        source: 'groupSessions',
+        registrationMarker: 'registerGroupSessionRoutes',
+        enqueueSource: 'groupCommand',
+        enqueueMarker: 'AppInboxType.GROUP_SESSION_CHANGE',
+        ownerSource: 'groupHandler',
+        owner: 'GroupStateInboxHandler.processGroupStateMutation',
+        typeOwnerSource: 'groupContracts',
+        dispatchSource: 'groupInbox',
+        operationDiscriminant: 'change-group-session',
+        familyRegistrationMarker: 'registerGroupSessionRoutes',
+        rootSource: 'groupRoot',
+        constructionRootMarker: 'registerGroupStateRoutes'
+    },
+    {
+        transport: 'HTTP',
         entrypoint: `POST ${GROUP_ROUTE}${MUTATION_REQUEST_ROUTE}`,
         type: 'GROUP_CREATE',
         source: 'groupMutations',

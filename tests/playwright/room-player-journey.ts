@@ -11,11 +11,30 @@ export async function signInRoomPlayer(page: Page, username: string, game: 'aren
 }
 
 export async function playTogetherInRoom(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
+    await prepareRoomPlayers(host, guest, game);
+    await startAndVerifyRoomPlay(host, guest, game);
+}
+
+export async function prepareRoomPlayers(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
     if (game === 'arena') {
         const appoint = host.getByRole('button', { name: 'Appoint this SPA', exact: true });
         if (await appoint.isEnabled()) {
             await appoint.click();
         }
+        await expect(host.getByRole('button', { name: '1m', exact: true })).toBeEnabled();
+    }
+    else {
+        await expect(host.locator('.lobby-party-row')).toHaveCount(0);
+        await expect(guest.locator('.lobby-party-row')).toHaveCount(0);
+        for (const page of [host, guest]) {
+            await page.getByRole('button', { name: /Join as/ }).click();
+        }
+        await expect(host.locator('.lobby-party-row')).toHaveCount(2);
+    }
+}
+
+export async function startAndVerifyRoomPlay(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
+    if (game === 'arena') {
         await host.getByRole('button', { name: '1m', exact: true }).click();
         await expect(guest.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/);
         const hostCanvas = host.getByLabel('AR Eye Hunter gameplay canvas');
@@ -27,12 +46,6 @@ export async function playTogetherInRoom(host: Page, guest: Page, game: 'arena' 
         );
     }
     else {
-        await expect(host.locator('.lobby-party-row')).toHaveCount(0);
-        await expect(guest.locator('.lobby-party-row')).toHaveCount(0);
-        for (const page of [host, guest]) {
-            await page.getByRole('button', { name: /Join as/ }).click();
-        }
-        await expect(host.locator('.lobby-party-row')).toHaveCount(2);
         await host.locator('.lobby-begin-btn').click();
         await expect(guest.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
         await host.getByRole('button', { name: 'Submit Plan' }).click();

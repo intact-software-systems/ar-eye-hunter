@@ -334,7 +334,7 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(window.sessionStorage.getItem('rallar.room-entry:["rallar-server","default"]')).not.toContain('private-code');
     });
 
-    it('previews a scheduled destination while preserving the current expedition', async () => {
+    it.each(['connected', 'bootstrap'] as const)('previews a scheduled destination while preserving the current expedition (%s)', async (phase) => {
         const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('relic-room-1', 'relic-room-1', 1), {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'relic-room-1',
@@ -342,17 +342,25 @@ describe('useRelicHunters auth lifecycle', () => {
             kind: 'join-expedition'
         }, { presentPlayerIds: [session.sessionId], senderId: session.sessionId, now: 2 })).state;
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game));
+        const destination = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'next-week' };
+        if (phase === 'bootstrap') {
+            const link = toRoomEntryUrl(window.location.href, { intent: 'preview-session', roomRef: destination, joinCode: null, participation: 'player' });
+            if (!link.right) {
+                throw new Error('Expected a valid session preview link');
+            }
+            window.history.replaceState(null, '', link.right);
+        }
         await renderHook();
         await waitForState(() => current?.diagnostics.middlewareConnected === true && current.snapshot !== undefined);
-        const roomId = current?.roomId;
         const before = current?.snapshot;
-        const destination = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'next-week' };
         mockRallar.rooms.join.mockClear();
-        await act(async () => {
-            current?.roomEntry.enter({ intent: 'preview-session', roomRef: destination, joinCode: null, participation: 'player' });
-        });
+        if (phase === 'connected') {
+            await act(async () => {
+                current?.roomEntry.enter({ intent: 'preview-session', roomRef: destination, joinCode: null, participation: 'player' });
+            });
+        }
         expect(current?.roomEntry.getState()).toMatchObject({ status: 'preview', destination: { roomRef: destination } });
-        expect(current?.roomId).toBe(roomId);
+        expect(current?.roomId).toBe('relic-room-1');
         expect(current?.snapshot).toEqual(before);
         expect(mockRallar.rooms.join).not.toHaveBeenCalled();
     });

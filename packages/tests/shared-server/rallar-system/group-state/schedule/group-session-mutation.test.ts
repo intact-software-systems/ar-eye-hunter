@@ -33,6 +33,34 @@ describe('scheduled session commands through AppInbox', () => {
             .toMatchObject({ code: 'group-mutation-rejected' });
     });
 
+    it.each(['reserve', 'withdraw'] as const)('replays a private %s receipt under a fresh queue delivery identity', async (action) => {
+        const harness = await createSession();
+        const reservation: ChangeGroupSessionRequest = { requestId: 'reserve-first', action: 'reserve', expectedScheduleRevision: 1, startsAtEpochMs: null };
+        if (action === 'withdraw') {
+            requireGroupStateResult(await change(harness, 'alice', reservation));
+        }
+        const request = { ...reservation, action, requestId: 'private-' + action };
+        const original = requireGroupStateResult(await change(harness, 'alice', request));
+        const replay = requireGroupStateResult(
+            await processAuthenticated({
+                service: harness.service,
+                reader: harness.reader,
+                authority: harness.sessions.alice,
+                input: {
+                    traceId: 'distinct-queue-delivery',
+                    type: AppInboxType.GROUP_SESSION_CHANGE,
+                    resourceId: 'second-envelope-' + action,
+                    contextId: groupId,
+                    data: { scope: SCOPE, groupId, request }
+                }
+            })
+        );
+        expect(replay).toEqual(original);
+        expect(JSON.stringify(await harness.repository.listEvents(ref))).not.toContain('alice');
+        expect((await harness.repository.findSessionReservationsEntry(ref))?.value.principalIds)
+            .toEqual(action === 'reserve' ? ['alice'] : []);
+    });
+
     it('previews only the caller reservation and lists sessions without exposing another account intent', async () => {
         const harness = await createSession();
         const directory = harness.groupStateService.sessionDirectory;

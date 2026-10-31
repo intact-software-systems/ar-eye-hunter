@@ -81,6 +81,12 @@ describe('GroupStateService mutation exact reads', () => {
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
+                    selectorId: 'session-intent',
+                    kind: 'key',
+                    namespace: 'group-state:session-intents',
+                    key: 'app=batch-read-app:ws=batch-read-workspace:principal=bob:group=membership'
+                },
+                {
                     selectorId: 'session-reservations',
                     kind: 'key',
                     namespace: 'group-state:session-reservations',
@@ -148,6 +154,7 @@ describe('GroupStateService mutation exact reads', () => {
                 'presence-summary',
                 'presence-sessions',
                 'publication-grants',
+                'session-intent',
                 'session-reservations',
                 'lifecycle-policy',
                 'idempotency:0',

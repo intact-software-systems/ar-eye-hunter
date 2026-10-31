@@ -46,6 +46,15 @@ const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
         requiresAuthorization: false,
         readRoutePaths: ['/api/state/apps/:applicationId/workspaces/:workspaceId/group-moves']
     },
+    {
+        name: 'registerGroupSessionRoutes',
+        sourcePath: './register-group-session-routes.ts',
+        requiresAuthorization: false,
+        readRoutePaths: [
+            '/api/state/apps/:applicationId/workspaces/:workspaceId/group-sessions',
+            '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/session'
+        ]
+    },
     { name: 'registerGroupStateMutationRoutes', sourcePath: './register-group-state-mutation-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupLifecycleRoutes', sourcePath: './register-group-lifecycle-routes.ts', requiresAuthorization: false },
     { name: 'registerGroupAdmissionRoutes', sourcePath: './register-group-admission-routes.ts', requiresAuthorization: false },
@@ -169,11 +178,11 @@ function collectInlineRegistrations(program: MutationRoutingAstNode, owner: Muta
     const registrations: DirectRouteRegistration[] = [];
     const bindings: MutationRoutingAstNode[] = [];
     for (const statement of getBlockStatements(asNode(owner.body))) {
-        if (isInertStatement(statement)) {
+        const scopedProgram = { ...program, body: [...bindings, ...asNodes(program.body)] };
+        if (isInertStatement(statement) || isStaticStringBinding(scopedProgram, statement)) {
             bindings.unshift(statement);
             continue;
         }
-        const scopedProgram = { ...program, body: [...bindings, ...asNodes(program.body)] };
         const registration = toInlineRegistration(scopedProgram, owner, statement);
         if (!registration) {
             return undefined;
@@ -181,6 +190,13 @@ function collectInlineRegistrations(program: MutationRoutingAstNode, owner: Muta
         registrations.push(registration);
     }
     return registrations.length > 0 ? registrations : undefined;
+}
+
+function isStaticStringBinding(program: MutationRoutingAstNode, statement: MutationRoutingAstNode): boolean {
+    return statement.type === 'VariableDeclaration' && statement.kind === 'const' &&
+        asNodes(statement.declarations).every((declaration) =>
+            asNode(declaration.id)?.type === 'Identifier' && resolveModuleString(program, asNode(declaration.init)) !== undefined
+        );
 }
 
 function toInlineRegistration(

@@ -88,45 +88,9 @@ export function computeUpdate(
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
     const next = computeUpdatedGroup(command, current, audit);
-    const schedule = readGroupSessionSchedule(current.metadata);
-    if (schedule !== null && (next.kind !== 'room' || next.maxMembers === null || next.maxMembers > 64)) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Scheduled rooms require a player capacity of 1 to 64.'
-        });
-    }
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
-    const occupiedSeats = schedule === null
-        ? countGroupPlayers(snapshot)
-        : countGroupSessionOccupiedSeats({
-            schedule,
-            reservations: requireSessionReservations(read),
-            activePlayerPrincipalIds: snapshot.members.filter((member) =>
-                member.status === 'active' && !isGroupSpectator(member)
-            )
-                .map((member) => member.principalId),
-            nowEpochMs: facts.attemptAtEpochMs
-        });
-    if (next.maxMembers !== null && next.maxMembers < occupiedSeats) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Group maxMembers cannot be lower than the occupied and reserved player seats.'
-        });
-    }
-    if (readGroupSpectatorCapacity(next.metadata) < (read.activeMembers ?? []).filter(isGroupSpectator).length) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Spectator capacity cannot be lower than the spectator count.'
-        });
+    const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
+    if (capacityRefusal !== null) {
+        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
     }
     if (sameGroupIgnoringVersions(current, next)) {
         return noOp(command, read, facts);
@@ -142,6 +106,33 @@ export function computeUpdate(
             ? 'group-deleted'
             : 'group-updated'
     });
+}
+
+/** Capacity changes preserve occupied players, outstanding reservations and spectators. */
+function toGroupCapacityRefusal(next: Group, read: GroupMutationRead, nowEpochMs: number): string | null {
+    const schedule = readGroupSessionSchedule(next.metadata);
+    if (schedule !== null && (next.kind !== 'room' || next.maxMembers === null || next.maxMembers > 64)) {
+        return 'Scheduled rooms require a player capacity of 1 to 64.';
+    }
+    const snapshot = toPolicySnapshot(read, next, nowEpochMs);
+    const occupiedSeats = schedule === null
+        ? countGroupPlayers(snapshot)
+        : countGroupSessionOccupiedSeats({
+            schedule,
+            reservations: requireSessionReservations(read),
+            activePlayerPrincipalIds: snapshot.members.filter((member) =>
+                member.status === 'active' && !isGroupSpectator(member)
+            )
+                .map((member) => member.principalId),
+            nowEpochMs
+        });
+    if (next.maxMembers !== null && next.maxMembers < occupiedSeats) {
+        return 'Group maxMembers cannot be lower than the occupied and reserved player seats.';
+    }
+    if (readGroupSpectatorCapacity(next.metadata) < (read.activeMembers ?? []).filter(isGroupSpectator).length) {
+        return 'Spectator capacity cannot be lower than the spectator count.';
+    }
+    return null;
 }
 
 export function computeDirector(

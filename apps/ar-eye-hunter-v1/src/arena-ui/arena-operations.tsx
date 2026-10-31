@@ -73,33 +73,39 @@ export function ArenaOperations(props: ArenaOperationsProps) {
                 ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
                 : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
             {arena.error && <div className="panel error-panel">{arena.error}</div>}
-            <div className="panel compact">
-                {arena.spectating
-                    ? <p>Watching the live arena. Join as player to move and fight.</p>
-                    : (
-                        <div className="control-grid">
-                            {[
-                                'WASD',
-                                'Move',
-                                'Shift',
-                                'Sprint',
-                                'E',
-                                'Dash',
-                                'C/Ctrl',
-                                'Slide',
-                                'Space',
-                                'Jump',
-                                'Mouse',
-                                'Look',
-                                'Click',
-                                'Fire',
-                                'Right click',
-                                'Scan'
-                            ].map((label) => <span key={label}>{label}</span>)}
-                        </div>
-                    )}
-            </div>
+            <ArenaControlHints spectating={arena.spectating} />
         </section>
+    );
+}
+
+function ArenaControlHints({ spectating }: Readonly<{ spectating: boolean; }>) {
+    return (
+        <div className="panel compact">
+            {spectating
+                ? <p>Watching the live arena. Join as player to move and fight.</p>
+                : (
+                    <div className="control-grid">
+                        {[
+                            'WASD',
+                            'Move',
+                            'Shift',
+                            'Sprint',
+                            'E',
+                            'Dash',
+                            'C/Ctrl',
+                            'Slide',
+                            'Space',
+                            'Jump',
+                            'Mouse',
+                            'Look',
+                            'Click',
+                            'Fire',
+                            'Right click',
+                            'Scan'
+                        ].map((label) => <span key={label}>{label}</span>)}
+                    </div>
+                )}
+        </div>
     );
 }
 

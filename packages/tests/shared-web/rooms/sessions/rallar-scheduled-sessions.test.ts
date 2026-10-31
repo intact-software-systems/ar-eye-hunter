@@ -53,7 +53,8 @@ function browser() {
         auth: { session: () => session, onChange: (listener) => authChanges.subscribe(listener).unsubscribe },
         entry: { getState: () => entryState, onChange: (listener) => entryChanges.subscribe(listener).unsubscribe, enter, enterScheduledLobby },
         api,
-        timers: createDefaultTimers()
+        timers: createDefaultTimers(),
+        createId: () => crypto.randomUUID()
     }, { scope, refreshIntervalMs: 30_000 });
     cleanups.push(() => owner.stop());
     return {
@@ -95,10 +96,39 @@ describe('scheduled-session browser ownership', () => {
         expect(test.owner.getState().sessions).toEqual([]);
     });
 
+    it.each(['destination', 'account'] as const)('does not enter a replacement %s after an old admission refresh finishes', async (replacement) => {
+        const test = browser();
+        test.api.read.mockImplementation(async (roomRef) => ({ ...preview, roomRef, canEnter: true }));
+        await test.owner.start();
+        await test.owner.select(ref);
+        const delayed = Promise.withResolvers<GroupSessionPage>();
+        test.api.list.mockReturnValueOnce(delayed.promise);
+        const entering = test.owner.enterLobby();
+        if (replacement === 'account') {
+            test.changeAuth({ ...alice, clientId: 'bob', sessionId: 'bob-session' });
+        }
+        await test.owner.select({ ...ref, groupId: 'replacement' });
+        expect(test.owner.getState().selected?.roomRef.groupId).toBe('replacement');
+        delayed.resolve({ sessions: [preview], nextKey: null });
+        await entering;
+        expect(test.enterScheduledLobby).not.toHaveBeenCalled();
+    });
+
+    it('clears stale admission permission when its current refresh fails', async () => {
+        const test = browser();
+        test.api.read.mockResolvedValue({ ...preview, canEnter: true });
+        await test.owner.start();
+        await test.owner.select(ref);
+        test.api.read.mockRejectedValueOnce(new Error('Preview unavailable'));
+        await test.owner.enterLobby();
+        expect(test.owner.getState()).toMatchObject({ selected: null, error: 'Preview unavailable' });
+        expect(test.enterScheduledLobby).not.toHaveBeenCalled();
+    });
+
     it('retains loaded pages across refresh and rejects foreign room selection', async () => {
         const test = browser();
         const second = { ...preview, roomRef: { ...ref, groupId: 'second' } };
-        test.api.list.mockImplementation(async (_scope, after) =>
+        test.api.list.mockImplementation(async ({ after }) =>
             after === null
                 ? { sessions: [preview], nextKey: 'page-two' }
                 : { sessions: [second], nextKey: null }
@@ -119,8 +149,8 @@ describe('scheduled-session browser ownership', () => {
         expect(test.owner.getState()).toMatchObject({ retryPending: true, busy: false });
         await test.owner.retry();
         expect(test.api.change).toHaveBeenCalledTimes(2);
-        expect(test.api.change.mock.calls[0]?.[1]).toEqual(test.api.change.mock.calls[1]?.[1]);
-        expect(test.api.change.mock.calls[1]?.[1]).toMatchObject({ action: 'reserve', expectedScheduleRevision: 1 });
+        expect(test.api.change.mock.calls[0]?.[0].request).toEqual(test.api.change.mock.calls[1]?.[0].request);
+        expect(test.api.change.mock.calls[1]?.[0].request).toMatchObject({ action: 'reserve', expectedScheduleRevision: 1 });
         expect(test.owner.getState().retryPending).toBe(false);
     });
 

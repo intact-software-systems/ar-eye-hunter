@@ -130,6 +130,22 @@ function computeFreshGroupMutation(
         case 'upsertMember':
             return computeUpsertMember(command, read, facts);
         case 'connectPresence':
+        case 'heartbeatPresence':
+        case 'disconnectPresence':
+            return computePresenceMutation(command, read, facts);
+    }
+}
+
+function computePresenceMutation(
+    command: Extract<
+        GroupMutationCommand,
+        { operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence'; }
+    >,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts
+): GroupMutationComputed {
+    switch (command.operation) {
+        case 'connectPresence':
             return computeConnectGroupPresence(command, read, facts);
         case 'heartbeatPresence':
             return computeHeartbeatGroupPresence(command, read, facts);

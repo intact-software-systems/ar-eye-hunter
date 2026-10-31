@@ -1,4 +1,5 @@
 import { applyRelicCommand, createRelicGame, RELIC_PROTOCOL_VERSION } from '@relic-hunters/mod.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { describe, expect, it } from 'vitest';
 import { connectGameSession, createGameFixture, prepareGameWrite, RELIC_FIXTURE_TRACE_ID } from './relic-game-database-fixture.ts';
 import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
@@ -30,6 +31,16 @@ describe('scheduled Relic authority', () => {
             expect(start.computed.result).toMatchObject({ status: 'refused', code: 'session-not-started' });
             expect(start.computed.save).toBeNull();
             expect(start.computed.guard).not.toBeNull();
+            const refusal = start.computed.outboxWrites[0];
+            if (!refusal) {
+                throw new Error('Early start must publish its refusal to the requesting player');
+            }
+            const message = decodePersistedALMessage(refusal.entry.resource);
+            expect(message.targets).toMatchObject({ scope: 'principal', principalRef: { principalId: fixture.owner.clientId } });
+            expect(JSON.parse(message.payload.resource)).toMatchObject({
+                kind: 'command-refused',
+                text: 'Wait until the scheduled start time before starting gameplay.'
+            });
             fixture.nowEpochMs += 30_000;
             const read = await fixture.service.read(start.ingress);
             const attempt = { ...read, attemptCount: 2, traceId: RELIC_FIXTURE_TRACE_ID };

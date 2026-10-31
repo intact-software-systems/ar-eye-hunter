@@ -424,12 +424,25 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     }
     const scheduledStartRefusal = scheduledRelicStartRefusal(read);
     if (scheduledStartRefusal !== null) {
-        return { ...refused(command, { ...scheduledStartRefusal, httpStatus: 409 }), guard };
+        return {
+            ...refused(command, { ...scheduledStartRefusal, httpStatus: 409 }),
+            guard,
+            ...computeRelicGamePublications({ read, previous, next: null, refusal: scheduledStartRefusal.message })
+        };
     }
     const missingProposal = evaluateRelicGameProposal(command, previous, read.ingress.initial);
     if (missingProposal !== null) {
         return { result: missingProposal, guard: null, save: null, outboxWrites: [], provenance: [] };
     }
+    return computeRelicGameTransitionResult(read, previous, guard);
+}
+
+function computeRelicGameTransitionResult(
+    read: RelicGameMutationService.Attempt,
+    previous: RelicGameState | null,
+    guard: RelicGameMutationService.GroupGuard
+): RelicGameMutationService.Computed {
+    const { command } = read.ingress;
     const transition = computeRelicGameTransition(read, previous);
     if (transition.left !== undefined) {
         return {

@@ -4,13 +4,12 @@ import {
     decodeGroupSessionPreview
 } from '@shared/api/group-sessions/decode-group-session-preview.ts';
 import type {
-    ChangeGroupSessionRequest,
+    GroupSessionChange,
     GroupSessionPage,
     GroupSessionPreview
 } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
@@ -27,10 +26,7 @@ export const scheduledSessionHttpApi: RallarScheduledSessions.Api = {
 };
 
 async function listSessions(
-    scope: StateScope,
-    after: string | null,
-    session: AuthSession,
-    signal: AbortSignal
+    { scope, after, session, signal }: RallarScheduledSessions.ListInput
 ): Promise<GroupSessionPage> {
     const query = after === null ? '' : `?after=${encodeURIComponent(after)}`;
     const response = await sendApiHttpRequest<never, unknown>({
@@ -67,10 +63,7 @@ async function readSession(
 }
 
 async function createSession(
-    scope: StateScope,
-    request: RallarScheduledSessions.CreateRequest,
-    session: AuthSession,
-    signal: AbortSignal
+    { scope, request, session, signal }: RallarScheduledSessions.CreateInput
 ): Promise<GroupRef> {
     await new Command(async (attemptSignal) => {
         await roomGroupStateHttpApi.createGroup({
@@ -89,26 +82,25 @@ async function createSession(
             },
             options: { authSession: session, signal: attemptSignal, requestId: request.requestId }
         });
-    }, { signal, timeoutMs: 15_000, maxAttempts: 2 }).run();
+    }, { signal, timeoutMs: 15_000, maxAttempts: 2, errorOnNull: false }).run();
     return { ...scope, groupId: request.groupId };
 }
 
-async function changeSession(
-    ref: GroupRef,
-    request: ChangeGroupSessionRequest,
-    session: AuthSession,
-    signal: AbortSignal
-): Promise<void> {
+async function changeSession({ ref, request, session, signal }: RallarScheduledSessions.ChangeInput): Promise<void> {
     if (!request.requestId) {
         throw new TypeError('Session mutation requires a stable request identity');
     }
     const requestId = request.requestId;
     await new Command(async (attemptSignal) => {
-        const response = await sendApiHttpRequest<ChangeGroupSessionRequest, unknown>({
+        const response = await sendApiHttpRequest<GroupSessionChange, unknown>({
             baseUrl: readApiBaseUrl(),
             path: toApiMutationRequestPath(`${toStateGroupHttpPath(ref, ref.groupId)}/session`, requestId),
             method: 'POST',
-            body: request,
+            body: {
+                action: request.action,
+                expectedScheduleRevision: request.expectedScheduleRevision,
+                startsAtEpochMs: request.startsAtEpochMs
+            },
             options: { authSession: session, signal: attemptSignal }
         });
         if (
@@ -117,5 +109,5 @@ async function changeSession(
         ) {
             throw new TypeError('Session mutation returned an invalid acknowledgement');
         }
-    }, { signal, timeoutMs: 15_000, maxAttempts: 2 }).run();
+    }, { signal, timeoutMs: 15_000, maxAttempts: 2, errorOnNull: false }).run();
 }

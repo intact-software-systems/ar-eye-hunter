@@ -1,0 +1,882 @@
+{
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "scheduled-sessions-{runId}",
+    "workspaceId": "default-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Scheduled sessions: private account discovery, reserved capacity, pre-lobby denial, idempotent replay, rescheduling and reconfirmation, cancellation, and claimed lobby seats.",
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-sessions-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-sessions-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "futureStart",
+      "type": "set",
+      "output": "futureStart",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          1200000
+        ]
+      }
+    },
+    {
+      "name": "newStart",
+      "type": "set",
+      "output": "newStart",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          1800000
+        ]
+      }
+    },
+    {
+      "name": "lobbyStart",
+      "type": "set",
+      "output": "lobbyStart",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          300000
+        ]
+      }
+    },
+    {
+      "name": "privateEmpty",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [],
+          "nextKey": null
+        }
+      }
+    },
+    {
+      "name": "createfuture",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-session-createfuture-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "future-{runId}",
+          "displayName": "Scheduled future",
+          "kind": "room",
+          "joinMode": "open",
+          "directoryListing": "unlisted",
+          "retention": {
+            "mode": "temporary",
+            "reconnectGraceMs": 600000
+          },
+          "maxMembers": 2,
+          "scheduledStartAtEpochMs": "{futureStart}"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "createlobby",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-session-createlobby-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "lobby-{runId}",
+          "displayName": "Scheduled lobby",
+          "kind": "room",
+          "joinMode": "open",
+          "directoryListing": "unlisted",
+          "retention": {
+            "mode": "temporary",
+            "reconnectGraceMs": 600000
+          },
+          "maxMembers": 2,
+          "scheduledStartAtEpochMs": "{lobbyStart}"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "stillPrivateEmpty",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [],
+          "nextKey": null
+        }
+      }
+    },
+    {
+      "name": "futurePreview",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "participation": "none",
+          "canReserve": true,
+          "canEnter": false,
+          "availableSeats": 1,
+          "timing": {
+            "phase": "upcoming"
+          }
+        }
+      }
+    },
+    {
+      "name": "earlyJoin",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/join/requests/bb-session-earlyJoin-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "reserve",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-reserve-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "replayReservation",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-reserve-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "conflictingReplay",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-reserve-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "withdraw",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "heldSeat",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "participation": "reserved",
+          "availableSeats": 0,
+          "canEnter": false
+        }
+      }
+    },
+    {
+      "name": "personalDiscovery",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [
+            {
+              "roomRef": {
+                "groupId": "future-{runId}"
+              },
+              "participation": "reserved"
+            }
+          ],
+          "nextKey": null
+        }
+      }
+    },
+    {
+      "name": "withdraw",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-withdraw-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "withdraw",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "withdrawnDiscovery",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [],
+          "nextKey": null
+        }
+      }
+    },
+    {
+      "name": "reserveAgain",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-reserveAgain-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "guestCannotReschedule",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-guestCannotReschedule-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reschedule",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": "{newStart}"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "reschedule",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-reschedule-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "reschedule",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": "{newStart}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "mustReconfirm",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "participation": "needs-confirmation",
+          "availableSeats": 1,
+          "schedule": {
+            "revision": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "interestSurvivesReschedule",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [
+            {
+              "roomRef": {
+                "groupId": "future-{runId}"
+              },
+              "participation": "needs-confirmation"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "staleRevision",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-staleRevision-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "reconfirm",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-reconfirm-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 2,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "cancel",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-cancel-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "cancel",
+          "expectedScheduleRevision": 2,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "cancelled",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "timing": {
+            "phase": "cancelled"
+          },
+          "canReserve": false,
+          "canEnter": false
+        }
+      }
+    },
+    {
+      "name": "cancelledStillDiscoverable",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [
+            {
+              "roomRef": {
+                "groupId": "future-{runId}"
+              },
+              "timing": {
+                "phase": "cancelled"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cancelledReservationDenied",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session/requests/bb-session-cancelledReservationDenied-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 3,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "reserveLobby",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/lobby-{runId}/session/requests/bb-session-reserveLobby-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "reserve",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accepted": true
+        }
+      }
+    },
+    {
+      "name": "lobbyReady",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/lobby-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "participation": "reserved",
+          "availableSeats": 0,
+          "canEnter": true,
+          "timing": {
+            "phase": "lobby"
+          }
+        }
+      }
+    },
+    {
+      "name": "claimSeat",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/lobby-{runId}/join/requests/bb-session-claimSeat-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "claimedSeat",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/lobby-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "participation": "admitted",
+          "availableSeats": 0,
+          "canEnter": true
+        }
+      }
+    },
+    {
+      "name": "openLobbyCannotCancel",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/lobby-{runId}/session/requests/bb-session-openLobbyCannotCancel-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "cancel",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "authRequired",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {}
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "strictPathIdentity",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/lobby-{runId}/session/requests/bb-session-strictPathIdentity-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "body-is-forbidden",
+          "action": "withdraw",
+          "expectedScheduleRevision": 1,
+          "startsAtEpochMs": null
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    }
+  ]
+}

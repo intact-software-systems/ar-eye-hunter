@@ -39,21 +39,29 @@ export namespace RallarScheduledSessions {
         readonly groupId: string;
         readonly requestId: string;
     }
+    export interface ListInput {
+        readonly scope: StateScope;
+        readonly after: string | null;
+        readonly session: AuthSession;
+        readonly signal: AbortSignal;
+    }
+    export interface CreateInput {
+        readonly scope: StateScope;
+        readonly request: CreateRequest;
+        readonly session: AuthSession;
+        readonly signal: AbortSignal;
+    }
+    export interface ChangeInput {
+        readonly ref: GroupRef;
+        readonly request: ChangeGroupSessionRequest;
+        readonly session: AuthSession;
+        readonly signal: AbortSignal;
+    }
     export interface Api {
-        list(
-            scope: StateScope,
-            after: string | null,
-            session: AuthSession,
-            signal: AbortSignal
-        ): Promise<GroupSessionPage>;
+        list(input: ListInput): Promise<GroupSessionPage>;
         read(ref: GroupRef, session: AuthSession, signal: AbortSignal): Promise<GroupSessionPreview | null>;
-        create(scope: StateScope, request: CreateRequest, session: AuthSession, signal: AbortSignal): Promise<GroupRef>;
-        change(
-            ref: GroupRef,
-            request: ChangeGroupSessionRequest,
-            session: AuthSession,
-            signal: AbortSignal
-        ): Promise<void>;
+        create(input: CreateInput): Promise<GroupRef>;
+        change(input: ChangeInput): Promise<void>;
     }
     export interface Auth extends Pick<RallarAuthFacade, 'onChange'> {
         session(): AuthSession | undefined;
@@ -63,6 +71,7 @@ export namespace RallarScheduledSessions {
         readonly api: Api;
         readonly entry: Pick<RallarRoomEntry, 'getState' | 'onChange' | 'enter' | 'enterScheduledLobby'>;
         readonly timers: Timers;
+        readonly createId: () => string;
     }
     export interface Config {
         readonly scope: StateScope;
@@ -115,7 +124,8 @@ export class RallarScheduledSessions {
             },
             entry,
             api: scheduledSessionHttpApi,
-            timers: createDefaultTimers()
+            timers: createDefaultTimers(),
+            createId: () => crypto.randomUUID()
         }, config);
     }
 
@@ -202,8 +212,18 @@ export class RallarScheduledSessions {
         if (this.state.busy || this.pending !== null) {
             return;
         }
+        const attempt = this.attempt();
+        const selectedRef = this.selectedRef;
+        const revision = this.revision;
+        if (attempt === null || selectedRef === null) {
+            return;
+        }
         await this.refresh();
-        if (this.state.selected?.canEnter) {
+        const selected = this.state.selected;
+        if (
+            this.current(attempt) && revision === this.revision && selected?.canEnter &&
+            isSameGroupRef(selected.roomRef, selectedRef)
+        ) {
             this.dependencies.entry.enterScheduledLobby();
         }
     }
@@ -214,7 +234,7 @@ export class RallarScheduledSessions {
         }
         return this.send({
             kind: 'create',
-            request: { ...input, groupId: crypto.randomUUID(), requestId: crypto.randomUUID() }
+            request: { ...input, groupId: this.dependencies.createId(), requestId: this.dependencies.createId() }
         });
     }
 
@@ -230,7 +250,7 @@ export class RallarScheduledSessions {
                 action,
                 startsAtEpochMs,
                 expectedScheduleRevision: selected.schedule.revision,
-                requestId: crypto.randomUUID()
+                requestId: this.dependencies.createId()
             }
         });
     }
@@ -246,12 +266,12 @@ export class RallarScheduledSessions {
             let cursor: string | null = null;
             const visited = new Set<string>();
             for (let page = 0; page < this.pageCount; page++) {
-                const result = await this.dependencies.api.list(
-                    this.config.scope,
-                    cursor,
-                    attempt.session,
-                    attempt.signal
-                );
+                const result = await this.dependencies.api.list({
+                    scope: this.config.scope,
+                    after: cursor,
+                    session: attempt.session,
+                    signal: attempt.signal
+                });
                 if (!this.current(attempt) || revision !== this.revision) {
                     return;
                 }
@@ -305,12 +325,12 @@ export class RallarScheduledSessions {
         this.publish({ ...this.state, busy: true, retryPending: false, error: null });
         try {
             if (pending.kind === 'create') {
-                const ref = await this.dependencies.api.create(
-                    this.config.scope,
-                    pending.request,
-                    attempt.session,
-                    attempt.signal
-                );
+                const ref = await this.dependencies.api.create({
+                    scope: this.config.scope,
+                    request: pending.request,
+                    session: attempt.session,
+                    signal: attempt.signal
+                });
                 if (!this.current(attempt)) {
                     return;
                 }
@@ -323,7 +343,12 @@ export class RallarScheduledSessions {
                 });
             }
             else {
-                await this.dependencies.api.change(pending.roomRef, pending.request, attempt.session, attempt.signal);
+                await this.dependencies.api.change({
+                    ref: pending.roomRef,
+                    request: pending.request,
+                    session: attempt.session,
+                    signal: attempt.signal
+                });
             }
             if (this.current(attempt)) {
                 this.pending = null;

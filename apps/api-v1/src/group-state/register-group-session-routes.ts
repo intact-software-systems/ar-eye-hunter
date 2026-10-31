@@ -1,5 +1,5 @@
 import type { ChangeGroupSessionRequest } from '@shared/api/group-sessions/group-session-schedule.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
@@ -10,21 +10,7 @@ import { toGroupStateCommand } from './to-group-state-command.ts';
 export function registerGroupSessionRoutes(app: Hono, dependencies: GroupStateRouteDependencies): void {
     const base = '/api/state/apps/:applicationId/workspaces/:workspaceId';
     const sessionPath = `${base}/groups/:groupId/session`;
-    app.get(`${base}/group-sessions`, async (context) => {
-        try {
-            const auth = await dependencies.requireApiAuthSession(context.req);
-            return context.json(
-                await dependencies.sessionDirectory.listForPrincipal(
-                    toGroupStateRouteScope(context),
-                    auth.clientId,
-                    context.req.query('after') ?? null
-                )
-            );
-        }
-        catch (error) {
-            return toGroupMutationErrorResponse(context, error);
-        }
-    });
+    app.get(`${base}/group-sessions`, (context) => listAccountSessions(context, dependencies));
     app.get(sessionPath, async (context) => {
         try {
             const auth = await dependencies.requireApiAuthSession(context.req);
@@ -68,4 +54,20 @@ export function registerGroupSessionRoutes(app: Hono, dependencies: GroupStateRo
             return toGroupMutationErrorResponse(context, error);
         }
     });
+}
+
+async function listAccountSessions(context: Context, dependencies: GroupStateRouteDependencies): Promise<Response> {
+    try {
+        const auth = await dependencies.requireApiAuthSession(context.req);
+        return context.json(
+            await dependencies.sessionDirectory.listForPrincipal(
+                toGroupStateRouteScope(context),
+                auth.clientId,
+                context.req.query('after') ?? null
+            )
+        );
+    }
+    catch (error) {
+        return toGroupMutationErrorResponse(context, error);
+    }
 }
