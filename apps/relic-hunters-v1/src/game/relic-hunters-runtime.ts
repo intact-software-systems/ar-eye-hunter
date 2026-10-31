@@ -301,7 +301,11 @@ export class RelicHuntersRuntime {
             submitAction: (action) => this.sendCommand({ kind: 'submit-action', action }),
             forceResolveRound: () => this.sendCommand({ kind: 'force-resolve-round' }),
             pickupRelic: (relicId) => this.sendCommand({ kind: 'pickup-relic', relicId }),
-            continueReview: () => this.continueReview(),
+            continueReview: async () => {
+                if (this.connection.snapshot?.phase === 'review') {
+                    await this.sendCommand({ kind: 'continue-review' });
+                }
+            },
             setRoundLimit: (timeLimitMs) => this.sendCommand({ kind: 'set-round-limit', timeLimitMs }),
             resetExpedition: () => this.resetExpedition()
         };
@@ -360,8 +364,15 @@ export class RelicHuntersRuntime {
     }
 
     private entryChanged(state: RallarRoomEntry.State): void {
+        if (!this.active || state.status !== 'pending') {
+            return;
+        }
+        // Admission can finish before expedition hydration; absence is not evidence of participation.
+        if (this.connection.participation === 'player' && !this.connection.snapshot) {
+            return;
+        }
         if (
-            state.status === 'pending' && this.blocksRoomChange() &&
+            this.blocksRoomChange() &&
             (this.connection.diagnostics.commandInFlight !== undefined ||
                 state.destination?.participation === 'spectator' ||
                 state.destination?.roomRef.groupId !== this.connection.roomId)
@@ -370,7 +381,7 @@ export class RelicHuntersRuntime {
             this.operationFailed(new Error('Use Leave expedition before entering or watching another expedition.'));
             return;
         }
-        if (this.active && this.connection.diagnostics.middlewareConnected && state.status === 'pending') {
+        if (this.connection.diagnostics.middlewareConnected) {
             void this.deps.roomEntry.resume();
         }
     }
@@ -545,9 +556,7 @@ export class RelicHuntersRuntime {
             firstRun: 'after-interval',
             run: () => this.publishSnapshotRepair()
         });
-        if (this.deps.roomEntry.getState().status === 'pending') {
-            await this.deps.roomEntry.resume();
-        }
+        this.entryChanged(this.deps.roomEntry.getState());
         if (this.current(attempt)) {
             await this.hydrateRoom('bootstrap');
         }
@@ -715,6 +724,9 @@ export class RelicHuntersRuntime {
             this.publishSnapshotRepair();
         }
         this.roundRepair.observe(snapshot);
+        if (this.current(attempt, true)) {
+            this.entryChanged(this.deps.roomEntry.getState());
+        }
         return true;
     }
 
@@ -848,7 +860,10 @@ export class RelicHuntersRuntime {
             return;
         }
         const request = ++this.roomRefreshRequest;
-        this.publish({ directory: { ...this.connection.directory, status: 'loading', error: undefined } });
+        this.publish({
+            directory: { ...this.connection.directory, status: 'loading', error: undefined },
+            error: this.connection.snapshot ? this.connection.error : undefined
+        });
         if (!this.current(attempt) || request !== this.roomRefreshRequest) {
             return;
         }
@@ -858,6 +873,9 @@ export class RelicHuntersRuntime {
                 return;
             }
             this.adoptRoom(state, true);
+            if (this.current(attempt, true) && request === this.roomRefreshRequest && !this.connection.snapshot) {
+                await this.hydrateRoom('room-hydration');
+            }
             if (this.current(attempt) && request === this.roomRefreshRequest) {
                 await this.deps.directory.refresh();
             }
@@ -926,16 +944,9 @@ export class RelicHuntersRuntime {
         return completed ? snapshot : undefined;
     }
 
-    private hasUnfinishedParticipation(): boolean {
-        return this.connection.participation === 'player' &&
-            hasUnfinishedRelicParticipation(this.connection.snapshot, this.connection.session?.sessionId);
-    }
-
     private blocksRoomChange(): boolean {
         return this.connection.diagnostics.commandInFlight !== undefined ||
-            this.admission.hasPending(this.connection.roomId, this.connection.session?.sessionId) ||
-            (this.connection.participation === 'player' && !this.connection.snapshot) ||
-            this.hasUnfinishedParticipation();
+            this.admission.blocksDeparture(this.connection);
     }
 
     private async joinRoom(roomId: string, participation: 'preserve' | 'player' | 'spectator'): Promise<void> {
@@ -1050,7 +1061,7 @@ export class RelicHuntersRuntime {
         this.acceptSnapshot(snapshot, 'rest-command', attempt.roomId);
         if (
             this.connection.snapshot?.createdAtEpochMs !== snapshot.createdAtEpochMs ||
-            this.hasUnfinishedParticipation()
+            hasUnfinishedRelicParticipation(this.connection.snapshot, attempt.session.sessionId)
         ) {
             throw new Error('Expedition changed while leaving. Stay in the room and try again.');
         }
@@ -1102,12 +1113,6 @@ export class RelicHuntersRuntime {
     private operationFailed(error: Error): void {
         const message = error.message;
         this.phase('error', { lastError: message }, { error: message });
-    }
-
-    private async continueReview(): Promise<void> {
-        if (this.connection.snapshot?.phase === 'review') {
-            await this.sendCommand({ kind: 'continue-review' });
-        }
     }
 
     private sendRematchCommand(input: RelicRematchDraft): Promise<void> {

@@ -22,6 +22,12 @@ interface AdmissionRecord {
 }
 
 export namespace RelicExpeditionParticipation {
+    export interface DepartureState {
+        readonly roomId: string | undefined;
+        readonly session: AuthSession | undefined;
+        readonly participation: 'player' | 'spectator' | undefined;
+        readonly snapshot: RelicPublicSnapshot | undefined;
+    }
     export interface Withdrawal {
         readonly roomId: string;
         readonly session: AuthSession;
@@ -46,6 +52,14 @@ export class RelicExpeditionParticipation {
 
     hasPending(roomId: string | undefined, sessionId: string | undefined): boolean {
         return !!roomId && !!sessionId && this.pending.get(JSON.stringify([roomId, sessionId])) !== false;
+    }
+
+    blocksDeparture(
+        { roomId, session, participation, snapshot }: RelicExpeditionParticipation.DepartureState
+    ): boolean {
+        return this.hasPending(roomId, session?.sessionId) ||
+            (participation === 'player' &&
+                (!snapshot || hasUnfinishedRelicParticipation(snapshot, session?.sessionId)));
     }
 
     join(roomId: string, sessionId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined> {

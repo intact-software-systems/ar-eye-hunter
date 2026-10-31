@@ -53,6 +53,18 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
             />
             {pending && entry.destination && <p>Room destination: {entry.destination.roomRef.groupId}</p>}
             {pending && entry.destination && !game.session && <p>Sign in to enter this room.</p>}
+            {entry.status === 'pending' && game.participation === 'player' && !game.snapshot && (
+                game.error
+                    ? (
+                        <div>
+                            <p role="alert">Expedition state could not be checked. {game.error}</p>
+                            <button type="button" onClick={() => void game.refreshRooms()}>
+                                Retry expedition state
+                            </button>
+                        </div>
+                    )
+                    : <p role="status">Checking the current expedition before changing rooms…</p>
+            )}
             {entry.status === 'joining' && <p role="status">Entering the expedition room…</p>}
             {entry.status === 'entered' && <p aria-live="polite">Entered {entry.destination?.roomRef.groupId}.</p>}
             {entry.failure && <p role="alert">{entry.failure.message}</p>}
