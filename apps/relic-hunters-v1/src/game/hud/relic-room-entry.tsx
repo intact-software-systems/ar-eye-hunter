@@ -1,6 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+    useEffect,
+    useState,
+    type FormEvent
+} from 'react';
 
 import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
+import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
@@ -40,7 +45,6 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
             participation: draft.participation
         });
     };
-    const pending = entry.status !== 'idle' && entry.status !== 'entered';
     return (
         <section className="panel stack" aria-label="Shared room entry">
             <h3>Enter a shared expedition</h3>
@@ -51,6 +55,20 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
                 joining={entry.status === 'joining'}
                 watchBlocked={watchBlocked}
             />
+            <RelicRoomEntryStatus game={game} entry={entry} />
+            <RelicRecentRooms game={game} joining={entry.status === 'joining'} />
+        </section>
+    );
+}
+
+interface RelicRoomEntryStatusProps extends RelicRoomEntryProps {
+    readonly entry: RallarRoomEntry.State;
+}
+
+function RelicRoomEntryStatus({ game, entry }: RelicRoomEntryStatusProps) {
+    const pending = entry.status !== 'idle' && entry.status !== 'entered';
+    return (
+        <>
             {pending && entry.destination && <p>Room destination: {entry.destination.roomRef.groupId}</p>}
             {pending && entry.destination && !game.session && <p>Sign in to enter this room.</p>}
             {entry.status === 'pending' && game.participation === 'player' && !game.snapshot && (
@@ -73,16 +91,15 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
                     {entry.status === 'failed' && game.session && (
                         <button
                             type="button"
-                            onClick={() => void owner.resume()}
+                            onClick={() => void game.roomEntry.resume()}
                         >
                             Retry room entry
                         </button>
                     )}
-                    <button type="button" onClick={() => owner.cancel()}>Cancel room entry</button>
+                    <button type="button" onClick={() => game.roomEntry.cancel()}>Cancel room entry</button>
                 </div>
             )}
-            <RelicRecentRooms game={game} joining={entry.status === 'joining'} />
-        </section>
+        </>
     );
 }
 

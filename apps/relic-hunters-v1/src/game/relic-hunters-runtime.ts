@@ -35,13 +35,6 @@ import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { deliverRelicCommand } from './runtime/deliver-relic-command.ts';
-import {
-    createRelicRematchDraft,
-    type RelicCommandDraft,
-    type RelicRematchDraft
-} from './runtime/relic-command-draft.ts';
-import { acceptRelicHunterFeedback, expireRelicHunterFeedback } from './runtime/relic-hunter-feedback.ts';
 
 import {
     createInitialRelicRuntimeDiagnostics,
@@ -55,7 +48,14 @@ import {
     type RelicSnapshotSource
 } from './relic-snapshot-ordering.ts';
 import { createRelicRoomName } from './runtime/create-relic-room-name.ts';
+import { deliverRelicCommand } from './runtime/deliver-relic-command.ts';
+import {
+    createRelicRematchDraft,
+    type RelicCommandDraft,
+    type RelicRematchDraft
+} from './runtime/relic-command-draft.ts';
 import { RelicExpeditionParticipation } from './runtime/relic-expedition-participation.ts';
+import { acceptRelicHunterFeedback, expireRelicHunterFeedback } from './runtime/relic-hunter-feedback.ts';
 import { RelicRoundDeadlineRepair } from './runtime/relic-round-deadline-repair.ts';
 import { toCreatedRelicRoomSnapshot } from './runtime/to-created-relic-room-snapshot.ts';
 import type { RelicWsCommandDelivery } from './send-relic-ws-command.ts';
@@ -882,12 +882,10 @@ export class RelicHuntersRuntime {
         }
         catch (error) {
             if (this.current(attempt) && request === this.roomRefreshRequest) {
+                const message = toError(error).message;
                 this.publish({
-                    directory: {
-                        ...this.connection.directory,
-                        status: 'error',
-                        error: toError(error).message
-                    }
+                    directory: { ...this.connection.directory, status: 'error', error: message },
+                    error: this.connection.snapshot ? this.connection.error : message
                 });
             }
         }

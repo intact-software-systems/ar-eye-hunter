@@ -121,6 +121,14 @@ describe('Relic recent-room recovery', () => {
         expect(backend.roomEntry.getState().status).toBe('pending');
         expect(runtime.getState().error).toBe('Expedition state unavailable');
         backend.fetchSnapshot = fetchSnapshot;
+        const refreshRooms = backend.refreshRooms.bind(backend);
+        backend.refreshRooms = async () => {
+            throw new Error('Membership refresh unavailable');
+        };
+        await runtime.getState().refreshRooms();
+        expect(backend.roomEntry.getState().status).toBe('pending');
+        expect(runtime.getState().error).toBe('Membership refresh unavailable');
+        backend.refreshRooms = refreshRooms;
         await runtime.getState().refreshRooms();
         await vi.waitFor(() => expect(runtime.getState().roomId).toBe('recent-room'));
         expect(backend.roomEntry.getState().status).toBe('entered');
