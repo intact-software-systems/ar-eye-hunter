@@ -8,6 +8,7 @@ import {
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
@@ -75,7 +76,11 @@ function toPolicy(retainNewest: number, messages: number): ALPublicationPolicy {
 }
 
 /** The live send every paced cell makes, on `resourceId`. */
-function toLiveSend(scenario: AlmConformanceScenario, carrier: AlmConformanceCarrier, publication: ALPublicationPolicy) {
+function toLiveSend(
+    scenario: AlmConformanceScenario,
+    carrier: AlmConformanceCarrier,
+    publication: ALPublicationPolicy
+): Pick<RallarBlackBoxTestMessagesSendCommand, 'kind' | 'carrier' | 'typeId' | 'purpose' | 'publication'> {
     return {
         kind: 'messages.send',
         carrier,
@@ -138,7 +143,7 @@ function expectLoopSends(scenario: AlmConformanceScenario, carrier: AlmConforman
 
 /** The receiver's count of `count` arrivals spans the boundary that carries the last of them plus one cadence. */
 function expectArrivalCount(receiver: RallarBlackBoxTestRecipe, count: number, opportunity: number): void {
-    const timeoutMs = SEND_WINDOW_MS + (opportunity + 1) * CADENCE_MS;
+    const timeoutMs = SEND_WINDOW_MS + (receiver.metadata?.carrier === 'ws' ? 0 : 30_000) + (opportunity + 1) * CADENCE_MS;
     expect(findCommand(receiver, `received-${count}`)).toMatchObject({
         count,
         absent: false,
@@ -202,6 +207,7 @@ describe('paced-latest', () => {
             });
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...[1, 2, 3, 4].flatMap((index) => toObserveNames(index, 'superseded', ['attempts', 'reason'])),
                 ...toObserveNames(5, 'transport-accepted', []),
@@ -268,6 +274,7 @@ describe('paced-newest-n', () => {
             });
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(4, 'staged', []),
                 ...toObserveNames(1, 'superseded', ['attempts', 'reason']),
@@ -322,6 +329,7 @@ describe('paced-expiry', () => {
             });
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(1, 'expired', ['failure-kind', 'attempts']),
                 'stats'
@@ -366,6 +374,7 @@ describe('paced-capacity', () => {
                 ...SENDER_PROLOGUE,
                 'close-before-lowered',
                 'connect-lowered',
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(3, 'rejected', ['failure-kind', 'failure-reason', 'failure-limit', 'attempts']),
                 ...[1, 2].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
@@ -425,8 +434,8 @@ describe('paced-capacity', () => {
             expect(findCommand(receiver, 'received-1')).toMatchObject({
                 count: 1,
                 absent: false,
-                windowMs: SEND_WINDOW_MS + CADENCE_MS + 30_000 - 1_000,
-                timeoutMs: SEND_WINDOW_MS + CADENCE_MS + 30_000
+                windowMs: SEND_WINDOW_MS + (carrier === 'ws' ? 0 : 30_000) + CADENCE_MS + 30_000 - 1_000,
+                timeoutMs: SEND_WINDOW_MS + (carrier === 'ws' ? 0 : 30_000) + CADENCE_MS + 30_000
             });
             expectNotYet(receiver, 1, 0);
             expectArrivalCount(receiver, 3, 1);
@@ -449,6 +458,7 @@ describe('paced-fairness', () => {
             expectLead(scenario, carrier, publication);
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...LEAD_PROLOGUE,
                 'send-1',
                 'send-2',
@@ -523,6 +533,7 @@ describe('paced-cancel', () => {
             });
             expect(toCommandNames(sender)).toEqual([
                 ...SENDER_PROLOGUE,
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 'cancel-1',
                 ...toObserveNames(1, 'cancelled', ['attempts']),
@@ -573,6 +584,7 @@ describe('paced-isolation-resources', () => {
             });
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...[1, 2].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
                 'stats'
@@ -638,6 +650,7 @@ describe('paced-isolation-lists', () => {
             expect(toCommandNames(sender)).toEqual([
                 ...SENDER_PROLOGUE,
                 'await-leader',
+                ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...LEAD_PROLOGUE,
                 'send-1',
                 'send-2',

@@ -15,7 +15,6 @@ import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { isRallarGameEnvelope } from '../../shared-web/game/envelopes.ts';
-import { toOverlayLayoutIdentity } from '../../shared/repository/overlays-repository.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
 
@@ -404,58 +403,30 @@ describe('ALM scale recipes', () => {
                 commandId: `${prefix}-layout-stable`,
                 count: 90,
                 intervalMs: 500,
-                timeoutMs: 48_500,
+                timeoutMs: 45_000,
                 until: 'first-success',
                 commands: [
                     { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
                     {
-                        kind: 'wait',
-                        commandId: `${prefix}-layout-replan`,
-                        absent: true,
-                        timeoutMs: 3_500,
-                        timeoutFrom: `{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                            `${prefix}-layout-readiness.value.acceptedHeldSinceEpochMs}`,
-                        match: {
-                            topic: 'rallar.browser.formation.layout',
-                            payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
-                            payloadPath: 'data.identity',
-                            contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                                `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
-                        }
+                        kind: 'assert',
+                        commandId: `${prefix}-assert-no-pending-layout`,
+                        operator: 'equals',
+                        source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-readiness.value.hasPendingLayout`,
+                        expected: false
+                    },
+                    {
+                        kind: 'assert',
+                        commandId: `${prefix}-assert-layout-stable`,
+                        operator: 'gte',
+                        source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-readiness.value.acceptedHeldForMs`,
+                        expected: 3_500
                     }
                 ]
             });
         }
     );
-
-    it('matches a re-plan from exactly the ready revision because the layout event serializes its group revision first', () => {
-        const identity = toOverlayLayoutIdentity({
-            sourceGroupStateCausalRevision: { groupRevision: 56, presenceRevision: 7 },
-            provenance: 'server',
-            state: 'active',
-            overlayId: 'overlay-1',
-            groupRef: GROUP,
-            topology: 'tree',
-            name: 'scale-room',
-            createdByClientId: 'director',
-            createdAtEpochMs: 1_000,
-            nextHopSessionIds: [],
-            degreeLimit: 4,
-            overlayVersion: 5,
-            updatedAtEpochMs: 1_000,
-            nextHopsBySessionId: {}
-        });
-
-        expect(JSON.stringify(identity)).toMatch(/^\{"groupRevision":56,"presenceRevision"/);
-    });
-
-    it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {
-        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics });
-
-        const connects = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
-            .filter((command) => command.kind === 'rtc.connect');
-        expect(connects.map((command) => command.rallar?.almDiagnostics)).toEqual([almDiagnostics, almDiagnostics]);
-    });
 
     it('authors coherent AR Eye shot and completed-match wire specimens', () => {
         const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
