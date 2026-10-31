@@ -1,3 +1,4 @@
+import { createStableRtcLayoutWait } from '../../../fixtures/create-stable-rtc-layout-wait.ts';
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -7,11 +8,6 @@ import type {
 import { RESTORED_SESSION_RALLAR } from '../alm-conformance-session-commands.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
-/**
- * Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan, counted from when the page
- * first held the accepted layout at the readiness revision, which the acceptance's own write produces.
- */
-const LAYOUT_QUIET_WINDOW_MS = 3_500;
 /** A readiness whose layout is replaced is read again this soon, since its quiet window may already have elapsed. */
 const LAYOUT_RECHECK_INTERVAL_MS = 500;
 /** A promotion still in flight lands within this; a setup with no accepted layout by then fails instead of looping. */
@@ -64,7 +60,7 @@ export function createAlmScaleSetupCommands(
             timeoutMs: computeGroupRequestTimeoutMs(input)
         },
         createAcceptedLayoutGate(input, prefix),
-        createStableLayoutWait(input, prefix),
+        createStableRtcLayoutWait({ group: input.group, prefix, timeoutMs: input.readyTimeoutMs }),
         createSetupBarrier(input, prefix, 'setup-complete'),
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
         createSetupBarrier(input, prefix, 'traffic-ready')
@@ -249,44 +245,6 @@ function createAcceptedLayoutGate(input: AlmScaleRecipeInput, prefix: string): R
                 operator: 'exists',
                 source: `resultCache.${prefix}-layout-accepted:i{loop.iteration}:c1:` +
                     `${prefix}-layout-accepted-readiness.value.acceptedHeldSinceEpochMs`
-            }
-        ]
-    };
-}
-
-/**
- * Readiness repeats until no plan from its own group revision, which would replace the ready layout, has appeared
- * within the quiet window counted from when the page first held the accepted layout at that revision, so a layout
- * that settled earlier costs no wait.
- */
-function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    const readiness = `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:${prefix}-layout-readiness.value`;
-    return {
-        kind: 'loop',
-        commandId: `${prefix}-layout-stable`,
-        count: Math.ceil(input.readyTimeoutMs / LAYOUT_RECHECK_INTERVAL_MS),
-        intervalMs: LAYOUT_RECHECK_INTERVAL_MS,
-        timeoutMs: input.readyTimeoutMs + LAYOUT_QUIET_WINDOW_MS,
-        until: 'first-success',
-        commands: [
-            {
-                kind: 'formation.readiness',
-                commandId: `${prefix}-layout-readiness`,
-                roomRef: { ...input.group },
-                timeoutMs: LAYOUT_READINESS_TIMEOUT_MS
-            },
-            {
-                kind: 'wait',
-                commandId: `${prefix}-layout-replan`,
-                absent: true,
-                timeoutMs: LAYOUT_QUIET_WINDOW_MS,
-                timeoutFrom: `{${readiness}.acceptedHeldSinceEpochMs}`,
-                match: {
-                    topic: 'rallar.browser.formation.layout',
-                    payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
-                    payloadPath: 'data.identity',
-                    contains: `"groupRevision":{${readiness}.formation.causalRevision.groupRevision},`
-                }
             }
         ]
     };

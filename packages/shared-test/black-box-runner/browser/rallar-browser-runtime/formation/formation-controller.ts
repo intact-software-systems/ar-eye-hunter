@@ -95,7 +95,10 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
             readyAtEpochMs,
             formation: summary,
-            ...(acceptedHeldSinceEpochMs === undefined ? {} : { acceptedHeldSinceEpochMs })
+            ...(acceptedHeldSinceEpochMs === undefined ? {} : {
+                acceptedHeldSinceEpochMs,
+                acceptedHeldForMs: Math.max(0, readyAtEpochMs - acceptedHeldSinceEpochMs)
+            })
         };
         this.#emit(
             BLACK_BOX_RALLAR_FORMATION_TOPICS.ready,

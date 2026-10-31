@@ -969,7 +969,9 @@ it('reports when the page first held the accepted layout at the readiness revisi
     unsubscribe();
 
     expect(settled.acceptedHeldSinceEpochMs).toBe(10_000);
+    expect(settled).toHaveProperty('acceptedHeldForMs', 10_000);
     expect(advanced.acceptedHeldSinceEpochMs).toBe(21_000);
+    expect(advanced).toHaveProperty('acceptedHeldForMs', 1_000);
 });
 
 it('counts the hold from the readiness itself when the page observed no earlier change', async () => {
@@ -991,4 +993,21 @@ it('reports no hold while no layout is accepted', async () => {
     const result = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
 
     expect(result).not.toHaveProperty('acceptedHeldSinceEpochMs');
+});
+
+it('restarts the accepted hold after a group-first transition temporarily removes the layout body', async () => {
+    const harness = createOpenFormationHarness();
+    const unsubscribe = harness.controller.installDiagnostics(roomRef);
+    harness.nowEpochMs = 10_000;
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+    harness.nowEpochMs = 11_000;
+    harness.emitChange({ accepted: undefined });
+    harness.nowEpochMs = 12_000;
+    harness.emitChange({ accepted: toAcceptedLayout(harness, { ...PLANNED, version: PLANNED.version + 1 }) });
+    harness.nowEpochMs = 12_500;
+
+    const recovered = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    unsubscribe();
+
+    expect(recovered).toMatchObject({ acceptedHeldSinceEpochMs: 12_000, acceptedHeldForMs: 500 });
 });

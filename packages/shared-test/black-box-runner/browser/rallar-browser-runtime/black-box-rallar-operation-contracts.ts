@@ -881,6 +881,8 @@ export interface BlackBoxRallarFormationReadinessDiagnostics {
      * no layout is accepted.
      */
     readonly acceptedHeldSinceEpochMs?: number;
+    /** Elapsed on this page at this readiness observation; absent when no layout is accepted. */
+    readonly acceptedHeldForMs?: number;
 }
 
 export interface BlackBoxRallarFormationRuntime {
