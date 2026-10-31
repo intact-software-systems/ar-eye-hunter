@@ -532,6 +532,7 @@ class ScaleCohort {
     readLayoutReadiness(): RallarBlackBoxTestRecord {
         return {
             readyAtEpochMs: Date.now(),
+            hasPendingLayout: this.plannedLayoutIdentity !== undefined,
             formation: {
                 roomRef: GROUP,
                 ...(this.plannedLayoutIdentity === undefined ? {} : { planned: { identity: { ...this.plannedLayoutIdentity } } }),

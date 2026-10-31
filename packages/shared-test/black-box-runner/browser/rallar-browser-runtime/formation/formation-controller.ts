@@ -8,6 +8,7 @@ import type {
     RallarRoomFormation,
     RallarRoomFormationStatus
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import { isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type {
@@ -95,6 +96,9 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
             readyAtEpochMs,
             formation: summary,
+            hasPendingLayout: summary.planned !== undefined &&
+                (summary.accepted === undefined ||
+                    !isSameGroupLayoutIdentity(summary.planned.identity, summary.accepted.identity)),
             ...(acceptedHeldSinceEpochMs === undefined ? {} : {
                 acceptedHeldSinceEpochMs,
                 acceptedHeldForMs: Math.max(0, readyAtEpochMs - acceptedHeldSinceEpochMs)

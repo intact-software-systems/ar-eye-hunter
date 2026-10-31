@@ -364,6 +364,7 @@ export class AlmReloadPorts {
             status: 'ok',
             value: {
                 readyAtEpochMs: this.now,
+                hasPendingLayout: false,
                 acceptedHeldSinceEpochMs,
                 acceptedHeldForMs: this.now - acceptedHeldSinceEpochMs,
                 formation: {}

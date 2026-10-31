@@ -35,6 +35,7 @@ function createTransitionRuntime(recoveryAtMs: number | undefined): LayoutTransi
                 status: 'ok',
                 value: {
                     readyAtEpochMs: now,
+                    hasPendingLayout: false,
                     acceptedHeldSinceEpochMs: heldSince,
                     acceptedHeldForMs: now - heldSince,
                     formation: { causalRevision: { groupRevision: now < 10_300 ? 36 : 38, presenceRevision: 26 } }

@@ -1012,3 +1012,21 @@ it('restarts the accepted hold after a group-first transition temporarily remove
 
     expect(recovered).toMatchObject({ acceptedHeldSinceEpochMs: 12_000, acceptedHeldForMs: 500 });
 });
+
+it.each([
+    { planned: undefined, pending: false },
+    { planned: PLANNED, pending: false },
+    { planned: { ...PLANNED, version: PLANNED.version + 1 }, pending: true },
+    { planned: { ...PLANNED, state: 'removed' as const }, pending: true }
+])('distinguishes a pending layout from the already accepted identity: $pending', async ({ planned, pending }) => {
+    const harness = createOpenFormationHarness();
+    const accepted = toAcceptedLayout(harness, PLANNED);
+    harness.emitChange({
+        accepted,
+        planned: planned === undefined ? undefined : { ...accepted, role: 'planned', identity: planned }
+    });
+
+    const observation = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(observation).toHaveProperty('hasPendingLayout', pending);
+});

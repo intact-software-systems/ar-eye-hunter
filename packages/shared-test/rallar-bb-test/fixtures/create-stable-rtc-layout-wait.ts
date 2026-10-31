@@ -36,9 +36,9 @@ export function createStableRtcLayoutWait(input: StableRtcLayoutWaitInput): Rall
             {
                 kind: 'assert',
                 commandId: `${prefix}-assert-no-pending-layout`,
-                operator: 'exists',
+                operator: 'equals',
                 source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                    `${prefix}-layout-readiness.value.formation.planned`,
+                    `${prefix}-layout-readiness.value.hasPendingLayout`,
                 expected: false
             },
             {

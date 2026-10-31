@@ -874,6 +874,8 @@ export interface BlackBoxRallarFormationCommandDiagnostics {
 }
 
 export interface BlackBoxRallarFormationReadinessDiagnostics {
+    /** A planned slot with the exact accepted identity is already settled, not a pending replacement. */
+    readonly hasPendingLayout: boolean;
     readonly readyAtEpochMs: number;
     readonly formation: BlackBoxRallarFormationSummary;
     /**
