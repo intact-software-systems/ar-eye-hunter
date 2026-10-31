@@ -9,8 +9,7 @@ import {
 } from '../composite-results.ts';
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '../control-protocol.ts';
 import type { ControlQueuedCommandSnapshot } from '../control-snapshots.ts';
-import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
-import { RecipeCaptureRequirements } from '../recipe/recipe-capture-requirements.ts';
+import type { RecipeCaptureRequirements } from '../recipe/recipe-capture-requirements.ts';
 import { RecipeCaptureSequence } from '../recipe/recipe-capture-sequence.ts';
 import { decodeJsonValue, decodeRecord, decodeText } from '../runtime/decode-runtime-result-values.ts';
 import {
@@ -19,6 +18,7 @@ import {
     resolveAcknowledgedControlRecipe,
     resolveControlExecutionCommand,
     toControlCommandAttribution,
+    toControlCommandRequirements,
     type AcknowledgedControlRecipeInput,
     type ControlCommandAttribution,
     type ControlCommandEvidenceInput
@@ -51,7 +51,7 @@ export function isAdmissibleControlRtcCaptureResult(input: ControlCommandEvidenc
     if (execution === undefined) {
         return false;
     }
-    const requirements = toCommandCaptureRequirements(execution);
+    const requirements = toControlCommandRequirements(execution);
     if (requirements.entries.length === 0) {
         return true;
     }
@@ -97,25 +97,10 @@ export function bindAcknowledgedControlRecipe(input: AcknowledgedControlRecipeIn
         return input.command;
     }
     const accepted = resolveAcknowledgedControlRecipe(input);
-    if (!accepted || toCommandCaptureRequirements({ ...command, recipe: accepted.recipe }).entries.length === 0) {
+    if (!accepted || toControlCommandRequirements({ ...command, recipe: accepted.recipe }).entries.length === 0) {
         return input.command;
     }
     return { ...input.command, command: { ...command, expectedRecipeBodyId: accepted.recipeBodyId } };
-}
-
-function toCommandCaptureRequirements(command: RallarBlackBoxTestCommand): RecipeCaptureRequirements.Analysis {
-    const recipe = command.kind === 'recipe.run' ? command.recipe : {
-        schemaVersion: 1 as const,
-        recipeId: 'control-command',
-        commands: [command]
-    };
-    const analysis = new RecipeCaptureRequirements().analyze({
-        selections: [{ recipeId: recipe?.recipeId ?? 'control-reference', recipe, variables: {} }],
-        run: command.kind === 'recipe.run' ? command.rtcCaptureMode : undefined
-    });
-    return command.kind === 'recipe.run' && command.recipe === undefined
-        ? { ...analysis, entries: analysis.entries.map((entry) => ({ ...entry, command })) }
-        : analysis;
 }
 
 function isAttributedCaptureSuccess(

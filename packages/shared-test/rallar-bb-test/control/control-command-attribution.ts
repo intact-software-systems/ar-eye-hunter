@@ -12,6 +12,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecipeRunCommand
 } from '../rallar-black-box-test-contracts.ts';
+import { RecipeCaptureRequirements } from '../recipe/recipe-capture-requirements.ts';
 import { decodeRecipeExecutionSegment } from '../recipe/run-recipe-commands.ts';
 import { decodeRecord, decodeText } from '../runtime/decode-runtime-result-values.ts';
 
@@ -196,4 +197,19 @@ export function isCommandIdentityConsistent(
     const value = decodeRecord(entry.result.value);
     return command.kind !== 'rtc.connect' || command.connection === undefined ||
         value.connection === command.connection;
+}
+
+export function toControlCommandRequirements(command: RallarBlackBoxTestCommand): RecipeCaptureRequirements.Analysis {
+    const recipe = command.kind === 'recipe.run' ? command.recipe : {
+        schemaVersion: 1 as const,
+        recipeId: 'control-command',
+        commands: [command]
+    };
+    const analysis = new RecipeCaptureRequirements().analyze({
+        selections: [{ recipeId: recipe?.recipeId ?? 'control-reference', recipe, variables: {} }],
+        run: command.kind === 'recipe.run' ? command.rtcCaptureMode : undefined
+    });
+    return command.kind === 'recipe.run' && command.recipe === undefined
+        ? { ...analysis, entries: analysis.entries.map((entry) => ({ ...entry, command })) }
+        : analysis;
 }

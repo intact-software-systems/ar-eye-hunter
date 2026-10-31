@@ -1,7 +1,7 @@
 import type { ControlEventEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
-import type { RallarBlackBoxTestRecipeRunCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestRecipeRunCommand, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assert, assertEquals } from '@std/assert';
@@ -13,15 +13,10 @@ interface PollingFleetFixture {
     readonly controlRun: ControlRunSnapshot;
 }
 
-async function runPollingFixture(mode: 'success' | 'exhausted' | 'continue' | 'failed-root'): Promise<PollingFleetFixture> {
-    let now = 1_000;
-    const runtime = createDefaultRallarBlackBoxTestRuntime({
-        now: () => now,
-        sleep: async (ms) => {
-            now += ms;
-        }
-    });
-    const command: RallarBlackBoxTestRecipeRunCommand = {
+type PollingMode = 'success' | 'exhausted' | 'continue' | 'failed-root';
+
+function toPollingCommand(mode: PollingMode): RallarBlackBoxTestRecipeRunCommand {
+    return {
         kind: 'recipe.run',
         commandId: 'root',
         recipe: {
@@ -31,7 +26,7 @@ async function runPollingFixture(mode: 'success' | 'exhausted' | 'continue' | 'f
                 {
                     kind: 'loop',
                     commandId: 'poll',
-                    count: 4,
+                    count: 6,
                     intervalMs: 500,
                     ...(mode === 'continue' ? { continueOnFailure: true } : { until: 'first-success' as const }),
                     commands: [{
@@ -39,7 +34,7 @@ async function runPollingFixture(mode: 'success' | 'exhausted' | 'continue' | 'f
                         commandId: 'ready',
                         source: 'state.commandHistory.length',
                         operator: 'gte',
-                        expected: mode === 'exhausted' ? 100 : 2
+                        expected: mode === 'exhausted' ? 100 : 4
                     }]
                 },
                 ...(mode === 'failed-root'
@@ -48,6 +43,20 @@ async function runPollingFixture(mode: 'success' | 'exhausted' | 'continue' | 'f
             ]
         }
     };
+}
+
+async function runPollingFixture(mode: PollingMode): Promise<PollingFleetFixture> {
+    return runCommandFixture(toPollingCommand(mode));
+}
+
+async function runCommandFixture(command: RallarBlackBoxTestRecipeRunCommand): Promise<PollingFleetFixture> {
+    let now = 1_000;
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        now: () => now,
+        sleep: async (ms) => {
+            now += ms;
+        }
+    });
     const result = await runtime.execute(command);
     const events: ControlEventEnvelope[] = runtime.state().events.filter((event) => event.severity === 'error').map((event) => ({
         kind: 'event',
@@ -71,22 +80,33 @@ async function runPollingFixture(mode: 'success' | 'exhausted' | 'continue' | 'f
             commandLinks: [{ phase: 'start', agentId: 'agent-1', commandId: 'root', queuedAtEpochMs: 1_000 }],
             rollup: rollupDistributedRunResult({ stateHint: state })
         },
-        controlRun: {
-            runId: 'run-1',
-            createdAtEpochMs: 1_000,
-            updatedAtEpochMs: now,
-            agents: [],
-            commands: [{
-                envelope: { kind: 'command', protocolVersion: 1, runId: 'run-1', agentId: 'agent-1', commandId: 'root', command },
-                queuedAtEpochMs: 1_000,
-                dispatchCount: 1
-            }],
-            results: [{ kind: 'result', protocolVersion: 1, runId: 'run-1', agentId: 'agent-1', commandId: 'root', ok: result.ok, result }],
-            events,
-            stats: [],
-            reports: [],
-            heartbeats: []
-        }
+        controlRun: toControlRunSnapshot({ command, result, events, now })
+    };
+}
+
+interface PollingExecution {
+    readonly command: RallarBlackBoxTestRecipeRunCommand;
+    readonly result: RallarBlackBoxTestResult;
+    readonly events: readonly ControlEventEnvelope[];
+    readonly now: number;
+}
+
+function toControlRunSnapshot({ command, result, events, now }: PollingExecution): ControlRunSnapshot {
+    return {
+        runId: 'run-1',
+        createdAtEpochMs: 1_000,
+        updatedAtEpochMs: now,
+        agents: [],
+        commands: [{
+            envelope: { kind: 'command', protocolVersion: 1, runId: 'run-1', agentId: 'agent-1', commandId: 'root', command },
+            queuedAtEpochMs: 1_000,
+            dispatchCount: 1
+        }],
+        results: [{ kind: 'result', protocolVersion: 1, runId: 'run-1', agentId: 'agent-1', commandId: 'root', ok: result.ok, result }],
+        events,
+        stats: [],
+        reports: [],
+        heartbeats: []
     };
 }
 
@@ -99,7 +119,7 @@ Deno.test('fleet counts successful until polling as passed while retaining its f
     const fleet = report(fixture);
     assertEquals(fleet.summary.failed, 0);
     assertEquals(fleet.summary.passRate, 1);
-    assertEquals(fleet.agents[0].diagnosticCount, 2);
+    assertEquals(fleet.agents[0].diagnosticCount, 4);
     assertEquals(fleet.failureSignatures, []);
     assertEquals(report(fixture, fixture.controlRun.events.slice(-1)).summary.passRate, 1);
     assertEquals(report(fixture, []).summary.passRate, 1);
@@ -144,3 +164,55 @@ for (const field of ['runId', 'agentId'] as const) {
         assertEquals(report(fixture, [event]).failureSignatures.length, 1);
     });
 }
+
+Deno.test('fleet retains tolerated failures in the successful final polling attempt', async () => {
+    const fixture = await runCommandFixture({
+        kind: 'recipe.run',
+        commandId: 'root',
+        recipe: {
+            schemaVersion: 1,
+            recipeId: 'nested',
+            commands: [{
+                kind: 'loop',
+                commandId: 'outer',
+                until: 'first-success',
+                count: 2,
+                commands: [{
+                    kind: 'loop',
+                    commandId: 'inner',
+                    continueOnFailure: true,
+                    count: 1,
+                    commands: [{
+                        kind: 'assert',
+                        commandId: 'never',
+                        source: 'state.commandHistory.length',
+                        operator: 'lt',
+                        expected: 0
+                    }]
+                }]
+            }]
+        }
+    });
+    assertEquals(fixture.controlRun.results[0].ok, true);
+    assertEquals(report(fixture).summary.failed, 1);
+});
+
+Deno.test('fleet recognizes successful polling inside a retained loaded recipe', async () => {
+    const nested = toPollingCommand('success').recipe;
+    assert(nested);
+    const fixture = await runCommandFixture({
+        kind: 'recipe.run',
+        commandId: 'root',
+        recipe: {
+            schemaVersion: 1,
+            recipeId: 'root-recipe',
+            commands: [
+                { kind: 'recipe.load', commandId: 'load-nested', recipe: nested },
+                { kind: 'recipe.run', commandId: 'run-nested' }
+            ]
+        }
+    });
+    assertEquals(fixture.controlRun.results[0].ok, true);
+    assert(fixture.controlRun.events.length > 0);
+    assertEquals(report(fixture).summary.failed, 0);
+});
