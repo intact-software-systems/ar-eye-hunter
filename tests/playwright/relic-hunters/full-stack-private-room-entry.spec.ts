@@ -510,14 +510,36 @@ roomBrowserTest(
         await guest.goto(secondLink);
         await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
         await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
-        await guest.reload();
-        await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+        const hydrationStarted = Promise.withResolvers<void>();
+        const releaseHydration = Promise.withResolvers<void>();
+        const snapshotPath = `**/api/relic/games/${secondRef}`;
+        await guest.route(snapshotPath, async (route) => {
+            hydrationStarted.resolve();
+            await releaseHydration.promise;
+            await route.fulfill({ status: 503, json: { error: 'Expedition snapshot unavailable' } });
+        });
         const admissionPath = `**/groups/${firstRef}/join/requests/*`;
         await guest.route(
             admissionPath,
             (route) => route.fulfill({ status: 403, json: { error: 'Room no longer available' } })
         );
-        await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+        try {
+            await guest.reload();
+            await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+            await hydrationStarted.promise;
+            await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+            await expect(guest.getByRole('status')).toContainText(
+                'Checking the current expedition before changing rooms'
+            );
+            await expect(guest.getByText(`Room destination: ${firstRef}`, { exact: true })).toBeVisible();
+        }
+        finally {
+            releaseHydration.resolve();
+        }
+        await expect(guest.getByRole('alert')).toContainText('Expedition state could not be checked');
+        await expect(guest.getByText(`Room destination: ${firstRef}`, { exact: true })).toBeVisible();
+        await guest.unroute(snapshotPath);
+        await guest.getByRole('button', { name: 'Retry expedition state', exact: true }).click();
         await expect(guest.getByRole('alert')).toContainText('Room entry was denied');
         await guest.unroute(admissionPath);
         await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();

@@ -1,6 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+    useEffect,
+    useState,
+    type FormEvent
+} from 'react';
 
 import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
+import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
@@ -40,7 +45,6 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
             participation: draft.participation
         });
     };
-    const pending = entry.status !== 'idle' && entry.status !== 'entered';
     return (
         <section className="panel stack" aria-label="Shared room entry">
             <h3>Enter a shared expedition</h3>
@@ -51,8 +55,34 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
                 joining={entry.status === 'joining'}
                 watchBlocked={watchBlocked}
             />
+            <RelicRoomEntryStatus game={game} entry={entry} />
+            <RelicRecentRooms game={game} joining={entry.status === 'joining'} />
+        </section>
+    );
+}
+
+interface RelicRoomEntryStatusProps extends RelicRoomEntryProps {
+    readonly entry: RallarRoomEntry.State;
+}
+
+function RelicRoomEntryStatus({ game, entry }: RelicRoomEntryStatusProps) {
+    const pending = entry.status !== 'idle' && entry.status !== 'entered';
+    return (
+        <>
             {pending && entry.destination && <p>Room destination: {entry.destination.roomRef.groupId}</p>}
             {pending && entry.destination && !game.session && <p>Sign in to enter this room.</p>}
+            {entry.status === 'pending' && game.participation === 'player' && !game.snapshot && (
+                game.error
+                    ? (
+                        <div>
+                            <p role="alert">Expedition state could not be checked. {game.error}</p>
+                            <button type="button" onClick={() => void game.refreshRooms()}>
+                                Retry expedition state
+                            </button>
+                        </div>
+                    )
+                    : <p role="status">Checking the current expedition before changing rooms…</p>
+            )}
             {entry.status === 'joining' && <p role="status">Entering the expedition room…</p>}
             {entry.status === 'entered' && <p aria-live="polite">Entered {entry.destination?.roomRef.groupId}.</p>}
             {entry.failure && <p role="alert">{entry.failure.message}</p>}
@@ -61,16 +91,15 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
                     {entry.status === 'failed' && game.session && (
                         <button
                             type="button"
-                            onClick={() => void owner.resume()}
+                            onClick={() => void game.roomEntry.resume()}
                         >
                             Retry room entry
                         </button>
                     )}
-                    <button type="button" onClick={() => owner.cancel()}>Cancel room entry</button>
+                    <button type="button" onClick={() => game.roomEntry.cancel()}>Cancel room entry</button>
                 </div>
             )}
-            <RelicRecentRooms game={game} joining={entry.status === 'joining'} />
-        </section>
+        </>
     );
 }
 
