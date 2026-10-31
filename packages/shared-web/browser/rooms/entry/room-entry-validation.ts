@@ -8,12 +8,13 @@ export function decodeRoomEntryDestination(
 ): Either<RallarRoomEntry.Failure, RallarRoomEntry.Destination> {
     if (
         !value || typeof value !== 'object' || !('roomRef' in value) || !('joinCode' in value) ||
-        !('participation' in value)
+        !('participation' in value) || !('intent' in value)
     ) {
         return Either.ofLeft(invalidDestination());
     }
     const roomRef = value.roomRef;
     if (
+        (value.intent !== 'join' && value.intent !== 'preview-session') ||
         !roomRef || typeof roomRef !== 'object' ||
         !('applicationId' in roomRef) || typeof roomRef.applicationId !== 'string' ||
         !('workspaceId' in roomRef) || typeof roomRef.workspaceId !== 'string' ||
@@ -26,6 +27,7 @@ export function decodeRoomEntryDestination(
         return Either.ofLeft(invalidDestination());
     }
     return Either.ofRight({
+        intent: value.intent,
         roomRef: { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId, groupId: roomRef.groupId },
         joinCode: value.joinCode,
         participation: value.participation

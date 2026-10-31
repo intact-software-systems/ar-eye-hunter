@@ -9,6 +9,14 @@ import type {
     GroupScope,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
+import {
+    canonicalStoredGroupSessionIntent,
+    decodeSessionIntent,
+    GROUP_SESSION_INTENTS_NAMESPACE,
+    groupSessionIntentKey,
+    groupSessionIntentPrincipalPrefix,
+    type StoredGroupSessionIntent
+} from '../schedule/group-session-intent-storage.ts';
 
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntryPageOptions } from '../../../runtime-state/runtime-state-repository.ts';
@@ -16,6 +24,11 @@ import { decodeAuthSessionBySessionIdEntry } from '../../auth/persistence/auth-s
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
+import {
+    canonicalStoredGroupSessionReservations,
+    GROUP_SESSION_RESERVATIONS_NAMESPACE,
+    type StoredGroupSessionReservations
+} from '../schedule/group-session-reservation-storage.ts';
 import {
     assertStoredIdempotency,
     canonicalStoredGroup,
@@ -315,6 +328,55 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             groupStatePublicationGrantStorageKey(ref, ref.principalId)
         );
         return stored ? canonicalStoredPublicationGrant(stored, ref) : undefined;
+    }
+
+    async listSessionIntentsPage(scope: GroupScope, principalId: string, afterKey: string | null): Promise<{
+        readonly intents: readonly StoredGroupSessionIntent[];
+        readonly nextKey: string | null;
+    }> {
+        const prefix = groupSessionIntentPrincipalPrefix(scope, principalId);
+        if (afterKey !== null && !afterKey.startsWith(prefix)) {
+            throw new TypeError('Session cursor belongs to a different account or scope');
+        }
+        const entries = await this.repository.findEntriesByPrefixPage(GROUP_SESSION_INTENTS_NAMESPACE, prefix, {
+            limit: 32,
+            ...(afterKey === null ? {} : { afterKey })
+        });
+        const intents: StoredGroupSessionIntent[] = [];
+        for (const entry of entries) {
+            const stored = await this.toLiveJsonEntryValue(GROUP_SESSION_INTENTS_NAMESPACE, entry);
+            if (stored === undefined) {
+                continue;
+            }
+            const decoded = decodeSessionIntent(stored.value);
+            const intent = canonicalStoredGroupSessionIntent(stored, { ...scope, groupId: decoded.groupId }).value;
+            if (intent.principalId !== principalId) {
+                throw new TypeError('Session interest principal differs from its index');
+            }
+            intents.push(intent);
+        }
+        return { intents, nextKey: entries.length === 32 ? entries[entries.length - 1].key : null };
+    }
+
+    async findSessionIntentEntry(
+        ref: GroupRef,
+        principalId: string
+    ): Promise<RuntimeStateEntryValue<StoredGroupSessionIntent> | undefined> {
+        const stored = await this.getJsonEntryValue(
+            GROUP_SESSION_INTENTS_NAMESPACE,
+            groupSessionIntentKey(ref, principalId)
+        );
+        return stored ? canonicalStoredGroupSessionIntent(stored, ref) : undefined;
+    }
+
+    async findSessionReservationsEntry(
+        ref: GroupRef
+    ): Promise<RuntimeStateEntryValue<StoredGroupSessionReservations> | undefined> {
+        const stored = await this.getJsonEntryValue(
+            GROUP_SESSION_RESERVATIONS_NAMESPACE,
+            groupStateGroupStorageKey(ref)
+        );
+        return stored ? canonicalStoredGroupSessionReservations(stored, ref) : undefined;
     }
 
     async listPresenceAdmissions(ref: GroupRef): Promise<readonly GroupPresenceAdmission[]> {

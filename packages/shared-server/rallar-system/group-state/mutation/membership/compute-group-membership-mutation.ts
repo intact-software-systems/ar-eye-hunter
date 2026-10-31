@@ -57,6 +57,7 @@ export function computeJoin(
             },
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
+            sessionReservations: read.sessionReservations?.value,
             participation: command.input.participation ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
             joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
@@ -278,7 +279,8 @@ export function computeUpsertMember(
         snapshot,
         role,
         nowEpochMs: facts.attemptAtEpochMs,
-        capacity: facts.capacity
+        capacity: facts.capacity,
+        sessionReservations: read.sessionReservations
     });
     const status = resolveUpsertMemberStatus({ command, read, facts, role });
     const invitedByPrincipalId = command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;

@@ -44,6 +44,7 @@ import type { GroupStateMutationExactAuthSession } from './persistence/read-exac
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import { GroupRetentionService } from './retention/group-retention-service.ts';
+import { GroupSessionDirectory } from './schedule/group-session-directory.ts';
 
 export class GroupMutationIdempotencyConflictError extends Error {
     readonly status = 409;
@@ -81,6 +82,7 @@ export function createGroupStateRuntime(
     const ingressOperations = createIngressCaptureOperations(owners);
     const mutationOperations = createMutationOperations(owners);
     const service: GroupStateService = {
+        sessionDirectory: new GroupSessionDirectory({ repository: repositoryFor(runtime), now }),
         move: new GroupMoveService({
             groups: repositoryFor(runtime),
             moves: new GroupMoveRepository(runtime, now),

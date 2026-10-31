@@ -37,6 +37,7 @@ import {
     requireRecord,
     requireString
 } from '@shared/api/exact-object-decoding.ts';
+import { groupSessionStartRefusal } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
@@ -223,7 +224,7 @@ export class RelicGameMutationService {
     }
 
     needsInitialState(read: RelicGameMutationService.Read): boolean {
-        if (authorizeRelicGameMutation(read) !== null) {
+        if (authorizeRelicGameMutation(read) !== null || scheduledRelicStartRefusal(read) !== null) {
             return false;
         }
         const { command } = read.ingress;
@@ -420,6 +421,10 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
             outboxWrites: [],
             provenance: []
         };
+    }
+    const scheduledStartRefusal = scheduledRelicStartRefusal(read);
+    if (scheduledStartRefusal !== null) {
+        return { ...refused(command, { ...scheduledStartRefusal, httpStatus: 409 }), guard };
     }
     const missingProposal = evaluateRelicGameProposal(command, previous, read.ingress.initial);
     if (missingProposal !== null) {
@@ -708,4 +713,11 @@ function evaluateRelicGameProposal(
     }
 
     return null;
+}
+
+function scheduledRelicStartRefusal(read: RelicGameMutationService.Read) {
+    const move = read.ingress.command.move;
+    return read.group !== null && (move?.kind === 'start-expedition' || move?.kind === 'start-rematch')
+        ? groupSessionStartRefusal(read.group.snapshot.group.metadata, read.attemptAtEpochMs)
+        : null;
 }

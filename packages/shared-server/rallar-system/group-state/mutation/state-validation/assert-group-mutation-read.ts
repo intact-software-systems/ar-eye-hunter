@@ -1,4 +1,7 @@
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { canonicalStoredGroupSessionIntent } from '../../schedule/group-session-intent-storage.ts';
+import { groupSessionIntentPrincipal } from '../read/group-mutation-read-scope.ts';
 
 import {
     assertExactKeys,
@@ -19,8 +22,10 @@ import {
 } from '../../persistence/validate-persisted-group-presence.ts';
 import { validateStoredGroup } from '../../persistence/validate-persisted-group.ts';
 import { validateGroupExpiredStateAuthority } from '../../presence/group-expired-state-authority.ts';
+import { canonicalStoredGroupSessionReservations } from '../../schedule/group-session-reservation-storage.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
+import { readsGroupSessionReservations } from '../read/group-mutation-read-scope.ts';
 import { resolveGroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 import { assertGroupMutationAuthorityReads } from './assert-group-mutation-authority-reads.ts';
 import { assertGroupMutationMemberReads } from './assert-group-mutation-member-reads.ts';
@@ -28,6 +33,8 @@ import { assertGroupMutationOperationReads } from './assert-group-mutation-opera
 import { assertGroupMutationIdempotencyRecord } from './assert-group-mutation-result.ts';
 
 const GROUP_MUTATION_READ_KEYS = [
+    'sessionIntent',
+    'sessionReservations',
     'idempotency',
     'group',
     'actorMember',
@@ -64,6 +71,18 @@ export function assertGroupMutationRead(
     const ref = command.aggregateRef;
     assertReadShape(read);
     assertStoredGroupRead(read, ref);
+    assertSessionReservationRead(read, command);
+    if (read.sessionIntent !== null) {
+        if (
+            read.sessionIntent.value.principalId !== groupSessionIntentPrincipal(command)
+        ) {
+            throw new TypeError('Session interest must belong to the exact command discovery target');
+        }
+        canonicalStoredGroupSessionIntent(
+            { entry: read.sessionIntent.entry, value: { ...read.sessionIntent.value } },
+            ref
+        );
+    }
     const identities = resolveGroupMutationReadIdentities(read, command);
     assertGroupMutationMemberReads(read, ref, identities);
     assertTargetPresenceRead({
@@ -165,4 +184,28 @@ function assertSummaryAndIdempotencyReads(
         groupStateIdempotencyStorageKey(ref, idempotencyKey)
     );
     assertGroupMutationIdempotencyRecord(read.idempotency.value, ref);
+}
+
+function assertSessionReservationRead(read: GroupMutationRead, command: GroupMutationCommand): void {
+    const needed = readsGroupSessionReservations(command.operation);
+    const schedule = read.group === null ? null : readGroupSessionSchedule(read.group.value.metadata);
+    const stored = read.sessionReservations;
+    if (!needed || schedule === null) {
+        if (stored !== null) {
+            throw new TypeError('Session reservations were read outside their scheduled admission scope');
+        }
+        return;
+    }
+    if (stored === null) {
+        throw new TypeError('Scheduled room reservation state is missing');
+    }
+    validateGroupStateRuntimeEntry(
+        stored,
+        'Stored session reservations',
+        groupStateGroupStorageKey(command.aggregateRef)
+    );
+    canonicalStoredGroupSessionReservations({ entry: stored.entry, value: { ...stored.value } }, command.aggregateRef);
+    if (stored.value.scheduleRevision !== schedule.revision) {
+        throw new TypeError('Session reservation state differs from the current schedule revision');
+    }
 }

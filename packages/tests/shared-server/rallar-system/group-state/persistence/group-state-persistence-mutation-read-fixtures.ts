@@ -9,106 +9,64 @@ import {
     storedEntry
 } from '../mutation/group-mutation-test-runtime.ts';
 
-export function createCorruptionMutationRead(): GroupMutationRead {
+export function createPersistenceMutationRead(): GroupMutationRead {
     const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
     const group = createTestGroup({
         ...groupRef('pure-room'),
-        ...{ displayName: 'Before', activeMemberCount: 1, ownerPrincipalId: 'alice' },
-        ...{ snapshotVersion: 1, metadataVersion: 1, rosterVersion: 1, presenceVersion: 0 },
-        ...{ created: audit, updated: audit }
+        displayName: 'Before',
+        activeMemberCount: 1,
+        ownerPrincipalId: 'alice',
+        snapshotVersion: 1,
+        metadataVersion: 1,
+        rosterVersion: 1,
+        presenceVersion: 0,
+        created: audit,
+        updated: audit
     });
     const actorMember = {
         ...groupRef('pure-room'),
-        ...{ principalId: 'alice', role: 'owner' as const, status: 'active' as const },
-        ...{ invitedByPrincipalId: null, invitationExpiresAtEpochMs: null },
-        ...{ left: null, removed: null, banned: null, joined: audit, updated: audit }
+        principalId: 'alice',
+        role: 'owner' as const,
+        status: 'active' as const,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
+        joined: audit,
+        updated: audit
     };
     return {
-        ...{ idempotency: null, group: storedEntry(groupStorageKey(), group) },
-        ...{ retiredGroup: null, expiredGroupEntry: null, actorMember, targetMember: null },
-        ...{ authorityMember: null, directorMember: null },
+        idempotency: null,
+        group: storedEntry(groupStorageKey(), group),
+        retiredGroup: null,
+        expiredGroupEntry: null,
+        actorMember,
+        targetMember: null,
+        authorityMember: null,
+        directorMember: null,
         actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
-        ...{ targetMemberEntry: null, authorityMemberEntry: null, directorMemberEntry: null },
-        ...{ targetPresence: null, expiredTargetPresenceEntry: null, targetAdmission: null },
-        ...{ authorityAdmission: null, directorAdmission: null },
-        ...{ authorityPresenceSessions: [], authorityPresenceSessionEntries: [] },
+        targetMemberEntry: null,
+        authorityMemberEntry: null,
+        directorMemberEntry: null,
+        targetPresence: null,
+        expiredTargetPresenceEntry: null,
+        targetAdmission: null,
+        authorityAdmission: null,
+        directorAdmission: null,
+        authorityPresenceSessions: [],
+        authorityPresenceSessionEntries: [],
         presenceSummary: null,
         targetPublicationGrant: null,
+        sessionReservations: null,
+        sessionIntent: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         activeMembers: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
-}
-
-export function createIdentityMutationRead(): GroupMutationRead {
-    const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
-    const group = createTestGroup({
-        ...groupRef('pure-room'),
-        ...{ displayName: 'Before', activeMemberCount: 1, ownerPrincipalId: 'alice' },
-        ...{ snapshotVersion: 1, metadataVersion: 1, rosterVersion: 1, presenceVersion: 0 },
-        ...{ created: audit, updated: audit }
-    });
-    const actorMember = {
-        ...groupRef('pure-room'),
-        ...{ principalId: 'alice', role: 'owner' as const, status: 'active' as const },
-        ...{ invitedByPrincipalId: null, invitationExpiresAtEpochMs: null },
-        ...{ left: null, removed: null, banned: null, joined: audit, updated: audit }
     };
-    return {
-        ...{ idempotency: null, group: storedEntry(groupStorageKey(), group) },
-        ...{ retiredGroup: null, expiredGroupEntry: null, actorMember, targetMember: null },
-        ...{ authorityMember: null, directorMember: null },
-        actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
-        ...{ targetMemberEntry: null, authorityMemberEntry: null, directorMemberEntry: null },
-        ...{ targetPresence: null, expiredTargetPresenceEntry: null, targetAdmission: null },
-        ...{ authorityAdmission: null, directorAdmission: null },
-        ...{ authorityPresenceSessions: [], authorityPresenceSessionEntries: [] },
-        presenceSummary: null,
-        targetPublicationGrant: null,
-        lifecyclePolicy: null,
-        activeMemberPrincipalIds: null,
-        activeMembers: null,
-        plannedLayoutRow: null,
-        connectTriggerLatch: null,
-        acceptedLayoutRow: null
-    } as GroupMutationRead;
-}
-
-export function createSnapshotAssemblyMutationRead(): GroupMutationRead {
-    const audit = persistenceAuditStamp(1_000, 'alice', 'seed');
-    const group = createTestGroup({
-        ...groupRef('pure-room'),
-        ...{ displayName: 'Before', activeMemberCount: 1, ownerPrincipalId: 'alice' },
-        ...{ snapshotVersion: 1, metadataVersion: 1, rosterVersion: 1, presenceVersion: 0 },
-        ...{ created: audit, updated: audit }
-    });
-    const actorMember = {
-        ...groupRef('pure-room'),
-        ...{ principalId: 'alice', role: 'owner' as const, status: 'active' as const },
-        ...{ invitedByPrincipalId: null, invitationExpiresAtEpochMs: null },
-        ...{ left: null, removed: null, banned: null, joined: audit, updated: audit }
-    };
-    return {
-        ...{ idempotency: null, group: storedEntry(groupStorageKey(), group) },
-        ...{ retiredGroup: null, expiredGroupEntry: null, actorMember, targetMember: null },
-        ...{ authorityMember: null, directorMember: null },
-        actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
-        ...{ targetMemberEntry: null, authorityMemberEntry: null, directorMemberEntry: null },
-        ...{ targetPresence: null, expiredTargetPresenceEntry: null, targetAdmission: null },
-        ...{ authorityAdmission: null, directorAdmission: null },
-        ...{ authorityPresenceSessions: [], authorityPresenceSessionEntries: [] },
-        presenceSummary: null,
-        targetPublicationGrant: null,
-        lifecyclePolicy: null,
-        activeMemberPrincipalIds: null,
-        activeMembers: null,
-        plannedLayoutRow: null,
-        connectTriggerLatch: null,
-        acceptedLayoutRow: null
-    } as GroupMutationRead;
 }
 
 function persistenceAuditStamp(

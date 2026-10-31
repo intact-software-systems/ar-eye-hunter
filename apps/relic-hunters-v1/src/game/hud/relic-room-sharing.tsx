@@ -32,6 +32,7 @@ export function RelicRoomSharing({ snapshot, code, busy, rotate }: RelicRoomShar
     const [copyStatus, setCopyStatus] = useState('');
     const codeMatches = code && isSameGroupRef(code.snapshot.group, snapshot.group);
     const link = snapshot.group.joinMode === 'code' && !codeMatches ? '' : toRoomEntryUrl(window.location.href, {
+        intent: 'join',
         roomRef: snapshot.group,
         joinCode: codeMatches ? code.joinCode : null,
         participation: 'preserve'

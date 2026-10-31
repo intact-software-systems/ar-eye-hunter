@@ -279,6 +279,7 @@ export function toDescriptorCommand(
         case 'createGroup':
         case 'updateGroup':
         case 'appointDirector':
+        case 'changeGroupSession':
         case 'rotateGroupJoinCode':
             return toAggregateMutationCommand(descriptor, randomId);
         case 'planGroupLayout':

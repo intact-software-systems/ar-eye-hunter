@@ -1,3 +1,4 @@
+import type { ChangeGroupSessionRequest } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     AcceptGroupInviteRequest,
     AppointGroupDirectorRequest,
@@ -26,6 +27,12 @@ import type {
 import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+
+export interface GroupSessionChangeAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: ChangeGroupSessionRequest;
+}
 
 export interface GroupCreateAppInboxPayload {
     readonly scope: StateScope;
@@ -206,6 +213,7 @@ export interface GroupPresenceDisconnectAppInboxPayload {
 }
 
 export interface AuthenticatedGroupMutationPayloadByType {
+    [AppInboxType.GROUP_SESSION_CHANGE]: GroupSessionChangeAppInboxPayload;
     [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
     [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
     [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
@@ -255,6 +263,7 @@ interface AuthenticatedGroupMutationEnqueueCandidate {
 }
 
 export const AUTHENTICATED_GROUP_INBOX_TYPES = [
+    AppInboxType.GROUP_SESSION_CHANGE,
     AppInboxType.GROUP_CREATE,
     AppInboxType.GROUP_UPDATE,
     AppInboxType.GROUP_DIRECTOR_APPOINT,

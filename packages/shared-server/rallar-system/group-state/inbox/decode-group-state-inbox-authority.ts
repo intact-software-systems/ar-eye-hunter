@@ -217,6 +217,7 @@ function decodeGroupMutationOperation(
         case 'revokeGroupInvite':
         case 'grantGroupAdmission':
         case 'declineGroupAdmission':
+        case 'changeGroupSession':
         case 'rotateGroupJoinCode':
         case 'removeGroupMember':
         case 'banGroupMember':

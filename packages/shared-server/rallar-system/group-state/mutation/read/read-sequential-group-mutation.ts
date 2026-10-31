@@ -199,6 +199,8 @@ function assembleSequentialGroupMutationRead({
         authorityPresenceSessionEntries,
         presenceSummary: presenceSummary ?? null,
         targetPublicationGrant: related.targetPublicationGrant ?? null,
+        sessionReservations: related.sessionReservations,
+        sessionIntent: related.sessionIntent,
         lifecyclePolicy,
         activeMemberPrincipalIds,
         activeMembers,

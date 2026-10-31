@@ -131,6 +131,8 @@ describe('Postgres reads of live history rows', () => {
                 includeGroup: true,
                 includePresenceSummary: true,
                 includeLifecyclePolicy: false,
+                includeSessionReservations: false,
+                sessionIntentPrincipalId: null,
                 includeGroupSnapshot: true,
                 authSessionId: null,
                 requestIds: [],

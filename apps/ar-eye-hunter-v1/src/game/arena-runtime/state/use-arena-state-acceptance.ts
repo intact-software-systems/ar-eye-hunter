@@ -1,4 +1,10 @@
 import { rallar } from '@shared-web/browser/rallar.ts';
+import { scheduledSessionHttpApi } from '@shared-web/browser/rooms/sessions/scheduled-session-http-api.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import {
+    groupSessionStartRefusal,
+    readGroupSessionSchedule
+} from '@shared/api/group-sessions/group-session-schedule.ts';
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import type {
     Dispatch,
@@ -160,6 +166,25 @@ async function acceptArenaMatchStart(
     }
     const isCurrentOwner = () =>
         isCurrent() && input.arenaMatchRef.current === match && input.roomIdRef.current === roomId;
+    const room = rallar.rooms.state().currentRoom;
+    if (!room || room.group.groupId !== roomId) {
+        return;
+    }
+    if (readGroupSessionSchedule(room.group.metadata) !== null) {
+        const session = rallar.session();
+        if (!session || room.group.groupId !== roomId) {
+            return;
+        }
+        const preview = await scheduledSessionHttpApi.read(room.group, session, AbortSignal.timeout(10_000));
+        if (
+            !isCurrentOwner() || input.arenaSnapshotRef.current !== previous || preview === null ||
+            !isSameGroupRef(preview.roomRef, room.group) || !preview.canEnter || preview.participation !== 'admitted' ||
+            groupSessionStartRefusal({ rallarSessionSchedule: { ...preview.schedule } }, preview.serverNowEpochMs) !==
+                null
+        ) {
+            return;
+        }
+    }
     const nowEpochMs = input.nowMs();
     const state = previous ? hydrateArenaSnapshot(previous) : createInitialArenaState(undefined, nowEpochMs);
     const result = startArenaMatch(state, intent, nowEpochMs);

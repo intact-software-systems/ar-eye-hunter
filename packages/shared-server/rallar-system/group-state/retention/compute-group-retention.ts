@@ -1,4 +1,5 @@
 import { GROUP_RETENTION_METADATA_KEY, readGroupRetentionState } from '@shared/api/group-retention.ts';
+import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 
 import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -27,13 +28,23 @@ export function computeGroupRetention(read: GroupRetentionService.Read): GroupRe
         group: stored,
         current: read.authority.current ?? null
     }, read.attemptAtEpochMs).activeSessionCount > 0;
-    if (live) {
+    const schedule = readGroupSessionSchedule(group.metadata);
+    const timing = schedule === null ? null : toGroupSessionTiming(schedule, read.attemptAtEpochMs);
+    const holdReleasedAtEpochMs = schedule === null || timing === null
+        ? null
+        : schedule.cancelledAtEpochMs ?? timing.reservationsExpireAtEpochMs;
+    const heldForSession = timing !== null && timing.phase !== 'cancelled' &&
+        read.attemptAtEpochMs < timing.reservationsExpireAtEpochMs;
+    if (live || heldForSession) {
         return group.emptySinceEpochMs === null
             ? noChange(read, group)
             : computeGroupRetentionWrite(read, updateObservation(read, group, { atEpochMs: null, fingerprint: null }));
     }
     const fingerprint = computePresenceFingerprint(read);
-    if (group.emptySinceEpochMs === null || policy.emptyPresenceFingerprint !== fingerprint) {
+    if (
+        group.emptySinceEpochMs === null || policy.emptyPresenceFingerprint !== fingerprint ||
+        (holdReleasedAtEpochMs !== null && group.emptySinceEpochMs < holdReleasedAtEpochMs)
+    ) {
         return computeGroupRetentionWrite(
             read,
             updateObservation(read, group, {

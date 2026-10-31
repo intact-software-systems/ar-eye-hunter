@@ -221,6 +221,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         groupStateService: mutation.groupStateService,
+        sessionDirectory: mutation.groupStateService.sessionDirectory,
         rtcRttRepository: new RtcRttRepository(mutation.runtimeStateRepository),
         requireApiAuthSession: (request) => requireApiAuthSession(request, mutation.authSessionRepository),
         processGroupAppInbox: async (authority, enqueue) => {

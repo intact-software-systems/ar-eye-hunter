@@ -9,13 +9,13 @@ import type { GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary
 import { describe, expect, it } from 'vitest';
 
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
-import { createCorruptionMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('group-state persistence codec', () => {
     // A stored value is parsed afresh from its text on every read, so the decoder hands out the
     // validated value itself rather than a copy.
     it('returns the validated stored value itself', () => {
-        const read = createCorruptionMutationRead();
+        const read = createPersistenceMutationRead();
         const ref = groupRef('pure-room');
         const group = JSON.parse(JSON.stringify(read.group!.value));
         const member = JSON.parse(JSON.stringify(read.actorMember));

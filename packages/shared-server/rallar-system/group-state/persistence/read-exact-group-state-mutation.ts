@@ -8,6 +8,12 @@ import type {
     GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+import {
+    canonicalStoredGroupSessionIntent,
+    GROUP_SESSION_INTENTS_NAMESPACE,
+    groupSessionIntentKey,
+    type StoredGroupSessionIntent
+} from '../schedule/group-session-intent-storage.ts';
 
 import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
@@ -17,6 +23,11 @@ import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../../auth/p
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
+import {
+    canonicalStoredGroupSessionReservations,
+    GROUP_SESSION_RESERVATIONS_NAMESPACE,
+    type StoredGroupSessionReservations
+} from '../schedule/group-session-reservation-storage.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import { isRetiredGroupIdentity, type RetiredGroupIdentity } from './aggregate/retired-group-identity.ts';
 import {
@@ -47,10 +58,12 @@ import { groupStatePublicationGrantStorageKey } from './publication/group-public
 import { toGroupStateAuthoritySelectors, type GroupStateAuthorityBatchRead } from './read-group-state-authority.ts';
 
 export interface GroupStateMutationExactReadInput {
+    readonly sessionIntentPrincipalId: string | null;
     readonly aggregateRef: GroupRef;
     readonly includeGroup: boolean;
     readonly includePresenceSummary: boolean;
     readonly includeLifecyclePolicy: boolean;
+    readonly includeSessionReservations: boolean;
     /** The whole roster and every session as well, so the group's snapshot comes from the same statement. */
     readonly includeGroupSnapshot: boolean;
     /** The authenticated session the attempt re-checks, selected by the same statement; null for internal authority. */
@@ -80,6 +93,8 @@ export type GroupStateMutationExactAuthSession =
 
 /** The rows one exact read selected, all from the same statement. */
 export interface GroupStateMutationExactEntries {
+    readonly sessionIntent: RuntimeStateEntryValue<StoredGroupSessionIntent> | null;
+    readonly sessionReservations: RuntimeStateEntryValue<StoredGroupSessionReservations> | null;
     readonly groups: readonly RuntimeStateEntryValue<Group>[];
     readonly retiredGroup: RetiredGroupIdentity | null;
     readonly expiredGroupEntry: RuntimeStateEntry | null;
@@ -129,6 +144,8 @@ type AggregateSlotKind =
     | 'group'
     | 'presence-summary'
     | 'lifecycle-policy'
+    | 'session-intent'
+    | 'session-reservations'
     | 'roster'
     | 'sessions'
     | 'publication-grants'
@@ -194,9 +211,15 @@ function toExactReadResult(
 ): GroupStateMutationExactEntries {
     const group = findSlotSelection(selections, 'group');
     const summary = findSlotSelection(selections, 'presence-summary');
+    const intent = findSlotSelection(selections, 'session-intent')?.entries[0];
+    const reservations = findSlotSelection(selections, 'session-reservations')?.entries[0];
     const records = (group?.entries ?? []).map((entry) => decoders.group(entry));
     const retirement = records.find((entry) => isRetiredGroupIdentity(entry.value));
     return {
+        sessionIntent: intent ? canonicalStoredGroupSessionIntent(intent, input.aggregateRef) : null,
+        sessionReservations: reservations
+            ? canonicalStoredGroupSessionReservations(reservations, input.aggregateRef)
+            : null,
         groups: records.flatMap((entry) =>
             isRetiredGroupIdentity(entry.value) ? [] : [{ entry: entry.entry, value: entry.value }]
         ),
@@ -324,6 +347,22 @@ function addAggregateSelectors(input: GroupStateMutationExactReadInput, add: Exa
                 { kind: 'presence-summary' }
             );
         }
+    }
+    if (input.sessionIntentPrincipalId !== null) {
+        add({
+            selectorId: 'session-intent',
+            kind: 'key',
+            namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+            key: groupSessionIntentKey(input.aggregateRef, input.sessionIntentPrincipalId)
+        }, { kind: 'session-intent' });
+    }
+    if (input.includeSessionReservations) {
+        add({
+            selectorId: 'session-reservations',
+            kind: 'key',
+            namespace: GROUP_SESSION_RESERVATIONS_NAMESPACE,
+            key: groupKey
+        }, { kind: 'session-reservations' });
     }
     if (input.includeLifecyclePolicy) {
         add(

@@ -11,6 +11,7 @@ import type {
     GroupPublicationGrant,
     GroupPublicationTopicGrants
 } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     AuditStamp,
     Group,
@@ -28,6 +29,8 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import type { StoredGroupSessionIntent } from '../schedule/group-session-intent-storage.ts';
+import type { StoredGroupSessionReservations } from '../schedule/group-session-reservation-storage.ts';
 
 import type {
     RuntimeStateGuardedBatchEffect,
@@ -62,6 +65,13 @@ interface GroupMutationCommandBase {
 export type GroupPublicationGrantOperation = 'grantGroupPublication' | 'revokeGroupPublication';
 
 export type GroupMutationCommand =
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            operation: 'changeGroupSession';
+            input: NullableActorInput & GroupSessionChange;
+        }>
+    )
     | (
         & GroupMutationCommandBase
         & Readonly<{
@@ -440,6 +450,8 @@ export interface GroupMutationIdempotencyRecord {
 }
 
 export interface GroupMutationRead {
+    readonly sessionIntent: RuntimeStateEntryValue<StoredGroupSessionIntent> | null;
+    readonly sessionReservations: RuntimeStateEntryValue<StoredGroupSessionReservations> | null;
     readonly idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
     readonly group: RuntimeStateEntryValue<Group> | null;
     readonly retiredGroup: RetiredGroupIdentity | null;
@@ -600,7 +612,14 @@ export type GroupPublicationGrantEffect =
     | Readonly<{ operation: 'update'; value: GroupPublicationGrant; expectedRevision: number; }>
     | Readonly<{ operation: 'delete'; value: GroupPublicationGrant; expectedRevision: number; }>;
 
+export interface GroupSessionReservationWrite {
+    readonly value: StoredGroupSessionReservations;
+    readonly expectedRevision: number;
+}
+
 export interface GroupMutationDomainWrite {
+    readonly sessionIntentEffect: RuntimeStateGuardedBatchEffect | null;
+    readonly sessionReservationWrite: GroupSessionReservationWrite | null;
     readonly outcome: 'write';
     readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
     readonly members: readonly GroupMember[];

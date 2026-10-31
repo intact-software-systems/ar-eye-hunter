@@ -6,13 +6,13 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createIdentityMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('keeps absent and explicit sentinel workspaces isolated at the repository boundary', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = createTestGroupStateRepository(runtime);
-        const base = createIdentityMutationRead().group!.value;
+        const base = createPersistenceMutationRead().group!.value;
         const absentGroup: Group = {
             ...base,
             applicationId: 'boundary-app',
@@ -55,7 +55,7 @@ describe('GroupStateRepository persistence', () => {
             groupId: 'sentinel-boundary-group'
         };
         const explicitSentinelGroup: Group = {
-            ...createIdentityMutationRead().group!.value,
+            ...createPersistenceMutationRead().group!.value,
             ...absentRef,
             workspaceId: '_',
             activeMemberCount: 0
@@ -83,7 +83,7 @@ describe('GroupStateRepository persistence', () => {
             groupId: 'physical-key-group'
         };
         const group: Group = {
-            ...createIdentityMutationRead().group!.value,
+            ...createPersistenceMutationRead().group!.value,
             ...ref
         };
         vi.spyOn(runtime, 'findEntry').mockResolvedValue({

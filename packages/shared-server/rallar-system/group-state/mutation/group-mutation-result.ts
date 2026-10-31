@@ -14,6 +14,7 @@ import type {
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { computeGroupSessionMembershipEffects } from '../schedule/compute-group-session-membership-effects.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
@@ -33,6 +34,7 @@ import type {
     GroupMutationReceipt,
     GroupPublicationGrantEffect,
     GroupPublicationGrantOperation,
+    GroupSessionReservationWrite,
     PresenceAdmissionCandidate,
     PresenceGuardCandidate
 } from './group-mutation-contracts.ts';
@@ -48,6 +50,8 @@ import { computeGroupMutationPersistence } from './orchestration/compute-group-m
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface GroupMutationWriteInput {
+    readonly sessionIntentEffect?: RuntimeStateGuardedBatchEffect;
+    readonly sessionReservationWrite?: GroupSessionReservationWrite;
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
@@ -150,8 +154,11 @@ export function computeGroupMutationWriteResult(
         outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
         rejection: null
     });
+    const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const computed: GroupMutationDomainWrite = {
         outcome: 'write',
+        sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
+        sessionReservationWrite: input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite,
         guard: input.guard,
         members: input.members,
         initialPresenceSummary: input.initialPresenceSummary,
@@ -350,6 +357,10 @@ function toGroupMutationActor(
 
 function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
     const { causalRevision, command, eventType, facts, group } = input;
+    // Reservations are private account intent. Publish only an anonymous invalidation;
+    // the authenticated command and receipt retain the authoritative audit identity.
+    const privateReservation = command.operation === 'changeGroupSession' &&
+        (command.input.action === 'reserve' || command.input.action === 'withdraw');
     return {
         applicationId: group.applicationId,
         workspaceId: group.workspaceId,
@@ -359,10 +370,12 @@ function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
         snapshotVersion: group.snapshotVersion,
         causalRevision,
         occurredAtEpochMs: facts.nowEpochMs,
-        actor: toGroupMutationActor(command, facts, undefined),
-        reason: command.input.reason,
-        traceId: facts.traceId,
-        requestId: command.requestId,
+        actor: privateReservation
+            ? { kind: 'service', serviceId: facts.serviceId }
+            : toGroupMutationActor(command, facts, undefined),
+        reason: privateReservation ? null : command.input.reason,
+        traceId: privateReservation ? facts.eventId : facts.traceId,
+        requestId: privateReservation ? null : command.requestId,
         payload: toGroupEventPayload(input)
     };
 }

@@ -161,6 +161,7 @@ interface AssertUpsertActivationAllowedInput {
     readonly role: GroupMember['role'];
     readonly nowEpochMs: number;
     readonly capacity: GroupPolicyCapacityConfig | undefined;
+    readonly sessionReservations: GroupMutationRead['sessionReservations'];
 }
 
 export function assertUpsertActivationAllowed({
@@ -168,7 +169,8 @@ export function assertUpsertActivationAllowed({
     snapshot,
     role,
     nowEpochMs,
-    capacity
+    capacity,
+    sessionReservations
 }: AssertUpsertActivationAllowedInput): void {
     if (command.input.status !== 'active') {
         return;
@@ -183,6 +185,7 @@ export function assertUpsertActivationAllowed({
                 },
                 nowEpochMs,
                 capacity,
+                sessionReservations: sessionReservations?.value,
                 participation: role === 'spectator' ? 'spectator' : 'player'
             })
             : canActivateGroupMember({
@@ -190,7 +193,8 @@ export function assertUpsertActivationAllowed({
                 targetPrincipalId: command.targetPrincipalId,
                 role,
                 nowEpochMs,
-                capacity
+                capacity,
+                sessionReservations: sessionReservations?.value
             })
     );
 }
@@ -214,7 +218,8 @@ export function assertGovernedParticipationChange(
         targetPrincipalId: member.principalId,
         role,
         nowEpochMs: facts.attemptAtEpochMs,
-        capacity: facts.capacity
+        capacity: facts.capacity,
+        sessionReservations: read.sessionReservations?.value
     }));
     if (member.role === 'spectator' && role !== 'spectator') {
         assertGroupAdmissionWindowsOpen(read, facts);

@@ -104,6 +104,10 @@ export function createGroupStateRouteTestDependencies(
     const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
     return {
         groupStateService: createGroupStateRouteService(input.groupService),
+        sessionDirectory: {
+            read: () => Promise.reject(new Error('Unexpected session preview')),
+            listForPrincipal: () => Promise.reject(new Error('Unexpected session listing'))
+        },
         rtcRttRepository: input.rtcRttRepository ?? { listMeasurementEntriesForEndpoints: () => Promise.resolve([]) },
         requireApiAuthSession,
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,

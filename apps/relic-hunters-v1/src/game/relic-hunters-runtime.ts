@@ -367,6 +367,12 @@ export class RelicHuntersRuntime {
         if (!this.active || state.status !== 'pending') {
             return;
         }
+        if (state.destination?.intent === 'preview-session') {
+            if (this.connection.diagnostics.middlewareConnected) {
+                void this.deps.roomEntry.resume();
+            }
+            return;
+        }
         // Admission can finish before expedition hydration; absence is not evidence of participation.
         if (this.connection.participation === 'player' && !this.connection.snapshot) {
             return;

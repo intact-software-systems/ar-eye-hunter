@@ -1,5 +1,6 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import { registerGroupLifecycleRoutes } from './register-group-lifecycle-routes.ts';
+import { registerGroupSessionRoutes } from './register-group-session-routes.ts';
 
 import { createGroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import type { GroupStateRouteDependencies } from './group-state-route-contracts.ts';
@@ -21,6 +22,7 @@ export function registerGroupStateRoutes(
     registerGroupStateReadRoutes(app, dependencies, authorization);
     registerGroupQuickJoinRoute(app, dependencies);
     registerGroupMoveRoutes(app, dependencies);
+    registerGroupSessionRoutes(app, dependencies);
     registerGroupStateMutationRoutes(app, dependencies, authorization);
     registerGroupLifecycleRoutes(app, dependencies);
     registerGroupAdmissionRoutes(app, dependencies);

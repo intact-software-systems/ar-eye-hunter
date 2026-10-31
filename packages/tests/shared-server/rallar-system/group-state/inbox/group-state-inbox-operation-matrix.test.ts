@@ -87,6 +87,7 @@ describe('GroupStateInboxService authenticated authority', () => {
 
     it('advertises every authenticated group operation covered by the real handler matrix', () => {
         expect(AUTHENTICATED_GROUP_INBOX_TYPES).toEqual([
+            AppInboxType.GROUP_SESSION_CHANGE,
             AppInboxType.GROUP_CREATE,
             AppInboxType.GROUP_UPDATE,
             AppInboxType.GROUP_DIRECTOR_APPOINT,
@@ -141,6 +142,52 @@ describe('GroupStateInboxService authenticated authority', () => {
                 actorSessionId: 'charlie-session'
             } as const;
             const cases: readonly OperationMatrixCase[] = [
+                {
+                    type: AppInboxType.GROUP_CREATE,
+                    operation: 'createGroup',
+                    authority: harness.sessions.owner,
+                    data: {
+                        scope: SCOPE,
+                        request: {
+                            groupId: 'matrix-session',
+                            displayName: 'Scheduled session',
+                            kind: 'room',
+                            joinMode: 'open',
+                            createdByPrincipalId: 'owner',
+                            requestId: 'matrix-session-create',
+                            ...ownerActor,
+                            maxMembers: 2,
+                            retention: { mode: 'temporary' },
+                            scheduledStartAtEpochMs: harness.nowEpochMs + 3_600_000
+                        }
+                    },
+                    assertDomain: async () => {
+                        expect((await harness.repository.findSessionReservationsEntry({ ...SCOPE, groupId: 'matrix-session' }))?.value.principalIds).toEqual(
+                            []
+                        );
+                    }
+                },
+                {
+                    type: AppInboxType.GROUP_SESSION_CHANGE,
+                    operation: 'changeGroupSession',
+                    authority: harness.sessions.bob,
+                    data: {
+                        scope: SCOPE,
+                        groupId: 'matrix-session',
+                        request: {
+                            requestId: 'matrix-session-reserve',
+                            ...bobActor,
+                            action: 'reserve',
+                            expectedScheduleRevision: 1,
+                            startsAtEpochMs: null
+                        }
+                    },
+                    assertDomain: async () => {
+                        expect((await harness.repository.findSessionReservationsEntry({ ...SCOPE, groupId: 'matrix-session' }))?.value.principalIds).toEqual([
+                            'bob'
+                        ]);
+                    }
+                },
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
