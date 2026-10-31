@@ -77,6 +77,16 @@ export async function scheduledSessionPlayJourney(host: Page, guest: Page, game:
     // Reaching the instant must not start either game automatically.
     await expect(startButton).toBeEnabled();
     await startAndVerifyRoomPlay(host, guest, game);
+    if (game === 'arena') {
+        const canvas = guest.getByLabel('AR Eye Hunter gameplay canvas');
+        await expect(canvas).toHaveAttribute('data-arena-avatar-count', /^[1-9]\d*$/, { timeout: 20_000 });
+        const shotsBefore = Number(await canvas.getAttribute('data-arena-shot-sequence'));
+        await canvas.click({ position: { x: 400, y: 200 } });
+        await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence'))).toBeGreaterThan(
+            shotsBefore
+        );
+        await guest.keyboard.press('Escape');
+    }
 }
 
 async function scheduleThroughControls(page: Page, delayMs: number) {

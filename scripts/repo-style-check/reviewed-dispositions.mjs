@@ -5,6 +5,48 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hasIdentifierOutsideFunctions',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'findCallsOutsideFunctions',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visitOutsideFunctions',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visit',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes',
+        maximumMagnitude: 1
+    }),
     // Whole-file review: bounded all-or-none admission keeps staged group, roster and reservation predecessors visible together.
     Object.freeze({
         path: 'packages/shared-server/rallar-system/group-state/move/compute-group-move-admission.ts',
@@ -45,13 +87,13 @@ export const reviewedDispositions = Object.freeze([
         path: 'apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 57
+        maximumMagnitude: 61
     }),
     // Untrusted persisted account arrays are checked for bounded length, strings and uniqueness before entering reservation computation.
     Object.freeze({
         path: 'packages/shared-server/rallar-system/group-state/schedule/group-session-reservations.ts',
         rule: 'boundary.unknown',
-        symbol: undefined,
+        symbol: 'decodeGroupSessionReservations',
         maximumMagnitude: 1
     }),
     // Untrusted HTTP JSON is immediately decoded as an exact bounded account-specific session page.
