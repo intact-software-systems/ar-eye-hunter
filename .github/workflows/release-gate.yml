@@ -234,6 +234,7 @@ jobs:
             tests/playwright/ar-eye-hunter/director-capability-delivery.spec.ts \
             tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts \
             tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
+            tests/playwright/ar-eye-hunter/room-entry-recovery.spec.ts \
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
 
       - name: Upload AR Eye browser timing
@@ -256,6 +257,7 @@ jobs:
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
+            tests/playwright/relic-hunters/full-stack-room-entry-recovery.spec.ts \
             tests/playwright/relic-hunters/full-stack-http.spec.ts \
             tests/playwright/relic-hunters/full-stack-spectating.spec.ts --trace=retain-on-failure
 

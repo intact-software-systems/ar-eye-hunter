@@ -1,5 +1,6 @@
 import { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+import { toErrorSummary, type ErrorSummary } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type BlackBoxRallarSerializedError =
@@ -11,6 +12,7 @@ interface BlackBoxRallarErrorDetails {
     readonly name: string;
     readonly message: string;
     readonly stack: string | undefined;
+    readonly cause: ErrorSummary | null;
 }
 
 interface BlackBoxRallarCaptureRefusal extends BlackBoxRallarErrorDetails, RallarRtcCaptureUnverifiedError.Input {
@@ -25,7 +27,12 @@ interface BlackBoxRallarCaptureIncompatibility extends BlackBoxRallarErrorDetail
 }
 
 export function toBlackBoxRallarSerializedError(error: Error): BlackBoxRallarSerializedError {
-    const details = { name: error.name, message: error.message, stack: error.stack };
+    const details = {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        cause: toErrorSummary(error).cause
+    };
     if (error instanceof RallarRtcCaptureUnverifiedError) {
         return {
             ...details,

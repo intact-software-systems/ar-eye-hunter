@@ -4,12 +4,12 @@ import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import type { LeaveRoomInput } from './leave-room.ts';
+import type { GroupSnapshot } from './room-group-state-translation.ts';
 import type { RoomSessionFence } from './room-session-fence.ts';
 
 interface AdoptJoinedRoomInput {
@@ -46,29 +46,7 @@ export async function adoptJoinedRoom(input: AdoptJoinedRoomInput): Promise<Grou
         }
     }
 
-    assertCurrent();
-    const cached = input.dependencies.stateStore.findGroupSnapshot(input.snapshot.group);
-    const minCausalRevision = {
-        groupRevision: Math.max(input.snapshot.causalRevision.groupRevision, cached?.causalRevision.groupRevision ?? 0),
-        presenceRevision: Math.max(
-            input.snapshot.causalRevision.presenceRevision,
-            cached?.causalRevision.presenceRevision ?? 0
-        )
-    };
-    const { snapshot } = await new Command<StateGroupSnapshotRead>(
-        (signal) =>
-            readStateGroupSnapshot(input.snapshot.group.groupId, scope, {
-                authSession: input.context.session,
-                signal,
-                minCausalRevision
-            }),
-        toRallarCommandOptions(input.options)
-    ).run();
-    assertCurrent();
-    const comparison = compareGroupCausalRevision(snapshot.causalRevision, minCausalRevision);
-    if (comparison !== 'equal' && comparison !== 'dominates') {
-        throw new Error('Current room read does not cover the admitted and observed revisions.');
-    }
+    const snapshot = await readJoinedRoomAfterConflict(input);
     await acceptAuthoritativeGroupStateSnapshot(snapshot, scope, { assertCanMutate: assertCurrent });
     assertCurrent();
     await input.dependencies.acceptSnapshots({
@@ -80,5 +58,37 @@ export async function adoptJoinedRoom(input: AdoptJoinedRoomInput): Promise<Grou
         assertCurrent
     });
     assertCurrent();
+    return snapshot;
+}
+
+/** One authenticated point read must cover both admission and the latest local observation. */
+async function readJoinedRoomAfterConflict(input: AdoptJoinedRoomInput): Promise<GroupSnapshot> {
+    const scope = toStateScope(input.snapshot.group);
+    const assertCurrent = () => input.assertCurrent(input.context);
+    assertCurrent();
+    const cached = input.dependencies.stateStore.findGroupSnapshot(input.snapshot.group);
+    const minCausalRevision = {
+        groupRevision: Math.max(input.snapshot.causalRevision.groupRevision, cached?.causalRevision.groupRevision ?? 0),
+        presenceRevision: Math.max(
+            input.snapshot.causalRevision.presenceRevision,
+            cached?.causalRevision.presenceRevision ?? 0
+        )
+    };
+    const { snapshot } = await new Command<StateGroupSnapshotRead>(
+        async (signal) => {
+            assertCurrent();
+            return await readStateGroupSnapshot(input.snapshot.group.groupId, scope, {
+                authSession: input.context.session,
+                signal,
+                minCausalRevision
+            });
+        },
+        toRallarCommandOptions({ ...input.options, timeoutMs: input.options.timeoutMs ?? 15000 })
+    ).run();
+    assertCurrent();
+    const comparison = compareGroupCausalRevision(snapshot.causalRevision, minCausalRevision);
+    if (comparison !== 'equal' && comparison !== 'dominates') {
+        throw new Error('Current room read does not cover the admitted and observed revisions.');
+    }
     return snapshot;
 }

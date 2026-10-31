@@ -1,6 +1,5 @@
 import type { RallarStateRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/people/rallar-people-contracts.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,
@@ -10,6 +9,7 @@ import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-cont
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import {
     browserStateCacheLifecycle,
+    type BrowserStateCacheLifecycle,
     type StateCacheChangeListener
 } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
@@ -35,7 +35,10 @@ export interface RallarStateCacheReadPort {
 }
 
 export interface RallarStateSnapshotAcceptanceInput {
-    readonly context: ApiMiddleware;
+    readonly context: {
+        readonly session: AuthSession;
+        readonly middleware: Pick<BrowserStateCacheLifecycle.HydrateInput, 'webRtcGroupManager'>;
+    };
     readonly clients: readonly ClientSnapshot[];
     readonly groups: readonly GroupSnapshot[];
     readonly scope?: StateScope;

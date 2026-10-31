@@ -217,6 +217,35 @@ describe('room entry through the browser facade and HTTP workflow', () => {
         expect(requests.filter(isAdmission)).toHaveLength(1);
     });
 
+    it.each([10, undefined])('bounds recovery reads with timeout %s and cannot select after a late response', async (timeoutMs) => {
+        vi.useFakeTimers();
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous, roomAtRevision(4, 5)]);
+        const readStarted = Promise.withResolvers<void>();
+        const read = Promise.withResolvers<Response>();
+        respond((request) => {
+            if (request.method === 'GET') {
+                readStarted.resolve();
+                return read.promise;
+            }
+            return json(roomAtRevision(5, 4));
+        });
+        const facade = createRallarFacade();
+        const failure = expect(facade.rooms.join('selected', { scope, timeoutMs })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            cause: { name: 'CommandTimedOutError' }
+        });
+        await readStarted.promise;
+        await vi.advanceTimersByTimeAsync(timeoutMs ?? 15000);
+        await failure;
+        read.resolve(pointRead(roomAtRevision(5, 5)));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(facade.rooms.current()).toBe(previous);
+        expect(requests.filter(isAdmission)).toHaveLength(1);
+    });
+
     it('does not hide an unrelated hydration failure behind a recovery read', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const previous = createRoomSnapshot('previous', ['session-1']);
@@ -371,7 +400,7 @@ describe('room entry through the browser facade and HTTP workflow', () => {
     });
 });
 
-function respond(handler: (request: HttpRequest) => Response): void {
+function respond(handler: (request: HttpRequest) => Response | Promise<Response>): void {
     vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
         const request = {
             url: String(url),
