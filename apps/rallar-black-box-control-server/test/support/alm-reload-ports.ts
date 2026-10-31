@@ -168,7 +168,6 @@ const HOLD_MSG_ID_REFERENCE = /^\{resultCache\.(.+)\.value\.msgId\}$/u;
 
 interface AlmReloadAdmissionPayload {
     readonly marker: string | undefined;
-    readonly index: number | undefined;
     readonly seq: number | undefined;
 }
 
@@ -799,11 +798,8 @@ export class AlmReloadPorts {
         command: RallarBlackBoxTestMessagesSendCommand,
         payload: AlmReloadAdmissionPayload
     ): AlmReloadSendAdmission {
-        const capacityRefused = !this.volatileSessions.sender.admit(
-            command,
-            `port-message-${this.messages.length + 1}`,
-            this.now
-        );
+        const msgId = `port-message-${this.messages.length + 1}`;
+        const capacityRefused = !this.volatileSessions.sender.admit(command, msgId, this.now);
         const requestedDurability = command.durability ?? 'volatile';
         const durable = requestedDurability !== 'volatile';
         const checkpointed = command.durability === 'local-checkpoint';
@@ -817,7 +813,7 @@ export class AlmReloadPorts {
         const recipientRoles = resolvePortRecipientRoles(command, this.participants, this.group);
         const message: PortMessage = {
             command,
-            msgId: `port-message-${this.messages.length + 1}`,
+            msgId,
             admittedAtMs: this.now,
             checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
             state: storageRefused ? 'failed' : rejected ? 'rejected' : payload.seq === 300 ? 'queued' : 'accepted',
@@ -1443,7 +1439,6 @@ function toAlmReloadAdmissionPayload(
     assert(isJsonRecordValue(payload));
     return {
         marker: typeof payload.marker === 'string' ? payload.marker : undefined,
-        index: typeof payload.index === 'number' ? payload.index : undefined,
         seq: typeof payload.seq === 'number' ? payload.seq : undefined
     };
 }
