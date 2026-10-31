@@ -116,6 +116,125 @@ describe('room entry through the browser facade and HTTP workflow', () => {
         expect(facade.rooms.current()).toBe(previous);
     });
 
+    it.each(['incomparable', 'same-revision'] as const)(
+        'recovers a conflicting %s admission response through a current scoped read before selecting the room',
+        async (conflict) => {
+            const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+            const previous = createRoomSnapshot('previous', ['session-1']);
+            const cached = roomAtRevision(conflict === 'incomparable' ? 4 : 5, 5);
+            const response = roomAtRevision(5, conflict === 'incomparable' ? 4 : 5);
+            const delayed = { ...response, group: { ...response.group, displayName: 'Outdated room name' } };
+            const current = roomAtRevision(5, 5);
+            seedRoomSnapshots([previous, cached]);
+            const facade = createRallarFacade();
+            respond((request) => {
+                if (request.method === 'GET') {
+                    expect(facade.rooms.current()).toBe(previous);
+                    return pointRead(current);
+                }
+                return json(delayed);
+            });
+
+            await expect(facade.rooms.join('selected', { scope, leaveCurrent: false })).resolves.toEqual(current);
+
+            expect(facade.rooms.current()).toEqual(current);
+            expect(requests.filter(isAdmission)).toHaveLength(1);
+            expect(requests.filter((request) => request.method === 'GET')).toMatchObject([{
+                url: '/api/state/apps/app-1/workspaces/workspace-1/groups/selected?minGroupRevision=5&minPresenceRevision=5',
+                clientId: runtime.session.clientId
+            }]);
+        }
+    );
+
+    it('keeps the previous room selected when recovering an admitted room fails', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const cached = roomAtRevision(4, 5);
+        const delayed = roomAtRevision(5, 4);
+        seedRoomSnapshots([previous, cached]);
+        const facade = createRallarFacade();
+        respond((request) => request.method === 'GET' ? new Response('unavailable', { status: 503 }) : json(delayed));
+
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            joinedRoom: delayed,
+            cause: { status: 503 }
+        });
+
+        expect(facade.rooms.current()).toBe(previous);
+        expect(requests.filter(isAdmission)).toHaveLength(1);
+        expect(requests.some((request) => request.url.includes('/previous/'))).toBe(false);
+    });
+
+    it.each(['cancelled', 'replaced account'] as const)(
+        'does not adopt a recovery read after the entry is %s',
+        async (interruption) => {
+            const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+            const previous = createRoomSnapshot('previous', ['session-1']);
+            const cached = roomAtRevision(4, 5);
+            const delayed = roomAtRevision(5, 4);
+            seedRoomSnapshots([previous, cached]);
+            const controller = new AbortController();
+            const facade = createRallarFacade();
+            respond((request) => {
+                if (request.method === 'GET') {
+                    if (interruption === 'cancelled') {
+                        controller.abort();
+                    }
+                    else {
+                        runtime.readSession.mockReturnValue({ ...runtime.session, clientId: 'replacement' });
+                    }
+                    return pointRead(roomAtRevision(5, 5));
+                }
+                return json(delayed);
+            });
+
+            await expect(facade.rooms.join('selected', { scope, signal: controller.signal })).rejects.toMatchObject({
+                name: 'RallarRoomJoinPartialFailureError',
+                joinedRoom: delayed
+            });
+
+            expect(facade.rooms.current()).toBe(previous);
+            expect(requests.filter(isAdmission)).toHaveLength(1);
+            expect(requests.some((request) => request.url.includes('/previous/'))).toBe(false);
+        }
+    );
+
+    it('rejects a recovery read below either observed revision floor', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous, roomAtRevision(4, 5)]);
+        const delayed = roomAtRevision(5, 4);
+        const facade = createRallarFacade();
+        respond((request) => request.method === 'GET' ? pointRead(delayed) : json(delayed));
+
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            cause: { message: 'Current room read does not cover the admitted and observed revisions.' }
+        });
+
+        expect(facade.rooms.current()).toBe(previous);
+        expect(requests.filter(isAdmission)).toHaveLength(1);
+    });
+
+    it('does not hide an unrelated hydration failure behind a recovery read', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous]);
+        const cause = new Error('RTC observer failed');
+        runtime.hydrateStateCache.mockRejectedValueOnce(cause);
+        respond(() => json(roomAtRevision(5, 5)));
+        const facade = createRallarFacade();
+
+        await expect(facade.rooms.join('selected', { scope })).rejects.toMatchObject({
+            name: 'RallarRoomJoinPartialFailureError',
+            cause
+        });
+
+        expect(facade.rooms.current()).toBe(previous);
+        expect(requests.map((request) => request.method)).toEqual(['POST', 'PUT']);
+    });
+
     it.each(
         [
             { stage: 'admission', sessionId: 'other-session' },
@@ -271,4 +390,25 @@ function isAdmission(request: HttpRequest): boolean {
 
 function json(value: object): Response {
     return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+function roomAtRevision(groupRevision: number, presenceRevision: number): GroupSnapshot {
+    const snapshot = createRoomSnapshot('selected', ['session-1']);
+    return {
+        ...snapshot,
+        causalRevision: { groupRevision, presenceRevision },
+        group: { ...snapshot.group, snapshotVersion: groupRevision, presenceVersion: presenceRevision }
+    };
+}
+
+function pointRead(snapshot: GroupSnapshot): Response {
+    return new Response(JSON.stringify(snapshot), {
+        headers: {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+            'rallar-state-source': 'durable',
+            'rallar-group-revision': String(snapshot.causalRevision.groupRevision),
+            'rallar-presence-revision': String(snapshot.causalRevision.presenceRevision)
+        }
+    });
 }

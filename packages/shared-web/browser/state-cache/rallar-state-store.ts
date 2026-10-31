@@ -39,6 +39,9 @@ export interface RallarStateSnapshotAcceptanceInput {
     readonly clients: readonly ClientSnapshot[];
     readonly groups: readonly GroupSnapshot[];
     readonly scope?: StateScope;
+    /** Select only after hydration succeeds and the initiating session is still current. */
+    readonly currentRoom?: GroupSnapshot;
+    readonly assertCurrent?: () => void;
 }
 
 export interface RallarStatePort {
@@ -112,6 +115,7 @@ export class RallarStateStore implements RallarStatePort {
     }
 
     async acceptSnapshots(input: RallarStateSnapshotAcceptanceInput): Promise<void> {
+        input.assertCurrent?.();
         await browserStateCacheLifecycle.hydrate({
             webRtcGroupManager: input.context.middleware.webRtcGroupManager,
             clientData: toClientInfo(input.context.session),
@@ -119,6 +123,10 @@ export class RallarStateStore implements RallarStatePort {
             groupSnapshots: input.groups,
             options: { scope: input.scope }
         });
+        input.assertCurrent?.();
+        if (input.currentRoom) {
+            this.input.roomStateStore.setCurrentRoom(input.currentRoom);
+        }
         this.emit();
     }
 
