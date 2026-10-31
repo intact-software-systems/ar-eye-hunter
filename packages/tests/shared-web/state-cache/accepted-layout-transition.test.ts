@@ -31,7 +31,9 @@ const rtc: GroupSnapshotRtcSyncPort = {
 beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
-    onTestFinished(() => vi.useRealTimers());
+    onTestFinished(() => {
+        vi.useRealTimers();
+    });
     configureTestCacheRepositories();
 });
 
@@ -90,7 +92,7 @@ function publish(value: RallarOverlayTopologySnapshot, deferredTopologies: Defer
 
 function availability() {
     return computeRtcOutboundCarrierAvailability({
-        message: newALMulticastMessage('sender', { topicId: 'room.test', resourceId: 'message' }, roomRef, 'test', {}, {
+        message: newALMulticastMessage('sender', { topicId: 'room.test', resourceId: 'message', contextId: 'room-test' }, roomRef, 'test', {}, {
             reliability: 'best-effort',
             ack: 'none'
         }),
@@ -99,6 +101,7 @@ function availability() {
             overlayId,
             room: findGroupStateSnapshotByRef(roomRef),
             overlay: findAcceptedOverlayById(overlayId),
+            connectedPeerIds: ['receiver'],
             nowMs: Date.now()
         }
     });

@@ -33,6 +33,7 @@ import type {
     RallarRoomFormation,
     RallarRoomFormationCommandOptions,
     RallarRoomFormationStatus,
+    RallarRoomLayout,
     RallarRoomLayoutEvent,
     RallarRoomLayoutListener,
     RallarRoomReconfigureOptions
@@ -940,7 +941,7 @@ it('retains exactly the first ten short desired and ready identities in original
     });
 });
 
-function toAcceptedLayout(harness: FormationHarness, identity: GroupLayoutIdentity) {
+function toAcceptedLayout(harness: FormationHarness, identity: GroupLayoutIdentity): RallarRoomLayout {
     return { role: 'accepted' as const, identity, overlay: createAcceptedOverlayFixture(harness.snapshot, identity.version, []) };
 }
 

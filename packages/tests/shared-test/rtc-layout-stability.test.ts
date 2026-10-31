@@ -2,32 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createAlmScaleSetupCommands } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-setup-commands.ts';
+import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
+interface LayoutTransitionFixture {
+    readonly runtime: RallarBlackBoxTestRuntime;
+    readonly observations: readonly number[];
+    now(): number;
+}
+
 /** Runs the shipped recipe interpreter; only the browser observation and clock are controlled. */
-function createTransitionRuntime(recoveryAtMs: number | undefined) {
+function createTransitionRuntime(recoveryAtMs: number | undefined): LayoutTransitionFixture {
     let now = 10_000;
     const observations: number[] = [];
     const runtime = createDefaultRallarBlackBoxTestRuntime({
         now: () => now,
         sleep: async (ms) => {
-            const before = now;
             now += ms;
-            if (before < 10_300 && now >= 10_300) {
-                runtime.recordEvent({
-                    kind: 'diagnostic',
-                    topic: 'rallar.browser.formation.layout',
-                    payload: {
-                        data: {
-                            kind: 'layoutRemoved',
-                            role: 'accepted',
-                            identity: { groupRevision: 35, presenceRevision: 25, version: 7, state: 'active' }
-                        }
-                    }
-                });
-            }
         },
         commandExecutor: (command) => {
             if (command.kind !== 'formation.readiness') {

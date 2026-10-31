@@ -8,6 +8,7 @@ import {
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
@@ -75,7 +76,11 @@ function toPolicy(retainNewest: number, messages: number): ALPublicationPolicy {
 }
 
 /** The live send every paced cell makes, on `resourceId`. */
-function toLiveSend(scenario: AlmConformanceScenario, carrier: AlmConformanceCarrier, publication: ALPublicationPolicy) {
+function toLiveSend(
+    scenario: AlmConformanceScenario,
+    carrier: AlmConformanceCarrier,
+    publication: ALPublicationPolicy
+): Pick<RallarBlackBoxTestMessagesSendCommand, 'kind' | 'carrier' | 'typeId' | 'purpose' | 'publication'> {
     return {
         kind: 'messages.send',
         carrier,
