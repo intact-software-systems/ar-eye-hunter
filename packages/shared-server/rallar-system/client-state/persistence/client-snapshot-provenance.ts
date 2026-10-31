@@ -8,10 +8,8 @@ import type {
     RuntimeStateGuardedBatchEffectResult
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
-    WS_OUTBOX_PROVENANCE_NAMESPACE,
-    type WsOutboxProvenance
+    computeWsOutboxProvenanceRecord,
+    WS_OUTBOX_PROVENANCE_NAMESPACE
 } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import type {
     ClientMutationComputed,
@@ -58,13 +56,10 @@ function computeClientSnapshotProvenanceInsert(
     ) {
         throw new TypeError('Client state-sync principal target differs from the accepted snapshot');
     }
-    const facts: Omit<WsOutboxProvenance, 'digest'> = {
-        version: 1,
+    const record = computeWsOutboxProvenanceRecord({
         producerKind: 'state-sync',
-        queueKey: write.entry.key,
-        typeId: write.entry.typeId,
-        messageId: message.id.msgId,
-        senderId: message.id.senderId,
+        entry: write.entry,
+        message,
         expiresAtMs: write.entry.audit.expiryTs.epochMilliseconds,
         target: targets.mode === 'unicast'
             ? {
@@ -85,16 +80,12 @@ function computeClientSnapshotProvenanceInsert(
                 },
                 admittedAudience: mutation.principalAudienceSessionIds
             }
-    };
-    const proof: WsOutboxProvenance = {
-        ...facts,
-        digest: computeWsOutboxProvenanceDigest(write.entry, facts)
-    };
+    });
     return {
         queueKey: write.entry.key,
         namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
-        key: toWsOutboxProvenanceKey(write.entry.key),
-        value: JSON.stringify(proof),
+        key: record.key,
+        value: record.value,
         expiresAt: write.expiresAt
     };
 }

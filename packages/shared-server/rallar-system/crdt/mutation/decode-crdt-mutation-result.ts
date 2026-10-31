@@ -1,4 +1,4 @@
-import { requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireOneOf, requireString } from '@shared/api/exact-object-decoding.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { CrdtMutationCommand, CrdtMutationResult } from './crdt-mutation-contracts.ts';
 import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
@@ -113,23 +113,7 @@ function decodeResultEnvelope(
     if (status === 'replay' && operation !== 'append') {
         throw new TypeError('CRDT mutation replay status is valid only for append');
     }
-    requireString(fields.commandId, 'result commandId');
-    requireString(fields.documentKey, 'result documentKey');
-    const documentRevision = decodeNullableNonNegativeInteger(
-        fields.documentRevision,
-        'result documentRevision'
-    );
-    const appendSequence = decodeNullableNonNegativeInteger(
-        fields.appendSequence,
-        'result appendSequence'
-    );
-    const code = decodeNullableString(fields.code, 'result code');
-    const common = {
-        version: 1 as const,
-        operation,
-        commandId: fields.commandId,
-        documentKey: fields.documentKey
-    };
+    const { common, documentRevision, appendSequence, code } = decodeResultIdentity(fields, operation);
     if (status === 'rejected') {
         if (appendSequence !== null || code === null) {
             throw new TypeError('CRDT rejected result sequence or code is inconsistent');
@@ -183,4 +167,25 @@ function decodeNullableString(value: JsonWireValue | undefined, label: string): 
     }
     requireString(value, label);
     return value;
+}
+
+function decodeResultIdentity(fields: JsonWireObject, operation: CrdtMutationCommand['operation']) {
+    requireString(fields.commandId, 'result commandId');
+    requireString(fields.documentKey, 'result documentKey');
+    const documentRevision = decodeNullableNonNegativeInteger(
+        fields.documentRevision,
+        'result documentRevision'
+    );
+    const appendSequence = decodeNullableNonNegativeInteger(
+        fields.appendSequence,
+        'result appendSequence'
+    );
+    const code = decodeNullableString(fields.code, 'result code');
+    const common = {
+        version: 1 as const,
+        operation,
+        commandId: fields.commandId,
+        documentKey: fields.documentKey
+    };
+    return { common, documentRevision, appendSequence, code };
 }

@@ -4,7 +4,7 @@ import { timeRallarAsync, type RallarTimingSink } from '../../observability/timi
 
 export interface GroupStatePhaseTiming {
     readonly timing: RallarTimingSink | undefined;
-    readonly component: 'group-retention' | 'group-quick-join';
+    readonly component: 'group-retention' | 'group-quick-join' | 'group-move';
     readonly serviceId: string;
     readonly requestId: string;
     /** The trace of the queued message whose attempt the phase belongs to. */

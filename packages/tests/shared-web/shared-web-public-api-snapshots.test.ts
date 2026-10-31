@@ -14,6 +14,10 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
+        expected: { values: ['RallarRoomMove'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/directory/rallar-room-directory.ts',
         expected: { values: ['RallarRoomDirectory'], types: [], starExports: [], namespaceExports: [] }
     },

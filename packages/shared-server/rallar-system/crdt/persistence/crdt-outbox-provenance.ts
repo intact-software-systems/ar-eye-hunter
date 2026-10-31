@@ -12,8 +12,7 @@ import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
+    computeWsOutboxProvenanceRecord,
     WS_OUTBOX_PROVENANCE_NAMESPACE,
     type WsOutboxProvenance
 } from '../../websocket/outbox/ws-outbox-provenance.ts';
@@ -53,23 +52,17 @@ export function computeCrdtOutboxProvenance(
     const proofs: CrdtOutboxProvenanceInsert[] = [];
     for (const write of wsWrites) {
         const message = decodePersistedALMessage(write.entry.resource);
-        const facts: Omit<WsOutboxProvenance, 'digest'> = {
-            version: 1,
+        const record = computeWsOutboxProvenanceRecord({
             producerKind: 'crdt',
-            queueKey: write.entry.key,
-            typeId: write.entry.typeId,
-            messageId: message.id.msgId,
-            senderId: message.id.senderId,
+            entry: write.entry,
+            message,
             expiresAtMs: write.entry.audit.expiryTs.epochMilliseconds,
             target: toCrdtOutboxProvenanceTarget(mutation.command, message, authority)
-        };
+        });
         proofs.push({
             queueKey: write.entry.key,
-            key: toWsOutboxProvenanceKey(write.entry.key),
-            value: JSON.stringify({
-                ...facts,
-                digest: computeWsOutboxProvenanceDigest(write.entry, facts)
-            }),
+            key: record.key,
+            value: record.value,
             expiresAt: write.expiresAt
         });
     }

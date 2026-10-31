@@ -22,6 +22,7 @@ import {
     type GroupMutationIngress,
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
+import type { GroupMoveIngress } from './move/group-move-command.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationIngressFacts } from './mutation/group-mutation-contracts.ts';
 import { hmacSha256Hex } from './mutation/group-state-crypto.ts';
@@ -362,7 +363,10 @@ function toTrustedMutationDescriptor(
 
 export async function createGroupMutationAuthorityProof(
     session: IssuedAuthSession | PersistedAuthSession,
-    descriptor: GroupMutationDescriptor | Omit<GroupQuickJoinIngress, 'authorityProof'>
+    descriptor:
+        | GroupMutationDescriptor
+        | Omit<GroupQuickJoinIngress, 'authorityProof'>
+        | Omit<GroupMoveIngress, 'authorityProof'>
 ): Promise<GroupMutationAuthorityProof> {
     return {
         version: 1,

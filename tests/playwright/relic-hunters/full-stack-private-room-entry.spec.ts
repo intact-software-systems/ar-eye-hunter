@@ -569,11 +569,13 @@ test(
         }
         const history = page.getByRole('region', { name: 'Recent rooms', exact: true });
         await expect(history.getByRole('button', { name: `Return to ${reference}`, exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
         await page.getByRole('button', { name: 'New Room', exact: true }).click();
         await expect(linkField).not.toHaveValue(firstLink);
         await expect(linkField).toHaveValue(/#rallar-room\?/);
         const currentLink = await linkField.inputValue();
         const currentName = await page.locator('.room-row.active span').innerText();
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
         const createBody = response.request().postDataJSON();
         const authorization = await response.request().headerValue('authorization');
         if (!authorization) {

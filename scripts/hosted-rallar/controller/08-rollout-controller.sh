@@ -606,6 +606,8 @@ runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 cleanup_rollout_npm_transients
 print_rollout_disk_summary "after npm dependency cleanup"
 
+configure_rallar_deno_environment /etc/systemd/system
+
 echo "==> Warming Deno caches"
 rallar_playwright_operation_stage "rollout-deno-cache"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \

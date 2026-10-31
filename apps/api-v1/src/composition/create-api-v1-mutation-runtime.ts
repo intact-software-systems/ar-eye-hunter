@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import { decodeRoomOwnedAppDataBindings, RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
+import { installGroupMoveDeadline } from '@shared-server/rallar-system/group-state/move/group-move-inbox.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
@@ -422,7 +423,7 @@ function createGroupStateInboxServiceFactory(
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)
         });
 
-        return new GroupStateInboxService(
+        const service = new GroupStateInboxService(
             {
                 inboxQueueReader: inboxQueueReader,
                 resourceInboxRepository: input.resourceInboxRepository.entries,
@@ -440,6 +441,12 @@ function createGroupStateInboxServiceFactory(
                 formationMetrics: input.groupFormationMetrics.groupMutation
             }
         );
+        installGroupMoveDeadline({
+            outboxQueueReader,
+            enqueue: (command, traceId) => service.enqueueGroupMoveExpiry(command, traceId),
+            now: input.nowEpochMs
+        });
+        return service;
     };
 }
 

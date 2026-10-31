@@ -77,7 +77,8 @@ export default defineConfig({
                 '**/director-capability-delivery.spec.ts',
                 '**/open-arena-directory.spec.ts',
                 '**/private-room-entry.spec.ts',
-                '**/quick-join.spec.ts'
+                '**/quick-join.spec.ts',
+                '**/move-together.spec.ts'
             ],
             use: {
                 ...devices['Desktop Chrome'],

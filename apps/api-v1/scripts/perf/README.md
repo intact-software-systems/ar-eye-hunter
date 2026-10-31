@@ -593,3 +593,23 @@ When using these scripts to validate an optimization, record:
 - input size and mode;
 - number of runs;
 - before and after artifacts under `tmp/perf/`.
+
+## Move-together cohort diagnostic
+
+`group-move-commit-bench.ts` measures actual AppInbox commits for 2, 8 and 16
+consenting player sessions. It runs one warmup and ten measured commits per cohort,
+records read/compute/validate/write timings, SQL work and attempts, and verifies every
+committed membership by reading the destination. Setup and readback are excluded;
+queue pump cleanup remains included. This serial diagnostic does not replace the
+unchanged state-write regression gate or establish concurrent cohort throughput.
+
+Provide an explicit PostgreSQL URL through `GROUP_MOVE_BENCH_DATABASE_URL` and a
+fresh output path under `tmp/perf/`. The harness uses four connections with JIT off,
+creates a uniquely named schema and removes only that schema when it finishes.
+Run without competing workloads and record the host alongside the output.
+
+```sh
+mkdir -p tmp/perf/group-move
+deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read --allow-write --allow-run \
+  apps/api-v1/scripts/perf/group-move-commit-bench.ts tmp/perf/group-move/cohorts.json
+```

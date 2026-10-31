@@ -42,7 +42,7 @@ export function requireString(value: unknown, label: string): asserts value is s
     }
 }
 
-export function requireEpoch(value: unknown, label: string): void {
+export function requireEpoch(value: unknown, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) < 0) {
         throw new TypeError(`${label} must be a non-negative safe integer`);
     }
@@ -55,12 +55,6 @@ export function requirePositiveInteger(value: unknown, label: string): void {
 }
 
 export function requireNullableEpoch(value: unknown, label: string): void {
-    if (value !== null) {
-        requireEpoch(value, label);
-    }
-}
-
-export function requireNullableInteger(value: unknown, label: string): void {
     if (value !== null) {
         requireEpoch(value, label);
     }

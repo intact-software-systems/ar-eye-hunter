@@ -5,13 +5,13 @@ import type {
 } from '@shared-server/mod.ts';
 import { toAppInboxCommandAttempt } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { timeRallarAsync, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     requireExactKeys,
     requireOneOf,
     requireRecord,
     requireString
-} from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import { encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { toRelicRoomGroupRef, type RelicGameState } from '../mod.ts';

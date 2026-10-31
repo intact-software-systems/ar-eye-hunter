@@ -7,7 +7,7 @@ import {
     requireExactOptionalKeys,
     requireRecord,
     requireString
-} from '../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import { decodeGroupDirectoryQuery } from '../directory/decode-group-directory-query.ts';
 import { decodeGroupMutationAuthorityProof } from '../inbox/decode-group-state-inbox-authority.ts';
 import type { GroupMutationIngressFacts } from '../mutation/group-mutation-contracts.ts';

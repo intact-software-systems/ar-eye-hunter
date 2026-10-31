@@ -129,6 +129,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             logout: vi.fn()
         },
         session: () => rallarMock.session,
+        people: { onChange: () => () => undefined },
         // Absent unless a test sets it: commands then take the REST fallback these tests read (C13).
         serverPeerId: () => rallarMock.serverPeerId,
         connect: async () => {
@@ -1015,6 +1016,9 @@ function stubSnapshotFetchSequence(
 ): ReturnType<typeof vi.fn> {
     let index = 0;
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+        if (String(_url).endsWith('/group-moves')) {
+            return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+        }
         const snapshot = snapshots[Math.min(index, snapshots.length - 1)];
         index += 1;
         return new Response(JSON.stringify(snapshot), {

@@ -2,6 +2,7 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import { requireExactKeys, requireString } from '@shared/api/exact-object-decoding.ts';
 import {
     toAppInboxCommandAttempt,
     type AppInboxCommandAttempt,
@@ -18,7 +19,6 @@ import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     GroupTopologyConfigMutationAttemptRead,
@@ -107,13 +107,13 @@ interface TopologyOperationValidationIssue {
 }
 
 export function decodeTopologyAppInboxResult(value: JsonWireValue): TopologyAppInboxResult {
-    const result = readJsonRecord(value, 'Topology AppInbox result');
+    const result = decodeJsonRecord(value, 'Topology AppInbox result');
     if (result.status === 'queued') {
         return decodeTopologyReconfigureInboxResult(result);
     }
 
-    const receiptRecord = readJsonRecord(result.receipt, 'Topology config AppInbox receipt');
-    const groupRef = readExactGroupRef(receiptRecord.groupRef);
+    const receiptRecord = decodeJsonRecord(result.receipt, 'Topology config AppInbox receipt');
+    const groupRef = decodeExactGroupRef(receiptRecord.groupRef);
     const receipt = readTopologyConfigReceiptBoundary(receiptRecord, groupRef);
     if (receipt.operation === 'putConfig') {
         requireExactKeys(result, ['receipt', 'config'], 'Topology config AppInbox result');
@@ -130,7 +130,7 @@ export function decodeTopologyAppInboxResult(value: JsonWireValue): TopologyAppI
 export function decodeTopologyReconfigureInboxResult(
     value: JsonWireValue
 ): TopologyReconfigureInboxResult {
-    const result = readJsonRecord(value, 'Topology reconfigure AppInbox result');
+    const result = decodeJsonRecord(value, 'Topology reconfigure AppInbox result');
     requireExactKeys(
         result,
         ['status', 'groupRef', 'requestId', 'outboxId'],
@@ -139,14 +139,14 @@ export function decodeTopologyReconfigureInboxResult(
     if (result.status !== 'queued') {
         throw new TypeError('Topology reconfigure status is invalid');
     }
-    const groupRef = readExactGroupRef(result.groupRef);
+    const groupRef = decodeExactGroupRef(result.groupRef);
     requireString(result.requestId, 'Topology reconfigure requestId');
     requireString(result.outboxId, 'Topology reconfigure outboxId');
     return { status: 'queued', groupRef, requestId: result.requestId, outboxId: result.outboxId };
 }
 
-function readExactGroupRef(value: JsonWireValue): TopologyReconfigureInboxResult['groupRef'] {
-    const groupRef = readJsonRecord(value, 'Topology AppInbox groupRef');
+function decodeExactGroupRef(value: JsonWireValue): TopologyReconfigureInboxResult['groupRef'] {
+    const groupRef = decodeJsonRecord(value, 'Topology AppInbox groupRef');
     requireExactKeys(
         groupRef,
         ['applicationId', 'workspaceId', 'groupId'],
@@ -162,7 +162,7 @@ function readExactGroupRef(value: JsonWireValue): TopologyReconfigureInboxResult
     };
 }
 
-function readJsonRecord(value: JsonWireValue, label: string): Record<string, JsonWireValue> {
+function decodeJsonRecord(value: JsonWireValue, label: string): Record<string, JsonWireValue> {
     if (!isJsonRecord(value)) {
         throw new TypeError(`${label} must be an exact object`);
     }
@@ -233,7 +233,20 @@ export class TopologyAppInboxHandler {
                 completionFacts
             );
         }
-        const command = toTopologyConfigMutationCommand(authority.command);
+        return await this.processTopologyConfigMutation(
+            context,
+            toTopologyConfigMutationCommand(authority.command),
+            owners,
+            completionFacts
+        );
+    }
+
+    private async processTopologyConfigMutation(
+        context: AppInboxMessageContext<TopologyAppInboxResult>,
+        command: ReturnType<typeof toTopologyConfigMutationCommand>,
+        owners: TopologyAppInboxMutationOwners,
+        completionFacts: AppInboxCompletionFacts
+    ): Promise<TopologyAppInboxResult> {
         const read = await owners.configMutationService.read(command);
         const attempt = toAppInboxCommandAttempt(context);
         const computed = this.computeTopologyConfigOperation(

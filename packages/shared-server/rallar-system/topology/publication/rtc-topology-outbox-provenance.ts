@@ -6,10 +6,8 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
-    WS_OUTBOX_PROVENANCE_NAMESPACE,
-    type WsOutboxProvenance
+    computeWsOutboxProvenanceRecord,
+    WS_OUTBOX_PROVENANCE_NAMESPACE
 } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 import { assertRtcTopologyPublicationOutbox } from './rtc-topology-ws-outbox-entry.ts';
@@ -37,24 +35,21 @@ export function computeRtcTopologyOutboxProvenance(
         ) {
             throw new TypeError('RTC topology page differs from its validated publication audience');
         }
-        const facts: Omit<WsOutboxProvenance, 'digest'> = {
-            version: 1,
+        const record = computeWsOutboxProvenanceRecord({
             producerKind: 'rtc-topology',
-            queueKey: write.entry.key,
-            typeId: write.entry.typeId,
-            messageId: message.id.msgId,
-            senderId: message.id.senderId,
+            entry: write.entry,
+            message,
             expiresAtMs: write.entry.audit.expiryTs.epochMilliseconds,
             target: {
                 kind: 'scoped-room-broadcast',
                 groupRef: publication.groupRef,
                 admittedAudience: targets.recipientPeerIds
             }
-        };
+        });
         proofs.push({
             queueKey: write.entry.key,
-            key: toWsOutboxProvenanceKey(write.entry.key),
-            value: JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(write.entry, facts) }),
+            key: record.key,
+            value: record.value,
             expiresAt: write.expiresAt
         });
     }

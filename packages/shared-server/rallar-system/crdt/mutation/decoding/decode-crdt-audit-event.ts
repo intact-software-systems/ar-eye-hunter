@@ -5,7 +5,7 @@ import {
     requireExactKeys,
     requireOneOf,
     requireString
-} from '../../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { requireCrdtJsonWireObject } from './require-crdt-json-wire-object.ts';
 

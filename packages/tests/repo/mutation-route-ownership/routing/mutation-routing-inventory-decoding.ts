@@ -4,37 +4,39 @@ import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.t
 import { MUTATION_ROUTE_OWNER_DISPATCH_PATHS, MUTATION_ROUTE_OWNER_PATHS, type MutationRouteInventoryRow } from './mutation-routing-owner-inventory.ts';
 
 const PATHS = {
-    c: 'apps/api-v1/src/routes/client-state-mutation-routes.ts',
-    ga: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
-    gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
-    gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
-    gpub: 'apps/api-v1/src/group-state/register-group-publication-routes.ts',
+    groupMove: 'apps/api-v1/src/group-state/register-group-move-routes.ts',
+    groupMoveDeadline: 'packages/shared-server/rallar-system/group-state/move/group-move-inbox.ts',
+    clientMutations: 'apps/api-v1/src/routes/client-state-mutation-routes.ts',
+    groupAdmission: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
+    groupMembership: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
+    groupPresence: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
+    groupPublication: 'apps/api-v1/src/group-state/register-group-publication-routes.ts',
     quickJoin: 'apps/api-v1/src/group-state/register-group-quick-join-route.ts',
     groupRetentionReconciliation: 'packages/shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts',
-    gr: 'apps/api-v1/src/group-state/register-group-state-routes.ts',
-    gl: 'apps/api-v1/src/group-state/register-group-lifecycle-routes.ts',
-    gs: 'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
-    gc: 'apps/api-v1/src/group-state/to-group-state-command.ts',
-    t: 'apps/api-v1/src/routes/graph-topology-routes.ts',
-    a: 'apps/api-v1/src/routes/config-route.ts',
-    ac: 'apps/api-v1/src/routes/auth/register-auth-credential-mutation-routes.ts',
-    au: 'apps/api-v1/src/routes/auth/register-auth-user-mutation-routes.ts',
-    w: 'apps/api-v1/src/routes/ws-routes.ts',
-    ad: 'apps/api-v1/src/admin-operations/register-admin-operation-mutation-routes.ts',
-    cr: 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts',
-    cm: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
-    ar: 'apps/api-v1/src/admin-operations/recompute-api-admin-topology.ts',
-    ap: 'apps/api-v1/src/admin-operations/prune-api-admin-expired-data.ts',
-    acc: 'apps/api-v1/src/admin-operations/compact-api-admin-crdt.ts',
-    acl: 'apps/api-v1/src/admin-operations/update-api-admin-crdt-lifecycle.ts',
-    ace: 'apps/api-v1/src/admin-operations/erase-api-admin-crdt.ts',
-    l: 'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts',
-    e: 'packages/shared-server/rallar-system/group-state/presence/' +
+    groupRoot: 'apps/api-v1/src/group-state/register-group-state-routes.ts',
+    groupLifecycle: 'apps/api-v1/src/group-state/register-group-lifecycle-routes.ts',
+    groupMutations: 'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
+    groupCommand: 'apps/api-v1/src/group-state/to-group-state-command.ts',
+    graphTopology: 'apps/api-v1/src/routes/graph-topology-routes.ts',
+    config: 'apps/api-v1/src/routes/config-route.ts',
+    authCredentials: 'apps/api-v1/src/routes/auth/register-auth-credential-mutation-routes.ts',
+    authUsers: 'apps/api-v1/src/routes/auth/register-auth-user-mutation-routes.ts',
+    webSocketRoutes: 'apps/api-v1/src/routes/ws-routes.ts',
+    adminMutations: 'apps/api-v1/src/admin-operations/register-admin-operation-mutation-routes.ts',
+    crdtAdminRoutes: 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts',
+    crdtAdminMutations: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
+    adminTopology: 'apps/api-v1/src/admin-operations/recompute-api-admin-topology.ts',
+    adminPrune: 'apps/api-v1/src/admin-operations/prune-api-admin-expired-data.ts',
+    adminCompaction: 'apps/api-v1/src/admin-operations/compact-api-admin-crdt.ts',
+    adminCrdtLifecycle: 'apps/api-v1/src/admin-operations/update-api-admin-crdt-lifecycle.ts',
+    adminCrdtErasure: 'apps/api-v1/src/admin-operations/erase-api-admin-crdt.ts',
+    webSocketLifecycle: 'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts',
+    presenceExpiry: 'packages/shared-server/rallar-system/group-state/presence/' +
         'reconcile-expired-group-presence.ts',
-    s: 'packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts',
-    d: 'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts',
-    gi: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
-    ci: 'apps/api-v1/src/composition/create-api-v1-system-installers.ts'
+    rtcRttTopic: 'packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts',
+    crdtTopics: 'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts',
+    groupInbox: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
+    systemInstallers: 'apps/api-v1/src/composition/create-api-v1-system-installers.ts'
 } as const;
 
 interface InventoryOwnerPathAliases {
@@ -60,9 +62,9 @@ export function decodeMutationRouteInventory(
 function toMutationRouteInventoryEntry(
     row: MutationRouteInventoryRow
 ): MutationRouteInventoryEntry {
-    const sourcePath = readStringProperty(PATHS, row.source);
-    const enqueueSourcePath = readStringProperty(PATHS, row.enqueueSource);
-    const rootSourcePath = row.rootSource ? readStringProperty(PATHS, row.rootSource) : undefined;
+    const sourcePath = decodeStringProperty(PATHS, row.source);
+    const enqueueSourcePath = decodeStringProperty(PATHS, row.enqueueSource);
+    const rootSourcePath = row.rootSource ? decodeStringProperty(PATHS, row.rootSource) : undefined;
     const { ownerSourcePath, ownerDispatchPath, typeOwnerSourcePath, dispatchSourcePath } = resolveInventoryOwnerPaths({
         dispatchSource: row.dispatchSource,
         owner: row.owner,
@@ -109,20 +111,20 @@ function resolveInventoryOwnerPaths({
     ownerSource,
     typeOwnerSource
 }: InventoryOwnerPathAliases): InventoryOwnerPaths {
-    const ownerSourcePath = readStringProperty(MUTATION_ROUTE_OWNER_PATHS, ownerSource);
+    const ownerSourcePath = decodeStringProperty(MUTATION_ROUTE_OWNER_PATHS, ownerSource);
     return {
         ownerSourcePath,
-        ownerDispatchPath: readStringProperty(MUTATION_ROUTE_OWNER_DISPATCH_PATHS, owner),
+        ownerDispatchPath: decodeStringProperty(MUTATION_ROUTE_OWNER_DISPATCH_PATHS, owner),
         typeOwnerSourcePath: typeOwnerSource
-            ? readStringProperty(MUTATION_ROUTE_OWNER_PATHS, typeOwnerSource)
+            ? decodeStringProperty(MUTATION_ROUTE_OWNER_PATHS, typeOwnerSource)
             : ownerSourcePath,
         dispatchSourcePath: dispatchSource
-            ? readStringProperty(MUTATION_ROUTE_OWNER_PATHS, dispatchSource)
+            ? decodeStringProperty(MUTATION_ROUTE_OWNER_PATHS, dispatchSource)
             : ownerSourcePath
     };
 }
 
-function readStringProperty(value: object, key: string): string | undefined {
+function decodeStringProperty(value: object, key: string): string | undefined {
     const property = Reflect.get(value, key);
     return typeof property === 'string' ? property : undefined;
 }

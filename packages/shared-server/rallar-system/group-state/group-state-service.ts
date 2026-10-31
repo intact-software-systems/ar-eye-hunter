@@ -22,6 +22,8 @@ import {
     type GroupStateServiceDependencies
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
+import { GroupMoveRepository } from './move/group-move-repository.ts';
+import { GroupMoveService } from './move/group-move-service.ts';
 import { assertGroupMutationAuthority } from './mutation/command-validation/assert-group-mutation-authority.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import type {
@@ -76,7 +78,18 @@ export function createGroupStateRuntime(
         authorityDependencies: createAuthorityDependencies({ dependencies, authSessions, now, randomId }),
         captureInternalMutationIngress: createInternalMutationIngressCapture(dependencies)
     };
+    const ingressOperations = createIngressCaptureOperations(owners);
+    const mutationOperations = createMutationOperations(owners);
     const service: GroupStateService = {
+        move: new GroupMoveService({
+            groups: repositoryFor(runtime),
+            moves: new GroupMoveRepository(runtime, now),
+            authSessions,
+            mutations: {
+                captureMutationIngress: ingressOperations.captureMutationIngress,
+                read: mutationOperations.read
+            }
+        }, { serviceId: dependencies.serviceId, finishedRetentionMs: dependencies.finishedRetentionMs, now }),
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         quickJoin: new GroupQuickJoinService(
             { repository: repositoryFor(runtime), authSessions },
@@ -94,9 +107,9 @@ export function createGroupStateRuntime(
             serviceId: dependencies.serviceId,
             now
         }),
-        ...createIngressCaptureOperations(owners),
+        ...ingressOperations,
         ...createQueryOperations(owners),
-        ...createMutationOperations(owners)
+        ...mutationOperations
     };
     return {
         service: createTimedGroupStateService({

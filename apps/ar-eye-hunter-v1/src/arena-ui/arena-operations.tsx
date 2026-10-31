@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { ArenaRoomMove } from './arena-room-move.tsx';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { ArenaRoomEntry } from './arena-room-entry.tsx';
@@ -48,6 +49,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
+            {arena.session && <ArenaRoomMove arena={arena} />}
             {arena.connectionState === 'signed-out' || !arena.session
                 ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
                 : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}

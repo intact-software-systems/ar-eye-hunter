@@ -1,0 +1,817 @@
+{
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "group-move-{runId}",
+    "workspaceId": "default-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "sourceId": "move-source-{runId}",
+    "fullId": "move-full-{runId}",
+    "targetId": "move-target-{runId}"
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Move together: exact-session consent, whole-cohort capacity denial, durable participant recovery, atomic admission, preserved source membership and request replay.",
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-move-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-move-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createSource",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/move-create-source-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{sourceId}",
+          "displayName": "Move source",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 2,
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "createFull",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/move-create-full-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{fullId}",
+          "displayName": "Move full",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 1,
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "createTarget",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/move-create-target-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{targetId}",
+          "displayName": "Move target",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 2,
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBobSource",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sourceId}/join/requests/move-bob-source-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "participation": "player"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "connectAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sourceId}/sessions/{aliceSessionId}/requests/move-connect-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "principalId": "{aliceClientId}",
+          "generationId": "move-alice-generation-{runId}",
+          "connectionGenerationId": "move-alice-connection-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sourceId}/sessions/{bobSessionId}/requests/move-connect-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "principalId": "{bobClientId}",
+          "generationId": "move-bob-generation-{runId}",
+          "connectionGenerationId": "move-bob-connection-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "moveFullPropose",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveFullPropose-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "full-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{fullId}"
+          },
+          "action": "propose",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "proposed"
+        }
+      }
+    },
+    {
+      "name": "moveFullAliceConfirm",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveFullAliceConfirm-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "full-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{fullId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "moveFullBobConfirm",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveFullBobConfirm-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "moveId": "full-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{fullId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "moveFullCommit",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveFullCommit-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "full-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{fullId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "denied",
+          "reason": "admission-denied",
+          "admissionFailure": {
+            "code": "group-full"
+          }
+        }
+      }
+    },
+    {
+      "name": "fullRoomUnchanged",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fullId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "moveTargetPropose",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetPropose-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "propose",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "proposed"
+        }
+      }
+    },
+    {
+      "name": "moveTargetAliceConfirm",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetAliceConfirm-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "moveTargetTooEarly",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetTooEarly-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "targetUnchangedBeforeBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{targetId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "moveTargetBobConfirm",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetBobConfirm-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "moveTargetCommit",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetCommit-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "committed"
+        }
+      }
+    },
+    {
+      "name": "targetBothMembers",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{targetId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "sourceMembersPreserved",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sourceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "bobServerRecovery",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "moveId": "target-move-{runId}",
+            "status": "committed"
+          },
+          {
+            "moveId": "full-move-{runId}",
+            "status": "denied"
+          }
+        ]
+      }
+    },
+    {
+      "name": "replayCommit",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetCommit-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "committed"
+        }
+      }
+    },
+    {
+      "name": "conflictingReplay",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetCommit-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "cancel",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "unauthenticatedRecovery",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "crossScopeRejected",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/move-cross-scope-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "wrong-scope-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "wrong",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "propose",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 403
+      }
+    }
+  ]
+}

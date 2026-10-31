@@ -16,6 +16,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import App from '../../../apps/ar-eye-hunter-v1/src/app.tsx';
 import type { ArenaConnection, MatchDelivery } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-connection-contracts.ts';
+import { createBrowserTestStorage } from '../shared-test/browser-test-storage.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +39,8 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
     let container: HTMLDivElement;
 
     beforeEach(() => {
+        vi.stubGlobal('localStorage', createBrowserTestStorage());
+        vi.stubGlobal('sessionStorage', createBrowserTestStorage());
         vi.useFakeTimers();
         mockArena.refreshDiagnostics.mockClear();
         mockArena.current = createArenaConnection({ networkEnabled: true });

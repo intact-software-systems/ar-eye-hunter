@@ -49,6 +49,8 @@ export interface GroupStateRouteTestRuntimeInput {
         'processGroupAppInbox'
     ];
     readonly processQuickJoin?: GroupStateRouteDependencies['processQuickJoin'];
+    readonly processGroupMove?: GroupStateRouteDependencies['processGroupMove'];
+    readonly listGroupMoves?: GroupStateRouteDependencies['listGroupMoves'];
     readonly groupAdmissionQuota?: GroupAdmissionQuota;
     readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteDependencies[
         'hydrateStateSyncSnapshotCaches'
@@ -105,6 +107,8 @@ export function createGroupStateRouteTestDependencies(
         rtcRttRepository: input.rtcRttRepository ?? { listMeasurementEntriesForEndpoints: () => Promise.resolve([]) },
         requireApiAuthSession,
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
+        processGroupMove: input.processGroupMove ?? (() => Promise.reject(new Error('Unexpected group move mutation'))),
+        listGroupMoves: input.listGroupMoves ?? (() => Promise.reject(new Error('Unexpected group move recovery'))),
         processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),
         groupAdmissionQuota: input.groupAdmissionQuota ?? createGroupAdmissionQuota({
             windowMs: 60_000,

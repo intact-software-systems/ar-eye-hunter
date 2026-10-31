@@ -24,6 +24,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import type { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
 import type { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
@@ -44,8 +45,9 @@ import { acceptRelicHunterFeedback, expireRelicHunterFeedback } from './runtime/
 
 import {
     createInitialRelicRuntimeDiagnostics,
+    toAcceptedRelicSnapshotDiagnostics,
+    toIgnoredRelicSnapshotDiagnostics,
     toRelicRoomDiagnostics,
-    toRelicRuntimeSnapshotSummary,
     type RelicRuntimeDiagnostics
 } from './relic-runtime-diagnostics.ts';
 import {
@@ -83,6 +85,7 @@ interface RelicAuthentication {
 
 export namespace RelicHuntersRuntime {
     export interface Dependencies extends RelicExpeditionParticipation.Dependencies {
+        readonly roomMove: RallarRoomMove;
         readonly roomEntry: RallarRoomEntry;
         readonly recentRooms: RallarRecentRooms;
         readonly directory: RallarRoomDirectory;
@@ -118,6 +121,7 @@ export namespace RelicHuntersRuntime {
     }
 
     export interface Connection extends Actions {
+        readonly roomMove: RallarRoomMove;
         readonly roomEntry: RallarRoomEntry;
         readonly recentRooms: RallarRecentRooms;
         readonly participation: 'player' | 'spectator' | undefined;
@@ -202,6 +206,7 @@ export class RelicHuntersRuntime {
         }, { intervalMs: SNAPSHOT_REPAIR_INTERVAL_MS });
         const session = deps.restoreSession();
         this.connection = {
+            roomMove: deps.roomMove,
             roomEntry: deps.roomEntry,
             recentRooms: deps.recentRooms,
             session,
@@ -682,26 +687,26 @@ export class RelicHuntersRuntime {
             allowSemanticRegression: source === 'rest-reset'
         });
         if (!acceptance.accepted) {
-            this.diagnose({
-                ignoredSnapshotCount: this.connection.diagnostics.ignoredSnapshotCount + 1,
-                lastIgnoredSnapshotReason: acceptance.reason,
-                lastIgnoredSnapshot: toRelicRuntimeSnapshotSummary(snapshot, source)
-            });
+            this.diagnose(
+                toIgnoredRelicSnapshotDiagnostics({
+                    diagnostics: this.connection.diagnostics,
+                    snapshot,
+                    source,
+                    reason: acceptance.reason
+                })
+            );
             return false;
         }
         this.publish({
             snapshot,
             ...expireRelicHunterFeedback(this.connection, snapshot),
-            diagnostics: {
-                ...this.connection.diagnostics,
-                ...toRelicRoomDiagnostics(this.connection, this.deps.authorityStatus()),
-                snapshotReady: true,
-                lastSnapshotSource: source,
-                lastAcceptedSnapshot: toRelicRuntimeSnapshotSummary(snapshot, source),
-                lastIgnoredSnapshotReason: undefined,
-                lastIgnoredSnapshot: undefined,
-                lastHydratedAtEpochMs: this.deps.timers.nowMs()
-            }
+            diagnostics: toAcceptedRelicSnapshotDiagnostics({
+                state: this.connection,
+                authority: this.deps.authorityStatus(),
+                snapshot,
+                source,
+                nowEpochMs: this.deps.timers.nowMs()
+            })
         });
         if (!this.current(attempt, true) || this.connection.snapshot !== snapshot) {
             return false;

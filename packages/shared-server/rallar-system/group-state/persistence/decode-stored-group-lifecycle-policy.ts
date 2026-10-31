@@ -13,7 +13,7 @@ import {
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireOneOf, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 export interface StoredGroupLifecyclePolicy {
