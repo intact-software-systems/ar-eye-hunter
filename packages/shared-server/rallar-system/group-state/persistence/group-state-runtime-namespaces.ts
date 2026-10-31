@@ -5,3 +5,4 @@ export const PRESENCE_SUMMARIES_NAMESPACE = 'group-state:presence-summaries';
 export const PRESENCE_ADMISSIONS_NAMESPACE = 'group-state:presence-admissions';
 export const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
 export const PUBLICATION_GRANTS_NAMESPACE = 'group-state:publication-grants';
+export const SUBSCRIPTIONS_NAMESPACE = 'group-state:subscriptions';

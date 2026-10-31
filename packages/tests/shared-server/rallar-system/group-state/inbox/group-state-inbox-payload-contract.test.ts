@@ -11,6 +11,8 @@ import {
     type GroupMemberUnbanAppInboxPayload,
     type GroupPublicationGrantAppInboxPayload,
     type GroupPublicationRevokeAppInboxPayload,
+    type GroupTopicSubscribeAppInboxPayload,
+    type GroupTopicUnsubscribeAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
@@ -26,6 +28,31 @@ describe('authenticated group mutation enqueue payload contract', () => {
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_PUBLICATION_REVOKE]>().toEqualTypeOf<
             GroupPublicationRevokeAppInboxPayload
         >();
+        expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE]>().toEqualTypeOf<GroupTopicSubscribeAppInboxPayload>();
+        expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE]>().toEqualTypeOf<
+            GroupTopicUnsubscribeAppInboxPayload
+        >();
+    });
+
+    it('decodes a persisted topic subscribe or unsubscribe and refuses an empty generation or a reserved topic', () => {
+        for (const type of [AppInboxType.GROUP_TOPIC_SUBSCRIBE, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE] as const) {
+            const command = {
+                scope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupId: 'group',
+                sessionId: 'session-1',
+                request: { requestId: 'request-1', topicId: 'room.feed', connectionGenerationId: 'ws-generation-1' }
+            } as const;
+
+            expect(decodeGroupStateAppInboxCommand(type, command)).toEqual(command);
+            expect(() => decodeGroupStateAppInboxCommand(type, { ...command, principalId: 'member' })).toThrow();
+            expect(() =>
+                decodeGroupStateAppInboxCommand(type, {
+                    ...command,
+                    request: { ...command.request, connectionGenerationId: '' }
+                })
+            ).toThrow('connectionGenerationId');
+            expect(() => decodeGroupStateAppInboxCommand(type, { ...command, request: { ...command.request, topicId: 'rallar.state' } })).toThrow('topicId');
+        }
     });
 
     it('decodes a persisted publication grant or revoke and refuses one naming neither permission', () => {

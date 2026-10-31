@@ -39,6 +39,10 @@ import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import type { GroupStateMutationExactAuthSession } from './persistence/read-exact-group-state-mutation.ts';
+import {
+    readGroupSessionTopicSubscriptions,
+    readGroupTopicSubscriptionAuthority
+} from './persistence/subscription/read-group-topic-subscriptions.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import { GroupRetentionService } from './retention/group-retention-service.ts';
@@ -242,19 +246,33 @@ function createQueryOperations(
     | 'listSnapshotsPage'
     | 'readSnapshot'
     | 'readCausalRevision'
+    | 'readGroupSessionTopicSubscriptions'
+    | 'readGroupTopicSubscriptionAuthority'
     | 'readIssuedAuthSession'
     | 'listEvents'
     | 'listRecentEvents'
     | 'listEventPage'
     | 'observeSnapshot'
 > {
-    const { dependencies, repositoryFor } = owners;
+    const { dependencies, repositoryFor, authorityDependencies } = owners;
     const runtime = dependencies.runtimeRepository;
     return {
         listSnapshots: async (scope) => await repositoryFor(runtime).listSnapshots(scope),
         listSnapshotsPage: async (scope, options) => await repositoryFor(runtime).listSnapshotsPage(scope, options),
         readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
         readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
+        readGroupSessionTopicSubscriptions: async (ref, sessionId) =>
+            await readGroupSessionTopicSubscriptions(runtime, {
+                ref,
+                sessionId,
+                observedAtEpochMs: authorityDependencies.now()
+            }),
+        readGroupTopicSubscriptionAuthority: async (snapshot, topicId) =>
+            await readGroupTopicSubscriptionAuthority(runtime, {
+                snapshot,
+                topicId,
+                observedAtEpochMs: authorityDependencies.now()
+            }),
         readIssuedAuthSession: async (sessionId) => await owners.authSessions.findBySessionId(sessionId),
         listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
         listRecentEvents: async (ref, query) => await repositoryFor(runtime).listRecentEvents(ref, query),

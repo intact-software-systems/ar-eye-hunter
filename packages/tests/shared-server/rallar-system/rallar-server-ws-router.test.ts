@@ -547,6 +547,7 @@ describe('RallarServerWsRouter', () => {
             const snapshot = createGroupSnapshot('room-1', ['peer-1'], 3);
             const { router, socket } = createRouter({
                 authorizeRoomMessage: createGroupRoomWsAuthorizer({
+                    readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
                     readGroupSnapshot: () => snapshot,
                     readPreActivationAppData: () => 'allowed',
                     nowEpochMs: Date.now
@@ -594,6 +595,7 @@ describe('RallarServerWsRouter', () => {
             const snapshot = createGroupSnapshot('room-1', ['peer-1'], 3);
             const { router, socket } = createIngressRouter({
                 authorizeRoomMessage: createGroupRoomWsAuthorizer({
+                    readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
                     readGroupSnapshot: () => snapshot,
                     readPreActivationAppData: () => 'allowed',
                     nowEpochMs: Date.now
@@ -684,7 +686,8 @@ describe('RallarServerWsRouter', () => {
                     audience: {
                         targets: message.targets,
                         sessions: Array.from({ length: authorizationCount }, (_, index) => createGroupPresenceRecord('room-1', `session-${index + 1}`, 1)),
-                        snapshotVersion: 1
+                        snapshotVersion: 1,
+                        recipientConnectionGenerationIds: {}
                     }
                 };
             }
@@ -750,7 +753,8 @@ describe('RallarServerWsRouter', () => {
                     audience: {
                         targets: message.targets,
                         sessions: [createGroupPresenceRecord('room-1', 'peer-2', 1)],
-                        snapshotVersion: 9
+                        snapshotVersion: 9,
+                        recipientConnectionGenerationIds: {}
                     }
                 }
         });
@@ -1405,7 +1409,8 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
                 audience: {
                     targets: message.targets,
                     sessions: sessionIds.map((sessionId) => createGroupPresenceRecord('room-1', sessionId, 3)),
-                    snapshotVersion: 3
+                    snapshotVersion: 3,
+                    recipientConnectionGenerationIds: {}
                 }
             };
         }
@@ -1449,7 +1454,8 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
                 audience: {
                     targets: message.targets,
                     sessions: sessionIds.map((sessionId) => createGroupPresenceRecord('room-1', sessionId, 3)),
-                    snapshotVersion: 3
+                    snapshotVersion: 3,
+                    recipientConnectionGenerationIds: {}
                 }
             }
     });

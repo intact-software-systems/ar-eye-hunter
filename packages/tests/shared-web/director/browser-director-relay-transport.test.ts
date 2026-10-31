@@ -537,7 +537,10 @@ function createRoomChannel(send: RallarTypedMessageChannel<RallarDirectorRelayEn
         sendRtc: rejectCarrierSend,
         sendWs: rejectCarrierSend,
         onRtc: () => () => {},
-        onWs: () => () => {}
+        onWs: () => () => {},
+        subscribe: () => {
+            throw new Error('The director relay never subscribes.');
+        }
     };
     const open = vi.fn((_definition: RallarRoomMessageChannelDefinition) => channel);
     return { open, send: sendDouble };

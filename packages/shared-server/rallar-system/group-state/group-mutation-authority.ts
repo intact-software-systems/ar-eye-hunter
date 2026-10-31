@@ -11,7 +11,8 @@ import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/j
 import {
     toAggregateMutationCommand,
     toMembershipMutationCommand,
-    toPublicationMutationCommand
+    toPublicationMutationCommand,
+    toTopicSubscriptionMutationCommand
 } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
@@ -22,7 +23,10 @@ import {
     type GroupMutationIngress,
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
-import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
+import {
+    assertGroupMutationCommand,
+    isGroupSessionMutationOperation
+} from './mutation/command-validation/assert-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationIngressFacts } from './mutation/group-mutation-contracts.ts';
 import { hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import type { GroupQuickJoinIngress } from './quick-join/group-quick-join-contracts.ts';
@@ -300,6 +304,9 @@ export function toDescriptorCommand(
         case 'grantGroupPublication':
         case 'revokeGroupPublication':
             return toPublicationMutationCommand(descriptor, randomId);
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
+            return toTopicSubscriptionMutationCommand(descriptor, randomId);
         default:
             return toMembershipMutationCommand(descriptor, randomId);
     }
@@ -331,14 +338,10 @@ function toTrustedMutationDescriptor(
             'Group creator does not match authenticated principal.'
         );
     }
-    if (
-        descriptor.operation === 'connectPresence' ||
-        descriptor.operation === 'heartbeatPresence' ||
-        descriptor.operation === 'disconnectPresence'
-    ) {
+    if (isGroupSessionMutationOperation(descriptor.operation)) {
         if (descriptor.sessionId !== authority.sessionId) {
             throw new GroupMutationAuthorizationError(
-                'Presence session does not match authenticated session.'
+                'Mutation session does not match authenticated session.'
             );
         }
         if (

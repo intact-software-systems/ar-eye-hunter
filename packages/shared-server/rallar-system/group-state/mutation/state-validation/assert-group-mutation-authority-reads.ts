@@ -1,21 +1,31 @@
 import { validateGroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
+import {
+    validateGroupTopicSubscription,
+    type GroupTopicSubscription
+} from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import { assertGroupRefIdentity } from '../../persistence/group-state-persistence-contracts.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '../../persistence/presence/group-presence-storage-keys.ts';
 import { groupStatePublicationGrantStorageKey } from '../../persistence/publication/group-publication-grant-storage-key.ts';
+import { groupStateTopicSubscriptionStorageKey } from '../../persistence/subscription/group-topic-subscription-storage-key.ts';
 import { validateGroupStateRuntimeEntry } from '../../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,
     validatePresenceSession
 } from '../../persistence/validate-persisted-group-presence.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { readsTargetPublicationGrant } from '../read/group-mutation-read-scope.ts';
+import {
+    readsTargetPrincipalSubscriptions,
+    readsTargetPublicationGrant,
+    readsTopicSubscriptionTarget
+} from '../read/group-mutation-read-scope.ts';
 import type { GroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 
 interface AssertGroupMutationAuthorityReadsInput {
@@ -34,6 +44,72 @@ export function assertGroupMutationAuthorityReads({
     assertAdmissionReads({ read, command, ref, identities });
     assertAuthorityPresenceReads(read, ref);
     assertTargetPublicationGrantRead({ read, command, ref, identities });
+    assertTopicSubscriptionTargetReads({ read, command, ref, identities });
+    assertTargetPrincipalSubscriptionReads({ read, command, ref, identities });
+}
+
+/** Exactly subscribe and unsubscribe read their (session, topic) row and the session's client-state rows, the target's. */
+function assertTopicSubscriptionTargetReads({
+    read,
+    command,
+    ref,
+    identities
+}: AssertGroupMutationAuthorityReadsInput): void {
+    const { targetTopicSubscription: subscription, targetClientSessions: sessions } = read;
+    if (!readsTopicSubscriptionTarget(command)) {
+        if (subscription !== null || sessions !== null) {
+            throw new TypeError('Topic subscription read differs from the command read scope');
+        }
+        return;
+    }
+    if (sessions === null || identities.targetPrincipalId === null) {
+        throw new TypeError('Topic subscription read differs from the command read scope');
+    }
+    if (subscription !== null) {
+        const key = groupStateTopicSubscriptionStorageKey(ref, command.sessionId, command.input.topicId);
+        assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
+    }
+    const principalId = identities.targetPrincipalId;
+    const foreign = sessions.find(({ value }) =>
+        value.sessionId !== command.sessionId || value.principalId !== principalId || value.status !== 'active'
+    );
+    if (foreign !== undefined) {
+        throw new TypeError('Target client session differs from the command slot identity');
+    }
+}
+
+/** Only a revoke naming subscribe and a departure read the target's subscription rows, every one the target's. */
+function assertTargetPrincipalSubscriptionReads({
+    read,
+    command,
+    ref,
+    identities
+}: AssertGroupMutationAuthorityReadsInput): void {
+    const subscriptions = read.targetPrincipalSubscriptions;
+    if ((subscriptions !== null) !== readsTargetPrincipalSubscriptions(command)) {
+        throw new TypeError('Target principal subscriptions read differs from the command read scope');
+    }
+    for (const subscription of subscriptions ?? []) {
+        const { sessionId, topicId } = subscription.value;
+        const key = groupStateTopicSubscriptionStorageKey(ref, sessionId, topicId);
+        assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
+    }
+}
+
+/** The row sits at its own key, keeps the row contract, and belongs to the command's target. */
+function assertTopicSubscriptionRow(
+    subscription: RuntimeStateEntryValue<GroupTopicSubscription>,
+    key: string,
+    principalId: string | null
+): void {
+    validateGroupStateRuntimeEntry(subscription, 'Topic subscription', key);
+    const issues = validateGroupTopicSubscription(subscription.value);
+    if (issues.length > 0) {
+        throw new TypeError(`Topic subscription is invalid: ${formatRallarValidation(issues)}`);
+    }
+    if (principalId === null || subscription.value.principalId !== principalId) {
+        throw new TypeError('Topic subscription principal differs from the command target');
+    }
 }
 
 /** Only a grant command or a departure reads the target's grant row, and the row belongs to that target in this group. */

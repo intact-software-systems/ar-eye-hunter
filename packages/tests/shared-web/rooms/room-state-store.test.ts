@@ -228,7 +228,8 @@ describe('room state store summaries', () => {
                     isOwner: true,
                     isOnline: true,
                     sessionIds: ['session-1'],
-                    client: undefined
+                    client: undefined,
+                    topicGrants: {}
                 }
             ]
         });

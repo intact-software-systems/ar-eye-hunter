@@ -80,7 +80,7 @@ function bodyOf(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCo
 function shapeOf(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String(command.remaining)}`;
+            return `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`;
         case 'wait':
             return `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`;
         case 'messages.received':

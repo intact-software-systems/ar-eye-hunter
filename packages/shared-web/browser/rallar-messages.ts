@@ -19,6 +19,8 @@ export type {
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
     RallarStorageUnavailablePolicy,
+    RallarTopicSubscription,
+    RallarTopicSubscriptionStatus,
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
     RallarTypedMessageSendOptions,

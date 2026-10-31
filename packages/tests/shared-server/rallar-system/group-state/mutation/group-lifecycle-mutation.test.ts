@@ -269,7 +269,7 @@ describe('group lifecycle transition computation', () => {
         expect(written.lifecycleState).toBe('planned');
         expect(written.formationEpoch).toBe(3);
         expect(written.snapshotVersion).toBe(2);
-        expect(computed.event.eventType).toBe('group-updated');
+        expect(computed.event?.eventType).toBe('group-updated');
     });
 
     it('pins the formation electorate to the roster read at every epoch advance', () => {

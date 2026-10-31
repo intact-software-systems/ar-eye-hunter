@@ -225,6 +225,7 @@ function planTrackedSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPay
             maxAttempts: 3,
             expectedPeerIds: ['receiver'],
             nextHopPeerIds: ['receiver']
-        }
+        },
+        admittedConnectionGenerationIds: undefined
     };
 }

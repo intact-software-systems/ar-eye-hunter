@@ -13,6 +13,7 @@ import type {
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
+    GrantGroupPublicationRequest,
     GroupConnectRequest,
     HeartbeatClientSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
@@ -20,8 +21,10 @@ import type {
     MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
+    RevokeGroupPublicationRequest,
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
+    SubscribeGroupTopicRequest,
     TransferGroupOwnershipRequest,
     UnbanGroupMemberRequest,
     UpdateGroupRequest,
@@ -44,11 +47,18 @@ export type RemoveStateGroupMemberBody = Omit<RemoveGroupMemberRequest, 'request
 export type BanStateGroupMemberBody = Omit<BanGroupMemberRequest, 'requestId'>;
 export type UnbanStateGroupMemberBody = Omit<UnbanGroupMemberRequest, 'requestId'>;
 export type SetStateGroupMemberRoleBody = Omit<SetGroupMemberRoleRequest, 'requestId'>;
+export type GrantStateGroupPublicationBody = Omit<GrantGroupPublicationRequest, 'requestId'>;
+export type RevokeStateGroupPublicationBody = Omit<RevokeGroupPublicationRequest, 'requestId'>;
 export type TransferStateGroupOwnershipBody = Omit<TransferGroupOwnershipRequest, 'requestId'>;
 export type UpsertStateGroupMemberBody = Omit<UpsertGroupMemberRequest, 'requestId'>;
 export type ConnectStateGroupPresenceSessionBody = Omit<ConnectGroupPresenceSessionRequest, 'requestId'>;
 export type HeartbeatStateGroupPresenceSessionBody = Omit<HeartbeatGroupPresenceSessionRequest, 'requestId'>;
 export type DisconnectStateGroupPresenceSessionBody = Omit<DisconnectGroupPresenceSessionRequest, 'requestId'>;
+/**
+ * The actor is the authenticated session the path names, so the body carries only the topic and its generation; the
+ * unsubscribe body is the same two fields.
+ */
+export type SubscribeStateGroupTopicBody = Pick<SubscribeGroupTopicRequest, 'topicId' | 'connectionGenerationId'>;
 
 /**
  * The lifecycle routes take the actor from authentication and declare

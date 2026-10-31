@@ -182,6 +182,8 @@ function createDefaultRallarServerWsOptions(
         }),
         readServerPublishAudience: createServerPublishRoomAudienceReader({
             readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
+            readPublicationAuthority: async (ref, topicId) =>
+                await runtime.groupStateService.readCurrentPublicationAuthority(ref, topicId),
             nowEpochMs
         }),
         livePublication: createApiV1WsLivePublication({

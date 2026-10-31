@@ -151,6 +151,8 @@ function createTimedSnapshotOperations(
     | 'listSnapshotsPage'
     | 'readSnapshot'
     | 'readCausalRevision'
+    | 'readGroupSessionTopicSubscriptions'
+    | 'readGroupTopicSubscriptionAuthority'
 > {
     return {
         listSnapshots: async (scope) =>
@@ -180,6 +182,20 @@ function createTimedSnapshotOperations(
                 operation: 'readCausalRevision',
                 details: toScopeTimingDetails(ref),
                 action: async () => await service.readCausalRevision(ref)
+            }),
+        readGroupSessionTopicSubscriptions: async (ref, sessionId) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'readGroupSessionTopicSubscriptions',
+                details: toScopeTimingDetails(ref),
+                action: async () => await service.readGroupSessionTopicSubscriptions(ref, sessionId)
+            }),
+        readGroupTopicSubscriptionAuthority: async (snapshot, topicId) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'readGroupTopicSubscriptionAuthority',
+                details: toScopeTimingDetails(snapshot.group),
+                action: async () => await service.readGroupTopicSubscriptionAuthority(snapshot, topicId)
             })
     };
 }

@@ -226,7 +226,7 @@ function hasReloadNativeHolds({ send, prefix }: ReloadEvidence): boolean {
     const selectedCarriers = send.carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [send.carrier];
     const sendIndex = prefix.indexOf(send);
     const holds = prefix.filter((command): command is RallarBlackBoxTestTransportFaultInjectCommand =>
-        command.kind === 'fault.inject' && command.carrier !== 'storage'
+        command.kind === 'fault.inject' && (command.carrier === 'ws' || command.carrier === 'rtc')
     );
     const matchingHolds = selectedCarriers.every((carrier) =>
         holds.some((hold) =>

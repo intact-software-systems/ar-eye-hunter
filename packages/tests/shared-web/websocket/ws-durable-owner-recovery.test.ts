@@ -158,6 +158,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     validateAuthoritativeGroupSnapshot(snapshot);
     setGroupStateSnapshot(snapshot);
     const authorize = createGroupRoomWsAuthorizer({
+        readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
         readGroupSnapshot: () => snapshot,
         readPreActivationAppData: () => 'allowed',
         nowEpochMs: () => Date.now()

@@ -152,7 +152,9 @@ it('fresh authored reconnect overrides configured credentials and restores the s
             typeId: 'restore-proof',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-reload');
         if (!scenario) {
             throw new Error('Expected the canonical delivery-reload conformance recipe.');

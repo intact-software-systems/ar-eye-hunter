@@ -17,7 +17,9 @@ describe('ALM durable reload specimens', () => {
             typeId: 'probe',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((candidate) => candidate.scenarioId === 'delivery-reload');
         expect(scenario, 'full conformance must exercise real document replacement').toBeDefined();
         expect(scenario!.tags).toEqual(['full']);
@@ -67,7 +69,7 @@ describe('ALM durable reload specimens', () => {
         expect(baselineIndex).toBeGreaterThanOrEqual(0);
         expect(baselineIndex).toBeLessThan(prefix.indexOf(sends[0]));
         expect(heldIndex).toBeGreaterThan(prefix.indexOf(sends[0]));
-        const holds = prefix.filter((command) => command.kind === 'fault.inject');
+        const holds = prefix.filter((command) => command.kind === 'fault.inject' && command.carrier !== 'product-socket');
         expect(holds.map((command) => ({ carrier: command.carrier, action: command.action, remaining: command.remaining, match: command.match })))
             .toEqual((carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier]).map((heldCarrier) => ({
                 carrier: heldCarrier,

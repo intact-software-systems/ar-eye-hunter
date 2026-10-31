@@ -30,6 +30,7 @@ import type {
     BlackBoxBrowserDeliveriesDependency,
     BlackBoxBrowserPeersDependency
 } from '../browser-rallar-runtime-composition.ts';
+import { resolveBlackBoxRallarChannelAccess } from '../connection/black-box-rallar-message-selector.ts';
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
 import type { BlackBoxRallarTypedChannels } from './black-box-rallar-typed-channels.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
@@ -116,6 +117,7 @@ export class BlackBoxRallarDeliveryLedger {
             typeId: send.typeId,
             topicId: send.topicId,
             roomRef,
+            access: resolveBlackBoxRallarChannelAccess(config, send.topicId),
             durability: send.durability,
             onStorageUnavailable: send.onStorageUnavailable,
             purpose: send.purpose ?? (send.toPeer === undefined ? 'notification' : 'command'),

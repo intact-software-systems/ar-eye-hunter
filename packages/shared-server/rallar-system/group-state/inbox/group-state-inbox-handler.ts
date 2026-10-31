@@ -39,6 +39,7 @@ import {
 import { decodeGroupStateInboxAuthority } from './decode-group-state-inbox-authority.ts';
 import {
     computeGroupStateInboxResult,
+    isReceiptResultOperation,
     validateGroupStateInboxResult,
     type ComputeGroupStateInboxResultInput,
     type GroupStateInboxDurableResult,
@@ -223,7 +224,7 @@ export class GroupStateInboxHandler {
     }
 
     private async readResultFacts(command: GroupStateMutationCommand): Promise<GroupStateInboxResultRead> {
-        if (isPresenceOperation(command.command.operation)) {
+        if (isReceiptResultOperation(command.command.operation)) {
             const mutationRead = await this.dependencies.mutationService.read(command);
             return { mutationRead, currentSnapshot: undefined, recordedEvent: undefined };
         }
@@ -402,8 +403,4 @@ function toLayoutIdentityLabel(identity: GroupLayoutIdentity | null): string {
     return identity === null
         ? 'none'
         : `group=${identity.groupRevision};presence=${identity.presenceRevision};version=${identity.version};state=${identity.state}`;
-}
-
-function isPresenceOperation(operation: GroupStateMutationCommand['command']['operation']): boolean {
-    return operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence';
 }

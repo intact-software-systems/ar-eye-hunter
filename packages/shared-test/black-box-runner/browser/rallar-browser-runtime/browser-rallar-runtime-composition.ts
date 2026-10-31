@@ -132,6 +132,20 @@ export interface BlackBoxBrowserRallarRuntimeDependency
     readonly diagnostics: BlackBoxBrowserDiagnosticsDependency;
     readonly deliveries: BlackBoxBrowserDeliveriesDependency;
     readonly peers: BlackBoxBrowserPeersDependency;
+    readonly productSocket: BlackBoxBrowserProductSocketDependency;
+}
+
+/**
+ * The connected session's own product socket, which a harness fault drops and reopens as a network would. Each action
+ * throws while the page holds no connected session.
+ */
+export interface BlackBoxBrowserProductSocketDependency {
+    /** Disables reconnect first, so the closed socket stays closed until `reopen`. */
+    close(): void;
+    /** A new authorised connect under a request id of its own, which the server stamps with a new connection generation. */
+    reopen(): Promise<void>;
+    /** Undefined while the socket is closed or its generation cannot be read yet. */
+    readConnectionGenerationId(): Promise<string | undefined>;
 }
 
 export interface BlackBoxBrowserAuthDependency
@@ -260,8 +274,40 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         crdt,
         director,
         diagnostics: { faults, storage, storageFaults, congestion, inboundStoreCounts },
-        ...toBlackBoxBrowserMessagingPorts({ session, state })
+        ...toBlackBoxBrowserMessagingPorts({ session, state }),
+        productSocket: toBlackBoxBrowserProductSocket(session)
     });
+}
+
+/** The close code and reason a dropped product socket carries, which no server close uses. */
+const PRODUCT_SOCKET_DROP = { code: 4000, reason: 'black-box-socket-drop' } as const;
+
+function toBlackBoxBrowserProductSocket(
+    session: BrowserSessionCoreComposition
+): BlackBoxBrowserProductSocketDependency {
+    const requireQueueBox = () => {
+        const middleware = session.session.readMiddleware()?.middleware;
+        if (middleware === undefined) {
+            throw new Error('fault.inject on the product-socket carrier needs a connected session.');
+        }
+        return middleware.webSocketQueueBox;
+    };
+    return {
+        close: () => {
+            const queueBox = requireQueueBox();
+            queueBox.disableReconnect();
+            queueBox.socket.close(PRODUCT_SOCKET_DROP.code, PRODUCT_SOCKET_DROP.reason);
+        },
+        reopen: async () => {
+            const queueBox = requireQueueBox();
+            queueBox.enableReconnect();
+            await queueBox.socket.connect({ requestId: crypto.randomUUID() });
+        },
+        readConnectionGenerationId: async () => {
+            const generation = session.session.readMiddleware()?.middleware.ownWsConnectionGeneration;
+            return generation === undefined ? undefined : (await generation.read()).fold(() => undefined, (id) => id);
+        }
+    };
 }
 
 interface BlackBoxBrowserMessagingPortsInput {
@@ -323,7 +369,8 @@ export async function readBlackBoxRtcMessageNacks(
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: []
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
         })
     );
     return observation.nacks;
@@ -350,6 +397,7 @@ function registerBlackBoxBrowserRallarLifecycle(
         lifecycle: input.foundation.lifecycle,
         messageSubscriptions: input.messaging.messagesController.subscriptions,
         wsInbox: input.stateEvents.wsInbox,
+        topicSubscriptions: input.messaging.topicSubscriptions,
         wsController: input.realtime.wsController,
         realtimeReceive: input.realtime.realtimeReceive,
         rtcLifecycle: input.realtime.rtcController.lifecycle
@@ -366,12 +414,14 @@ interface BlackBoxBrowserRuntimeComponents {
     readonly diagnostics: BlackBoxBrowserDiagnosticsDependency;
     readonly deliveries: BlackBoxBrowserDeliveriesDependency;
     readonly peers: BlackBoxBrowserPeersDependency;
+    readonly productSocket: BlackBoxBrowserProductSocketDependency;
 }
 
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents
 ): BlackBoxBrowserRallarRuntimeDependency {
-    const { session, rooms, messaging, realtime, crdt, director, diagnostics, deliveries, peers } = components;
+    const { session, rooms, messaging, realtime, crdt, director, diagnostics, deliveries, peers, productSocket } =
+        components;
     return {
         ...session.connection,
         connect: async (options) => {
@@ -414,7 +464,8 @@ function toBlackBoxBrowserRuntimeDependency(
         director: director.director,
         diagnostics,
         deliveries,
-        peers
+        peers,
+        productSocket
     };
 }
 

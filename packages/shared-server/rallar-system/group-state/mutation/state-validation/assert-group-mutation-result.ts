@@ -28,8 +28,15 @@ const MUTATION_RECEIPT_KEYS = [
     'outboxIds',
     'joinCode',
     'joinCodeExpiresAtEpochMs',
+    'subscriptionOutcome',
     'rejection'
 ] as const;
+
+const SUBSCRIPTION_OUTCOMES_BY_RECEIPT_OUTCOME: Readonly<Record<GroupMutationReceipt['outcome'], readonly string[]>> = {
+    applied: ['subscribed', 'renewed', 'unsubscribed'],
+    'no-op': ['not-subscribed'],
+    rejected: []
+};
 
 export function assertGroupMutationIdempotencyRecord(
     record: unknown,
@@ -132,7 +139,16 @@ function assertMutationReceiptDetails(
         requireNonEmptyString(outboxId, `${label} outboxId`);
         return outboxId;
     });
-    if ((outcome === 'applied') !== (receipt.eventId !== null)) {
+    const subscriptionOutcome = receipt.subscriptionOutcome;
+    if (
+        subscriptionOutcome !== null &&
+        (typeof subscriptionOutcome !== 'string' ||
+            !SUBSCRIPTION_OUTCOMES_BY_RECEIPT_OUTCOME[outcome].includes(subscriptionOutcome))
+    ) {
+        throw new TypeError(`${label} subscriptionOutcome differs from outcome`);
+    }
+    // A subscription write records no event, so only an applied receipt without a subscription outcome names one.
+    if ((outcome === 'applied' && subscriptionOutcome === null) !== (receipt.eventId !== null)) {
         throw new TypeError(`${label} event differs from outcome`);
     }
     if (receipt.joinCode !== null) {

@@ -44,7 +44,12 @@ const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
     { name: 'registerGroupAdmissionRoutes', sourcePath: './register-group-admission-routes.ts', requiresAuthorization: false },
     { name: 'registerGroupMembershipRoutes', sourcePath: './register-group-membership-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupPresenceRoutes', sourcePath: './register-group-presence-routes.ts', requiresAuthorization: true },
-    { name: 'registerGroupPublicationRoutes', sourcePath: './register-group-publication-routes.ts', requiresAuthorization: false }
+    { name: 'registerGroupPublicationRoutes', sourcePath: './register-group-publication-routes.ts', requiresAuthorization: false },
+    {
+        name: 'registerGroupTopicSubscriptionRoutes',
+        sourcePath: './register-group-topic-subscription-routes.ts',
+        requiresAuthorization: true
+    }
 ];
 
 export function hasExactGroupRegistrationRoot({

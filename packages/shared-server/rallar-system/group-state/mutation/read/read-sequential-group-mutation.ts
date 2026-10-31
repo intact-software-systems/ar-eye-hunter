@@ -199,6 +199,10 @@ function assembleSequentialGroupMutationRead({
         authorityPresenceSessionEntries,
         presenceSummary: presenceSummary ?? null,
         targetPublicationGrant: related.targetPublicationGrant ?? null,
+        // No sequential operation is in a subscription read scope, and the read validator refuses one that enters it.
+        targetTopicSubscription: null,
+        targetClientSessions: null,
+        targetPrincipalSubscriptions: null,
         lifecyclePolicy,
         activeMemberPrincipalIds,
         activeMembers,

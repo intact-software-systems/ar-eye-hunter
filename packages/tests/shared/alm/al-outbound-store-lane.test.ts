@@ -37,7 +37,8 @@ describe('outbound store lanes (S3a, D54)', () => {
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ kind: 'send' }]
+            preparedMessages: [{ kind: 'send' }],
+            admittedConnectionGenerationIds: undefined
         };
     }
 

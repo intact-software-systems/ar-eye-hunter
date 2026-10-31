@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { installLiveWsNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
 import { encodeLiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
@@ -17,6 +18,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -43,6 +45,10 @@ const PRODUCER = 'feed-producer';
 const MEMBERS_TOPIC = 'room.chat';
 
 type Grants = Readonly<Record<string, GroupPublicationTopicPermissions | undefined>>;
+/** Session id → the generation its live subscription to the feed asserts; its live client row carries the same. */
+type Subscriptions = Readonly<Record<string, string>>;
+/** One read of the room: the probed snapshot with the feed's fresh subscription rows, or no current snapshot. */
+type RoomRead = () => Promise<GroupPublicationAuthority | undefined>;
 
 /** Alice publishes, Bob and Carol subscribe. */
 const GRANTS: Grants = {
@@ -51,6 +57,9 @@ const GRANTS: Grants = {
     carol: { publish: false, subscribe: true }
 };
 const REVOKED_CAROL: Grants = { ...GRANTS, carol: undefined };
+/** Every session subscribes to the feed under its first generation. */
+const SUBSCRIBED: Subscriptions = { alice: 'client-generation-alice', bob: 'client-generation-bob', carol: 'client-generation-carol' };
+const UNSUBSCRIBED_CAROL: Subscriptions = { alice: SUBSCRIBED.alice, bob: SUBSCRIBED.bob };
 
 interface GrantedDeliveryHarness {
     readonly service: WsQueueBoxServerService;
@@ -58,9 +67,9 @@ interface GrantedDeliveryHarness {
     readonly server: JsonWebSocketServer;
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     /** Each authority read takes the next answer; the last one repeats. */
-    readonly reads: (() => Promise<GroupSnapshot | undefined>)[];
+    readonly reads: RoomRead[];
     /** When set, the D498 re-check reads this instead of taking its turn in `reads`. */
-    recheckRead: (() => Promise<GroupSnapshot | undefined>) | undefined;
+    recheckRead: RoomRead | undefined;
     readonly readCount: () => number;
 }
 
@@ -78,11 +87,11 @@ Deno.test('each of socket admission, pending replay, inbox dispatch and route re
         await withHarness({ fanout: 'live-only' }, async (harness) => {
             const aliceFrames = addConnection(harness.server, 'alice');
             const bobFrames = addConnection(harness.server, 'bob');
-            const revoked = createSnapshot({ ...GRANTS, alice: undefined }, pass === 'pending replay' ? 4 : 3);
+            const revoked = createAuthority({ ...GRANTS, alice: undefined }, { snapshotVersion: pass === 'pending replay' ? 4 : 3 });
             // The read that sees the revoke: admission is read 1, inbox dispatch read 2, route read 3.
             const grantedReads = { 'socket admission': 0, 'pending replay': 1, 'inbox dispatch': 1, route: 2 }[pass];
             harness.reads.push(
-                ...Array.from({ length: grantedReads }, () => () => Promise.resolve(createSnapshot(GRANTS))),
+                ...Array.from({ length: grantedReads }, () => () => Promise.resolve(createAuthority(GRANTS))),
                 () => Promise.resolve(revoked)
             );
             const message = feedMessage({
@@ -201,7 +210,7 @@ Deno.test('two held granted rows for one session reach it in admission order how
             if (rechecks === 3) {
                 await new Promise((resolve) => setTimeout(resolve, 40));
             }
-            return createSnapshot(GRANTS);
+            return createAuthority(GRANTS);
         };
         const first = feedMessage({ senderId: 'alice', msgId: 'held-first' });
         const second = feedMessage({ senderId: 'alice', msgId: 'held-second' });
@@ -296,11 +305,14 @@ Deno.test('a run of granted rows for a missing room does not stop a members row\
 Deno.test('a granted row whose publisher\'s session left before dequeue reaches nobody and completes', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
-        const departed = createSnapshot(GRANTS);
+        const departed = createAuthority(GRANTS);
         harness.reads.push(...grantedReads(3), () =>
             Promise.resolve({
                 ...departed,
-                activeSessions: departed.activeSessions.filter((session) => session.sessionId !== 'alice')
+                snapshot: {
+                    ...departed.snapshot,
+                    activeSessions: departed.snapshot.activeSessions.filter((session) => session.sessionId !== 'alice')
+                }
             }));
         const message = feedMessage({ senderId: 'alice', msgId: 'publisher-departed' });
 
@@ -317,11 +329,12 @@ Deno.test('a granted row whose publisher\'s session left before dequeue reaches 
 Deno.test('a granted row of a room archived before dequeue reaches nobody', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
-        const snapshot = createSnapshot(GRANTS, 4);
+        const authority = createAuthority(GRANTS, { snapshotVersion: 4 });
+        const { group } = authority.snapshot;
         harness.reads.push(...grantedReads(3), () =>
             Promise.resolve({
-                ...snapshot,
-                group: { ...snapshot.group, status: 'archived', archived: snapshot.group.updated, deleted: null }
+                ...authority,
+                snapshot: { ...authority.snapshot, group: { ...group, status: 'archived', archived: group.updated, deleted: null } }
             }));
         const message = feedMessage({ senderId: 'alice', msgId: 'archived-room' });
 
@@ -380,11 +393,171 @@ Deno.test('a remote node\'s broad live notice on a granted topic reaches no sess
     assert.equal(frames.bob.length, 0);
 });
 
+const ROUTE_TIME_CHANGES = [
+    ['an unsubscribe', subscriptionReads(UNSUBSCRIBED_CAROL)],
+    ['a revoke of subscribe', revokedReads()],
+    // Carol's socket reopened under a new generation that has not subscribed yet: her row asserts the closed one.
+    ['a reopened generation', () => Promise.resolve(createAuthority(GRANTS, { reopenedGenerations: { carol: 'client-generation-carol-reopened' } }))]
+] as const;
+
+for (const [change, routeRead] of ROUTE_TIME_CHANGES) {
+    Deno.test(`${change} between socket admission and route skips the session on a live-only granted topic`, async () => {
+        await withHarness({ fanout: 'live-only' }, async (harness) => {
+            const frames = addAudience(harness.server);
+            // Socket admission and inbox dispatch read Carol's live subscription; route's fresh read no longer finds it.
+            harness.reads.push(...grantedReads(2), routeRead);
+            const message = feedMessage({ senderId: 'alice', msgId: `live-route-${change.replaceAll(' ', '-')}` });
+
+            assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
+            await waitFor(() => readDelivered(frames.bob, message) > 0);
+            await settle();
+
+            assert.equal(readDelivered(frames.bob, message), 1, change);
+            assert.equal(readDelivered(frames.carol, message), 0, change);
+            assert.deepEqual(readReceipts(frames.alice)[0]?.expectedRecipientPeerIds, ['bob', 'carol'], change);
+        });
+    });
+}
+
+Deno.test('only subscribed sessions receive a granted publication', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        await withHarness({ fanout }, async (harness) => {
+            const frames = addAudience(harness.server);
+            // Carol holds subscribe but has not subscribed.
+            harness.reads.push(subscriptionReads(UNSUBSCRIBED_CAROL));
+            const message = feedMessage({ senderId: 'alice', msgId: `subscribed-only-${fanout}` });
+
+            await harness.service.acceptIncomingMessage(message, 'alice');
+            await waitFor(() => readDelivered(frames.bob, message) > 0);
+            await settle();
+
+            assert.equal(readDelivered(frames.bob, message), 1, fanout);
+            assert.equal(readDelivered(frames.carol, message), 0, fanout);
+            assert.deepEqual(readReceipts(frames.alice)[0]?.expectedRecipientPeerIds, ['bob'], fanout);
+        });
+    }
+});
+
+for (const step of ['single-instance dequeue', 'cluster send'] as const) {
+    Deno.test(`an unsubscribe between enqueue and dequeue skips the session at ${step}`, async () => {
+        await withHarness({ fanout: 'outbox', cluster: step === 'cluster send' }, async (harness) => {
+            const frames = addAudience(harness.server);
+            // Admission, inbox dispatch and route read Carol's subscription; her unsubscribe commits before the re-check.
+            harness.reads.push(...grantedReads(3), subscriptionReads(UNSUBSCRIBED_CAROL));
+            const message = feedMessage({ senderId: 'alice', msgId: `unsubscribed-${step.replaceAll(' ', '-')}` });
+
+            assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
+            await waitFor(() => readDelivered(frames.bob, message) > 0);
+            await settle();
+
+            assert.equal(readDelivered(frames.bob, message), 1);
+            assert.equal(readDelivered(frames.carol, message), 0);
+        });
+    });
+}
+
+Deno.test('an unsubscribe between enqueue and dequeue skips the session at repair', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        // The first dequeue sends to both subscribers; neither acknowledges, and Carol unsubscribes before the retry.
+        harness.reads.push(...grantedReads(4), subscriptionReads(UNSUBSCRIBED_CAROL));
+        const message = {
+            ...feedMessage({ senderId: 'alice', msgId: 'repaired-unsubscribe' }),
+            qos: { ack: { algo: 'receiver', opts: { timeoutMs: 50 } } }
+        } as const;
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) >= 2);
+        await settle();
+
+        assert.equal(readDelivered(frames.bob, message) >= 2, true);
+        assert.equal(readDelivered(frames.carol, message), 1);
+    });
+});
+
+Deno.test('a session that re-subscribed under a new generation between enqueue and dequeue is not sent the old row', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        // Carol's socket reopened after route: her live client generation and her renewed subscription both moved on.
+        harness.reads.push(...grantedReads(3), subscriptionReads({ ...SUBSCRIBED, carol: 'client-generation-carol-reopened' }));
+        const message = feedMessage({ senderId: 'alice', msgId: 'resubscribed-generation' });
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await settle();
+
+        assert.equal(readDelivered(frames.bob, message), 1);
+        assert.equal(readDelivered(frames.carol, message), 0);
+    });
+});
+
+Deno.test('a held row for a session whose generation changed is not sent when its socket opens', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        addConnection(harness.server, 'alice');
+        for (const sessionId of ['bob', 'carol']) {
+            harness.server.expectedConnections.expect({ id: sessionId, generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
+        }
+        // Admission, dispatch, route and the dequeue read the first generations; the held re-checks read Carol's new one.
+        harness.reads.push(...grantedReads(4), subscriptionReads({ ...SUBSCRIBED, carol: 'client-generation-carol-reopened' }));
+        const message = feedMessage({ senderId: 'alice', msgId: 'held-generation' });
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => harness.readCount() >= 4);
+        await settle();
+        const bob = openLateConnection(harness.server, 'bob');
+        const carol = openLateConnection(harness.server, 'carol');
+        await waitFor(() => readDelivered(bob, message) > 0);
+        await settle();
+
+        assert.equal(readDelivered(bob, message), 1);
+        assert.equal(readDelivered(carol, message), 0);
+    });
+});
+
+Deno.test('a granted outbox row without captured generations sends nobody', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        const message = feedMessage({ senderId: SERVER_PEER_ID, msgId: 'captured-without-generations' });
+
+        const admitted = await harness.service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: ['bob', 'carol'],
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: undefined
+        });
+        await waitFor(async () => (await readRelayRows(harness, message))[0]?.status === EntityStatus.COMPLETED);
+        await settle();
+
+        assert.equal(admitted.verdict.kind, 'admitted');
+        assert.equal((await readRelayRows(harness, message))[0]?.status, EntityStatus.COMPLETED);
+        assert.equal(readDelivered(frames.bob, message), 0);
+        assert.equal(readDelivered(frames.carol, message), 0);
+    });
+});
+
+Deno.test('the receipt keeps the frozen expected set when the re-check drops a session', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        harness.reads.push(...grantedReads(3), subscriptionReads(UNSUBSCRIBED_CAROL));
+        const message = feedMessage({ senderId: 'alice', msgId: 'receipted-unsubscribe' });
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await settle();
+
+        const receipts = readReceipts(frames.alice);
+        assert.deepEqual(receipts[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
+        assert.equal(receipts.some((receipt) => receipt.phase === 'complete'), false);
+        assert.equal(receipts.some((receipt) => receipt.confirmedRecipientPeerIds.includes('carol')), false);
+        assert.equal(readDelivered(frames.carol, message), 0);
+    });
+});
+
 Deno.test('a members-topic outbox row is narrowed by the durable filter only', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // No principal holds a grant on room.chat: the row is a members row, so no grant decides its sends.
-        harness.reads.push(() => Promise.resolve(createSnapshot({})));
+        harness.reads.push(() => Promise.resolve(createAuthority({})));
         const message = feedMessage({ senderId: 'alice', msgId: 'members-row', topicId: MEMBERS_TOPIC });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
@@ -422,15 +595,16 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
     const server = new JsonWebSocketServer();
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const grantedTopics = new WsGrantedTopicSet();
-    const reads: (() => Promise<GroupSnapshot | undefined>)[] = [];
+    const reads: RoomRead[] = [];
     let readCount = 0;
-    const readCurrentSnapshot = (ref: GroupRef) => {
+    const readRoom = (ref: GroupRef) => {
         assert.deepEqual(ref, ROOM);
         readCount += 1;
         const next = reads.length > 1 ? reads.shift()! : reads[0];
-        return next === undefined ? Promise.resolve(createSnapshot(GRANTS)) : next();
+        return next === undefined ? Promise.resolve(createAuthority(GRANTS)) : next();
     };
-    const readRecheckSnapshot = (ref: GroupRef) => harness.recheckRead?.() ?? readCurrentSnapshot(ref);
+    const readCurrentSnapshot = async (ref: GroupRef) => (await readRoom(ref))?.snapshot;
+    const readRecheckRoom = (ref: GroupRef) => harness.recheckRead?.() ?? readRoom(ref);
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: stores.workQueue,
@@ -449,17 +623,21 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                 durableEligibleSessionIds: captured.candidateSessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
                 grantedTopics,
                 serverPeerId: SERVER_PEER_ID,
-                readCurrentSnapshot: readRecheckSnapshot,
+                readPublicationAuthority: readRecheckRoom,
                 nowEpochMs: Date.now()
             })
     });
     const router = new RallarServerWsRouter(service, {
         grantedTopics,
         authorizeRoomMessage: createApiV1RoomWsAuthorizer(
-            { readCurrentSnapshot },
+            { readCurrentSnapshot, readCurrentPublicationAuthority: readRoom },
             { readLifecyclePolicy: () => Promise.resolve({ status: 'absent' }) }
         ),
-        readServerPublishAudience: createServerPublishRoomAudienceReader({ readGroupSnapshot: readCurrentSnapshot, nowEpochMs: Date.now })
+        readServerPublishAudience: createServerPublishRoomAudienceReader({
+            readGroupSnapshot: readCurrentSnapshot,
+            readPublicationAuthority: readRoom,
+            nowEpochMs: Date.now
+        })
     });
     router.defineTopic({ topicId: FEED, scope: 'room', participation: 'granted', serverProducerIds: [PRODUCER], fanout: input.fanout });
     router.defineTopic({ topicId: MEMBERS_TOPIC, scope: 'room', participation: 'members', fanout: input.fanout });
@@ -485,7 +663,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                     durableEligibleSessionIds: captured.candidateSessionIds,
                     grantedTopics,
                     serverPeerId: SERVER_PEER_ID,
-                    readCurrentSnapshot: readRecheckSnapshot,
+                    readPublicationAuthority: readRecheckRoom,
                     nowEpochMs: Date.now()
                 })
         });
@@ -493,12 +671,43 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
     return harness;
 }
 
-function grantedReads(count: number): (() => Promise<GroupSnapshot | undefined>)[] {
-    return Array.from({ length: count }, () => () => Promise.resolve(createSnapshot(GRANTS)));
+function grantedReads(count: number, subscriptions: Subscriptions = SUBSCRIBED): RoomRead[] {
+    return Array.from({ length: count }, () => () => Promise.resolve(createAuthority(GRANTS, { subscriptions })));
 }
 
-function revokedReads(): () => Promise<GroupSnapshot | undefined> {
-    return () => Promise.resolve(createSnapshot(REVOKED_CAROL, 4));
+function revokedReads(): RoomRead {
+    return () => Promise.resolve(createAuthority(REVOKED_CAROL, { snapshotVersion: 4 }));
+}
+
+function subscriptionReads(subscriptions: Subscriptions): RoomRead {
+    return () => Promise.resolve(createAuthority(GRANTS, { subscriptions }));
+}
+
+interface CreateAuthorityOptions {
+    readonly snapshotVersion?: number;
+    readonly subscriptions?: Subscriptions;
+    /** A session's live client generation where it differs from the one its subscription asserts. */
+    readonly reopenedGenerations?: Subscriptions;
+}
+
+/** The room's snapshot with each subscribed session's live feed row, asserted by its one live client generation unless reopened. */
+function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): GroupPublicationAuthority {
+    const snapshot = createSnapshot(grants, options.snapshotVersion);
+    const subscriptions = Object.entries(options.subscriptions ?? SUBSCRIBED);
+    return {
+        snapshot,
+        subscriptions: subscriptions.map(([sessionId, connectionGenerationId]): GroupTopicSubscription => ({
+            sessionId,
+            principalId: sessionId,
+            topicId: FEED,
+            connectionGenerationId,
+            leaseExpiresAtEpochMs: Date.now() + 120_000,
+            admittedAtGroupRevision: snapshot.group.snapshotVersion
+        })),
+        liveSessionGenerations: Object.fromEntries(
+            subscriptions.map(([sessionId, generation]) => [sessionId, [options.reopenedGenerations?.[sessionId] ?? generation]])
+        )
+    };
 }
 
 /** Alice, Bob and Carol in the room, each a live session of the principal of the same name. */

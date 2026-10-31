@@ -117,6 +117,7 @@ export function toGroupRetentionReceipt(
         outboxIds: input.outboxIds,
         joinCode: null,
         joinCodeExpiresAtEpochMs: null,
+        subscriptionOutcome: null,
         rejection: null
     };
 }

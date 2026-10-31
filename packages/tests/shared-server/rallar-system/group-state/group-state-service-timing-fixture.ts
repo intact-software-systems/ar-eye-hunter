@@ -23,6 +23,8 @@ export const TIMED_ASYNC_OPERATIONS = [
     'listSnapshotsPage',
     'readSnapshot',
     'readCausalRevision',
+    'readGroupSessionTopicSubscriptions',
+    'readGroupTopicSubscriptionAuthority',
     'readIssuedAuthSession',
     'listEvents',
     'listRecentEvents',
@@ -182,6 +184,8 @@ function createQueryFake(
     | 'listSnapshotsPage'
     | 'readSnapshot'
     | 'readCausalRevision'
+    | 'readGroupSessionTopicSubscriptions'
+    | 'readGroupTopicSubscriptionAuthority'
     | 'readIssuedAuthSession'
     | 'listEvents'
     | 'listRecentEvents'
@@ -193,6 +197,10 @@ function createQueryFake(
         listSnapshotsPage: async (...arguments_) => (await record({ operation: 'listSnapshotsPage', arguments: arguments_ })) as never,
         readSnapshot: async (...arguments_) => (await record({ operation: 'readSnapshot', arguments: arguments_ })) as never,
         readCausalRevision: async (...arguments_) => (await record({ operation: 'readCausalRevision', arguments: arguments_ })) as never,
+        readGroupSessionTopicSubscriptions: async (...arguments_) =>
+            (await record({ operation: 'readGroupSessionTopicSubscriptions', arguments: arguments_ })) as never,
+        readGroupTopicSubscriptionAuthority: async (...arguments_) =>
+            (await record({ operation: 'readGroupTopicSubscriptionAuthority', arguments: arguments_ })) as never,
         readIssuedAuthSession: async (...arguments_) => (await record({ operation: 'readIssuedAuthSession', arguments: arguments_ })) as never,
         listEvents: async (...arguments_) => (await record({ operation: 'listEvents', arguments: arguments_ })) as never,
         listRecentEvents: async (...arguments_) => (await record({ operation: 'listRecentEvents', arguments: arguments_ })) as never,
@@ -318,6 +326,8 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     listSnapshotsPage: [timingScope, timingSnapshotPageOptions],
     readSnapshot: [timingGroupRef],
     readCausalRevision: [timingGroupRef],
+    readGroupSessionTopicSubscriptions: [timingGroupRef, 'timing-session'],
+    readGroupTopicSubscriptionAuthority: [{ group: timingGroupRef } as never, 'room.timing'],
     readIssuedAuthSession: ['timing-session'],
     listEvents: [timingGroupRef],
     listRecentEvents: [timingGroupRef, timingRecentEventsQuery],
@@ -373,6 +383,14 @@ const TIMED_OPERATION_INVOCATIONS: TimedOperationInvocations = {
     listSnapshotsPage: async (service) => await service.listSnapshotsPage(...TIMED_OPERATION_ARGUMENTS.listSnapshotsPage),
     readSnapshot: async (service) => await service.readSnapshot(...TIMED_OPERATION_ARGUMENTS.readSnapshot),
     readCausalRevision: async (service) => await service.readCausalRevision(...TIMED_OPERATION_ARGUMENTS.readCausalRevision),
+    readGroupSessionTopicSubscriptions: async (service) =>
+        await service.readGroupSessionTopicSubscriptions(
+            ...TIMED_OPERATION_ARGUMENTS.readGroupSessionTopicSubscriptions
+        ),
+    readGroupTopicSubscriptionAuthority: async (service) =>
+        await service.readGroupTopicSubscriptionAuthority(
+            ...TIMED_OPERATION_ARGUMENTS.readGroupTopicSubscriptionAuthority
+        ),
     readIssuedAuthSession: async (service) => await service.readIssuedAuthSession(...TIMED_OPERATION_ARGUMENTS.readIssuedAuthSession),
     listEvents: async (service) => await service.listEvents(...TIMED_OPERATION_ARGUMENTS.listEvents),
     listRecentEvents: async (service) => await service.listRecentEvents(...TIMED_OPERATION_ARGUMENTS.listRecentEvents),

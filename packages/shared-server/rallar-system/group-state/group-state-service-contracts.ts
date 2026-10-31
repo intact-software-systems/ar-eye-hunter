@@ -1,3 +1,4 @@
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -25,8 +26,10 @@ import type {
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
+    SubscribeGroupTopicRequest,
     TransferGroupOwnershipRequest,
     UnbanGroupMemberRequest,
+    UnsubscribeGroupTopicRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
@@ -64,6 +67,20 @@ import type {
     GroupConnectAppInboxPayload,
     GroupReconfigureAppInboxPayload
 } from './inbox/group-state-inbox-contracts.ts';
+
+/** A granted topic's server-only subscription facts, read fresh after the snapshot probe and never cached. */
+export interface GroupTopicSubscriptionAuthority {
+    /** The topic's rows whose lease outlasts the read instant. */
+    readonly subscriptions: readonly GroupTopicSubscription[];
+    /** Each snapshot session's active, unexpired client-state generations; a session with none is absent. */
+    readonly liveSessionGenerations: Readonly<Record<string, readonly string[]>>;
+}
+
+/** What a granted topic's audience is decided on: the probed snapshot and the subscription facts read after it. */
+export interface GroupPublicationAuthority extends GroupTopicSubscriptionAuthority {
+    /** The probed snapshot, unchanged. */
+    readonly snapshot: GroupSnapshot;
+}
 
 export interface GroupWritten {
     readonly snapshot: GroupSnapshot;
@@ -146,6 +163,8 @@ interface GroupMutationRequests {
     readonly setGroupMemberRole: SetGroupMemberRoleRequest;
     readonly grantGroupPublication: GrantGroupPublicationRequest;
     readonly revokeGroupPublication: RevokeGroupPublicationRequest;
+    readonly subscribeGroupTopic: SubscribeGroupTopicRequest;
+    readonly unsubscribeGroupTopic: UnsubscribeGroupTopicRequest;
     readonly transferGroupOwnership: TransferGroupOwnershipRequest;
     readonly upsertMember: UpsertGroupMemberRequest;
     readonly rotateGroupJoinCode: RotateGroupJoinCodeRequest;
@@ -246,6 +265,16 @@ export type GroupStateService =
         ): Promise<GroupSnapshotPage>;
         readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
         readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
+        /** One session's live topic subscription rows, in topicId order; a server-only fact never on the snapshot. */
+        readGroupSessionTopicSubscriptions(
+            ref: GroupRef,
+            sessionId: string
+        ): Promise<readonly GroupTopicSubscription[]>;
+        /** A granted topic's subscription rows and its candidates' live generations, read fresh after the snapshot. */
+        readGroupTopicSubscriptionAuthority(
+            snapshot: GroupSnapshot,
+            topicId: string
+        ): Promise<GroupTopicSubscriptionAuthority>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
         listRecentEvents(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;

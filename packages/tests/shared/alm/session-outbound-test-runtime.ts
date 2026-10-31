@@ -98,7 +98,8 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
                 msg,
                 dropReasonCode: undefined,
                 lane: toSessionTestLane(msg.route.resourceId),
-                preparedMessages: [{ peer: 'receiver' }]
+                preparedMessages: [{ peer: 'receiver' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage.route.resourceId);

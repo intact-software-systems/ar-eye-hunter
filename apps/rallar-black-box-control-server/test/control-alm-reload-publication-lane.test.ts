@@ -173,7 +173,9 @@ function toCatalogInput(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]): Cre
         typeId: 'alm.conformance',
         senderConnection: 'almConformanceSender',
         receiverConnection: 'almConformanceReceiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     };
 }
 

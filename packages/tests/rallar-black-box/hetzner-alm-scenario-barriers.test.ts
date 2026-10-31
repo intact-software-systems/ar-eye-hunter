@@ -54,7 +54,8 @@ describe('ALM combined recipient-b ACK-hold ordering', () => {
             for (let i = 2; i < commands.length; i++) {
                 const command = commands[i]!;
                 if (
-                    command.kind !== 'fault.inject' || command.carrier === 'storage' || command.match.controlType !== 'ack' ||
+                    command.kind !== 'fault.inject' || command.carrier === 'storage' || command.carrier === 'product-socket' ||
+                    command.match.controlType !== 'ack' ||
                     command.remaining !== 'until-cleared'
                 ) {
                     continue;

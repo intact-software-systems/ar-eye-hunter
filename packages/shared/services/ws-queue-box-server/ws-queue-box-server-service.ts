@@ -61,7 +61,10 @@ import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
-import { toWsQueueBoxServerCapturedSendInput } from './scope/to-ws-queue-box-server-captured-send-input.ts';
+import {
+    toWsQueueBoxServerCapturedSendInput,
+    toWsQueueBoxServerHeldSessionPolicy
+} from './scope/to-ws-queue-box-server-captured-send-input.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -187,6 +190,11 @@ export namespace WsQueueBoxServerService {
          * the wire, and narrows every later plan of the message to that audience.
          */
         readonly admittedAudience: readonly string[] | undefined;
+        /**
+         * On a granted topic, the connection generation each admitted session's live subscription asserted when the
+         * router admitted it; every later dispatch step compares it. Undefined for every other topic.
+         */
+        readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
         /** The scope a producer proved for a unicast that names no group. */
         readonly recipientScope: StateScope | undefined;
     }
@@ -445,6 +453,7 @@ export class WsQueueBoxServerService {
             phase,
             clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
             admittedAudience: authority?.admittedAudience,
+            admittedConnectionGenerationIds: authority?.admittedConnectionGenerationIds,
             recipientScope: authority?.recipientScope,
             principalTargetId: authority?.principalTargetId,
             sessionInvalidation: authority?.sessionInvalidation,
@@ -572,6 +581,7 @@ export class WsQueueBoxServerService {
             phase: 'immediate',
             clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
             admittedAudience: authority?.admittedAudience,
+            admittedConnectionGenerationIds: authority?.admittedConnectionGenerationIds,
             recipientScope: authority?.recipientScope
         });
         const outgoingMessage = dispatchPlan.lane !== 'volatile'
@@ -780,7 +790,12 @@ export class WsQueueBoxServerService {
                 // One session's held rows re-check one after the other, so they reach it in the order they were held.
                 void this.heldSends.admit(
                     sessionId,
-                    () => this.sendHeldRow({ message, entry, policy: { ...policy, admittedAudience: [sessionId] } })
+                    () =>
+                        this.sendHeldRow({
+                            message,
+                            entry,
+                            policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId)
+                        })
                 ).catch((error) => console.error('Held WebSocket send failed:', error));
             }
         });

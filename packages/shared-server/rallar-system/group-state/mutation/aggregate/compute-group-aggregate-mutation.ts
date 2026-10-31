@@ -237,6 +237,8 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         eventType,
         lifecyclePolicy: null,
         publicationGrantEffects: [],
+        subscriptionEffects: [],
+        subscriptionOutcome: null,
         presenceSummaryWork: 'enqueue'
     });
 }

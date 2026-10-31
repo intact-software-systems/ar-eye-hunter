@@ -85,7 +85,8 @@ describe('Rallar Game Authority browser client', () => {
                 status: 'active',
                 isOwner: false,
                 isOnline: true,
-                sessionIds: ['peer-a']
+                sessionIds: ['peer-a'],
+                topicGrants: {}
             }]);
         const client = createClient(fake, { peerAssist: { enabled: true, snapshotRepair: true } });
         await client.start();
@@ -546,7 +547,8 @@ function createFakeAuthorityLifecycle(): FakeAuthorityLifecycle {
             status: 'active',
             isOwner: false,
             isOnline: true,
-            sessionIds: [`peer-${id}`]
+            sessionIds: [`peer-${id}`],
+            topicGrants: {}
         }))
     );
     const rtcStatus: RallarRtcStatus = {

@@ -94,7 +94,8 @@ describe('room state store current-room projection', () => {
                 isOwner: false,
                 isOnline: false,
                 sessionIds: [],
-                client: bobClient
+                client: bobClient,
+                topicGrants: {}
             },
             {
                 principalId: 'charlie',
@@ -105,7 +106,8 @@ describe('room state store current-room projection', () => {
                 isOwner: false,
                 isOnline: false,
                 sessionIds: [],
-                client: undefined
+                client: undefined,
+                topicGrants: {}
             },
             {
                 principalId: 'alice',
@@ -116,7 +118,8 @@ describe('room state store current-room projection', () => {
                 isOwner: true,
                 isOnline: true,
                 sessionIds: ['session-1'],
-                client: aliceClient
+                client: aliceClient,
+                topicGrants: {}
             }
         ]);
     });

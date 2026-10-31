@@ -223,10 +223,12 @@ function createGameRouterFixture(cluster = false): GameRouterFixture {
                 audience: {
                     targets: message.targets,
                     sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
+                    snapshotVersion: 2,
+                    recipientConnectionGenerationIds: {}
                 }
             },
         readServerPublishAudience: createServerPublishRoomAudienceReader({
+            readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
             readGroupSnapshot: async () => snapshot,
             nowEpochMs: () => Date.now()
         })

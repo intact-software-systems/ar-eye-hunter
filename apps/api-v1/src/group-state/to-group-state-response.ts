@@ -8,16 +8,17 @@ import {
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     requireGroupJoinCodeWritten,
-    requireGroupPresenceInboxDurableResult,
+    requireGroupReceiptInboxDurableResult,
     requireGroupStateWritten
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type {
-    GroupPresenceInboxDurableResult,
+    GroupReceiptInboxDurableResult,
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import {
     GroupMutationRejectedError
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupTopicSubscriptionResult } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { GroupStateRouteService } from './group-state-route-contracts.ts';
@@ -37,7 +38,11 @@ export type GroupStateResponseInput =
         kind: 'presence';
         receipt: GroupStateInboxDurableResult;
         ref: GroupRef;
-        service: GroupStateRouteService;
+        service: Pick<GroupStateRouteService, 'readCurrentSnapshot'>;
+    }>
+    | Readonly<{
+        kind: 'subscription';
+        receipt: GroupStateInboxDurableResult;
     }>;
 
 export function toGroupStateResponse(
@@ -53,8 +58,12 @@ export function toGroupStateResponse(
 ): Promise<GroupSnapshot>;
 
 export function toGroupStateResponse(
+    input: Extract<GroupStateResponseInput, { kind: 'subscription'; }>
+): GroupTopicSubscriptionResult;
+
+export function toGroupStateResponse(
     input: GroupStateResponseInput
-): GroupMutationWritten | GroupJoinCodeResponse | Promise<GroupSnapshot> {
+): GroupMutationWritten | GroupJoinCodeResponse | Promise<GroupSnapshot> | GroupTopicSubscriptionResult {
     switch (input.kind) {
         case 'mutation':
             return toGroupMutationResponse(requireGroupStateWritten(input.written));
@@ -63,8 +72,10 @@ export function toGroupStateResponse(
         case 'presence':
             return toGroupPresenceResponse({
                 ...input,
-                receipt: requireGroupPresenceInboxDurableResult(input.receipt)
+                receipt: requireGroupReceiptInboxDurableResult(input.receipt)
             });
+        case 'subscription':
+            return toGroupTopicSubscriptionResponse(requireGroupReceiptInboxDurableResult(input.receipt));
     }
 }
 
@@ -77,9 +88,16 @@ function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeRe
     return response;
 }
 
+function toGroupTopicSubscriptionResponse(receipt: GroupReceiptInboxDurableResult): GroupTopicSubscriptionResult {
+    if (!('commandId' in receipt) || receipt.subscriptionOutcome === null) {
+        throw new TypeError('A topic subscription receipt carries its outcome');
+    }
+    return { outcome: receipt.subscriptionOutcome };
+}
+
 async function toGroupPresenceResponse(
     input: Omit<Extract<GroupStateResponseInput, { kind: 'presence'; }>, 'receipt'> & {
-        readonly receipt: GroupPresenceInboxDurableResult;
+        readonly receipt: GroupReceiptInboxDurableResult;
     }
 ): Promise<GroupSnapshot> {
     if ('commandId' in input.receipt && input.receipt.outcome === 'rejected') {

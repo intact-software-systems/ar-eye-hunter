@@ -50,16 +50,28 @@ export function decodeGroupStateChildStorageKey<Name extends string>(
     partName: string,
     propertyName: Name
 ): GroupRef & Readonly<Record<Name, string>> {
+    const { ref, values } = decodeGroupStateChildStorageKeyValues(storageKey, [partName]);
+    return { ...ref, [propertyName]: values[0] } as GroupRef & Readonly<Record<Name, string>>;
+}
+
+/** The group and the canonical value of each named child part, in key order, of a key with exactly those parts. */
+export function decodeGroupStateChildStorageKeyValues(
+    storageKey: string,
+    partNames: readonly string[]
+): Readonly<{ ref: GroupRef; values: readonly string[]; }> {
+    const label = partNames.join(' ');
     const parts = storageKey.split(':');
-    if (parts.length !== 4) {
-        throw new TypeError(`Group-state ${partName} storage key has invalid arity`);
+    if (parts.length !== 3 + partNames.length) {
+        throw new TypeError(`Group-state ${label} storage key has invalid arity`);
     }
     const ref = decodeGroupStateGroupStorageKeyParts(parts);
-    const value = decodeGroupStateStorageKeyPart(parts[3], partName);
-    if (!isCanonicalGroupStateStorageKeyPart(parts[3], partName, value)) {
-        throw new TypeError(`Group-state ${partName} storage key is not canonical`);
+    const values = partNames.map((partName, index) => decodeGroupStateStorageKeyPart(parts[3 + index], partName));
+    if (
+        !values.every((value, index) => isCanonicalGroupStateStorageKeyPart(parts[3 + index], partNames[index], value))
+    ) {
+        throw new TypeError(`Group-state ${label} storage key is not canonical`);
     }
-    return { ...ref, [propertyName]: value } as GroupRef & Readonly<Record<Name, string>>;
+    return { ref, values };
 }
 
 function decodeGroupStateGroupStorageKeyParts(parts: readonly string[]): GroupRef {

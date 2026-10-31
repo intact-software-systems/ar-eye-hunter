@@ -45,6 +45,12 @@ export interface ALOutboundCapturedPolicy {
     readonly mintsSequence?: true;
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
+    /**
+     * Kept exactly on a granted topic's row: the connection generation each admitted session's subscription asserted at
+     * route, keyed within the admitted audience. A dispatch step sends a session only while its live subscription
+     * asserts the same generation; an admitted session without an entry is never sent.
+     */
+    readonly admittedConnectionGenerationIds?: Readonly<Record<string, string>>;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
@@ -59,6 +65,9 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         supersedenceTracking: plan.supersedenceTracking ?? null,
         ...(plan.mintsSequence ? { mintsSequence: true } : {}),
         ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
+        ...(plan.admittedConnectionGenerationIds === undefined
+            ? {}
+            : { admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds }),
         ...(plan.sessionInvalidation === undefined
             ? {}
             : { sessionInvalidation: decodeALSessionInvalidationAuthority(plan.sessionInvalidation) }),
@@ -113,6 +122,7 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         repairTracking: policy.repairTracking ?? undefined,
         supersedenceTracking: policy.supersedenceTracking ?? undefined,
         admittedAudience: policy.admittedAudience,
+        admittedConnectionGenerationIds: policy.admittedConnectionGenerationIds,
         recipientScope: policy.recipientScope,
         principalTargetId: policy.principalTargetId,
         sessionInvalidation: policy.sessionInvalidation
@@ -151,7 +161,14 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['mintsSequence', 'admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
+    ], [
+        'mintsSequence',
+        'admittedAudience',
+        'admittedConnectionGenerationIds',
+        'recipientScope',
+        'principalTargetId',
+        'sessionInvalidation'
+    ]);
     if (policy.mintsSequence !== undefined && policy.mintsSequence !== true) {
         throw new TypeError('Captured sequence minting is invalid');
     }
@@ -162,6 +179,9 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         }
     }
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
+    if (policy.admittedConnectionGenerationIds !== undefined) {
+        decodeALOutboundCapturedConnectionGenerations(policy.admittedConnectionGenerationIds, policy.admittedAudience);
+    }
     if (policy.recipientScope !== undefined) {
         decodeALOutboundRecipientScope(policy.recipientScope);
     }
@@ -181,6 +201,19 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
     decodeALOutboundCapturedRepair(policy.repairTracking);
     decodeALOutboundCapturedSupersedence(policy.supersedenceTracking);
     return value as ALOutboundCapturedPolicy;
+}
+
+function decodeALOutboundCapturedConnectionGenerations(
+    value: PersistedALValue,
+    admittedAudience: PersistedALValue | undefined
+): void {
+    if (!Array.isArray(admittedAudience)) {
+        throw new TypeError('Captured connection generations require a frozen audience');
+    }
+    const generations = decodeALAdmissionRecord(value, [], admittedAudience as readonly string[]);
+    for (const generation of Object.values(generations)) {
+        requirePersistedALNonEmptyString(generation, 'captured connection generation');
+    }
 }
 
 function decodeALOutboundCapturedRetry(value: PersistedALValue | undefined): void {

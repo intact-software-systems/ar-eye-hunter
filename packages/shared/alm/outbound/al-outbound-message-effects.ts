@@ -357,6 +357,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         supersedenceTracking: pending.policy.supersedenceTracking ?? undefined,
         mintsSequence: pending.policy.mintsSequence,
         admittedAudience: pending.policy.admittedAudience,
+        admittedConnectionGenerationIds: pending.policy.admittedConnectionGenerationIds,
         recipientScope: pending.policy.recipientScope,
         principalTargetId: pending.policy.principalTargetId,
         sessionInvalidation: pending.policy.sessionInvalidation

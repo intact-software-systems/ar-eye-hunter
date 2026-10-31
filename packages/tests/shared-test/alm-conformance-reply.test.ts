@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALM_REPLY_WAIT_RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/alm/browser-adapter-alm-commands.ts';
+import { ALM_PAGE_WAIT_RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/alm/browser-adapter-alm-commands.ts';
 import type { RallarBlackBoxTestMessagesAwaitReplyResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
@@ -237,7 +237,7 @@ describe('reply-correlated', () => {
                 commandId: `alm-${carrier}-reply-correlated-sender-await-reply-1`,
                 connection: 'sender',
                 handleId: `alm-${carrier}-reply-correlated-send-1`,
-                timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS + ALM_REPLY_WAIT_RESPONSE_MARGIN_MS
+                timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS + ALM_PAGE_WAIT_RESPONSE_MARGIN_MS
             });
             expect(findCommand(scenario.sender, 'reply-identity-1')).toMatchObject({
                 kind: 'wait',
@@ -309,7 +309,7 @@ describe('reply-timeout-late', () => {
             'reply-late-timed-out-1',
             'stats'
         ]);
-        expect(findCommand(scenario.sender, 'await-reply-1')).toMatchObject({ timeoutMs: 1_000 + ALM_REPLY_WAIT_RESPONSE_MARGIN_MS });
+        expect(findCommand(scenario.sender, 'await-reply-1')).toMatchObject({ timeoutMs: 1_000 + ALM_PAGE_WAIT_RESPONSE_MARGIN_MS });
         expect(findCommand(scenario.sender, 'send-2')).toMatchObject({ toPeer: 'receiver', ack: 'receiver' });
         expect(findCommand(scenario.sender, 'reply-late-timed-out-1')).toMatchObject({
             kind: 'wait',
@@ -369,7 +369,7 @@ describe('reply-undelivered', () => {
         expect(findCommand(scenario.sender, 'release-ws')).toMatchObject({ kind: 'fault.inject', remaining: 0 });
         expect(findCommand(scenario.sender, 'send-1')).toMatchObject({ toPeer: 'receiver', ttlMs: 7_500 });
         expect(findCommand(scenario.sender, 'await-reply-1')).toMatchObject({
-            timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS + ALM_REPLY_WAIT_RESPONSE_MARGIN_MS
+            timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS + ALM_PAGE_WAIT_RESPONSE_MARGIN_MS
         });
         expect(toCommandNames(scenario.receiver)).toEqual([...PROLOGUE, 'received-1', 'stats']);
         expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 1, absent: true });

@@ -6,6 +6,11 @@ import { describe, expect, it } from 'vitest';
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
 import { GROUP_PUBLICATION_GRANT_LIMITS } from '@shared/api/group-publication/group-publication-grants.ts';
+import {
+    decodeGroupTopicSubscription,
+    type GroupTopicSubscription,
+    type GroupTopicSubscriptionOutcome
+} from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import { RALLAR_ROUTE_ID_MAX_LENGTH, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 const repoRoot = process.cwd();
@@ -19,6 +24,14 @@ if (!isOpenApiRecord(loadedOpenApi)) {
     throw new TypeError('OpenAPI document must be an object');
 }
 const openApiDocument = requireOpenApiDocument(loadedOpenApi);
+const SUBSCRIPTION_OUTCOMES = [
+    'subscribed',
+    'renewed',
+    'unsubscribed',
+    'not-subscribed'
+] as const satisfies readonly GroupTopicSubscriptionOutcome[];
+const SUBSCRIPTION_OUTCOMES_ARE_EXHAUSTIVE: [Exclude<GroupTopicSubscriptionOutcome, (typeof SUBSCRIPTION_OUTCOMES)[number]>] extends [never] ? true : false =
+    true;
 
 describe('Rallar group public contracts', () => {
     it('documents browser-safe room workflows and switch recovery', () => {
@@ -85,6 +98,30 @@ describe('Rallar group public contracts', () => {
         for (const request of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
             expect(schema(request).properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
             expectSchemaRequired(request, ['topicId', 'publish', 'subscribe']);
+        }
+    });
+
+    it('publishes the topic subscription row, outcomes and requests the shared contract declares', () => {
+        const subscription: GroupTopicSubscription = {
+            sessionId: 'bob-session',
+            principalId: 'bob',
+            topicId: 'room.feed',
+            connectionGenerationId: 'bob-generation',
+            leaseExpiresAtEpochMs: 120_000,
+            admittedAtGroupRevision: 3
+        };
+
+        expect(decodeGroupTopicSubscription(subscription).right).toEqual(subscription);
+        expectSchemaRequired('GroupTopicSubscription', Object.keys(subscription));
+        expect(schema('GroupTopicSubscription').properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
+        expect(SUBSCRIPTION_OUTCOMES_ARE_EXHAUSTIVE).toBe(true);
+        expect([...(schema('GroupTopicSubscriptionResult').properties?.outcome?.enum ?? [])].sort())
+            .toEqual([...SUBSCRIPTION_OUTCOMES].sort());
+        expectSchemaRequired('GroupTopicSubscriptionResult', ['outcome']);
+        expectSchemaRequired('GroupTopicSubscriptionList', ['subscriptions']);
+        for (const request of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {
+            expect(schema(request).properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
+            expectSchemaRequired(request, ['topicId', 'connectionGenerationId']);
         }
     });
 

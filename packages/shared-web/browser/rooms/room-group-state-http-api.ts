@@ -12,10 +12,12 @@ import type {
     CreateStateGroupBody,
     CreateStateGroupInviteBody,
     DisconnectStateGroupPresenceSessionBody,
+    GrantStateGroupPublicationBody,
     HeartbeatStateGroupPresenceSessionBody,
     JoinStateGroupBody,
     RemoveStateGroupMemberBody,
     RevokeStateGroupInviteBody,
+    RevokeStateGroupPublicationBody,
     RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
@@ -72,6 +74,10 @@ export interface RemoveStateGroupMemberHttpInput extends TargetRoomGroupRequestI
 export interface BanStateGroupMemberHttpInput extends TargetRoomGroupRequestInput<BanStateGroupMemberBody> {}
 export interface UnbanStateGroupMemberHttpInput extends TargetRoomGroupRequestInput<UnbanStateGroupMemberBody> {}
 export interface SetStateGroupMemberRoleHttpInput extends TargetRoomGroupRequestInput<SetStateGroupMemberRoleBody> {}
+export interface GrantStateGroupPublicationHttpInput
+    extends TargetRoomGroupRequestInput<GrantStateGroupPublicationBody> {}
+export interface RevokeStateGroupPublicationHttpInput
+    extends TargetRoomGroupRequestInput<RevokeStateGroupPublicationBody> {}
 export interface TransferStateGroupOwnershipHttpInput extends RoomGroupRequestInput<TransferStateGroupOwnershipBody> {}
 export interface UpsertStateGroupMemberHttpInput extends TargetRoomGroupRequestInput<UpsertStateGroupMemberBody> {}
 export interface CommandStateGroupLifecycleHttpInput extends RoomGroupRequestInput<RoomFormationGroupStateRequest> {}
@@ -188,6 +194,24 @@ async function setStateGroupMemberRole(
     );
 }
 
+async function grantStateGroupPublication(
+    input: GrantStateGroupPublicationHttpInput
+): Promise<GroupSnapshot> {
+    return await postRoomGroupState(
+        input,
+        `/publication-grants/${encodeURIComponent(input.principalId)}/grant`
+    );
+}
+
+async function revokeStateGroupPublication(
+    input: RevokeStateGroupPublicationHttpInput
+): Promise<GroupSnapshot> {
+    return await postRoomGroupState(
+        input,
+        `/publication-grants/${encodeURIComponent(input.principalId)}/revoke`
+    );
+}
+
 async function transferStateGroupOwnership(
     input: TransferStateGroupOwnershipHttpInput
 ): Promise<GroupSnapshot> {
@@ -290,6 +314,8 @@ export const roomGroupStateHttpApi = Object.freeze({
     banMember: banStateGroupMember,
     unbanMember: unbanStateGroupMember,
     setMemberRole: setStateGroupMemberRole,
+    grantPublication: grantStateGroupPublication,
+    revokePublication: revokeStateGroupPublication,
     transferOwnership: transferStateGroupOwnership,
     upsertMember: upsertStateGroupMember,
     connectPresence: connectStateGroupPresenceSession,

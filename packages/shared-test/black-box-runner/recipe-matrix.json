@@ -2797,6 +2797,32 @@
       "description": "No-browser API-v1 publication grants over REST: the creator's declared initial grant, an owner's grant read back on the snapshot and named by publication-grant-changed, a change-less grant that writes no revision and no event, a changed-body idempotency conflict and a replay after the revoke that answers the first result, forbidden-role for an admin granting an admin, a member granting itself and a publish grant to a spectator, the 65th topic refused capacity with limit topics-per-principal, a revoke removing the row, and a member who leaves or is banned and rejoins coming back holding no grant."
     },
     {
+      "id": "api-v1-group-topic-subscriptions",
+      "recipe": "tests/api-v1/api-v1-group-topic-subscriptions.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-topic-subscriptions",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 WS topic subscriptions over REST: a session subscribes only with a live client-state session, effective subscribe and its current connection generation; subscribed, an equal replay, a changed-body idempotency conflict and renewed; the self-session read lists the leased row while the group revision stays, and another session's read is forbidden; a reconnect re-subscribes under the new generation and an old-generation unsubscribe keeps the row; a revoke of subscribe deletes the row and a re-grant does not revive it; unsubscribed then not-subscribed; and a leave deletes the row."
+    },
+    {
       "id": "api-v1-group-join-code-admission",
       "recipe": "tests/api-v1/api-v1-group-join-code-admission.json",
       "category": "api-v1-black-box",

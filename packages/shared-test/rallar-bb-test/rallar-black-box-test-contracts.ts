@@ -63,6 +63,9 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'messages.control',
     'messages.awaitReply',
     'messages.reply',
+    'messages.subscribe',
+    'messages.unsubscribe',
+    'messages.subscriptions',
     'fault.inject',
     'storage.counters',
     'agent.reload',
@@ -468,13 +471,27 @@ export type RallarBlackBoxTestMessagesReplyCommand =
         handleId: string;
     }>;
 
+/** Elects the page's session to receive its connection's granted topic; the token is kept by `subscriptionId`. */
+export type RallarBlackBoxTestMessagesSubscribeCommand =
+    & RallarBlackBoxTestCommandBase<'messages.subscribe'>
+    & Readonly<{ connection?: string; subscriptionId: string; }>;
+
+export type RallarBlackBoxTestMessagesUnsubscribeCommand =
+    & RallarBlackBoxTestCommandBase<'messages.unsubscribe'>
+    & Readonly<{ connection?: string; subscriptionId: string; }>;
+
+export type RallarBlackBoxTestMessagesSubscriptionsCommand =
+    & RallarBlackBoxTestCommandBase<'messages.subscriptions'>
+    & Readonly<{ connection?: string; }>;
+
 export type RallarBlackBoxTestMessagesControlCommand =
     & RallarBlackBoxTestCommandBase<'messages.control'>
     & RallarBlackBoxTestMessagesControlFields;
 
 export type RallarBlackBoxTestFaultInjectCommand =
     | RallarBlackBoxTestTransportFaultInjectCommand
-    | RallarBlackBoxTestStorageFaultInjectCommand;
+    | RallarBlackBoxTestStorageFaultInjectCommand
+    | RallarBlackBoxTestProductSocketFaultInjectCommand;
 
 export type RallarBlackBoxTestTransportFaultInjectCommand =
     & RallarBlackBoxTestCommandBase<'fault.inject'>
@@ -497,6 +514,11 @@ export type RallarBlackBoxTestStorageFaultInjectCommand =
         action: ScriptedStorageFault['action'];
         remaining: ScriptedStorageFault['remaining'];
     }>;
+
+/** `close` drops the page's product socket with reconnect disabled; `reopen` opens a new authorised one. */
+export type RallarBlackBoxTestProductSocketFaultInjectCommand =
+    & RallarBlackBoxTestCommandBase<'fault.inject'>
+    & Readonly<{ faultId: string; carrier: 'product-socket'; action: 'close' | 'reopen'; }>;
 
 export type RallarBlackBoxTestStorageCountersCommand =
     & RallarBlackBoxTestCommandBase<'storage.counters'>
@@ -827,6 +849,9 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestMessagesControlCommand
     | RallarBlackBoxTestMessagesAwaitReplyCommand
     | RallarBlackBoxTestMessagesReplyCommand
+    | RallarBlackBoxTestMessagesSubscribeCommand
+    | RallarBlackBoxTestMessagesUnsubscribeCommand
+    | RallarBlackBoxTestMessagesSubscriptionsCommand
     | RallarBlackBoxTestFaultInjectCommand
     | RallarBlackBoxTestStorageCountersCommand
     | RallarBlackBoxTestAgentReloadCommand

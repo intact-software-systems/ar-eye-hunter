@@ -14,20 +14,22 @@ import type {
 } from '../group-state-service-contracts.ts';
 import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
 import type { InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
-import type { GroupPresenceInboxDurableResult, GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
+import type { GroupReceiptInboxDurableResult, GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
 
-const GROUP_PRESENCE_RESULT_TYPES: ReadonlySet<AppInboxType> = new Set([
+const GROUP_RECEIPT_RESULT_TYPES: ReadonlySet<AppInboxType> = new Set([
     AppInboxType.GROUP_PRESENCE_CONNECT,
     AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-    AppInboxType.GROUP_PRESENCE_DISCONNECT
+    AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+    AppInboxType.GROUP_TOPIC_UNSUBSCRIBE
 ]);
 
 export function decodeGroupStateInboxDurableResult(
     value: JsonWireValue,
     type: AppInboxType
 ): GroupStateInboxDurableResult {
-    if (GROUP_PRESENCE_RESULT_TYPES.has(type)) {
-        const result = requireJsonWireRecord(value, 'Group presence result');
+    if (GROUP_RECEIPT_RESULT_TYPES.has(type)) {
+        const result = requireJsonWireRecord(value, 'Group receipt result');
         return result.status === 'inactive'
             ? decodeInactiveGroupPresenceResult(result)
             : decodeGroupMutationReceipt(value);
@@ -76,6 +78,7 @@ export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationR
             'outboxIds',
             'joinCode',
             'joinCodeExpiresAtEpochMs',
+            'subscriptionOutcome',
             'rejection'
         ],
         'Group mutation receipt'
@@ -109,6 +112,13 @@ export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationR
         receipt.joinCodeExpiresAtEpochMs,
         'Group mutation receipt joinCodeExpiresAtEpochMs'
     );
+    const subscriptionOutcome = receipt.subscriptionOutcome === null
+        ? null
+        : requireOneOf(
+            receipt.subscriptionOutcome,
+            ['subscribed', 'renewed', 'unsubscribed', 'not-subscribed'] as const,
+            'Group mutation receipt subscriptionOutcome'
+        );
     const rejection = requireNullableString(receipt.rejection, 'Group mutation receipt rejection');
     return {
         commandId: receipt.commandId,
@@ -124,6 +134,7 @@ export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationR
         outboxIds,
         joinCode,
         joinCodeExpiresAtEpochMs,
+        subscriptionOutcome,
         rejection
     };
 }
@@ -176,13 +187,13 @@ export function requireGroupMutationReceipt(
     return result;
 }
 
-export function requireGroupPresenceInboxDurableResult(
+export function requireGroupReceiptInboxDurableResult(
     result: GroupStateInboxDurableResult
-): GroupPresenceInboxDurableResult {
+): GroupReceiptInboxDurableResult {
     if ('commandId' in result || result.status === 'inactive') {
         return result;
     }
-    throw new TypeError('Expected a group presence mutation result');
+    throw new TypeError('Expected a group receipt mutation result');
 }
 
 function decodeGroupMutationWritten(value: JsonWireValue): GroupStateWritten['result'] {

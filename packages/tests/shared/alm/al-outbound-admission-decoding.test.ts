@@ -178,7 +178,7 @@ describe('outbound admission persisted-record validation', () => {
         await expect(
             store.readOutgoingMessage({
                 msg: msg,
-                planner: () => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+                planner: () => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
                 observedCanonicalEntry: undefined,
                 intent: 'enqueue'
             })
@@ -296,7 +296,13 @@ describe('outbound admission persisted-record validation', () => {
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            }),
             sendPreparedMessage: async (_message, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage.id.msgId);
 
@@ -353,7 +359,13 @@ describe('outbound admission persisted-record validation', () => {
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [],
+                admittedConnectionGenerationIds: undefined
+            }),
             sendPreparedMessage: async () => {
                 throw new Error('Corrupt replay must never send');
             }
@@ -558,7 +570,13 @@ async function runOutboundWorkBatch(
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
         readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-        planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({
+            msg: msg,
+            dropReasonCode: undefined,
+            lane: 'volatile',
+            preparedMessages: [],
+            admittedConnectionGenerationIds: undefined
+        }),
         sendPreparedMessage: async (_message, _phase, lifecycle) => {
             sent.push(lifecycle.canonicalMessage.id.msgId);
             return { status: 'sent' as const, submissionAttempted: true };

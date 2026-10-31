@@ -77,6 +77,9 @@ export function snapshotExecutableCommand(command: RallarBlackBoxTestCommand): R
 function snapshotFaultCommand(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'fault.inject'; }>
 ): RallarBlackBoxTestCommand {
+    if (command.carrier === 'product-socket') {
+        return Object.freeze({ ...command });
+    }
     const fault = { ...command };
     fault.match = Object.freeze({ ...command.match });
     fault.action = typeof command.action === 'object' ? Object.freeze({ ...command.action }) : command.action;

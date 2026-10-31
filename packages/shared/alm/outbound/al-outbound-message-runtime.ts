@@ -141,6 +141,8 @@ export type ALOutboundRepairTrigger = 'ack-timeout' | 'nack' | 'repair';
 export interface ALOutboundRepairRequest {
     readonly referenceKey?: Key;
     readonly admittedAudience?: readonly string[];
+    /** The captured generation of each admitted session, carried beside the audience on a granted topic's row. */
+    readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
@@ -201,6 +203,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      * hands it to its planners on every later plan. Absent when nothing admitted the message to an audience.
      */
     readonly admittedAudience?: readonly string[];
+    /** On a granted topic's row, the connection generation each admitted session's subscription asserted at route. */
+    readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;

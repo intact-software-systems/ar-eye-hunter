@@ -45,6 +45,10 @@ const PUBLICATION_GRANT_FIELDS: readonly GroupInputFieldRule[] = [
     { key: 'publish', kind: 'boolean', required: true },
     { key: 'subscribe', kind: 'boolean', required: true }
 ];
+const TOPIC_SUBSCRIPTION_FIELDS: readonly GroupInputFieldRule[] = [
+    { key: 'topicId', kind: 'string', required: true },
+    { key: 'connectionGenerationId', kind: 'string', required: true }
+];
 const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly GroupInputFieldRule[]>> = {
     createGroup: [
         { key: 'groupId', kind: 'string', required: true },
@@ -88,6 +92,8 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
     setGroupMemberRole: [{ ...GROUP_ROLE, required: true }],
     grantGroupPublication: PUBLICATION_GRANT_FIELDS,
     revokeGroupPublication: PUBLICATION_GRANT_FIELDS,
+    subscribeGroupTopic: TOPIC_SUBSCRIPTION_FIELDS,
+    unsubscribeGroupTopic: TOPIC_SUBSCRIPTION_FIELDS,
     transferGroupOwnership: [{ key: 'newOwnerPrincipalId', kind: 'string', required: true }],
     upsertMember: [
         GROUP_ROLE,
@@ -124,6 +130,9 @@ export function validateGroupMutationOperationInput(
     if (operation === 'grantGroupPublication' || operation === 'revokeGroupPublication') {
         return [...issues, ...validatePublicationGrantIntent(operation, input)];
     }
+    if (operation === 'subscribeGroupTopic' || operation === 'unsubscribeGroupTopic') {
+        return [...issues, ...validateUserTopicIdInput(operation, input)];
+    }
     if (operation === 'createGroup') {
         return [
             ...issues,
@@ -149,21 +158,28 @@ function validatePublicationGrantIntent(
     operation: 'grantGroupPublication' | 'revokeGroupPublication',
     input: JsonWireObject
 ): readonly TypeError[] {
+    const namesNone = input.publish === false && input.subscribe === false;
+    return [
+        ...validateUserTopicIdInput(operation, input),
+        ...(namesNone ? [new TypeError(`Group ${operation} request must name publish or subscribe`)] : [])
+    ];
+}
+
+/** A present non-empty topicId names one exact user topic; its absence or type is the field rule's issue. */
+function validateUserTopicIdInput(
+    operation: GroupMutationCommand['operation'],
+    input: JsonWireObject
+): readonly TypeError[] {
     const topic = typeof input.topicId === 'string' && input.topicId.length > 0
         ? validateRallarWsUserTopicId(input.topicId)
         : null;
-    const topicIssues = topic === null || topic.ok
+    return topic === null || topic.ok
         ? []
         : [
             new TypeError(
                 `Group ${operation} topicId is invalid: ${topic.issues.map((issue) => issue.message).join('; ')}`
             )
         ];
-    const namesNone = input.publish === false && input.subscribe === false;
-    return [
-        ...topicIssues,
-        ...(namesNone ? [new TypeError(`Group ${operation} request must name publish or subscribe`)] : [])
-    ];
 }
 
 /** D494: the creator's declared grant, each key one exact user topic naming publish, subscribe or both, at most 64. */

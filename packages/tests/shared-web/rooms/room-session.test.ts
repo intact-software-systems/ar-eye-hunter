@@ -11,7 +11,8 @@ import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import {
@@ -22,6 +23,7 @@ import {
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { createAuditStampFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
@@ -344,3 +346,57 @@ it('passes a declared storage choice through to the room channel', async () => {
         onStorageUnavailable: 'volatile'
     }]);
 });
+
+it('topicRole reads the session principal\'s effective role and none without a cached snapshot', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const granted = withPrincipalGrant(createRoomSnapshot('room-1', ['principal-1']), { publish: true, subscribe: true });
+    const roomRef = granted.group;
+    const facade = createRallarFacade();
+    const session = facade.rooms.session(roomRef);
+
+    const roles = [session.topicRole('room.feed')];
+    seedRoomSnapshots([granted]);
+    roles.push(session.topicRole('room.feed'), session.topicRole('room.other'));
+
+    expect(roles).toEqual(['none', 'publisher-subscriber', 'none']);
+});
+
+it('a newer cached snapshot changes topicRole', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const before = withPrincipalGrant(createRoomSnapshot('room-1', ['principal-1']), { publish: true, subscribe: false });
+    seedRoomSnapshots([before]);
+    const session = createRallarFacade().rooms.session(before.group);
+    const roles = [session.topicRole('room.feed')];
+
+    seedRoomSnapshots([withPrincipalGrant(before, { publish: true, subscribe: true })]);
+    roles.push(session.topicRole('room.feed'));
+
+    expect(roles).toEqual(['publisher', 'publisher-subscriber']);
+});
+
+it('topicRole answers none when no session is signed in', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const granted = withPrincipalGrant(createRoomSnapshot('room-1', ['principal-1']), { publish: true, subscribe: true });
+    seedRoomSnapshots([granted]);
+    const session = createRallarFacade().rooms.session(granted.group);
+
+    getRoomWorkflowMocks().readSession.mockReturnValue(undefined);
+
+    expect(session.topicRole('room.feed')).toBe('none');
+});
+
+function withPrincipalGrant(snapshot: GroupSnapshot, permissions: GroupPublicationTopicPermissions): GroupSnapshot {
+    return {
+        ...snapshot,
+        group: { ...snapshot.group, snapshotVersion: snapshot.group.snapshotVersion + 1 },
+        causalRevision: { ...snapshot.causalRevision, groupRevision: snapshot.causalRevision.groupRevision + 1 },
+        publicationGrants: [{
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            groupId: snapshot.group.groupId,
+            principalId: 'principal-1',
+            topics: { 'room.feed': permissions },
+            updated: createAuditStampFixture(1, 'principal-1')
+        }]
+    };
+}

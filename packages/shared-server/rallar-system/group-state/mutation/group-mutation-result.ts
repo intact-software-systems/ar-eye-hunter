@@ -2,6 +2,7 @@ import type {
     GroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import type { GroupTopicSubscriptionOutcome } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type {
     AuditStamp,
     Group,
@@ -11,7 +12,6 @@ import type {
     GroupRef,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
-import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -32,9 +32,10 @@ import type {
     GroupMutationRead,
     GroupMutationReceipt,
     GroupPublicationGrantEffect,
-    GroupPublicationGrantOperation,
+    GroupTopicSubscriptionDeleteEffect,
     PresenceAdmissionCandidate,
-    PresenceGuardCandidate
+    PresenceGuardCandidate,
+    SubscriptionGuardCandidate
 } from './group-mutation-contracts.ts';
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
@@ -44,6 +45,7 @@ import {
     type GroupMutationRejectionCode
 } from './group-mutation-rejection-codes.ts';
 import { computeGroupMutationPersistence } from './orchestration/compute-group-mutation-persistence.ts';
+import { toGroupMutationActor, toGroupMutationEvent } from './to-group-mutation-event.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -51,11 +53,12 @@ export interface GroupMutationWriteInput {
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
-    readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
+    readonly guard: GroupGuardCandidate | PresenceGuardCandidate | SubscriptionGuardCandidate;
     readonly members: readonly GroupMember[];
     readonly initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
     readonly presenceAdmission?: PresenceAdmissionCandidate | null;
-    readonly eventType: GroupEventType;
+    /** Null records no event: a subscription write, which enqueues no presence-summary work either. */
+    readonly eventType: GroupEventType | null;
     readonly eventGroup?: Group;
     readonly presenceSummaryWork: 'enqueue' | 'none';
     readonly extraOutboxEntries?: readonly ResourceEntry[];
@@ -66,6 +69,8 @@ export interface GroupMutationWriteInput {
     readonly layoutTombstones?: GroupLayoutTombstones | null;
     readonly lifecyclePolicy: GroupLifecyclePolicy | null;
     readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
+    readonly subscriptionEffects: readonly GroupTopicSubscriptionDeleteEffect[];
+    readonly subscriptionOutcome: GroupTopicSubscriptionOutcome | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -76,14 +81,11 @@ export interface RejectedGroupMutationInput {
     readonly message: string;
 }
 
-interface GroupMutationEventInput {
-    readonly eventType: GroupEventType;
-    readonly group: Group;
-    readonly causalRevision: GroupStateCausalRevision;
+interface NoOpInput {
     readonly command: GroupMutationCommand;
+    readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
-    readonly members: readonly GroupMember[];
-    readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
+    readonly subscriptionOutcome: GroupTopicSubscriptionOutcome | null;
 }
 
 interface MaterializedGroupJoinCode {
@@ -105,6 +107,7 @@ interface GroupMutationReceiptInput {
     readonly acceptedStorageRevision: number | null;
     readonly eventId: string | null;
     readonly outboxIds: readonly string[];
+    readonly subscriptionOutcome: GroupTopicSubscriptionOutcome | null;
     readonly rejection: string | null;
 }
 
@@ -128,15 +131,17 @@ export function computeGroupMutationWriteResult(
         (guard.kind === 'group' ? guard.value : requireGroup(read, command.aggregateRef).value);
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision: group.snapshotVersion, presenceRevision };
-    const event = toGroupMutationEvent({
-        eventType: input.eventType,
-        group,
-        causalRevision,
-        command,
-        facts,
-        members: input.members,
-        publicationGrantEffects: input.publicationGrantEffects
-    });
+    const event = input.eventType === null
+        ? null
+        : toGroupMutationEvent({
+            eventType: input.eventType,
+            group,
+            causalRevision,
+            command,
+            facts,
+            members: input.members,
+            publicationGrantEffects: input.publicationGrantEffects
+        });
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
     const plannedLayoutFence = input.plannedLayoutFence ?? null;
@@ -146,8 +151,9 @@ export function computeGroupMutationWriteResult(
         causalRevision,
         snapshotVersion: group.snapshotVersion,
         acceptedStorageRevision: input.guard.operation === 'insert' ? 0 : input.guard.expectedRevision + 1,
-        eventId: event.eventId,
+        eventId: event?.eventId ?? null,
         outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
+        subscriptionOutcome: input.subscriptionOutcome,
         rejection: null
     });
     const computed: GroupMutationDomainWrite = {
@@ -165,7 +171,8 @@ export function computeGroupMutationWriteResult(
         plannedLayoutFence,
         layoutTombstones,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null,
-        publicationGrantEffects: input.publicationGrantEffects
+        publicationGrantEffects: input.publicationGrantEffects,
+        subscriptionEffects: input.subscriptionEffects
     };
     return { ...computed, persistence: computeGroupMutationPersistence(computed, facts, read) };
 }
@@ -192,6 +199,19 @@ export function noOp(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
+    return toNoOp({ command, read, facts, subscriptionOutcome: null });
+}
+
+/** An unsubscribe that found nothing it may delete: a receipt-only no-op that still answers its outcome. */
+export function notSubscribed(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts
+): GroupMutationComputed {
+    return toNoOp({ command, read, facts, subscriptionOutcome: 'not-subscribed' });
+}
+
+function toNoOp({ command, read, facts, subscriptionOutcome }: NoOpInput): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const causalRevision = currentCausalRevision(read);
     return {
@@ -204,6 +224,7 @@ export function noOp(
             acceptedStorageRevision: stored.entry.revision,
             eventId: null,
             outboxIds: [],
+            subscriptionOutcome,
             rejection: null
         })
     };
@@ -224,6 +245,7 @@ export function rejected(
             acceptedStorageRevision: read.group?.entry.revision ?? null,
             eventId: null,
             outboxIds: [],
+            subscriptionOutcome: null,
             rejection: message
         })
     };
@@ -289,6 +311,7 @@ function toGroupMutationReceipt(
         outboxIds: input.outboxIds,
         joinCode: joinCode?.joinCode ?? null,
         joinCodeExpiresAtEpochMs: joinCode?.expiresAtEpochMs ?? null,
+        subscriptionOutcome: input.subscriptionOutcome,
         rejection: input.rejection
     };
 }
@@ -326,95 +349,18 @@ export function auditStamp(
     };
 }
 
-function toGroupMutationActor(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-    defaultPrincipalId: string | undefined
-): MutationActor {
-    const principalId = command.input.actorPrincipalId ?? defaultPrincipalId;
-    if (command.input.actorSessionId !== null) {
-        if (!principalId) {
-            throw new GroupMutationRejectedError('A session actor requires a principal identity.');
-        }
-        return {
-            kind: 'session',
-            sessionId: command.input.actorSessionId,
-            principalId
-        };
-    }
-    if (principalId) {
-        return { kind: 'principal', principalId };
-    }
-    return { kind: 'service', serviceId: facts.serviceId };
-}
-
-function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
-    const { causalRevision, command, eventType, facts, group } = input;
-    return {
-        applicationId: group.applicationId,
-        workspaceId: group.workspaceId,
-        groupId: group.groupId,
-        eventId: facts.eventId,
-        eventType,
-        snapshotVersion: group.snapshotVersion,
-        causalRevision,
-        occurredAtEpochMs: facts.nowEpochMs,
-        actor: toGroupMutationActor(command, facts, undefined),
-        reason: command.input.reason,
-        traceId: facts.traceId,
-        requestId: command.requestId,
-        payload: toGroupEventPayload(input)
-    };
-}
-
-// The actor is whoever issued the command, so a member event must name the
-// member it is about itself: a manager's grant emits member-joined with the
-// manager as actor and the admitted member only here.
-function toGroupEventPayload(
-    { eventType, members, command, publicationGrantEffects }: GroupMutationEventInput
-): GroupEvent['payload'] {
-    if (command.operation === 'reconfigureGroup' || command.operation === 'resetGroupFormation') {
-        return { topologyReplanOrigin: 'commanded' };
-    }
-    if (command.operation === 'grantGroupPublication' || command.operation === 'revokeGroupPublication') {
-        return toPublicationGrantChangedPayload(command, publicationGrantEffects);
-    }
-    if (eventType === 'ownership-transferred') {
-        const nextOwner = members.find((member) => member.role === 'owner');
-        const previousOwner = members.find((member) => member.role !== 'owner');
-        return {
-            ...(previousOwner ? { fromPrincipalId: previousOwner.principalId } : {}),
-            ...(nextOwner ? { toPrincipalId: nextOwner.principalId } : {})
-        };
-    }
-    if (eventType.startsWith('member-') && members.length === 1) {
-        return { principalId: members[0].principalId };
-    }
-    return {};
-}
-
-/** The topic's permissions after the write; a deleted row leaves the principal holding neither. */
-function toPublicationGrantChangedPayload(
-    command: Extract<GroupMutationCommand, { operation: GroupPublicationGrantOperation; }>,
-    effects: readonly GroupPublicationGrantEffect[]
-): GroupEvent['payload'] {
-    const effect = effects.find((candidate) => candidate.value.principalId === command.targetPrincipalId);
-    const permissions = effect === undefined || effect.operation === 'delete'
-        ? undefined
-        : effect.value.topics[command.input.topicId];
-    return {
-        principalId: command.targetPrincipalId,
-        topicId: command.input.topicId,
-        permissions: { publish: permissions?.publish ?? false, subscribe: permissions?.subscribe ?? false }
-    };
-}
-
 function computeMutationFollowupEntries(
     input: GroupMutationWriteInput,
     causalRevision: GroupStateCausalRevision,
-    event: GroupEvent
+    event: GroupEvent | null
 ): readonly ResourceEntry[] {
     const { command, facts } = input;
+    if (event === null) {
+        if (input.presenceSummaryWork === 'enqueue') {
+            throw new TypeError('Presence-summary work expands an event, and this write records none');
+        }
+        return input.extraOutboxEntries ?? [];
+    }
     const summaryOutboxEntries = input.presenceSummaryWork === 'none'
         ? []
         : [

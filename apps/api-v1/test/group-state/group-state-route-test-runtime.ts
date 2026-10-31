@@ -17,6 +17,7 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import type {
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import type {
@@ -356,6 +357,8 @@ function createGroupStateRouteService(
         listSnapshotsForPrincipal: groupService?.listSnapshotsForPrincipal ?? (() => Promise.resolve([])),
         readSnapshot,
         readCurrentSnapshot: groupService?.readCurrentSnapshot ?? readSnapshot,
+        readGroupSessionTopicSubscriptions: groupService?.readGroupSessionTopicSubscriptions ??
+            (() => Promise.resolve([])),
         listEvents: groupService?.listEvents ?? (() => Promise.resolve([])),
         listRecentEvents: groupService?.listRecentEvents ?? (() => Promise.resolve([])),
         listEventPage: groupService?.listEventPage ??
@@ -391,28 +394,52 @@ function toGroupStateRouteDurableResult(
         entry.type === AppInboxType.GROUP_PRESENCE_HEARTBEAT ||
         entry.type === AppInboxType.GROUP_PRESENCE_DISCONNECT
     ) {
-        const commandId = entry.resourceId ?? 'test-presence-command';
-        return {
-            commandId,
-            requestId: commandId,
-            commandHash: 'test-command-hash',
-            aggregateRef: {
-                ...entry.data.scope,
-                groupId: entry.data.groupId
-            },
-            outcome: 'applied',
-            attemptCount: 1,
-            acceptedStorageRevision: 1,
-            snapshotVersion: snapshot.group.snapshotVersion,
-            causalRevision: snapshot.causalRevision,
-            eventId: null,
-            outboxIds: [],
-            joinCode: null,
-            joinCodeExpiresAtEpochMs: null,
-            rejection: null
-        };
+        return toGroupStateRouteReceipt(entry, snapshot, null);
+    }
+    if (entry.type === AppInboxType.GROUP_TOPIC_SUBSCRIBE) {
+        return toGroupStateRouteReceipt(entry, snapshot, 'subscribed');
+    }
+    if (entry.type === AppInboxType.GROUP_TOPIC_UNSUBSCRIBE) {
+        return toGroupStateRouteReceipt(entry, snapshot, 'unsubscribed');
     }
     return toGroupStateWritten(snapshot);
+}
+
+type GroupStateRouteReceiptEntry = Extract<AuthenticatedGroupMutationEnqueue, {
+    type:
+        | typeof AppInboxType.GROUP_PRESENCE_CONNECT
+        | typeof AppInboxType.GROUP_PRESENCE_HEARTBEAT
+        | typeof AppInboxType.GROUP_PRESENCE_DISCONNECT
+        | typeof AppInboxType.GROUP_TOPIC_SUBSCRIBE
+        | typeof AppInboxType.GROUP_TOPIC_UNSUBSCRIBE;
+}>;
+
+function toGroupStateRouteReceipt(
+    entry: GroupStateRouteReceiptEntry,
+    snapshot: GroupSnapshot,
+    subscriptionOutcome: GroupMutationReceipt['subscriptionOutcome']
+): GroupMutationReceipt {
+    const commandId = entry.resourceId ?? 'test-receipt-command';
+    return {
+        commandId,
+        requestId: commandId,
+        commandHash: 'test-command-hash',
+        aggregateRef: {
+            ...entry.data.scope,
+            groupId: entry.data.groupId
+        },
+        outcome: 'applied',
+        attemptCount: 1,
+        acceptedStorageRevision: 1,
+        snapshotVersion: snapshot.group.snapshotVersion,
+        causalRevision: snapshot.causalRevision,
+        eventId: null,
+        outboxIds: [],
+        joinCode: null,
+        joinCodeExpiresAtEpochMs: null,
+        subscriptionOutcome,
+        rejection: null
+    };
 }
 
 function createGroupStateRouteMember(groupId: string, principalId: string): GroupMember {

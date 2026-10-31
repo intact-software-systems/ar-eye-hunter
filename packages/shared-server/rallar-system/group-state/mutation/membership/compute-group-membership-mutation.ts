@@ -1,5 +1,5 @@
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { AuditStamp, GroupMember } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 
 import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
 import {
@@ -14,10 +14,12 @@ import type {
     GroupMutationComputed,
     GroupMutationFacts,
     GroupMutationRead,
-    GroupPublicationGrantEffect
+    GroupPublicationGrantEffect,
+    GroupTopicSubscriptionDeleteEffect
 } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import { auditStamp, noOp, requireGroup } from '../group-mutation-result.ts';
+import { toTopicSubscriptionDeleteEffects } from '../subscription/compute-group-topic-subscription-mutation.ts';
 import { computeGroupMembershipWrite } from '../write/compute-group-membership-write.ts';
 import { resolveAdmittedMemberStatus } from './compute-group-admission-mutation.ts';
 import {
@@ -90,7 +92,8 @@ export function computeJoin(
         facts,
         members: [member],
         eventType: existing?.status === 'active' ? 'member-role-changed' : groupMemberEventType(status),
-        publicationGrantEffects: []
+        publicationGrantEffects: [],
+        subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, member)
     });
 }
 
@@ -129,7 +132,8 @@ export function computeInvite(
         facts,
         members: [member],
         eventType: 'member-invited',
-        publicationGrantEffects: []
+        publicationGrantEffects: [],
+        subscriptionEffects: []
     });
 }
 
@@ -160,7 +164,8 @@ export function computeRevokeInvite(
             )
         ],
         eventType: 'member-left',
-        publicationGrantEffects: []
+        publicationGrantEffects: [],
+        subscriptionEffects: []
     });
 }
 
@@ -221,7 +226,8 @@ export function computeGovernedMember(
         facts,
         members: [member],
         eventType,
-        publicationGrantEffects: computeDepartureGrantEffects(read, member)
+        publicationGrantEffects: computeDepartureGrantEffects(read, member),
+        subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, member)
     });
 }
 
@@ -254,7 +260,8 @@ export function computeTransfer(
             { ...target, role: 'owner', updated: audit }
         ],
         eventType: 'ownership-transferred',
-        publicationGrantEffects: []
+        publicationGrantEffects: [],
+        subscriptionEffects: []
     });
 }
 
@@ -314,7 +321,8 @@ export function computeUpsertMember(
         facts,
         members: [member],
         eventType: groupMemberEventType(member.status),
-        publicationGrantEffects: computeDepartureGrantEffects(read, member)
+        publicationGrantEffects: computeDepartureGrantEffects(read, member),
+        subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, member)
     });
 }
 
@@ -327,6 +335,20 @@ function computeDepartureGrantEffects(
     return grant === null || member.status === 'active'
         ? []
         : [{ operation: 'delete', value: grant.value, expectedRevision: grant.entry.revision }];
+}
+
+/**
+ * The target's rows survive only while it stays an active member across the write: a departure deletes them, and an
+ * activation deletes any orphan a cross-server race left, so a rejoin never revives an old subscription.
+ */
+function computeMembershipSubscriptionEffects(
+    ref: GroupRef,
+    read: GroupMutationRead,
+    member: GroupMember
+): readonly GroupTopicSubscriptionDeleteEffect[] {
+    return read.targetMember?.status === 'active' && member.status === 'active'
+        ? []
+        : toTopicSubscriptionDeleteEffects(ref, read.targetPrincipalSubscriptions ?? []);
 }
 
 interface CreateJoinedGroupMemberInput {

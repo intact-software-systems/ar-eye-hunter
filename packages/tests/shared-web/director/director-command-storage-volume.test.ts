@@ -64,7 +64,8 @@ describe('director command browser storage volume (D60, D87)', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: resolveALOutboundStoreDurability(normalizeALQosPolicy(msg).effective.durability.algo),
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -111,7 +112,12 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
         sender,
         rtc: { onMessage: () => () => {} },
         ws: { onMessage: () => () => {} },
-        recoveryOwners: new BrowserChannelRecoveryOwners()
+        recoveryOwners: new BrowserChannelRecoveryOwners(),
+        topicSubscriptions: {
+            hold: () => {
+                throw new Error('No channel in this test subscribes.');
+            }
+        }
     });
     return new BrowserDirectorRelayTransport({
         messages: {

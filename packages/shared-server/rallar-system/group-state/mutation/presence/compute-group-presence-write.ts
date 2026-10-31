@@ -72,6 +72,8 @@ export function computeGroupPresenceWrite({
         eventGroup: stored.value,
         lifecyclePolicy: null,
         publicationGrantEffects: [],
+        subscriptionEffects: [],
+        subscriptionOutcome: null,
         presenceAdmission,
         presenceSummaryWork
     });

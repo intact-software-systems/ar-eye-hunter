@@ -1,6 +1,6 @@
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
-import { ALM_REPLY_WAIT_RESPONSE_MARGIN_MS } from '../../../../alm/browser-adapter-alm-commands.ts';
+import { ALM_PAGE_WAIT_RESPONSE_MARGIN_MS } from '../../../../alm/browser-adapter-alm-commands.ts';
 import type { RallarBlackBoxTestMessagesAwaitReplyResultValue } from '../../../../alm/rallar-black-box-alm-result-values.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -46,7 +46,7 @@ export function toAwaitReplyCommands(
             commandId: toCommandId(request, resultName),
             connection: toConnectionName(request),
             handleId: toSendHandleId(request),
-            timeoutMs: toBudgetMs(wait.timeoutMs + ALM_REPLY_WAIT_RESPONSE_MARGIN_MS, request.input.deadlineMs)
+            timeoutMs: toBudgetMs(wait.timeoutMs + ALM_PAGE_WAIT_RESPONSE_MARGIN_MS, request.input.deadlineMs)
         },
         toResultAssertion({
             step: request,

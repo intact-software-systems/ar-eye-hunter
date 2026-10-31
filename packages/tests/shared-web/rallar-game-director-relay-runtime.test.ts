@@ -48,7 +48,8 @@ describe('RallarGameDirectorRelayRuntime', () => {
                             status: 'active',
                             isOwner: false,
                             isOnline: true,
-                            sessionIds: ['local']
+                            sessionIds: ['local'],
+                            topicGrants: {}
                         }])
                 })
             })

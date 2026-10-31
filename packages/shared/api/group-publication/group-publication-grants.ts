@@ -1,8 +1,16 @@
 import { Either } from '../../resilience/Either.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
 import { isSameGroupRef } from '../api-type-utils.ts';
-import type { AuditStamp, GroupRef, GroupSnapshot, PrincipalId } from '../group-types.ts';
+import type { AuditStamp, GroupMember, GroupRef, GroupSnapshot, PrincipalId } from '../group-types.ts';
 import { validateRallarWsUserTopicId, type RallarValidationIssue } from '../rallar-validation.ts';
+import {
+    isJsonObject,
+    isNonEmptyString,
+    presentKeys,
+    toIssue,
+    toKeyIssues,
+    toNonEmptyStringIssues
+} from './group-publication-validation-issues.ts';
 
 export interface GroupPublicationTopicPermissions {
     readonly publish: boolean;
@@ -38,7 +46,7 @@ export function decodeGroupPublicationGrant(
 ): Either<readonly RallarValidationIssue[], GroupPublicationGrant> {
     const issues = isJsonObject(value)
         ? toGrantIssues(value)
-        : [issue('$', 'invalid-record', 'Publication grant must be an object.')];
+        : [toIssue('$', 'invalid-record', 'Publication grant must be an object.')];
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as GroupPublicationGrant);
 }
 
@@ -52,7 +60,7 @@ export function decodeGroupPublicationTopicGrants(
 ): Either<readonly RallarValidationIssue[], GroupPublicationTopicGrants> {
     const issues = isJsonObject(value)
         ? toTopicsIssues(value, '$', 0)
-        : [issue('$', 'invalid-topics', 'Publication grant topics must be an object.')];
+        : [toIssue('$', 'invalid-topics', 'Publication grant topics must be an object.')];
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as GroupPublicationTopicGrants);
 }
 
@@ -62,7 +70,7 @@ export function decodeGroupPublicationGrantList(
     ref: GroupRef
 ): Either<readonly RallarValidationIssue[], readonly GroupPublicationGrant[]> {
     if (!Array.isArray(value)) {
-        return Either.ofLeft([issue('$', 'invalid-list', 'Publication grants must be an array.')]);
+        return Either.ofLeft([toIssue('$', 'invalid-list', 'Publication grants must be an array.')]);
     }
     const issues = toGrantListIssues(value, ref);
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as readonly GroupPublicationGrant[]);
@@ -90,11 +98,11 @@ function toListedGrantIssues({ row, previous, ref, path }: ListedGrant): Issues 
     return [
         ...(isSameGroupRef(row, ref)
             ? []
-            : [issue(path, 'foreign-group', 'Publication grant belongs to another group.')]),
+            : [toIssue(path, 'foreign-group', 'Publication grant belongs to another group.')]),
         ...(typeof previousPrincipalId !== 'string' ||
                 comparePublicationGrantPrincipalIds(previousPrincipalId, row.principalId) < 0
             ? []
-            : [issue(path, 'unsorted', 'Publication grants are listed in strictly ascending principalId order.')])
+            : [toIssue(path, 'unsorted', 'Publication grants are listed in strictly ascending principalId order.')])
     ];
 }
 
@@ -112,10 +120,20 @@ export function resolveGroupPublicationPermissions(
     principalId: string,
     topicId: string
 ): GroupPublicationTopicPermissions {
-    const member = snapshot.members.find((candidate) => candidate.principalId === principalId);
-    const topics = member?.status === 'active'
-        ? snapshot.publicationGrants.find((grant) => grant.principalId === principalId)?.topics
-        : undefined;
+    return resolveMemberPublicationPermissions(
+        snapshot.members.find((candidate) => candidate.principalId === principalId) ?? null,
+        snapshot.publicationGrants.find((grant) => grant.principalId === principalId) ?? null,
+        topicId
+    );
+}
+
+/** D501 on one member's own rows: the member row and the grant row of the same principal, either absent. */
+export function resolveMemberPublicationPermissions(
+    member: GroupMember | null,
+    grant: GroupPublicationGrant | null,
+    topicId: string
+): GroupPublicationTopicPermissions {
+    const topics = member?.status === 'active' ? grant?.topics : undefined;
     const permissions = topics !== undefined && Object.hasOwn(topics, topicId) ? topics[topicId] : undefined;
     return {
         publish: member?.role !== 'spectator' && permissions?.publish === true,
@@ -134,14 +152,14 @@ function toGrantIssues(grant: ApiJsonObject): Issues {
 
 function toTopicsIssues(topics: ApiJsonValue, path: string, minimumTopics: 0 | 1): Issues {
     if (!isJsonObject(topics)) {
-        return [issue(path, 'invalid-topics', 'Publication grant topics must be an object.')];
+        return [toIssue(path, 'invalid-topics', 'Publication grant topics must be an object.')];
     }
     const entries = Object.entries(topics);
     const max = GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal;
     return [
         ...(entries.length < minimumTopics || entries.length > max
             ? [
-                issue(
+                toIssue(
                     path,
                     'invalid-topic-count',
                     `Publication grants hold ${minimumTopics} to ${max} topics per principal.`
@@ -160,78 +178,45 @@ function toTopicIssues(path: string, topicId: string, permissions: ApiJsonValue)
 
 function toPermissionIssues(path: string, permissions: ApiJsonValue): Issues {
     if (!isJsonObject(permissions)) {
-        return [issue(path, 'invalid-permissions', 'Topic permissions must be an object.')];
+        return [toIssue(path, 'invalid-permissions', 'Topic permissions must be an object.')];
     }
     const issues = [
         ...toKeyIssues(permissions, PERMISSION_KEYS, path),
         ...presentKeys(permissions, PERMISSION_KEYS)
             .filter((key) => typeof permissions[key] !== 'boolean')
-            .map((key) => issue(`${path}.${key}`, 'invalid-boolean', `${key} must be a boolean.`))
+            .map((key) => toIssue(`${path}.${key}`, 'invalid-boolean', `${key} must be a boolean.`))
     ];
     if (issues.length === 0 && permissions.publish !== true && permissions.subscribe !== true) {
-        issues.push(issue(path, 'empty-permissions', 'A granted topic holds publish, subscribe or both.'));
+        issues.push(toIssue(path, 'empty-permissions', 'A granted topic holds publish, subscribe or both.'));
     }
     return issues;
 }
 
 function toAuditIssues(audit: ApiJsonValue, path: string): Issues {
     if (!isJsonObject(audit)) {
-        return [issue(path, 'invalid-audit-stamp', 'Audit stamp must be an object.')];
+        return [toIssue(path, 'invalid-audit-stamp', 'Audit stamp must be an object.')];
     }
     const atEpochMs = audit.atEpochMs;
     return [
         ...toKeyIssues(audit, AUDIT_KEYS, path),
         ...(atEpochMs === undefined || (Number.isSafeInteger(atEpochMs) && (atEpochMs as number) >= 0)
             ? []
-            : [issue(`${path}.atEpochMs`, 'invalid-timestamp', 'atEpochMs must be a non-negative integer.')]),
+            : [toIssue(`${path}.atEpochMs`, 'invalid-timestamp', 'atEpochMs must be a non-negative integer.')]),
         ...(audit.actor === undefined ? [] : toActorIssues(audit.actor, `${path}.actor`)),
         ...presentKeys(audit, ['reason', 'traceId', 'requestId'])
             .filter((key) => audit[key] !== null && !isNonEmptyString(audit[key]))
-            .map((key) => issue(`${path}.${key}`, 'invalid-string', `${key} must be a non-empty string or null.`))
+            .map((key) => toIssue(`${path}.${key}`, 'invalid-string', `${key} must be a non-empty string or null.`))
     ];
 }
 
 function toActorIssues(actor: ApiJsonValue, path: string): Issues {
     const kind = isJsonObject(actor) ? actor.kind : null;
     if (!isJsonObject(actor) || (kind !== 'principal' && kind !== 'session' && kind !== 'service')) {
-        return [issue(path, 'invalid-actor', 'Actor must be a principal, session or service.')];
+        return [toIssue(path, 'invalid-actor', 'Actor must be a principal, session or service.')];
     }
     const keys = ACTOR_KEYS[kind];
     return [
         ...toKeyIssues(actor, keys, path),
         ...toNonEmptyStringIssues(actor, keys.filter((key) => key !== 'kind'), path)
     ];
-}
-
-function toKeyIssues(record: ApiJsonObject, keys: readonly string[], path: string): Issues {
-    return [
-        ...Object.keys(record).filter((key) => !keys.includes(key)).map((key) =>
-            issue(`${path}.${key}`, 'unknown-key', `${key} is not a field of this record.`)
-        ),
-        ...keys.filter((key) => !Object.hasOwn(record, key)).map((key) =>
-            issue(`${path}.${key}`, 'missing-key', `${key} is required.`)
-        )
-    ];
-}
-
-function toNonEmptyStringIssues(record: ApiJsonObject, keys: readonly string[], path: string): Issues {
-    return presentKeys(record, keys)
-        .filter((key) => !isNonEmptyString(record[key]))
-        .map((key) => issue(`${path}.${key}`, 'invalid-string', `${key} must be a non-empty string.`));
-}
-
-function presentKeys<Key extends string>(record: ApiJsonObject, keys: readonly Key[]): readonly Key[] {
-    return keys.filter((key) => Object.hasOwn(record, key));
-}
-
-function issue(path: string, code: string, message: string): RallarValidationIssue {
-    return { path, code, message };
-}
-
-function isNonEmptyString(value: ApiJsonValue): boolean {
-    return typeof value === 'string' && value.length > 0;
-}
-
-function isJsonObject(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

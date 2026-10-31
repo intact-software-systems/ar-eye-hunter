@@ -1,4 +1,4 @@
-import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupTopicSubscriptionOperation } from '../group-mutation-contracts.ts';
 import {
     isGroupAdmissionDecisionOperation,
     isGroupAdmissionPolicyReadOperation,
@@ -82,15 +82,38 @@ export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
 
 /**
  * The target's publication-grant row is read exactly by the grant commands, which rewrite it, by the departures,
- * which delete it in their own batch (D485): a remove, a ban, or an upsert out of active, a leave among them, and by a
- * create, whose creator's row may survive an expired incarnation (D494). Join, admission, unban and role changes never
- * consult it.
+ * which delete it in their own batch (D485): a remove, a ban, or an upsert out of active, a leave among them, by a
+ * create, whose creator's row may survive an expired incarnation (D494), and by a subscribe, which needs effective
+ * subscribe. Join, admission, unban and role changes never consult it.
  */
 export function readsTargetPublicationGrant(command: GroupMutationCommand): boolean {
     return command.operation === 'createGroup' ||
+        command.operation === 'subscribeGroupTopic' ||
         command.operation === 'grantGroupPublication' ||
         command.operation === 'revokeGroupPublication' ||
         command.operation === 'removeGroupMember' ||
         command.operation === 'banGroupMember' ||
         (command.operation === 'upsertMember' && command.input.status !== 'active');
+}
+
+/** Subscribe and unsubscribe read their own (session, topic) row and the session's live client-state row. */
+export function readsTopicSubscriptionTarget(
+    command: GroupMutationCommand
+): command is Extract<GroupMutationCommand, { operation: GroupTopicSubscriptionOperation; }> {
+    return command.operation === 'subscribeGroupTopic' || command.operation === 'unsubscribeGroupTopic';
+}
+
+/**
+ * Every subscription row of the target is read exactly by the group-row writes that may delete them in their own
+ * batch: a grant or revoke naming subscribe, every departure, and every activation (a join or an upsert). Those are the
+ * writes after which an orphan row a cross-server race left behind must not survive.
+ */
+export function readsTargetPrincipalSubscriptions(command: GroupMutationCommand): boolean {
+    return ((command.operation === 'grantGroupPublication' || command.operation === 'revokeGroupPublication') &&
+        command.input.subscribe) ||
+        command.operation === 'removeGroupMember' ||
+        command.operation === 'banGroupMember' ||
+        command.operation === 'joinGroup' ||
+        command.operation === 'acceptGroupInvite' ||
+        command.operation === 'upsertMember';
 }

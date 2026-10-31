@@ -13,7 +13,9 @@ export interface FilterEligibleLiveWsSessionIdsInput {
     readonly nowMs: number;
 }
 
-export interface FilterEligibleDurableWsSessionIdsInput extends CapturedWsRecipientEligibilityInputDto {
+/** The socket and scope half of a captured re-check: a granted row's generations are the publication port's to compare. */
+export interface FilterEligibleDurableWsSessionIdsInput
+    extends Omit<CapturedWsRecipientEligibilityInputDto, 'capturedConnectionGenerationIds'> {
     readonly socketServer: JsonWebSocketServer;
     readonly nowMs: number;
 }

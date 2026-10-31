@@ -417,7 +417,13 @@ it('observes a retained pending admission without storage reads and wakes on the
         stores,
         carrier: 'ws',
         settlements: (settlement) => fixture.registry.record(settlement),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ kind: 'send' }],
+            admittedConnectionGenerationIds: undefined
+        }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();
@@ -1161,7 +1167,9 @@ it('keeps the authored bounded-rejection cancellation probe aligned with a real 
         typeId: 'alm.conformance',
         senderConnection: 'aliceAlm',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     })
         .find((entry) => entry.scenarioId === 'bounded-rejection');
     if (!scenario) {
@@ -1555,7 +1563,9 @@ it.each(
         typeId: 'alm.conformance',
         senderConnection: 'aliceAlm',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     }).find((entry) => entry.scenarioId === scenarioId)!;
     const commands = scenario.sender.commands.filter((command) =>
         command.kind === 'messages.send' ||

@@ -160,7 +160,7 @@ a current control server.
 
 ## ALM Commands
 
-Eleven command kinds drive the Application Layer Messaging surface. All eleven are
+Fourteen command kinds drive the Application Layer Messaging surface. All fourteen are
 browser-only: the in-process runner adapter refuses them with the
 `browser-only-command` code rather than translating one into an `rtc.send`, and
 that refusal fails the step.
@@ -491,6 +491,45 @@ adapter's `rallar.bb.messages.reply_awaited` diagnostic for that command, whose 
 A reply from a session the unicast request did not address is dropped as `reply-wrong-responder`. No product path
 sends one, so that case is pinned at the matcher's unit level, not in a cell. The hosted manifests 18 and 22 withhold
 the reply cells, so they stay as recorded.
+
+The `topic-subscription` conformance scenarios (`scenarios/topic-subscription/`) prove the
+granted topic's elections: a session receives `room.alm-conformance-granted`, which the lane's API
+profile installs, only while it holds `subscribe` and an election its current connection
+generation asserted. They run in the full scope over `ws` and `rtc-with-ws-fallback`, since a
+granted channel is WS-only. Four of them form the `four-role` family: the receiver owns the room
+and grants, the sender and `sibling` are two sessions of user A, and `publisher-b` is user C, a
+second producer. The owner's grants name each grantee as `{principal:<role>}`, which recipe
+creation substitutes from `principalIdsByRole` (the lane passes its opened agents' client ids;
+a placeholder no entry resolves throws). A grant is retried until its grantee has joined, and an
+election until it is `active`. A producer publishes until one copy is confirmed by every
+subscriber, or probes so before a publication it sends once; a role tells another it reached a
+step with a cue, a members-topic send under the cell's type that the waiting role hears through
+the channel its own first cue send opened. Connection generations are compared with `wait`s on
+the result events of `messages.subscriptions` and of the subscription rows read, whose
+`contains` names a `{resultCache…}` generation.
+
+- `subscription-delivery`: the receiver and the sibling elect to receive; the sender's and
+  `publisher-b`'s publications reach both, and neither producer, granted but not subscribed,
+  receives the other's.
+- `subscription-token-count`: the receiver's two tokens hold one election and one row; releasing
+  the first lapses it alone, a publication still arrives, and releasing the last deletes the row,
+  so the next publication reaches the subscribed sibling and not the receiver.
+- `subscription-revoke-held`: the sibling's product socket drops, a publication leaves while it is
+  down, and the receiver then revokes the principal's `subscribe`. The reopened socket's
+  re-assertion is refused and a second publication follows. The receiver receives both, the
+  sibling neither, and the lane fails a receipt that confirms the sibling. Whether the first
+  publication's expected set names the sibling depends on when the server stops counting the
+  dropped socket live: the lane records it as the test's `subscription-revoke-held` annotation.
+- `subscription-reconnect`: the sibling's socket drops and reopens under a new generation, its
+  token turns `active` again and the session's row names the new generation; a publication
+  reaches it and the receiver.
+
+`subscription-successor` runs in the `same-context` family: the successor page opens while the
+owner page still runs, once the owner read its own generation, and its connect replaces the
+owner's socket. The successor's election moves the session's row to its generation; the owner's
+token reads `lapsed`, its release sends nothing, and an explicit unsubscribe naming the owner's
+generation answers `not-subscribed`, so the row stays the successor's, which the receiver's
+publication then reaches. No hosted manifest carries these cells (S2ii-R3).
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
@@ -868,6 +907,25 @@ id. A top-level `typeId` never matches. The fault's observations are not
 readable from a recipe in this release, so a fault's effect can only be inferred
 from what the receiver did or did not get.
 
+`messages.subscribe` names a `subscriptionId` (and optionally `connection`) and elects the page's
+session to receive the granted topic its connection's message selector names (`access:
+'granted'`), keeping the token under that id. It returns `{ subscriptionId, status }` once the
+token leaves `pending`, or 250 ms before the command's budget with the status it holds: `active`,
+`refused`, `lapsed` or `pending`. The token's handler does nothing; the connect's own subscription
+records every delivery, so `messages.received` and message waits stay the evidence of arrival.
+An id whose token is still `pending` or `active` refuses a second subscribe; once refused or
+lapsed, subscribing it again takes a new token. `messages.unsubscribe` releases the token under
+an id and returns its status, `lapsed`; the last token of a topic releases the election on the
+server. `messages.subscriptions` returns `{ connectionGenerationId, subscriptions }`: the open
+product socket's connection generation, `null` while it is closed, and each held token's
+`subscriptionId`, `topicId` and `status` in the order taken. A close releases every token.
+
+`fault.inject` with `carrier: 'product-socket'` names `faultId` and `action` and neither
+`match` nor `remaining`. `close` disables the page's WS reconnect and closes its product socket
+(code 4000, `black-box-socket-drop`), as a dropped network would; `reopen` enables reconnect and
+opens a new authorised socket, which the server stamps with a new connection generation, and
+the product re-asserts the page's elections under it. A recipe reopens every socket it closes.
+
 `fault.inject` with `carrier: 'storage'` faults the AL-owned IndexedDB
 operations instead: `match.owner` is `al-admission` or `al-work`, and
 `match.kind`, when present, narrows it to one operation kind (the kinds
@@ -1010,6 +1068,14 @@ states the same invocation as `recovery-owner-invoked` on `rallar.browser.alm.st
 opens no channel, so it declares no owner; absent, the channel declares none and a message the receiver can
 no longer order is dropped, as a product channel does by default.
 
+### The `rallar.messageSelector.access` connect field
+
+`rtc.connect.rallar.messageSelector.access` is `'granted'`, `'members'` or absent, which reads as
+`members`; any other value fails the connect. Like the other `rallar` fields it is validated in
+the page only. `granted` makes the room channel the page opens on the selector's topic a granted
+one: a `messages.send` on that topic opens it so, and `messages.subscribe` elects on it. Every
+other channel the page opens is a members one, and a granted selector subscribes no RTC lane.
+
 ### A `fault.inject` that holds one message
 
 A transport `fault.inject` whose `match.msgId` names `{resultCache.<commandId>.<path>}` resolves the token
@@ -1058,6 +1124,10 @@ while asserting nothing. The `RallarBlackBoxTestRtcSendCommand.expect`
 TypeScript field exists only for the in-process black-box-runner adapter,
 which calls `runtime.execute` directly and records runner-side expectations.
 Distributed delivery expectations belong in `wait` and `assert` commands.
+
+A `{resultCache.<commandId>.<path>}` token in an `http.request` body stands for the string or
+number an earlier command returned, as in a wait's `contains`; a token naming none fails the
+command before the request leaves.
 
 `http.request` results record `url`, `status`, `statusText`, `ok`, the full
 response header record, and the decoded body. Every recorded result value,

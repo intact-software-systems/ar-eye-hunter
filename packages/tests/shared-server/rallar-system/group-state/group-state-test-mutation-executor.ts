@@ -198,7 +198,9 @@ export class GroupStateTestMutationExecutor {
             if (computed.lifecyclePolicy !== null) {
                 await new GroupLifecyclePolicyRepository(transaction).writePolicy(computed.receipt.aggregateRef, computed.lifecyclePolicy);
             }
-            await repository.appendEvent(computed.event);
+            if (computed.event !== null) {
+                await repository.appendEvent(computed.event);
+            }
         });
         return computed.receipt;
     }

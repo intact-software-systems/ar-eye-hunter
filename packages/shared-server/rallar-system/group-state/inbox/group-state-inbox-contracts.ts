@@ -17,8 +17,10 @@ import type {
     RotateGroupJoinCodeRequest,
     SetGroupMemberRoleRequest,
     StateScope,
+    SubscribeGroupTopicRequest,
     TransferGroupOwnershipRequest,
     UnbanGroupMemberRequest,
+    UnsubscribeGroupTopicRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
@@ -160,6 +162,20 @@ export interface GroupPublicationRevokeAppInboxPayload {
     readonly request: RevokeGroupPublicationRequest;
 }
 
+export interface GroupTopicSubscribeAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly request: SubscribeGroupTopicRequest;
+}
+
+export interface GroupTopicUnsubscribeAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly request: UnsubscribeGroupTopicRequest;
+}
+
 export interface GroupOwnershipTransferAppInboxPayload {
     readonly scope: StateScope;
     readonly groupId: string;
@@ -226,6 +242,8 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_MEMBER_ROLE_SET]: GroupMemberRoleSetAppInboxPayload;
     [AppInboxType.GROUP_PUBLICATION_GRANT]: GroupPublicationGrantAppInboxPayload;
     [AppInboxType.GROUP_PUBLICATION_REVOKE]: GroupPublicationRevokeAppInboxPayload;
+    [AppInboxType.GROUP_TOPIC_SUBSCRIBE]: GroupTopicSubscribeAppInboxPayload;
+    [AppInboxType.GROUP_TOPIC_UNSUBSCRIBE]: GroupTopicUnsubscribeAppInboxPayload;
     [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: GroupOwnershipTransferAppInboxPayload;
     [AppInboxType.GROUP_MEMBER_UPSERT]: GroupMemberUpsertAppInboxPayload;
     [AppInboxType.GROUP_PRESENCE_CONNECT]: GroupPresenceConnectAppInboxPayload;
@@ -275,6 +293,8 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_MEMBER_ROLE_SET,
     AppInboxType.GROUP_PUBLICATION_GRANT,
     AppInboxType.GROUP_PUBLICATION_REVOKE,
+    AppInboxType.GROUP_TOPIC_SUBSCRIBE,
+    AppInboxType.GROUP_TOPIC_UNSUBSCRIBE,
     AppInboxType.GROUP_OWNERSHIP_TRANSFER,
     AppInboxType.GROUP_MEMBER_UPSERT,
     AppInboxType.GROUP_PRESENCE_CONNECT,

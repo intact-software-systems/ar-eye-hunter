@@ -98,7 +98,11 @@ describe('public WS unicast scope', () => {
         onTestFinished(() => service.dispose());
         const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
 
-        const result = await service.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: undefined });
+        const result = await service.enqueueOutboxIfAbsent(message, {
+            admittedAudience: undefined,
+            admittedConnectionGenerationIds: undefined,
+            recipientScope: undefined
+        });
         await new Promise((resolve) => setTimeout(resolve, 20));
 
         expect(result.verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
@@ -178,7 +182,8 @@ describe('public WS unicast scope', () => {
             lane: 'durable',
             preparedMessages: [],
             dropReasonCode: undefined,
-            recipientScope
+            recipientScope,
+            admittedConnectionGenerationIds: undefined
         });
         recipientScope.workspaceId = 'changed-after-capture';
         expect(decodeALOutboundCapturedPolicy(JSON.parse(JSON.stringify(policy))))
@@ -270,7 +275,11 @@ describe('public WS unicast scope', () => {
                 }
                 return encode(message);
             });
-            await service.enqueueOutboxIfAbsent(createMessage(), { admittedAudience: undefined, recipientScope: SCOPE });
+            await service.enqueueOutboxIfAbsent(createMessage(), {
+                admittedAudience: undefined,
+                admittedConnectionGenerationIds: undefined,
+                recipientScope: SCOPE
+            });
             await expect.poll(() => settled.length).toBe(1);
             expect(native.sent).toHaveLength(boundary === 'same-scope' ? 1 : 0);
             expect(replacement.sent).toEqual([]);

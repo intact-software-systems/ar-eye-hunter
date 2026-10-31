@@ -236,7 +236,13 @@ describe('outbound default send IndexedDB volume', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-default-send' }),
             nowMs: () => laneNowMs,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
+            }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
@@ -272,7 +278,8 @@ describe('outbound volatile send IndexedDB volume', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -325,7 +332,8 @@ describe('outbound local-checkpoint send IndexedDB volume', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'checkpoint',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -373,7 +381,8 @@ describe('an idle durable outbound owner beside a volatile send', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -410,7 +419,8 @@ describe('an idle durable outbound owner beside a volatile send', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                admittedConnectionGenerationIds: undefined
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');

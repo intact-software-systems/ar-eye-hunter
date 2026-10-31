@@ -181,6 +181,7 @@ Deno.test('group presence response retains the current snapshot', async () => {
             outboxIds: [],
             joinCode: null,
             joinCodeExpiresAtEpochMs: null,
+            subscriptionOutcome: null,
             rejection: null
         },
         ref,
@@ -218,6 +219,7 @@ Deno.test('group presence response rejects before reading its current snapshot',
                     outboxIds: [],
                     joinCode: null,
                     joinCodeExpiresAtEpochMs: null,
+                    subscriptionOutcome: null,
                     rejection: 'Presence rejected by current authority'
                 },
                 ref,
@@ -476,6 +478,7 @@ function createGroupPresenceReceipt(
         outboxIds: [],
         joinCode: null,
         joinCodeExpiresAtEpochMs: null,
+        subscriptionOutcome: null,
         rejection: input.rejection
     };
 }
