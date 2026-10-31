@@ -28,14 +28,21 @@ export function toGroupStateCommand(
         case 'appoint-group-director':
             return toAppointGroupDirectorCommand(input);
         case 'plan-group-layout':
+            return toPlanGroupCommand(input);
         case 'connect-group':
+            return toConnectGroupCommand(input);
         case 'activate-group':
+            return toActivateGroupCommand(input);
         case 'reconfigure-group':
+            return toReconfigureGroupCommand(input);
         case 'pause-group-transport':
+            return toPauseGroupCommand(input);
         case 'resume-group-transport':
+            return toResumeGroupCommand(input);
         case 'reset-group-formation':
+            return toResetGroupCommand(input);
         case 'start-group-formation':
-            return toGroupLifecycleCommand(input);
+            return toStartGroupCommand(input);
         case 'join-group':
             return toJoinGroupCommand(input);
         case 'accept-group-invite':
@@ -72,40 +79,6 @@ export function toGroupStateCommand(
             return toHeartbeatGroupPresenceCommand(input);
         case 'disconnect-group-presence':
             return toDisconnectGroupPresenceCommand(input);
-    }
-}
-
-/** Lifecycle and transport commands share the room formation authority boundary. */
-function toGroupLifecycleCommand(
-    input: Extract<GroupStateRouteCommandInput, {
-        operation:
-            | 'plan-group-layout'
-            | 'connect-group'
-            | 'activate-group'
-            | 'reconfigure-group'
-            | 'pause-group-transport'
-            | 'resume-group-transport'
-            | 'reset-group-formation'
-            | 'start-group-formation';
-    }>
-): AuthenticatedGroupMutationEnqueue {
-    switch (input.operation) {
-        case 'plan-group-layout':
-            return toPlanGroupCommand(input);
-        case 'connect-group':
-            return toConnectGroupCommand(input);
-        case 'activate-group':
-            return toActivateGroupCommand(input);
-        case 'reconfigure-group':
-            return toReconfigureGroupCommand(input);
-        case 'pause-group-transport':
-            return toPauseGroupCommand(input);
-        case 'resume-group-transport':
-            return toResumeGroupCommand(input);
-        case 'reset-group-formation':
-            return toResetGroupCommand(input);
-        case 'start-group-formation':
-            return toStartGroupCommand(input);
     }
 }
 

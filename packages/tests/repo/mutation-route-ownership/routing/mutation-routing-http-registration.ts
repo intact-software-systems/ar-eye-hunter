@@ -261,43 +261,26 @@ function hasExactGroupTranslatorOperation(
     if (translators.length !== 1) {
         return false;
     }
-    const result = resolveGroupTranslationReturn({ program, owner: translators[0]!, operation, visited: new Set() });
-    return readObjectMemberPath(result, 'type') === `AppInboxType.${expectedType}`;
-}
-
-interface GroupTranslationResolution {
-    readonly program: MutationRoutingAstNode;
-    readonly owner: MutationRoutingAstNode;
-    readonly operation: string;
-    readonly visited: Set<MutationRoutingAstNode>;
-}
-
-function resolveGroupTranslationReturn({ program, owner, operation, visited }: GroupTranslationResolution): MutationRoutingAstNode | undefined {
-    if (visited.has(owner)) {
-        return undefined;
-    }
-    visited.add(owner);
-    const statements = readBlockStatements(asNode(owner.body));
+    const statements = readBlockStatements(asNode(translators[0]?.body));
     if (statements.length !== 1 || statements[0]?.type !== 'SwitchStatement') {
-        return readLiveReturnObject(owner, createMutationBoundaryLexicalValues(program));
+        return false;
     }
-    const discriminant = asNode(statements[0].discriminant);
-    const parameter = asNodes(owner.params)[0];
-    if (readMemberName(discriminant) !== 'operation' || readName(asNode(discriminant?.object)) !== readName(parameter)) {
-        return undefined;
+    const cases = asNodes(statements[0].cases).filter(
+        (switchCase) => readString(asNode(switchCase.test)) === operation
+    );
+    if (cases.length !== 1) {
+        return false;
     }
-    const cases = asNodes(statements[0].cases);
-    const matching = cases.filter((entry) => readString(asNode(entry.test)) === operation);
-    if (matching.length !== 1) {
-        return undefined;
-    }
-    const selected = cases.slice(cases.indexOf(matching[0]!)).find((entry) => asNodes(entry.consequent).length > 0);
-    const helperName = selected ? readSwitchHelperName(selected) : undefined;
+    const helperName = readSwitchHelperName(cases[0]!);
     if (!helperName) {
-        return undefined;
+        return false;
     }
     const helpers = findNamedTopLevelFunctions(program, helperName);
-    return helpers.length === 1 ? resolveGroupTranslationReturn({ program, owner: helpers[0]!, operation, visited }) : undefined;
+    if (helpers.length !== 1) {
+        return false;
+    }
+    const result = readLiveReturnObject(helpers[0]!, createMutationBoundaryLexicalValues(program));
+    return readObjectMemberPath(result, 'type') === `AppInboxType.${expectedType}`;
 }
 
 function readSwitchHelperName(switchCase: MutationRoutingAstNode): string | undefined {
