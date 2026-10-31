@@ -42,6 +42,7 @@ import {
     decodeAlmReloadPublicationLimits,
     toAlmReloadLiveCommand
 } from './alm-reload-publication-lane.ts';
+import { AlmReloadVolatileSession } from './alm-reload-volatile-session.ts';
 
 type MessagesPortKind =
     | 'messages.send'
@@ -167,7 +168,6 @@ const HOLD_MSG_ID_REFERENCE = /^\{resultCache\.(.+)\.value\.msgId\}$/u;
 
 interface AlmReloadAdmissionPayload {
     readonly marker: string | undefined;
-    readonly index: number | undefined;
     readonly seq: number | undefined;
 }
 
@@ -196,6 +196,11 @@ export class AlmReloadPorts {
     /** Whether the receiver's connect installed the recording recovery owner on its channel. */
     recoveryOwnerInstalled = false;
     private deliveries = 0;
+    private readonly volatileSessions: Readonly<Record<PortRole, AlmReloadVolatileSession>> = {
+        sender: new AlmReloadVolatileSession(),
+        receiver: new AlmReloadVolatileSession(),
+        'recipient-b': new AlmReloadVolatileSession()
+    };
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
@@ -269,6 +274,7 @@ export class AlmReloadPorts {
             this.senderDocument += 100;
         }
         this.acceptedLayoutSince.delete('sender');
+        this.volatileSessions.sender.close();
         this.handles.clear();
         this.holds.clear();
         this.writes.sender = 1;
@@ -297,6 +303,8 @@ export class AlmReloadPorts {
                 // The page returns from its absence with every lane opportunity due meanwhile run at its own time.
                 await this.publicationLane.advanceTo(this.now + duration, () => false);
             },
+            readAlmUsage: async () =>
+                this.volatileSessions[role].readUsage(this.now, this.publicationLane.readReport()),
             commandExecutor: (command) => this.executePort(role, command)
         });
     }
@@ -314,6 +322,7 @@ export class AlmReloadPorts {
             case 'http.request':
                 return this.requestGroup(role, command);
             case 'rtc.connect':
+                this.volatileSessions[role].connect(command);
                 this.acceptedLayoutSince.set(role, this.now);
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
@@ -341,6 +350,7 @@ export class AlmReloadPorts {
             case 'messages.received':
                 return this.executeMessagesPort(role, command);
             case 'close':
+                this.volatileSessions[role].close();
                 this.acceptedLayoutSince.delete(role);
                 if (role === 'sender') {
                     this.publicationLane.close();
@@ -788,8 +798,8 @@ export class AlmReloadPorts {
         command: RallarBlackBoxTestMessagesSendCommand,
         payload: AlmReloadAdmissionPayload
     ): AlmReloadSendAdmission {
-        // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
-        const capacityRefused = payload.marker === 'capacity' && payload.index === 3;
+        const msgId = `port-message-${this.messages.length + 1}`;
+        const capacityRefused = !this.volatileSessions.sender.admit(command, msgId, this.now);
         const requestedDurability = command.durability ?? 'volatile';
         const durable = requestedDurability !== 'volatile';
         const checkpointed = command.durability === 'local-checkpoint';
@@ -803,7 +813,7 @@ export class AlmReloadPorts {
         const recipientRoles = resolvePortRecipientRoles(command, this.participants, this.group);
         const message: PortMessage = {
             command,
-            msgId: `port-message-${this.messages.length + 1}`,
+            msgId,
             admittedAtMs: this.now,
             checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
             state: storageRefused ? 'failed' : rejected ? 'rejected' : payload.seq === 300 ? 'queued' : 'accepted',
@@ -1429,7 +1439,6 @@ function toAlmReloadAdmissionPayload(
     assert(isJsonRecordValue(payload));
     return {
         marker: typeof payload.marker === 'string' ? payload.marker : undefined,
-        index: typeof payload.index === 'number' ? payload.index : undefined,
         seq: typeof payload.seq === 'number' ? payload.seq : undefined
     };
 }

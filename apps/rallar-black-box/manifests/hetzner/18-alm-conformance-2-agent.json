@@ -10433,6 +10433,28 @@
             "timeoutMs": 31000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-ws-capacity-sender-headroom",
+            "until": "first-success",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "alm-ws-capacity-sender-headroom-stats",
+                "timeoutMs": 3000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-ws-capacity-sender-assert-headroom",
+                "source": "resultCache.alm-ws-capacity-sender-headroom:i{loop.iteration}:c1:alm-ws-capacity-sender-headroom-stats.value.rallar.alm.usage.bytes",
+                "operator": "lte",
+                "expected": 8192
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-ws-capacity-sender-send-1",
             "connection": "almConformanceSender",
@@ -11249,6 +11271,28 @@
             },
             "absent": true,
             "timeoutMs": 31000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-capacity-sender-headroom",
+            "until": "first-success",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "alm-rtc-capacity-sender-headroom-stats",
+                "timeoutMs": 3000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-capacity-sender-assert-headroom",
+                "source": "resultCache.alm-rtc-capacity-sender-headroom:i{loop.iteration}:c1:alm-rtc-capacity-sender-headroom-stats.value.rallar.alm.usage.bytes",
+                "operator": "lte",
+                "expected": 8192
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -12126,6 +12170,28 @@
             },
             "absent": true,
             "timeoutMs": 31000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-capacity-sender-headroom",
+            "until": "first-success",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "alm-rtc-with-ws-fallback-capacity-sender-headroom-stats",
+                "timeoutMs": 3000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-capacity-sender-assert-headroom",
+                "source": "resultCache.alm-rtc-with-ws-fallback-capacity-sender-headroom:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-capacity-sender-headroom-stats.value.rallar.alm.usage.bytes",
+                "operator": "lte",
+                "expected": 8192
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -17247,8 +17313,8 @@
             "typeId": "alm.conformance.ws.capacity",
             "count": 2,
             "absent": false,
-            "windowMs": 88000,
-            "timeoutMs": 89000
+            "windowMs": 118000,
+            "timeoutMs": 119000
           },
           {
             "kind": "stats",
@@ -17391,8 +17457,8 @@
             "typeId": "alm.conformance.rtc.capacity",
             "count": 2,
             "absent": false,
-            "windowMs": 88000,
-            "timeoutMs": 89000
+            "windowMs": 118000,
+            "timeoutMs": 119000
           },
           {
             "kind": "stats",
@@ -17535,8 +17601,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.capacity",
             "count": 2,
             "absent": false,
-            "windowMs": 88000,
-            "timeoutMs": 89000
+            "windowMs": 118000,
+            "timeoutMs": 119000
           },
           {
             "kind": "stats",
