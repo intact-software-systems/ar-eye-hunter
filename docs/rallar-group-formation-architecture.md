@@ -995,9 +995,19 @@ function — and not where a restarted server would exercise it.
 
 The five browser-only scenarios (`discovery-holds-dials`, `member-progress`, `status-on-connect`,
 `reset-tears-down`, `reset-no-stale-hydration`) are pinned by
-`full-stack-live-rtc-lifecycle-acceptance.spec.ts`, an opt-in three-browser lane
-(`npm run test:rallar:full-stack:memory:live-rtc-3:lifecycle` or its `postgres` twin) that no CI
-workflow runs.
+`full-stack-live-rtc-lifecycle-acceptance.spec.ts`, a three-browser lane
+(`npm run test:rallar:full-stack:memory:live-rtc-3:lifecycle` or its `postgres` twin).
+Release Gate's app browser lane runs the reopening readiness scenario and retains its sample trace;
+the other four scenarios remain opt-in.
+
+Reopening advances presence. With managed topology, automatic layout publications and the delayed
+activation-status observation can therefore advance the group revision while lanes reconnect.
+The readiness proof partitions the complete trace at those revision boundaries, checks unchanged
+accepted identity and a nondecreasing fraction inside every window, rejects backwards revisions,
+and requires the final window to reach one. An interrupted earlier window need not be complete;
+none of its samples or failures is discarded. The single-window validator still rejects mixed
+revisions. Its semantic regressions live in
+`packages/tests/rallar-black-box/live-rtc-readiness-progress.test.ts`.
 
 The count in this paragraph is checked against the table itself, so it cannot drift as rows change.
 

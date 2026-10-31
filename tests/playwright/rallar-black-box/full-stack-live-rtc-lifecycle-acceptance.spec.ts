@@ -4,6 +4,8 @@ import {
     type APIRequestContext,
     type Browser
 } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
@@ -29,12 +31,12 @@ import {
     type FormationDiagnosticEvent,
     type FormationHealth
 } from './live-rtc-formation-operations.ts';
+import { validateProgressSeries } from './live-rtc-readiness-progress.ts';
 
 /**
  * The five acceptance scenarios of the group-activation product plan that only a real browser can
- * exercise. Every statement is read from the browser's own evidence: the formation summary the
- * agents report, the diagnostics they emit, and the dial events they record. Nothing here refreshes
- * a room on an observing agent, because a refresh would answer the question the pin is asking.
+ * exercise. Evidence comes from browser formation summaries, diagnostics and dial events.
+ * Presence restores the same session; readiness explicitly refreshes the current room before waiting.
  */
 
 const HOLD_MS = 5_000;
@@ -90,7 +92,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     });
 
-    test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }) => {
+    test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }, testInfo) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'progress');
         try {
@@ -106,14 +108,15 @@ test.describe('live RTC lifecycle acceptance', () => {
             await connectPresence(scenario, reopened);
             await settleSurvivors(scenario, reopened);
             await formationOperations.readiness(agentInput(scenario, reopened));
-
             const samples = await formationOperations.readFormationDiagnostics({
                 ...agentInput(scenario, reopened),
                 topic: 'rallar.browser.formation.room-status',
                 sinceEpochMs: reopenedAt
             });
-
-            expect(validateProgressSeries(samples)).toEqual([]);
+            const evidencePath = testInfo.outputPath('reopening-readiness.json');
+            await writeFile(evidencePath, JSON.stringify({ reopenedAt, samples }, null, 2));
+            await testInfo.attach('reopening-readiness', { path: evidencePath, contentType: 'application/json' });
+            expect(validateProgressSeries(samples, 'successive-revisions')).toEqual([]);
         }
         finally {
             await retire(scenario);
@@ -340,10 +343,7 @@ async function connectPresence(
         agentInput(scenario, agent),
         'presence'
     );
-    // The session the page already holds is the one the runtime is required to come back as. Naming
-    // it here is what makes the runtime's own mismatch diagnostic mean anything: left unset, the
-    // adapter falls back to the URL's `sessionId`, which the agent opener sets to the AGENT ID, so
-    // the witness compares a session against an agent name and can never fire.
+    // The accepted layout names this stored session, not the opener's agent ID.
     const expectedSessionId = (await readRestoredSession(agent)).sessionId;
     const result = await scenario.control.executeOk({
         runId: scenario.runId,
@@ -362,16 +362,8 @@ async function connectPresence(
             rallar: {
                 apiBaseUrl: apiBaseUrl ?? '',
                 expectedSessionId,
-                // Credentials are deliberately absent, and that absence is what selects the runtime's
-                // restore branch: it logs in only when it is handed a username and password, and a
-                // login mints a second session. The page already holds one — its sign-in wrote it to
-                // browser storage, and a reopened page is seeded with the session it left with — so
-                // restoring is both sufficient and required. It is required because the accepted
-                // layout names sessions as its peers: a returning member that logs in afresh rejoins
-                // under an identity the group has never heard of.
-                //
-                // `leaveRoomOnClose` defaults to true, so it is pinned off here to keep a page that
-                // closes for a reopen from dropping the membership it is about to return to.
+                // Restore the stored session; credentials would mint a different layout peer.
+                // Closing a page preserves its session and membership for the reopening test.
                 logoutOnClose: false,
                 leaveRoomOnClose: false
             },
@@ -379,16 +371,14 @@ async function connectPresence(
         },
         timeoutMs: 90_000
     });
-    // The runtime's own mismatch diagnostic is informational, so the pin is asserted here: a page
-    // that connected as some other session has silently left the accepted layout, and every later
-    // claim about it would be about a member the group has never heard of.
+    // A new session would test admission instead of restoring an accepted peer.
     expect(
         scenario.control.requireSessionId(result, commandId),
         `Agent ${agent.prefix} connected as a different session than the one its page holds`
     ).toBe(expectedSessionId);
 }
 
-/** Drives the group to `active` through the four commands, then settles every agent's readiness. */
+/** Drives the group to the active lifecycle stage; transport readiness is a separate barrier. */
 async function activateGroup(scenario: AcceptanceScenario): Promise<void> {
     await setupMembership(scenario);
     for (const agent of scenario.agents) {
@@ -481,9 +471,7 @@ async function expectRoomHeld(
 
 /**
  * A member that reopens returns to a mesh whose surviving peers still hold the lane it left with, so
- * they are the ones that must look again before anything dials it. Only the survivors are refreshed:
- * the reopened agent is the observer, and refreshing it would answer the question its own barrier is
- * asking.
+ * they must reconcile those lanes before the reopened member waits for readiness.
  */
 async function settleSurvivors(
     scenario: AcceptanceScenario,
@@ -559,100 +547,4 @@ function acceptedIdentityOf(
 ): string | undefined {
     const accepted = jsonRecord(event.data.accepted);
     return accepted === null ? undefined : JSON.stringify(accepted.identity);
-}
-
-interface ProgressSeriesIssue {
-    readonly index: number;
-    readonly reason: string;
-}
-
-interface ProgressSample {
-    readonly desiredCount: number;
-    readonly readyCount: number;
-    readonly identity: string;
-    readonly groupRevision: string;
-}
-
-/** One recorded room-status diagnostic, narrowed to the four values the window is read from. */
-function decodeProgressSample(
-    value: FormationDiagnosticEvent
-): ProgressSample | undefined {
-    const room = jsonRecord(value.data.room);
-    if (room === null) {
-        return undefined;
-    }
-    const desired = room.desiredPeerIds;
-    const ready = room.readyPeerIds;
-    if (
-        !Array.isArray(desired) ||
-        !Array.isArray(ready) ||
-        desired.length === 0
-    ) {
-        return undefined;
-    }
-    return {
-        desiredCount: desired.length,
-        readyCount: ready.length,
-        identity: JSON.stringify(room.acceptedLayoutIdentity),
-        groupRevision: JSON.stringify(value.data.groupRevision)
-    };
-}
-
-/**
- * Decision 40's window, read as a pure function of the recorded samples: hydration delivers the
- * accepted layout first, then lanes open while no group write happens, so the fraction only rises,
- * it ends at one, and every sample after the first full desired set names the same layout and the
- * same group revision. Samples taken before the desired set arrives carry no fraction and are the
- * pre-hydration ones the scenario expects to see.
- */
-export function validateProgressSeries(
-    samples: readonly FormationDiagnosticEvent[]
-): readonly ProgressSeriesIssue[] {
-    const issues: ProgressSeriesIssue[] = [];
-    let previous: ProgressSample | undefined;
-    let last: ProgressSample | undefined;
-
-    for (const [index, event] of samples.entries()) {
-        const sample = decodeProgressSample(event);
-        if (sample === undefined) {
-            continue;
-        }
-        if (previous !== undefined) {
-            if (sample.identity !== previous.identity) {
-                issues.push({
-                    index,
-                    reason: 'the accepted layout changed inside the window'
-                });
-            }
-            if (sample.groupRevision !== previous.groupRevision) {
-                issues.push({
-                    index,
-                    reason: 'the group revision moved inside the window'
-                });
-            }
-            if (fractionOf(sample) < fractionOf(previous)) {
-                issues.push({
-                    index,
-                    reason: `the ready fraction fell to ${fractionOf(sample)}`
-                });
-            }
-        }
-        previous = sample;
-        last = sample;
-    }
-
-    if (last === undefined) {
-        issues.push({ index: -1, reason: 'no sample carried a desired peer set' });
-    }
-    else if (fractionOf(last) !== 1) {
-        issues.push({
-            index: samples.length - 1,
-            reason: `the window ended at ${fractionOf(last)}`
-        });
-    }
-    return issues;
-}
-
-function fractionOf(sample: ProgressSample): number {
-    return sample.readyCount / sample.desiredCount;
 }
