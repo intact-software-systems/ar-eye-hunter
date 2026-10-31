@@ -1,19 +1,42 @@
 import { expect, type Page } from '@playwright/test';
 
-export async function moveTogetherJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    const { source, destination } = await prepareMoveRooms(host, guest, game);
-    await confirmMoveWithConsentChanges(host, guest, source, destination);
-    await commitMoveWithNetworkRecovery(host, guest, source, destination);
-    await returnThroughRetainedMembership(host, guest, game, source, destination);
-    await playInDestination(host, guest, game);
+import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
+
+interface MoveJourneyRooms {
+    readonly host: Page;
+    readonly guest: Page;
+    readonly source: string;
+    readonly destination: string;
 }
 
-async function confirmMoveWithConsentChanges(
-    host: Page,
-    guest: Page,
-    source: string,
-    destination: string
-): Promise<void> {
+interface ReturnThroughMembershipInput extends MoveJourneyRooms {
+    readonly game: 'arena' | 'relic';
+}
+
+interface PrepareMoveRoomsInput {
+    readonly host: Page;
+    readonly guest: Page;
+    readonly game: 'arena' | 'relic';
+    readonly participation?: 'player' | 'spectator';
+}
+
+export async function moveTogetherJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
+    const { source, destination } = await prepareMoveRooms({ host, guest, game });
+    await confirmMoveWithConsentChanges({ host, guest, source, destination });
+    await commitMoveWithNetworkRecovery({ host, guest, source, destination });
+    await returnThroughRetainedMembership({ host, guest, game, source, destination });
+    await playTogetherInRoom(host, guest, game);
+    for (const page of game === 'arena' ? [host] : [host, guest]) {
+        await expect(
+            page.getByRole('region', { name: 'Move together', exact: true }).getByRole('button', {
+                name: 'Propose move',
+                exact: true
+            })
+        ).toBeDisabled();
+    }
+}
+
+async function confirmMoveWithConsentChanges({ host, guest, source, destination }: MoveJourneyRooms): Promise<void> {
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     await expect(host.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText('2 present');
@@ -38,12 +61,7 @@ async function confirmMoveWithConsentChanges(
     await expect(hostMove.getByRole('button', { name: 'Move everyone', exact: true })).toBeEnabled();
 }
 
-async function commitMoveWithNetworkRecovery(
-    host: Page,
-    guest: Page,
-    source: string,
-    destination: string
-): Promise<void> {
+async function commitMoveWithNetworkRecovery({ host, guest, source, destination }: MoveJourneyRooms): Promise<void> {
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     const membershipLeaves: string[] = [];
@@ -88,11 +106,7 @@ async function commitMoveWithNetworkRecovery(
 }
 
 async function returnThroughRetainedMembership(
-    host: Page,
-    guest: Page,
-    game: 'arena' | 'relic',
-    source: string,
-    destination: string
+    { host, guest, game, source, destination }: ReturnThroughMembershipInput
 ): Promise<void> {
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     await guest.reload();
@@ -115,67 +129,8 @@ async function returnThroughRetainedMembership(
     await expect(guest.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
 }
 
-async function playInDestination(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    if (game === 'arena') {
-        const appoint = host.getByRole('button', { name: 'Appoint this SPA', exact: true });
-        if (await appoint.isEnabled()) {
-            await appoint.click();
-        }
-        await host.getByRole('button', { name: '1m', exact: true }).click();
-        await expect(guest.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/);
-        await expect(
-            host.getByRole('region', { name: 'Move together', exact: true }).getByRole('button', {
-                name: 'Propose move',
-                exact: true
-            })
-        ).toBeDisabled();
-    }
-    else {
-        await expect(host.locator('.lobby-party-row')).toHaveCount(0);
-        await expect(guest.locator('.lobby-party-row')).toHaveCount(0);
-        for (const page of [host, guest]) {
-            await page.getByRole('button', { name: /Join as/ }).click();
-        }
-        await expect(host.locator('.lobby-party-row')).toHaveCount(2);
-        await host.locator('.lobby-begin-btn').click();
-        await expect(guest.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
-        await host.getByRole('button', { name: 'Submit Plan' }).click();
-        await guest.getByRole('button', { name: 'Submit Plan' }).click();
-        for (const hunter of [host, guest]) {
-            await expect(hunter.locator('.turn-plan-status .panel-label')).toHaveText('Round 2', { timeout: 30000 });
-            await expect(
-                hunter.getByRole('region', { name: 'Move together', exact: true }).getByRole('button', {
-                    name: 'Propose move',
-                    exact: true
-                })
-            ).toBeDisabled();
-        }
-    }
-}
-
-function toGroupId(link: string): string {
-    const id = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
-    if (!id) {
-        throw new Error('Room sharing did not expose a group identity');
-    }
-    return id;
-}
-
-async function openArenaOperations(page: Page): Promise<void> {
-    const panel = page.getByRole('region', { name: 'Arena operations', exact: true });
-    if (await panel.isVisible()) {
-        return;
-    }
-    const button = page.getByRole('button', { name: 'Ops', exact: true });
-    await expect(panel.or(button).first()).toBeVisible({ timeout: 30000 });
-    if (!await panel.isVisible()) {
-        await button.click();
-    }
-    await expect(panel).toBeVisible();
-}
-
 export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    const { source, destination } = await prepareMoveRooms(host, guest, game);
+    const { source, destination } = await prepareMoveRooms({ host, guest, game });
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     await expect(host.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText('2 present');
@@ -209,21 +164,10 @@ export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 
 }
 
 async function prepareMoveRooms(
-    host: Page,
-    guest: Page,
-    game: 'arena' | 'relic',
-    participation: 'player' | 'spectator' = 'player'
+    { host, guest, game, participation = 'player' }: PrepareMoveRoomsInput
 ): Promise<{ source: string; destination: string; }> {
-    const base = game === 'arena' ? 'http://127.0.0.1:5186' : 'http://127.0.0.1:5175';
-    for (const [page, username] of [[host, 'alice'], [guest, 'bob']] as const) {
-        await page.goto(base);
-        if (game === 'arena') {
-            await openArenaOperations(page);
-        }
-        await page.getByLabel('Username', { exact: true }).fill(username);
-        await page.getByLabel('Password', { exact: true }).fill('secret');
-        await page.getByRole('button', { name: game === 'arena' ? 'Enter Arena' : 'Enter', exact: true }).click();
-    }
+    await signInRoomPlayer(host, 'alice', game);
+    await signInRoomPlayer(guest, 'bob', game);
     const create = host.getByRole('button', {
         name: game === 'arena' ? 'New unlisted arena' : 'New unlisted room',
         exact: true
@@ -299,7 +243,7 @@ async function registerDifferentAccount(page: Page): Promise<void> {
 }
 
 export async function moveLeavesSpectatorJourney(host: Page, watcher: Page, game: 'arena' | 'relic'): Promise<void> {
-    const { source, destination } = await prepareMoveRooms(host, watcher, game, 'spectator');
+    const { source, destination } = await prepareMoveRooms({ host, guest: watcher, game, participation: 'spectator' });
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const watcherMove = watcher.getByRole('region', { name: 'Move together', exact: true });
     const watching =

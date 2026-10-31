@@ -14,6 +14,7 @@ import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '.
 import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
 import { toDisconnectRoomPresenceGroupStateRequest } from './room-group-state-translation.ts';
 
+import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
 import { leaveRoom, type LeaveRoomInput } from './leave-room.ts';
 import type {
@@ -25,7 +26,7 @@ import type {
     RallarRoomSwitchOperation
 } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
-import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
+import type { GroupRef, GroupSnapshot } from './room-group-state-translation.ts';
 import {
     createRoomJoinPartialFailureError,
     createStateGroupPresenceCommand,
@@ -87,12 +88,13 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
             participation: target.options.participation
         }
     });
+    let adopted: GroupSnapshot;
     try {
-        await adoptJoinedRoom({
+        adopted = await adoptJoinedRoom({
             dependencies: input,
             context,
             snapshot,
-            scope,
+            options,
             assertCurrent: sessionFence.assertCurrent
         });
     }
@@ -101,14 +103,14 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     }
     await leavePreviousRoomAfterJoin({
         input: { ...input, sessionFence },
-        joinedRoom: snapshot,
+        joinedRoom: adopted,
         currentRoomRef,
         operation: 'join',
         leaveCurrent: target.options.leaveCurrent,
         operationOptions: options
     });
     sessionFence.assertCurrent(context);
-    return snapshot;
+    return adopted;
 }
 
 export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
@@ -137,18 +139,18 @@ export async function activateGroupMove(input: ActivateGroupMoveInput): Promise<
         const activation = { input, move, context, fence, options };
         const snapshot = await connectMovedSession(activation);
         const source = await disconnectMovedSession(activation);
-        await adoptJoinedRoom({
+        const adopted = await adoptJoinedRoom({
             dependencies: input,
             context,
             snapshot,
-            scope: toStateScope(move.destination),
+            options,
             assertCurrent: fence.assertCurrent
         });
         if (source) {
             await input.acceptSnapshots({ context, clients: [], groups: [source], scope: toStateScope(move.source) });
             fence.assertCurrent(context);
         }
-        return snapshot;
+        return adopted;
     });
 }
 
@@ -383,34 +385,13 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
     if (!snapshot) {
         throw new Error('Quick Join presence did not produce a snapshot.');
     }
-    await adoptJoinedRoom({
+    return await adoptJoinedRoom({
         dependencies: input.dependencies,
         context: input.context,
         snapshot,
-        scope,
+        options: input.options,
         assertCurrent: input.assertCurrent
     });
-    return snapshot;
-}
-
-interface AdoptJoinedRoomInput {
-    readonly dependencies: Pick<LeaveRoomInput, 'stateStore' | 'acceptSnapshots'>;
-    readonly context: ApiMiddleware;
-    readonly snapshot: GroupSnapshot;
-    readonly scope: StateScope | undefined;
-    readonly assertCurrent: RoomSessionFence['assertCurrent'];
-}
-
-async function adoptJoinedRoom(input: AdoptJoinedRoomInput): Promise<void> {
-    input.assertCurrent(input.context);
-    input.dependencies.stateStore.setCurrentRoom(input.snapshot);
-    await input.dependencies.acceptSnapshots({
-        context: input.context,
-        clients: [],
-        groups: [input.snapshot],
-        scope: input.scope
-    });
-    input.assertCurrent(input.context);
 }
 
 export async function enterRoom(input: JoinRoomInput): Promise<RallarRoomSession> {
