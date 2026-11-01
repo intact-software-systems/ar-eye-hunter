@@ -13,7 +13,7 @@ import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { isDefinitiveApiMutationFailure } from '../api/api-mutation-retry.ts';
+import { isDefinitiveApiMutationFailure } from '../api/is-definitive-api-mutation-failure.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';

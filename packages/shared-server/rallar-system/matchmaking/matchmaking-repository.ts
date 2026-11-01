@@ -1,13 +1,6 @@
-import {
-    requireEpoch,
-    requireExactKeys,
-    requireOneOf,
-    requireRecord,
-    requireString
-} from '@shared/api/exact-object-decoding.ts';
+import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
@@ -29,6 +22,13 @@ import type {
     MatchmakingSearch,
     MatchmakingTransition
 } from './matchmaking-pool.ts';
+
+import {
+    decodeMatchmakingAccountEntry,
+    decodeMatchmakingFinishedEntry,
+    matchmakingAccountKey,
+    matchmakingFinishedKey
+} from './matchmaking-storage-codec.ts';
 
 const POOLS_NAMESPACE = 'matchmaking:pools';
 const FINISHED_NAMESPACE = 'matchmaking:finished';
@@ -94,7 +94,7 @@ export class MatchmakingRepository {
                 selectorId: `account:${index}`,
                 kind: 'key',
                 namespace: ACCOUNTS_NAMESPACE,
-                key: accountKey(scope, principalId)
+                key: matchmakingAccountKey(scope, principalId)
             }))
         ];
         const selections = assertRuntimeStateReadBatchResult(
@@ -109,7 +109,7 @@ export class MatchmakingRepository {
         const accounts = new Map<string, RuntimeStateEntry | null>();
         for (const [index, principalId] of principals.entries()) {
             const entry = selections[index + 1].entries[0];
-            const searchId = entry === undefined ? null : decodeAccountLookup(entry, { scope, principalId });
+            const searchId = entry === undefined ? null : decodeMatchmakingAccountEntry(entry, { scope, principalId });
             const current = searches.get(principalId);
             if (
                 current !== undefined &&
@@ -126,7 +126,12 @@ export class MatchmakingRepository {
         const { scope, principalId, nowEpochMs } = input;
         const selections = await this.runtime.readRuntimeStateBatch([
             { selectorId: 'pool', kind: 'key', namespace: POOLS_NAMESPACE, key: groupStateScopeStorageKey(scope) },
-            { selectorId: 'account', kind: 'key', namespace: ACCOUNTS_NAMESPACE, key: accountKey(scope, principalId) }
+            {
+                selectorId: 'account',
+                kind: 'key',
+                namespace: ACCOUNTS_NAMESPACE,
+                key: matchmakingAccountKey(scope, principalId)
+            }
         ]);
         if (
             selections.length !== 2 || selections[0].selectorId !== 'pool' || selections[1].selectorId !== 'account' ||
@@ -137,7 +142,7 @@ export class MatchmakingRepository {
         const { pool } = decodeStoredPool(scope, selections[0].entries[0]);
         const active = activeSearches(pool).find((search) => search.principalId === principalId);
         const entry = selections[1].entries[0];
-        const decodedSearchId = entry === undefined ? null : decodeAccountLookup(entry, input);
+        const decodedSearchId = entry === undefined ? null : decodeMatchmakingAccountEntry(entry, input);
         const searchId = entry !== undefined && entry.expireAtTimestamp > nowEpochMs ? decodedSearchId : null;
         if (active !== undefined && searchId !== active.searchId) {
             throw new TypeError('Active matchmaking search has lost its account lookup');
@@ -150,20 +155,12 @@ export class MatchmakingRepository {
 
     async readFinished(input: MatchmakingRepository.FinishedRead): Promise<MatchmakingFinished | null> {
         const { scope, principalId, searchId, nowEpochMs } = input;
-        const key = finishedKey(scope, principalId, searchId);
+        const key = matchmakingFinishedKey(scope, principalId, searchId);
         const entry = await this.runtime.findEntry(FINISHED_NAMESPACE, key);
         if (entry === undefined) {
             return null;
         }
-        if (entry.key !== key) {
-            throw new TypeError('Finished search storage key differs');
-        }
-        const stored = requireRecord(JSON.parse(entry.value), 'Finished search record');
-        requireExactKeys(stored, ['scope', 'search'], 'Finished search record');
-        if (!jsonEquals(stored.scope, scope)) {
-            throw new TypeError('Finished search scope differs');
-        }
-        const search = decodeFinishedSearch(stored.search, input);
+        const search = decodeMatchmakingFinishedEntry(entry, input);
         return entry.expireAtTimestamp <= nowEpochMs ? null : search;
     }
 }
@@ -179,23 +176,6 @@ function decodeStoredPool(
         throw new TypeError('Matchmaking pool storage identity or lifetime differs');
     }
     return { entry, pool: decodeMatchmakingPool(JSON.parse(entry.value), scope) };
-}
-
-function decodeAccountLookup(
-    entry: RuntimeStateEntry,
-    input: Pick<MatchmakingRepository.AccountRead, 'scope' | 'principalId'>
-): string {
-    const { scope, principalId } = input;
-    const value = requireRecord(JSON.parse(entry.value), 'Search account lookup');
-    requireExactKeys(value, ['scope', 'principalId', 'searchId'], 'Search account lookup');
-    requireString(value.searchId, 'Account search identity');
-    if (
-        entry.key !== accountKey(scope, principalId) || value.principalId !== principalId ||
-        !jsonEquals(value.scope, scope)
-    ) {
-        throw new TypeError('Search account lookup identity differs');
-    }
-    return value.searchId;
 }
 
 export function computeMatchmakingStorage(
@@ -273,7 +253,7 @@ function computeSearchEffects(
             effectId: `finished:${search.searchId}`,
             operation: 'insert',
             namespace: FINISHED_NAMESPACE,
-            key: finishedKey(pool.scope, search.principalId, search.searchId),
+            key: matchmakingFinishedKey(pool.scope, search.principalId, search.searchId),
             value: JSON.stringify({ scope: pool.scope, search }),
             expireAtTimestamp
         });
@@ -305,91 +285,8 @@ function accountLookup(
             ? { operation: 'insert' as const }
             : { operation: 'update' as const, expectedRevision: entry.revision }),
         namespace: ACCOUNTS_NAMESPACE,
-        key: accountKey(scope, search.principalId),
+        key: matchmakingAccountKey(scope, search.principalId),
         value: JSON.stringify({ scope, principalId: search.principalId, searchId: search.searchId }),
         expireAtTimestamp
     };
-}
-
-function accountKey(scope: StateScope, principalId: string): string {
-    requireString(principalId, 'Matchmaking account');
-    return `${groupStateScopeStorageKey(scope)}:principal=${encodeURIComponent(principalId)}`;
-}
-
-function finishedKey(scope: StateScope, principalId: string, searchId: string): string {
-    requireString(searchId, 'Matchmaking search');
-    return `${accountKey(scope, principalId)}:search=${encodeURIComponent(searchId)}`;
-}
-
-function decodeFinishedSearch(value: unknown, identity: MatchmakingRepository.FinishedIdentity): MatchmakingFinished {
-    const { scope, principalId, searchId } = identity;
-    const search = requireRecord(value, 'Finished search');
-    requireExactKeys(search, [
-        'searchId',
-        'principalId',
-        'sessionId',
-        'sessionIssuedAtEpochMs',
-        'sessionExpiresAtEpochMs',
-        'createdAtEpochMs',
-        'expiresAtEpochMs',
-        'completedAtEpochMs',
-        'reason',
-        'roomRef',
-        'leaderPrincipalId'
-    ], 'Finished search');
-    if (search.principalId !== principalId || search.searchId !== searchId) {
-        throw new TypeError('Finished search account or search identity differs');
-    }
-    requireString(search.sessionId, 'Finished search session');
-    requireEpoch(search.sessionIssuedAtEpochMs, 'Finished search session issuance');
-    requireEpoch(search.sessionExpiresAtEpochMs, 'Finished search session expiry');
-    requireEpoch(search.createdAtEpochMs, 'Finished search creation');
-    requireEpoch(search.expiresAtEpochMs, 'Finished search deadline');
-    requireEpoch(search.completedAtEpochMs, 'Finished search completion');
-    const reason = requireOneOf(search.reason, [
-        'search-timeout',
-        'confirmation-timeout',
-        'cancelled',
-        'declined',
-        'matched',
-        'admission-denied'
-    ], 'Finished search reason');
-    if (search.completedAtEpochMs < search.createdAtEpochMs || search.expiresAtEpochMs <= search.createdAtEpochMs) {
-        throw new TypeError('Finished search lifetime is invalid');
-    }
-    const destination = decodeFinishedDestination(search, scope, reason);
-    return {
-        principalId,
-        searchId,
-        sessionId: search.sessionId,
-        sessionIssuedAtEpochMs: search.sessionIssuedAtEpochMs,
-        sessionExpiresAtEpochMs: search.sessionExpiresAtEpochMs,
-        createdAtEpochMs: search.createdAtEpochMs,
-        expiresAtEpochMs: search.expiresAtEpochMs,
-        completedAtEpochMs: search.completedAtEpochMs,
-        reason,
-        ...destination
-    };
-}
-
-function decodeFinishedDestination(
-    value: unknown,
-    scope: StateScope,
-    reason: MatchmakingFinished['reason']
-): Pick<MatchmakingFinished, 'roomRef' | 'leaderPrincipalId'> {
-    const search = requireRecord(value, 'Finished search destination');
-    if (reason !== 'matched') {
-        if (search.roomRef !== null || search.leaderPrincipalId !== null) {
-            throw new TypeError('An unsuccessful search cannot grant a destination');
-        }
-        return { roomRef: null, leaderPrincipalId: null };
-    }
-    const room = requireRecord(search.roomRef, 'Matched destination');
-    requireExactKeys(room, ['applicationId', 'workspaceId', 'groupId'], 'Matched destination');
-    requireString(room.groupId, 'Matched group');
-    requireString(search.leaderPrincipalId, 'Matched leader');
-    if (room.applicationId !== scope.applicationId || room.workspaceId !== scope.workspaceId) {
-        throw new TypeError('Matched destination scope differs');
-    }
-    return { roomRef: { ...scope, groupId: room.groupId }, leaderPrincipalId: search.leaderPrincipalId };
 }
