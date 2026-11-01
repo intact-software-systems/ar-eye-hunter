@@ -80,7 +80,8 @@ export default defineConfig({
                 '**/room-entry-recovery.spec.ts',
                 '**/quick-join.spec.ts',
                 '**/move-together.spec.ts',
-                '**/scheduled-sessions.spec.ts'
+                '**/scheduled-sessions.spec.ts',
+                '**/friends.spec.ts'
             ],
             use: {
                 ...devices['Desktop Chrome'],

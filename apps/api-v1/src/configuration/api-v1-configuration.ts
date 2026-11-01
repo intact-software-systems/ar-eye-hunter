@@ -1,5 +1,6 @@
 import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
+import type { FriendsConfig } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
 import type { RallarServerWsFanout } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
@@ -290,6 +291,10 @@ export interface ApiV1ObservabilityConfiguration {
     readonly startupSummary: boolean;
 }
 
+export interface ApiV1FriendsConfiguration extends FriendsConfig {
+    readonly rateLimit: ApiV1RateLimitConfiguration;
+}
+
 export interface ApiV1Configuration {
     readonly profile: ApiV1ConfigurationProfile;
     readonly http: ApiV1HttpConfiguration;
@@ -298,6 +303,7 @@ export interface ApiV1Configuration {
     readonly authentication: ApiV1AuthenticationConfiguration;
     readonly clientSessions: ApiV1ClientSessionsConfiguration;
     readonly stateApi: ApiV1StateApiConfiguration;
+    readonly friends: ApiV1FriendsConfiguration;
     readonly group: ApiV1GroupConfiguration;
     readonly topology: ApiV1TopologyConfiguration;
     readonly appInbox: ApiV1AppInboxConfiguration;

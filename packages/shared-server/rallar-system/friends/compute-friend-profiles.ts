@@ -1,6 +1,7 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { FriendsRefusal } from '@shared/api/friends/friends-request.ts';
 import type { FriendshipStatus } from '@shared/api/friends/friendship.ts';
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { computeFriendship } from './compute-friendship.ts';
@@ -20,7 +21,13 @@ export function computeFriendProfiles(read: FriendsMutationRead): Either<Friends
         }]);
     }
     const target = read.target?.profile;
-    if (!read.targetAvailable || !target || target.principalId === actor.principalId) {
+    if (!target || target.principalId === actor.principalId) {
+        return Either.ofLeft('person-unavailable');
+    }
+    const withdrawsKnownConsent = request.action !== 'request' && request.action !== 'accept' &&
+        request.action !== 'invite' &&
+        actor.contacts.some((contact) => contact.principalId === target.principalId);
+    if (!read.targetAvailable && !withdrawsKnownConsent) {
         return Either.ofLeft('person-unavailable');
     }
     if (request.action === 'invite') {
@@ -72,7 +79,7 @@ function computeFriendInvitation(
     ) {
         return Either.ofLeft('friend-required');
     }
-    if (!read.destinationAvailable) {
+    if (!canShareFriendsDestination(read)) {
         return Either.ofLeft('destination-unavailable');
     }
     const expiresAtEpochMs = capturedAtEpochMs + read.config.invitationLifetimeMs;
@@ -99,4 +106,19 @@ function computeFriendInvitation(
             a.invitationId < b.invitationId ? -1 : a.invitationId > b.invitationId ? 1 : 0
         )
     }]);
+}
+
+function canShareFriendsDestination(read: FriendsMutationRead): boolean {
+    const request = read.input.request;
+    const snapshot = read.destination?.snapshot;
+    if (request.action !== 'invite' || snapshot === undefined || !isSameGroupRef(snapshot.group, request.roomRef)) {
+        return false;
+    }
+    const schedule = readGroupSessionSchedule(snapshot.group.metadata);
+    return snapshot.group.status === 'active' &&
+        (snapshot.group.expiresAtEpochMs === null || snapshot.group.expiresAtEpochMs > read.nowEpochMs) &&
+        snapshot.members.some((member) =>
+            member.principalId === read.input.principalId && member.status === 'active'
+        ) &&
+        (request.kind === 'room' || (schedule !== null && schedule.cancelledAtEpochMs === null));
 }

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { computeFriendsMutation } from '@shared-server/rallar-system/friends/compute-friends-mutation.ts';
 import type { FriendsMutationRead } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { FriendsRequest } from '@shared/api/friends/friends-request.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 
 function read(request: FriendsRequest): FriendsMutationRead {
+    const snapshot = createGroupSnapshot(1, []);
     return {
         input: {
             principalId: 'alice',
@@ -17,9 +21,32 @@ function read(request: FriendsRequest): FriendsMutationRead {
         },
         actor: { entry: null, profile: { principalId: 'alice', shareOnline: false, contacts: [], invitations: [] } },
         target: { entry: null, profile: { principalId: 'bob', shareOnline: false, contacts: [], invitations: [] } },
-        authorized: true,
+        session: {
+            entry: { key: 'session=alice-session', value: '{}', revision: 0, expireAtTimestamp: 10000, updatedTimestamp: '2026-11-01' },
+            value: {
+                clientId: 'alice',
+                username: 'alice',
+                sessionId: 'alice-session',
+                accessTokenDigest: 'test-digest',
+                issuedAtEpochMs: 1,
+                expiresAtEpochMs: 10000
+            }
+        },
         targetAvailable: true,
-        destinationAvailable: true,
+        destination: {
+            snapshot,
+            authorityGuard: {
+                groupRef: snapshot.group,
+                causalGroupRevision: snapshot.group.snapshotVersion,
+                entry: {
+                    key: groupStateGroupStorageKey(snapshot.group),
+                    value: JSON.stringify(snapshot.group),
+                    revision: 0,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                    updatedTimestamp: '2026-11-01'
+                }
+            }
+        },
         nowEpochMs: 20,
         config: { maxContacts: 10, maxInvitations: 10, invitationLifetimeMs: 1000 }
     };
@@ -43,7 +70,7 @@ describe('private friends mutations', () => {
         const before = read({ action: 'request', username: 'bob' });
         for (
             const changed of [
-                { ...before, authorized: false },
+                { ...before, session: null },
                 { ...before, target: before.actor },
                 { ...before, config: { ...before.config, maxContacts: 0 } }
             ]
@@ -59,7 +86,7 @@ describe('private friends mutations', () => {
             action: 'invite',
             principalId: 'bob',
             kind: 'room',
-            roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId: 'arena' }
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' }
         };
         const before = read(request);
         expect(computeFriendsMutation(before).result).toMatchObject({ status: 'refused', code: 'friend-required' });
@@ -80,10 +107,58 @@ describe('private friends mutations', () => {
             createdAtEpochMs: 10,
             expiresAtEpochMs: 1010
         }]);
-        expect(computeFriendsMutation({ ...friends, destinationAvailable: false }).result)
+        expect(computeFriendsMutation({ ...friends, destination: null }).result)
             .toMatchObject({ status: 'refused', code: 'destination-unavailable' });
         expect(computeFriendsMutation({ ...friends, nowEpochMs: 1010 }).result)
             .toMatchObject({ status: 'refused', code: 'invitation-expired' });
+    });
+
+    it('rejects a cancelled scheduled destination even when its host remains a member', () => {
+        const before = read({
+            action: 'invite',
+            principalId: 'bob',
+            kind: 'scheduled-session',
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' }
+        });
+        const friends: FriendsMutationRead = {
+            ...before,
+            actor: { ...before.actor, profile: { ...before.actor.profile, contacts: [{ principalId: 'bob', status: 'friend' }] } },
+            target: {
+                entry: null,
+                profile: { principalId: 'bob', shareOnline: false, contacts: [{ principalId: 'alice', status: 'friend' }], invitations: [] }
+            }
+        };
+        const destination = friends.destination!;
+        const scheduled: FriendsMutationRead = {
+            ...friends,
+            destination: {
+                ...destination,
+                snapshot: {
+                    ...destination.snapshot,
+                    group: {
+                        ...destination.snapshot.group,
+                        metadata: { rallarSessionSchedule: { revision: 1, startsAtEpochMs: 100, cancelledAtEpochMs: null } }
+                    }
+                }
+            }
+        };
+        expect(computeFriendsMutation(scheduled).result.status).toBe('applied');
+        const cancelled: FriendsMutationRead = {
+            ...scheduled,
+            destination: {
+                ...scheduled.destination!,
+                snapshot: {
+                    ...scheduled.destination!.snapshot,
+                    group: {
+                        ...scheduled.destination!.snapshot.group,
+                        metadata: { rallarSessionSchedule: { revision: 2, startsAtEpochMs: 100, cancelledAtEpochMs: 15 } }
+                    }
+                }
+            }
+        };
+        const refused = computeFriendsMutation(cancelled);
+        expect(refused.result).toMatchObject({ status: 'refused', code: 'destination-unavailable' });
+        expect(refused.writes).toEqual([]);
     });
 
     it('removes pending invitations in both directions when friendship is removed', () => {
@@ -110,6 +185,21 @@ describe('private friends mutations', () => {
             }
         });
         expect(computed.profiles.map((profile) => profile.invitations)).toEqual([[], []]);
+        expect(computed.profiles.map((profile) => profile.contacts)).toEqual([[], []]);
+    });
+
+    it('allows withdrawing existing consent even when the other account is unavailable', () => {
+        const before = read({ action: 'remove', principalId: 'bob' });
+        const computed = computeFriendsMutation({
+            ...before,
+            targetAvailable: false,
+            actor: { ...before.actor, profile: { ...before.actor.profile, contacts: [{ principalId: 'bob', status: 'friend' }] } },
+            target: {
+                entry: null,
+                profile: { principalId: 'bob', shareOnline: false, contacts: [{ principalId: 'alice', status: 'friend' }], invitations: [] }
+            }
+        });
+        expect(computed.result.status).toBe('applied');
         expect(computed.profiles.map((profile) => profile.contacts)).toEqual([[], []]);
     });
 

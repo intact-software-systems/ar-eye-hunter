@@ -1,6 +1,10 @@
 import type { FriendsMutationResult, FriendsRequest } from '@shared/api/friends/friends-request.ts';
+import type { RuntimeStateGuardedBatchUpdate } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { GroupStateAuthoritativeSnapshot } from '../group-state/persistence/group-state-persistence-contracts.ts';
 
+import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
+import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import type { FriendsProfile } from './friends-profile.ts';
 
 export interface FriendsCommand {
@@ -28,9 +32,9 @@ export interface FriendsMutationRead {
     readonly input: FriendsCommand;
     readonly actor: FriendsProfileRead;
     readonly target: FriendsProfileRead | null;
-    readonly authorized: boolean;
+    readonly session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     readonly targetAvailable: boolean;
-    readonly destinationAvailable: boolean;
+    readonly destination: GroupStateAuthoritativeSnapshot | null;
     readonly nowEpochMs: number;
     readonly config: FriendsConfig;
 }
@@ -46,5 +50,6 @@ export interface FriendsMutationComputed {
     readonly read: FriendsMutationRead;
     readonly profiles: readonly FriendsProfile[];
     readonly writes: readonly FriendsProfileWrite[];
+    readonly guards: readonly RuntimeStateGuardedBatchUpdate[];
     readonly result: FriendsMutationResult;
 }

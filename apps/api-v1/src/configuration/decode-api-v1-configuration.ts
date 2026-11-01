@@ -17,6 +17,7 @@ import type {
     ApiV1CrdtConfiguration,
     ApiV1DatabaseConfiguration,
     ApiV1DatabasePoolConfiguration,
+    ApiV1FriendsConfiguration,
     ApiV1GroupConfiguration,
     ApiV1HttpConfiguration,
     ApiV1IceConfiguration,
@@ -71,6 +72,7 @@ export function decodeApiV1Configuration(
         clientSessions: decodeClientSessions(decoder, authentication),
         stateApi: decodeStateApi(decoder),
         group: decodeGroup(decoder),
+        friends: decodeFriends(decoder),
         topology: decodeTopology(decoder),
         appInbox: decodeAppInbox(decoder),
         ice: decodeIce(decoder, secrets),
@@ -727,4 +729,16 @@ function decodeRoomOwnedBindings(decoder: ApiV1ConfigurationValueDecoder): reado
         );
         return [];
     }
+}
+
+function decodeFriends(decoder: ApiV1ConfigurationValueDecoder): ApiV1FriendsConfiguration {
+    return {
+        maxContacts: decoder.integer('friends.maxContacts', 1, 1000),
+        maxInvitations: decoder.integer('friends.maxInvitations', 1, 1000),
+        invitationLifetimeMs: decoder.integer('friends.invitationLifetimeMs', 1, 2_592_000_000),
+        rateLimit: {
+            windowMs: decoder.integer('friends.rateLimit.windowMs', 1, 3_600_000),
+            requests: decoder.integer('friends.rateLimit.requests', 1, 10_000)
+        }
+    };
 }

@@ -1,12 +1,11 @@
 import {
-    requireEpoch,
     requireExactKeys,
     requireOneOf,
     requireRecord,
     requireString
 } from '@shared/api/exact-object-decoding.ts';
 import type { FriendContact, FriendInvitation } from '@shared/api/friends/friendship.ts';
-import { assertValidRallarGroupRef } from '@shared/api/rallar-validation.ts';
+import { decodeFriendInvitation } from '@shared/api/friends/friendship.ts';
 
 export interface FriendsProfile {
     readonly principalId: string;
@@ -44,37 +43,6 @@ function decodeFriendContact(value: unknown): FriendContact {
     requireString(contact.principalId, 'Friend contact principal');
     const status = requireOneOf(contact.status, ['outgoing', 'incoming', 'friend', 'blocked'], 'Friendship status');
     return { principalId: contact.principalId, status };
-}
-
-function decodeFriendInvitation(value: unknown): FriendInvitation {
-    const invitation = requireRecord(value, 'Friend invitation');
-    requireExactKeys(invitation, [
-        'invitationId',
-        'senderPrincipalId',
-        'kind',
-        'roomRef',
-        'createdAtEpochMs',
-        'expiresAtEpochMs'
-    ], 'Friend invitation');
-    requireString(invitation.invitationId, 'Friend invitation identity');
-    requireString(invitation.senderPrincipalId, 'Friend invitation sender');
-    const kind = requireOneOf(invitation.kind, ['room', 'scheduled-session'], 'Friend invitation kind');
-    const ref = requireRecord(invitation.roomRef, 'Friend invitation destination');
-    requireExactKeys(ref, ['applicationId', 'workspaceId', 'groupId'], 'Friend invitation destination');
-    const roomRef = assertValidRallarGroupRef(ref);
-    requireEpoch(invitation.createdAtEpochMs, 'Friend invitation creation');
-    requireEpoch(invitation.expiresAtEpochMs, 'Friend invitation expiry');
-    if (invitation.expiresAtEpochMs <= invitation.createdAtEpochMs) {
-        throw new TypeError('Friend invitation lifetime is invalid');
-    }
-    return {
-        invitationId: invitation.invitationId,
-        senderPrincipalId: invitation.senderPrincipalId,
-        kind,
-        roomRef,
-        createdAtEpochMs: invitation.createdAtEpochMs,
-        expiresAtEpochMs: invitation.expiresAtEpochMs
-    };
 }
 
 function assertUniqueContacts(contacts: readonly FriendContact[], principalId: string): void {

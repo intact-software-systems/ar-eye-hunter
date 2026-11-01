@@ -168,5 +168,14 @@
     "timingLogs": true,
     "heapSampleIntervalMs": 30000,
     "startupSummary": true
+  },
+  "friends": {
+    "maxContacts": 200,
+    "maxInvitations": 100,
+    "invitationLifetimeMs": 604800000,
+    "rateLimit": {
+      "windowMs": 60000,
+      "requests": 60
+    }
   }
 }

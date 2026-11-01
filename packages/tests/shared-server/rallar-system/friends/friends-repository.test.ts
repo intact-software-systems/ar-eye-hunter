@@ -38,6 +38,22 @@ describe('optimistic friends persistence', () => {
         }
     });
 
+    it('reads mirrored consent from one repository batch rather than separate account snapshots', async () => {
+        const storage = await createResourceInboxTestStorage('friends_batch');
+        try {
+            const runtime = new PSqlRuntimeStateRepository(storage.sql);
+            const repository = new FriendsRepository({
+                readRuntimeStateBatch: (selectors) => runtime.readRuntimeStateBatch(selectors)
+            });
+            const pair = await repository.readProfiles(['alice', 'bob']);
+            expect(pair.map((read) => read.profile.principalId)).toEqual(['alice', 'bob']);
+            expect(pair.every((read) => read.entry === null)).toBe(true);
+        }
+        finally {
+            await storage.close();
+        }
+    });
+
     it('rejects corrupt account identity instead of treating it as an empty friend list', async () => {
         const storage = await createResourceInboxTestStorage('friends_corruption');
         try {

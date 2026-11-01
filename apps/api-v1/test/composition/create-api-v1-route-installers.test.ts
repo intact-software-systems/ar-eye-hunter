@@ -61,6 +61,8 @@ Deno.test('route installers mount representative API and websocket behavior in o
     const movePath = '/api/state/apps/app/workspaces/workspace/group-moves';
     assert.equal((await app.request(movePath)).status, 401);
     assert.equal((await app.request(`${movePath}/requests/request-1`, { method: 'POST' })).status, 401);
+    assert.equal((await app.request('/api/friends/apps/app/workspaces/workspace')).status, 401);
+    assert.equal((await app.request('/api/friends/requests/request-1', { method: 'POST' })).status, 401);
     assert.equal((await app.request('/api/docs')).status, 200);
 });
 
@@ -78,6 +80,11 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         runtime: createRuntime(),
         topology: createTopology(),
         admin: createAdmin(),
+        friends: {
+            reader: { read: rejectUnusedOperation },
+            mutation: { submit: rejectUnusedOperation },
+            mutationQuota: { timebasedFilterMs: 60_000, maxNumberToAllow: 60 }
+        },
         crdtLogRepository: new InMemoryRallarCrdtLogRepository({ now: () => 1_000 }),
         crdtMutations: {
             writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used'))

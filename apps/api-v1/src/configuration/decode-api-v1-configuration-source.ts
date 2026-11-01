@@ -69,6 +69,7 @@ const DEFAULT_TOP_LEVEL_KEYS = new Set([
     'authentication',
     'clientSessions',
     'stateApi',
+    'friends',
     'group',
     'topology',
     'appInbox',
@@ -116,6 +117,8 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'registrationUsername',
         'webSocketTicket'
     ]),
+    friends: new Set(['maxContacts', 'maxInvitations', 'invitationLifetimeMs', 'rateLimit']),
+    'friends.rateLimit': new Set(['windowMs', 'requests']),
     clientSessions: new Set(['disconnectedRetentionMs']),
     stateApi: new Set(['strictReadAuthorization', 'rateLimits', 'circuitBreaker']),
     'stateApi.rateLimits': new Set(['windowMs', 'request', 'eventList']),

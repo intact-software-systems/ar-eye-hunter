@@ -1,0 +1,730 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "friends-game-{runId}",
+    "workspaceId": "friends-workspace-{runId}",
+    "clientPassword": {
+      "env": "RALLAR_BB_FRIENDS_PASSWORD",
+      "default": "friends-test-password",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "description": "Private account-level friendships: exact consent, replay, conflicting keys, blocked invitation revocation, scoped destination authority and default-hidden presence. Registers isolated accounts for this run.",
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "steps": [
+    {
+      "name": "registeralice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/friends-register-alice-{runId}",
+        "body": {
+          "username": "friends-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "loginalice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/friends-login-alice-{runId}",
+        "body": {
+          "username": "friends-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivealiceAuth",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/friends-register-bob-{runId}",
+        "body": {
+          "username": "friends-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "loginbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/friends-login-bob-{runId}",
+        "body": {
+          "username": "friends-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivebobAuth",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unauthenticatedRead",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "emptyPrivateList",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "shareOnline": false,
+          "contacts": [],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "requestBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-requestBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "request",
+          "username": "friends-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "requestId": "friends-command-requestBob-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "replayRequestBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-requestBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "request",
+          "username": "friends-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "requestId": "friends-command-requestBob-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "conflictingRequestReuse",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-requestBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "visibility",
+          "shareOnline": true
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "bobIncoming",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "shareOnline": false,
+          "contacts": [
+            {
+              "principalId": "{aliceClientId}",
+              "username": "friends-alice-{runId}",
+              "displayName": "alice",
+              "status": "incoming",
+              "presence": "hidden"
+            }
+          ],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "reciprocalDoesNotAccept",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-reciprocalDoesNotAccept-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "request",
+          "username": "friends-alice-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "requestId": "friends-command-reciprocalDoesNotAccept-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "reciprocalStillNeedsAcceptance",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "shareOnline": false,
+          "contacts": [
+            {
+              "principalId": "{aliceClientId}",
+              "username": "friends-alice-{runId}",
+              "displayName": "alice",
+              "status": "incoming",
+              "presence": "hidden"
+            }
+          ],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "acceptAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-acceptAlice-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "accept",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "requestId": "friends-command-acceptAlice-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "friendsArePrivate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "shareOnline": false,
+          "contacts": [
+            {
+              "principalId": "{bobClientId}",
+              "username": "friends-bob-{runId}",
+              "displayName": "bob",
+              "status": "friend",
+              "presence": "hidden"
+            }
+          ],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "createInvitationRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/friends-create-room-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "friends-room-{runId}",
+          "displayName": "Friends room",
+          "kind": "room",
+          "joinMode": "open",
+          "directoryListing": "unlisted",
+          "retention": {
+            "mode": "temporary",
+            "reconnectGraceMs": 600000
+          }
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "denyNonMemberInvite",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-denyNonMemberInvite-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "invite",
+          "principalId": "{aliceClientId}",
+          "kind": "room",
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "friends-room-{runId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "requestId": "friends-command-denyNonMemberInvite-{runId}",
+          "status": "refused",
+          "code": "destination-unavailable"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "inviteBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-inviteBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "invite",
+          "principalId": "{bobClientId}",
+          "kind": "room",
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "friends-room-{runId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "requestId": "friends-command-inviteBob-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "readInvitation",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "invitations": [
+            {
+              "invitationId": "{aliceClientId}:friends-command-inviteBob-{runId}",
+              "senderPrincipalId": "{aliceClientId}",
+              "kind": "room",
+              "roomRef": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "friends-room-{runId}"
+              }
+            }
+          ],
+          "principalId": "{bobClientId}",
+          "shareOnline": false,
+          "contacts": [
+            {
+              "principalId": "{aliceClientId}",
+              "username": "friends-alice-{runId}",
+              "displayName": "alice",
+              "status": "friend",
+              "presence": "hidden"
+            }
+          ]
+        },
+        "comparison": "compatible"
+      }
+    },
+    {
+      "name": "oneCompleteInvitation",
+      "type": "assert",
+      "actual": "{resultsByName.readInvitation.0.actual.body}",
+      "expect": {
+        "comparators": [
+          {
+            "path": "invitations",
+            "length": 1
+          },
+          {
+            "path": "invitations.0.createdAtEpochMs",
+            "gt": 0
+          },
+          {
+            "path": "invitations.0.expiresAtEpochMs",
+            "gt": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "blockBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-blockBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "block",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "requestId": "friends-command-blockBob-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "blockRevokesInvitations",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "shareOnline": false,
+          "contacts": [],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "replayCannotRestoreConsent",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-requestBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "request",
+          "username": "friends-bob-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "requestId": "friends-command-requestBob-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "replayedConsentStillRevoked",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "shareOnline": false,
+          "contacts": [],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "unblockBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-unblockBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "unblock",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "requestId": "friends-command-unblockBob-{runId}",
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "unblockDoesNotRestoreFriends",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/friends/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "shareOnline": false,
+          "contacts": [],
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "rejectInjectedAuthority",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/friends/requests/friends-command-rejectInjectedAuthority-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "visibility",
+          "shareOnline": true,
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    }
+  ]
+}

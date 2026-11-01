@@ -70,6 +70,12 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
             webSocketTicket: 30
         }
     },
+    friends: {
+        maxContacts: 200,
+        maxInvitations: 100,
+        invitationLifetimeMs: 604_800_000,
+        rateLimit: { windowMs: 60_000, requests: 60 }
+    },
     clientSessions: {
         disconnectedRetentionMs: 604_800_000
     },
