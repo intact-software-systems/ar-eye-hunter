@@ -30,7 +30,7 @@ import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import { GroupMutationRejectedError } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
-import { decodeGroupMoveCommand, type GroupMoveCommand } from './group-move-command.ts';
+import { decodeGroupMoveCommand, decodeGroupMoveIngress, type GroupMoveCommand } from './group-move-command.ts';
 import { decodeGroupMoveDeadline, type GroupMoveDeadline } from './group-move-outbox.ts';
 import type { GroupMoveService } from './group-move-service.ts';
 
@@ -162,7 +162,7 @@ async function handleGroupMove(
     const read = await timeGroupStatePhase(
         timing,
         'read',
-        () => input.service.read(context.enqueue.authority, toAppInboxCommandAttempt(context))
+        () => input.service.read(decodeGroupMoveIngress(context.enqueue.authority), toAppInboxCommandAttempt(context))
     );
     if (!jsonEquals(command, read.ingress.command)) {
         throw new GroupMutationAuthorizationError('Group move ingress and command differ');

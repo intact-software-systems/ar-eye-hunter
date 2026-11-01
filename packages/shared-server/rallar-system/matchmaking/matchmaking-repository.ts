@@ -189,9 +189,15 @@ function computeSearchEffects(
 ): RuntimeStateGuardedBatchEffect[] {
     const { pool } = transition;
     const previousIds = new Set(activeSearches(previous).map((search) => search.searchId));
-    const effects: RuntimeStateGuardedBatchEffect[] = activeSearches(pool)
-        .filter((search) => !previousIds.has(search.searchId))
-        .map((search) => accountLookup(pool.scope, search, NEVER_EXPIRE_AT_TIMESTAMP));
+    const active = activeSearches(pool);
+    const activePrincipals = new Set(active.map((search) => search.principalId));
+    const lookups = new Map<string, RuntimeStateGuardedBatchEffect>();
+    for (const search of active) {
+        if (!previousIds.has(search.searchId)) {
+            lookups.set(search.principalId, accountLookup(pool.scope, search, NEVER_EXPIRE_AT_TIMESTAMP));
+        }
+    }
+    const effects: RuntimeStateGuardedBatchEffect[] = [];
     for (const search of transition.finished) {
         const expireAtTimestamp = search.completedAtEpochMs + retentionMs;
         effects.push({
@@ -202,12 +208,12 @@ function computeSearchEffects(
             value: JSON.stringify({ scope: pool.scope, search }),
             expireAtTimestamp
         });
-        // A new search by the same account may have replaced an expired search in this transition.
-        if (!activeSearches(pool).some((active) => active.principalId === search.principalId)) {
-            effects.push(accountLookup(pool.scope, search, expireAtTimestamp));
+        // Expiry precedes the command, so its new outcome replaces the expired predecessor's pointer.
+        if (!activePrincipals.has(search.principalId)) {
+            lookups.set(search.principalId, accountLookup(pool.scope, search, expireAtTimestamp));
         }
     }
-    return effects;
+    return [...effects, ...lookups.values()];
 }
 
 function activeSearches(pool: MatchmakingPool): readonly MatchmakingSearch[] {
@@ -246,6 +252,8 @@ function decodeFinishedSearch(value: unknown, identity: MatchmakingRepository.Fi
         'searchId',
         'principalId',
         'sessionId',
+        'sessionIssuedAtEpochMs',
+        'sessionExpiresAtEpochMs',
         'createdAtEpochMs',
         'expiresAtEpochMs',
         'completedAtEpochMs',
@@ -257,6 +265,8 @@ function decodeFinishedSearch(value: unknown, identity: MatchmakingRepository.Fi
         throw new TypeError('Finished search account or search identity differs');
     }
     requireString(search.sessionId, 'Finished search session');
+    requireEpoch(search.sessionIssuedAtEpochMs, 'Finished search session issuance');
+    requireEpoch(search.sessionExpiresAtEpochMs, 'Finished search session expiry');
     requireEpoch(search.createdAtEpochMs, 'Finished search creation');
     requireEpoch(search.expiresAtEpochMs, 'Finished search deadline');
     requireEpoch(search.completedAtEpochMs, 'Finished search completion');
@@ -276,6 +286,8 @@ function decodeFinishedSearch(value: unknown, identity: MatchmakingRepository.Fi
         principalId,
         searchId,
         sessionId: search.sessionId,
+        sessionIssuedAtEpochMs: search.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: search.sessionExpiresAtEpochMs,
         createdAtEpochMs: search.createdAtEpochMs,
         expiresAtEpochMs: search.expiresAtEpochMs,
         completedAtEpochMs: search.completedAtEpochMs,

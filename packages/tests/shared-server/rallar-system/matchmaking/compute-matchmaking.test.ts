@@ -5,6 +5,7 @@ import type { MatchmakingPool, MatchmakingTransition } from '../../../../shared-
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const policy = { players: 2, searchTimeoutMs: 120_000, confirmationTimeoutMs: 30_000, maxSearching: 256 };
+const sessionLifetime = { sessionIssuedAtEpochMs: 1, sessionExpiresAtEpochMs: 8_000_000_000_000 };
 
 function emptyPool(): MatchmakingPool {
     return { scope, searching: [], proposals: [] };
@@ -19,6 +20,7 @@ function start(pool: MatchmakingPool, principalId: string, at: number): Matchmak
             action: 'start',
             principalId,
             sessionId: `session-${principalId}`,
+            ...sessionLifetime,
             searchId: `search-${principalId}`,
             capturedAtEpochMs: at
         }
@@ -39,7 +41,7 @@ function command(input: CommandInput): MatchmakingTransition {
         pool,
         policy,
         nowEpochMs,
-        command: { action, principalId, sessionId: `session-${principalId}`, searchId, capturedAtEpochMs: nowEpochMs }
+        command: { action, principalId, sessionId: `session-${principalId}`, ...sessionLifetime, searchId, capturedAtEpochMs: nowEpochMs }
     });
 }
 
@@ -83,7 +85,7 @@ describe('matchmaking cohort intent', () => {
             pool: first.pool,
             policy,
             nowEpochMs: 2000,
-            command: { action: 'start', principalId: 'alice', sessionId: 'another-tab', searchId: 'duplicate', capturedAtEpochMs: 2000 }
+            command: { action: 'start', principalId: 'alice', sessionId: 'another-tab', ...sessionLifetime, searchId: 'duplicate', capturedAtEpochMs: 2000 }
         });
         expect(duplicate.pool).toEqual(first.pool);
         expect(duplicate.searchId).toBe('search-alice');
@@ -134,7 +136,7 @@ describe('matchmaking cohort intent', () => {
                 pool,
                 policy: four,
                 nowEpochMs: 1000 + index,
-                command: { action: 'start', principalId, sessionId: principalId, searchId: principalId, capturedAtEpochMs: 1000 + index }
+                command: { action: 'start', principalId, sessionId: principalId, ...sessionLifetime, searchId: principalId, capturedAtEpochMs: 1000 + index }
             }).pool;
         }
         expect(pool.proposals[0].participants.map((player) => player.principalId)).toEqual(['zoe', 'bob', 'alice', 'dan']);
@@ -183,9 +185,52 @@ describe('matchmaking cohort intent', () => {
             pool: waiting,
             policy,
             nowEpochMs: 121_000,
-            command: { action: 'start', principalId: 'alice', sessionId: 'session-alice', searchId: 'search-alice', capturedAtEpochMs: 1000 }
+            command: {
+                action: 'start',
+                principalId: 'alice',
+                sessionId: 'session-alice',
+                ...sessionLifetime,
+                searchId: 'search-alice',
+                capturedAtEpochMs: 1000
+            }
         });
         expect(late.finished).toHaveLength(1);
         expect(late.pool).toEqual(emptyPool());
+    });
+    it('rebinds confirmation to the new authenticated session after reload', () => {
+        const paired = start(start(emptyPool(), 'alice', 1000).pool, 'bob', 2000).pool;
+        const confirmed = computeMatchmaking({
+            pool: paired,
+            policy,
+            nowEpochMs: 3000,
+            command: {
+                action: 'confirm',
+                principalId: 'alice',
+                searchId: 'search-alice',
+                sessionId: 'recovered-session',
+                ...sessionLifetime,
+                sessionIssuedAtEpochMs: 2500,
+                sessionExpiresAtEpochMs: 60000,
+                capturedAtEpochMs: 3000
+            }
+        });
+        expect(confirmed.pool.proposals[0].participants[0]).toMatchObject({
+            sessionId: 'recovered-session',
+            ...sessionLifetime,
+            sessionIssuedAtEpochMs: 2500,
+            sessionExpiresAtEpochMs: 60000
+        });
+    });
+    it('uses ordinal search identity to break timestamp ties consistently across replicas', () => {
+        let pool = emptyPool();
+        for (const searchId of ['a', 'Z']) {
+            pool = computeMatchmaking({
+                pool,
+                policy,
+                nowEpochMs: 1000,
+                command: { action: 'start', principalId: searchId, sessionId: searchId, ...sessionLifetime, searchId, capturedAtEpochMs: 1000 }
+            }).pool;
+        }
+        expect(pool.proposals[0].leaderPrincipalId).toBe('Z');
     });
 });

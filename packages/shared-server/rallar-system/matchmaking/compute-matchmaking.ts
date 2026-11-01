@@ -3,6 +3,7 @@ import { decodeMatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-pol
 
 import { decodeMatchmakingPool } from './decode-matchmaking-pool.ts';
 import type {
+    MatchmakingActor,
     MatchmakingFinished,
     MatchmakingInput,
     MatchmakingIntent,
@@ -15,7 +16,7 @@ import type {
 interface ConfirmSearchInput {
     readonly previous: MatchmakingTransition;
     readonly current: MatchmakingSearch;
-    readonly sessionId: string;
+    readonly actor: MatchmakingActor;
     readonly now: number;
 }
 
@@ -47,7 +48,7 @@ export function computeMatchmaking(input: MatchmakingInput): MatchmakingTransiti
     }
     return command.action === 'cancel'
         ? cancelSearch(expired, current, input.nowEpochMs)
-        : confirmSearch({ previous: expired, current, sessionId: command.sessionId, now: input.nowEpochMs });
+        : confirmSearch({ previous: expired, current, actor: command, now: input.nowEpochMs });
 }
 
 function expireSearches(pool: MatchmakingPool, now: number): MatchmakingTransition {
@@ -95,6 +96,8 @@ function startSearch(
         searchId: command.searchId,
         principalId: command.principalId,
         sessionId: command.sessionId,
+        sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
         createdAtEpochMs: command.capturedAtEpochMs,
         expiresAtEpochMs: command.capturedAtEpochMs + input.policy.searchTimeoutMs
     };
@@ -106,7 +109,8 @@ function startSearch(
         };
     }
     const queued = [...pool.searching, search].sort((left, right) =>
-        left.createdAtEpochMs - right.createdAtEpochMs || left.searchId.localeCompare(right.searchId)
+        left.createdAtEpochMs - right.createdAtEpochMs ||
+        (left.searchId < right.searchId ? -1 : left.searchId > right.searchId ? 1 : 0)
     );
     const formed = formCohorts(input, queued);
     return {
@@ -154,7 +158,7 @@ function cancelSearch(previous: MatchmakingTransition, current: MatchmakingSearc
 }
 
 function confirmSearch(input: ConfirmSearchInput): MatchmakingTransition {
-    const { previous, current, sessionId, now } = input;
+    const { previous, current, actor, now } = input;
     const proposal = findProposal(previous.pool, current.searchId);
     if (proposal === null) {
         return { ...previous, searchId: current.searchId, rejection: 'search-not-current' };
@@ -163,7 +167,13 @@ function confirmSearch(input: ConfirmSearchInput): MatchmakingTransition {
         ...proposal,
         participants: proposal.participants.map((player) =>
             player.searchId === current.searchId
-                ? { ...player, sessionId, confirmedAtEpochMs: player.confirmedAtEpochMs ?? now }
+                ? {
+                    ...player,
+                    sessionId: actor.sessionId,
+                    sessionIssuedAtEpochMs: actor.sessionIssuedAtEpochMs,
+                    sessionExpiresAtEpochMs: actor.sessionExpiresAtEpochMs,
+                    confirmedAtEpochMs: player.confirmedAtEpochMs ?? now
+                }
                 : player
         )
     };
@@ -212,6 +222,8 @@ function finishSearch(
         searchId: search.searchId,
         principalId: search.principalId,
         sessionId: search.sessionId,
+        sessionIssuedAtEpochMs: search.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: search.sessionExpiresAtEpochMs,
         createdAtEpochMs: search.createdAtEpochMs,
         expiresAtEpochMs: search.expiresAtEpochMs,
         completedAtEpochMs: now,

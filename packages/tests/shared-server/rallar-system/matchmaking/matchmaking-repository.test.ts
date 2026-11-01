@@ -14,6 +14,7 @@ import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-te
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const policy = { players: 2, searchTimeoutMs: 120_000, confirmationTimeoutMs: 30_000, maxSearching: 256 };
+const sessionLifetime = { sessionIssuedAtEpochMs: 1, sessionExpiresAtEpochMs: 8_000_000_000_000 };
 
 function start(read: MatchmakingRepository.Read, principalId: string, now: number) {
     return computeMatchmakingStorage({
@@ -22,7 +23,7 @@ function start(read: MatchmakingRepository.Read, principalId: string, now: numbe
             pool: read.pool,
             policy,
             nowEpochMs: now,
-            command: { action: 'start', principalId, sessionId: principalId, searchId: `search-${principalId}`, capturedAtEpochMs: now }
+            command: { action: 'start', principalId, sessionId: principalId, ...sessionLifetime, searchId: `search-${principalId}`, capturedAtEpochMs: now }
         }),
         finishedRetentionMs: 60000
     });
@@ -68,7 +69,7 @@ describe('durable matchmaking reservations', () => {
                 pool: read.pool,
                 policy,
                 nowEpochMs: now + 2,
-                command: { action: 'cancel', principalId: 'bob', sessionId: 'bob', searchId: 'search-bob', capturedAtEpochMs: now + 2 }
+                command: { action: 'cancel', principalId: 'bob', sessionId: 'bob', ...sessionLifetime, searchId: 'search-bob', capturedAtEpochMs: now + 2 }
             });
             const write = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
             await expect(storage.sql.begin(async (transaction) => {
@@ -127,7 +128,14 @@ describe('durable matchmaking reservations', () => {
                     pool: read.pool,
                     policy,
                     nowEpochMs: now + 2 + index,
-                    command: { action: 'confirm', principalId, sessionId: principalId, searchId: `search-${principalId}`, capturedAtEpochMs: now + 2 + index }
+                    command: {
+                        action: 'confirm',
+                        principalId,
+                        sessionId: principalId,
+                        ...sessionLifetime,
+                        searchId: `search-${principalId}`,
+                        capturedAtEpochMs: now + 2 + index
+                    }
                 });
                 const write = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
                 await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, write));
@@ -160,6 +168,31 @@ describe('durable matchmaking reservations', () => {
             expect((await restarted.readCurrent({ scope, principalId: 'bob', nowEpochMs: now + 1 })).searchId).toBeNull();
             expect((await restarted.readCurrent({ scope: { ...scope, applicationId: 'another-game' }, principalId: 'alice', nowEpochMs: now + 1 })).searchId)
                 .toBeNull();
+        }
+        finally {
+            await storage.close();
+        }
+    });
+    it('keeps one recovery pointer when both an old search and a delayed replacement expire together', async () => {
+        const storage = await createResourceInboxTestStorage('matchmaking_delayed_replacement');
+        try {
+            const runtime = new PSqlRuntimeStateRepository(storage.sql);
+            const repository = new MatchmakingRepository(runtime);
+            const now = Date.now();
+            const first = await repository.read(scope);
+            await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, start(first, 'alice', now)));
+            const read = await repository.read(scope);
+            const transition = computeMatchmaking({
+                pool: read.pool,
+                policy,
+                nowEpochMs: now + 120002,
+                command: { action: 'start', principalId: 'alice', sessionId: 'alice', ...sessionLifetime, searchId: 'replacement', capturedAtEpochMs: now + 1 }
+            });
+            const write = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
+            await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, write));
+            const recovered = await repository.readCurrent({ scope, principalId: 'alice', nowEpochMs: now + 120003 });
+            expect(recovered.searchId).toBe('replacement');
+            expect(recovered.finished?.reason).toBe('search-timeout');
         }
         finally {
             await storage.close();

@@ -1,22 +1,33 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupMutationDescriptor, GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import { type GroupMoveAdmissionParticipant } from '@shared-server/rallar-system/group-state/move/compute-group-move-admission.ts';
-import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import type { GroupCohortAdmissionParticipant } from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
+import { computeGroupMutation, type GroupMutationInput } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-state/mutation/to-group-mutation-attempt-facts.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
-import { createResourceInboxTestStorage } from '../../../queuebox/resource-inbox-test-storage.ts';
+import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../../queuebox/resource-inbox-test-storage.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createTestAuthSession } from '../group-state-test-runtime.ts';
 
+export interface GroupMoveTestDatabase {
+    readonly storage: ResourceInboxTestStorage;
+    readonly repository: GroupStateRepository;
+    readonly runtime: PSqlRuntimeStateRepository;
+    readonly auth: AuthSessionRepository;
+    readonly service: GroupStateService;
+    readonly nowEpochMs: number;
+    prepare(descriptor: GroupMutationDescriptor, principalId: string): Promise<GroupMutationInput>;
+    join(principalId: string): Promise<GroupCohortAdmissionParticipant>;
+}
+
 export const DESTINATION = { applicationId: 'move-test', workspaceId: 'default', groupId: 'destination' };
 
-export async function createGroupMoveTestDatabase() {
+export async function createGroupMoveTestDatabase(): Promise<GroupMoveTestDatabase> {
     const storage = await createResourceInboxTestStorage('group_move_admission', 4);
     const runtime = new PSqlRuntimeStateRepository(storage.sql);
     const events = new PSqlGroupStateEventRepository(storage.sql);
@@ -32,7 +43,7 @@ export async function createGroupMoveTestDatabase() {
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null
     });
-    async function prepare(descriptor: GroupMutationDescriptor, principalId: string) {
+    async function prepare(descriptor: GroupMutationDescriptor, principalId: string): Promise<GroupMutationInput> {
         const session = createTestAuthSession(principalId);
         await auth.putSession(session);
         const ingress = await service.captureMutationIngress(descriptor, session);
@@ -43,7 +54,7 @@ export async function createGroupMoveTestDatabase() {
         return { command: command.command, facts: command.facts, read: await service.read(command) };
     }
     await seedDestination(storage, prepare);
-    async function join(principalId: string): Promise<GroupMoveAdmissionParticipant> {
+    async function join(principalId: string): Promise<GroupCohortAdmissionParticipant> {
         const prepared = await prepare(
             mutationDescriptor({
                 operation: 'joinGroup',
@@ -62,8 +73,8 @@ export async function createGroupMoveTestDatabase() {
 }
 
 async function seedDestination(
-    storage: Awaited<ReturnType<typeof createResourceInboxTestStorage>>,
-    prepare: Awaited<ReturnType<typeof createGroupMoveTestDatabase>>['prepare']
+    storage: ResourceInboxTestStorage,
+    prepare: GroupMoveTestDatabase['prepare']
 ): Promise<void> {
     const create = await prepare(
         mutationDescriptor({

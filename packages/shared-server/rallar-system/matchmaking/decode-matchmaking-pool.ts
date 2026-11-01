@@ -13,7 +13,15 @@ import type {
     MatchmakingSearch
 } from './matchmaking-pool.ts';
 
-const SEARCH_FIELDS = ['searchId', 'principalId', 'sessionId', 'createdAtEpochMs', 'expiresAtEpochMs'];
+const SEARCH_FIELDS = [
+    'searchId',
+    'principalId',
+    'sessionId',
+    'sessionIssuedAtEpochMs',
+    'sessionExpiresAtEpochMs',
+    'createdAtEpochMs',
+    'expiresAtEpochMs'
+];
 
 export function decodeMatchmakingPool(value: unknown, expectedScope: StateScope): MatchmakingPool {
     const pool = requireRecord(value, 'Matchmaking pool');
@@ -54,6 +62,11 @@ function decodeSearch(value: unknown): MatchmakingSearch {
     requireString(search.searchId, 'Search identity');
     requireString(search.principalId, 'Searching account');
     requireString(search.sessionId, 'Searching session');
+    requireEpoch(search.sessionIssuedAtEpochMs, 'Search session issuance');
+    requireEpoch(search.sessionExpiresAtEpochMs, 'Search session expiry');
+    if (search.sessionExpiresAtEpochMs <= search.sessionIssuedAtEpochMs) {
+        throw new TypeError('Search session lifetime is invalid');
+    }
     requireEpoch(search.createdAtEpochMs, 'Search creation time');
     requireEpoch(search.expiresAtEpochMs, 'Search deadline');
     if (search.searchId.length > 96 || search.expiresAtEpochMs <= search.createdAtEpochMs) {
@@ -63,6 +76,8 @@ function decodeSearch(value: unknown): MatchmakingSearch {
         searchId: search.searchId,
         principalId: search.principalId,
         sessionId: search.sessionId,
+        sessionIssuedAtEpochMs: search.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: search.sessionExpiresAtEpochMs,
         createdAtEpochMs: search.createdAtEpochMs,
         expiresAtEpochMs: search.expiresAtEpochMs
     };
