@@ -8,6 +8,7 @@ import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { isDefinitiveApiMutationFailure } from '../api/is-definitive-api-mutation-failure.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../browser-activity.ts';
@@ -279,10 +280,7 @@ export class RallarFriends {
 
     private failPending(error: Error): void {
         const exhausted = error instanceof ApiHttpError && error.mutationFailure?.retry?.kind === 'exhausted';
-        if (
-            exhausted || (error instanceof ApiHttpError && error.status >= 400 && error.status < 500 &&
-                error.status !== 408 && error.status !== 429)
-        ) {
+        if (isDefinitiveApiMutationFailure(error)) {
             this.pending = null;
         }
         this.publish({

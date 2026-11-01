@@ -170,6 +170,30 @@ in `packages/shared-react/scheduled-sessions-panel.tsx`; both games import it di
 start time in its authoritative AppInbox attempt. AR Eye checks fresh server permission and rechecks
 current director authority before accepting the start into the latest simulation snapshot.
 
+## Scoped matchmaking
+
+`MatchmakingService` registers public intent and private expiry operations with the server AppInbox
+before workers start. Authenticated routes bind account and session; winning ingress captures time,
+policy and service identity once. Each delivery reads the scoped pool, account records and current
+session authority, computes persistence-ready data, validates it, then commits behind RuntimeState
+compare-and-set guards. Conflicts return to QueueBox for a complete fresh attempt. Final confirmation
+reuses ordinary group creation and cohort admission; room, memberships, private results, deadline
+outbox records and AppInbox completion commit atomically. Read validation and new-room staging have
+separate owners beside the one shared cohort admission algorithm also used by Move together.
+
+`MatchmakingReader` returns only the requesting account's state and confirmed cohort, without session
+authority or unrelated searchers. The destination appears only after admission commits. Durable
+outbox deadlines submit private expiry operations; overdue reads also project the terminal outcome
+without writing. Old timers cannot cancel a newer search. API configuration supplies
+`matchmaking.defaultPolicy`, complete `matchmaking.policiesByApplication` overrides and a mutation
+rate limit. The authenticated scoped GET and request-keyed POST are described in OpenAPI.
+
+`RallarMatchmaking` owns account-fenced recovery, foreground/online polling and exact ambiguous-write
+retry. It reuses notifications, single-flight reads, timers and subscription cleanup. The shared HTTP
+mutation retry classifier distinguishes definitive outcomes from transport ambiguity. `MatchmakingPanel`
+in `packages/shared-react` supplies both games' visible consent controls. Explicit matched-room entry
+uses `RallarRoomEntry`; game participation and director/Keeper authority stay with their existing owners.
+
 ## Private friends and invitations
 
 `FriendsService` registers `app:rallar-friends:mutate` with `RallarServerAppInbox` during default

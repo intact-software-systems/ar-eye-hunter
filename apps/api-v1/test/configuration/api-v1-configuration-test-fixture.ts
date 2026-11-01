@@ -70,6 +70,11 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
             webSocketTicket: 30
         }
     },
+    matchmaking: {
+        defaultPolicy: { players: 2, searchTimeoutMs: 120000, confirmationTimeoutMs: 30000, maxSearching: 256 },
+        policiesByApplication: {},
+        rateLimit: { windowMs: 60000, requests: 30 }
+    },
     friends: {
         maxContacts: 200,
         maxInvitations: 100,

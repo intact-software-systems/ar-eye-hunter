@@ -81,7 +81,8 @@ export default defineConfig({
                 '**/quick-join.spec.ts',
                 '**/move-together.spec.ts',
                 '**/scheduled-sessions.spec.ts',
-                '**/friends.spec.ts'
+                '**/friends.spec.ts',
+                '**/matchmaking.spec.ts'
             ],
             use: {
                 ...devices['Desktop Chrome'],
