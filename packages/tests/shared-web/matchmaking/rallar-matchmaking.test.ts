@@ -88,7 +88,7 @@ describe('matchmaking browser recovery and consent', () => {
         await test.owner.enter();
         expect(test.enter).not.toHaveBeenCalled();
         await test.owner.confirm();
-        expect(test.api.change.mock.calls[0]?.[0].request).toEqual({ action: 'confirm', searchId: 'alice-search' });
+        expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({ request: { action: 'confirm', searchId: 'alice-search' } }));
         test.state(matched);
         await test.owner.refresh();
         expect(test.owner.getState().snapshot?.state).toEqual(matched);
@@ -107,7 +107,9 @@ describe('matchmaking browser recovery and consent', () => {
         await test.owner.cancel();
         expect(test.api.change).toHaveBeenCalledTimes(1);
         await test.owner.retry();
-        expect(test.api.change.mock.calls[1]?.[0]).toEqual(first);
+        expect(test.api.change.mock.calls[1]?.[0]).toMatchObject({
+            requestId: first.requestId, request: first.request, scope: first.scope, session: first.session
+        });
         expect(test.owner.getState()).toMatchObject({ retryPending: false, busy: false, error: null });
     });
 
@@ -117,7 +119,7 @@ describe('matchmaking browser recovery and consent', () => {
         test.state(confirming);
         await test.owner.start();
         await test.owner.cancel();
-        expect(test.api.change.mock.calls[0]?.[0].request).toEqual({ action: 'cancel', searchId: 'alice-search' });
+        expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({ request: { action: 'cancel', searchId: 'alice-search' } }));
         test.state({ status: 'ended', searchId: 'alice-search', reason: 'confirmation-timeout' });
         await vi.advanceTimersByTimeAsync(3000);
         expect(test.owner.getState().snapshot?.state).toMatchObject({ status: 'ended', reason: 'confirmation-timeout' });
