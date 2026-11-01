@@ -1,0 +1,678 @@
+{
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "matchmaking-{runId}",
+    "workspaceId": "matchmaking-workspace-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Scoped two-player matchmaking: authenticated search, replay/conflict, whole-cohort decline, explicit retry, all-party confirmation, private recovery and atomic room membership.",
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-matchmaking-alice-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-matchmaking-bob-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "requiresAuthentication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "idle",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "state": {
+            "status": "idle"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "rejectInjectedAuthority",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-forged-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start",
+          "searchId": "forged",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "startAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-startAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start",
+          "searchId": "alice-first-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "alice-first-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "replayAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-startAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start",
+          "searchId": "alice-first-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "alice-first-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "conflictingRequest",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-startAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "cancel",
+          "searchId": "alice-first-{runId}"
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "waiting",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "searching",
+            "searchId": "alice-first-{runId}"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "startBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-startBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "start",
+          "searchId": "bob-first-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "bob-first-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "offer",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "confirming",
+            "leaderPrincipalId": "{aliceClientId}"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "declineBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-declineBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "cancel",
+          "searchId": "bob-first-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "bob-first-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "declinedalice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "ended",
+            "reason": "declined"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "declinedbob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "ended",
+            "reason": "declined"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "againalice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-againalice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start",
+          "searchId": "alice-again-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "alice-again-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "againbob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-againbob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "start",
+          "searchId": "bob-again-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "bob-again-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "confirmAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-confirmAlice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "confirm",
+          "searchId": "alice-again-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "alice-again-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "waitingForBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "confirming"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "confirmBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-confirmBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "confirm",
+          "searchId": "bob-again-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "searchId": "bob-again-{runId}",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "matchedAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "matchedRoomId": "body.state.roomRef.groupId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "matched",
+            "searchId": "alice-again-{runId}",
+            "leaderPrincipalId": "{aliceClientId}",
+            "roomRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}"
+            }
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "matchedBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "matched",
+            "searchId": "bob-again-{runId}",
+            "roomRef": {
+              "groupId": "{matchedRoomId}"
+            }
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "room",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{matchedRoomId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2,
+            "maxMembers": 2,
+            "metadata": {
+              "rallarRetention": {
+                "mode": "temporary"
+              }
+            }
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "allMembersCommitted",
+      "type": "assert",
+      "actual": {
+        "body": "{resultsByName.room.0.actual.body}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "body.members",
+            "length": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "otherGame",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/other-{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "idle"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "otherWorkspace",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/other-{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "idle"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    }
+  ]
+}

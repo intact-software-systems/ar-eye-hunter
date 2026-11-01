@@ -1,6 +1,8 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
+import type { MatchmakingRouteDependencies } from '../matchmaking/register-matchmaking-routes.ts';
 import { createApiV1FriendsServices } from './create-api-v1-friends-services.ts';
+import { createApiV1MatchmakingServices } from './create-api-v1-matchmaking-services.ts';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -97,23 +99,6 @@ function constructDefaultRallarServer(
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {
         policies: configuration.crdt.documentTypePolicies
     });
-    const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
-    const authUserRepository = new AuthUserRepository(runtimeStateRepository);
-    const friends = createApiV1FriendsServices({
-        configuration,
-        runtime,
-        runtimeStateRepository,
-        authUserRepository,
-        nowEpochMs,
-        timing: toTimingOnSink(configuration.observability, timing)
-    });
-    const { admin, crdtAdminMutations } = createDefaultApiV1AdminServices({
-        input,
-        runtime,
-        nowEpochMs,
-        timing,
-        crdtLogRepository
-    });
     const wsOptions = createDefaultRallarServerWsOptions({ input, runtime, nowEpochMs, grantedTopics });
     const systemInstallers = createDefaultApiV1SystemInstallers({
         input,
@@ -123,16 +108,7 @@ function constructDefaultRallarServer(
         crdtLogRepository,
         wsOptions
     });
-    const routeInstallers = createDefaultApiV1RouteInstallers({
-        configuration,
-        runtime,
-        admin,
-        crdtLogRepository,
-        crdtAdminMutations,
-        friends,
-        authUserRepository,
-        nowEpochMs
-    });
+    const routeInstallers = createDefaultApiV1RestServices({ input, runtime, nowEpochMs, timing, crdtLogRepository });
     return createRallarServer({
         runtime,
         repositories: defaultRepositoryManager,
@@ -286,7 +262,7 @@ function createConfiguredApiV1Runtime(
     });
 }
 
-interface DefaultApiV1AdminServicesInput {
+interface DefaultApiV1RestInput {
     readonly input: CreateDefaultRallarServerInput;
     readonly runtime: ApiV1Runtime;
     readonly nowEpochMs: () => number;
@@ -300,7 +276,7 @@ interface DefaultApiV1AdminServices {
 }
 
 function createDefaultApiV1AdminServices(
-    { input, runtime, nowEpochMs, timing, crdtLogRepository }: DefaultApiV1AdminServicesInput
+    { input, runtime, nowEpochMs, timing, crdtLogRepository }: DefaultApiV1RestInput
 ): DefaultApiV1AdminServices {
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
@@ -346,6 +322,42 @@ function createDefaultApiV1AdminServices(
     return { admin, crdtAdminMutations };
 }
 
+/** Construct REST mutation owners before AppInbox registrations are sealed at server start. */
+function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
+    const { input, runtime, nowEpochMs, timing, crdtLogRepository } = rest;
+    const configuration = input.configuration;
+    const runtimeStateRepository = new PSqlRuntimeStateRepository(input.databaseLifecycle.database);
+    const authUserRepository = new AuthUserRepository(runtimeStateRepository);
+    const friends = createApiV1FriendsServices({
+        configuration,
+        runtime,
+        runtimeStateRepository,
+        authUserRepository,
+        nowEpochMs,
+        timing: toTimingOnSink(configuration.observability, timing)
+    });
+    const matchmaking = createApiV1MatchmakingServices({
+        configuration,
+        runtime,
+        runtimeStateRepository,
+        nowEpochMs,
+        serviceId: myServerId,
+        timing: toTimingOnSink(configuration.observability, timing)
+    });
+    const { admin, crdtAdminMutations } = createDefaultApiV1AdminServices(rest);
+    return createDefaultApiV1RouteInstallers({
+        configuration,
+        runtime,
+        admin,
+        crdtLogRepository,
+        crdtAdminMutations,
+        friends,
+        matchmaking,
+        authUserRepository,
+        nowEpochMs
+    });
+}
+
 interface DefaultApiV1RouteInstallersInput {
     readonly configuration: ApiV1Configuration;
     readonly runtime: ApiV1Runtime;
@@ -354,6 +366,7 @@ interface DefaultApiV1RouteInstallersInput {
     readonly crdtAdminMutations: CrdtAdminMutations;
     readonly authUserRepository: AuthUserRepository;
     readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
+    readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
     readonly nowEpochMs: () => number;
 }
 
@@ -364,6 +377,7 @@ function createDefaultApiV1RouteInstallers({
     crdtLogRepository,
     crdtAdminMutations,
     friends,
+    matchmaking,
     authUserRepository,
     nowEpochMs
 }: DefaultApiV1RouteInstallersInput) {
@@ -375,6 +389,7 @@ function createDefaultApiV1RouteInstallers({
         crdtLogRepository,
         crdtMutations: crdtAdminMutations,
         friends,
+        matchmaking,
         authUserRepository,
         authentication: {
             adminClientIds: configuration.authentication.adminClientIds,

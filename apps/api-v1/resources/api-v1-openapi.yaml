@@ -23,6 +23,7 @@ servers:
   - url: http://localhost:8090
 
 tags:
+  - name: Matchmaking
   - name: Config
   - name: Auth
   - name: WebRTC
@@ -36,6 +37,73 @@ tags:
   - name: Docs
 
 paths:
+  /api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags: [Matchmaking]
+      summary: Recover this account's current player search
+      description: Returns only the caller's search or cohort in this scope. A room is disclosed only after every confirmed participant is admitted. Reads do not mutate expired searches; durable workers finish them. Responses are private and must not be cached.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Account-specific recovery state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchmakingSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/{requestId}:
+    post:
+      tags: [Matchmaking]
+      summary: Start, confirm or cancel a player search
+      description: Idempotent AppInbox command bound to the authenticated account and scope. One active search per account; a duplicate start recovers that search. All cohort members must confirm before atomic room creation and admission. Cancel or timeout releases the cohort; another search requires an explicit new searchId. The leader starts gameplay separately. Policy and authority are server-owned.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchmakingRequest'
+      responses:
+        '200':
+          description: Durable applied or refused result, including replay. Read the private recovery state for the current cohort or admitted room.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchmakingMutationResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/friends/apps/{applicationId}/workspaces/{workspaceId}:
     get:
       tags: [Friends]
@@ -4223,6 +4291,106 @@ components:
             $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   schemas:
+    MatchmakingSearchId:
+      type: string
+      minLength: 1
+      maxLength: 96
+      pattern: '^(?!\.{1,2}$)[A-Za-z0-9._:-]+$'
+    MatchmakingRequest:
+      type: object
+      additionalProperties: false
+      required: [action, searchId]
+      properties:
+        action: { type: string, enum: [start, confirm, cancel] }
+        searchId:
+          $ref: '#/components/schemas/MatchmakingSearchId'
+    MatchmakingMutationResult:
+      type: object
+      additionalProperties: false
+      required: [scope, principalId, requestId, status, searchId, code]
+      properties:
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        principalId: { type: string, minLength: 1 }
+        requestId: { type: string, minLength: 20, maxLength: 128 }
+        status: { type: string, enum: [applied, refused] }
+        searchId: { type: [string, 'null'] }
+        code:
+          type: [string, 'null']
+          enum: [null, unauthorized, search-not-current, search-capacity, search-ended]
+      oneOf:
+        - properties:
+            status: { const: applied }
+            code: { const: null }
+        - properties:
+            status: { const: refused }
+            code: { type: string }
+    MatchmakingSnapshot:
+      type: object
+      additionalProperties: false
+      required: [scope, principalId, observedAtEpochMs, state]
+      properties:
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        principalId: { type: string, minLength: 1 }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        state:
+          $ref: '#/components/schemas/MatchmakingState'
+    MatchmakingState:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status: { const: idle }
+        - type: object
+          additionalProperties: false
+          required: [status, searchId, expiresAtEpochMs]
+          properties:
+            status: { const: searching }
+            searchId:
+              $ref: '#/components/schemas/MatchmakingSearchId'
+            expiresAtEpochMs: { type: integer, minimum: 0 }
+        - type: object
+          additionalProperties: false
+          required: [status, searchId, expiresAtEpochMs, leaderPrincipalId, players]
+          properties:
+            status: { const: confirming }
+            searchId:
+              $ref: '#/components/schemas/MatchmakingSearchId'
+            expiresAtEpochMs: { type: integer, minimum: 0 }
+            leaderPrincipalId: { type: string, minLength: 1 }
+            players:
+              type: array
+              minItems: 2
+              maxItems: 16
+              items:
+                type: object
+                additionalProperties: false
+                required: [principalId, confirmed]
+                properties:
+                  principalId: { type: string, minLength: 1 }
+                  confirmed: { type: boolean }
+        - type: object
+          additionalProperties: false
+          required: [status, searchId, roomRef, leaderPrincipalId]
+          properties:
+            status: { const: matched }
+            searchId:
+              $ref: '#/components/schemas/MatchmakingSearchId'
+            roomRef:
+              $ref: '#/components/schemas/GroupRef'
+            leaderPrincipalId: { type: string, minLength: 1 }
+        - type: object
+          additionalProperties: false
+          required: [status, searchId, reason]
+          properties:
+            status: { const: ended }
+            searchId:
+              $ref: '#/components/schemas/MatchmakingSearchId'
+            reason:
+              type: string
+              enum: [search-timeout, confirmation-timeout, cancelled, declined, admission-denied]
     FriendsView:
       type: object
       additionalProperties: false

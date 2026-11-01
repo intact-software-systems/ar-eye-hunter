@@ -6,6 +6,7 @@ import {
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { decodeApiV1Matchmaking } from './decode-api-v1-matchmaking.ts';
 
 import type {
     ApiV1AppInboxConfiguration,
@@ -73,6 +74,7 @@ export function decodeApiV1Configuration(
         stateApi: decodeStateApi(decoder),
         group: decodeGroup(decoder),
         friends: decodeFriends(decoder),
+        matchmaking: decodeApiV1Matchmaking(decoder),
         topology: decodeTopology(decoder),
         appInbox: decodeAppInbox(decoder),
         ice: decodeIce(decoder, secrets),

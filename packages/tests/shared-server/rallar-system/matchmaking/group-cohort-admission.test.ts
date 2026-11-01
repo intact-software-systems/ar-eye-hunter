@@ -1,8 +1,6 @@
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import {
-    computeGroupCohortAdmission,
-    computeNewGroupCohortAdmission
-} from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
+import { computeGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
+import { computeNewGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
 import { createGroupMoveTestDatabase, DESTINATION } from '../group-state/move/group-move-test-database.ts';

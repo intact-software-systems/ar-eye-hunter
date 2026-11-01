@@ -13,7 +13,7 @@ import {
     GroupMutationRejectedError,
     type GroupMutationComputedWrite
 } from '../group-state/mutation/group-mutation-contracts.ts';
-import { computeNewGroupCohortAdmission } from '../group-state/mutation/membership/compute-group-cohort-admission.ts';
+import { computeNewGroupCohortAdmission } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { writeGroupMutation } from '../group-state/mutation/write/write-group-mutation.ts';
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
 import { computeMatchmaking } from './compute-matchmaking.ts';

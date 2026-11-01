@@ -8,7 +8,7 @@ import { toAppInboxCommandAttempt } from '../app-inbox/app-inbox-contracts.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { validateComputedProjection } from '../computed-data-validation.ts';
-import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-group-cohort-admission.ts';
+import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import { timeRallarAsync, type RallarTimingSink } from '../observability/timing.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';

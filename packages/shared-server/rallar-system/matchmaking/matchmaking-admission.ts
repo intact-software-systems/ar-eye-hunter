@@ -4,7 +4,7 @@ import {
     toMembershipMutationCommand
 } from '../group-state/group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '../group-state/mutation/group-mutation-contracts.ts';
-import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-group-cohort-admission.ts';
+import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { readGroupMutation } from '../group-state/mutation/read/read-group-mutation.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
