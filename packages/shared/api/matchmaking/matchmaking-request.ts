@@ -1,4 +1,5 @@
 import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
+import { assertValidRallarRouteId } from '../rallar-validation.ts';
 import type { StateScope } from '../state-types.ts';
 
 export interface MatchmakingRequest {
@@ -26,7 +27,7 @@ export function decodeMatchmakingRequest(value: unknown): MatchmakingRequest {
     }
     return {
         action: requireOneOf(request.action, ['start', 'confirm', 'cancel'], 'Matchmaking action'),
-        searchId: request.searchId
+        searchId: assertValidRallarRouteId(request.searchId)
     };
 }
 
@@ -35,7 +36,10 @@ export function decodeMatchmakingScope(value: unknown): StateScope {
     requireExactKeys(scope, ['applicationId', 'workspaceId'], 'Matchmaking scope');
     requireString(scope.applicationId, 'Matchmaking application');
     requireString(scope.workspaceId, 'Matchmaking workspace');
-    return { applicationId: scope.applicationId, workspaceId: scope.workspaceId };
+    return {
+        applicationId: assertValidRallarRouteId(scope.applicationId),
+        workspaceId: assertValidRallarRouteId(scope.workspaceId)
+    };
 }
 
 export function decodeMatchmakingMutationResult(value: unknown): MatchmakingMutationResult {

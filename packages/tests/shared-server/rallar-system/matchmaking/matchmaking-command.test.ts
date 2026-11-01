@@ -25,6 +25,13 @@ describe('matchmaking ingress and replay binding', () => {
         expect(() => decodeMatchmakingRequest({ action: 'expire', searchId: 'search-a' })).toThrow();
     });
 
+    it('rejects identities that cannot become scoped room routes', () => {
+        for (const searchId of ['../escape', 'contains space', '.', 'x'.repeat(97)]) {
+            expect(() => decodeMatchmakingRequest({ action: 'start', searchId })).toThrow();
+        }
+        expect(() => decodeMatchmakingCommand({ ...command, scope: { ...scope, applicationId: '../other' } })).toThrow();
+    });
+
     it('requires a complete winning capture and a coherent authenticated session lifetime', () => {
         expect(decodeMatchmakingCommand(command)).toEqual(command);
         expect(() => decodeMatchmakingCommand({ ...command, capturedAtEpochMs: 2000 })).toThrow();

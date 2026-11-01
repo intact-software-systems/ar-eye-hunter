@@ -86,6 +86,12 @@ function startSearch(
     command: Exclude<MatchmakingIntent, { action: 'expire'; }>
 ): MatchmakingTransition {
     const { pool } = previous;
+    if (
+        pool.searching.some((search) => search.searchId === command.searchId) ||
+        findProposal(pool, command.searchId) !== null
+    ) {
+        return { ...previous, searchId: command.searchId, rejection: 'search-not-current' };
+    }
     const count = pool.searching.length +
         pool.proposals.reduce((total, proposal) => total + proposal.participants.length, 0);
     if (count >= input.policy.maxSearching) {

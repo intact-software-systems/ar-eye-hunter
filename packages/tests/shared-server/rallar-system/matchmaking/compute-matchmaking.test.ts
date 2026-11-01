@@ -92,6 +92,19 @@ describe('matchmaking cohort intent', () => {
         expect(duplicate.admission).toBeNull();
     });
 
+    it('refuses another account reusing an active search identity without changing the first search', () => {
+        const first = start(emptyPool(), 'alice', 1000);
+        const duplicate = computeMatchmaking({
+            pool: first.pool,
+            policy,
+            nowEpochMs: 2000,
+            command: { action: 'start', principalId: 'bob', sessionId: 'session-bob', ...sessionLifetime, searchId: 'search-alice', capturedAtEpochMs: 2000 }
+        });
+        expect(duplicate.rejection).toBe('search-not-current');
+        expect(duplicate.pool).toEqual(first.pool);
+        expect(duplicate.admission).toBeNull();
+    });
+
     it('releases every reservation on decline without silently requeuing the partner', () => {
         const paired = start(start(emptyPool(), 'alice', 1000).pool, 'bob', 2000);
         const declined = command({ pool: paired.pool, action: 'cancel', principalId: 'bob', nowEpochMs: 3000 });

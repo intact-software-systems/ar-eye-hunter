@@ -1,5 +1,6 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
+import type { MatchmakingEndedReason } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 export interface MatchmakingActor {
@@ -35,13 +36,7 @@ export interface MatchmakingPool {
 
 export interface MatchmakingFinished extends MatchmakingSearch {
     readonly completedAtEpochMs: number;
-    readonly reason:
-        | 'search-timeout'
-        | 'confirmation-timeout'
-        | 'cancelled'
-        | 'declined'
-        | 'matched'
-        | 'admission-denied';
+    readonly reason: MatchmakingEndedReason | 'matched';
     readonly roomRef: GroupRef | null;
     readonly leaderPrincipalId: string | null;
 }
