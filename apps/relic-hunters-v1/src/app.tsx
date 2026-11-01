@@ -1,6 +1,6 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
 import { RelicFloatingHud, RelicOverlays } from './game/hud/relic-overlays.tsx';
@@ -57,8 +57,15 @@ interface RelicGameSceneProps {
 }
 
 function RelicGameScene({ game, turn, playback }: RelicGameSceneProps) {
+    const [entry, setEntry] = useState(() => game.roomEntry.getState());
+    useEffect(() => game.roomEntry.onChange(setEntry), [game.roomEntry]);
     if (!game.snapshot) {
-        return <OpeningRelicScene />;
+        // Entry can finish before the runtime adopts its room and hydrates the expedition.
+        const preparingExpedition = game.connectionState === 'connecting' ||
+            game.connectionState === 'joining-room' ||
+            (game.connectionState === 'connected' && (game.roomId !== undefined || entry.status === 'entered')) ||
+            (game.session !== undefined && (entry.status === 'pending' || entry.status === 'joining'));
+        return <RelicOpeningPresentation preparingExpedition={preparingExpedition} />;
     }
     const pickup = async (relicId: string) => {
         playUiSound('select');
@@ -81,6 +88,21 @@ function RelicGameScene({ game, turn, playback }: RelicGameSceneProps) {
             onReviewPlaybackComplete={turn.actions.continueReview}
         />
     );
+}
+
+interface RelicOpeningPresentationProps {
+    readonly preparingExpedition: boolean;
+}
+
+function RelicOpeningPresentation({ preparingExpedition }: RelicOpeningPresentationProps) {
+    // Keep an existing opening scene through sign-in; only defer a new graphics context.
+    const [started, setStarted] = useState(!preparingExpedition);
+    useEffect(() => {
+        if (!preparingExpedition) {
+            setStarted(true);
+        }
+    }, [preparingExpedition]);
+    return started ? <OpeningRelicScene /> : null;
 }
 
 function useRelicRuntimeDiagnostics(game: RelicHuntersRuntime.Connection): void {
