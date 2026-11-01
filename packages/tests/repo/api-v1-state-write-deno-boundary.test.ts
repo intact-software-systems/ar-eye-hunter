@@ -3,15 +3,18 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 
+import { requireRecord } from '../../shared/api/exact-object-decoding.ts';
 import { runOwnedTestProcess } from '../hetzner/owned-test-process.ts';
 
 it('checks the hosted measurement with its declared environment and a frozen Deno lock', async (context) => {
     const root = path.resolve(__dirname, '../../..');
-    const workflow = requireObject(load(readFileSync(
+    const workflow = requireRecord(load(readFileSync(
         path.join(root, '.github/workflows/api-v1-state-write-pr-measurement.yml'),
         'utf8'
-    )));
-    const environment = requireObject(requireObject(requireObject(workflow.jobs).compare).env);
+    )), 'measurement workflow');
+    const jobs = requireRecord(workflow.jobs, 'workflow jobs');
+    const job = requireRecord(jobs.compare, 'comparison job');
+    const environment = requireRecord(job.env, 'measurement environment');
     const lockPath = path.join(root, 'apps/api-v1/deno.lock');
     const lockBefore = readFileSync(lockPath, 'utf8');
     const isolation = environment.DENO_NO_PACKAGE_JSON;
@@ -32,10 +35,3 @@ it('checks the hosted measurement with its declared environment and a frozen Den
     })).resolves.toBeDefined();
     expect(readFileSync(lockPath, 'utf8')).toBe(lockBefore);
 }, 35_000);
-
-function requireObject(value: unknown): Record<string, unknown> {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError('Expected a workflow object');
-    }
-    return value as Record<string, unknown>;
-}
