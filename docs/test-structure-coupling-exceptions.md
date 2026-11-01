@@ -5113,6 +5113,66 @@ moved or changed test.
         "requiredConstraint": "Clicking Reserve a seat must emit the reserve action and must not invoke the separate lobby-entry action.",
         "failureRationale": "A disabled Enter lobby button alone does not rule out the reserve handler accidentally invoking entry."
       }
+    },
+    {
+      "id": "friends-ambiguous-request-identity",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "A manual retry resubmits the unresolved HTTP mutation with its original request identity and payload.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#loads the private view and preserves exact command identity after an ambiguous failure",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarFriends.Api.change",
+        "observableEffect": "A manual retry resubmits the unresolved HTTP mutation with its original request identity and payload.",
+        "requiredConstraint": "The initial delivery and explicit retry carry identical actor, request identity and command data.",
+        "failureRationale": "A locally cleared error does not prove the server received the same idempotency identity; a new identity could execute the mutation twice."
+      }
+    },
+    {
+      "id": "friends-terminal-request-recovery",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "A user can submit a new social action after the previous durable command exhausts its retry budget.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#releases a terminal exhausted request so a new action can proceed",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarFriends.Api.change",
+        "observableEffect": "A user can submit a new social action after the previous durable command exhausts its retry budget.",
+        "requiredConstraint": "The next action reaches the mutation port with its own payload and a different request identity.",
+        "failureRationale": "Reusing a terminal identity only replays exhaustion; local enabled controls alone cannot prove a new command is admitted."
+      }
+    },
+    {
+      "id": "friends-stale-invitation-no-entry",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "Invitation clicks may request room admission only after current consent and game scope are verified.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomEntry.enter",
+        "observableEffect": "Invitation clicks may request room admission only after current consent and game scope are verified.",
+        "requiredConstraint": "A removed invitation or an invitation scoped to a different game emits no room entry intent.",
+        "failureRationale": "An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly."
+      }
+    },
+    {
+      "id": "friends-background-read-suppression",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "Inactive browsers stop private presence polling and resume with one coalesced current read on activation.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarFriends.Api.read",
+        "observableEffect": "Inactive browsers stop private presence polling and resume with one coalesced current read on activation.",
+        "requiredConstraint": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read.",
+        "failureRationale": "Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract."
+      }
     }
   ],
   "entries": [
@@ -10802,6 +10862,72 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The actual reserve button click must not cause the separate lobby-entry effect.",
       "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview"
+    },
+    {
+      "id": "test-structure-coupling-5c2d0e5ac23944ed",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-ambiguous-request-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial delivery and explicit retry carry identical actor, request identity and command data. A locally cleared error does not prove the server received the same idempotency identity; a new identity could execute the mutation twice.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#loads the private view and preserves exact command identity after an ambiguous failure"
+    },
+    {
+      "id": "test-structure-coupling-d6c2c71cc350a46b",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-terminal-request-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The next action reaches the mutation port with its own payload and a different request identity. Reusing a terminal identity only replays exhaustion; local enabled controls alone cannot prove a new command is admitted.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#releases a terminal exhausted request so a new action can proceed"
+    },
+    {
+      "id": "test-structure-coupling-d7c78613092fde22",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-stale-invitation-no-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+    },
+    {
+      "id": "test-structure-coupling-3cdfc58ebbfc0866",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-stale-invitation-no-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+    },
+    {
+      "id": "test-structure-coupling-7fa28eddd4ee743a",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-9adfe00fdd70b6d5",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
     }
   ]
 }
