@@ -1,6 +1,5 @@
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import type { Engine } from '@babylonjs/core/Engines/engine.js';
-import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
@@ -73,7 +72,6 @@ export class ArenaSceneRuntime {
     readonly engine: Engine;
     readonly scene: Scene;
     readonly camera: FreeCamera;
-    readonly glow: GlowLayer;
     readonly layoutPropRoot: TransformNode;
     readonly simulation: ArenaSceneState;
     readonly avatars = new Map<string, RemoteAvatar>();
@@ -127,7 +125,6 @@ export class ArenaSceneRuntime {
         this.engine = input.engine;
         this.scene = graphics.scene;
         this.camera = graphics.camera;
-        this.glow = graphics.glow;
         this.lastFrameEpochMs = input.clock.nowEpochMs();
         const snapshot = input.props.current.arenaSnapshot;
         const initial = snapshot
@@ -264,7 +261,6 @@ export class ArenaSceneRuntime {
 interface ArenaGraphics {
     readonly scene: Scene;
     readonly camera: FreeCamera;
-    readonly glow: GlowLayer;
 }
 
 function createArenaGraphics(engine: Engine): ArenaGraphics {
@@ -276,9 +272,7 @@ function createArenaGraphics(engine: Engine): ArenaGraphics {
     camera.minZ = 0.05;
     camera.maxZ = 190;
     camera.fov = 0.94;
-    const glow = new GlowLayer('arena-glow', scene);
-    glow.intensity = 0.92;
-    return { scene, camera, glow };
+    return { scene, camera };
 }
 
 function initialMusicState(

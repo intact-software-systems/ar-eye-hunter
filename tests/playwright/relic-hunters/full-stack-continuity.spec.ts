@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { registerRelicHunter, waitForExpeditionScene } from './relic-browser-room-workflow.ts';
 
@@ -131,13 +132,19 @@ roomBrowserTest(
 roomBrowserTest(
     'withdraws across shared-session tabs and preserves withdrawal on room re-entry',
     async ({ page: host }) => {
+        await host.addInitScript(observeBrowserWebGlContexts);
         await registerRelicHunter(host, 'shared-session');
+        // interaction: signing in keeps an already visible opening renderer alive.
+        await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
         await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         await waitForExpeditionScene(host);
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();
         const other = await host.context().newPage();
+        await other.addInitScript(observeBrowserWebGlContexts);
         await other.goto(link);
         await waitForExpeditionScene(other);
+        // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
+        await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
         const committed = Promise.withResolvers<void>();
         const response = Promise.withResolvers<void>();
         await host.route('**/commands/requests/*', async (route) => {
@@ -167,6 +174,7 @@ roomBrowserTest(
             // Re-enter from the room link to verify persisted withdrawal independently of either tab's cache.
             await other.goto(link);
             await waitForExpeditionScene(other);
+            await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
             await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
             await expect(other.getByRole('button', { name: /Join as/ })).toBeEnabled();
