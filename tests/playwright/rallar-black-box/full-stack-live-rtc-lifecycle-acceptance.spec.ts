@@ -28,6 +28,7 @@ import { jsonRecord } from './live-rtc-evidence-json.ts';
 import {
     createLiveRtcFormationOperations,
     readRestoredSession,
+    type FormationAgentInput,
     type FormationDiagnosticEvent,
     type FormationHealth
 } from './live-rtc-formation-operations.ts';
@@ -97,13 +98,14 @@ test.describe('live RTC lifecycle acceptance', () => {
         const scenario = await openScenario(browser, request, 'progress');
         try {
             await activateGroup(scenario);
-            const reopenedAt = Date.now();
             const reopened = await formationOperations.reopen({
                 ...agentInput(scenario, scenario.agents[2]),
                 browser,
                 config: liveRtcAgentConfig(),
                 transport: 'realtime'
             });
+            // The agent ID survives reopening; the old page can emit while its context closes.
+            const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
             scenario.agents = [scenario.agents[0], scenario.agents[1], reopened];
             await connectPresence(scenario, reopened);
             await settleSurvivors(scenario, reopened);
@@ -128,13 +130,14 @@ test.describe('live RTC lifecycle acceptance', () => {
         const scenario = await openScenario(browser, request, 'barrier');
         try {
             await activateGroup(scenario);
-            const reopenedAt = Date.now();
             const reopened = await formationOperations.reopen({
                 ...agentInput(scenario, scenario.agents[1]),
                 browser,
                 config: liveRtcAgentConfig(),
                 transport: 'realtime'
             });
+            // The agent ID survives reopening; the old page can emit while its context closes.
+            const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
             scenario.agents = [scenario.agents[0], reopened, scenario.agents[2]];
             await connectPresence(scenario, reopened);
             await settleSurvivors(scenario, reopened);
@@ -434,7 +437,7 @@ function expectDormantAndEmpty(health: FormationHealth): void {
 function agentInput(
     scenario: AcceptanceScenario,
     agent: LiveRtcControlClient.Agent
-) {
+): FormationAgentInput {
     return {
         control: scenario.control,
         runId: scenario.runId,

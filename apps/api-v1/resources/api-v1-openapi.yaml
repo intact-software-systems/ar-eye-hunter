@@ -36,6 +36,69 @@ tags:
   - name: Docs
 
 paths:
+  /api/friends/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags: [Friends]
+      summary: Read this account's private friends and invitations
+      description: Account-level mutual consent with online presence projected only for the requested game and workspace. Sharing is off by default. No raw session or current-room data is returned; explicit invitations alone disclose destinations. Responses must not be cached.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Private consent, presence and unexpired invitations.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FriendsView'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/friends/requests/{requestId}:
+    post:
+      tags: [Friends]
+      summary: Change friendship consent, visibility or invitations
+      description: Exact idempotent command through AppInbox with fresh session authorization and optimistic account guards. Reciprocal requests do not imply acceptance. Block or remove revokes pending social invitations while preserving independent room memberships. Invitations confer no admission grant.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FriendsRequest'
+      responses:
+        '200':
+          description: Durable applied or refused result, including replay.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FriendsMutationResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/config:
     get:
       parameters:
@@ -4160,6 +4223,104 @@ components:
             $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   schemas:
+    FriendsView:
+      type: object
+      additionalProperties: false
+      required: [principalId, shareOnline, contacts, invitations]
+      properties:
+        principalId: { type: string, minLength: 1 }
+        shareOnline: { type: boolean }
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FriendPerson'
+        invitations:
+          type: array
+          items:
+            $ref: '#/components/schemas/FriendInvitation'
+    FriendPerson:
+      type: object
+      additionalProperties: false
+      required: [principalId, username, displayName, status, presence]
+      properties:
+        principalId: { type: string, minLength: 1 }
+        username: { type: string, minLength: 1 }
+        displayName: { type: string, minLength: 1 }
+        status: { type: string, enum: [outgoing, incoming, friend, blocked] }
+        presence: { type: string, enum: [online, away, hidden] }
+    FriendInvitation:
+      type: object
+      additionalProperties: false
+      required: [invitationId, senderPrincipalId, kind, roomRef, createdAtEpochMs, expiresAtEpochMs]
+      properties:
+        invitationId: { type: string, minLength: 1 }
+        senderPrincipalId: { type: string, minLength: 1 }
+        kind: { type: string, enum: [room, scheduled-session] }
+        roomRef:
+          $ref: '#/components/schemas/GroupRef'
+        createdAtEpochMs: { type: integer, minimum: 0 }
+        expiresAtEpochMs: { type: integer, minimum: 0 }
+    FriendsRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, username]
+          properties:
+            action: { type: string, enum: [request] }
+            username: { type: string, minLength: 1 }
+        - type: object
+          additionalProperties: false
+          required: [action, principalId]
+          properties:
+            action: { type: string, enum: [accept, decline, cancel, remove, block, unblock] }
+            principalId: { type: string, minLength: 1 }
+        - type: object
+          additionalProperties: false
+          required: [action, shareOnline]
+          properties:
+            action: { type: string, enum: [visibility] }
+            shareOnline: { type: boolean }
+        - type: object
+          additionalProperties: false
+          required: [action, principalId, kind, roomRef]
+          properties:
+            action: { type: string, enum: [invite] }
+            principalId: { type: string, minLength: 1 }
+            kind: { type: string, enum: [room, scheduled-session] }
+            roomRef:
+              $ref: '#/components/schemas/GroupRef'
+        - type: object
+          additionalProperties: false
+          required: [action, invitationId]
+          properties:
+            action: { type: string, enum: [dismiss] }
+            invitationId: { type: string, minLength: 1 }
+    FriendsMutationResult:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [principalId, requestId, status]
+          properties:
+            principalId: { type: string, minLength: 1 }
+            requestId: { type: string, minLength: 20, maxLength: 128 }
+            status: { type: string, enum: [applied] }
+        - type: object
+          additionalProperties: false
+          required: [principalId, requestId, status, code]
+          properties:
+            principalId: { type: string, minLength: 1 }
+            requestId: { type: string, minLength: 20, maxLength: 128 }
+            status: { type: string, enum: [refused] }
+            code:
+              type: string
+              enum:
+                - request-unavailable
+                - person-unavailable
+                - unauthorized
+                - capacity
+                - friend-required
+                - destination-unavailable
+                - invitation-expired
     ApiMutationFailure:
       type: object
       required: [type, version, code, status, message, issues, denial, retry]

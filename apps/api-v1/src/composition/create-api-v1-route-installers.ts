@@ -1,6 +1,7 @@
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type { AdminSupportUseCases } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { registerFriendsRoutes, type FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -86,6 +87,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly admin: ApiV1RouteInstallerAdminServices;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtMutations: CrdtAdminMutations;
+    readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: configRoutes.ConfigRouteDependencies['authentication'];
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
@@ -151,6 +153,7 @@ export function constructApiV1RouteInstallers<
     const construction = createApiV1RouteConstruction(input, operations);
     function installApiV1RestRoutes(app: Hono): void {
         registerApiV1StateRoutes(app, construction);
+        registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
         registerApiV1AdministrationRoutes(app, construction);
     }
     return {

@@ -170,6 +170,30 @@ in `packages/shared-react/scheduled-sessions-panel.tsx`; both games import it di
 start time in its authoritative AppInbox attempt. AR Eye checks fresh server permission and rechecks
 current director authority before accepting the start into the latest simulation snapshot.
 
+## Private friends and invitations
+
+`FriendsService` registers `app:rallar-friends:mutate` with `RallarServerAppInbox` during default
+API composition, before workers start. Authenticated routes capture the actor and session lifetime;
+clients supply only intent and request identity. Each delivery reads the paired profiles in one
+RuntimeState batch, the current auth session and any destination authority snapshot. Pure computation
+produces serialized profile writes, auth and destination guards, and the exact result before the
+AppInbox transaction. Validation recomputes that candidate. Conditional writes fence both accounts
+and authority; conflict rolls back and returns to QueueBox for a fresh complete attempt. The AppInbox
+owner commits the durable replay result atomically. This capability has no outbox or after-commit
+effect. The invitation creation time is captured once by the winner materializer and reused.
+
+`FriendsRepository` owns account-scoped private records and rejects malformed or wrong-slot data.
+`FriendsReader` projects consent and opt-in presence without authentication material or room location.
+`GET /api/friends/apps/:applicationId/workspaces/:workspaceId` is authenticated self-only and no-store;
+`POST /api/friends/requests/:requestId` is rate limited and idempotent. Configuration bounds contacts,
+invitations, invitation lifetime and mutation rate. No schema migration or predecessor reader exists.
+
+`RallarFriends` owns account-fenced refresh, cancellation and exact request retry, using shared
+notifications, single-flight reads, subscription cleanup and timers. It refreshes only in an active
+browser and delegates explicit invitation opening to `RallarRoomEntry`. `FriendsPanel` in
+`packages/shared-react` supplies both games' controls. Scheduled previews, reservations, room admission
+and gameplay authority remain with their existing owners; social invitations never bypass them.
+
 ## Temporary retention is a separate group-state capability
 
 Creation accepts `retention: { mode: 'temporary', reconnectGraceMs? }` or persistent intent. Absence

@@ -70,26 +70,7 @@ export function toApiV1BlackBoxEnvironment(
     options: ApiV1BlackBoxOptions,
     baseEnv: Record<string, string | undefined>
 ): Record<string, string> {
-    const env: Record<string, string> = Object.fromEntries(
-        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-    );
-    env.PORT = String(options.port);
-    const defaultApiBaseUrl = `http://127.0.0.1:${options.port}`;
-    const defaultWsBaseUrl = `ws://127.0.0.1:${options.port}`;
-    env.RALLAR_API_BASE_URL = options.recipesOnly
-        ? (env.RALLAR_API_BASE_URL ?? defaultApiBaseUrl)
-        : defaultApiBaseUrl;
-    env.RALLAR_WS_BASE_URL = options.recipesOnly
-        ? (env.RALLAR_WS_BASE_URL ?? defaultWsBaseUrl)
-        : defaultWsBaseUrl;
-    if (options.secondaryPort !== undefined) {
-        env.RALLAR_API_BASE_URL_SECONDARY = `http://127.0.0.1:${options.secondaryPort}`;
-        env.RALLAR_WS_BASE_URL_SECONDARY = `ws://127.0.0.1:${options.secondaryPort}`;
-    }
-    if (options.tertiaryPort !== undefined) {
-        env.RALLAR_API_BASE_URL_TERTIARY = `http://127.0.0.1:${options.tertiaryPort}`;
-        env.RALLAR_WS_BASE_URL_TERTIARY = `ws://127.0.0.1:${options.tertiaryPort}`;
-    }
+    const env = toApiV1RecipeEndpointEnvironment(options, baseEnv);
     env.RALLAR_DIRECTORY_BROWSER_ORIGIN = env.RALLAR_DIRECTORY_BROWSER_ORIGIN ?? 'https://browser.example.test';
     env.CORS_ORIGINS = env.CORS_ORIGINS ?? env.RALLAR_DIRECTORY_BROWSER_ORIGIN;
     env.RALLAR_BB_RUN_ID = options.runId;
@@ -127,6 +108,31 @@ export function toApiV1BlackBoxEnvironment(
         delete env.DATABASE_URL;
     }
 
+    return env;
+}
+
+function toApiV1RecipeEndpointEnvironment(
+    options: ApiV1BlackBoxOptions,
+    baseEnv: Readonly<Record<string, string | undefined>>
+): Record<string, string> {
+    const env: Record<string, string> = Object.fromEntries(
+        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    );
+    env.PORT = String(options.port);
+    for (const [prefix, scheme] of [['RALLAR_API_BASE_URL', 'http'], ['RALLAR_WS_BASE_URL', 'ws']]) {
+        const primary = options.recipesOnly
+            ? (env[prefix] ?? `${scheme}://127.0.0.1:${options.port}`)
+            : `${scheme}://127.0.0.1:${options.port}`;
+        env[prefix] = primary;
+        for (const [suffix, port] of [
+            ['_SECONDARY', options.secondaryPort], ['_TERTIARY', options.tertiaryPort]
+        ] as const) {
+            const name = `${prefix}${suffix}`;
+            env[name] = options.recipesOnly
+                ? (env[name] ?? primary)
+                : `${scheme}://127.0.0.1:${port ?? options.port}`;
+        }
+    }
     return env;
 }
 
@@ -339,15 +345,15 @@ async function runRecipeMatrix(
     }
 }
 
-async function runManagedProofOrRecipeMatrix(
-    input: Readonly<{
-        options: ApiV1BlackBoxOptions;
-        env: Record<string, string>;
-        artifactDir: string;
-        serverPlans: readonly ManagedApiServerPlan[];
-        controls: ManagedApiServerLifecycleControls;
-    }>
-): Promise<void> {
+interface ManagedApiProofOrRecipeInput {
+    readonly options: ApiV1BlackBoxOptions;
+    readonly env: Record<string, string>;
+    readonly artifactDir: string;
+    readonly serverPlans: readonly ManagedApiServerPlan[];
+    readonly controls: ManagedApiServerLifecycleControls;
+}
+
+async function runManagedProofOrRecipeMatrix(input: ManagedApiProofOrRecipeInput): Promise<void> {
     if (
         input.options.profile !== 'api-v1-black-box-topology-replay' &&
         input.options.clusterProfile !== 'api-v1-black-box-topology-replay'

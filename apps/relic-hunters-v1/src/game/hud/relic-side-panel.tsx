@@ -1,4 +1,6 @@
+import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
+import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
 import { useEffect, useState } from 'react';
@@ -41,12 +43,6 @@ interface RelicSidePanelProps {
 }
 
 export function RelicSidePanel({ game, turn, preferences, playback }: RelicSidePanelProps) {
-    const [scheduledSessions] = useState(() =>
-        RallarScheduledSessions.createBrowser(rallar, game.roomEntry, {
-            scope: RELIC_ROOM_SCOPE,
-            refreshIntervalMs: 5_000
-        })
-    );
     const [collapsed, setCollapsed] = useState(false);
     const [dismissedPartyChange, setDismissedPartyChange] = useState<string | undefined>();
     useEffect(() => setDismissedPartyChange(undefined), [game.snapshot?.gameId]);
@@ -66,17 +62,7 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
                 {collapsed ? '▶ Panel' : '◀ Collapse'}
             </button>
             {game.session && <RelicSectionMenu game={game} />}
-            <RelicRoomEntry game={game} />
-            {game.session && (
-                <ScheduledSessionsPanel
-                    owner={scheduledSessions}
-                    connected={game.diagnostics.middlewareConnected}
-                    defaultName="Relic Hunters Expedition"
-                    maxPlayers={4}
-                />
-            )}
-            {game.session && <RelicRoomMove game={game} />}
-            <RelicLobby game={game} preferences={preferences} />
+            <RelicRoomPanels game={game} preferences={preferences} />
             {game.session && game.roomId && (
                 <>
                     <RelicExpeditionPanel game={game} turn={turn} preferences={preferences} reset={reset} />
@@ -92,6 +78,42 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
             {import.meta.env.DEV && game.session && <RallarDiagnosticsPanel diagnostics={game.diagnostics} />}
             {game.error && <div className="panel error-panel">{game.error}</div>}
         </section>
+    );
+}
+
+function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game' | 'preferences'>) {
+    const [scheduledSessions] = useState(() =>
+        RallarScheduledSessions.createBrowser(rallar, game.roomEntry, {
+            scope: RELIC_ROOM_SCOPE,
+            refreshIntervalMs: 5_000
+        })
+    );
+    const [friends] = useState(() =>
+        RallarFriends.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 30_000 })
+    );
+    return (
+        <>
+            <RelicRoomEntry game={game} />
+            {game.session && (
+                <ScheduledSessionsPanel
+                    owner={scheduledSessions}
+                    connected={game.diagnostics.middlewareConnected}
+                    defaultName="Relic Hunters Expedition"
+                    maxPlayers={4}
+                />
+            )}
+            {game.session && (
+                <FriendsPanel
+                    owner={friends}
+                    sessions={scheduledSessions}
+                    enabled={true}
+                    scope={RELIC_ROOM_SCOPE}
+                    roomRef={game.roomId ? { ...RELIC_ROOM_SCOPE, groupId: game.roomId } : null}
+                />
+            )}
+            {game.session && <RelicRoomMove game={game} />}
+            <RelicLobby game={game} preferences={preferences} />
+        </>
     );
 }
 

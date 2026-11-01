@@ -1,5 +1,19 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Untrusted HTTP JSON is decoded immediately by exact friends contract decoders before reaching browser state.
+    Object.freeze({
+        path: 'packages/shared-web/browser/friends/friends-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // One account-bound lifecycle owns read generations, pending mutation identity and invitation admission handoff.
+    // Notifications, single flight, timers, browser activity and subscription cleanup already use shared owners.
+    Object.freeze({
+        path: 'packages/shared-web/browser/friends/rallar-friends.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
     // Reviewed deterministic scalar/vector arithmetic owner; all exports have direct consumers.
     Object.freeze({
         path: 'apps/ar-eye-hunter-v1/src/game/arena-math.ts',

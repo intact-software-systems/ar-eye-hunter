@@ -1,4 +1,6 @@
+import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
+import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
 import { useState, type FormEvent } from 'react';
@@ -42,6 +44,9 @@ export function ArenaOperations(props: ArenaOperationsProps) {
             refreshIntervalMs: 5_000
         })
     );
+    const [friends] = useState(() =>
+        RallarFriends.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 30_000 })
+    );
     const [fields, setFields] = useState<ArenaAuthFields>({
         mode: 'login',
         username: '',
@@ -66,6 +71,15 @@ export function ArenaOperations(props: ArenaOperationsProps) {
                     connected={arena.connectionState === 'connected'}
                     defaultName={GAME_ROOM_NAME}
                     maxPlayers={16}
+                />
+            )}
+            {arena.session && (
+                <FriendsPanel
+                    owner={friends}
+                    sessions={scheduledSessions}
+                    enabled={true}
+                    scope={ARENA_ROOM_SCOPE}
+                    roomRef={arena.roomId ? { ...ARENA_ROOM_SCOPE, groupId: arena.roomId } : null}
                 />
             )}
             {arena.session && <ArenaRoomMove arena={arena} />}

@@ -7,6 +7,7 @@ import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { BrowserActivity } from '../../browser-activity.ts';
 
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
@@ -87,19 +88,7 @@ export class RallarRoomDirectory {
             },
             rooms: browser.rooms,
             timers: createDefaultTimers(),
-            activity: {
-                isActive: () => document.visibilityState === 'visible' && navigator.onLine,
-                onChange: (listener) => {
-                    document.addEventListener('visibilitychange', listener);
-                    window.addEventListener('online', listener);
-                    window.addEventListener('offline', listener);
-                    return () => {
-                        document.removeEventListener('visibilitychange', listener);
-                        window.removeEventListener('online', listener);
-                        window.removeEventListener('offline', listener);
-                    };
-                }
-            }
+            activity: new BrowserActivity()
         }, config);
     }
 

@@ -120,6 +120,23 @@ A future session survives an empty room until the reservation deadline, then rec
 reconnect grace. Live presence keeps the room active. Normal temporary-room archival and seven-day
 deletion apply afterward, including private session records and room-owned game saves.
 
+## Friends and invitations
+
+AR Eye and Relic share an account-wide friend list. Enter an exact username to send a request;
+the recipient explicitly accepts or declines. Sending a reciprocal request never accepts it.
+Either person can remove the friendship. Blocking removes requests, friendship and pending
+invitations in both directions; unblocking does not restore consent. These actions do not remove
+independent room memberships.
+
+Online sharing is off by default and can be turned off again. Mutual friends see only whether a
+sharing account is online in the current game and workspace, never its current room or sessions.
+The panel refreshes while foreground and online, every thirty seconds, and on explicit Refresh.
+Room location is disclosed only by an explicit invitation. Invitations expire after seven days by
+default. Opening one rechecks consent and uses the normal room admission or scheduled-session
+preview and RSVP flow; it grants no seat, membership, join code, or gameplay authority by itself.
+Reload restores the private list. An uncertain write offers Retry with the same request identity;
+signing out clears the view and pending browser work.
+
 ## Moving together
 
 AR Eye and Relic let present players propose another room in the same application and workspace.
