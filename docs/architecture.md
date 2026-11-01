@@ -152,6 +152,24 @@ retryable session operation. Source memberships remain; present and away are pro
 sessions, not different access rights. Fresh entry generations prevent a disconnected presence
 tombstone from accepting an old connect, and arrival waits for the authoritative presence summary.
 
+## Scheduled room sessions
+
+`GroupSessionDirectory` projects caller-specific previews from one current room snapshot, private
+reservations and private account interest. Schedule revision and start/cancellation times live in
+reserved room metadata; private interest survives rescheduling so accounts can discover the change.
+`GROUP_SESSION_CHANGE` enters the existing group-state AppInbox path. Each delivery reads fresh
+state, computes the complete write, validates it, then commits the group CAS, reservation/interest
+changes, receipt, event and outbox atomically. Conflicts return to QueueBox for a fresh attempt.
+The same admission policy protects normal joins, membership changes and all-or-none room moves.
+Private RSVP events redact actor and request identity; durable receipt replay checks that exact
+anonymous event contract without weakening identity checks for other mutations.
+
+`RallarScheduledSessions` owns account-fenced reads, stable mutation identities, recovery and refresh.
+It reuses `RallarRoomEntry` for saved preview intent and explicit lobby entry. The common view lives
+in `packages/shared-react/scheduled-sessions-panel.tsx`; both games import it directly. Relic checks
+start time in its authoritative AppInbox attempt. AR Eye checks fresh server permission and rechecks
+current director authority before accepting the start into the latest simulation snapshot.
+
 ## Temporary retention is a separate group-state capability
 
 Creation accepts `retention: { mode: 'temporary', reconnectGraceMs? }` or persistent intent. Absence

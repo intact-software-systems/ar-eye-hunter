@@ -41,7 +41,7 @@ export function readsGroupActiveMembers(
     return readsGroupActiveMemberPrincipalIds(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||
         operation === 'setGroupMemberRole' || operation === 'transferGroupOwnership' ||
-        operation === 'updateGroup';
+        operation === 'updateGroup' || operation === 'changeGroupSession';
 }
 
 /** Sorted player identities are needed only for electorate and manager decisions. */
@@ -93,4 +93,21 @@ export function readsTargetPublicationGrant(command: GroupMutationCommand): bool
         command.operation === 'removeGroupMember' ||
         command.operation === 'banGroupMember' ||
         (command.operation === 'upsertMember' && command.input.status !== 'active');
+}
+
+/** Reservation capacity shares the group CAS with all player admission and capacity changes. */
+export function readsGroupSessionReservations(operation: GroupMutationCommand['operation']): boolean {
+    return isGroupAdmissionPolicyReadOperation(operation) || operation === 'setGroupMemberRole' ||
+        operation === 'transferGroupOwnership' || operation === 'updateGroup' || operation === 'changeGroupSession' ||
+        operation === 'banGroupMember' || operation === 'removeGroupMember' || operation === 'revokeGroupInvite';
+}
+
+/** Membership target discovery uses the same exact predecessor read as its admission transaction. */
+export function groupSessionIntentPrincipal(command: GroupMutationCommand): string | null {
+    if (command.operation === 'changeGroupSession') {
+        return command.input.actorPrincipalId;
+    }
+    return readsGroupSessionReservations(command.operation) && 'targetPrincipalId' in command
+        ? command.targetPrincipalId
+        : null;
 }

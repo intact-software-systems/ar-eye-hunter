@@ -5,6 +5,10 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { decodeGroupPublicationTopicGrants } from '@shared/api/group-publication/group-publication-grants.ts';
 import { assertGroupRetentionIntent, GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
+import {
+    assertGroupSessionChange,
+    GROUP_SESSION_SCHEDULE_METADATA_KEY
+} from '@shared/api/group-sessions/group-session-schedule.ts';
 import { formatRallarValidation, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
@@ -54,6 +58,7 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
         { ...GROUP_KIND, required: true },
         GROUP_JOIN_MODE,
         { key: 'directoryListing', kind: 'enum', allowed: ['listed', 'unlisted'] },
+        { key: 'scheduledStartAtEpochMs', kind: 'positive-integer' },
         { key: 'maxMembers', kind: 'positive-integer' },
         { key: 'maxSpectators', kind: 'nonnegative-integer' },
         { key: 'maxSessionsPerMember', kind: 'positive-integer' },
@@ -118,6 +123,23 @@ export function validateGroupMutationOperationInput(
     ) {
         issues.push(new TypeError('Group maxSpectators must be at most 64'));
     }
+    if (
+        (operation === 'createGroup' || operation === 'updateGroup') &&
+        isGroupInputRecord(input.metadata) && Object.hasOwn(input.metadata, GROUP_SESSION_SCHEDULE_METADATA_KEY)
+    ) {
+        issues.push(new TypeError('Group session schedule metadata is server-owned; use the scheduling commands'));
+    }
+    if (operation === 'changeGroupSession') {
+        try {
+            assertGroupSessionChange(input);
+        }
+        catch (error) {
+            if (!(error instanceof TypeError)) {
+                throw error;
+            }
+            issues.push(error);
+        }
+    }
     if (operation === 'connectGroup') {
         return [...issues, ...validateExpectedLayout(input.expectedLayout)];
     }
@@ -128,6 +150,7 @@ export function validateGroupMutationOperationInput(
         return [
             ...issues,
             ...validateRetentionCreationInput(input),
+            ...validateScheduledCreationInput(input),
             ...(input.lifecyclePolicy === undefined
                 ? []
                 : validateGroupLifecyclePolicyInputShape(input.lifecyclePolicy)),
@@ -174,6 +197,21 @@ export function validateCreationPublicationGrants(value: JsonWireValue | undefin
         ) => [new TypeError(`Group createGroup publicationGrants is invalid: ${formatRallarValidation(issues)}`)],
         () => []
     );
+}
+
+function validateScheduledCreationInput(input: JsonWireObject): readonly TypeError[] {
+    if (input.scheduledStartAtEpochMs === undefined) {
+        return [];
+    }
+    return input.kind === 'room' && typeof input.maxMembers === 'number' &&
+            Number.isSafeInteger(input.maxMembers) && input.maxMembers >= 1 && input.maxMembers <= 64 &&
+            isGroupInputRecord(input.retention) && input.retention.mode === 'temporary'
+        ? []
+        : [
+            new TypeError(
+                'Scheduled sessions require a temporary room with an explicit player capacity from 1 through 64'
+            )
+        ];
 }
 
 function validateRetentionCreationInput(input: JsonWireObject): readonly TypeError[] {

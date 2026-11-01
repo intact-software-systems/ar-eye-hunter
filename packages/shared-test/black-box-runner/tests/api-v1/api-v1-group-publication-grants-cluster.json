@@ -932,55 +932,6 @@
             "contentType": "application/json",
             "resource": "{\"item\":\"granted-item\",\"runId\":\"{runId}\"}"
           }
-        },
-        "outputs": {
-          "grantedReceiptResource": "matchedMessage.data.payload.resource"
-        }
-      },
-      "expect": {
-        "connection": "wsAliceTertiary",
-        "withinMs": 10000,
-        "message": {
-          "route": {
-            "topicId": "al-control"
-          },
-          "targets": {
-            "mode": "unicast",
-            "toPeerId": "{aliceSessionId}"
-          },
-          "payload": {
-            "typeId": "al.control.receipt.v1"
-          }
-        },
-        "consume": true
-      }
-    },
-    {
-      "name": "parseGrantedAdmittedReceipt",
-      "type": "set",
-      "output": "grantedReceipt",
-      "transform": {
-        "jsonParse": {
-          "path": "outputs.grantedReceiptResource"
-        }
-      }
-    },
-    {
-      "name": "assertTheAdmittedReceiptExpectsBobAlone",
-      "type": "assert",
-      "actual": {
-        "msgId": "{grantedReceipt.msgId}",
-        "phase": "{grantedReceipt.phase}",
-        "firstExpected": "{grantedReceipt.expectedRecipientPeerIds.0}",
-        "secondExpected": "{grantedReceipt.expectedRecipientPeerIds.1}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "body": {
-          "msgId": "pubgrantcl-granted-item-{runId}",
-          "phase": "admitted",
-          "firstExpected": "{bobSessionId}",
-          "secondExpected": "MISSING"
         }
       }
     },
@@ -1046,6 +997,69 @@
       }
     },
     {
+      "name": "aliceReceivesTheAdmittedReceipt",
+      "type": "ws.wait",
+      "connection": "wsAliceTertiary",
+      "request": {
+        "outputs": {
+          "grantedReceiptResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAliceTertiary",
+        "withinMs": 10000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.receipt.v1",
+            "resource": {
+              "msgId": "pubgrantcl-granted-item-{runId}",
+              "phase": "admitted"
+            }
+          }
+        },
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ]
+      }
+    },
+    {
+      "name": "parseGrantedAdmittedReceipt",
+      "type": "set",
+      "output": "grantedReceipt",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.grantedReceiptResource"
+        }
+      }
+    },
+    {
+      "name": "assertTheAdmittedReceiptExpectsBobAlone",
+      "type": "assert",
+      "actual": {
+        "msgId": "{grantedReceipt.msgId}",
+        "phase": "{grantedReceipt.phase}",
+        "firstExpected": "{grantedReceipt.expectedRecipientPeerIds.0}",
+        "secondExpected": "{grantedReceipt.expectedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "pubgrantcl-granted-item-{runId}",
+          "phase": "admitted",
+          "firstExpected": "{bobSessionId}",
+          "secondExpected": "MISSING"
+        }
+      }
+    },
+    {
       "name": "aliceReceivesTheCompleteReceipt",
       "type": "ws.wait",
       "connection": "wsAliceTertiary",
@@ -1066,10 +1080,17 @@
             "toPeerId": "{aliceSessionId}"
           },
           "payload": {
-            "typeId": "al.control.receipt.v1"
+            "typeId": "al.control.receipt.v1",
+            "resource": {
+              "msgId": "pubgrantcl-granted-item-{runId}",
+              "phase": "complete"
+            }
           }
         },
-        "consume": true
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ]
       }
     },
     {

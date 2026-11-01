@@ -1,8 +1,11 @@
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { readsTargetPublicationGrant } from './group-mutation-read-scope.ts';
+import { groupSessionIntentPrincipal } from './group-mutation-read-scope.ts';
+import { readsGroupSessionReservations, readsTargetPublicationGrant } from './group-mutation-read-scope.ts';
 
 export interface SequentialRelatedEntries {
+    readonly sessionIntent: GroupMutationRead['sessionIntent'];
+    readonly sessionReservations: GroupMutationRead['sessionReservations'];
     readonly actorMemberEntry: GroupMutationRead['actorMemberEntry'] | undefined;
     readonly targetMemberEntry: GroupMutationRead['targetMemberEntry'] | undefined;
     readonly targetAdmission: GroupMutationRead['targetAdmission'] | undefined;
@@ -42,6 +45,7 @@ export async function readGroupMutationRelatedEntries({
             directorPrincipalId !== ownerPrincipalId
         ? (directorPrincipalId ?? null)
         : null;
+    const intentPrincipalId = groupSessionIntentPrincipal(command);
     const values = await Promise.all([
         readOptionalMemberEntry(repository, command, actorPrincipalId),
         readOptionalMemberEntry(
@@ -58,7 +62,13 @@ export async function readGroupMutationRelatedEntries({
             repository,
             command,
             readsTargetPublicationGrant(command) ? targetPrincipalId : null
-        )
+        ),
+        readsGroupSessionReservations(command.operation)
+            ? repository.findSessionReservationsEntry(command.aggregateRef)
+            : Promise.resolve(undefined),
+        intentPrincipalId !== null
+            ? repository.findSessionIntentEntry(command.aggregateRef, intentPrincipalId)
+            : Promise.resolve(undefined)
     ]);
     return {
         actorMemberEntry: values[0],
@@ -68,7 +78,9 @@ export async function readGroupMutationRelatedEntries({
         authorityAdmission: values[4],
         directorMemberEntry: values[5],
         directorAdmission: values[6],
-        targetPublicationGrant: values[7]
+        targetPublicationGrant: values[7],
+        sessionReservations: values[8] ?? null,
+        sessionIntent: values[9] ?? null
     };
 }
 

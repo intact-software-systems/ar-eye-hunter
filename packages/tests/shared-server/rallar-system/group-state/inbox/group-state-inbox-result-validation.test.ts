@@ -47,6 +47,19 @@ describe('group-state AppInbox result validation', () => {
         ]));
     });
 
+    it('rejects redacted request identity or a foreign scope for ordinary mutation replay', () => {
+        const input = createResultInput();
+        for (const changed of [{ requestId: null }, { workspaceId: 'other-workspace' }]) {
+            expect(() =>
+                computeGroupStateInboxResult({
+                    ...input,
+                    computed: { outcome: 'replay', rejectionCode: null, receipt: input.computed.receipt },
+                    recordedEvent: { ...input.computed.event, ...changed }
+                })
+            ).toThrow('Group mutation event not found');
+        }
+    });
+
     it('returns an expected conflict instead of throwing when the result read is stale', () => {
         const input = createResultInput();
         const compute = () =>

@@ -1,3 +1,6 @@
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { GROUP_SESSION_RESERVATIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/schedule/group-session-reservation-storage.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
 
 import { computeGroupMoveAdmission } from '@shared-server/rallar-system/group-state/move/compute-group-move-admission.ts';
@@ -9,7 +12,7 @@ import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { createGroupAuthorityFacts, groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 
-async function createDestination(maxMembers: number, maxSessionsPerMember: number | null = null) {
+async function createDestination(maxMembers: number, maxSessionsPerMember: number | null = null, scheduled = false) {
     const runtime = new FakeRuntimeStateRepository();
     const service = createTestGroupStateService({ runtimeRepository: runtime, now: () => 1_000, serviceId: 'move-test', randomId: () => 'move-test-id' });
     await service.createGroup(SCOPE, {
@@ -18,12 +21,13 @@ async function createDestination(maxMembers: number, maxSessionsPerMember: numbe
         kind: 'room',
         joinMode: 'open',
         maxMembers,
+        ...(scheduled ? { scheduledStartAtEpochMs: 31_000, retention: { mode: 'temporary' as const } } : {}),
         ...(maxSessionsPerMember === null ? {} : { maxSessionsPerMember }),
         createdByPrincipalId: 'alice',
         requestId: 'create-destination'
     });
     const repository = createTestGroupStateRepository(runtime);
-    return { service, repository };
+    return { service, repository, runtime };
 }
 
 async function readJoin(
@@ -146,6 +150,30 @@ describe('group move admission', () => {
         expect(result.mutations.at(-1)?.guard.value).toMatchObject({ activeMemberCount: 3 });
         expect((await repository.readSnapshot(groupRef('pure-room')))?.members.map((member) => member.principalId))
             .toEqual(['alice']);
+    });
+
+    it('consumes both reserved seats with sequential private CAS revisions in one staged cohort', async () => {
+        const { repository, runtime } = await createDestination(3, null, true);
+        const ref = groupRef('pure-room');
+        await runtime.upsert(
+            GROUP_SESSION_RESERVATIONS_NAMESPACE,
+            groupStateGroupStorageKey(ref),
+            JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['bob', 'carol'] }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+        const reserved = await repository.findSessionReservationsEntry(ref);
+        const participants = await Promise.all([readJoin(repository, 'bob'), readJoin(repository, 'carol')]);
+        const result = computeGroupMoveAdmission({ participants });
+        expect(result.status).toBe('admitted');
+        if (result.status !== 'admitted' || reserved === undefined) {
+            throw new Error('Expected reserved cohort admission');
+        }
+        expect(result.mutations.map((mutation) => mutation.sessionReservationWrite)).toEqual([
+            { value: { ...ref, scheduleRevision: 1, principalIds: ['carol'] }, expectedRevision: reserved.entry.revision },
+            { value: { ...ref, scheduleRevision: 1, principalIds: [] }, expectedRevision: reserved.entry.revision + 1 }
+        ]);
+        expect(result.mutations.map((mutation) => mutation.sessionIntentEffect?.operation)).toEqual(['insert', 'insert']);
+        expect((await repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual(['bob', 'carol']);
     });
 
     it('does not charge another player place for an existing member', async () => {

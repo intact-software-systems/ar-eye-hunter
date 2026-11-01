@@ -75,8 +75,12 @@ export async function acceptArenaMatchIntent(
     }
     if (isArenaMatchStartIntentFromSender(message, envelope.senderId)) {
         const status = match.status();
-        if (status?.directorPeerId === envelope.senderId) {
-            await input.acceptMatchStartIntent(message.intent, () => isCurrentArenaIntentOwner(owner));
+        if (status.directorIsFresh && status.directorPeerId === envelope.senderId) {
+            await input.acceptMatchStartIntent(message.intent, () => {
+                const current = match.status();
+                return isCurrentArenaIntentOwner(owner) && current.directorIsFresh &&
+                    current.directorPeerId === envelope.senderId && current.directorEpoch === status.directorEpoch;
+            });
         }
         return;
     }

@@ -3426,6 +3426,33 @@
         ]
       },
       "description": "Move together: exact-session consent, whole-cohort capacity denial, durable participant recovery, atomic admission, preserved source membership and request replay."
+    },
+    {
+      "id": "api-v1-group-sessions",
+      "recipe": "tests/api-v1/api-v1-group-sessions.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-group-sessions"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-sessions",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Scheduled sessions: private account discovery, reserved capacity, pre-lobby denial, idempotent replay, rescheduling and reconfirmation, cancellation, and claimed lobby seats."
     }
   ]
 }

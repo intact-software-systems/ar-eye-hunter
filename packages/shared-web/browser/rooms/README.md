@@ -42,3 +42,12 @@ Entry persistence records `preserve` after admission so recovery follows the aut
 scoped authoritative point read. Explicit destination selection waits for hydration and
 the initiating session fence; previous-room cleanup follows successful adoption. Cache
 notifications may still restore a room from authoritative session presence, as on reload.
+
+## Scheduled sessions
+
+Import `sessions/rallar-scheduled-sessions.ts` directly. Its account-bound owner loads personal
+sessions and a selected preview, preserves stable IDs across uncertain writes, and fences replaced
+accounts and destinations. `sessions/scheduled-session-http-api.ts` owns exact HTTP decoding and
+bounded transport attempts. Shared timing and preview contracts live in `shared/api/group-sessions`.
+`RallarRoomEntry` persists `preview-session` intent and performs admission only after explicit lobby
+entry. The optional React view lives in `shared-react/scheduled-sessions-panel.tsx`.

@@ -1,3 +1,4 @@
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import {
     comparePublicationGrantPrincipalIds,
     type GroupPublicationGrant
@@ -5,6 +6,7 @@ import {
 import type { GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { isPrivateGroupReservationCommand } from '../mutation/group-mutation-result.ts';
 
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
@@ -77,7 +79,7 @@ export function computeGroupStateInboxResult(
     }
     const event = input.computed.outcome === 'write'
         ? input.computed.event
-        : readRecordedEvent(input.recordedEvent, input.computed.receipt);
+        : readRecordedEvent(input.recordedEvent, input.computed.receipt, input.command.command);
     const durableResult = input.command.command.operation === 'rotateGroupJoinCode'
         ? toJoinCodeResult(input.computed.receipt, snapshot, event)
         : toGroupMutationResult({ command: input.command, receipt: input.computed.receipt, snapshot, event });
@@ -118,7 +120,7 @@ export function validateGroupStateInboxResult(
     }
     const event = input.computed.outcome === 'write'
         ? input.computed.event
-        : readRecordedEvent(input.recordedEvent, input.computed.receipt);
+        : readRecordedEvent(input.recordedEvent, input.computed.receipt, input.command.command);
     const durableResult = input.command.command.operation === 'rotateGroupJoinCode'
         ? toJoinCodeResult(input.computed.receipt, computed.right.snapshot, event)
         : toGroupMutationResult({
@@ -228,7 +230,8 @@ function toCommittedPublicationGrants(
 
 function readRecordedEvent(
     event: GroupEvent | undefined,
-    receipt: GroupMutationReceipt
+    receipt: GroupMutationReceipt,
+    command: GroupStateMutationCommand['command']
 ): GroupEvent | null {
     if (receipt.eventId === null) {
         return null;
@@ -237,7 +240,8 @@ function readRecordedEvent(
         event === undefined ||
         event.eventId !== receipt.eventId ||
         event.snapshotVersion !== receipt.snapshotVersion ||
-        event.requestId !== receipt.requestId
+        !isSameGroupRef(event, receipt.aggregateRef) ||
+        event.requestId !== (isPrivateGroupReservationCommand(command) ? null : receipt.requestId)
     ) {
         throw new TypeError(`Group mutation event not found: ${receipt.eventId}`);
     }

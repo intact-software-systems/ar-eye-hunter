@@ -85,7 +85,8 @@ export function computeGrantGroupAdmission(
             snapshot,
             targetPrincipalId: command.targetPrincipalId,
             nowEpochMs: facts.attemptAtEpochMs,
-            capacity: facts.capacity
+            capacity: facts.capacity,
+            sessionReservations: read.sessionReservations?.value
         })
     );
     assertGroupAdmissionWindowsOpen(read, facts);

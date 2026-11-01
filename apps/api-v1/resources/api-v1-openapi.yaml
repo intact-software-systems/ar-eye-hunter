@@ -1004,6 +1004,124 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions:
+    get:
+      tags: [Group State]
+      summary: List this account's scheduled sessions
+      description: Authenticated, scoped session summary and caller-only participation. Never returns reservation identities or a member roster. Personal discovery retains rescheduled and cancelled sessions until withdrawal or room deletion.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - in: query
+          name: after
+          description: Opaque continuation key from this account's previous page.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current server timing and caller-specific admission state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSessionPage'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session:
+    get:
+      tags: [Group State]
+      summary: Preview a scheduled session without joining
+      description: Authenticated, scoped session summary and caller-only participation. Never returns reservation identities or a member roster. Personal discovery retains rescheduled and cancelled sessions until withdrawal or room deletion.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Current server timing and caller-specific admission state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSessionPreview'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Reserve, withdraw, reschedule or cancel a scheduled session
+      description: |
+        One reserved player seat per authenticated account. RSVP grants neither membership nor
+        gameplay authority. Lobby admission opens ten minutes before start; the host starts
+        gameplay explicitly at or after start. Unclaimed reservations stop withholding capacity
+        ten minutes after start. Successful admission consumes the caller's reservation.
+        Only the current organizer may reschedule or cancel, and only before the lobby opens.
+        Rescheduling increments the revision and clears reservations; interested guests must
+        confirm the new revision. Each action requires a stable request ID in the path only.
+        Repeating it replays the original result; changing its payload returns 409.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupSessionChange'
+      responses:
+        '200':
+          description: Durable acknowledgement without membership or reservation roster disclosure.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [accepted]
+                properties:
+                  accepted:
+                    type: boolean
+                    enum: [true]
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves:
     get:
       tags: [Group State]
@@ -7139,6 +7257,116 @@ components:
               minimum: 1000
               maximum: 86400000
               default: 600000
+    GroupSessionSchedule:
+      type: object
+      additionalProperties: false
+      required: [revision, startsAtEpochMs, cancelledAtEpochMs]
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+        startsAtEpochMs:
+          type: integer
+          format: int64
+        cancelledAtEpochMs:
+          type: integer
+          format: int64
+          nullable: true
+    GroupSessionChange:
+      type: object
+      additionalProperties: false
+      required: [action, expectedScheduleRevision, startsAtEpochMs]
+      properties:
+        action:
+          type: string
+          enum: [reserve, withdraw, reschedule, cancel]
+        expectedScheduleRevision:
+          type: integer
+          minimum: 1
+        startsAtEpochMs:
+          type: integer
+          format: int64
+          nullable: true
+          description: Required future start for reschedule; null for every other action. The new lobby must open in the future.
+    GroupSessionTiming:
+      type: object
+      additionalProperties: false
+      required: [phase, lobbyOpensAtEpochMs, startsAtEpochMs, reservationsExpireAtEpochMs]
+      properties:
+        phase:
+          type: string
+          enum: [upcoming, lobby, start-ready, reservations-expired, cancelled]
+        lobbyOpensAtEpochMs:
+          type: integer
+          format: int64
+        startsAtEpochMs:
+          type: integer
+          format: int64
+        reservationsExpireAtEpochMs:
+          type: integer
+          format: int64
+    GroupSessionPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - roomRef
+        - displayName
+        - schedule
+        - timing
+        - serverNowEpochMs
+        - maxPlayers
+        - availableSeats
+        - participation
+        - isOrganizer
+        - canReserve
+        - canEnter
+        - admissionDenial
+      properties:
+        roomRef:
+          $ref: '#/components/schemas/GroupRef'
+        displayName:
+          type: string
+        schedule:
+          $ref: '#/components/schemas/GroupSessionSchedule'
+        timing:
+          $ref: '#/components/schemas/GroupSessionTiming'
+        serverNowEpochMs:
+          type: integer
+          format: int64
+        maxPlayers:
+          type: integer
+          minimum: 1
+          maximum: 64
+        availableSeats:
+          type: integer
+          minimum: 0
+          maximum: 64
+        participation:
+          type: string
+          enum: [none, reserved, admitted, needs-confirmation]
+        isOrganizer:
+          type: boolean
+        canReserve:
+          type: boolean
+        canEnter:
+          type: boolean
+        admissionDenial:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/GroupPolicyReasonCode'
+    GroupSessionPage:
+      type: object
+      additionalProperties: false
+      required: [sessions, nextKey]
+      properties:
+        sessions:
+          type: array
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/GroupSessionPreview'
+        nextKey:
+          type: string
+          nullable: true
     CreateGroupRequest:
       type: object
       required: [groupId, displayName, kind]
@@ -7163,6 +7391,12 @@ components:
           description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
         retention:
           $ref: '#/components/schemas/GroupRetentionIntent'
+        scheduledStartAtEpochMs:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 8639999999400000
+          description: Optional future start for a new temporary room with explicit player capacity from 1 to 64. Creates the server-owned rallarSessionSchedule metadata, private reservation state and organizer interest atomically. The organizer occupies one player seat. Do not supply this key through metadata.
         maxMembers:
           type: integer
           format: int64
@@ -7175,7 +7409,7 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity.
+          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity. rallarSessionSchedule is server-owned; use scheduledStartAtEpochMs.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
@@ -7227,7 +7461,7 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity.
+          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity. rallarSessionSchedule cannot be injected, removed or altered by metadata updates; use the session mutation route.
           type: object
           additionalProperties: true
         expiresAtEpochMs:

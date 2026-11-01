@@ -1,3 +1,4 @@
+import { computeGroupSessionMutation } from '../../schedule/compute-group-session-mutation.ts';
 import { computeApplyPlannedLayout } from '../aggregate/compute-apply-planned-layout.ts';
 import {
     computeDirector,
@@ -80,6 +81,8 @@ function computeFreshGroupMutation(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     switch (command.operation) {
+        case 'changeGroupSession':
+            return computeGroupSessionMutation(command, read, facts);
         case 'createGroup':
             return computeCreate(command, read, facts);
         case 'updateGroup':

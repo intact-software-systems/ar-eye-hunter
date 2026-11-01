@@ -144,6 +144,7 @@ const GROUP_MUTATION_OPERATIONS: Record<AuthenticatedGroupMutationInboxType, Gro
     [AppInboxType.GROUP_INVITE_ACCEPT]: 'acceptGroupInvite',
     [AppInboxType.GROUP_ADMISSION_GRANT]: 'grantGroupAdmission',
     [AppInboxType.GROUP_ADMISSION_DECLINE]: 'declineGroupAdmission',
+    [AppInboxType.GROUP_SESSION_CHANGE]: 'changeGroupSession',
     [AppInboxType.GROUP_JOIN_CODE_ROTATE]: 'rotateGroupJoinCode',
     [AppInboxType.GROUP_MEMBER_REMOVE]: 'removeGroupMember',
     [AppInboxType.GROUP_MEMBER_BAN]: 'banGroupMember',

@@ -120,6 +120,7 @@ const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor
     [AppInboxType.GROUP_INVITE_CREATE, 'createGroupInvite'],
     [AppInboxType.GROUP_INVITE_REVOKE, 'revokeGroupInvite'],
     [AppInboxType.GROUP_INVITE_ACCEPT, 'acceptGroupInvite'],
+    [AppInboxType.GROUP_SESSION_CHANGE, 'changeGroupSession'],
     [AppInboxType.GROUP_JOIN_CODE_ROTATE, 'rotateGroupJoinCode'],
     [AppInboxType.GROUP_ADMISSION_GRANT, 'grantGroupAdmission'],
     [AppInboxType.GROUP_ADMISSION_DECLINE, 'declineGroupAdmission'],

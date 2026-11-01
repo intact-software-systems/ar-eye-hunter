@@ -4,6 +4,7 @@ import {
 } from '@shared/api/group-director.ts';
 import { toNormalizedGroupLifecyclePolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
+import { GROUP_SESSION_SCHEDULE_METADATA_KEY } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type {
@@ -40,6 +41,18 @@ export function toAggregateMutationCommand(
             }
             return toCreateCommand(descriptor.scope, request, randomId);
         }
+        case 'changeGroupSession':
+            return {
+                operation: descriptor.operation,
+                aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+                ...toGroupMutationIdentity(descriptor.request.requestId, randomId),
+                input: {
+                    ...toGroupMutationActorInput(descriptor.request),
+                    action: descriptor.request.action,
+                    expectedScheduleRevision: descriptor.request.expectedScheduleRevision,
+                    startsAtEpochMs: descriptor.request.startsAtEpochMs
+                }
+            };
         case 'updateGroup':
             return toUpdateCommand(descriptor, randomId);
         case 'appointDirector':
@@ -121,7 +134,7 @@ function toCreateCommand(
     };
 }
 
-/** The request's metadata with the server-owned spectator capacity and retention entries taken from their own fields. */
+/** Server-owned room policy is constructed from explicit creation fields, never raw caller metadata. */
 function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
     const retention = toInitialGroupRetentionState(request.retention);
     const metadata = { ...structuredClone(request.metadata ?? {}) };
@@ -129,7 +142,14 @@ function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
     return {
         ...metadata,
         ...(request.maxSpectators === undefined ? {} : { rallarSpectatorCapacity: request.maxSpectators }),
-        ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } })
+        ...(retention === null ? {} : { [GROUP_RETENTION_METADATA_KEY]: { ...retention } }),
+        ...(request.scheduledStartAtEpochMs === undefined ? {} : {
+            [GROUP_SESSION_SCHEDULE_METADATA_KEY]: {
+                revision: 1,
+                startsAtEpochMs: request.scheduledStartAtEpochMs,
+                cancelledAtEpochMs: null
+            }
+        })
     };
 }
 

@@ -1,3 +1,4 @@
+import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import {
     assertExactKeys,
@@ -129,6 +130,9 @@ function assertAggregateOperationInput(
             return;
         case 'appointDirector':
             requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
+            return;
+        case 'changeGroupSession':
+            assertGroupSessionChange(input);
             return;
         case 'rotateGroupJoinCode':
             assertNullableString(input, 'joinCode');
@@ -297,6 +301,7 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'revokeGroupInvite',
     'grantGroupAdmission',
     'declineGroupAdmission',
+    'changeGroupSession',
     'rotateGroupJoinCode',
     'removeGroupMember',
     'banGroupMember',
@@ -338,6 +343,7 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'createGroup',
     'updateGroup',
     'appointDirector',
+    'changeGroupSession',
     'rotateGroupJoinCode',
     'planGroupLayout',
     'connectGroup',
@@ -425,6 +431,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'invitedByPrincipalId',
         'invitationExpiresAtEpochMs'
     ],
+    changeGroupSession: [...ACTOR_INPUT_KEYS, 'action', 'expectedScheduleRevision', 'startsAtEpochMs'],
     rotateGroupJoinCode: [...ACTOR_INPUT_KEYS, 'joinCode', 'expiresAtEpochMs'],
     connectPresence: [
         ...ACTOR_INPUT_KEYS,

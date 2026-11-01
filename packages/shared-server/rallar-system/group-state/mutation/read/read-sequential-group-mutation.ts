@@ -159,9 +159,51 @@ function assembleSequentialGroupMutationRead({
     activeMembers
 }: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
     const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
-    const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
     const group = groupRead.value;
     const targetPresence = targetPresenceRead.value;
+    return {
+        idempotency: idempotency ?? null,
+        group: group ?? null,
+        retiredGroup: groupRead.retiredGroup,
+        expiredGroupEntry: groupRead.expiredEntry ?? null,
+        ...resolveSequentialMembers(identities, related),
+        targetPresence: targetPresence ?? null,
+        expiredTargetPresenceEntry: targetPresenceRead.expiredEntry ?? null,
+        targetAdmission: related.targetAdmission ?? null,
+        authorityAdmission: related.authorityAdmission ?? null,
+        directorAdmission: related.directorAdmission ?? null,
+        authorityPresenceSessions: authorityPresenceSessionEntries.map(({ value }) => value),
+        authorityPresenceSessionEntries,
+        presenceSummary: presenceSummary ?? null,
+        targetPublicationGrant: related.targetPublicationGrant ?? null,
+        sessionReservations: related.sessionReservations,
+        sessionIntent: related.sessionIntent,
+        lifecyclePolicy,
+        activeMemberPrincipalIds,
+        activeMembers,
+        // The layout rows are attached by the service for the commands that
+        // consult them; the read layer itself never does.
+        connectTriggerLatch: null,
+        plannedLayoutRow: null,
+        acceptedLayoutRow: null
+    };
+}
+
+function resolveSequentialMembers(
+    identities: SequentialIdentities,
+    related: SequentialRelatedEntries
+): Pick<
+    GroupMutationRead,
+    | 'actorMember'
+    | 'targetMember'
+    | 'authorityMember'
+    | 'directorMember'
+    | 'actorMemberEntry'
+    | 'targetMemberEntry'
+    | 'authorityMemberEntry'
+    | 'directorMemberEntry'
+> {
+    const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
     const resolvedTargetMemberEntry = targetPrincipalId === actorPrincipalId
         ? related.actorMemberEntry
         : related.targetMemberEntry;
@@ -178,10 +220,6 @@ function assembleSequentialGroupMutationRead({
         ? related.authorityMemberEntry
         : related.directorMemberEntry;
     return {
-        idempotency: idempotency ?? null,
-        group: group ?? null,
-        retiredGroup: groupRead.retiredGroup,
-        expiredGroupEntry: groupRead.expiredEntry ?? null,
         actorMember: related.actorMemberEntry?.value ?? null,
         targetMember: resolvedTargetMemberEntry?.value ?? null,
         authorityMember: resolvedAuthorityMemberEntry?.value ?? null,
@@ -189,24 +227,7 @@ function assembleSequentialGroupMutationRead({
         actorMemberEntry: related.actorMemberEntry ?? null,
         targetMemberEntry: resolvedTargetMemberEntry ?? null,
         authorityMemberEntry: resolvedAuthorityMemberEntry ?? null,
-        directorMemberEntry: resolvedDirectorMemberEntry ?? null,
-        targetPresence: targetPresence ?? null,
-        expiredTargetPresenceEntry: targetPresenceRead.expiredEntry ?? null,
-        targetAdmission: related.targetAdmission ?? null,
-        authorityAdmission: related.authorityAdmission ?? null,
-        directorAdmission: related.directorAdmission ?? null,
-        authorityPresenceSessions: authorityPresenceSessionEntries.map(({ value }) => value),
-        authorityPresenceSessionEntries,
-        presenceSummary: presenceSummary ?? null,
-        targetPublicationGrant: related.targetPublicationGrant ?? null,
-        lifecyclePolicy,
-        activeMemberPrincipalIds,
-        activeMembers,
-        // The layout rows are attached by the service for the commands that
-        // consult them; the read layer itself never does.
-        connectTriggerLatch: null,
-        plannedLayoutRow: null,
-        acceptedLayoutRow: null
+        directorMemberEntry: resolvedDirectorMemberEntry ?? null
     };
 }
 

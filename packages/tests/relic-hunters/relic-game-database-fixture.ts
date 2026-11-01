@@ -23,7 +23,7 @@ import {
 /** The trace every prepared Relic attempt carries, as its queued command's envelope would. */
 export const RELIC_FIXTURE_TRACE_ID = 'trace-relic-game-database-fixture';
 
-export async function createGameFixture(gameId = 'expedition-1') {
+export async function createGameFixture(gameId = 'expedition-1', scheduledStartOffsetMs: number | null = null) {
     const fixture = await createRetentionDatabaseFixture();
     const ref = toRelicRoomGroupRef(gameId);
     const { computed } = await prepareMutation(
@@ -39,6 +39,7 @@ export async function createGameFixture(gameId = 'expedition-1') {
                 kind: 'room',
                 joinMode: 'open',
                 maxSpectators: 16,
+                ...(scheduledStartOffsetMs === null ? {} : { maxMembers: 4, scheduledStartAtEpochMs: fixture.nowEpochMs + scheduledStartOffsetMs }),
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
                 retention: { mode: 'temporary', reconnectGraceMs: 600_000 }

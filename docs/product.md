@@ -101,6 +101,25 @@ The next game stays in the same room and includes only eligible consenting playe
 their characters and resets expedition progress; AR Eye starts fresh score baselines. Finished results
 remain visible until accepted start. Reset and the old start controls cannot bypass this consent flow.
 
+## Scheduled sessions
+
+AR Eye and Relic let an organizer schedule an unlisted temporary room, copy its session link,
+and change or cancel the schedule before its lobby opens. Following the link previews the session
+without leaving the current game. Signed-in accounts can reserve one player seat, withdraw that
+reservation, and find their sessions again after reload. The organizer occupies one player seat.
+Rescheduling releases reservations and asks interested accounts to review and confirm the new time.
+
+The lobby opens ten minutes before the scheduled start. Entry claims the account's reserved seat;
+accounts without reservations can enter only if an unreserved seat is available. The current host
+starts gameplay explicitly at or after the scheduled time. Passing the start time never starts a
+game automatically. Unclaimed reservations expire ten minutes after start, releasing their seats.
+Spectators use the separate spectator capacity. Reservation identities are private to each account;
+shared room events carry only an anonymous change notification.
+
+A future session survives an empty room until the reservation deadline, then receives the usual
+reconnect grace. Live presence keeps the room active. Normal temporary-room archival and seven-day
+deletion apply afterward, including private session records and room-owned game saves.
+
 ## Moving together
 
 AR Eye and Relic let present players propose another room in the same application and workspace.

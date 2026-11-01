@@ -1,4 +1,9 @@
+import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
 import { useState, type FormEvent } from 'react';
+import { GAME_ROOM_NAME } from '../game/arena-contracts.ts';
+import { ARENA_ROOM_SCOPE, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
 import { ArenaRoomMove } from './arena-room-move.tsx';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
@@ -31,6 +36,12 @@ interface ArenaAuthFormProps {
 
 export function ArenaOperations(props: ArenaOperationsProps) {
     const { arena } = props;
+    const [scheduledSessions] = useState(() =>
+        RallarScheduledSessions.createBrowser(rallar, arenaRoomEntry, {
+            scope: ARENA_ROOM_SCOPE,
+            refreshIntervalMs: 5_000
+        })
+    );
     const [fields, setFields] = useState<ArenaAuthFields>({
         mode: 'login',
         username: '',
@@ -49,38 +60,52 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
+            {arena.session && (
+                <ScheduledSessionsPanel
+                    owner={scheduledSessions}
+                    connected={arena.connectionState === 'connected'}
+                    defaultName={GAME_ROOM_NAME}
+                    maxPlayers={16}
+                />
+            )}
             {arena.session && <ArenaRoomMove arena={arena} />}
             {arena.connectionState === 'signed-out' || !arena.session
                 ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
                 : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
             {arena.error && <div className="panel error-panel">{arena.error}</div>}
-            <div className="panel compact">
-                {arena.spectating
-                    ? <p>Watching the live arena. Join as player to move and fight.</p>
-                    : (
-                        <div className="control-grid">
-                            {[
-                                'WASD',
-                                'Move',
-                                'Shift',
-                                'Sprint',
-                                'E',
-                                'Dash',
-                                'C/Ctrl',
-                                'Slide',
-                                'Space',
-                                'Jump',
-                                'Mouse',
-                                'Look',
-                                'Click',
-                                'Fire',
-                                'Right click',
-                                'Scan'
-                            ].map((label) => <span key={label}>{label}</span>)}
-                        </div>
-                    )}
-            </div>
+            <ArenaControlHints spectating={arena.spectating} />
         </section>
+    );
+}
+
+function ArenaControlHints({ spectating }: Readonly<{ spectating: boolean; }>) {
+    return (
+        <div className="panel compact">
+            {spectating
+                ? <p>Watching the live arena. Join as player to move and fight.</p>
+                : (
+                    <div className="control-grid">
+                        {[
+                            'WASD',
+                            'Move',
+                            'Shift',
+                            'Sprint',
+                            'E',
+                            'Dash',
+                            'C/Ctrl',
+                            'Slide',
+                            'Space',
+                            'Jump',
+                            'Mouse',
+                            'Look',
+                            'Click',
+                            'Fire',
+                            'Right click',
+                            'Scan'
+                        ].map((label) => <span key={label}>{label}</span>)}
+                    </div>
+                )}
+        </div>
     );
 }
 

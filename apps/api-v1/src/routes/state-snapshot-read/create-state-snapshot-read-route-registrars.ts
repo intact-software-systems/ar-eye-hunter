@@ -61,6 +61,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
         >
         & Readonly<{
             move: Pick<ApiV1Runtime['groupStateService']['move'], 'listForPrincipal'>;
+            sessionDirectory: Pick<ApiV1Runtime['groupStateService']['sessionDirectory'], 'read' | 'listForPrincipal'>;
         }>;
     readonly clientRestSnapshotReadSelector: Pick<ApiV1Runtime['clientRestSnapshotReadSelector'], 'read'>;
     readonly groupRestSnapshotReadSelector: Pick<ApiV1Runtime['groupRestSnapshotReadSelector'], 'read'>;
@@ -109,6 +110,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                sessionDirectory: runtime.groupStateService.sessionDirectory,
                 rtcRttRepository: runtime.topologyServices.rttRepository,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 groupDefaultMaxMembers: policy.groupDefaultMaxMembers,

@@ -62,6 +62,7 @@ function stageAdmissions(
     const first = participants[0];
     let group = initialGroup;
     let activeMembers = first.read.activeMembers;
+    let sessionReservations = first.read.sessionReservations;
     const admittedPrincipals = new Set<string>();
     const mutations: GroupMutationComputedWrite[] = [];
     for (const participant of participants) {
@@ -69,7 +70,7 @@ function stageAdmissions(
         if (admittedPrincipals.has(principalId)) {
             continue;
         }
-        const read: GroupMutationRead = { ...participant.read, group, activeMembers };
+        const read: GroupMutationRead = { ...participant.read, group, activeMembers, sessionReservations };
         const decision = computeParticipantAdmission(participant, read);
         if (decision.status !== 'admitted') {
             return decision;
@@ -92,6 +93,20 @@ function stageAdmissions(
                 updatedTimestamp: new Date(participant.facts.nowEpochMs).toISOString()
             }
         };
+        if (computed.sessionReservationWrite !== null) {
+            if (sessionReservations === null) {
+                throw new TypeError('Scheduled move admission requires reservation state');
+            }
+            const value = computed.sessionReservationWrite.value;
+            sessionReservations = {
+                value,
+                entry: {
+                    ...sessionReservations.entry,
+                    value: JSON.stringify(value),
+                    revision: sessionReservations.entry.revision + 1
+                }
+            };
+        }
         activeMembers = replaceActiveMembers(activeMembers, computed.members);
         mutations.push(computed);
     }

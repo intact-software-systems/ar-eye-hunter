@@ -165,6 +165,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
         },
         groupStateService: {
             move: { listForPrincipal: rejectUnusedOperation },
+            sessionDirectory: { read: rejectUnusedOperation, listForPrincipal: rejectUnusedOperation },
             listEventPage: rejectUnusedOperation,
             listEvents: rejectUnusedOperation,
             listRecentEvents: rejectUnusedOperation,

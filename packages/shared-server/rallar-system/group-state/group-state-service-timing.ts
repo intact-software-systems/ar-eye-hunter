@@ -25,7 +25,7 @@ interface GroupStateTimingDetails {
 
 type GroupStateTimedOperation = Exclude<
     keyof GroupStateService,
-    'compute' | 'validate' | 'sessionGenerationLifecycle' | 'quickJoin' | 'retention' | 'move'
+    'compute' | 'validate' | 'sessionGenerationLifecycle' | 'quickJoin' | 'retention' | 'move' | 'sessionDirectory'
 >;
 
 interface TimeGroupStateOperationInput<T> {
@@ -48,6 +48,7 @@ export function createTimedGroupStateService(
     return {
         sessionGenerationLifecycle: service.sessionGenerationLifecycle,
         quickJoin: service.quickJoin,
+        sessionDirectory: service.sessionDirectory,
         move: service.move,
         retention: service.retention,
         ...createTimedIngressCaptureOperations(service, timedInput),

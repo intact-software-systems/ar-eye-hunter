@@ -1,4 +1,6 @@
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { GROUP_SESSION_INTENTS_NAMESPACE, groupSessionIntentKey } from '../../schedule/group-session-intent-storage.ts';
 
 import { computeRuntimeStateGuardedBatchWrite } from '../../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import {
@@ -34,6 +36,7 @@ import {
     groupStateUpdatePresenceSummaryDescriptor
 } from '../../persistence/presence/group-presence-write-descriptors.ts';
 import { toPublicationGrantBatchEffect } from '../../persistence/publication/group-publication-grant-write-descriptors.ts';
+import { GROUP_SESSION_RESERVATIONS_NAMESPACE } from '../../schedule/group-session-reservation-storage.ts';
 import type {
     GroupMutationDomainWrite,
     GroupMutationFacts,
@@ -79,6 +82,7 @@ function computeGroupMutationGuardedBatch(
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
+    effects.push(...computeSessionEffects(computed));
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
     }
@@ -119,6 +123,55 @@ function computeGroupMutationGuardedBatch(
         });
     }
     return validateRuntimeStateGuardedBatch({ guard, effects });
+}
+
+/** Private scheduling rows commit atomically behind the same room guard. */
+function computeSessionEffects(computed: GroupMutationDomainWrite): RuntimeStateGuardedBatchEffect[] {
+    const effects: RuntimeStateGuardedBatchEffect[] = [];
+    if (computed.guard.kind === 'group' && computed.guard.operation === 'insert') {
+        const schedule = readGroupSessionSchedule(computed.guard.value.metadata);
+        if (schedule !== null) {
+            effects.push({
+                effectId: 'organizer-session-interest',
+                operation: 'insert',
+                namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                key: groupSessionIntentKey(computed.receipt.aggregateRef, computed.guard.value.ownerPrincipalId),
+                value: encodeRuntimeStateJsonValue({
+                    ...computed.receipt.aggregateRef,
+                    principalId: computed.guard.value.ownerPrincipalId,
+                    reviewedScheduleRevision: schedule.revision
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
+            effects.push({
+                effectId: 'session-reservations',
+                operation: 'insert',
+                namespace: GROUP_SESSION_RESERVATIONS_NAMESPACE,
+                key: groupStateGroupStorageKey(computed.receipt.aggregateRef),
+                value: encodeRuntimeStateJsonValue({
+                    ...computed.receipt.aggregateRef,
+                    scheduleRevision: schedule.revision,
+                    principalIds: []
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
+        }
+    }
+    if (computed.sessionIntentEffect !== null) {
+        effects.push(computed.sessionIntentEffect);
+    }
+    if (computed.sessionReservationWrite !== null) {
+        effects.push({
+            effectId: 'session-reservations',
+            operation: 'update',
+            namespace: GROUP_SESSION_RESERVATIONS_NAMESPACE,
+            key: groupStateGroupStorageKey(computed.receipt.aggregateRef),
+            value: encodeRuntimeStateJsonValue({ ...computed.sessionReservationWrite.value }),
+            expectedRevision: computed.sessionReservationWrite.expectedRevision,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+    }
+    return effects;
 }
 
 function computeGroupMutationGuard(

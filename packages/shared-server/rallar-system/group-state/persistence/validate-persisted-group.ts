@@ -15,6 +15,7 @@ import {
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { readGroupRetentionState } from '@shared/api/group-retention.ts';
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -123,6 +124,13 @@ function assertStoredGroupRetention(group: ValidationRecord): void {
     const metadata = requireRecord(group.metadata, 'Stored group metadata');
     requireJsonSafe(metadata, 'Stored group metadata');
     const retention = readGroupRetentionState(metadata);
+    const schedule = readGroupSessionSchedule(metadata);
+    if (
+        schedule !== null && (group.kind !== 'room' || typeof group.maxMembers !== 'number' ||
+            group.maxMembers > 64 || retention === null)
+    ) {
+        throw new TypeError('Stored scheduled rooms require bounded player capacity and temporary retention');
+    }
     if (retention === null) {
         return;
     }

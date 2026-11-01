@@ -40,6 +40,7 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
             return;
         }
         owner.enter({
+            intent: 'join',
             roomRef: { ...RELIC_ROOM_SCOPE, groupId: draft.reference.trim() },
             joinCode: draft.code.trim() || null,
             participation: draft.participation

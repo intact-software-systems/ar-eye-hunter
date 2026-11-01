@@ -1,7 +1,16 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+    canonicalStoredGroupSessionIntent,
+    GROUP_SESSION_INTENTS_NAMESPACE
+} from '../schedule/group-session-intent-storage.ts';
+import { groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    canonicalStoredGroupSessionReservations,
+    GROUP_SESSION_RESERVATIONS_NAMESPACE
+} from '../schedule/group-session-reservation-storage.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import { decodeStoredGroupLifecyclePolicy } from './decode-stored-group-lifecycle-policy.ts';
 import {
@@ -37,6 +46,13 @@ export async function readGroupRetirementEntries(
 ): Promise<readonly GroupRetirementEntry[]> {
     const key = groupStateGroupStorageKey(ref);
     const selections = await repository.readRuntimeStateBatch([
+        {
+            selectorId: GROUP_SESSION_INTENTS_NAMESPACE,
+            kind: 'prefix-suffix',
+            namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+            keyPrefix: groupStateScopeStorageKey(ref) + ':principal=',
+            keySuffix: ':group=' + encodeURIComponent(ref.groupId)
+        },
         ...[
             MEMBERS_NAMESPACE,
             PRESENCE_ADMISSIONS_NAMESPACE,
@@ -49,12 +65,14 @@ export async function readGroupRetirementEntries(
             namespace,
             keyPrefix: `${key}:`
         })),
-        ...[PRESENCE_SUMMARIES_NAMESPACE, GROUP_LIFECYCLE_POLICIES_NAMESPACE].map((namespace) => ({
-            selectorId: namespace,
-            kind: 'key' as const,
-            namespace,
-            key
-        }))
+        ...[PRESENCE_SUMMARIES_NAMESPACE, GROUP_LIFECYCLE_POLICIES_NAMESPACE, GROUP_SESSION_RESERVATIONS_NAMESPACE].map(
+            (namespace) => ({
+                selectorId: namespace,
+                kind: 'key' as const,
+                namespace,
+                key
+            })
+        )
     ]);
     return selections.flatMap((selection) =>
         selection.entries.map((entry) => {
@@ -82,6 +100,12 @@ function validateRetirementEntry(namespace: string, entry: RuntimeStateEntry, re
                 return;
             case PUBLICATION_GRANTS_NAMESPACE:
                 canonicalStoredPublicationGrant(stored, ref);
+                return;
+            case GROUP_SESSION_INTENTS_NAMESPACE:
+                canonicalStoredGroupSessionIntent(stored, ref);
+                return;
+            case GROUP_SESSION_RESERVATIONS_NAMESPACE:
+                canonicalStoredGroupSessionReservations(stored, ref);
                 return;
             case GROUP_LIFECYCLE_POLICIES_NAMESPACE:
                 if (entry.key !== groupStateGroupStorageKey(ref)) {

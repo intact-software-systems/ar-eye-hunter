@@ -134,8 +134,10 @@ function readObjectString(node: MutationRoutingAstNode, propertyName: string): s
 }
 
 function readTemplateElement(node: MutationRoutingAstNode | undefined): string | undefined {
-    const value = asNode(node?.value);
-    return typeof value?.raw === 'string' ? value.raw : undefined;
+    const value = node?.value;
+    return value !== null && typeof value === 'object' && 'raw' in value && typeof value.raw === 'string'
+        ? value.raw
+        : undefined;
 }
 
 function findAll(value: MutationRoutingAstNode, predicate: (node: MutationRoutingAstNode) => boolean): MutationRoutingAstNode[] {
@@ -354,8 +356,8 @@ function visitOutsideFunctions(value: unknown, visitor: (node: MutationRoutingAs
             }
             return;
         }
-        const node = current as MutationRoutingAstNode;
-        if (!isRoot && isFunctionNode(node)) {
+        const node = asNode(current);
+        if (node === undefined || !isRoot && isFunctionNode(node)) {
             return;
         }
         visitor(node);
@@ -461,7 +463,7 @@ function isFunctionNode(node: MutationRoutingAstNode): boolean {
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {
-    return value && typeof value === 'object' && !Array.isArray(value)
+    return value && typeof value === 'object' && !Array.isArray(value) && 'type' in value && typeof value.type === 'string'
         ? (value as MutationRoutingAstNode)
         : undefined;
 }

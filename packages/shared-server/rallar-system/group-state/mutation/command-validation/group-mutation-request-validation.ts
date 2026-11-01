@@ -167,6 +167,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'joinMode',
         'directoryListing',
         'retention',
+        'scheduledStartAtEpochMs',
         'maxMembers',
         'maxSpectators',
         'maxSessionsPerMember',
@@ -232,6 +233,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'invitedByPrincipalId',
         'invitationExpiresAtEpochMs'
     ],
+    changeGroupSession: [...MUTATION_REQUEST_KEYS, 'action', 'expectedScheduleRevision', 'startsAtEpochMs'],
     rotateGroupJoinCode: [...MUTATION_REQUEST_KEYS, 'joinCode', 'expiresAtEpochMs'],
     connectPresence: [
         ...MUTATION_REQUEST_KEYS,

@@ -3,6 +3,8 @@ import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/g
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
+import { readGroupRetentionState } from '@shared/api/group-retention.ts';
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     AuditStamp,
     Group,
@@ -171,7 +173,7 @@ export function computeCreate(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    const denial = toCreateDenial(command, read);
+    const denial = toCreateDenial(command, read, facts);
     if (denial !== null) {
         return rejected({ command, read, facts, ...denial });
     }
@@ -215,7 +217,8 @@ interface GroupCreateDenial {
 
 function toCreateDenial(
     command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>,
-    read: GroupMutationRead
+    read: GroupMutationRead,
+    facts: GroupMutationFacts
 ): GroupCreateDenial | null {
     if (command.input.actorPrincipalId !== command.input.createdByPrincipalId) {
         return {
@@ -233,6 +236,20 @@ function toCreateDenial(
         return {
             rejectionCode: 'group-already-exists',
             message: `Group already exists: ${command.aggregateRef.groupId}`
+        };
+    }
+    const schedule = readGroupSessionSchedule(command.input.metadata);
+    if (
+        schedule !== null && (
+            schedule.startsAtEpochMs <= facts.attemptAtEpochMs || schedule.revision !== 1 ||
+            schedule.cancelledAtEpochMs !== null || command.input.kind !== 'room' ||
+            command.input.maxMembers === null || command.input.maxMembers > 64 ||
+            readGroupRetentionState(command.input.metadata) === null
+        )
+    ) {
+        return {
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Scheduled creation requires a future start, initial schedule and bounded temporary room.'
         };
     }
     const policyIssues = command.input.lifecyclePolicy === undefined

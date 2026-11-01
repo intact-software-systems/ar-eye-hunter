@@ -4,6 +4,7 @@ import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.t
 import { MUTATION_ROUTE_OWNER_DISPATCH_PATHS, MUTATION_ROUTE_OWNER_PATHS, type MutationRouteInventoryRow } from './mutation-routing-owner-inventory.ts';
 
 const PATHS = {
+    groupSessions: 'apps/api-v1/src/group-state/register-group-session-routes.ts',
     groupMove: 'apps/api-v1/src/group-state/register-group-move-routes.ts',
     groupMoveDeadline: 'packages/shared-server/rallar-system/group-state/move/group-move-inbox.ts',
     clientMutations: 'apps/api-v1/src/routes/client-state-mutation-routes.ts',
