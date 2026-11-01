@@ -81,7 +81,7 @@ describe('scheduled-session browser ownership', () => {
         expect(test.enterScheduledLobby).not.toHaveBeenCalled();
         test.api.read.mockResolvedValue({ ...preview, timing: toGroupSessionTiming(schedule, 3_000_000), serverNowEpochMs: 3_000_000, canEnter: true });
         await test.owner.enterLobby();
-        expect(test.enterScheduledLobby).toHaveBeenCalledOnce();
+        expect(test.enterScheduledLobby).toHaveBeenCalled();
     });
 
     it('ignores old account reads even when their transport ignores abort', async () => {

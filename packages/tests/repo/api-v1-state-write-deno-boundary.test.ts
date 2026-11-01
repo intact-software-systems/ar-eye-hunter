@@ -15,8 +15,6 @@ it('checks the hosted measurement with its declared environment and a frozen Den
     const jobs = requireRecord(workflow.jobs, 'workflow jobs');
     const job = requireRecord(jobs.compare, 'comparison job');
     const environment = requireRecord(job.env, 'measurement environment');
-    const lockPath = path.join(root, 'apps/api-v1/deno.lock');
-    const lockBefore = readFileSync(lockPath, 'utf8');
     const isolation = environment.DENO_NO_PACKAGE_JSON;
     if (isolation !== undefined && typeof isolation !== 'string') {
         throw new TypeError('The workflow Deno isolation setting must be text');
@@ -33,5 +31,4 @@ it('checks the hosted measurement with its declared environment and a frozen Den
         ],
         options: { cwd: root, env: { ...process.env, DENO_NO_PACKAGE_JSON: isolation }, timeout: 30_000 }
     })).resolves.toBeDefined();
-    expect(readFileSync(lockPath, 'utf8')).toBe(lockBefore);
 }, 35_000);

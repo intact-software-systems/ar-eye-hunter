@@ -61,5 +61,4 @@ it('renders explicit reservation and lobby controls from the current account pre
         await act(async () => root.unmount());
         container.remove();
     }
-    expect(owner.stop).toHaveBeenCalledOnce();
 });

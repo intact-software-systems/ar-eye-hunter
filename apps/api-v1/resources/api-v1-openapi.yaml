@@ -7308,20 +7308,19 @@ components:
     GroupSessionPreview:
       type: object
       additionalProperties: false
-      required: [
-        roomRef,
-        displayName,
-        schedule,
-        timing,
-        serverNowEpochMs,
-        maxPlayers,
-        availableSeats,
-        participation,
-        isOrganizer,
-        canReserve,
-        canEnter,
-        admissionDenial,
-      ]
+      required:
+        - roomRef
+        - displayName
+        - schedule
+        - timing
+        - serverNowEpochMs
+        - maxPlayers
+        - availableSeats
+        - participation
+        - isOrganizer
+        - canReserve
+        - canEnter
+        - admissionDenial
       properties:
         roomRef:
           $ref: '#/components/schemas/GroupRef'

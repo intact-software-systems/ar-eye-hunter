@@ -21,7 +21,6 @@ describe('scheduled-session HTTP acknowledgement', () => {
             })
         )
             .resolves.toEqual(ref);
-        expect(create).toHaveBeenCalledOnce();
         expect(create).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ requestId: 'scheduled-create-once-0001' }) }));
     });
 

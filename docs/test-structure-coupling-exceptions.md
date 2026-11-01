@@ -5021,6 +5021,98 @@ moved or changed test.
         "requiredConstraint": "Uncommitted or other-account moves must be rejected before any HTTP effect.",
         "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
       }
+    },
+    {
+      "id": "scheduled-preview-never-enters-before-permission",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Previewing a scheduled session must not request joining it; explicit entry requires fresh server admission permission.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay",
+      "coverageRelation": "The test selects a preview and attempts entry before permission, observing no entry request. After fresh permission it invokes entry again and verifies an entry request exists; duplicate idempotent port calls are not pinned.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarRoomEntry.enterScheduledLobby",
+        "observableEffect": "The entry port publishes a pending join destination; the consuming app then owns eligibility, admission and active-room switching.",
+        "requiredConstraint": "Preview selection and an early entry attempt emit zero join-intent requests; an explicit permitted attempt must request entry, without requiring an exact invocation count.",
+        "failureRationale": "Preview state can look correct while an unintended join destination is already queued. Conversely, permitted entry must actually request that destination."
+      }
+    },
+    {
+      "id": "scheduled-entry-fails-closed-after-refresh-failure",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "A failed current preview refresh cannot reuse old admission permission.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#clears stale admission permission when its current refresh fails",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. After the fresh permission read fails, no lobby-entry effect is emitted.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomEntry.enterScheduledLobby",
+        "observableEffect": "The entry port publishes the pending join destination that app admission consumes.",
+        "requiredConstraint": "After the fresh permission read fails, no join-intent request is emitted.",
+        "failureRationale": "A cleared local preview does not prove that a join destination was not already queued."
+      }
+    },
+    {
+      "id": "scheduled-ambiguous-write-replays-identical-command",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Explicit retry after a lost RSVP response replays the identical logical command.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#retries an ambiguous write with the same identity and reviewed revision",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. One initial attempt followed by one explicit retry emits two requests in that order, with identical request identity, action and reviewed revision.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarScheduledSessions.Api.change",
+        "observableEffect": "The API port delivers the reservation command to AppInbox.",
+        "requiredConstraint": "One initial attempt followed by one explicit retry emits two requests in that order, with identical request identity, action and reviewed revision.",
+        "failureRationale": "Retry state alone cannot exclude a second logical reservation or accidental duplicate deliveries."
+      }
+    },
+    {
+      "id": "scheduled-creation-deduplicates-pending-clicks",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Repeated creation clicks while a request is pending create only one scheduled room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. Two overlapping clicks emit exactly one creation request before it settles.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarScheduledSessions.Api.create",
+        "observableEffect": "The API port creates a durable scheduled room.",
+        "requiredConstraint": "Two overlapping clicks emit exactly one creation request before it settles.",
+        "failureRationale": "One final selected room can hide a second orphan room created by a duplicate request."
+      },
+      "sharedCoverageGroup": "scheduled-creation-pending-click-and-logout-lifecycle"
+    },
+    {
+      "id": "scheduled-creation-completion-respects-logout",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "A creation result from a logged-out account cannot replace the current room destination.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. When creation completes after logout, no destination-entry request is emitted.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomEntry.enter",
+        "observableEffect": "The entry port publishes a destination that may resume through later authentication.",
+        "requiredConstraint": "When creation completes after logout, no destination-entry request is emitted.",
+        "failureRationale": "Empty session UI state alone cannot prove that a stale destination was not queued for later entry."
+      },
+      "sharedCoverageGroup": "scheduled-creation-pending-click-and-logout-lifecycle"
+    },
+    {
+      "id": "scheduled-reservation-click-does-not-enter-lobby",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Reserving a seat is distinct from explicit lobby entry.",
+      "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. Clicking Reserve a seat must emit the reserve action and no lobby-entry action.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ScheduledSessionsPanel owner.enterLobby",
+        "observableEffect": "The lobby action starts a fresh permission check and may publish a pending join destination for app-owned admission.",
+        "requiredConstraint": "Clicking Reserve a seat must emit the reserve action and must not invoke the separate lobby-entry action.",
+        "failureRationale": "A disabled Enter lobby button alone does not rule out the reserve handler accidentally invoking entry."
+      }
     }
   ],
   "entries": [
@@ -10611,6 +10703,105 @@ moved or changed test.
       "owner": "Rallar realtime maintainers",
       "rationale": "Uncommitted or other-account moves must be rejected before any HTTP effect. The absence assertion excludes remote side effects that local state cannot prove.",
       "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#refuses an uncommitted or other-account move before any HTTP effect"
+    },
+    {
+      "id": "test-structure-coupling-0ea82a76def8a2de",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-never-enters-before-permission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Selecting a session preview must emit no join-intent request.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay"
+    },
+    {
+      "id": "test-structure-coupling-617a0a3295b7b5e6",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-never-enters-before-permission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "An explicit attempt before server permission must still emit no join-intent request.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay"
+    },
+    {
+      "id": "test-structure-coupling-1c814d95cd1783c2",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-never-enters-before-permission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The permitted explicit attempt must request entry; existence is observable while an exact count for the idempotent port is incidental.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay"
+    },
+    {
+      "id": "test-structure-coupling-79dd99e01c9d920d",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-entry-fails-closed-after-refresh-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The failed refresh must prevent a join-intent request, in addition to clearing visible permission.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#clears stale admission permission when its current refresh fails"
+    },
+    {
+      "id": "test-structure-coupling-ff908e48df5ee115",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-ambiguous-write-replays-identical-command",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial action and its one explicit retry must emit exactly two deliveries.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#retries an ambiguous write with the same identity and reviewed revision"
+    },
+    {
+      "id": "test-structure-coupling-080eeb3d4b339414",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-ambiguous-write-replays-identical-command",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Comparing first and second request data proves replay identity and reviewed revision remain unchanged across the lost response.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#retries an ambiguous write with the same identity and reviewed revision"
+    },
+    {
+      "id": "test-structure-coupling-d3926c5bba27c2b3",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-creation-deduplicates-pending-clicks",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Two pending clicks must cause only one durable room creation attempt.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout"
+    },
+    {
+      "id": "test-structure-coupling-95632c2ee4cb2469",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-creation-completion-respects-logout",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The completed stale request must not enqueue a destination after logout.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout"
+    },
+    {
+      "id": "test-structure-coupling-fb3e7a0c520b76fc",
+      "path": "packages/tests/shared-react/scheduled-sessions-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-reservation-click-does-not-enter-lobby",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The actual reserve button click must not cause the separate lobby-entry effect.",
+      "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview"
     }
   ]
 }
