@@ -8,11 +8,47 @@ export async function friendsPlayJourney(host: Page, guest: Page, game: 'arena' 
     await signInRoomPlayer(guest, 'bob', game);
     await openFriends(host);
     await openFriends(guest);
+    await recoverTerminalFriendsFailure(host);
     await exerciseFriendConsent(host, guest);
     await removeAndRestoreFriendship(host, guest);
     await inviteScheduledSession(host, guest);
     await inviteToRoomAndPlay(host, guest, game);
     await revokePendingInvitation(host, guest, game);
+}
+
+async function recoverTerminalFriendsFailure(page: Page): Promise<void> {
+    const panel = friendsPanel(page);
+    const endpoint = '**/api/friends/requests/*';
+    await page.route(endpoint, async (route) =>
+        route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                type: 'api-mutation-failure',
+                version: 'canonical.v2',
+                code: 'app-inbox-retry-exhausted',
+                status: 503,
+                message: 'The request exhausted its retry budget.',
+                issues: null,
+                denial: null,
+                retry: {
+                    kind: 'exhausted',
+                    retryAfterMs: null,
+                    attempts: 20,
+                    lane: null,
+                    queueAgeMs: null,
+                    dueAgeMs: null
+                }
+            })
+        }));
+    await panel.getByRole('checkbox', { name: 'Share when I am online with friends', exact: true }).click();
+    await expect(panel.getByRole('alert')).toContainText('Review your friends and try the action again.');
+    await expect(panel.getByRole('button', { name: 'Retry friends request', exact: true })).toHaveCount(0);
+    await page.unroute(endpoint);
+    await panel.getByRole('checkbox').click();
+    await expect(panel.getByRole('checkbox')).toBeChecked();
+    await panel.getByRole('checkbox').click();
+    await expect(panel.getByRole('checkbox')).not.toBeChecked();
 }
 
 async function exerciseFriendConsent(host: Page, guest: Page): Promise<void> {

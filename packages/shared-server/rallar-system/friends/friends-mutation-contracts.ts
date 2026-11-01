@@ -1,5 +1,5 @@
 import type { FriendsMutationResult, FriendsRequest } from '@shared/api/friends/friends-request.ts';
-import type { RuntimeStateGuardedBatchUpdate } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { GroupStateAuthoritativeSnapshot } from '../group-state/persistence/group-state-persistence-contracts.ts';
 
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
@@ -39,17 +39,9 @@ export interface FriendsMutationRead {
     readonly config: FriendsConfig;
 }
 
-export interface FriendsProfileWrite {
-    readonly key: string;
-    readonly expectedRevision: number | null;
-    readonly value: string;
-    readonly expireAtTimestamp: number;
-}
-
 export interface FriendsMutationComputed {
     readonly read: FriendsMutationRead;
     readonly profiles: readonly FriendsProfile[];
-    readonly writes: readonly FriendsProfileWrite[];
-    readonly guards: readonly RuntimeStateGuardedBatchUpdate[];
+    readonly storage: RuntimeStateGuardedBatchWrite | null;
     readonly result: FriendsMutationResult;
 }

@@ -4311,10 +4311,16 @@ components:
             principalId: { type: string, minLength: 1 }
             requestId: { type: string, minLength: 20, maxLength: 128 }
             status: { type: string, enum: [refused] }
-            code: {
-              type: string,
-              enum: [request-unavailable, person-unavailable, unauthorized, capacity, friend-required, destination-unavailable, invitation-expired],
-            }
+            code:
+              type: string
+              enum:
+                - request-unavailable
+                - person-unavailable
+                - unauthorized
+                - capacity
+                - friend-required
+                - destination-unavailable
+                - invitation-expired
     ApiMutationFailure:
       type: object
       required: [type, version, code, status, message, issues, denial, retry]

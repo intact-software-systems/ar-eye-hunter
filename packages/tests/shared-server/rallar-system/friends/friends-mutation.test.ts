@@ -62,8 +62,9 @@ describe('private friends mutations', () => {
             [{ principalId: 'alice', status: 'incoming' }]
         ]);
         expect(before.actor.profile.contacts).toEqual([]);
-        expect(computed.writes).toHaveLength(2);
-        expect(computed.writes.every((write) => typeof write.value === 'string')).toBe(true);
+        expect(computed.storage?.guardSqlDescriptor.expireAtTimestamp).toBe('1970-01-01T00:00:10.000Z');
+        expect(computed.storage?.effectSqlDescriptors.map((effect) => JSON.parse(effect.value!).principalId)).toEqual(['alice', 'bob']);
+        expect(computed.storage?.effectSqlDescriptors.every((effect) => typeof effect.expireAtTimestamp === 'string')).toBe(true);
     });
 
     it('refuses absent authority, self requests and capacity without prepared writes', () => {
@@ -77,7 +78,7 @@ describe('private friends mutations', () => {
         ) {
             const computed = computeFriendsMutation(changed);
             expect(computed.result.status).toBe('refused');
-            expect(computed.writes).toEqual([]);
+            expect(computed.storage).toBeNull();
         }
     });
 
@@ -158,7 +159,7 @@ describe('private friends mutations', () => {
         };
         const refused = computeFriendsMutation(cancelled);
         expect(refused.result).toMatchObject({ status: 'refused', code: 'destination-unavailable' });
-        expect(refused.writes).toEqual([]);
+        expect(refused.storage).toBeNull();
     });
 
     it('removes pending invitations in both directions when friendship is removed', () => {
@@ -201,6 +202,27 @@ describe('private friends mutations', () => {
         });
         expect(computed.result.status).toBe('applied');
         expect(computed.profiles.map((profile) => profile.contacts)).toEqual([[], []]);
+    });
+
+    it('allows turning sharing off after an operator lowers contact limits', () => {
+        const before = read({ action: 'visibility', shareOnline: false });
+        const computed = computeFriendsMutation({
+            ...before,
+            actor: {
+                ...before.actor,
+                profile: {
+                    ...before.actor.profile,
+                    shareOnline: true,
+                    contacts: [
+                        { principalId: 'bob', status: 'friend' },
+                        { principalId: 'carol', status: 'outgoing' }
+                    ]
+                }
+            },
+            config: { ...before.config, maxContacts: 1 }
+        });
+        expect(computed.result.status).toBe('applied');
+        expect(computed.profiles[0]?.shareOnline).toBe(false);
     });
 
     it('changes only the caller visibility and can dismiss only the caller invitations', () => {

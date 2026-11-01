@@ -267,13 +267,7 @@ export class RallarFriends {
         }
         catch (error) {
             if (this.current(attempt)) {
-                if (
-                    error instanceof ApiHttpError && error.status >= 400 && error.status < 500 &&
-                    error.status !== 408 && error.status !== 429
-                ) {
-                    this.pending = null;
-                }
-                this.publish({ ...this.state, error: toError(error).message });
+                this.failPending(toError(error));
             }
         }
         finally {
@@ -281,6 +275,22 @@ export class RallarFriends {
                 this.publish({ ...this.state, busy: false, retryPending: this.pending !== null });
             }
         }
+    }
+
+    private failPending(error: Error): void {
+        const exhausted = error instanceof ApiHttpError && error.mutationFailure?.retry?.kind === 'exhausted';
+        if (
+            exhausted || (error instanceof ApiHttpError && error.status >= 400 && error.status < 500 &&
+                error.status !== 408 && error.status !== 429)
+        ) {
+            this.pending = null;
+        }
+        this.publish({
+            ...this.state,
+            error: exhausted
+                ? 'The request could not complete. Review your friends and try the action again.'
+                : error.message
+        });
     }
 
     private authenticationChanged(): void {

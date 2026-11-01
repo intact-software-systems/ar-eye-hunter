@@ -1,10 +1,7 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { createTransactionBoundPSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
-import type { FriendsProfileRead, FriendsProfileWrite } from './friends-mutation-contracts.ts';
+import type { FriendsProfileRead } from './friends-mutation-contracts.ts';
 import { decodeFriendsProfile, FRIENDS_PROFILE_NAMESPACE, friendsProfileKey } from './friends-profile.ts';
 
 export class FriendsRepository {
@@ -55,31 +52,5 @@ function decodeStoredFriendsProfile(principalId: string, entry: RuntimeStateEntr
     }
     catch (cause) {
         throw new Error('Friends profile stored identity or content is invalid', { cause });
-    }
-}
-
-export async function writeFriendsProfiles(
-    transaction: PSqlSql,
-    writes: readonly FriendsProfileWrite[]
-): Promise<void> {
-    const repository = createTransactionBoundPSqlRuntimeStateRepository(transaction);
-    for (const write of writes) {
-        const result = write.expectedRevision === null
-            ? await repository.insertIfAbsent(
-                FRIENDS_PROFILE_NAMESPACE,
-                write.key,
-                write.value,
-                write.expireAtTimestamp
-            )
-            : await repository.upsertIfRevision(
-                FRIENDS_PROFILE_NAMESPACE,
-                write.key,
-                write.value,
-                write.expireAtTimestamp,
-                write.expectedRevision
-            );
-        if (result.status === 'conflict') {
-            throw new RuntimeStateWriteConflictError();
-        }
     }
 }

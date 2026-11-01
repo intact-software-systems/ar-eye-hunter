@@ -12,7 +12,7 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'packages/shared-web/browser/friends/rallar-friends.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 54
+        maximumMagnitude: 55
     }),
     // Reviewed deterministic scalar/vector arithmetic owner; all exports have direct consumers.
     Object.freeze({

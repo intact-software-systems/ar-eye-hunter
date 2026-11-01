@@ -1,6 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
+import { writeRuntimeStateGuardedBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -12,7 +14,7 @@ import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistenc
 import { FriendsAccountDirectory } from '@shared-server/rallar-system/friends/friends-account-directory.ts';
 import type { FriendsCommand } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
 import { FRIENDS_PROFILE_NAMESPACE } from '@shared-server/rallar-system/friends/friends-profile.ts';
-import { FriendsRepository, writeFriendsProfiles } from '@shared-server/rallar-system/friends/friends-repository.ts';
+import { FriendsRepository } from '@shared-server/rallar-system/friends/friends-repository.ts';
 import { FriendsService } from '@shared-server/rallar-system/friends/friends-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -137,6 +139,8 @@ describe('authenticated friends commands through AppInbox', () => {
             vi.spyOn(fixture.profiles, 'readProfiles').mockImplementationOnce(async (principals) => {
                 const observed = await readProfiles(principals);
                 const writes = observed.map(({ entry, profile }) => ({
+                    operation: 'update' as const,
+                    namespace: FRIENDS_PROFILE_NAMESPACE,
                     key: entry!.key,
                     expectedRevision: entry!.revision,
                     expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
@@ -145,7 +149,11 @@ describe('authenticated friends commands through AppInbox', () => {
                         contacts: winner === 'block' && profile.principalId === 'bob' ? [{ principalId: 'alice', status: 'blocked' }] : []
                     })
                 }));
-                await fixture.storage.sql.begin((transaction) => writeFriendsProfiles(transaction, writes));
+                const prepared = computeRuntimeStateGuardedBatchWrite({
+                    guard: writes[0]!,
+                    effects: [{ ...writes[1]!, effectId: 'other-account' }]
+                });
+                await fixture.storage.sql.begin((transaction) => writeRuntimeStateGuardedBatch(transaction, prepared));
                 return observed;
             });
             const admission = await fixture.service.mutate.enqueue({

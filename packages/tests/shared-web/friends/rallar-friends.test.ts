@@ -1,3 +1,4 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -77,6 +78,37 @@ describe('friends browser lifecycle', () => {
         await test.owner.retry();
         expect(test.api.change.mock.calls[1]?.[0]).toEqual(test.api.change.mock.calls[0]?.[0]);
         expect(test.owner.getState()).toMatchObject({ retryPending: false, error: null });
+    });
+
+    it('releases a terminal exhausted request so a new action can proceed', async () => {
+        const test = browser();
+        await test.owner.start();
+        test.api.change.mockRejectedValueOnce(
+            new ApiHttpError(
+                'POST',
+                '/api/friends/requests/request',
+                503,
+                JSON.stringify({
+                    type: 'api-mutation-failure',
+                    version: 'canonical.v2',
+                    code: 'app-inbox-retry-exhausted',
+                    status: 503,
+                    message: 'The request exhausted its retry budget.',
+                    issues: null,
+                    denial: null,
+                    retry: { kind: 'exhausted', retryAfterMs: null, attempts: 20, lane: null, queueAgeMs: null, dueAgeMs: null }
+                })
+            )
+        );
+        await test.owner.act({ action: 'visibility', shareOnline: true });
+        expect(test.owner.getState()).toMatchObject({
+            retryPending: false,
+            busy: false,
+            error: 'The request could not complete. Review your friends and try the action again.'
+        });
+        await test.owner.act({ action: 'request', username: 'carol' });
+        expect(test.api.change.mock.calls[1]?.[0].request).toEqual({ action: 'request', username: 'carol' });
+        expect(test.api.change.mock.calls[1]?.[0].requestId).not.toBe(test.api.change.mock.calls[0]?.[0].requestId);
     });
 
     it('shows a readable refusal without leaving a retryable command', async () => {
