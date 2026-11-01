@@ -18,7 +18,8 @@ export class ArenaCanvasRuntime {
         // Room scenes still dispose independently; replacing one must not recompile the same arena materials.
         Effect.PersistentMode = true;
         this.canvas = canvas;
-        this.engine = new Engine(canvas, true, { antialias: true, preserveDrawingBuffer: true, stencil: true });
+        // Single-sample rendering reduces graphics work competing with room and gameplay controls.
+        this.engine = new Engine(canvas, false, { antialias: false, preserveDrawingBuffer: true, stencil: true });
     }
 
     startScene(input: ArenaCanvasRuntime.SceneInput): ArenaSceneRuntime {

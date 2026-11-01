@@ -4,6 +4,7 @@ import {
     type Page
 } from '@playwright/test';
 
+import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
 import type { GroupSnapshot } from '../../../packages/shared/api/group-types.ts';
 
 import { roomBrowserTest } from '../room-browser-fixture.ts';
@@ -15,8 +16,8 @@ roomBrowserTest(
             process.env.RALLAR_ARENA_FULL_STACK !== '1',
             'Requires the local API-v1 memory fixture on port 8080.'
         );
-        await alice.addInitScript(installArenaWebGlObservation);
-        await bob.addInitScript(installArenaWebGlObservation);
+        await alice.addInitScript(observeBrowserWebGlContexts);
+        await bob.addInitScript(observeBrowserWebGlContexts);
         const bobOperations = await signIn(bob, 'bob');
         await bob.route(
             '**/groups/quick-join/requests/*',
@@ -69,12 +70,12 @@ roomBrowserTest(
         await expect(bobOperations.locator('.room-row.active')).toContainText(replacement.group.displayName);
         await bob.screenshot({ path: testInfo.outputPath('quick-join-replacement.png'), fullPage: true });
         // interaction: one WebGL acquisition per mounted canvas avoids repeating driver initialization on room changes.
-        await expect(alice.getByLabel('AR Eye Hunter gameplay canvas')).toHaveAttribute(
-            'data-test-webgl-acquisitions',
+        await expect(alice.locator('html')).toHaveAttribute(
+            'data-test-webgl-contexts',
             '1'
         );
-        await expect(bob.getByLabel('AR Eye Hunter gameplay canvas')).toHaveAttribute(
-            'data-test-webgl-acquisitions',
+        await expect(bob.locator('html')).toHaveAttribute(
+            'data-test-webgl-contexts',
             '1'
         );
     }
@@ -245,23 +246,27 @@ function installAnimationFrameGate(): void {
     });
 }
 
-roomBrowserTest('director canvas shot fixture does not render the local player as a remote avatar without a session', async ({ page }) => {
-    roomBrowserTest.skip(
-        process.env.RALLAR_ARENA_FULL_STACK === '1',
-        'Component integration uses the Vite source server.'
-    );
-    const fixturePath =
-        new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url).pathname;
-    await page.goto(`/@fs${fixturePath}`);
-    await page.getByRole('button', { name: 'Play without session' }).click();
-    const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
-    await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
-    await canvas.click();
-    await page.keyboard.down('w');
-    await page.waitForTimeout(500);
-    await page.keyboard.up('w');
-    await expect(canvas).toHaveAttribute('data-arena-avatar-count', '0');
-});
+roomBrowserTest(
+    'director canvas shot fixture does not render the local player as a remote avatar without a session',
+    async ({ page }) => {
+        roomBrowserTest.skip(
+            process.env.RALLAR_ARENA_FULL_STACK === '1',
+            'Component integration uses the Vite source server.'
+        );
+        const fixturePath =
+            new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                .pathname;
+        await page.goto(`/@fs${fixturePath}`);
+        await page.getByRole('button', { name: 'Play without session' }).click();
+        const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await canvas.click();
+        await page.keyboard.down('w');
+        await page.waitForTimeout(500);
+        await page.keyboard.up('w');
+        await expect(canvas).toHaveAttribute('data-arena-avatar-count', '0');
+    }
+);
 
 roomBrowserTest('director canvas shots keep current room state and reuse shaders until unmount', async ({ page }) => {
     roomBrowserTest.skip(
@@ -302,6 +307,8 @@ roomBrowserTest('director canvas shots keep current room state and reuse shaders
         originalSceneDisposed: true,
         originalFloorEffectDisposed: false,
         sameFloorEffect: true,
+        multisampling: false,
+        effectLayers: 0,
         scenes: 1,
         loops: 1
     });
@@ -314,23 +321,9 @@ roomBrowserTest('director canvas shots keep current room state and reuse shaders
         originalSceneDisposed: true,
         originalFloorEffectDisposed: true,
         sameFloorEffect: false,
+        multisampling: false,
+        effectLayers: 0,
         scenes: 0,
         loops: 0
     });
 });
-
-function installArenaWebGlObservation(): void {
-    HTMLCanvasElement.prototype.getContext = new Proxy(HTMLCanvasElement.prototype.getContext, {
-        apply(target, canvas: HTMLCanvasElement, argumentsList: Parameters<HTMLCanvasElement['getContext']>) {
-            const context = Reflect.apply(target, canvas, argumentsList);
-            const kind = argumentsList[0];
-            if (
-                context && typeof kind === 'string' && kind.startsWith('webgl') &&
-                canvas.getAttribute('aria-label') === 'AR Eye Hunter gameplay canvas'
-            ) {
-                canvas.dataset.testWebglAcquisitions = String(Number(canvas.dataset.testWebglAcquisitions ?? 0) + 1);
-            }
-            return context;
-        }
-    });
-}

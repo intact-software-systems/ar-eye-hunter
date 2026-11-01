@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { registerRelicHunter, waitForExpeditionScene } from './relic-browser-room-workflow.ts';
 
@@ -131,7 +132,7 @@ roomBrowserTest(
 roomBrowserTest(
     'withdraws across shared-session tabs and preserves withdrawal on room re-entry',
     async ({ page: host }) => {
-        await host.addInitScript(observeWebGlContexts);
+        await host.addInitScript(observeBrowserWebGlContexts);
         await registerRelicHunter(host, 'shared-session');
         // interaction: signing in keeps an already visible opening renderer alive.
         await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
@@ -139,7 +140,7 @@ roomBrowserTest(
         await waitForExpeditionScene(host);
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();
         const other = await host.context().newPage();
-        await other.addInitScript(observeWebGlContexts);
+        await other.addInitScript(observeBrowserWebGlContexts);
         await other.goto(link);
         await waitForExpeditionScene(other);
         // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
@@ -173,6 +174,7 @@ roomBrowserTest(
             // Re-enter from the room link to verify persisted withdrawal independently of either tab's cache.
             await other.goto(link);
             await waitForExpeditionScene(other);
+            await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
             await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
             await expect(other.getByRole('button', { name: /Join as/ })).toBeEnabled();
@@ -239,20 +241,4 @@ async function joinTwoHunters(host: Page, guest: Page): Promise<string> {
     await guest.getByRole('button', { name: /Join as/ }).click();
     await expect(host.locator('.lobby-party-row')).toHaveCount(2);
     return link;
-}
-
-function observeWebGlContexts(): void {
-    const contexts = new WeakSet<object>();
-    let count = 0;
-    HTMLCanvasElement.prototype.getContext = new Proxy(HTMLCanvasElement.prototype.getContext, {
-        apply(target, canvas: HTMLCanvasElement, argumentsList: Parameters<HTMLCanvasElement['getContext']>) {
-            const context = Reflect.apply(target, canvas, argumentsList);
-            const kind = argumentsList[0];
-            if (context && typeof kind === 'string' && kind.startsWith('webgl') && !contexts.has(context)) {
-                contexts.add(context);
-                document.documentElement.dataset.testWebglContexts = String(++count);
-            }
-            return context;
-        }
-    });
 }
