@@ -3,8 +3,8 @@ import type { MatchmakingReader } from '@shared-server/rallar-system/matchmaking
 import type { MatchmakingService } from '@shared-server/rallar-system/matchmaking/matchmaking-service.ts';
 import type { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import { readMatchmaking } from './matchmaking-read.ts';
-import { changeMatchmaking } from './matchmaking-write.ts';
+import { readMatchmaking } from './read-matchmaking.ts';
+import { changeMatchmaking } from './change-matchmaking.ts';
 
 export interface MatchmakingRouteDependencies {
     readonly reader: Pick<MatchmakingReader, 'read'>;

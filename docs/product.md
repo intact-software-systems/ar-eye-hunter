@@ -120,6 +120,21 @@ A future session survives an empty room until the reservation deadline, then rec
 reconnect grace. Live presence keeps the room active. Normal temporary-room archival and seven-day
 deletion apply afterward, including private session records and room-owned game saves.
 
+## Find players and start together
+
+AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and
+workspace. Each account has one active search in that scope. Defaults are two players, two minutes
+to find a group and thirty seconds for everyone to confirm; operators can configure these per game.
+Nobody enters until all players confirm and the server admits the whole group to one unlisted,
+temporary room. Each player then chooses Enter matched room and uses the normal game lobby;
+the director or Keeper starts gameplay explicitly.
+
+Cancel, decline and timeout end the whole pending group. They never automatically requeue players.
+A new search is always an explicit choice, including after a successful match. Reload recovers the
+account's current search or result. An uncertain write offers Retry with the same request identity.
+Signing out clears the browser view; server deadlines continue without an open browser. Quick Join
+continues to offer immediate admission to an existing suitable room.
+
 ## Friends and invitations
 
 AR Eye and Relic share an account-wide friend list. Enter an exact username to send a request;

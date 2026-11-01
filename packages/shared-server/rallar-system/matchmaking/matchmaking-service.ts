@@ -191,7 +191,7 @@ export class MatchmakingService {
     private async read(command: MatchmakingCommand, attempt: AppInboxCommandAttempt): Promise<MatchmakingService.Read> {
         const nowEpochMs = Math.max(this.dependencies.nowEpochMs(), command.capturedAtEpochMs ?? 0);
         const [pool, actor, finished] = await Promise.all([
-            this.dependencies.repository.read(command.scope),
+            this.dependencies.repository.read(command.scope, [command.principalId]),
             this.dependencies.authSessions.findSessionBySessionIdEntry(command.sessionId),
             this.dependencies.repository.readFinished({
                 scope: command.scope,

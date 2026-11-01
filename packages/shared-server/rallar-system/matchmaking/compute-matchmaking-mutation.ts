@@ -2,8 +2,7 @@ import type { MatchmakingMutationResult, MatchmakingRefusal } from '@shared/api/
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
-    RuntimeStateGuardedBatchEffect,
-    RuntimeStateGuardedBatchWrite
+    RuntimeStateGuardedBatchEffect
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import { writeAppOutboxInserts, type AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
@@ -19,13 +18,17 @@ import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-resul
 import { computeMatchmaking } from './compute-matchmaking.ts';
 import { computeMatchmakingDeadlines } from './matchmaking-deadline.ts';
 import type { MatchmakingActor, MatchmakingTransition } from './matchmaking-pool.ts';
-import { computeMatchmakingStorage, writeMatchmakingStorage } from './matchmaking-repository.ts';
+import {
+    computeMatchmakingStorage,
+    writeMatchmakingStorage,
+    type MatchmakingRepository
+} from './matchmaking-repository.ts';
 import type { MatchmakingService } from './matchmaking-service.ts';
 
 export interface MatchmakingMutation {
     readonly read: MatchmakingService.Read;
     readonly transition: MatchmakingTransition | null;
-    readonly storage: RuntimeStateGuardedBatchWrite | null;
+    readonly storage: MatchmakingRepository.StorageWrite | null;
     readonly deadlines: readonly AppOutboxInsert[];
     readonly admissions: readonly GroupMutationComputedWrite[];
     readonly result: MatchmakingMutationResult;
@@ -85,7 +88,7 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
 function computeAuthorizedMatchmakingStorage(
     read: MatchmakingService.Read,
     transition: MatchmakingTransition
-): RuntimeStateGuardedBatchWrite {
+): MatchmakingRepository.StorageWrite {
     const prepared = computeMatchmakingStorage({
         read: read.pool,
         transition,
@@ -100,7 +103,13 @@ function computeAuthorizedMatchmakingStorage(
         expireAtTimestamp: session.entry.expireAtTimestamp,
         expectedRevision: session.entry.revision
     }));
-    return computeRuntimeStateGuardedBatchWrite({ ...prepared, effects: [...prepared.effects, ...authority] });
+    return {
+        accountInserts: prepared.accountInserts,
+        batch: computeRuntimeStateGuardedBatchWrite({
+            ...prepared.batch,
+            effects: [...prepared.batch.effects, ...authority]
+        })
+    };
 }
 
 export function validateMatchmakingMutation(

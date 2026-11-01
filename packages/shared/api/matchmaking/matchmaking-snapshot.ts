@@ -107,9 +107,10 @@ function decodeState(value: unknown): MatchmakingState {
 }
 
 function decodeConfirmation(
-    state: Readonly<Record<string, unknown>>,
+    value: unknown,
     searchId: string
 ): Extract<MatchmakingState, { status: 'confirming'; }> {
+    const state = requireRecord(value, 'Confirmation state');
     requireExactKeys(
         state,
         ['status', 'searchId', 'expiresAtEpochMs', 'leaderPrincipalId', 'players'],

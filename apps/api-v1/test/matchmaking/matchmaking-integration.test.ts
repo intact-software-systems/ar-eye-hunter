@@ -1,5 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { decodeMatchmakingMutationResult, type MatchmakingRequest } from '@shared/api/matchmaking/matchmaking-request.ts';
 import { decodeMatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import assert from 'node:assert/strict';
@@ -35,7 +36,7 @@ Deno.test({
             assert.deepEqual((await read(server, admin)).state, { ...matched, searchId: 'search-admin' });
             const response = await server.app.request(`/api/state/apps/game/workspaces/default/groups/${matched.roomRef.groupId}`, { headers: headers(alice) });
             assert.equal(response.status, 200);
-            const room: unknown = await response.json();
+            const room = requireRecord(await response.json(), 'Room response');
             validateAuthoritativeGroupSnapshot(room);
             assert.deepEqual(room.members.map((member) => member.principalId).sort(), ['admin', 'alice']);
             assert.equal(room.group.maxMembers, 2);

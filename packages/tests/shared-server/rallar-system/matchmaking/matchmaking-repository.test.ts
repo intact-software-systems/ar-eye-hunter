@@ -35,14 +35,14 @@ describe('durable matchmaking reservations', () => {
         try {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new MatchmakingRepository(runtime);
-            const stale = await repository.read(scope);
+            const stale = await repository.read(scope, ['alice', 'bob']);
             const now = Date.now();
             const alice = start(stale, 'alice', now);
             const bob = start(stale, 'bob', now + 1);
             await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, alice));
             await expect(storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, bob)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const refreshed = await repository.read(scope);
+            const refreshed = await repository.read(scope, ['bob']);
             await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, start(refreshed, 'bob', now + 1)));
             const committed = await repository.read(scope);
             expect(committed.pool.searching).toEqual([]);
@@ -61,7 +61,7 @@ describe('durable matchmaking reservations', () => {
             const repository = new MatchmakingRepository(new PSqlRuntimeStateRepository(storage.sql));
             const now = Date.now();
             for (const [index, principalId] of ['alice', 'bob'].entries()) {
-                const read = await repository.read(scope);
+                const read = await repository.read(scope, [principalId]);
                 await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, start(read, principalId, now + index)));
             }
             const read = await repository.read(scope);
@@ -119,11 +119,11 @@ describe('durable matchmaking reservations', () => {
             const repository = new MatchmakingRepository(new PSqlRuntimeStateRepository(storage.sql));
             const now = Date.now();
             for (const [index, principalId] of ['alice', 'bob'].entries()) {
-                const read = await repository.read(scope);
+                const read = await repository.read(scope, [principalId]);
                 await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, start(read, principalId, now + index)));
             }
             for (const [index, principalId] of ['alice', 'bob'].entries()) {
-                const read = await repository.read(scope);
+                const read = await repository.read(scope, [principalId]);
                 const transition = computeMatchmaking({
                     pool: read.pool,
                     policy,
@@ -159,7 +159,7 @@ describe('durable matchmaking reservations', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new MatchmakingRepository(runtime);
             const now = Date.now();
-            const initial = await repository.read(scope);
+            const initial = await repository.read(scope, ['alice']);
             await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, start(initial, 'alice', now)));
             const restarted = new MatchmakingRepository(runtime);
             const recovered = await restarted.readCurrent({ scope, principalId: 'alice', nowEpochMs: now + 1 });
@@ -179,7 +179,7 @@ describe('durable matchmaking reservations', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new MatchmakingRepository(runtime);
             const now = Date.now();
-            const first = await repository.read(scope);
+            const first = await repository.read(scope, ['alice']);
             await storage.sql.begin((transaction) => writeMatchmakingStorage(transaction, start(first, 'alice', now)));
             const read = await repository.read(scope);
             const transition = computeMatchmaking({
