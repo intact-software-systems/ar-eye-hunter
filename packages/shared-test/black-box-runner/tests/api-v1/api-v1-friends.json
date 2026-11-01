@@ -540,19 +540,21 @@
     {
       "name": "oneCompleteInvitation",
       "type": "assert",
-      "actual": "{resultsByName.readInvitation.0.actual.body}",
+      "actual": {
+        "body": "{resultsByName.readInvitation.0.actual.body}"
+      },
       "expect": {
         "comparators": [
           {
-            "path": "invitations",
+            "path": "body.invitations",
             "length": 1
           },
           {
-            "path": "invitations.0.createdAtEpochMs",
+            "path": "body.invitations.0.createdAtEpochMs",
             "gt": 0
           },
           {
-            "path": "invitations.0.expiresAtEpochMs",
+            "path": "body.invitations.0.expiresAtEpochMs",
             "gt": 0
           }
         ]
