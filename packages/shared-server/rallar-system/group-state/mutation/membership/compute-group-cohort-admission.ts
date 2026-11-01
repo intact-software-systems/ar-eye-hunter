@@ -2,6 +2,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
 
+import { groupStateInsertGroupDescriptor } from '../../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
 import { assertGroupMutationCommand } from '../command-validation/assert-group-mutation-command.ts';
@@ -11,7 +12,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import { computeGroupMutation } from '../orchestration/compute-group-mutation.ts';
+import { computeGroupMutation, type GroupMutationInput } from '../orchestration/compute-group-mutation.ts';
 import { assertGroupMutationFacts } from '../state-validation/assert-group-mutation-facts.ts';
 import { assertGroupMutationRead } from '../state-validation/assert-group-mutation-read.ts';
 
@@ -28,6 +29,11 @@ export interface GroupCohortAdmissionParticipant {
 }
 
 export interface GroupCohortAdmissionInput {
+    readonly participants: readonly GroupCohortAdmissionParticipant[];
+}
+
+export interface NewGroupCohortAdmissionInput {
+    readonly creation: GroupMutationInput;
     readonly participants: readonly GroupCohortAdmissionParticipant[];
 }
 
@@ -59,6 +65,51 @@ export function computeGroupCohortAdmission(input: GroupCohortAdmissionInput): G
         return { status: 'denied', ...sessionFailure };
     }
     return stageAdmissions(input.participants, group);
+}
+
+/** Stage a new room first, then use the same admission policy as cohorts entering existing rooms. */
+export function computeNewGroupCohortAdmission(input: NewGroupCohortAdmissionInput): GroupCohortAdmissionResult {
+    if (input.creation.command.operation !== 'createGroup') {
+        throw new TypeError('A new cohort requires an ordinary group creation command');
+    }
+    const created = computeGroupMutation(input.creation);
+    if (
+        created.outcome !== 'write' || created.guard.kind !== 'group' || created.guard.operation !== 'insert' ||
+        created.lifecyclePolicy === null || input.creation.read.expiredGroupEntry !== null
+    ) {
+        throw new TypeError('A new cohort requires a fresh exclusive room identity');
+    }
+    if (input.participants.some((participant) => participant.read.group !== null)) {
+        return { status: 'conflict' };
+    }
+    const descriptor = groupStateInsertGroupDescriptor(created.guard.value);
+    const group: NonNullable<GroupMutationRead['group']> = {
+        value: created.guard.value,
+        entry: {
+            key: descriptor.key,
+            value: descriptor.value,
+            expireAtTimestamp: descriptor.expireAtTimestamp,
+            revision: 0,
+            updatedTimestamp: new Date(input.creation.facts.nowEpochMs).toISOString()
+        }
+    };
+    const policy = created.lifecyclePolicy;
+    const participants = input.participants.map((participant): GroupCohortAdmissionParticipant => {
+        if (participant.command.targetPrincipalId === group.value.ownerPrincipalId) {
+            throw new TypeError('The new room creator is already admitted by creation');
+        }
+        return {
+            ...participant,
+            read: {
+                ...participant.read,
+                group,
+                activeMembers: created.members,
+                lifecyclePolicy: { status: 'present', policy }
+            }
+        };
+    });
+    const admitted = computeGroupCohortAdmission({ participants });
+    return admitted.status === 'admitted' ? { ...admitted, mutations: [created, ...admitted.mutations] } : admitted;
 }
 
 function stageAdmissions(
