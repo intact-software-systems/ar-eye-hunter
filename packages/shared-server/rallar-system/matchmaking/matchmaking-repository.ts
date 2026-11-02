@@ -1,6 +1,8 @@
 import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { PARTY_ACCOUNTS_NAMESPACE, partyAccountKey } from '../parties/persistence/party-account.ts';
+import { decodePartyAccountEntry, type PartyRepository } from '../parties/persistence/party-repository.ts';
 
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
@@ -41,6 +43,7 @@ const ACCOUNTS_NAMESPACE = 'matchmaking:accounts';
 export namespace MatchmakingRepository {
     export interface Read {
         readonly partyEntry: RuntimeStateEntry | null;
+        readonly partyAccounts: Readonly<Record<string, PartyRepository.AccountRead>>;
         readonly partySearches: readonly MatchmakingPartySearch[];
         readonly entry: RuntimeStateEntry | null;
         readonly pool: MatchmakingPool;
@@ -97,6 +100,12 @@ export class MatchmakingRepository {
                 kind: 'key',
                 namespace: ACCOUNTS_NAMESPACE,
                 key: matchmakingAccountKey(scope, principalId)
+            })),
+            ...principals.map((principalId, index): RuntimeStateReadBatchSelector => ({
+                selectorId: `party-account:${index}`,
+                kind: 'key',
+                namespace: PARTY_ACCOUNTS_NAMESPACE,
+                key: partyAccountKey(scope, principalId)
             }))
         ];
         const selections = assertRuntimeStateReadBatchResult(
@@ -122,17 +131,34 @@ export class MatchmakingRepository {
             accounts.set(principalId, entry ?? null);
         }
         const partyEntry = selections[1].entries[0];
+        const partyAccounts = Object.fromEntries(
+            principals.map((
+                principalId,
+                index
+            ) => [
+                principalId,
+                decodePartyAccountEntry(selections[2 + principals.length + index].entries[0], scope, principalId)
+            ])
+        );
+        const partySearches = decodeMatchmakingPartyEntry(partyEntry, read.pool);
+        for (const search of active) {
+            const binding = partySearches.find((party) => party.searchIds.includes(search.searchId));
+            if ((binding?.ref.partyId ?? null) !== partyAccounts[search.principalId]!.account.partyId) {
+                throw new TypeError('Matchmaking search and party membership binding differ');
+            }
+        }
         return {
             ...read,
             partyEntry: partyEntry ?? null,
-            partySearches: decodeMatchmakingPartyEntry(partyEntry, read.pool),
+            partySearches,
+            partyAccounts,
             accounts: Object.fromEntries(accounts)
         };
     }
 
     async readCurrent(input: MatchmakingRepository.AccountRead): Promise<MatchmakingRepository.Current> {
         const { scope, principalId, nowEpochMs } = input;
-        const selections = await this.runtime.readRuntimeStateBatch([
+        const selectors: RuntimeStateReadBatchSelector[] = [
             { selectorId: 'pool', kind: 'key', namespace: POOLS_NAMESPACE, key: groupStateScopeStorageKey(scope) },
             {
                 selectorId: 'account',
@@ -145,18 +171,29 @@ export class MatchmakingRepository {
                 kind: 'key',
                 namespace: MATCHMAKING_PARTIES_NAMESPACE,
                 key: groupStateScopeStorageKey(scope)
+            },
+            {
+                selectorId: 'party-account',
+                kind: 'key',
+                namespace: PARTY_ACCOUNTS_NAMESPACE,
+                key: partyAccountKey(scope, principalId)
             }
-        ]);
-        if (
-            selections.length !== 3 || selections[0].selectorId !== 'pool' || selections[1].selectorId !== 'account' ||
-            selections[2].selectorId !== 'parties' ||
-            selections.some((selection) => selection.entries.length > 1)
-        ) {
-            throw new TypeError('Matchmaking recovery batch identities differ');
-        }
+        ];
+        const selections = assertRuntimeStateReadBatchResult(
+            selectors,
+            await this.runtime.readRuntimeStateBatch(selectors)
+        );
         const { pool } = decodeStoredPool(scope, selections[0].entries[0]);
-        decodeMatchmakingPartyEntry(selections[2].entries[0], pool);
+        const partySearches = decodeMatchmakingPartyEntry(selections[2].entries[0], pool);
+        const partyAccount = decodePartyAccountEntry(selections[3].entries[0], scope, principalId);
         const active = activeSearches(pool).find((search) => search.principalId === principalId);
+        if (
+            active !== undefined &&
+            (partySearches.find((party) => party.searchIds.includes(active.searchId))?.ref.partyId ?? null) !==
+                partyAccount.account.partyId
+        ) {
+            throw new TypeError('Matchmaking search and party membership binding differ');
+        }
         const entry = selections[1].entries[0];
         const decodedSearchId = entry === undefined ? null : decodeMatchmakingAccountEntry(entry, input);
         const searchId = entry !== undefined && entry.expireAtTimestamp > nowEpochMs ? decodedSearchId : null;

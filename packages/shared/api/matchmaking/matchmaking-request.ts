@@ -1,13 +1,26 @@
-import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireOneOf,
+    requireRecord,
+    requireString
+} from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
 import type { StateScope } from '../state-types.ts';
 
-export interface MatchmakingRequest {
-    readonly action: 'start' | 'confirm' | 'cancel';
-    readonly searchId: string;
-}
+export type MatchmakingRequest =
+    | Readonly<{ action: 'start' | 'confirm' | 'cancel'; searchId: string; }>
+    | Readonly<{ action: 'start-party'; searchId: string; partyId: string; rosterRevision: number; }>;
 
-export type MatchmakingRefusal = 'unauthorized' | 'search-not-current' | 'search-capacity' | 'search-ended';
+export type MatchmakingRefusal =
+    | 'unauthorized'
+    | 'search-not-current'
+    | 'search-capacity'
+    | 'search-ended'
+    | 'party-required'
+    | 'party-changed'
+    | 'party-leader-required'
+    | 'party-member-away';
 
 export interface MatchmakingMutationResult {
     readonly scope: StateScope;
@@ -20,10 +33,23 @@ export interface MatchmakingMutationResult {
 
 export function decodeMatchmakingRequest(value: unknown): MatchmakingRequest {
     const request = requireRecord(value, 'Matchmaking request');
-    requireExactKeys(request, ['action', 'searchId'], 'Matchmaking request');
+    requireExactKeys(
+        request,
+        request.action === 'start-party' ? ['action', 'searchId', 'partyId', 'rosterRevision'] : ['action', 'searchId'],
+        'Matchmaking request'
+    );
     requireString(request.searchId, 'Search identity');
     if (request.searchId.length > 96) {
         throw new TypeError('Search identity must contain at most 96 characters');
+    }
+    if (request.action === 'start-party') {
+        requireEpoch(request.rosterRevision, 'Party search roster revision');
+        return {
+            action: 'start-party',
+            searchId: assertValidRallarRouteId(request.searchId),
+            partyId: assertValidRallarRouteId(request.partyId),
+            rosterRevision: request.rosterRevision
+        };
     }
     return {
         action: requireOneOf(request.action, ['start', 'confirm', 'cancel'], 'Matchmaking action'),
@@ -56,7 +82,16 @@ export function decodeMatchmakingMutationResult(value: unknown): MatchmakingMuta
         ? null
         : requireOneOf(
             result.code,
-            ['unauthorized', 'search-not-current', 'search-capacity', 'search-ended'],
+            [
+                'unauthorized',
+                'search-not-current',
+                'search-capacity',
+                'search-ended',
+                'party-required',
+                'party-changed',
+                'party-leader-required',
+                'party-member-away'
+            ],
             'Matchmaking refusal'
         );
     if ((status === 'applied') !== (code === null)) {

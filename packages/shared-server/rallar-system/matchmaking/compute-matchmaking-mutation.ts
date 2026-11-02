@@ -21,6 +21,11 @@ import { writeGroupMutation } from '../group-state/mutation/write/write-group-mu
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
 import { computeMatchmaking } from './compute-matchmaking.ts';
 import { computeMatchmakingDeadlines } from './matchmaking-deadline.ts';
+import {
+    areMatchmakingPartiesCurrent,
+    computeMatchmakingPartyGuards,
+    computeMatchmakingPartyStart
+} from './matchmaking-party-authority.ts';
 import type { MatchmakingActor, MatchmakingTransition } from './matchmaking-pool.ts';
 import {
     computeMatchmakingStorage
@@ -47,19 +52,31 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
     if (command.capturedAtEpochMs === null || command.policy === null || command.serviceId === null) {
         throw new TypeError('Matchmaking execution requires winning ingress facts');
     }
+    const partyInput = { command, pool: read.pool, authority: read.partyAuthority, nowEpochMs: read.nowEpochMs };
+    if (command.request.action === 'start' && read.pool.partyAccounts[command.principalId]!.account.partyId !== null) {
+        return refused(read, 'party-required');
+    }
+    if (!areMatchmakingPartiesCurrent(partyInput)) {
+        return refused(read, 'party-changed');
+    }
+    const partyStart = command.request.action === 'start-party' ? computeMatchmakingPartyStart(partyInput) : null;
+    if (partyStart?.left !== undefined) {
+        return refused(read, partyStart.left);
+    }
+    const intent = {
+        ...command.request,
+        principalId: command.principalId,
+        sessionId: command.sessionId,
+        sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
+        capturedAtEpochMs: command.capturedAtEpochMs
+    };
     const proposed = computeMatchmaking({
         partySearches: read.pool.partySearches,
         pool: read.pool.pool,
         policy: command.policy,
         nowEpochMs: read.nowEpochMs,
-        command: {
-            ...command.request,
-            principalId: command.principalId,
-            sessionId: command.sessionId,
-            sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
-            sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
-            capturedAtEpochMs: command.capturedAtEpochMs
-        }
+        command: intent.action === 'start-party' ? { ...intent, party: partyStart!.right! } : intent
     });
     const admissions = proposed.admission === null ? [] : computeAdmission(read, proposed);
     const transition = proposed.admission !== null && admissions.length === 0 ? failedAdmission(proposed) : proposed;
@@ -111,7 +128,7 @@ function computeAuthorizedMatchmakingStorage(
         inserts: prepared.inserts,
         batch: computeRuntimeStateGuardedBatchWrite({
             ...prepared.batch,
-            effects: [...prepared.batch.effects, ...authority]
+            effects: [...prepared.batch.effects, ...authority, ...computeMatchmakingPartyGuards(read.partyAuthority)]
         })
     };
 }

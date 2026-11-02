@@ -10,6 +10,7 @@ import type {
     MatchmakingFinished,
     MatchmakingInput,
     MatchmakingIntent,
+    MatchmakingInvalidationInput,
     MatchmakingPool,
     MatchmakingProposal,
     MatchmakingSearch,
@@ -34,6 +35,15 @@ export function computeMatchmaking(input: MatchmakingInput): MatchmakingTransiti
     return retainActiveParties(transition);
 }
 
+/** Membership changes cancel reservations without applying search-formation policy. */
+export function computeMatchmakingInvalidation(input: MatchmakingInvalidationInput): MatchmakingTransition {
+    requireEpoch(input.nowEpochMs, 'Matchmaking invalidation time');
+    const pool = decodeMatchmakingPool(input.pool, input.pool.scope);
+    const parties = decodeMatchmakingPartySearches(input.partySearches, pool);
+    const expired = retainActiveParties(expireSearches(pool, parties, input.nowEpochMs));
+    return retainActiveParties(invalidateSearches(expired, input.principalIds, input.nowEpochMs));
+}
+
 function retainActiveParties(transition: MatchmakingTransition): MatchmakingTransition {
     const activeIds = new Set(
         [...transition.pool.searching, ...transition.pool.proposals.flatMap((proposal) => proposal.participants)]
@@ -49,9 +59,6 @@ function computeCommand(input: MatchmakingInput, expired: MatchmakingTransition)
     const command = input.command;
     if (command.action === 'expire') {
         return expired;
-    }
-    if (command.action === 'invalidate') {
-        return invalidateSearches(expired, command.principalIds, input.nowEpochMs);
     }
     if (command.action === 'start-party') {
         return startSearch(input, expired, command);
@@ -116,7 +123,7 @@ function startSearch(
     previous: MatchmakingTransition,
     command:
         | Extract<MatchmakingIntent, { action: 'start-party'; }>
-        | Exclude<MatchmakingIntent, { action: 'expire' | 'invalidate' | 'start-party'; }>
+        | Exclude<MatchmakingIntent, { action: 'expire' | 'start-party'; }>
 ): MatchmakingTransition {
     const { pool } = previous;
     const party = command.action === 'start-party' ? command.party : null;

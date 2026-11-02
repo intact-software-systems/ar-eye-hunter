@@ -1,154 +1,12 @@
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { FriendsRepository } from '@shared-server/rallar-system/friends/friends-repository.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { PartyCommand } from '@shared-server/rallar-system/parties/party-command.ts';
-import { PartyService } from '@shared-server/rallar-system/parties/party-service.ts';
-import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
-import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
-import type { PartyRequest } from '@shared/api/parties/party-request.ts';
+import { computeMatchmaking } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
+import { computeMatchmakingStorage } from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
+import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
-import type { ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
-import { createSqlServerAppInbox } from '../../rallar-server/create-test-server-app-inbox.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
-
-const ref = { applicationId: 'game', workspaceId: 'default', partyId: 'party-one' };
-const policy = { maxMembers: 2, maxInvitations: 16, invitationLifetimeMs: 600000 };
-
-async function createRuntime(storage: ResourceInboxTestStorage) {
-    const clock = { now: Date.now() };
-    const runtime = new PSqlRuntimeStateRepository(storage.sql);
-    const queue = createSqlServerAppInbox({ database: storage.sql, nowEpochMs: () => clock.now });
-    const auth = new AuthSessionRepository(runtime);
-    const parties = new PartyRepository(runtime, () => clock.now);
-    const profiles = new FriendsRepository(runtime);
-    const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(storage.sql));
-    const sessions = ['alice', 'bob'].map((principalId) => ({
-        clientId: principalId,
-        username: principalId,
-        sessionId: `session-${principalId}`,
-        accessToken: `test-only-${principalId}`,
-        issuedAtEpochMs: clock.now - 1000,
-        expiresAtEpochMs: clock.now + 60000
-    }));
-    for (const session of sessions) {
-        await auth.putSession(session);
-        const principalId = session.clientId;
-        const audit = {
-            atEpochMs: clock.now - 1000,
-            actor: { kind: 'service' as const, serviceId: 'party-test' },
-            reason: null,
-            traceId: null,
-            requestId: null
-        };
-        const principal: ClientPrincipal = {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            principalId,
-            username: principalId,
-            displayName: principalId,
-            avatarUrl: null,
-            authProvider: null,
-            externalSubjectId: null,
-            roles: [],
-            metadata: {},
-            snapshotVersion: 1,
-            profileVersion: 1,
-            presenceVersion: 1,
-            created: audit,
-            updated: audit,
-            lastSeenAtEpochMs: clock.now - 1000,
-            status: 'active',
-            disabled: null,
-            deleted: null
-        };
-        await clients.insertPrincipal(principal);
-        await clients.insertInstance({
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            principalId,
-            clientInstanceId: `browser-${principalId}`,
-            platform: 'web',
-            deviceLabel: null,
-            appVersion: null,
-            userAgent: null,
-            capabilities: [],
-            registered: audit,
-            updated: audit,
-            status: 'active',
-            revoked: null
-        });
-        const presence: ClientSession = {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            principalId,
-            clientInstanceId: `browser-${principalId}`,
-            sessionId: session.sessionId,
-            generationId: `generation-${principalId}`,
-            generationVersion: 1,
-            presenceState: 'online',
-            transport: 'http',
-            connectionId: null,
-            authenticatedAtEpochMs: session.issuedAtEpochMs,
-            connectedAtEpochMs: session.issuedAtEpochMs,
-            lastHeartbeatAtEpochMs: session.issuedAtEpochMs,
-            expiresAtEpochMs: session.expiresAtEpochMs,
-            status: 'active',
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        };
-        await clients.insertSession(presence);
-        await runtime.upsert(
-            'friends:profiles',
-            `principal=${principalId}`,
-            JSON.stringify({
-                principalId,
-                shareOnline: false,
-                contacts: [{ principalId: principalId === 'alice' ? 'bob' : 'alice', status: 'friend' }],
-                invitations: []
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
-        );
-    }
-    const timing: RallarTimingEvent[] = [];
-    const service = new PartyService({
-        appInbox: queue.inbox,
-        parties,
-        profiles,
-        authSessions: auth,
-        clients,
-        nowEpochMs: () => clock.now,
-        timing: (event) => timing.push(event)
-    }, { defaultPolicy: policy, policiesByApplication: {} });
-    queue.inbox.start();
-    function command(principalId: string, requestId: string, request: PartyRequest): PartyCommand {
-        const session = sessions.find((candidate) => candidate.clientId === principalId)!;
-        return {
-            principalId,
-            sessionId: session.sessionId,
-            sessionIssuedAtEpochMs: session.issuedAtEpochMs,
-            sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-            requestId,
-            request,
-            capturedAtEpochMs: null,
-            policy: null
-        };
-    }
-    async function run(input: PartyCommand) {
-        const enqueued = await service.mutate.enqueue({ command: input, traceId: input.requestId });
-        expect(enqueued.left).toBeUndefined();
-        await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
-        const result = await enqueued.right!.wait();
-        expect(result.left).toBeUndefined();
-        return result.right;
-    }
-    return { clock, runtime, queue, auth, parties, profiles, clients, sessions, service, command, run, timing };
-}
+import { createRuntime, policy, ref } from './party-service-fixture.ts';
 
 describe('party mutations through authenticated AppInbox', () => {
     it('replays the exact result without duplicating membership and rejects changed request reuse', async () => {
@@ -217,13 +75,58 @@ describe('party mutations through authenticated AppInbox', () => {
                 return observed;
             });
             const command = fixture.command('bob', 'accept', { ref, expectedRosterRevision: null, intent: { action: 'accept', invitationId: 'invite-bob' } });
+            const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
+            const beforeMatchmaking = await fixture.matchmaking.read(scope);
             const admitted = await fixture.service.mutate.enqueue({ command, traceId: 'friendship-race' });
             await fixture.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await fixture.parties.read(ref)).record?.members.map((member) => member.principalId)).toEqual(['alice']);
             expect((await fixture.parties.readAccount(ref, 'bob')).account.partyId).toBeNull();
+            expect(await fixture.matchmaking.read(scope)).toEqual(beforeMatchmaking);
             await fixture.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await admitted.right!.wait()).right).toMatchObject({ status: 'refused', code: 'person-unavailable' });
             expect((await fixture.parties.read(ref)).record?.invitations).toHaveLength(1);
+        }
+        finally {
+            await storage.close();
+        }
+    });
+
+    it('creating a party cancels the actor pending match for the entire cohort in the same transaction', async () => {
+        const storage = await createResourceInboxTestStorage('party_invalidates_pending_match');
+        try {
+            const fixture = await createRuntime(storage);
+            const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
+            const matchmakingPolicy = { players: 2, searchTimeoutMs: 120000, confirmationTimeoutMs: 30000, maxSearching: 256 };
+            for (const session of fixture.sessions) {
+                const read = await fixture.matchmaking.read(scope, [session.clientId]);
+                const transition = computeMatchmaking({
+                    pool: read.pool,
+                    partySearches: read.partySearches,
+                    policy: matchmakingPolicy,
+                    nowEpochMs: fixture.clock.now,
+                    command: {
+                        action: 'start',
+                        principalId: session.clientId,
+                        sessionId: session.sessionId,
+                        sessionIssuedAtEpochMs: session.issuedAtEpochMs,
+                        sessionExpiresAtEpochMs: session.expiresAtEpochMs,
+                        searchId: `search-${session.clientId}`,
+                        capturedAtEpochMs: fixture.clock.now
+                    }
+                });
+                const prepared = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
+                await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, prepared));
+            }
+            expect((await fixture.matchmaking.read(scope)).pool.proposals).toHaveLength(1);
+            expect(await fixture.run(fixture.command('alice', 'create', { ref, expectedRosterRevision: null, intent: { action: 'create' } }))).toMatchObject({
+                status: 'applied'
+            });
+            expect((await fixture.matchmaking.read(scope)).pool.proposals).toEqual([]);
+            for (const principalId of ['alice', 'bob']) {
+                expect((await fixture.matchmaking.readCurrent({ scope, principalId, nowEpochMs: fixture.clock.now })).finished?.reason)
+                    .toBe('declined');
+            }
+            expect((await fixture.parties.read(ref)).record?.members.map((member) => member.principalId)).toEqual(['alice']);
         }
         finally {
             await storage.close();
@@ -245,6 +148,7 @@ describe('party mutations through authenticated AppInbox', () => {
             await fixture.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await fixture.parties.read(ref)).record).toBeNull();
             expect((await fixture.parties.readAccount(ref, 'alice')).entry).toBeNull();
+            expect((await fixture.matchmaking.read({ applicationId: ref.applicationId, workspaceId: ref.workspaceId })).entry).toBeNull();
             await fixture.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await admitted.right!.wait()).right).toMatchObject({ status: 'refused', code: 'unauthorized' });
             expect(fixture.timing.filter((event) => event.operation === 'read')).toHaveLength(2);

@@ -9,12 +9,15 @@ import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-sto
 import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '../client-state/persistence/client-state-runtime-namespaces.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../computed-data-validation.ts';
 import { FRIENDS_PROFILE_NAMESPACE } from '../friends/friends-profile.ts';
+import { computeMatchmakingInvalidation } from '../matchmaking/compute-matchmaking.ts';
+import { computeMatchmakingStorage } from '../matchmaking/matchmaking-repository.ts';
 import { computePartyRoster } from './compute-party-roster.ts';
 import type { PartyService } from './party-service.ts';
 import { computePartyStorage } from './persistence/compute-party-storage.ts';
 
 export interface PartyMutation {
     readonly storage: RuntimeStateConditionalBatch | null;
+    readonly matchmaking: RuntimeStateConditionalBatch | null;
     readonly result: PartyMutationResult;
     readonly rosterChanged: boolean;
 }
@@ -79,7 +82,9 @@ export function computePartyMutation(read: PartyService.Read): PartyMutation {
     const computed = decision.right!;
     const storage = computePartyStorage({ read: read.party, party: computed.party });
     const authority = computePartyAuthority(read);
+    const matchmaking = computed.rosterChanged ? computeRosterSearchInvalidation(read) : null;
     return {
+        matchmaking,
         storage: {
             ...storage,
             batch: computeRuntimeStateGuardedBatchWrite({
@@ -134,6 +139,7 @@ function guard(namespace: string, entry: RuntimeStateEntry): RuntimeStateGuarded
 function refused(read: PartyService.Read, code: PartyRefusal): PartyMutation {
     return {
         storage: null,
+        matchmaking: null,
         rosterChanged: false,
         result: {
             ref: read.command.request.ref,
@@ -143,4 +149,26 @@ function refused(read: PartyService.Read, code: PartyRefusal): PartyMutation {
             code
         }
     };
+}
+
+function computeRosterSearchInvalidation(read: PartyService.Read): RuntimeStateConditionalBatch {
+    if (read.matchmaking === null) {
+        throw new TypeError('Party roster changes require the current matchmaking pool');
+    }
+    const transition = computeMatchmakingInvalidation({
+        pool: read.matchmaking.pool,
+        partySearches: read.matchmaking.partySearches,
+        nowEpochMs: read.nowEpochMs,
+        principalIds: [
+            ...new Set([
+                read.command.principalId,
+                ...read.party.record?.members.map((member) => member.principalId) ?? []
+            ])
+        ]
+    });
+    return computeMatchmakingStorage({
+        read: read.matchmaking,
+        transition,
+        finishedRetentionMs: read.finishedRetentionMs
+    });
 }

@@ -1,4 +1,4 @@
-import { computeMatchmaking } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
+import { computeMatchmaking, computeMatchmakingInvalidation } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
 import type { MatchmakingInput, MatchmakingTransition } from '@shared-server/rallar-system/matchmaking/matchmaking-pool.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -120,7 +120,7 @@ describe('indivisible party matchmaking', () => {
     it('invalidates the full proposed match when a party roster changes and rejects stale confirmation', () => {
         const party = startParty(initial(), 'friends', ['alice', 'bob']);
         const formed = startSolo(after(startSolo(after(party), 'charlie')), 'dan');
-        const cancelled = computeMatchmaking({ ...after(formed), command: { action: 'invalidate', principalIds: ['bob'] } });
+        const cancelled = computeMatchmakingInvalidation({ pool: formed.pool, partySearches: formed.partySearches, nowEpochMs: 1001, principalIds: ['bob'] });
         expect(cancelled.pool.proposals).toEqual([]);
         expect(cancelled.finished).toHaveLength(4);
         expect(cancelled.partySearches).toEqual([]);

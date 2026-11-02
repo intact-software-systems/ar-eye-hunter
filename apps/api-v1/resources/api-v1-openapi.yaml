@@ -4297,13 +4297,23 @@ components:
       maxLength: 96
       pattern: '^(?!\.{1,2}$)[A-Za-z0-9._:-]+$'
     MatchmakingRequest:
-      type: object
-      additionalProperties: false
-      required: [action, searchId]
-      properties:
-        action: { type: string, enum: [start, confirm, cancel] }
-        searchId:
-          $ref: '#/components/schemas/MatchmakingSearchId'
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, searchId]
+          properties:
+            action: { type: string, enum: [start, confirm, cancel] }
+            searchId:
+              $ref: '#/components/schemas/MatchmakingSearchId'
+        - type: object
+          additionalProperties: false
+          required: [action, searchId, partyId, rosterRevision]
+          properties:
+            action: { type: string, const: start-party }
+            searchId:
+              $ref: '#/components/schemas/MatchmakingSearchId'
+            partyId: { type: string, minLength: 1, maxLength: 128, pattern: '^(?!\.{1,2}$)[A-Za-z0-9._:-]+$' }
+            rosterRevision: { type: integer, minimum: 0 }
     MatchmakingMutationResult:
       type: object
       additionalProperties: false
@@ -4317,7 +4327,7 @@ components:
         searchId: { type: [string, 'null'] }
         code:
           type: [string, 'null']
-          enum: [null, unauthorized, search-not-current, search-capacity, search-ended]
+          enum: [null, unauthorized, search-not-current, search-capacity, search-ended, party-required, party-changed, party-leader-required, party-member-away]
       oneOf:
         - properties:
             status: { const: applied }

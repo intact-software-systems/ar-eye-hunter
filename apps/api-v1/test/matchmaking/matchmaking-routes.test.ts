@@ -54,6 +54,14 @@ Deno.test('matchmaking reads and commands bind scope and account to the authenti
         policy: null,
         serviceId: null
     }]);
+    const partyRequest = { action: 'start-party', searchId: 'party-search', partyId: 'friends', rosterRevision: 3 };
+    const partyResponse = await app.request(`${path}/requests/start-party-request-1`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(partyRequest)
+    });
+    assert.equal(partyResponse.status, 200);
+    assert.deepEqual(commands[1], { ...commands[0], requestId: 'start-party-request-1', request: partyRequest });
 });
 
 Deno.test('matchmaking requires authentication and rejects caller-supplied authority, policy and private expiry actions', async () => {
@@ -64,10 +72,17 @@ Deno.test('matchmaking requires authentication and rejects caller-supplied autho
     const authenticated = createTracedApiTestApp();
     registerMatchmakingRoutes(authenticated, dependencies());
     for (
-        const body of [{ action: 'start', searchId: 'search-alice', principalId: 'admin' }, { action: 'start', searchId: 'search-alice', players: 1 }, {
-            action: 'expire',
-            searchId: 'search-alice'
-        }]
+        const body of [
+            { action: 'start-party', searchId: 'party', partyId: 'friends', rosterRevision: 1, members: ['alice', 'bob'] },
+            { action: 'start-party', searchId: 'party', partyId: 'friends' },
+            { action: 'start-party', searchId: 'party', partyId: 'friends', rosterRevision: -1 },
+            { action: 'start', searchId: 'search-alice', principalId: 'admin' },
+            { action: 'start', searchId: 'search-alice', players: 1 },
+            {
+                action: 'expire',
+                searchId: 'search-alice'
+            }
+        ]
     ) {
         const response = await authenticated.request(`${path}/requests/start-search-request-2`, {
             method: 'POST',

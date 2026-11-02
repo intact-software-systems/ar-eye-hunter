@@ -1,7 +1,9 @@
+import { computePartyStorage } from '@shared-server/rallar-system/parties/persistence/compute-party-storage.ts';
+import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
 import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { describe, expect, it } from 'vitest';
 
-import { computeMatchmaking } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
+import { computeMatchmaking, computeMatchmakingInvalidation } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
 import {
     computeMatchmakingStorage,
     MatchmakingRepository
@@ -102,8 +104,23 @@ describe('durable matchmaking reservations', () => {
         try {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new MatchmakingRepository(runtime);
-            const read = await repository.read(scope, ['alice', 'bob']);
             const now = Date.now();
+            const parties = new PartyRepository(runtime, () => now);
+            const ref = { ...scope, partyId: 'friends' };
+            const partyWrite = computePartyStorage({
+                read: await parties.read(ref, ['alice', 'bob']),
+                party: {
+                    ref,
+                    status: 'active',
+                    rosterRevision: 3,
+                    leaderPrincipalId: 'alice',
+                    createdAtEpochMs: now,
+                    members: ['alice', 'bob'].map((principalId) => ({ principalId, joinedAtEpochMs: now })),
+                    invitations: []
+                }
+            });
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, partyWrite));
+            const read = await repository.read(scope, ['alice', 'bob']);
             const transition = computeMatchmaking({
                 pool: read.pool,
                 partySearches: [],
@@ -130,12 +147,11 @@ describe('durable matchmaking reservations', () => {
             expect(stored.partySearches).toEqual(transition.partySearches);
             expect(stored.partyEntry).not.toBeNull();
             expect(stored.pool.proposals[0]?.participants).toHaveLength(2);
-            const cancelled = computeMatchmaking({
+            const cancelled = computeMatchmakingInvalidation({
                 pool: stored.pool,
                 partySearches: stored.partySearches,
-                policy,
                 nowEpochMs: now + 1,
-                command: { action: 'invalidate', principalIds: ['bob'] }
+                principalIds: ['bob']
             });
             const cancellation = computeMatchmakingStorage({ read: stored, transition: cancelled, finishedRetentionMs: 60000 });
             await expect(storage.sql.begin(async (transaction) => {

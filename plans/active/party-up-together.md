@@ -110,6 +110,13 @@ unchanged individual search/result records and commit with the pool CAS. Pure co
 selects the earliest complete set of whole units that fits the configured player count. Strict
 creation, guarded updates and exact-absence inserts share `writeRuntimeStateConditionalBatch`; domain
 computation and AppInbox transaction ownership remain with each service.
+Roster-changing party operations first fence the shared matchmaking pool, canceling every affected
+pending cohort in the same AppInbox transaction as the roster update. Party search reads every roster
+account, requires the current leader and live authenticated scoped presence, and fences the exact
+party/presence/session rows. Final admission rechecks the captured party revision. The losing writer
+redelivers the complete attempt: a leave that wins prevents admission; a match that wins preserves its
+room memberships and finished result when a later party leave applies. Private recovery reads validate
+party membership and search bindings from the same database snapshot as the pool and account pointer.
 
 ## Implementation horizon
 

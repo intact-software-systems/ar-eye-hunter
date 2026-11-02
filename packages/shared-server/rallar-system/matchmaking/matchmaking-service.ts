@@ -8,10 +8,12 @@ import type { AppInboxCommandAttempt, AppInboxMessageContext } from '../app-inbo
 import { toAppInboxCommandAttempt } from '../app-inbox/app-inbox-contracts.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
+import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
 import { validateComputedProjection } from '../computed-data-validation.ts';
 import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import { timeRallarAsync, type RallarTimingSink } from '../observability/timing.ts';
+import type { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import {
@@ -23,6 +25,7 @@ import { computeMatchmaking } from './compute-matchmaking.ts';
 import { readMatchmakingAdmission } from './matchmaking-admission.ts';
 import { decodeMatchmakingCommand, decodeMatchmakingResult, type MatchmakingCommand } from './matchmaking-command.ts';
 import { decodeMatchmakingDeadline, type MatchmakingDeadline } from './matchmaking-deadline.ts';
+import { readMatchmakingPartyAuthority, type MatchmakingPartyAuthority } from './matchmaking-party-authority.ts';
 import type { MatchmakingFinished, MatchmakingProposal } from './matchmaking-pool.ts';
 import { computeMatchmakingStorage } from './matchmaking-repository.ts';
 import type { MatchmakingRepository } from './matchmaking-repository.ts';
@@ -38,6 +41,8 @@ export namespace MatchmakingService {
     export interface Dependencies {
         readonly appInbox: RallarServerAppInbox;
         readonly repository: MatchmakingRepository;
+        readonly parties: PartyRepository;
+        readonly clients: Pick<ClientStateRepository, 'readPrincipalSnapshot'>;
         readonly authSessions: Pick<AuthSessionPersistence, 'findSessionBySessionIdEntry'>;
         readonly groups: GroupStateRepository;
         readonly nowEpochMs: () => number;
@@ -49,6 +54,7 @@ export namespace MatchmakingService {
         readonly attempt: AppInboxCommandAttempt;
         readonly nowEpochMs: number;
         readonly pool: MatchmakingRepository.Read;
+        readonly partyAuthority: MatchmakingPartyAuthority;
         readonly finished: MatchmakingFinished | null;
         readonly sessions: readonly RuntimeStateEntryValue<PersistedAuthSession>[];
         readonly admission: NewGroupCohortAdmissionInput | null;
@@ -192,8 +198,15 @@ export class MatchmakingService {
 
     private async read(command: MatchmakingCommand, attempt: AppInboxCommandAttempt): Promise<MatchmakingService.Read> {
         const nowEpochMs = Math.max(this.dependencies.nowEpochMs(), command.capturedAtEpochMs ?? 0);
+        const requestedParty = command.request.action === 'start-party'
+            ? await this.dependencies.parties.read({ ...command.scope, partyId: command.request.partyId })
+            : null;
+        const principals = [
+            command.principalId,
+            ...(requestedParty?.record?.members.map((member) => member.principalId) ?? [])
+        ];
         const [pool, actor, finished] = await Promise.all([
-            this.dependencies.repository.read(command.scope, [command.principalId]),
+            this.dependencies.repository.read(command.scope, principals),
             this.dependencies.authSessions.findSessionBySessionIdEntry(command.sessionId),
             this.dependencies.repository.readFinished({
                 scope: command.scope,
@@ -202,8 +215,17 @@ export class MatchmakingService {
                 nowEpochMs
             })
         ]);
+        const partyAuthority = await readMatchmakingPartyAuthority({
+            command,
+            pool,
+            requestedParty,
+            parties: this.dependencies.parties,
+            clients: this.dependencies.clients,
+            authSessions: this.dependencies.authSessions
+        });
         const proposal = pendingAdmission(pool.pool.proposals, command, nowEpochMs);
-        const sessions = actor === undefined ? [] : [actor];
+        const sessions = [...new Map([...(actor === undefined ? [] : [actor]), ...partyAuthority.sessions]
+            .map((session) => [session.value.sessionId, session])).values()];
         if (proposal !== null) {
             const readSessionIds = new Set([command.sessionId]);
             for (const participant of proposal.participants) {
@@ -230,6 +252,7 @@ export class MatchmakingService {
             attempt,
             nowEpochMs,
             pool,
+            partyAuthority,
             finished,
             sessions,
             admission,

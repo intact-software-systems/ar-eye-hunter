@@ -22,6 +22,10 @@ import { matchmakingHttpApi } from './matchmaking-http-api.ts';
 const REFUSAL_MESSAGES: Readonly<Record<MatchmakingRefusal, string>> = {
     unauthorized: 'Sign in again to find players.',
     'search-not-current': 'Your search changed. Review its current state before continuing.',
+    'party-required': 'Search with your party, or leave it to search alone.',
+    'party-changed': 'Your party changed. Review its roster before searching again.',
+    'party-leader-required': 'Only the party leader can start a group search.',
+    'party-member-away': 'Everyone in your party must be present before searching.',
     'search-capacity': 'Matchmaking is busy. Please try a new search shortly.',
     'search-ended': 'This search has ended. Start a new search to find players.'
 };

@@ -44,7 +44,6 @@ export interface MatchmakingFinished extends MatchmakingSearch {
 
 export type MatchmakingIntent =
     | Readonly<{ action: 'expire'; }>
-    | Readonly<{ action: 'invalidate'; principalIds: readonly string[]; }>
     | (
         & MatchmakingActor
         & Readonly<
@@ -75,4 +74,11 @@ export interface MatchmakingTransition {
     readonly admission: MatchmakingProposal | null;
     readonly searchId: string | null;
     readonly rejection: 'search-not-current' | 'search-capacity' | null;
+}
+
+export interface MatchmakingInvalidationInput {
+    readonly pool: MatchmakingPool;
+    readonly partySearches: readonly MatchmakingPartySearch[];
+    readonly nowEpochMs: number;
+    readonly principalIds: readonly string[];
 }

@@ -74,7 +74,7 @@ export class PartyRepository {
             throw new RuntimeStateWriteConflictError();
         }
         const accounts = principals.map((principalId, index) =>
-            decodeStoredAccount(selections[index + 1].entries[0], ref, principalId)
+            decodePartyAccountEntry(selections[index + 1].entries[0], ref, principalId)
         );
         const observedAtEpochMs = this.nowEpochMs();
         assertPartyAccountLinks(current.record, accounts, observedAtEpochMs);
@@ -83,7 +83,7 @@ export class PartyRepository {
 
     async readAccount(scope: StateScope, principalId: string): Promise<PartyRepository.AccountRead> {
         const entry = await this.runtime.findEntry(PARTY_ACCOUNTS_NAMESPACE, partyAccountKey(scope, principalId));
-        return decodeStoredAccount(entry, scope, principalId);
+        return decodePartyAccountEntry(entry, scope, principalId);
     }
 }
 
@@ -97,7 +97,7 @@ function decodeStoredParty(entry: RuntimeStateEntry | undefined, ref: PartyRef) 
     return { entry, record: decodePartyRecord(JSON.parse(entry.value), ref) };
 }
 
-function decodeStoredAccount(
+export function decodePartyAccountEntry(
     entry: RuntimeStateEntry | undefined,
     scope: StateScope,
     principalId: string

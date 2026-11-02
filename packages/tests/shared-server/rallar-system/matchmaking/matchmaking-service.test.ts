@@ -1,11 +1,14 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { MatchmakingCommand } from '@shared-server/rallar-system/matchmaking/matchmaking-command.ts';
 import { installMatchmakingDeadline } from '@shared-server/rallar-system/matchmaking/matchmaking-deadline.ts';
 import { MatchmakingRepository } from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
 import { MatchmakingService } from '@shared-server/rallar-system/matchmaking/matchmaking-service.ts';
+import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/canonical-json.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
@@ -278,7 +281,16 @@ async function testRuntime(storage: ResourceInboxTestStorage, configuredPolicy: 
         await auth.putSession(session);
     }
     const service = new MatchmakingService(
-        { appInbox: queue.inbox, repository, authSessions: auth, groups, nowEpochMs: () => clock.now, timing: undefined },
+        {
+            appInbox: queue.inbox,
+            repository,
+            parties: new PartyRepository(runtime, () => clock.now),
+            clients: new ClientStateRepository(runtime, new PSqlClientStateEventRepository(storage.sql)),
+            authSessions: auth,
+            groups,
+            nowEpochMs: () => clock.now,
+            timing: undefined
+        },
         {
             serviceId: 'match-test',
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

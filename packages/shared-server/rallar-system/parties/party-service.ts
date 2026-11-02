@@ -11,6 +11,7 @@ import type { ClientPrincipalSnapshotRead } from '../client-state/persistence/cl
 import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
 import type { FriendsProfileRead } from '../friends/friends-mutation-contracts.ts';
 import type { FriendsRepository } from '../friends/friends-repository.ts';
+import type { MatchmakingRepository } from '../matchmaking/matchmaking-repository.ts';
 import { timeRallarAsync, type RallarTimingSink } from '../observability/timing.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -22,11 +23,13 @@ import type { PartyRepository } from './persistence/party-repository.ts';
 export namespace PartyService {
     export interface Config {
         readonly defaultPolicy: PartyPolicy;
+        readonly finishedRetentionMs: number;
         readonly policiesByApplication: Readonly<Record<string, PartyPolicy>>;
     }
     export interface Dependencies {
         readonly appInbox: RallarServerAppInbox;
         readonly parties: PartyRepository;
+        readonly matchmaking: MatchmakingRepository;
         readonly profiles: Pick<FriendsRepository, 'readProfiles'>;
         readonly authSessions: Pick<AuthSessionPersistence, 'findSessionBySessionIdEntry'>;
         readonly clients: Pick<ClientStateRepository, 'readPrincipalSnapshot'>;
@@ -36,6 +39,8 @@ export namespace PartyService {
     export interface Read {
         readonly command: PartyCommand;
         readonly party: PartyRepository.Read;
+        readonly matchmaking: MatchmakingRepository.Read | null;
+        readonly finishedRetentionMs: number;
         readonly session: RuntimeStateEntryValue<PersistedAuthSession> | null;
         readonly profiles: readonly FriendsProfileRead[];
         readonly friendship: PartyInvitationConsent | null;
@@ -47,9 +52,11 @@ export namespace PartyService {
 export class PartyService {
     readonly mutate: RallarServerAppInbox.Operation<PartyCommand, PartyMutationResult>;
     private readonly dependencies: PartyService.Dependencies;
+    private readonly finishedRetentionMs: number;
 
     constructor(dependencies: PartyService.Dependencies, config: PartyService.Config) {
         this.dependencies = dependencies;
+        this.finishedRetentionMs = config.finishedRetentionMs;
         this.mutate = dependencies.appInbox.register({
             type: 'app:rallar-parties:mutate',
             decodeEnvelope: ({ data }) => decodePartyCommand(data),
@@ -114,6 +121,9 @@ export class PartyService {
                     computed.result,
                     (transaction) =>
                         timeRallarAsync(timing, { ...event, operation: 'write' }, async () => {
+                            if (computed.matchmaking !== null) {
+                                await writeRuntimeStateConditionalBatch(transaction, computed.matchmaking);
+                            }
                             if (computed.storage !== null) {
                                 await writeRuntimeStateConditionalBatch(transaction, computed.storage);
                             }
@@ -147,15 +157,28 @@ export class PartyService {
             : intent.action === 'create' || intent.action === 'accept'
             ? [command.principalId]
             : [];
-        const [consent, presenceReads] = await Promise.all([
+        const [consent, presenceReads, matchmaking] = await Promise.all([
             pair.length === 0 ? Promise.resolve([]) : profiles.readProfiles(pair),
-            Promise.all(presenceIds.map((principalId) =>
-                clients.readPrincipalSnapshot({
-                    applicationId: ref.applicationId,
-                    workspaceId: ref.workspaceId,
-                    principalId
-                })
-            ))
+            Promise.all(
+                presenceIds.map((principalId) =>
+                    clients.readPrincipalSnapshot({
+                        applicationId: ref.applicationId,
+                        workspaceId: ref.workspaceId,
+                        principalId
+                    })
+                )
+            ),
+            ['invite', 'decline', 'revoke'].includes(intent.action)
+                ? Promise.resolve(null)
+                : this.dependencies.matchmaking.read(
+                    { applicationId: ref.applicationId, workspaceId: ref.workspaceId },
+                    [
+                        ...new Set([
+                            command.principalId,
+                            ...party.record?.members.map((member) => member.principalId) ?? []
+                        ])
+                    ]
+                )
         ]);
         if (intent.action === 'take-leadership' && presenceReads.some((entry) => entry === undefined)) {
             throw new TypeError('Party member lost its durable scoped principal');
@@ -163,6 +186,8 @@ export class PartyService {
         return {
             command,
             party,
+            matchmaking,
+            finishedRetentionMs: this.finishedRetentionMs,
             session: session ?? null,
             profiles: consent,
             friendship: consent.length === 0 ? null : {
