@@ -1,4 +1,5 @@
 import { matchmakingExpiryJourney, matchmakingPlayJourney } from '../matchmaking-journey.ts';
+import { partyPlayJourney } from '../party-journey.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 
 roomBrowserTest(
@@ -16,5 +17,14 @@ roomBrowserTest(
         roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the actual API and built SPA.');
         roomBrowserTest.setTimeout(240000);
         await matchmakingExpiryJourney(page, guest, 'relic');
+    }
+);
+
+roomBrowserTest(
+    'party invitation, exact retry, recovery, move and repeat play together',
+    async ({ page, guest }) => {
+        roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the actual API and built SPA.');
+        roomBrowserTest.setTimeout(240000);
+        await partyPlayJourney(page, guest, 'relic');
     }
 );

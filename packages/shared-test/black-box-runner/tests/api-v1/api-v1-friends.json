@@ -1036,7 +1036,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/move-create-target-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/friends-party-move-create-target-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -1065,7 +1065,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}/sessions/{aliceSessionId}/requests/move-connect-alice-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}/sessions/{aliceSessionId}/requests/friends-party-move-connect-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -1122,7 +1122,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}/sessions/{bobSessionId}/requests/move-connect-bob-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}/sessions/{bobSessionId}/requests/friends-party-move-connect-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"

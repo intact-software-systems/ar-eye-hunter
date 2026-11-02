@@ -194,6 +194,31 @@ mutation retry classifier distinguishes definitive outcomes from transport ambig
 in `packages/shared-react` supplies both games' visible consent controls. Explicit matched-room entry
 uses `RallarRoomEntry`; game participation and director/Keeper authority stay with their existing owners.
 
+## Durable scoped parties
+
+`PartyService` registers `app:rallar-parties:mutate` with the server AppInbox. Each attempt reads
+the complete party and account pointers, authenticated session and relevant friendship/presence
+facts, computes and validates serialized writes, then commits exact conditional guards and the
+durable replay result together. A conflict returns to the existing outer QueueBox retry. Private
+`PartyReader` views validate mirrored membership and invitation records from one snapshot; reads
+never repair corruption. The scoped HTTP API exposes only the authenticated account's view.
+
+Party capacity derives from matchmaking policy. Whole-unit allocation remains in the existing
+matchmaker: earliest complete cohorts fill the configured size without splitting parties. Party
+searches bind the leader and roster revision; every member supplies their own confirmation. Roster
+changes fence the matchmaking pool and cancel affected pending cohorts in the same transaction.
+Final admission rechecks party, session and presence authority. Party-aware Move together binds the
+same roster revision and one selected source session per account to the existing all-or-none
+admission write. Room-wide movement is a separate selection choice, not an alternate implementation.
+
+`RallarParty`, `RallarFriends` and `RallarMatchmaking` share `AuthenticatedResource` for private-view
+lifetime, active-browser refresh, single-flight reads, cancellation, immutable pending commands and
+exact retry. Their adapters own protocol/account/scope validation and refusal messages. Account
+replacement or disposal fences late responses. `PartyPanel`, `MatchmakingPanel` and `RoomMovePanel`
+in `packages/shared-react` subscribe to one party owner per game UI; React never enters shared-web,
+shared-server or Deno dependencies. Existing entry and game owners retain admission and gameplay
+start authority.
+
 ## Private friends and invitations
 
 `FriendsService` registers `app:rallar-friends:mutate` with `RallarServerAppInbox` during default
@@ -212,9 +237,9 @@ effect. The invitation creation time is captured once by the winner materializer
 `POST /api/friends/requests/:requestId` is rate limited and idempotent. Configuration bounds contacts,
 invitations, invitation lifetime and mutation rate. No schema migration or predecessor reader exists.
 
-`RallarFriends` owns account-fenced refresh, cancellation and exact request retry, using shared
-notifications, single-flight reads, subscription cleanup and timers. It refreshes only in an active
-browser and delegates explicit invitation opening to `RallarRoomEntry`. `FriendsPanel` in
+`RallarFriends` uses `AuthenticatedResource` for account-fenced refresh, cancellation and exact
+request retry. It refreshes only in an active browser and delegates explicit invitation opening to
+`RallarRoomEntry`. `FriendsPanel` in
 `packages/shared-react` supplies both games' controls. Scheduled previews, reservations, room admission
 and gameplay authority remain with their existing owners; social invitations never bypass them.
 

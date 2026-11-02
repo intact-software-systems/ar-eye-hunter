@@ -100,6 +100,13 @@ implementation proposals for the approved outcome, not additional user rulings.
 Party API contracts belong in `packages/shared/api/parties/`; domain, persistence and registration
 in `packages/shared-server/rallar-system/parties/`; browser owner in
 `packages/shared-web/browser/parties/`; views in `packages/shared-react/party-panel.tsx`.
+`AuthenticatedResource` owns the shared browser authentication, single-flight refresh, activity timer,
+immutable pending command and exact retry lifetime. Friends, matchmaking and parties use this owner;
+their protocol adapters retain account/scope/result binding and refusal translation. Its constructor
+only captures dependencies; subscription and network work begin after each domain owner is constructed.
+All three expose the same `view` state vocabulary. React stays in shared-react and subscribes to one
+party owner above its roster, matchmaking and movement views. It never grants game leadership.
+
 API-v1 composes and exposes authenticated, rate-limited self-only scoped reads/mutations. All
 incoming writes use AppInbox read -> compute -> validate -> write(transaction, computed), one
 attempt per delivery, full QueueBox re-entry on conflict. Final state, exact durable result and any
@@ -142,15 +149,15 @@ matchmaker to select whole units and fence party membership in the final admissi
 Reuse its deadlines, result receipts, account exclusivity and admission writes. Add party-aware
 selection to Move together without cloning its admission or arrival implementation.
 
-- [ ] RED: invitation acceptance requires current reciprocal friendship, a live unexpired invitation,
+- [x] RED: invitation acceptance requires current reciprocal friendship, a live unexpired invitation,
       correct scope, an available account slot and capacity; two concurrent accepts cannot put an
       account in two parties or exceed the last seat.
-- [ ] RED: leader departure transfers once, stale roster requests fail, outsider reads reveal no roster,
+- [x] RED: leader departure transfers once, stale roster requests fail, outsider reads reveal no roster,
       expired/corrupt records fail according to their actual contract, and replay preserves exact results.
-- [ ] RED: two-person party plus solo players reaches one configured four-player match intact;
+- [x] RED: two-person party plus solo players reaches one configured four-player match intact;
       cancellation/roster mutation racing final confirmation admits everybody or nobody. A full party
       does not wait for strangers. Default two-player solo behavior remains unchanged.
-- [ ] GREEN: implement each owned operation only after its behavior fails; prove real conditional
+- [x] GREEN: implement each owned operation only after its behavior fails; prove real conditional
       writes and transaction rollback, including final outbox collision, with PostgreSQL integration.
 - [ ] Verify affected shared/server tests and typechecks, API Deno checks, focused real API recipe,
       medium-scale and controlled performance comparison. Publish the coherent implementation early.
@@ -162,13 +169,13 @@ Matchmaking and Move together in `arena-ui/arena-operations.tsx` and
 `game/hud/relic-side-panel.tsx`. Distinguish party leadership from game-start authority. Extend the
 existing browser journeys and API black-box recipes rather than replacing them with injected calls.
 
-- [ ] RED: visible create/invite/accept/decline, capacity, leave/transfer, present/away, reload and
+- [x] RED: visible create/invite/accept/decline, capacity, leave/transfer, present/away, reload and
       same-request retry; replaced account cannot receive or execute prior party state.
-- [ ] RED: both games invite -> accept -> party search -> each confirm -> enter -> explicit game
+- [x] RED: both games invite -> accept -> party search -> each confirm -> enter -> explicit game
       participation/start -> finish -> Play again -> second shared game, keeping the party.
 - [ ] RED: party moves to an existing room intact after confirmation; outsider room players are not
       silently selected, one denied member preserves everyone, dispersed/away party cannot be split.
-- [ ] RED: recover disconnect/leader departure and an ambiguous committed response; exercise real
+- [x] RED: recover disconnect/leader departure and an ambiguous committed response; exercise real
       search/confirmation expiry plus auth replacement through visible controls.
 - [ ] GREEN: integrate the shared owners and game-owned guards; retain test evidence for refused and
       successful paths. Investigate any repeat-play failure affecting this acceptance, including #769.

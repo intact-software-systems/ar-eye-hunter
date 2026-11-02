@@ -8573,16 +8573,15 @@ components:
           enum: [proposed, committed, cancelled, expired, denied]
         reason:
           type: [string, 'null']
-          enum: [
-            participant-declined,
-            organizer-cancelled,
-            source-roster-changed,
-            party-roster-changed,
-            source-unavailable,
-            proposal-expired,
-            admission-denied,
-            null,
-          ]
+          enum:
+            - participant-declined
+            - organizer-cancelled
+            - source-roster-changed
+            - party-roster-changed
+            - source-unavailable
+            - proposal-expired
+            - admission-denied
+            - null
         admissionFailure:
           oneOf:
             - type: 'null'

@@ -42,7 +42,7 @@ async function recoverTerminalFriendsFailure(page: Page): Promise<void> {
             })
         }));
     await panel.getByRole('checkbox', { name: 'Share when I am online with friends', exact: true }).click();
-    await expect(panel.getByRole('alert')).toContainText('Review your friends and try the action again.');
+    await expect(panel.getByRole('alert')).toContainText('Refresh and try the action again.');
     await expect(panel.getByRole('button', { name: 'Retry friends request', exact: true })).toHaveCount(0);
     await page.unroute(endpoint);
     await panel.getByRole('checkbox').click();
