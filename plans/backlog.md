@@ -195,3 +195,14 @@ and it has no status list.
 - The api-v1 Deno test of a room archived before dequeue
   (`ws-room-granted-delivery.test.ts`) asserts only that nothing was delivered;
   assert the row reached COMPLETED too, so a row stuck retrying fails it (S2-i).
+- Push room-directory changes over existing state sync only if measured freshness
+  needs and request cost justify it; conditional pull remains missed-update recovery.
+- Broader social discovery, room-location sharing and metadata filters need a
+  concrete consumer and explicit privacy/consent policy. Friendship alone does
+  not authorize sharing a player's current location.
+- Tournaments would be a separate product slice covering rounds, trusted results,
+  advancement and cancellation. Scheduling, parties and matchmaking supply foundations;
+  tournament rules and cross-game behavior still need a product decision.
+- Further room latency, capacity and recovery work should follow reproducible
+  failures or participation evidence. Clickable journeys establish behavior and
+  local timings, not adoption, OS-suspension behavior or a latency SLO.
