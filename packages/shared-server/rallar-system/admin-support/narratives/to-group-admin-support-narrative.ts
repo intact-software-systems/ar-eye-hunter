@@ -9,30 +9,35 @@ import type {
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { isLiveGroupPresenceSession } from '../../group-state/policy/group-policy-primitives.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
 import { groupLifecycleFacts, isGroupFormationSeriesParked } from './group-lifecycle-facts.ts';
+import { toGroupRoomFacts } from './to-group-room-facts.ts';
 
-interface ProjectGroupAdminSupportInput extends AdminSupportNarrativeBase {
+interface GroupAdminSupportNarrativeInput extends AdminSupportNarrativeBase {
     readonly request: AdminSupportExplainGroupRequest;
     readonly hasGroupStateService: boolean;
     readonly hasTopologyQuery: boolean;
     readonly snapshot: GroupSnapshot | undefined;
     readonly recentEvents: readonly GroupEvent[];
     readonly topologyView: GroupTopologyManagementView | undefined;
-    readonly hasLifecyclePolicyReader: boolean;
     /** Null when unreadable or unconfigured; the facts it feeds degrade rather than lie. */
     readonly policy: GroupLifecyclePolicy | null;
 }
 
-export function projectGroupAdminSupportNarrative(
-    input: ProjectGroupAdminSupportInput
+type GroupTopologySummary =
+    | Readonly<{ present: false; }>
+    | Readonly<{ present: true; topologyKind: string; participantCount: number | null; }>;
+
+export function toGroupAdminSupportNarrative(
+    input: GroupAdminSupportNarrativeInput
 ): AdminSupportNarrativeResponse {
-    const session = findGroupSession(
-        input.snapshot,
-        input.request.principalId,
-        input.request.sessionId
+    const session = input.snapshot?.activeSessions.find((session) =>
+        isLiveGroupPresenceSession(session, input.generatedAtEpochMs) &&
+        (input.request.principalId === undefined || session.principalId === input.request.principalId) &&
+        (input.request.sessionId === undefined || session.sessionId === input.request.sessionId)
     );
-    const facts = groupFacts({
+    const facts = toGroupFacts({
         policy: input.policy,
         nowEpochMs: input.generatedAtEpochMs,
         snapshot: input.snapshot,
@@ -42,7 +47,7 @@ export function projectGroupAdminSupportNarrative(
         sessionId: input.request.sessionId,
         session
     });
-    const warnings = groupWarnings({
+    const warnings = toGroupWarnings({
         policy: input.policy,
         nowEpochMs: input.generatedAtEpochMs,
         hasGroupStateService: input.hasGroupStateService,
@@ -61,19 +66,19 @@ export function projectGroupAdminSupportNarrative(
             sessionId: input.request.sessionId
         }),
         facts,
-        timeline: groupTimeline(input.recentEvents),
+        timeline: toGroupTimeline(input.recentEvents),
         warnings,
-        likelyCauses: groupLikelyCauses(
+        likelyCauses: toGroupLikelyCauses(
             input.snapshot,
             session,
             input.request.sessionId
         ),
-        suggestedActions: groupSuggestedActions(
+        suggestedActions: toGroupSuggestedActions(
             input.snapshot,
             session,
             input.request.sessionId
         ),
-        rawRefs: [`group:${toGroupRef(input.request.groupRef)}`]
+        rawRefs: [`group:${toGroupReferenceText(input.request.groupRef)}`]
     };
 }
 
@@ -100,7 +105,7 @@ interface GroupWarningsInput {
     readonly nowEpochMs: number;
 }
 
-function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
+function toGroupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
     const facts: AdminSupportFact[] = [
         {
             label: 'group.snapshot',
@@ -111,32 +116,11 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
     ];
 
     if (input.snapshot) {
-        facts.push(
-            {
-                label: 'group.status',
-                source: 'group-state',
-                value: input.snapshot.group.status,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.memberCount',
-                source: 'group-state',
-                value: input.snapshot.memberCount,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.onlineMemberCount',
-                source: 'group-state',
-                value: input.snapshot.onlineMemberCount,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.activeSessionCount',
-                source: 'group-state',
-                value: input.snapshot.activeSessions.length,
-                certainty: 'exact'
-            }
-        );
+        facts.push(...toGroupRoomFacts({
+            snapshot: input.snapshot,
+            policy: input.policy,
+            nowEpochMs: input.nowEpochMs
+        }));
         facts.push(...groupLifecycleFacts({
             group: input.snapshot.group,
             plannedSnapshot: input.topologyView?.snapshot ?? null,
@@ -145,18 +129,8 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
             policy: input.policy,
             nowEpochMs: input.nowEpochMs
         }));
-        if (input.principalId) {
-            const member = input.snapshot.members.find(
-                (candidate) => candidate.principalId === input.principalId
-            );
-            facts.push({
-                label: 'group.member.status',
-                source: 'group-state',
-                value: member?.status ?? 'missing',
-                certainty: member ? 'exact' : 'unavailable'
-            });
-        }
     }
+    facts.push(...toRequestedMemberFacts(input));
 
     if (input.sessionId || input.principalId) {
         facts.push({
@@ -171,7 +145,7 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
         {
             label: 'group.topology',
             source: 'group-topology',
-            value: summarizeTopologyView(input.topologyView),
+            value: toTopologySummary(input.topologyView),
             certainty: input.topologyView ? 'exact' : 'unavailable'
         },
         {
@@ -185,7 +159,20 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
     return facts;
 }
 
-function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTimelineItem[] {
+function toRequestedMemberFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
+    if (!input.snapshot || !input.principalId) {
+        return [];
+    }
+    const member = input.snapshot.members.find((candidate) => candidate.principalId === input.principalId);
+    return [{
+        label: 'group.member.status',
+        source: 'group-state',
+        value: member?.status ?? 'missing',
+        certainty: member ? 'exact' : 'unavailable'
+    }];
+}
+
+function toGroupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTimelineItem[] {
     return events.map((event) => ({
         atEpochMs: event.occurredAtEpochMs,
         source: 'group-state-events',
@@ -195,7 +182,7 @@ function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTime
     }));
 }
 
-function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
+function toGroupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
     const warnings: AdminSupportWarning[] = [];
     if (!input.hasGroupStateService) {
         warnings.push({
@@ -218,33 +205,7 @@ function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[
             source: 'group-state'
         });
     }
-    const group = input.snapshot?.group;
-    if (group !== undefined && isGroupFormationSeriesParked(group, input.policy)) {
-        // The series is spent, so `start` is denied until a `reset` clears it
-        // (product decision 37). Keyed on the budget rather than on a non-zero
-        // attempt count, which stops describing exhaustion the moment someone
-        // raises `maxFormationAttempts` on a parked group. Nothing is claimed
-        // about admission: decision 38 keeps whatever posture the policy asked
-        // for, so a closed lobby stays closed.
-        warnings.push({
-            code: 'group-formation-series-parked',
-            message: `Formation parked in dormant after ${group.formationAttemptCount} attempt(s); ` +
-                'a reset clears the series before another can start.',
-            source: 'group-state'
-        });
-    }
-    if (group?.transportState === 'halted') {
-        // The valve is orthogonal to the stage (product decision 25), but it is
-        // only half the data gate: `resume` clears the halt and the forward
-        // gate can still refuse data before activation. `reset` also halts
-        // (product decision 36), so a halt is not evidence of a pause.
-        warnings.push({
-            code: 'group-transport-halted',
-            message: 'Transport is halted, so application data is refused; a reset halts as well as a pause. ' +
-                'Resume clears the halt, which is not sufficient on its own before activation.',
-            source: 'group-state'
-        });
-    }
+    warnings.push(...toGroupLifecycleWarnings(input));
     if (!input.hasTopologyQuery) {
         warnings.push({
             code: 'topology-reader-unconfigured',
@@ -262,7 +223,29 @@ function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[
     return warnings;
 }
 
-function groupLikelyCauses(
+function toGroupLifecycleWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
+    const warnings: AdminSupportWarning[] = [];
+    const group = input.snapshot?.group;
+    if (group !== undefined && isGroupFormationSeriesParked(group, input.policy)) {
+        warnings.push({
+            code: 'group-formation-series-parked',
+            message: `Formation parked in dormant after ${group.formationAttemptCount} attempt(s); ` +
+                'a reset clears the series before another can start.',
+            source: 'group-state'
+        });
+    }
+    if (group?.transportState === 'halted') {
+        warnings.push({
+            code: 'group-transport-halted',
+            message: 'Transport is halted, so application data is refused; a reset halts as well as a pause. ' +
+                'Resume clears the halt, which is not sufficient on its own before activation.',
+            source: 'group-state'
+        });
+    }
+    return warnings;
+}
+
+function toGroupLikelyCauses(
     snapshot: GroupSnapshot | undefined,
     session: GroupPresenceSession | undefined,
     sessionId: string | undefined
@@ -277,7 +260,7 @@ function groupLikelyCauses(
     return causes;
 }
 
-function groupSuggestedActions(
+function toGroupSuggestedActions(
     snapshot: GroupSnapshot | undefined,
     session: GroupPresenceSession | undefined,
     sessionId: string | undefined
@@ -300,24 +283,9 @@ function groupSuggestedActions(
     return actions;
 }
 
-function findGroupSession(
-    snapshot: GroupSnapshot | undefined,
-    principalId: string | undefined,
-    sessionId: string | undefined
-): GroupPresenceSession | undefined {
-    if (!snapshot) {
-        return undefined;
-    }
-    return snapshot.activeSessions.find(
-        (session) =>
-            (principalId === undefined || session.principalId === principalId) &&
-            (sessionId === undefined || session.sessionId === sessionId)
-    );
-}
-
-function summarizeTopologyView(
+function toTopologySummary(
     topologyView: GroupTopologyManagementView | undefined
-): Readonly<{ present: boolean; topologyKind?: string; participantCount?: number; }> {
+): GroupTopologySummary {
     if (!topologyView) {
         return { present: false };
     }
@@ -328,12 +296,10 @@ function summarizeTopologyView(
     return {
         present: true,
         topologyKind: topologyView.config.effective.topologyKind,
-        ...(trafficSnapshot
-            ? { participantCount: trafficSnapshot.activeSessionIds.length }
-            : {})
+        participantCount: trafficSnapshot?.activeSessionIds.length ?? null
     };
 }
 
-function toGroupRef(ref: GroupRef): string {
+function toGroupReferenceText(ref: GroupRef): string {
     return `${ref.applicationId}/${ref.workspaceId}/${ref.groupId}`;
 }

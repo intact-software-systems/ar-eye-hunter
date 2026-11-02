@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
 import { ADVANCED_SURFACE_CATALOG } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts';
-import AdvancedWorkspace from '../../../apps/rallar-black-box/src/recipe-console/advanced/AdvancedWorkspace.tsx';
+import AdvancedWorkspace from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-workspace.tsx';
 import { RecipeConsoleActiveWork } from '../../../apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
 import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-contract.ts';
 import type { RecipeConsoleUrlIssue, RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';

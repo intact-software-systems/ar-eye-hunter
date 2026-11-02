@@ -3509,6 +3509,8 @@ paths:
         '200':
           description: A private, uncacheable diagnostic page.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               schema: { type: string, enum: ['private, no-store'] }
           content:
@@ -3517,12 +3519,18 @@ paths:
                 $ref: '#/components/schemas/AdminRoomDirectoryResponse'
         '400':
           description: Invalid scope or pagination query.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
           description: Inspection unavailable; no internal row payload is returned.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
   /api/admin/operations/state:
     get:
       parameters:

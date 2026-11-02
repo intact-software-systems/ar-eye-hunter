@@ -3,16 +3,17 @@ import '../design/tokens.css';
 import '../design/reset.css';
 import { ControlConnectionProvider } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleControlBootstrap } from '../control/ControlConnectionProvider.tsx';
+import { RoomOperationsProvider } from '../rooms/room-operations-provider.tsx';
 import { RecipeConsoleWorkspace } from './recipe-console-workspace.tsx';
 import { RecipeConsolePreferencesController } from './RecipeConsolePreferencesController.tsx';
 
-export type RecipeConsoleAppProps = Readonly<{
-    authSession?: AuthSession;
-    authBusy: boolean;
-    authError?: string;
-    controlBootstrap: RecipeConsoleControlBootstrap;
+export interface RecipeConsoleAppProps {
+    readonly authSession?: AuthSession;
+    readonly authBusy: boolean;
+    readonly authError?: string;
+    readonly controlBootstrap: RecipeConsoleControlBootstrap;
     onLogout(): Promise<void>;
-}>;
+}
 
 export default function RecipeConsoleApp({
     authSession,
@@ -31,15 +32,22 @@ export default function RecipeConsoleApp({
                     bootstrap={preferences.state.effectiveBootstrap}
                     controlReadTimeoutMs={preferences.state.controlReadTimeoutMs}
                 >
-                    <RecipeConsoleWorkspace
-                        accountSettings={{
-                            authBusy,
-                            authError,
-                            authSession,
-                            onLogout,
-                            preferences
-                        }}
-                    />
+                    <RoomOperationsProvider
+                        apiBaseUrl={preferences.state.effectiveBootstrap.apiBaseUrl}
+                        endpointFromLocation={preferences.state.effectiveBootstrap.credentialPolicy
+                            .apiBaseUrlFromLocation}
+                        session={authSession ?? null}
+                    >
+                        <RecipeConsoleWorkspace
+                            accountSettings={{
+                                authBusy,
+                                authError,
+                                authSession,
+                                onLogout,
+                                preferences
+                            }}
+                        />
+                    </RoomOperationsProvider>
                 </ControlConnectionProvider>
             )}
         </RecipeConsolePreferencesController>

@@ -14,7 +14,7 @@ import { StatePanel } from '../ui/StatePanel.tsx';
 
 const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));
 const FleetWorkspace = lazy(() => import('../fleet/FleetWorkspace.tsx'));
-const AdvancedWorkspace = lazy(() => import('../advanced/AdvancedWorkspace.tsx'));
+const AdvancedWorkspace = lazy(() => import('../advanced/advanced-workspace.tsx'));
 
 type TuneWorkInput = Readonly<{
     query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>;

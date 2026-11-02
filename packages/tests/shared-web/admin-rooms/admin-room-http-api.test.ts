@@ -5,7 +5,7 @@ import {
     vi
 } from 'vitest';
 
-import { readAdminRoomDirectory } from '@shared-web/browser/admin-rooms/admin-room-http-api.ts';
+import { readAdminRoomDirectory, readAdminRoomExplanation } from '@shared-web/browser/admin-rooms/admin-room-http-api.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 const scope = { applicationId: 'ar-eye-hunter', workspaceId: 'test:rooms' };
@@ -66,4 +66,33 @@ it('rejects a response from another workspace instead of presenting its rooms', 
         session,
         signal: new AbortController().signal
     })).rejects.toThrow('foreign scope');
+});
+
+it('reads the existing group explanation with explicit API authentication and exact room identity', async () => {
+    const roomRef = { ...scope, groupId: 'private-room' };
+    const explanation = {
+        target: { kind: 'group', groupRef: roomRef },
+        generatedAtEpochMs: 10_000,
+        facts: [],
+        timeline: [],
+        warnings: [],
+        likelyCauses: [],
+        suggestedActions: [],
+        rawRefs: []
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(explanation));
+    vi.stubGlobal('fetch', fetch);
+    const signal = new AbortController().signal;
+    await expect(readAdminRoomExplanation({ apiBaseUrl: 'https://api.example.test', roomRef, session, signal }))
+        .resolves.toEqual(explanation);
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.example.test/api/admin/support/explain/group');
+    expect(options?.method).toBe('POST');
+    expect(JSON.parse(String(options?.body))).toEqual({ groupRef: roomRef, limitRecentEvents: 20 });
+    expect(new Headers(options?.headers).get('authorization')).toBe('Bearer test-only');
+    expect(options?.signal).toBe(signal);
+
+    fetch.mockResolvedValue(Response.json({ ...explanation, target: { kind: 'group', groupRef: { ...roomRef, groupId: 'other' } } }));
+    await expect(readAdminRoomExplanation({ apiBaseUrl: 'https://api.example.test', roomRef, session, signal }))
+        .rejects.toThrow('foreign room');
 });

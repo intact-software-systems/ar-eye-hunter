@@ -130,6 +130,15 @@ results. Connect the controls and add real-API clickable recovery journeys cover
 rooms. Verify that authorized recovery does not bypass player consent, membership, or game authority.
 Complete local and hosted validation, whole-branch review, and PR readiness in this increment.
 
+The existing topology recompute command acknowledges queued outbox work; its receipt alone cannot
+prove that replanning finished or that clients received a usable topology. Verify the exact queued
+work through retained completion evidence before reading the room again. If that evidence is absent
+or expired, report an unknown outcome instead of inferring success from a newer room snapshot.
+Existing prune maintenance waits for its aggregate result and supports dry-run, but runtime-state,
+queue, and result cleanup are global categories. Display that global scope explicitly and require a
+separate execution intent after preview; neither selecting a room nor running a preview authorizes
+cleanup. Reuse these command owners rather than introducing another mutation implementation.
+
 These are implementation increments, not separate feature PRs. Exact interfaces, filenames, filters,
 and recovery controls follow current owner inspection; do not invent a parallel service layer to
 satisfy a speculative file list. Material ownership or acceptance changes are explained in the PR.

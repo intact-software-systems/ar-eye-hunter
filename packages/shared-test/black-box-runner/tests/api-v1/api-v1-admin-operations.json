@@ -810,7 +810,8 @@
               }
             }
           }
-        }
+        },
+        "comparison": "compatible-complete"
       }
     },
     {
@@ -1039,7 +1040,8 @@
           "entries": [],
           "nextAfterGroupId": null,
           "completeness": "complete"
-        }
+        },
+        "comparison": "compatible-complete"
       }
     },
     {
