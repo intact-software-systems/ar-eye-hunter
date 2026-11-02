@@ -6,6 +6,12 @@ import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts'
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import { timeGroupStatePhase, type GroupStatePhaseTiming } from '../inbox/time-group-state-phase.ts';
+import {
+    computeGroupMoveExpiry,
+    computeGroupMoveMutation,
+    validateGroupMoveExpiry,
+    validateGroupMoveMutation
+} from './compute-group-move-mutation.ts';
 
 import { requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
@@ -82,6 +88,7 @@ export async function submitGroupMove({ input, authority, service, client }: Sub
         if (
             result.moveId !== command.moveId || !isSameGroupRef(result.source, command.source) ||
             !isSameGroupRef(result.destination, command.destination) ||
+            !jsonEquals(result.party ?? null, command.party ?? null) ||
             !result.participants.some((participant) =>
                 participant.principalId === command.actorPrincipalId && participant.sessionId === command.actorSessionId
             )
@@ -127,9 +134,8 @@ async function expireGroupMove(
         'read',
         () => input.service.readExpiry(command, context.message.id.traceId)
     );
-    const computed = await timeGroupStatePhase(timing, 'compute', () => input.service.computeExpiry(read));
-    const issue =
-        (await timeGroupStatePhase(timing, 'validate', () => input.service.validateExpiry(read, computed)))[0];
+    const computed = await timeGroupStatePhase(timing, 'compute', () => computeGroupMoveExpiry(read));
+    const issue = (await timeGroupStatePhase(timing, 'validate', () => validateGroupMoveExpiry(read, computed)))[0];
     if (issue) {
         throw issue.cause;
     }
@@ -167,8 +173,8 @@ async function handleGroupMove(
     if (!jsonEquals(command, read.ingress.command)) {
         throw new GroupMutationAuthorizationError('Group move ingress and command differ');
     }
-    const decision = await timeGroupStatePhase(timing, 'compute', () => input.service.compute(read));
-    const issue = (await timeGroupStatePhase(timing, 'validate', () => input.service.validate(read, decision)))[0];
+    const decision = await timeGroupStatePhase(timing, 'compute', () => computeGroupMoveMutation(read));
+    const issue = (await timeGroupStatePhase(timing, 'validate', () => validateGroupMoveMutation(read, decision)))[0];
     if (issue) {
         throw issue.cause;
     }

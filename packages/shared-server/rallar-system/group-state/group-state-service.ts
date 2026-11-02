@@ -1,4 +1,5 @@
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
+import { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
@@ -86,6 +87,7 @@ export function createGroupStateRuntime(
         move: new GroupMoveService({
             groups: repositoryFor(runtime),
             moves: new GroupMoveRepository(runtime, now),
+            parties: new PartyRepository(runtime, now),
             authSessions,
             mutations: {
                 captureMutationIngress: ingressOperations.captureMutationIngress,

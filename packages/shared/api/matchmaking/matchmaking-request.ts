@@ -1,4 +1,3 @@
-import { decodeStateScope } from '../decode-state-scope.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -7,7 +6,7 @@ import {
     requireString
 } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
-import type { StateScope } from '../state-types.ts';
+import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 export type MatchmakingRequest =
     | Readonly<{ action: 'start' | 'confirm' | 'cancel'; searchId: string; }>

@@ -22,4 +22,11 @@ Deno.test('published party API describes authenticated private views and exact r
     const member = requireRecord(requireRecord(schemas.PartyMemberView, 'party member').properties, 'member properties');
     assert.deepEqual(requireRecord(member.presence, 'party presence').enum, ['present', 'away']);
     assert.ok(!('sessionId' in member));
+    for (const schema of ['GroupMoveRequest', 'GroupMove']) {
+        const properties = requireRecord(requireRecord(schemas[schema], schema).properties, 'move properties');
+        assert.deepEqual(properties.party, { $ref: '#/components/schemas/GroupMoveParty' });
+    }
+    const selection = requireRecord(schemas.GroupMoveParty, 'party move selection');
+    assert.deepEqual(selection.required, ['partyId', 'rosterRevision']);
+    assert.equal(selection.additionalProperties, false);
 });

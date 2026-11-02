@@ -6,6 +6,7 @@ import type {
     ClientPrincipalStatus,
     ClientTransport
 } from './client-types.ts';
+import { requireExactKeys, requireRecord, requireString } from './exact-object-decoding.ts';
 import type { GroupDirectoryListing } from './group-directory/group-directory-listing.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
@@ -20,12 +21,24 @@ import type {
     GroupSnapshot,
     GroupStatus
 } from './group-types.ts';
+import { assertValidRallarRouteId } from './rallar-validation.ts';
 
 export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
 export const DEFAULT_STATE_WORKSPACE_ID = 'default';
 
 /** The application/workspace projection of a scoped group identity. */
 export type StateScope = Pick<GroupRef, 'applicationId' | 'workspaceId'>;
+
+export function decodeStateScope(value: unknown): StateScope {
+    const scope = requireRecord(value, 'State scope');
+    requireExactKeys(scope, ['applicationId', 'workspaceId'], 'State scope');
+    requireString(scope.applicationId, 'State application');
+    requireString(scope.workspaceId, 'State workspace');
+    return {
+        applicationId: assertValidRallarRouteId(scope.applicationId),
+        workspaceId: assertValidRallarRouteId(scope.workspaceId)
+    };
+}
 
 export interface MutationActorInput {
     readonly actorPrincipalId?: string;

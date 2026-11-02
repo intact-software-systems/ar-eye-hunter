@@ -80,12 +80,16 @@ implementation proposals for the approved outcome, not additional user rulings.
 - `packages/shared-server/rallar-system/friends/friends-repository.ts` supplies exact consent reads;
   friendship remains account-wide. Guard the observed consent when admitting a party invitation.
 - `packages/shared-server/rallar-system/matchmaking/matchmaking-service.ts` registers the existing
-  search and deadline AppInbox operations. `compute-matchmaking.ts` owns pure cohort selection;
-  `matchmaking-repository.ts` owns pool/account/finished storage and its first CAS.
+  search and deadline AppInbox operations. `compute-matchmaking-search.ts` owns whole-cohort allocation and `compute-matchmaking.ts` owns
+  lifecycle decisions; repository reads and `compute-matchmaking-storage.ts` retain their separate
+  read and persistence-computation boundaries.
 - `group-state/mutation/membership/compute-new-group-cohort-admission.ts` and
   `compute-group-cohort-admission.ts` remain canonical new/existing-room admission computations.
 - `group-state/move/group-move-service.ts` owns source-presence, destination admission and arrival.
-  Party selection must bind the complete party roster, not assume all source-room players are it.
+  Party selection binds the complete roster, not all source-room players. `select-group-move-players.ts`
+  selects one session per member and retains it through consent. `compute-group-move-mutation.ts`
+  computes admission, guards, publication and expiry before the AppInbox transaction. The service owns
+  reads, captured authority and writes; callers import the pure computations directly.
 - `packages/shared-web/browser/matchmaking/rallar-matchmaking.ts` owns authenticated search
   recovery, uncertainty and explicit RoomEntry handoff. Reuse rather than clone this lifecycle.
 - `packages/shared-web/browser/rooms/move/rallar-room-move.ts` and the existing game adapters own
@@ -117,6 +121,14 @@ party/presence/session rows. Final admission rechecks the captured party revisio
 redelivers the complete attempt: a leave that wins prevents admission; a match that wins preserves its
 room memberships and finished result when a later party leave applies. Private recovery reads validate
 party membership and search bindings from the same database snapshot as the pool and account pointer.
+
+Party Move together carries an explicit party ID and roster revision through proposal, consent and
+arrival. The independent room-wide operation omits that selection and continues to select its present
+room players; this is a domain choice, not a legacy schema decoder. A party proposal requires the
+leader and every member present in the source. It selects one session per account, ignores unrelated
+room players and additional tabs, and cancels if its selected session or roster no longer qualifies.
+The party record's exact CAS shares the destination admission transaction. Browser response validation
+binds the selection as well as both rooms; existing game eligibility still surrounds switching.
 
 ## Implementation horizon
 

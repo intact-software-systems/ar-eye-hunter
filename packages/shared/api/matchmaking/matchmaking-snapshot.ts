@@ -1,5 +1,4 @@
 import { isSameGroupScope } from '../api-type-utils.ts';
-import { decodeStateScope } from '../decode-state-scope.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -9,7 +8,7 @@ import {
 } from '../exact-object-decoding.ts';
 import type { GroupRef } from '../group-types.ts';
 import { assertValidRallarGroupRef, assertValidRallarRouteId } from '../rallar-validation.ts';
-import type { StateScope } from '../state-types.ts';
+import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 export type MatchmakingEndedReason =
     | 'search-timeout'

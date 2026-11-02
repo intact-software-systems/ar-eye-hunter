@@ -1031,6 +1031,446 @@
       }
     },
     {
+      "name": "partyMoveCreateTarget",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/move-create-target-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "party-move-target-{runId}",
+          "displayName": "Move target",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 2,
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "activeMemberCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "partyMoveConnectAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}/sessions/{aliceSessionId}/requests/move-connect-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "principalId": "{aliceClientId}",
+          "generationId": "move-alice-generation-{runId}",
+          "connectionGenerationId": "move-alice-connection-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyMoveRefusesDispersed",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveRefusesDispersed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "propose",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "partyMoveConnectBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}/sessions/{bobSessionId}/requests/move-connect-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "principalId": "{bobClientId}",
+          "generationId": "move-bob-generation-{runId}",
+          "connectionGenerationId": "move-bob-connection-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyMoveRequiresLeader",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveRequiresLeader-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "propose",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "partyMoveTargetPropose",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveTargetPropose-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "propose",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "proposed",
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "partyMoveTargetAliceConfirm",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveTargetAliceConfirm-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyMoveTargetTooEarly",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveTargetTooEarly-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "partyMoveTargetBobConfirm",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveTargetBobConfirm-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyMoveTargetCommit",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveTargetCommit-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "committed"
+        }
+      }
+    },
+    {
+      "name": "partyTargetBothMembers",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/party-move-target-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "partySourceMembersPreserved",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "partyBobServerRecovery",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "moveId": "party-move-{runId}",
+            "status": "committed",
+            "party": {
+              "partyId": "friends-party-{runId}",
+              "rosterRevision": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "partyReplayCommit",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/partyMoveTargetCommit-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "moveId": "party-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{partyMatchedRoomId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "party-move-target-{runId}"
+          },
+          "action": "commit",
+          "joinCode": null,
+          "inviteToken": null,
+          "party": {
+            "partyId": "friends-party-{runId}",
+            "rosterRevision": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "committed"
+        }
+      }
+    },
+    {
       "name": "partyLeaveBob",
       "type": "http",
       "connection": "api",

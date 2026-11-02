@@ -1,5 +1,4 @@
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
-import { decodeStateScope } from '@shared/api/decode-state-scope.ts';
 import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import { decodeMatchmakingPolicy, type MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
 import {
@@ -8,7 +7,7 @@ import {
     type MatchmakingMutationResult,
     type MatchmakingRequest
 } from '@shared/api/matchmaking/matchmaking-request.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import { decodeStateScope, type StateScope } from '@shared/api/state-types.ts';
 
 export interface MatchmakingCommand {
     readonly scope: StateScope;

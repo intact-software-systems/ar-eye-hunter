@@ -58,6 +58,8 @@ paths:
         '200':
           description: Private account-scoped result.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               schema:
                 type: string
@@ -105,6 +107,8 @@ paths:
         '200':
           description: Private account-scoped result.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               schema:
                 type: string
@@ -8460,11 +8464,26 @@ components:
         groupId:
           type: string
 
+    GroupMoveParty:
+      type: object
+      additionalProperties: false
+      description: Explicit whole-party selection. Omit party for a room-wide move. Every subsequent action must carry the proposal's exact selection.
+      required: [partyId, rosterRevision]
+      properties:
+        partyId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        rosterRevision:
+          type: integer
+          minimum: 0
     GroupMoveRequest:
       type: object
       additionalProperties: false
       required: [moveId, source, destination, action, joinCode, inviteToken]
       properties:
+        party:
+          $ref: '#/components/schemas/GroupMoveParty'
         requestId:
           type: string
           description: When supplied, must match the request ID path segment.
@@ -8523,6 +8542,8 @@ components:
         - reason
         - admissionFailure
       properties:
+        party:
+          $ref: '#/components/schemas/GroupMoveParty'
         moveId:
           type: string
         source:
@@ -8552,7 +8573,16 @@ components:
           enum: [proposed, committed, cancelled, expired, denied]
         reason:
           type: [string, 'null']
-          enum: [participant-declined, organizer-cancelled, source-roster-changed, source-unavailable, proposal-expired, admission-denied, null]
+          enum: [
+            participant-declined,
+            organizer-cancelled,
+            source-roster-changed,
+            party-roster-changed,
+            source-unavailable,
+            proposal-expired,
+            admission-denied,
+            null,
+          ]
         admissionFailure:
           oneOf:
             - type: 'null'

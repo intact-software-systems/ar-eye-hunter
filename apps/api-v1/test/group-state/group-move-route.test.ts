@@ -59,7 +59,9 @@ Deno.test('group move rejects cross-scope and unknown request fields before enqu
         const body of [
             { ...REQUEST, source: { ...REQUEST.source, applicationId: 'other' } },
             { ...REQUEST, destination: { ...REQUEST.destination, workspaceId: 'other' } },
-            { ...REQUEST, actorPrincipalId: 'victim' }
+            { ...REQUEST, actorPrincipalId: 'victim' },
+            { ...REQUEST, party: { partyId: 'party', rosterRevision: -1 } },
+            { ...REQUEST, party: { partyId: 'party', rosterRevision: 1, members: ['alice'] } }
         ]
     ) {
         const response = await app.request(`${PATH}/requests/${REQUEST.requestId}`, {
@@ -118,12 +120,13 @@ Deno.test('group move forwards the path request identity and authenticated sessi
             });
         }
     });
-    const { requestId: _requestId, ...body } = REQUEST;
+    const partyRequest = { ...REQUEST, party: { partyId: 'party', rosterRevision: 7 } };
+    const { requestId: _requestId, ...body } = partyRequest;
     const response = await app.request(`${PATH}/requests/${REQUEST.requestId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
     assert.equal(response.status, 200, await response.clone().text());
-    assert.deepEqual(calls, [{ request: REQUEST, principalId: 'alice' }]);
+    assert.deepEqual(calls, [{ request: partyRequest, principalId: 'alice' }]);
 });

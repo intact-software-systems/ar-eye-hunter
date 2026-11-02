@@ -1,4 +1,3 @@
-import { decodeStateScope } from '../decode-state-scope.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -6,7 +5,7 @@ import {
     requireRecord,
     requireString
 } from '../exact-object-decoding.ts';
-import type { StateScope } from '../state-types.ts';
+import { decodeStateScope, type StateScope } from '../state-types.ts';
 import { decodePartyRef } from './party-request.ts';
 import { decodePartyInvitation, decodePartyMember } from './party.ts';
 import type { PartyInvitation, PartyMember, PartyRef } from './party.ts';

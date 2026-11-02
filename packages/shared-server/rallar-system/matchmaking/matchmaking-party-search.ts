@@ -1,7 +1,7 @@
-import { decodeStateScope } from '@shared/api/decode-state-scope.ts';
 import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import { decodePartyRef } from '@shared/api/parties/party-request.ts';
 import type { PartyRef } from '@shared/api/parties/party.ts';
+import { decodeStateScope } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import { groupStateScopeStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
