@@ -1,21 +1,23 @@
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupRef, type GroupRef } from '@shared/api/group-types.ts';
-import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
-import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
-import type { GroupMove, GroupMoveAction, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
+import type { GroupMove, GroupMoveAction, GroupMoveParty, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Command } from '@shared/cache/Command.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
+import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { listMoves, mutateMove } from './room-move-api.ts';
+import {
+    assertRoomMoveAccount,
+    assertRoomMoveResponse,
+    changedRoomMoveArrivals,
+    groupMoveKey,
+    selectRoomMoveEntry
+} from './room-move-recovery.ts';
 
-import { readApiBaseUrl } from '../../api-client-config.ts';
-import { sendApiHttpRequest, type ApiMutationRequestOptions } from '../../api/send-api-http-request.ts';
-import { toStateScopeHttpPath } from '../../api/state-http-path.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
 import type { RallarWsMessageLane } from '../../messages/rallar-message-operations.ts';
 import type { RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
@@ -178,7 +180,7 @@ export class RallarRoomMove {
         return this.reads.drain();
     }
 
-    public async propose(destination: GroupRef): Promise<void> {
+    public async propose(destination: GroupRef, party?: GroupMoveParty): Promise<void> {
         const source = this.dependencies.currentRoom();
         if (!source) {
             this.publish({ ...this.state, error: 'Enter a source room first.' });
@@ -190,6 +192,7 @@ export class RallarRoomMove {
             source: toCanonicalGroupRef(source),
             destination: toCanonicalGroupRef(destination),
             action: 'propose',
+            ...(party === undefined ? {} : { party }),
             joinCode: null,
             inviteToken: null
         });
@@ -204,6 +207,7 @@ export class RallarRoomMove {
         await this.send({
             requestId: crypto.randomUUID(),
             moveId: move.moveId,
+            ...(move.party === undefined ? {} : { party: move.party }),
             source: move.source,
             destination: move.destination,
             action,
@@ -223,7 +227,7 @@ export class RallarRoomMove {
         this.attemptedEntries.add(groupMoveKey(move));
         this.publish({ ...this.state, busy: true, enteringMoveId: move.moveId, error: null });
         try {
-            this.assertMove(move, attempt);
+            assertRoomMoveAccount(move, this.config.scope, attempt.session);
             await this.dependencies.withEligibility(move.destination, async () => {
                 this.assertCurrent(attempt);
                 await this.dependencies.activate(move, attempt.signal);
@@ -240,6 +244,7 @@ export class RallarRoomMove {
                     {
                         requestId: crypto.randomUUID(),
                         moveId: move.moveId,
+                        ...(move.party === undefined ? {} : { party: move.party }),
                         source: move.source,
                         destination: move.destination,
                         action: 'arrive',
@@ -279,28 +284,16 @@ export class RallarRoomMove {
                 return;
             }
             for (const move of moves) {
-                this.assertMove(move, attempt);
+                assertRoomMoveAccount(move, this.config.scope, attempt.session);
             }
             const previousMoves = this.state.moves;
             // The durable decision must remain usable even if a historical room is now unreadable.
             this.publish({ ...this.state, moves });
             await this.enterCurrentSourceMove();
             const currentRoom = this.dependencies.currentRoom();
-            for (const move of moves) {
-                const previous = previousMoves.find((candidate) =>
-                    candidate.moveId === move.moveId && isSameGroupRef(candidate.source, move.source)
-                );
-                if (
-                    currentRoom &&
-                    (isSameGroupRef(currentRoom, move.source) || isSameGroupRef(currentRoom, move.destination)) &&
-                    move.status === 'committed' && move.participants.some((participant) =>
-                        participant.arrivedAtEpochMs !== null
-                    ) &&
-                    JSON.stringify(move) !== JSON.stringify(previous)
-                ) {
-                    await this.dependencies.refreshRooms(move, attempt.signal);
-                    this.assertCurrent(attempt);
-                }
+            for (const move of changedRoomMoveArrivals(moves, previousMoves, currentRoom)) {
+                await this.dependencies.refreshRooms(move, attempt.signal);
+                this.assertCurrent(attempt);
             }
         }
         catch (error) {
@@ -325,12 +318,7 @@ export class RallarRoomMove {
                 this.assertCurrent(attempt);
                 const result = await this.dependencies.api.mutate(request, attempt.session, attempt.signal);
                 this.assertCurrent(attempt);
-                if (
-                    result.moveId !== request.moveId || !isSameGroupRef(result.source, request.source) ||
-                    !isSameGroupRef(result.destination, request.destination)
-                ) {
-                    throw new TypeError('Room move response identity differs');
-                }
+                assertRoomMoveResponse(result, request);
                 this.accept(result, attempt);
             };
             if (request.action === 'propose' || request.action === 'confirm' || request.action === 'commit') {
@@ -357,7 +345,7 @@ export class RallarRoomMove {
     }
 
     private accept(move: GroupMove, attempt: RallarRoomMove.Attempt): void {
-        this.assertMove(move, attempt);
+        assertRoomMoveAccount(move, this.config.scope, attempt.session);
         this.revision++;
         this.publish({
             ...this.state,
@@ -373,26 +361,14 @@ export class RallarRoomMove {
     private async enterCurrentSourceMove(): Promise<void> {
         const current = this.dependencies.currentRoom();
         const session = this.dependencies.auth.session();
-        const move = this.state.moves.find((candidate) =>
-            candidate.status === 'committed' && current &&
-            isSameGroupRef(current, candidate.source) && !this.attemptedEntries.has(groupMoveKey(candidate)) &&
-            candidate.participants.some((participant) =>
-                participant.sessionId === session?.sessionId && participant.arrivedAtEpochMs === null
-            )
-        );
+        const move = selectRoomMoveEntry({
+            moves: this.state.moves,
+            currentRoom: current,
+            session,
+            attemptedEntries: this.attemptedEntries
+        });
         if (move) {
             await this.enter(move);
-        }
-    }
-
-    private assertMove(move: GroupMove, attempt: RallarRoomMove.Attempt): void {
-        decodeGroupMove(move);
-        if (
-            move.source.applicationId !== this.config.scope.applicationId ||
-            move.source.workspaceId !== this.config.scope.workspaceId ||
-            !move.participants.some((participant) => participant.principalId === attempt.session.clientId)
-        ) {
-            throw new TypeError('Room move does not belong to this scope and account');
         }
     }
 
@@ -444,40 +420,4 @@ export class RallarRoomMove {
         this.state = state;
         this.notifications.publishLatest(state);
     }
-}
-
-async function listMoves(scope: StateScope, session: AuthSession, signal: AbortSignal): Promise<readonly GroupMove[]> {
-    const value = await sendApiHttpRequest<never, unknown>({
-        baseUrl: readApiBaseUrl(),
-        path: `${toStateScopeHttpPath(scope)}/group-moves`,
-        method: 'GET',
-        body: undefined,
-        options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) }
-    });
-    if (!Array.isArray(value)) {
-        throw new TypeError('Room move list must be an array');
-    }
-    return Array.from(value, decodeGroupMove);
-}
-
-async function mutateMove(request: GroupMoveRequest, session: AuthSession, signal: AbortSignal): Promise<GroupMove> {
-    return await new Command(async (attemptSignal) => {
-        const options: ApiMutationRequestOptions = {
-            authSession: session,
-            signal: attemptSignal,
-            requestId: request.requestId
-        };
-        const value = await sendApiHttpRequest<GroupMoveRequest, unknown>({
-            baseUrl: readApiBaseUrl(),
-            path: toApiMutationRequestPath(`${toStateScopeHttpPath(request.source)}/group-moves`, request.requestId),
-            method: 'POST',
-            body: request,
-            options
-        });
-        return decodeGroupMove(value);
-    }, { signal, timeoutMs: 15000, maxAttempts: 2 }).run();
-}
-
-function groupMoveKey(move: GroupMove): string {
-    return JSON.stringify([move.source.applicationId, move.source.workspaceId, move.source.groupId, move.moveId]);
 }

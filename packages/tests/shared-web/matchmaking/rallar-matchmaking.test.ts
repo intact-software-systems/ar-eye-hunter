@@ -81,6 +81,13 @@ function browser() {
 }
 
 describe('matchmaking browser recovery and consent', () => {
+    it('starts one indivisible party search with the roster revision the leader selected', async () => {
+        const test = browser();
+        await test.owner.start();
+        await test.owner.find({ ref: { ...scope, partyId: 'party' }, rosterRevision: 7 });
+        expect(test.api.change.mock.calls[0]?.[0].request).toMatchObject({ action: 'start-party', partyId: 'party', rosterRevision: 7 });
+    });
+
     it('recovers confirmation, binds commands to the recovered search, and enters only a committed destination', async () => {
         const test = browser();
         test.state(confirming);
@@ -91,9 +98,24 @@ describe('matchmaking browser recovery and consent', () => {
         expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({ request: { action: 'confirm', searchId: 'alice-search' } }));
         test.state(matched);
         await test.owner.refresh();
-        expect(test.owner.getState().snapshot?.state).toEqual(matched);
+        expect(test.owner.getState().view?.state).toEqual(matched);
         await test.owner.enter();
         expect(test.enter).toHaveBeenCalledWith({ intent: 'join', roomRef: matched.roomRef, joinCode: null, participation: 'player' });
+    });
+
+    it('accepts a definitive party refusal without inventing a retryable search', async () => {
+        const test = browser();
+        await test.owner.start();
+        test.api.change.mockImplementationOnce(async ({ scope, session, requestId }) => ({
+            scope,
+            principalId: session.clientId,
+            requestId,
+            status: 'refused',
+            searchId: null,
+            code: 'party-required'
+        }));
+        await test.owner.find();
+        expect(test.owner.getState()).toMatchObject({ retryPending: false, error: 'Search with your party, or leave it to search alone.' });
     });
 
     it('keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves', async () => {
@@ -108,7 +130,10 @@ describe('matchmaking browser recovery and consent', () => {
         expect(test.api.change).toHaveBeenCalledTimes(1);
         await test.owner.retry();
         expect(test.api.change.mock.calls[1]?.[0]).toMatchObject({
-            requestId: first.requestId, request: first.request, scope: first.scope, session: first.session
+            requestId: first.requestId,
+            request: first.request,
+            scope: first.scope,
+            session: first.session
         });
         expect(test.owner.getState()).toMatchObject({ retryPending: false, busy: false, error: null });
     });
@@ -122,7 +147,7 @@ describe('matchmaking browser recovery and consent', () => {
         expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({ request: { action: 'cancel', searchId: 'alice-search' } }));
         test.state({ status: 'ended', searchId: 'alice-search', reason: 'confirmation-timeout' });
         await vi.advanceTimersByTimeAsync(3000);
-        expect(test.owner.getState().snapshot?.state).toMatchObject({ status: 'ended', reason: 'confirmation-timeout' });
+        expect(test.owner.getState().view?.state).toMatchObject({ status: 'ended', reason: 'confirmation-timeout' });
         expect(test.api.change).toHaveBeenCalledTimes(1);
         await test.owner.find();
         expect(test.api.change.mock.calls[1]?.[0].request.action).toBe('start');
@@ -138,11 +163,11 @@ describe('matchmaking browser recovery and consent', () => {
         await test.owner.refresh();
         late.resolve({ scope, principalId: 'alice', observedAtEpochMs: 1000, state: confirming });
         await start;
-        expect(test.owner.getState().snapshot?.principalId).toBe('bob');
+        expect(test.owner.getState().view?.principalId).toBe('bob');
         test.api.change.mockRejectedValueOnce(new Error('Lost'));
         await test.owner.find();
         test.login(undefined);
-        expect(test.owner.getState()).toEqual({ snapshot: null, busy: false, retryPending: false, error: null });
+        expect(test.owner.getState()).toEqual({ view: null, busy: false, retryPending: false, error: null });
     });
 
     it('rejects another scope or account and prevents stale entry after a failed fresh read', async () => {
@@ -156,7 +181,7 @@ describe('matchmaking browser recovery and consent', () => {
             state: { status: 'idle' }
         });
         await test.owner.refresh();
-        expect(test.owner.getState().snapshot).toBeNull();
+        expect(test.owner.getState().view).toBeNull();
         expect(test.owner.getState().error).toContain('scope');
         await test.owner.refresh();
         test.api.read.mockRejectedValueOnce(new Error('Offline'));

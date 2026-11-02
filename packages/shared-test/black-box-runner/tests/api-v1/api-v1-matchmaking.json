@@ -189,6 +189,59 @@
       }
     },
     {
+      "name": "rejectUnownedParty",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-rejectUnownedParty-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start-party",
+          "searchId": "party-forged",
+          "partyId": "unowned-{runId}",
+          "rosterRevision": 0
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "refused",
+          "code": "party-changed"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "rejectInjectedPartyRoster",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/matchmaking-rejectInjectedPartyRoster-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start-party",
+          "searchId": "party-forged",
+          "partyId": "unowned-{runId}",
+          "rosterRevision": 0,
+          "members": [
+            "{aliceClientId}",
+            "{bobClientId}"
+          ]
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
       "name": "startAlice",
       "type": "http",
       "connection": "primary",

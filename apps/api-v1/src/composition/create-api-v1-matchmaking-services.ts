@@ -3,6 +3,7 @@ import { MatchmakingReader } from '@shared-server/rallar-system/matchmaking/matc
 import { MatchmakingRepository } from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
 import { MatchmakingService } from '@shared-server/rallar-system/matchmaking/matchmaking-service.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
@@ -26,6 +27,8 @@ export function createApiV1MatchmakingServices(
     const service = new MatchmakingService({
         appInbox: runtime.appInbox,
         repository,
+        parties: new PartyRepository(runtimeStateRepository, nowEpochMs),
+        clients: runtime.clientsRepository,
         authSessions: runtime.authSessionRepository,
         groups: runtime.topologyServices.groupStateRepository,
         nowEpochMs,

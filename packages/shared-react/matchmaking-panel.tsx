@@ -1,9 +1,12 @@
 import type { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
+import type { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import type { MatchmakingEndedReason, MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
+import type { PartyView } from '@shared/api/parties/party-view.ts';
 import { useEffect, useState } from 'react';
 
 export interface MatchmakingPanelProps {
     readonly owner: RallarMatchmaking;
+    readonly party: RallarParty;
     readonly findLabel: string;
 }
 
@@ -15,7 +18,9 @@ const ENDED_MESSAGES: Readonly<Record<MatchmakingEndedReason, string>> = {
     'admission-denied': 'The group could not enter a room. All reservations were released.'
 };
 
-export function MatchmakingPanel({ owner, findLabel }: MatchmakingPanelProps) {
+export function MatchmakingPanel({ owner, party, findLabel }: MatchmakingPanelProps) {
+    const [partyState, setPartyState] = useState(party.getState());
+    useEffect(() => party.onChange(setPartyState), [party]);
     const [state, setState] = useState(owner.getState());
     useEffect(() => owner.onChange(setState), [owner]);
     useEffect(() => {
@@ -27,15 +32,22 @@ export function MatchmakingPanel({ owner, findLabel }: MatchmakingPanelProps) {
         <section className="panel stack" aria-label="Find players">
             <strong>Find players</strong>
             <p>Form a new group. Everyone confirms before a room is created.</p>
-            {state.snapshot && (
+            {partyState.view?.party && (
+                <p>
+                    The party leader searches when everyone is present. Your party stays together; other searching
+                    players fill any remaining seats.
+                </p>
+            )}
+            {state.view && (
                 <MatchmakingProgress
                     owner={owner}
-                    snapshot={state.snapshot}
+                    partyView={partyState.view}
+                    snapshot={state.view}
                     disabled={disabled}
                     findLabel={findLabel}
                 />
             )}
-            {!state.snapshot && !state.error && <p role="status">Checking your search…</p>}
+            {!state.view && !state.error && <p role="status">Checking your search…</p>}
             {state.busy && <p role="status">Updating your search…</p>}
             {state.error && <p role="alert">{state.error}</p>}
             {state.retryPending && (
@@ -48,13 +60,20 @@ export function MatchmakingPanel({ owner, findLabel }: MatchmakingPanelProps) {
     );
 }
 
-interface MatchmakingProgressProps extends MatchmakingPanelProps {
+interface MatchmakingProgressProps extends Pick<MatchmakingPanelProps, 'owner' | 'findLabel'> {
+    readonly partyView: PartyView | null;
     readonly snapshot: MatchmakingSnapshot;
     readonly disabled: boolean;
 }
 
-function MatchmakingProgress({ owner, snapshot, disabled, findLabel }: MatchmakingProgressProps) {
+function MatchmakingProgress({ owner, snapshot, disabled, findLabel, partyView }: MatchmakingProgressProps) {
     const { state } = snapshot;
+    const party = partyView?.party;
+    const canFind = partyView !== null &&
+        (!party ||
+            (party.leaderPrincipalId === partyView.principalId &&
+                party.members.every((member) => member.presence === 'present')));
+    const searchLabel = party ? 'Find a game with party' : findLabel;
     if (state.status === 'searching') {
         return (
             <>
@@ -71,7 +90,13 @@ function MatchmakingProgress({ owner, snapshot, disabled, findLabel }: Matchmaki
             <>
                 <p role="status">Your group is ready. Enter the room, then the leader starts gameplay.</p>
                 <button type="button" disabled={disabled} onClick={() => void owner.enter()}>Enter matched room</button>
-                <button type="button" disabled={disabled} onClick={() => void owner.find()}>{findLabel}</button>
+                <button
+                    type="button"
+                    disabled={disabled || !canFind}
+                    onClick={() => void owner.find(party ?? undefined)}
+                >
+                    {searchLabel}
+                </button>
             </>
         );
     }
@@ -80,14 +105,21 @@ function MatchmakingProgress({ owner, snapshot, disabled, findLabel }: Matchmaki
             {state.status === 'ended' && (
                 <p role="status">{ENDED_MESSAGES[state.reason]} Start a new search when ready.</p>
             )}
-            <button type="button" className="primary" disabled={disabled} onClick={() => void owner.find()}>
-                {findLabel}
+            <button
+                type="button"
+                className="primary"
+                disabled={disabled || !canFind}
+                onClick={() => void owner.find(party ?? undefined)}
+            >
+                {searchLabel}
             </button>
         </>
     );
 }
 
-function MatchmakingConfirmation({ owner, snapshot, disabled }: Omit<MatchmakingProgressProps, 'findLabel'>) {
+function MatchmakingConfirmation(
+    { owner, snapshot, disabled }: Omit<MatchmakingProgressProps, 'findLabel' | 'partyView'>
+) {
     const { state } = snapshot;
     if (state.status !== 'confirming') {
         return null;

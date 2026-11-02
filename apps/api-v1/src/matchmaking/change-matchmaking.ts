@@ -1,8 +1,9 @@
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { MatchmakingCommand } from '@shared-server/rallar-system/matchmaking/matchmaking-command.ts';
-import { decodeMatchmakingRequest, decodeMatchmakingScope } from '@shared/api/matchmaking/matchmaking-request.ts';
+import { decodeMatchmakingRequest } from '@shared/api/matchmaking/matchmaking-request.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
+import { decodeStateScope } from '@shared/api/state-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { Context } from 'jsr:@hono/hono@4.11.9';
 import {
@@ -41,7 +42,7 @@ export async function changeMatchmaking(
 
 async function readMatchmakingCommand(context: Context, session: IssuedAuthSession): Promise<MatchmakingCommand> {
     return {
-        scope: decodeMatchmakingScope({
+        scope: decodeStateScope({
             applicationId: context.req.param('applicationId'),
             workspaceId: context.req.param('workspaceId')
         }),

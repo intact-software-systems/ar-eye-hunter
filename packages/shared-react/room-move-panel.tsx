@@ -1,3 +1,5 @@
+import type { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
+import type { PartyRosterView } from '@shared/api/parties/party-view.ts';
 import { useEffect, useId, useState } from 'react';
 
 import type { RallarPeopleOperations, RallarPerson } from '@shared-web/browser/people/rallar-people-contracts.ts';
@@ -11,6 +13,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 export interface RoomMovePanelProps {
     readonly owner: RallarRoomMove;
+    readonly party: RallarParty;
     readonly scope: StateScope;
     readonly session: AuthSession | undefined;
     readonly roomId: string | undefined;
@@ -23,6 +26,8 @@ export interface RoomMovePanelProps {
 
 /** Optional React view; all mutation, recovery and activation behavior belongs to RallarRoomMove. */
 export function RoomMovePanel(props: RoomMovePanelProps) {
+    const [partyState, setPartyState] = useState(props.party.getState());
+    useEffect(() => props.party.onChange(setPartyState), [props.party]);
     const [state, setState] = useState(props.owner.getState());
     const [people, setPeople] = useState<readonly RallarPerson[]>([]);
     const [selected, setSelected] = useState('');
@@ -45,17 +50,17 @@ export function RoomMovePanel(props: RoomMovePanelProps) {
     return (
         <section className="panel stack" aria-label="Move together">
             <h3>Move together</h3>
-            <p className="muted">
-                Each present player confirms. Spectators stay. Old-room membership is kept. Capacity is checked when
-                everyone moves.
-            </p>
-            {blocked && <p>{props.blockedReason}</p>}
+            <MoveExplanation hasParty={partyState.view?.party != null} blockedReason={props.blockedReason} />
             <MoveProposalForm
                 owner={props.owner}
+                party={partyState.view?.party ?? null}
                 scope={props.scope}
                 roomId={props.roomId}
                 destinations={props.destinations}
-                disabled={state.busy || state.moves.some((entry) => entry.status === 'proposed') || blocked}
+                disabled={state.busy || state.moves.some((entry) => entry.status === 'proposed') || blocked ||
+                    partyState.view === null ||
+                    (partyState.view.party !== null &&
+                        partyState.view.party.leaderPrincipalId !== props.session?.clientId)}
                 onPropose={() => setSelected('')}
             />
             <MoveHistory moves={state.moves} move={move} onSelect={setSelected} />
@@ -76,12 +81,32 @@ export function RoomMovePanel(props: RoomMovePanelProps) {
     );
 }
 
+interface MoveExplanationProps {
+    readonly hasParty: boolean;
+    readonly blockedReason: string | null;
+}
+
+function MoveExplanation({ hasParty, blockedReason }: MoveExplanationProps) {
+    return (
+        <>
+            <p className="muted">
+                {hasParty
+                    ? 'Your whole party moves together. Everyone must be in this room and confirm. Other room members stay.'
+                    : 'Each present player confirms. Spectators stay.'}{' '}
+                Old-room membership is kept. Capacity is checked when everyone moves.
+            </p>
+            {blockedReason !== null && <p>{blockedReason}</p>}
+        </>
+    );
+}
+
 interface MoveProposalFormProps extends Pick<RoomMovePanelProps, 'owner' | 'scope' | 'roomId' | 'destinations'> {
     readonly disabled: boolean;
     readonly onPropose: () => void;
+    readonly party: PartyRosterView | null;
 }
 
-function MoveProposalForm({ owner, scope, roomId, destinations, disabled, onPropose }: MoveProposalFormProps) {
+function MoveProposalForm({ owner, scope, roomId, destinations, disabled, onPropose, party }: MoveProposalFormProps) {
     const [destination, setDestination] = useState('');
     return (
         <form
@@ -89,7 +114,10 @@ function MoveProposalForm({ owner, scope, roomId, destinations, disabled, onProp
             onSubmit={(event) => {
                 event.preventDefault();
                 onPropose();
-                void owner.propose({ ...scope, groupId: destination.trim() });
+                void owner.propose(
+                    { ...scope, groupId: destination.trim() },
+                    party ? { partyId: party.ref.partyId, rosterRevision: party.rosterRevision } : undefined
+                );
             }}
         >
             <label>

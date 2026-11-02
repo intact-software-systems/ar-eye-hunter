@@ -1,3 +1,4 @@
+import type { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { useRef, useState } from 'react';
 
 import { RoomMovePanel } from '@shared-react/room-move-panel.tsx';
@@ -7,10 +8,11 @@ import type { ArenaConnection } from '../game/arena-runtime/arena-connection-con
 import { ARENA_ROOM_SCOPE } from '../game/arena-runtime/arena-room-entry.ts';
 
 interface ArenaRoomMoveProps {
+    readonly party: RallarParty;
     readonly arena: ArenaConnection;
 }
 
-export function ArenaRoomMove({ arena }: ArenaRoomMoveProps) {
+export function ArenaRoomMove({ arena, party }: ArenaRoomMoveProps) {
     const current = useRef(arena);
     current.current = arena;
     const [owner] = useState(() =>
@@ -24,6 +26,7 @@ export function ArenaRoomMove({ arena }: ArenaRoomMoveProps) {
     );
     return (
         <RoomMovePanel
+            party={party}
             people={rallar.people}
             owner={owner}
             scope={ARENA_ROOM_SCOPE}

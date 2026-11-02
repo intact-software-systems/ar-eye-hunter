@@ -1,14 +1,16 @@
 import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
 import { RoomMovePanel } from '@shared-react/room-move-panel.tsx';
+import type { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 
 interface RelicRoomMoveProps {
+    readonly party: RallarParty;
     readonly game: RelicHuntersRuntime.Connection;
 }
 
-export function RelicRoomMove({ game }: RelicRoomMoveProps) {
+export function RelicRoomMove({ game, party }: RelicRoomMoveProps) {
     const blockedReason = game.participation === 'spectator'
         ? 'Spectators stay. Join as player before proposing or confirming a move.'
         : hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId)
@@ -16,6 +18,7 @@ export function RelicRoomMove({ game }: RelicRoomMoveProps) {
         : null;
     return (
         <RoomMovePanel
+            party={party}
             people={rallar.people}
             owner={game.roomMove}
             scope={RELIC_ROOM_SCOPE}

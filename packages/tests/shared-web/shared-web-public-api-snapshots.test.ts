@@ -14,6 +14,14 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/parties/rallar-party.ts',
+        expected: { values: ['RallarParty'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
+        filePath: 'packages/shared-web/browser/api/authenticated-resource.ts',
+        expected: { values: ['AuthenticatedResource'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
         expected: { values: ['RallarRoomMove'], types: [], starExports: [], namespaceExports: [] }
     },

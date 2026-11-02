@@ -1,8 +1,10 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
 import type { MatchmakingRouteDependencies } from '../matchmaking/register-matchmaking-routes.ts';
+import type { PartyRouteDependencies } from '../parties/register-party-routes.ts';
 import { createApiV1FriendsServices } from './create-api-v1-friends-services.ts';
 import { createApiV1MatchmakingServices } from './create-api-v1-matchmaking-services.ts';
+import { createApiV1PartyServices } from './create-api-v1-party-services.ts';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -344,6 +346,13 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
         serviceId: myServerId,
         timing: toTimingOnSink(configuration.observability, timing)
     });
+    const parties = createApiV1PartyServices({
+        configuration,
+        runtime,
+        runtimeStateRepository,
+        nowEpochMs,
+        timing: toTimingOnSink(configuration.observability, timing)
+    });
     const { admin, crdtAdminMutations } = createDefaultApiV1AdminServices(rest);
     return createDefaultApiV1RouteInstallers({
         configuration,
@@ -353,6 +362,7 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
         crdtAdminMutations,
         friends,
         matchmaking,
+        parties,
         authUserRepository,
         nowEpochMs
     });
@@ -367,6 +377,7 @@ interface DefaultApiV1RouteInstallersInput {
     readonly authUserRepository: AuthUserRepository;
     readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
     readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly nowEpochMs: () => number;
 }
 
@@ -378,6 +389,7 @@ function createDefaultApiV1RouteInstallers({
     crdtAdminMutations,
     friends,
     matchmaking,
+    parties,
     authUserRepository,
     nowEpochMs
 }: DefaultApiV1RouteInstallersInput) {
@@ -390,6 +402,7 @@ function createDefaultApiV1RouteInstallers({
         crdtMutations: crdtAdminMutations,
         friends,
         matchmaking,
+        parties,
         authUserRepository,
         authentication: {
             adminClientIds: configuration.authentication.adminClientIds,

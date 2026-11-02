@@ -5,7 +5,8 @@ import {
     GROUP_MOVE_MAX_SESSIONS,
     GROUP_MOVE_PROPOSAL_TTL_MS,
     type GroupMove,
-    type GroupMoveParticipant
+    type GroupMoveParticipant,
+    type GroupMoveParty
 } from './group-move.ts';
 
 import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
@@ -47,7 +48,7 @@ const GROUP_MOVE_FIELDS = [
 
 export function decodeGroupMove(value: unknown): GroupMove {
     const move = requireRecord(value, 'Group move');
-    requireExactKeys(move, GROUP_MOVE_FIELDS, 'Group move');
+    requireExactKeys(move, [...GROUP_MOVE_FIELDS, ...(Object.hasOwn(move, 'party') ? ['party'] : [])], 'Group move');
     const source = decodeGroupMoveRef(move.source);
     const destination = decodeGroupMoveRef(move.destination);
     if (
@@ -71,6 +72,7 @@ export function decodeGroupMove(value: unknown): GroupMove {
         throw new TypeError('Group move cohort repeats a session or omits the organizer');
     }
     const decoded: GroupMove = {
+        ...(Object.hasOwn(move, 'party') ? { party: decodeGroupMoveParty(move.party) } : {}),
         moveId: moveIdentifier(move.moveId),
         source,
         destination,
@@ -84,24 +86,26 @@ export function decodeGroupMove(value: unknown): GroupMove {
             ['proposed', 'committed', 'cancelled', 'expired', 'denied'],
             'Group move status'
         ),
-        reason: move.reason === null
-            ? null
-            : requireOneOf(
-                move.reason,
-                [
-                    'participant-declined',
-                    'organizer-cancelled',
-                    'source-roster-changed',
-                    'source-unavailable',
-                    'proposal-expired',
-                    'admission-denied'
-                ] as const,
-                'Group move reason'
-            ),
+        reason: decodeMoveReason(move.reason),
         admissionFailure: decodeAdmissionFailure(move.admissionFailure)
     };
+    if (
+        decoded.party !== undefined &&
+        new Set(participants.map((participant) => participant.principalId)).size !== participants.length
+    ) {
+        throw new TypeError('A party move selects exactly one session per member');
+    }
+    if (decoded.reason === 'party-roster-changed' && decoded.party === undefined) {
+        throw new TypeError('A party roster change requires a party selection');
+    }
     validateMoveState(decoded);
     return decoded;
+}
+
+export function decodeGroupMoveParty(value: unknown): GroupMoveParty {
+    const party = requireRecord(value, 'Group move party selection');
+    requireExactKeys(party, ['partyId', 'rosterRevision'], 'Group move party selection');
+    return { partyId: moveIdentifier(party.partyId), rosterRevision: moveEpoch(party.rosterRevision) };
 }
 
 export function moveIdentifier(value: unknown): string {
@@ -165,7 +169,13 @@ function validateMoveState(move: GroupMove): void {
         committed: [null],
         expired: ['proposal-expired'],
         denied: ['admission-denied'],
-        cancelled: ['participant-declined', 'organizer-cancelled', 'source-roster-changed', 'source-unavailable']
+        cancelled: [
+            'participant-declined',
+            'organizer-cancelled',
+            'source-roster-changed',
+            'source-unavailable',
+            'party-roster-changed'
+        ]
     };
     if (
         !expectedReasons[move.status].includes(move.reason) ||
@@ -199,4 +209,22 @@ function moveEpoch(value: unknown): number {
 
 function nullableMoveEpoch(value: unknown): number | null {
     return value === null ? null : moveEpoch(value);
+}
+
+function decodeMoveReason(value: unknown): GroupMove['reason'] {
+    return value === null
+        ? null
+        : requireOneOf(
+            value,
+            [
+                'participant-declined',
+                'organizer-cancelled',
+                'source-roster-changed',
+                'party-roster-changed',
+                'source-unavailable',
+                'proposal-expired',
+                'admission-denied'
+            ] as const,
+            'Group move reason'
+        );
 }

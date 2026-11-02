@@ -190,5 +190,13 @@
       "windowMs": 60000,
       "requests": 30
     }
+  },
+  "parties": {
+    "maxInvitations": 16,
+    "invitationLifetimeMs": 600000,
+    "rateLimit": {
+      "windowMs": 60000,
+      "requests": 60
+    }
   }
 }

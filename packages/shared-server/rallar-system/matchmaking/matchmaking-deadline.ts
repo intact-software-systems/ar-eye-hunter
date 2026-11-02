@@ -3,7 +3,7 @@ import { AL_MESSAGE_ENVELOPE_VERSION } from '@shared/al-contracts/al-contract.ts
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
-import { decodeMatchmakingScope } from '@shared/api/matchmaking/matchmaking-request.ts';
+import { decodeStateScope } from '@shared/api/state-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -38,7 +38,7 @@ export function decodeMatchmakingDeadline(value: unknown): MatchmakingDeadline {
         throw new TypeError('Matchmaking deadline identity is invalid');
     }
     return {
-        scope: decodeMatchmakingScope(record.scope),
+        scope: decodeStateScope(record.scope),
         deadlineId: record.deadlineId,
         dueAtEpochMs: record.dueAtEpochMs
     };

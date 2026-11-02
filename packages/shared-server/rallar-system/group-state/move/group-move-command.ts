@@ -1,7 +1,7 @@
 import type { GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
 
 import { requireExactKeys, requireOneOf, requireRecord } from '@shared/api/exact-object-decoding.ts';
-import { decodeGroupMoveRef, moveIdentifier } from '@shared/api/mutation/decode-group-move.ts';
+import { decodeGroupMoveParty, decodeGroupMoveRef, moveIdentifier } from '@shared/api/mutation/decode-group-move.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationAuthorityProof, GroupMutationIngress } from '../group-state-service-contracts.ts';
 import {
@@ -25,7 +25,11 @@ const REQUEST_KEYS = ['requestId', 'moveId', 'source', 'destination', 'action', 
 
 export function decodeGroupMoveRequest(value: unknown): GroupMoveRequest {
     const request = requireRecord(value, 'Group move request');
-    requireExactKeys(request, REQUEST_KEYS, 'Group move request');
+    requireExactKeys(
+        request,
+        [...REQUEST_KEYS, ...(Object.hasOwn(request, 'party') ? ['party'] : [])],
+        'Group move request'
+    );
     const action = requireOneOf(
         request.action,
         ['propose', 'confirm', 'withdraw', 'decline', 'cancel', 'commit', 'arrive'] as const,
@@ -37,6 +41,7 @@ export function decodeGroupMoveRequest(value: unknown): GroupMoveRequest {
         throw new TypeError('Admission credentials belong only to confirmation');
     }
     return {
+        ...(Object.hasOwn(request, 'party') ? { party: decodeGroupMoveParty(request.party) } : {}),
         requestId: moveIdentifier(request.requestId),
         moveId: moveIdentifier(request.moveId),
         source: decodeGroupMoveRef(request.source),
@@ -49,7 +54,12 @@ export function decodeGroupMoveRequest(value: unknown): GroupMoveRequest {
 
 export function decodeGroupMoveCommand(value: unknown): GroupMoveCommand {
     const command = requireRecord(value, 'Group move command');
-    requireExactKeys(command, [...REQUEST_KEYS, 'actorPrincipalId', 'actorSessionId'], 'Group move command');
+    requireExactKeys(command, [
+        ...REQUEST_KEYS,
+        'actorPrincipalId',
+        'actorSessionId',
+        ...(Object.hasOwn(command, 'party') ? ['party'] : [])
+    ], 'Group move command');
     const { actorPrincipalId, actorSessionId, ...request } = command;
     return {
         ...decodeGroupMoveRequest(request),

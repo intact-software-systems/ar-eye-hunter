@@ -4,11 +4,10 @@ import { decodeMatchmakingPolicy, type MatchmakingPolicy } from '@shared/api/mat
 import {
     decodeMatchmakingMutationResult,
     decodeMatchmakingRequest,
-    decodeMatchmakingScope,
     type MatchmakingMutationResult,
     type MatchmakingRequest
 } from '@shared/api/matchmaking/matchmaking-request.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import { decodeStateScope, type StateScope } from '@shared/api/state-types.ts';
 
 export interface MatchmakingCommand {
     readonly scope: StateScope;
@@ -59,7 +58,7 @@ export function decodeMatchmakingCommand(value: unknown): MatchmakingCommand {
         decodeMatchmakingPolicy(command.policy);
     }
     return {
-        scope: decodeMatchmakingScope(command.scope),
+        scope: decodeStateScope(command.scope),
         principalId: command.principalId,
         sessionId: command.sessionId,
         sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,

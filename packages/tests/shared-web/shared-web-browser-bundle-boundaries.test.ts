@@ -122,6 +122,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         entry: 'packages/shared-web/browser/rallar-messages.ts',
         output: 'rallar-browser-messages.boundary.min.js',
         brotliBudgetKiB: budgetFor('browser/rallar-messages.ts')
+    },
+    {
+        label: 'browser/parties/rallar-party.ts',
+        entry: 'packages/shared-web/browser/parties/rallar-party.ts',
+        output: 'rallar-party.boundary.min.js',
+        brotliBudgetKiB: budgetFor('browser/parties/rallar-party.ts')
     }
 ];
 
@@ -182,6 +188,7 @@ describe('shared-web browser bundle boundaries', () => {
     });
 
     it.each([
+        'browser/parties/rallar-party.ts',
         'browser/rooms/move/rallar-room-move.ts',
         'browser/rooms/entry/rallar-room-entry.ts',
         'browser/rooms/recent-rooms/rallar-recent-rooms.ts',

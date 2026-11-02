@@ -5263,6 +5263,81 @@ moved or changed test.
         "requiredConstraint": "The initial failed attempt and successful retry use the same application, workspace and request identity.",
         "failureRationale": "A successful final response alone cannot exclude an earlier independently committed command with another identity."
       }
+    },
+    {
+      "id": "authenticated-command-immutable-retry",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "An uncertain command excludes replacement writes and retries the same original immutable request and identity.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.change",
+        "observableEffect": "Each call sends an authoritative authenticated mutation.",
+        "requiredConstraint": "Only the original write is sent before explicit retry; retry repeats its exact identity and original payload even if the caller mutates its input.",
+        "failureRationale": "An unchanged local view cannot exclude a duplicate remote mutation or a changed payload under the same idempotency identity."
+      }
+    },
+    {
+      "id": "authenticated-retry-account-isolation",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "A late response from the previous account cannot replace the current account pending command.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#does not let a late write clear a replacement account command or expose its result",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "AuthenticatedResource.Api.change",
+        "observableEffect": "Retry sends a mutation authenticated as the currently active account.",
+        "requiredConstraint": "After account replacement and late prior-account completion, explicit retry repeats the current account command and identity.",
+        "failureRationale": "Local error state could remain correct while retry sends the old account command; the outbound identities expose that security failure."
+      }
+    },
+    {
+      "id": "party-uncertain-consent-retry",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "An uncertain party invitation retains its original roster revision and identity despite refreshed roster state.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarParty.Api.change",
+        "observableEffect": "Writes invite another account or change the durable party roster.",
+        "requiredConstraint": "Create and the original invitation are the only writes before explicit retry; disband is suppressed, and retry repeats the original invitation exactly.",
+        "failureRationale": "Rendered roster state cannot prove that a replacement disband was never sent or that retry retained the originally approved roster revision."
+      }
+    },
+    {
+      "id": "party-consent-requires-displayed-invitation",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "An invitation absent from the private view cannot initiate acceptance.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#accepts only a displayed invitation and preserves explicit null roster consent",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarParty.Api.change",
+        "observableEffect": "An acceptance request can add the account to a party.",
+        "requiredConstraint": "Responding with an unknown invitation ID sends no mutation; responding to the displayed invitation sends its exact scoped consent.",
+        "failureRationale": "Local state may remain unchanged even if an unauthorized or stale acceptance request reaches the server."
+      }
+    },
+    {
+      "id": "party-definitive-refusal-no-retry",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "A definitive party revision refusal does not silently retry with new roster consent.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarParty.Api.change",
+        "observableEffect": "Each takeover attempt asserts consent to a specific roster revision.",
+        "requiredConstraint": "Exactly one takeover mutation is sent when the server definitively refuses that revision.",
+        "failureRationale": "A refreshed view and cleared local retry flag could hide a second mutation using fresh consent that the user never approved."
+      }
     }
   ],
   "entries": [
@@ -11117,6 +11192,94 @@ moved or changed test.
       "owner": "Rallar browser matchmaking maintainers",
       "rationale": "Both captured transport attempts must use the same scoped request URL so an ambiguous response cannot create two logical commands.",
       "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery"
+    },
+    {
+      "id": "test-structure-coupling-2970147a21a60564",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The attempted replacement must not add a second outbound mutation while the original response is uncertain.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-f1fa04c53fa25bc3",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The two transport attempts must carry the identical logical request and request ID so server replay cannot create a second mutation.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-d4f1cb938c4a83d1",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retried payload must retain the original name despite caller mutation; matching two mutated attempts would not prove immutable capture.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-75109cb9edba3489",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-retry-account-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retry must equal the current account pending request, not the older account request that completed late.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#does not let a late write clear a replacement account command or expose its result"
+    },
+    {
+      "id": "test-structure-coupling-c9442fba7470603a",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-uncertain-consent-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Attempting Disband while the invitation is unresolved must not add a third mutation to Create and Invite.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
+    },
+    {
+      "id": "test-structure-coupling-13dd643abfb0c6f4",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-uncertain-consent-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retried invitation must retain the original scoped party, recipient, roster revision and idempotency identity despite refresh.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
+    },
+    {
+      "id": "test-structure-coupling-d5a09476296cfe2f",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-consent-requires-displayed-invitation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The unknown invitation produces no outbound consent before the known invitation is accepted.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#accepts only a displayed invitation and preserves explicit null roster consent"
+    },
+    {
+      "id": "test-structure-coupling-dcd0d429e44bba70",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-definitive-refusal-no-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The definitive party-changed response completes the one attempted takeover without a replacement write.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent"
     }
   ]
 }

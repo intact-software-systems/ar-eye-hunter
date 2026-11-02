@@ -5,10 +5,14 @@ import {
     GROUP_MOVE_PROPOSAL_TTL_MS,
     type GroupMove,
     type GroupMoveAction,
-    type GroupMoveParticipant
+    type GroupMoveParticipant,
+    type GroupMoveParty
 } from '@shared/api/mutation/group-move.ts';
+import { selectGroupMovePlayers } from './select-group-move-players.ts';
 
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { PartyRecord } from '../../parties/persistence/party-record.ts';
 
 export interface GroupMoveRejection {
     readonly code: 'group-move-rejected' | 'optimistic-conflict';
@@ -19,6 +23,8 @@ import type { GroupMoveAdmissionResult } from './compute-group-move-admission.ts
 
 export interface GroupMoveComputationInput {
     readonly proposal: GroupMove | null;
+    readonly partySelection: GroupMoveParty | null;
+    readonly party: PartyRecord | null;
     readonly source: Pick<GroupSnapshot, 'group' | 'members' | 'activeSessions'> | null;
     readonly sourceRef: GroupRef;
     readonly destination: GroupRef;
@@ -40,7 +46,8 @@ export function computeGroupMove(input: GroupMoveComputationInput): Either<Group
     }
     if (
         proposal.moveId !== input.moveId || !isSameGroupRef(proposal.source, input.sourceRef) ||
-        !isSameGroupRef(proposal.destination, input.destination)
+        !isSameGroupRef(proposal.destination, input.destination) ||
+        !jsonEquals(proposal.party ?? null, input.partySelection)
     ) {
         throw new TypeError('Group move command and stored identity differ');
     }
@@ -57,31 +64,48 @@ export function computeGroupMove(input: GroupMoveComputationInput): Either<Group
                 : proposal
         );
     }
+    const invalidated = invalidatePendingMove(input, proposal);
+    if (invalidated !== null) {
+        return Either.ofRight(invalidated);
+    }
+    return applyConsent(input, proposal, participant);
+}
+
+function invalidatePendingMove(input: GroupMoveComputationInput, proposal: GroupMove): GroupMove | null {
     if (input.nowEpochMs >= proposal.expiresAtEpochMs) {
-        return Either.ofRight({
+        return {
             ...proposal,
             status: 'expired',
             reason: 'proposal-expired',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
     if (input.source === null || requireActiveGroup(input.source.group, input.nowEpochMs)) {
-        return Either.ofRight({
+        return {
             ...proposal,
             status: 'cancelled',
             reason: 'source-unavailable',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
-    if (!sameCohort(proposal.participants, presentPlayers(input.source, input.nowEpochMs))) {
-        return Either.ofRight({
+    const selected = selectGroupMovePlayers(input);
+    if (selected.left !== undefined) {
+        return {
+            ...proposal,
+            status: 'cancelled',
+            reason: 'party-roster-changed',
+            completedAtEpochMs: input.nowEpochMs
+        };
+    }
+    if (!sameCohort(proposal.participants, selected.right!)) {
+        return {
             ...proposal,
             status: 'cancelled',
             reason: 'source-roster-changed',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
-    return applyConsent(input, proposal, participant);
+    return null;
 }
 
 function applyConsent(
@@ -139,7 +163,11 @@ function proposeMove(input: GroupMoveComputationInput): Either<GroupMoveRejectio
     ) {
         return rejectMove('Choose a different room in the same application and workspace.');
     }
-    const participants = presentPlayers(input.source, input.nowEpochMs);
+    const selected = selectGroupMovePlayers(input);
+    if (selected.left !== undefined) {
+        return Either.ofLeft(selected.left);
+    }
+    const participants = selected.right!;
     if (participants.length === 0 || participants.length > GROUP_MOVE_MAX_SESSIONS) {
         return rejectMove(
             `A group move requires between one and ${GROUP_MOVE_MAX_SESSIONS} player sessions.`
@@ -153,6 +181,7 @@ function proposeMove(input: GroupMoveComputationInput): Either<GroupMoveRejectio
         return rejectMove('Only a present player may organize a group move.');
     }
     return Either.ofRight({
+        ...(input.partySelection === null ? {} : { party: input.partySelection }),
         moveId: input.moveId,
         source: { applicationId: source.applicationId, workspaceId: source.workspaceId, groupId: source.groupId },
         destination: input.destination,
@@ -165,31 +194,6 @@ function proposeMove(input: GroupMoveComputationInput): Either<GroupMoveRejectio
         reason: null,
         admissionFailure: null
     });
-}
-
-function presentPlayers(
-    source: Pick<GroupSnapshot, 'group' | 'members' | 'activeSessions'>,
-    nowEpochMs: number
-): readonly GroupMoveParticipant[] {
-    const players = new Set(
-        source.members.filter((member) => member.status === 'active' && member.role !== 'spectator')
-            .map((member) => member.principalId)
-    );
-    const sessions = source.activeSessions.filter((session) =>
-        players.has(session.principalId) && session.status === 'active' && session.disconnectedAtEpochMs === null &&
-        session.expiresAtEpochMs > nowEpochMs
-    );
-    if (new Set(sessions.map((session) => session.sessionId)).size !== sessions.length) {
-        throw new TypeError('The source room has duplicate session identities');
-    }
-    return sessions.map((session): GroupMoveParticipant => ({
-        principalId: session.principalId,
-        sessionId: session.sessionId,
-        generationId: session.generationId,
-        generationVersion: session.generationVersion,
-        confirmedAtEpochMs: null,
-        arrivedAtEpochMs: null
-    })).toSorted((left, right) => left.sessionId.localeCompare(right.sessionId));
 }
 
 function sameCohort(previous: readonly GroupMoveParticipant[], current: readonly GroupMoveParticipant[]): boolean {

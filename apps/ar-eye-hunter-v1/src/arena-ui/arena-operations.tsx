@@ -1,8 +1,10 @@
 import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
+import { PartyPanel } from '@shared-react/party-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
+import { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
 import { useState, type FormEvent } from 'react';
@@ -46,6 +48,9 @@ export function ArenaOperations(props: ArenaOperationsProps) {
             refreshIntervalMs: 5_000
         })
     );
+    const [party] = useState(() =>
+        RallarParty.createBrowser(rallar, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
+    );
     const [matchmaking] = useState(() =>
         RallarMatchmaking.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
     );
@@ -58,19 +63,11 @@ export function ArenaOperations(props: ArenaOperationsProps) {
         displayName: '',
         password: ''
     });
-    const submit = async (event: FormEvent) => {
-        event.preventDefault();
-        if (fields.mode === 'login') {
-            await arena.login(fields.username.trim(), fields.password);
-        }
-        else {
-            await arena.register(fields.username.trim(), fields.password, fields.displayName.trim());
-        }
-    };
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
-            {arena.session && <MatchmakingPanel owner={matchmaking} findLabel="Find a game" />}
+            {arena.session && <PartyPanel owner={party} friends={friends} />}
+            {arena.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find a game" />}
             {arena.session && (
                 <ScheduledSessionsPanel
                     owner={scheduledSessions}
@@ -88,14 +85,30 @@ export function ArenaOperations(props: ArenaOperationsProps) {
                     roomRef={arena.roomId ? { ...ARENA_ROOM_SCOPE, groupId: arena.roomId } : null}
                 />
             )}
-            {arena.session && <ArenaRoomMove arena={arena} />}
+            {arena.session && <ArenaRoomMove arena={arena} party={party} />}
             {arena.connectionState === 'signed-out' || !arena.session
-                ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
+                ? (
+                    <ArenaAuthForm
+                        fields={fields}
+                        setFields={setFields}
+                        submit={(event) => submitArenaAuth(event, fields, arena)}
+                    />
+                )
                 : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
             {arena.error && <div className="panel error-panel">{arena.error}</div>}
             <ArenaControlHints spectating={arena.spectating} />
         </section>
     );
+}
+
+async function submitArenaAuth(event: FormEvent, fields: ArenaAuthFields, arena: ArenaConnection): Promise<void> {
+    event.preventDefault();
+    if (fields.mode === 'login') {
+        await arena.login(fields.username.trim(), fields.password);
+    }
+    else {
+        await arena.register(fields.username.trim(), fields.password, fields.displayName.trim());
+    }
 }
 
 function ArenaControlHints({ spectating }: Readonly<{ spectating: boolean; }>) {

@@ -135,6 +135,24 @@ account's current search or result. An uncertain write offers Retry with the sam
 Signing out clears the browser view; server deadlines continue without an open browser. Quick Join
 continues to offer immediate admission to an existing suitable room.
 
+## Parties that stay together
+
+AR Eye and Relic let mutual friends create a party, invite each other and explicitly accept or
+decline. Parties belong to one game and workspace; each account can belong to one party in that
+scope. The roster distinguishes Present from Away. Invitations expire after ten minutes by default;
+party capacity follows the game's configured match size.
+
+The party leader searches for everyone while all members are present. A party stays indivisible;
+other searching parties or solo players fill remaining seats. A full party proceeds directly to
+confirmation. Every member confirms separately. A roster change cancels a pending search or
+confirmation, and nobody enters unless the whole matched group can be admitted.
+
+Party membership survives reload, gameplay, Play again and Move together. The leader can transfer
+leadership or disband; leaving transfers leadership to the earliest remaining member. When the
+leader's server presence expires, a present member can explicitly take leadership. Reconnecting
+does not reclaim it. Party leadership grants no director or Keeper authority. Leaving the party
+keeps existing room memberships and game participation.
+
 ## Friends and invitations
 
 AR Eye and Relic share an account-wide friend list. Enter an exact username to send a request;
@@ -155,6 +173,8 @@ signing out clears the view and pending browser work.
 ## Moving together
 
 AR Eye and Relic let present players propose another room in the same application and workspace.
+When in a party, only its leader proposes and every party member must be present in the source
+room; unrelated room members stay. Without a party, the proposal includes the room's present players.
 Every selected player session confirms, then the organizer explicitly chooses Move everyone.
 Spectators stay. Capacity and current access rules are checked for the whole group at commit;
 if one player cannot enter, no destination membership changes.

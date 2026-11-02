@@ -107,6 +107,17 @@ test.describe('live RTC lifecycle acceptance', () => {
             // The agent ID survives reopening; the old page can emit while its context closes.
             const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
             scenario.agents = [scenario.agents[0], scenario.agents[1], reopened];
+            const recording = await scenario.control.executeOk({
+                runId: scenario.runId,
+                agentId: reopened.agentId,
+                commandId: `progress-recording-${scenario.suffix}`,
+                command: { kind: 'health' }
+            });
+            expect(
+                jsonRecord(scenario.control.resultValue(recording))?.browserDiagnostics,
+                'Readiness progression requires routine diagnostics enabled on the actual reopened page'
+            )
+                .toMatchObject({ routineBrowserDiagnostics: 'enabled', omittedRoutineBrowserDiagnostics: 0 });
             await connectPresence(scenario, reopened);
             await settleSurvivors(scenario, reopened);
             await formationOperations.readiness(agentInput(scenario, reopened));

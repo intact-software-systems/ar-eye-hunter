@@ -5,6 +5,10 @@ import type {
     RuntimeStateGuardedBatchEffect
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import {
+    writeRuntimeStateConditionalBatch,
+    type RuntimeStateConditionalBatch
+} from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { writeAppOutboxInserts, type AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../computed-data-validation.ts';
@@ -15,20 +19,23 @@ import {
 import { computeNewGroupCohortAdmission } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { writeGroupMutation } from '../group-state/mutation/write/write-group-mutation.ts';
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
+import { computeMatchmakingStorage } from './compute-matchmaking-storage.ts';
 import { computeMatchmaking } from './compute-matchmaking.ts';
+import type { MatchmakingCommand } from './matchmaking-command.ts';
 import { computeMatchmakingDeadlines } from './matchmaking-deadline.ts';
-import type { MatchmakingActor, MatchmakingTransition } from './matchmaking-pool.ts';
 import {
-    computeMatchmakingStorage,
-    writeMatchmakingStorage,
-    type MatchmakingRepository
-} from './matchmaking-repository.ts';
+    areMatchmakingPartiesCurrent,
+    computeMatchmakingPartyGuards,
+    computeMatchmakingPartyStart
+} from './matchmaking-party-authority.ts';
+import type { MatchmakingPartyStart } from './matchmaking-party-search.ts';
+import type { MatchmakingActor, MatchmakingIntent, MatchmakingTransition } from './matchmaking-pool.ts';
 import type { MatchmakingService } from './matchmaking-service.ts';
 
 export interface MatchmakingMutation {
     readonly read: MatchmakingService.Read;
     readonly transition: MatchmakingTransition | null;
-    readonly storage: MatchmakingRepository.StorageWrite | null;
+    readonly storage: RuntimeStateConditionalBatch | null;
     readonly deadlines: readonly AppOutboxInsert[];
     readonly admissions: readonly GroupMutationComputedWrite[];
     readonly result: MatchmakingMutationResult;
@@ -45,18 +52,23 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
     if (command.capturedAtEpochMs === null || command.policy === null || command.serviceId === null) {
         throw new TypeError('Matchmaking execution requires winning ingress facts');
     }
+    const partyInput = { command, pool: read.pool, authority: read.partyAuthority, nowEpochMs: read.nowEpochMs };
+    if (command.request.action === 'start' && read.pool.partyAccounts[command.principalId]!.account.partyId !== null) {
+        return refused(read, 'party-required');
+    }
+    if (!areMatchmakingPartiesCurrent(partyInput)) {
+        return refused(read, 'party-changed');
+    }
+    const partyStart = command.request.action === 'start-party' ? computeMatchmakingPartyStart(partyInput) : null;
+    if (partyStart?.left !== undefined) {
+        return refused(read, partyStart.left);
+    }
     const proposed = computeMatchmaking({
+        partySearches: read.pool.partySearches,
         pool: read.pool.pool,
         policy: command.policy,
         nowEpochMs: read.nowEpochMs,
-        command: {
-            ...command.request,
-            principalId: command.principalId,
-            sessionId: command.sessionId,
-            sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
-            sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
-            capturedAtEpochMs: command.capturedAtEpochMs
-        }
+        command: toMatchmakingIntent(command, command.capturedAtEpochMs, partyStart?.right ?? null)
     });
     const admissions = proposed.admission === null ? [] : computeAdmission(read, proposed);
     const transition = proposed.admission !== null && admissions.length === 0 ? failedAdmission(proposed) : proposed;
@@ -85,10 +97,31 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
     };
 }
 
+function toMatchmakingIntent(
+    command: MatchmakingCommand,
+    capturedAtEpochMs: number,
+    party: MatchmakingPartyStart | null
+): MatchmakingIntent {
+    const actor = {
+        principalId: command.principalId,
+        sessionId: command.sessionId,
+        sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
+        capturedAtEpochMs
+    };
+    if (command.request.action === 'start-party') {
+        if (party === null) {
+            throw new TypeError('Party search intent requires its admitted roster');
+        }
+        return { ...command.request, ...actor, party };
+    }
+    return { ...command.request, ...actor };
+}
+
 function computeAuthorizedMatchmakingStorage(
     read: MatchmakingService.Read,
     transition: MatchmakingTransition
-): MatchmakingRepository.StorageWrite {
+): RuntimeStateConditionalBatch {
     const prepared = computeMatchmakingStorage({
         read: read.pool,
         transition,
@@ -104,10 +137,11 @@ function computeAuthorizedMatchmakingStorage(
         expectedRevision: session.entry.revision
     }));
     return {
-        accountInserts: prepared.accountInserts,
+        creation: prepared.creation,
+        inserts: prepared.inserts,
         batch: computeRuntimeStateGuardedBatchWrite({
             ...prepared.batch,
-            effects: [...prepared.batch.effects, ...authority]
+            effects: [...prepared.batch.effects, ...authority, ...computeMatchmakingPartyGuards(read.partyAuthority)]
         })
     };
 }
@@ -123,7 +157,7 @@ export async function writeMatchmakingMutation(transaction: PSqlSql, computed: M
     if (computed.storage === null) {
         return;
     }
-    await writeMatchmakingStorage(transaction, computed.storage);
+    await writeRuntimeStateConditionalBatch(transaction, computed.storage);
     await writeAppOutboxInserts(transaction, computed.deadlines);
     for (const admission of computed.admissions) {
         await writeGroupMutation(transaction, admission);

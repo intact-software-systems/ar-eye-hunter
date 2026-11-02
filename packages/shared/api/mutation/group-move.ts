@@ -21,7 +21,14 @@ export interface GroupMoveAdmissionFailure {
 
 export type GroupMoveAction = 'propose' | 'confirm' | 'withdraw' | 'decline' | 'cancel' | 'commit' | 'arrive';
 
+/** Present only for a party move; room-wide moves select the source room's present players. */
+export interface GroupMoveParty {
+    readonly partyId: string;
+    readonly rosterRevision: number;
+}
+
 export interface GroupMove {
+    readonly party?: GroupMoveParty;
     readonly moveId: string;
     readonly source: GroupRef;
     readonly destination: GroupRef;
@@ -35,6 +42,7 @@ export interface GroupMove {
         | 'participant-declined'
         | 'organizer-cancelled'
         | 'source-roster-changed'
+        | 'party-roster-changed'
         | 'source-unavailable'
         | 'proposal-expired'
         | 'admission-denied'
@@ -44,6 +52,7 @@ export interface GroupMove {
 
 /** Every action has its own stable request identity; credentials are accepted only on confirmation. */
 export interface GroupMoveRequest {
+    readonly party?: GroupMoveParty;
     readonly requestId: string;
     readonly moveId: string;
     readonly source: GroupRef;

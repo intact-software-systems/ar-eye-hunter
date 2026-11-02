@@ -124,6 +124,32 @@ function createMoveApi(): MoveApi {
 }
 
 describe('Move together browser lifecycle', () => {
+    it('binds party selection through proposal, consent and arrival without changing game eligibility', async () => {
+        const b = browser();
+        b.api.setMoves([]);
+        await b.owner.start();
+        const party = { partyId: 'friends-party', rosterRevision: 3 };
+        const proposal: GroupMove = {
+            ...committed,
+            party,
+            status: 'proposed',
+            completedAtEpochMs: null,
+            participants: committed.participants.map((participant) => ({ ...participant, confirmedAtEpochMs: null }))
+        };
+        b.api.mutate.mockImplementation(async (request) => {
+            b.api.commands.push(request);
+            const result = { ...(request.action === 'propose' ? proposal : committed), moveId: request.moveId, party };
+            b.api.setMoves([result]);
+            return result;
+        });
+        await b.owner.propose(destination, party);
+        await b.owner.act('confirm', b.owner.getState().moves[0]);
+        expect(b.api.commands.find((command) => command.action === 'propose')?.party).toEqual(party);
+        expect(b.api.commands.find((command) => command.action === 'confirm')?.party).toEqual(party);
+        expect(b.api.commands.find((command) => command.action === 'arrive')?.party).toEqual(party);
+        expect(b.currentRoom().groupId).toBe(destination.groupId);
+    });
+
     it('recovers the durable destination without browser storage and reports arrival only after activation', async () => {
         const b = browser();
         await b.owner.start();
@@ -212,7 +238,9 @@ describe('Move together browser lifecycle', () => {
         });
         const refreshing = b.owner.refresh();
         const signal = await reading.promise;
-        b.unsubscribeAuth.mockImplementationOnce(() => { throw new Error('cleanup failure'); });
+        b.unsubscribeAuth.mockImplementationOnce(() => {
+            throw new Error('cleanup failure');
+        });
         expect(() => b.owner.stop()).toThrow(AggregateError);
         expect(signal.aborted).toBe(true);
         expect(b.owner.getState()).toEqual({ moves: [], busy: false, enteringMoveId: null, error: null });

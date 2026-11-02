@@ -104,7 +104,7 @@ describe('friends browser lifecycle', () => {
         expect(test.owner.getState()).toMatchObject({
             retryPending: false,
             busy: false,
-            error: 'The request could not complete. Review your friends and try the action again.'
+            error: 'The request could not complete. Refresh and try the action again.'
         });
         await test.owner.act({ action: 'request', username: 'carol' });
         expect(test.api.change.mock.calls[1]?.[0].request).toEqual({ action: 'request', username: 'carol' });

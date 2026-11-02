@@ -10,7 +10,7 @@ const policy = { players: 2, searchTimeoutMs: 120000, confirmationTimeoutMs: 300
 describe('durable matchmaking deadlines', () => {
     it('schedules each new wait exactly once and schedules the shorter confirmation separately', () => {
         const empty = { scope, searching: [], proposals: [] };
-        const alice = computeMatchmaking({ pool: empty, policy, nowEpochMs: 1000, command: start('alice') });
+        const alice = computeMatchmaking({ partySearches: [], pool: empty, policy, nowEpochMs: 1000, command: start('alice') });
         const first = computeMatchmakingDeadlines({
             before: empty,
             after: alice.pool,
@@ -33,7 +33,7 @@ describe('durable matchmaking deadlines', () => {
                 traceId: 'repeat'
             })
         ).toEqual([]);
-        const bob = computeMatchmaking({ pool: alice.pool, policy, nowEpochMs: 1000, command: start('bob') });
+        const bob = computeMatchmaking({ partySearches: [], pool: alice.pool, policy, nowEpochMs: 1000, command: start('bob') });
         const confirmation = computeMatchmakingDeadlines({
             before: alice.pool,
             after: bob.pool,

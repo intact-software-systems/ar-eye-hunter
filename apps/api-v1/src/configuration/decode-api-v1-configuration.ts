@@ -24,6 +24,7 @@ import type {
     ApiV1IceConfiguration,
     ApiV1ObservabilityConfiguration,
     ApiV1OperatorTokenConfiguration,
+    ApiV1PartiesConfiguration,
     ApiV1PGliteEvidenceConfiguration,
     ApiV1PublicApiConfiguration,
     ApiV1StateApiConfiguration,
@@ -75,6 +76,7 @@ export function decodeApiV1Configuration(
         group: decodeGroup(decoder),
         friends: decodeFriends(decoder),
         matchmaking: decodeApiV1Matchmaking(decoder),
+        parties: decodeParties(decoder),
         topology: decodeTopology(decoder),
         appInbox: decodeAppInbox(decoder),
         ice: decodeIce(decoder, secrets),
@@ -741,6 +743,17 @@ function decodeFriends(decoder: ApiV1ConfigurationValueDecoder): ApiV1FriendsCon
         rateLimit: {
             windowMs: decoder.integer('friends.rateLimit.windowMs', 1, 3_600_000),
             requests: decoder.integer('friends.rateLimit.requests', 1, 10_000)
+        }
+    };
+}
+
+function decodeParties(decoder: ApiV1ConfigurationValueDecoder): ApiV1PartiesConfiguration {
+    return {
+        maxInvitations: decoder.integer('parties.maxInvitations', 1, 256),
+        invitationLifetimeMs: decoder.integer('parties.invitationLifetimeMs', 1000, 86400000),
+        rateLimit: {
+            windowMs: decoder.integer('parties.rateLimit.windowMs', 1, 3600000),
+            requests: decoder.integer('parties.rateLimit.requests', 1, 10000)
         }
     };
 }

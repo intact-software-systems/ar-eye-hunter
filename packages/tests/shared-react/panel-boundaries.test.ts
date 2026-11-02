@@ -5,13 +5,16 @@ import { describe, expect, it } from 'vitest';
 
 import { collectExportSnapshot } from '../shared-web/public-api-snapshot-collector.ts';
 
-const entry = 'packages/shared-react/room-move-panel.tsx';
+const panels = [
+    { entry: 'packages/shared-react/room-move-panel.tsx', symbol: 'RoomMovePanel', requiredInputs: ['packages/shared/api/group-member-presence.ts'] },
+    { entry: 'packages/shared-react/party-panel.tsx', symbol: 'PartyPanel', requiredInputs: [] }
+];
 
-describe('shared-react room move panel boundary', () => {
+describe.each(panels)('shared-react $symbol boundary', ({ entry, symbol, requiredInputs }) => {
     it('exports the view and its props directly from their owner', () => {
         expect(collectExportSnapshot(entry, { resolveStarExports: false })).toEqual({
-            values: ['RoomMovePanel'],
-            types: ['RoomMovePanelProps'],
+            values: [symbol],
+            types: [`${symbol}Props`],
             starExports: [],
             namespaceExports: []
         });
@@ -31,9 +34,11 @@ describe('shared-react room move panel boundary', () => {
         });
         const inputs = Object.keys(bundle.metafile.inputs);
         expect(inputs).toContainEqual(expect.stringContaining('node_modules/react/'));
-        expect(inputs).toContain('packages/shared/api/group-member-presence.ts');
+        for (const input of requiredInputs) {
+            expect(inputs).toContain(input);
+        }
         expect(inputs.filter((file) => file.startsWith('packages/shared-server/') || file.startsWith('packages/shared-web/'))).toEqual([]);
-        // Preserve the existing panel budget when moving its package owner.
+        // Both optional views stay within the existing standalone panel budget.
         const brotliKiB = brotliCompressSync(bundle.outputFiles[0].contents, {
             params: { [constants.BROTLI_PARAM_QUALITY]: 11 }
         }).length / 1024;

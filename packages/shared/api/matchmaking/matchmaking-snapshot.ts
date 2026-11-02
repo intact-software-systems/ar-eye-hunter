@@ -8,8 +8,7 @@ import {
 } from '../exact-object-decoding.ts';
 import type { GroupRef } from '../group-types.ts';
 import { assertValidRallarGroupRef, assertValidRallarRouteId } from '../rallar-validation.ts';
-import type { StateScope } from '../state-types.ts';
-import { decodeMatchmakingScope } from './matchmaking-request.ts';
+import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 export type MatchmakingEndedReason =
     | 'search-timeout'
@@ -46,7 +45,7 @@ export interface MatchmakingSnapshot {
 export function decodeMatchmakingSnapshot(value: unknown): MatchmakingSnapshot {
     const snapshot = requireRecord(value, 'Matchmaking snapshot');
     requireExactKeys(snapshot, ['scope', 'principalId', 'observedAtEpochMs', 'state'], 'Matchmaking snapshot');
-    const scope = decodeMatchmakingScope(snapshot.scope);
+    const scope = decodeStateScope(snapshot.scope);
     requireString(snapshot.principalId, 'Matchmaking account');
     requireEpoch(snapshot.observedAtEpochMs, 'Matchmaking observation time');
     const state = decodeState(snapshot.state);

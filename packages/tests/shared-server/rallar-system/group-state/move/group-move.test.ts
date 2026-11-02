@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeGroupMove } from '@shared-server/rallar-system/group-state/move/compute-group-move.ts';
+import type { PartyRecord } from '@shared-server/rallar-system/parties/persistence/party-record.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 
@@ -26,6 +27,7 @@ function sourceRoom(): GroupSnapshot {
 
 interface MoveActionOptions {
     readonly principalId?: string;
+    readonly party?: PartyRecord;
     readonly source?: GroupSnapshot | null;
     readonly nowEpochMs?: number;
 }
@@ -38,6 +40,8 @@ function applyMove(
     const principalId = options.principalId ?? 'alice';
     return computeGroupMove({
         proposal,
+        partySelection: proposal?.party ?? (options.party ? { partyId: options.party.ref.partyId, rosterRevision: options.party.rosterRevision } : null),
+        party: options.party ?? null,
         source: options.source === undefined ? sourceRoom() : options.source,
         sourceRef: groupRef('pure-room'),
         destination: groupRef('next-room'),
@@ -56,6 +60,30 @@ function readyMove(): GroupMove {
 }
 
 describe('group move consent and lifecycle', () => {
+    it('selects one live session per party member and keeps that selection when another tab appears', () => {
+        const source = sourceRoom();
+        const party: PartyRecord = {
+            ref: { applicationId: source.group.applicationId, workspaceId: source.group.workspaceId, partyId: 'party' },
+            status: 'active',
+            leaderPrincipalId: 'alice',
+            rosterRevision: 0,
+            createdAtEpochMs: 1000,
+            members: [{ principalId: 'alice', joinedAtEpochMs: 1000 }, { principalId: 'bob', joinedAtEpochMs: 1000 }],
+            invitations: []
+        };
+        const proposal = applyMove(null, 'propose', {
+            source: { ...source, activeSessions: [...source.activeSessions, presenceFor('bob', 'bob-z-tab', 'extra')] },
+            party
+        });
+        expect(proposal.participants.map((participant) => participant.sessionId)).toEqual(['alice-session', 'bob-session']);
+        const confirmed = applyMove(proposal, 'confirm', {
+            source: { ...source, activeSessions: [...source.activeSessions, presenceFor('bob', 'bob-a-tab', 'new-extra')] },
+            party
+        });
+        expect(confirmed.status).toBe('proposed');
+        expect(confirmed.participants.map((participant) => participant.sessionId)).toEqual(['alice-session', 'bob-session']);
+    });
+
     it('recovers a committed outcome after the source room was deleted', () => {
         const committed = applyMove(readyMove(), 'commit');
 
