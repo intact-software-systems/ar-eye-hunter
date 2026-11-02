@@ -162,21 +162,21 @@ function ReceivedPartyInvitations({ owner, view, disabled }: Omit<PartyRosterPro
         <>
             {view.invitations.map((invitation) => (
                 <article
-                    key={invitation.invitationId}
+                    key={invitation.ref.partyId}
                     aria-label={`Party invitation from ${invitation.senderPrincipalId}`}
                 >
                     <p>{invitation.senderPrincipalId} invited you to their party.</p>
                     <button
                         type="button"
                         disabled={disabled || view.party !== null}
-                        onClick={() => void owner.respond(invitation.invitationId, 'accept')}
+                        onClick={() => void owner.respond(invitation.ref, invitation.invitationId, 'accept')}
                     >
                         Accept party invitation
                     </button>
                     <button
                         type="button"
                         disabled={disabled}
-                        onClick={() => void owner.respond(invitation.invitationId, 'decline')}
+                        onClick={() => void owner.respond(invitation.ref, invitation.invitationId, 'decline')}
                     >
                         Decline party invitation
                     </button>

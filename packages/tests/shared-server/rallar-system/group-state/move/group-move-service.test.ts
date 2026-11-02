@@ -74,35 +74,10 @@ async function database() {
         await act('confirm');
         await act('confirm', 'bob');
     }
-    async function storeParty(members: readonly string[], rosterRevision = 0, leaderPrincipalId = 'alice') {
-        const ref = { applicationId: DESTINATION.applicationId, workspaceId: DESTINATION.workspaceId, partyId: 'party-one' };
-        const record: PartyRecord = {
-            ref,
-            status: 'active',
-            leaderPrincipalId,
-            rosterRevision,
-            createdAtEpochMs: fixture.nowEpochMs,
-            members: members.map((principalId) => ({ principalId, joinedAtEpochMs: fixture.nowEpochMs })),
-            invitations: []
-        };
-        await fixture.runtime.upsert('parties:records', partyRecordKey(ref), JSON.stringify(record), NEVER_EXPIRE_AT_TIMESTAMP);
-        for (const principalId of members) {
-            await fixture.runtime.upsert(
-                'parties:accounts',
-                partyAccountKey(ref, principalId),
-                JSON.stringify({
-                    scope: { applicationId: ref.applicationId, workspaceId: ref.workspaceId },
-                    principalId,
-                    partyId: ref.partyId,
-                    invitations: []
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
-            );
-        }
-    }
     return {
         ...fixture,
-        storeParty,
+        storeParty: (members: readonly string[], rosterRevision = 0, leaderPrincipalId = 'alice') =>
+            storeParty(fixture, members, rosterRevision, leaderPrincipalId),
         moves,
         moveService: service,
         act,
@@ -112,6 +87,38 @@ async function database() {
             nowEpochMs += duration;
         }
     };
+}
+
+async function storeParty(
+    fixture: Awaited<ReturnType<typeof createGroupMoveTestDatabase>>,
+    members: readonly string[],
+    rosterRevision: number,
+    leaderPrincipalId: string
+): Promise<void> {
+    const ref = { applicationId: DESTINATION.applicationId, workspaceId: DESTINATION.workspaceId, partyId: 'party-one' };
+    const record: PartyRecord = {
+        ref,
+        status: 'active',
+        leaderPrincipalId,
+        rosterRevision,
+        createdAtEpochMs: fixture.nowEpochMs,
+        members: members.map((principalId) => ({ principalId, joinedAtEpochMs: fixture.nowEpochMs })),
+        invitations: []
+    };
+    await fixture.runtime.upsert('parties:records', partyRecordKey(ref), JSON.stringify(record), NEVER_EXPIRE_AT_TIMESTAMP);
+    for (const principalId of members) {
+        await fixture.runtime.upsert(
+            'parties:accounts',
+            partyAccountKey(ref, principalId),
+            JSON.stringify({
+                scope: { applicationId: ref.applicationId, workspaceId: ref.workspaceId },
+                principalId,
+                partyId: ref.partyId,
+                invitations: []
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+    }
 }
 
 async function seedMoveRooms(fixture: Awaited<ReturnType<typeof createGroupMoveTestDatabase>>): Promise<void> {

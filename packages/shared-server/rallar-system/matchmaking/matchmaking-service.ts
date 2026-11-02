@@ -224,21 +224,7 @@ export class MatchmakingService {
             authSessions: this.dependencies.authSessions
         });
         const proposal = pendingAdmission(pool.pool.proposals, command, nowEpochMs);
-        const sessions = [...new Map([...(actor === undefined ? [] : [actor]), ...partyAuthority.sessions]
-            .map((session) => [session.value.sessionId, session])).values()];
-        if (proposal !== null) {
-            const readSessionIds = new Set([command.sessionId]);
-            for (const participant of proposal.participants) {
-                if (readSessionIds.has(participant.sessionId)) {
-                    continue;
-                }
-                readSessionIds.add(participant.sessionId);
-                const session = await this.dependencies.authSessions.findSessionBySessionIdEntry(participant.sessionId);
-                if (session !== undefined) {
-                    sessions.push(session);
-                }
-            }
-        }
+        const sessions = await this.readAdmissionSessions(command, proposal, actor, partyAuthority.sessions);
         const admission = proposal === null ? null : await readMatchmakingAdmission({
             groups: this.dependencies.groups,
             proposal,
@@ -258,6 +244,29 @@ export class MatchmakingService {
             admission,
             finishedRetentionMs: this.config.finishedRetentionMs
         };
+    }
+    private async readAdmissionSessions(
+        command: MatchmakingCommand,
+        proposal: MatchmakingProposal | null,
+        actor: RuntimeStateEntryValue<PersistedAuthSession> | undefined,
+        partySessions: MatchmakingService.Read['sessions']
+    ): Promise<MatchmakingService.Read['sessions']> {
+        const sessions = [...new Map([...(actor === undefined ? [] : [actor]), ...partySessions]
+            .map((session) => [session.value.sessionId, session])).values()];
+        if (proposal !== null) {
+            const readSessionIds = new Set([command.sessionId]);
+            for (const participant of proposal.participants) {
+                if (readSessionIds.has(participant.sessionId)) {
+                    continue;
+                }
+                readSessionIds.add(participant.sessionId);
+                const session = await this.dependencies.authSessions.findSessionBySessionIdEntry(participant.sessionId);
+                if (session !== undefined) {
+                    sessions.push(session);
+                }
+            }
+        }
+        return sessions;
     }
 }
 

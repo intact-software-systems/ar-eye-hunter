@@ -5,7 +5,7 @@ import {
     type PartyRequest
 } from '@shared/api/parties/party-request.ts';
 import { decodePartyView, type PartyView } from '@shared/api/parties/party-view.ts';
-import type { PartyRefusal, PartyRosterIntent } from '@shared/api/parties/party.ts';
+import type { PartyRef, PartyRefusal, PartyRosterIntent } from '@shared/api/parties/party.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
@@ -104,9 +104,10 @@ export class RallarParty extends AuthenticatedResource<PartyView, PartyRequest> 
             : this.act({ ref: party.ref, expectedRosterRevision: party.rosterRevision, intent });
     }
 
-    respond(invitationId: string, action: 'accept' | 'decline'): Promise<void> {
+    respond(ref: PartyRef, invitationId: string, action: 'accept' | 'decline'): Promise<void> {
         const invitation = this.getState().view?.invitations.find((candidate) =>
-            candidate.invitationId === invitationId
+            candidate.invitationId === invitationId && candidate.ref.partyId === ref.partyId &&
+            isSameGroupScope(candidate.ref, ref)
         );
         return invitation === undefined ? Promise.resolve() : this.act({
             ref: invitation.ref,

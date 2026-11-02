@@ -11,7 +11,7 @@ import {
     type MatchmakingIntent,
     type MatchmakingTransition
 } from './matchmaking-pool.ts';
-import type { MatchmakingProposal, MatchmakingSearch } from './matchmaking-pool.ts';
+import type { MatchmakingActor, MatchmakingProposal, MatchmakingSearch } from './matchmaking-pool.ts';
 
 interface MatchmakingCohortInput {
     readonly scope: StateScope;
@@ -33,9 +33,7 @@ interface MatchmakingUnit {
 export function computeMatchmakingSearch(
     input: MatchmakingInput,
     previous: MatchmakingTransition,
-    command:
-        | Extract<MatchmakingIntent, { action: 'start-party'; }>
-        | Exclude<MatchmakingIntent, { action: 'expire' | 'start-party'; }>
+    command: Exclude<MatchmakingIntent, { action: 'expire'; }>
 ): MatchmakingTransition {
     const { pool } = previous;
     const active = activeMatchmakingSearches(pool);
@@ -51,28 +49,10 @@ export function computeMatchmakingSearch(
     ) {
         return { ...previous, searchId: command.searchId, rejection: 'search-not-current' };
     }
-    const count = pool.searching.length +
-        pool.proposals.reduce((total, proposal) => total + proposal.participants.length, 0);
-    if (count + actors.length > input.policy.maxSearching) {
+    if (active.length + actors.length > input.policy.maxSearching) {
         return { ...previous, searchId: command.searchId, rejection: 'search-capacity' };
     }
-    requireEpoch(command.capturedAtEpochMs, 'Captured search time');
-    const additions: MatchmakingSearch[] = actors.toSorted((left, right) =>
-        Number(right.principalId === command.principalId) - Number(left.principalId === command.principalId) ||
-        (left.principalId < right.principalId ? -1 : left.principalId > right.principalId ? 1 : 0)
-    ).map((actor) => ({
-        principalId: actor.principalId,
-        sessionId: actor.sessionId,
-        sessionIssuedAtEpochMs: actor.sessionIssuedAtEpochMs,
-        sessionExpiresAtEpochMs: actor.sessionExpiresAtEpochMs,
-        searchId: actor.principalId === command.principalId ? command.searchId : computeSha256CanonicalJson({
-            partyRef: party!.ref,
-            searchId: command.searchId,
-            principalId: actor.principalId
-        }),
-        createdAtEpochMs: command.capturedAtEpochMs,
-        expiresAtEpochMs: command.capturedAtEpochMs + input.policy.searchTimeoutMs
-    }));
+    const additions = createMatchmakingSearches(command, actors, input.policy.searchTimeoutMs);
     if (
         additions.some((search) => active.some((current) => current.searchId === search.searchId))
     ) {
@@ -109,6 +89,31 @@ export function computeMatchmakingSearch(
         partySearches,
         pool: { ...pool, searching: formed.searching, proposals: [...pool.proposals, ...formed.proposals] }
     };
+}
+
+function createMatchmakingSearches(
+    command: Exclude<MatchmakingIntent, { action: 'expire'; }>,
+    actors: readonly MatchmakingActor[],
+    searchTimeoutMs: number
+): MatchmakingSearch[] {
+    const party = command.action === 'start-party' ? command.party : null;
+    requireEpoch(command.capturedAtEpochMs, 'Captured search time');
+    return actors.toSorted((left, right) =>
+        Number(right.principalId === command.principalId) - Number(left.principalId === command.principalId) ||
+        (left.principalId < right.principalId ? -1 : left.principalId > right.principalId ? 1 : 0)
+    ).map((actor) => ({
+        principalId: actor.principalId,
+        sessionId: actor.sessionId,
+        sessionIssuedAtEpochMs: actor.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: actor.sessionExpiresAtEpochMs,
+        searchId: actor.principalId === command.principalId ? command.searchId : computeSha256CanonicalJson({
+            partyRef: party!.ref,
+            searchId: command.searchId,
+            principalId: actor.principalId
+        }),
+        createdAtEpochMs: command.capturedAtEpochMs,
+        expiresAtEpochMs: command.capturedAtEpochMs + searchTimeoutMs
+    }));
 }
 
 function computeMatchmakingCohorts(input: MatchmakingCohortInput): MatchmakingCohorts {

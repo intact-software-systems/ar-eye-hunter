@@ -133,7 +133,7 @@ export class PartyService {
     }
 
     private async read(command: PartyCommand): Promise<PartyService.Read> {
-        const { parties, authSessions, profiles, clients } = this.dependencies;
+        const { parties, authSessions } = this.dependencies;
         const { ref, intent } = command.request;
         const principalIds = intent.action === 'invite'
             ? [command.principalId, intent.principalId]
@@ -142,16 +142,23 @@ export class PartyService {
             parties.read(ref, principalIds),
             authSessions.findSessionBySessionIdEntry(command.sessionId)
         ]);
-        const invitation = intent.action === 'accept'
-            ? party.record?.invitations.find((entry) =>
-                entry.invitationId === intent.invitationId && entry.principalId === command.principalId
-            )
-            : undefined;
-        const pair = intent.action === 'invite'
-            ? [command.principalId, intent.principalId]
-            : invitation === undefined
-            ? []
-            : [invitation.senderPrincipalId, command.principalId];
+        const authority = await this.readRosterAuthority(command, party);
+        return {
+            command,
+            party,
+            finishedRetentionMs: this.finishedRetentionMs,
+            session: session ?? null,
+            ...authority,
+            nowEpochMs: Math.max(this.dependencies.nowEpochMs(), command.capturedAtEpochMs ?? 0)
+        };
+    }
+    private async readRosterAuthority(
+        command: PartyCommand,
+        party: PartyRepository.Read
+    ): Promise<Pick<PartyService.Read, 'profiles' | 'friendship' | 'presence' | 'matchmaking'>> {
+        const { profiles, clients } = this.dependencies;
+        const { ref, intent } = command.request;
+        const pair = partyConsentPrincipals(command, party);
         const presenceIds = intent.action === 'take-leadership'
             ? party.record?.members.map((member) => member.principalId) ?? []
             : intent.action === 'create' || intent.action === 'accept'
@@ -184,19 +191,28 @@ export class PartyService {
             throw new TypeError('Party member lost its durable scoped principal');
         }
         return {
-            command,
-            party,
             matchmaking,
-            finishedRetentionMs: this.finishedRetentionMs,
-            session: session ?? null,
             profiles: consent,
             friendship: consent.length === 0 ? null : {
                 sender: consent[0]!.profile.contacts.find((contact) => contact.principalId === pair[1])?.status ?? null,
                 recipient: consent[1]!.profile.contacts.find((contact) => contact.principalId === pair[0])?.status ??
                     null
             },
-            presence: presenceReads.filter((entry): entry is ClientPrincipalSnapshotRead => entry !== undefined),
-            nowEpochMs: Math.max(this.dependencies.nowEpochMs(), command.capturedAtEpochMs ?? 0)
+            presence: presenceReads.filter((entry): entry is ClientPrincipalSnapshotRead => entry !== undefined)
         };
     }
+}
+
+function partyConsentPrincipals(command: PartyCommand, party: PartyRepository.Read): readonly string[] {
+    const { intent } = command.request;
+    const invitation = intent.action === 'accept'
+        ? party.record?.invitations.find((entry) =>
+            entry.invitationId === intent.invitationId && entry.principalId === command.principalId
+        )
+        : undefined;
+    return intent.action === 'invite'
+        ? [command.principalId, intent.principalId]
+        : invitation === undefined
+        ? []
+        : [invitation.senderPrincipalId, command.principalId];
 }

@@ -57,9 +57,11 @@ describe('party browser consent', () => {
         await test.owner.start();
         expect(test.owner.getState().view).toEqual(view);
         await test.owner.changeRoster({ action: 'transfer', principalId: 'bob' });
-        expect(test.api.change.mock.calls[0]?.[0].request).toEqual({ ref, expectedRosterRevision: 3, intent: { action: 'transfer', principalId: 'bob' } });
+        expect(test.api.change).toHaveBeenCalledWith(
+            expect.objectContaining({ request: { ref, expectedRosterRevision: 3, intent: { action: 'transfer', principalId: 'bob' } } })
+        );
         await test.owner.changeRoster({ action: 'leave' });
-        expect(test.api.change.mock.calls[1]?.[0].request.intent).toEqual({ action: 'leave' });
+        expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({ request: { ref, expectedRosterRevision: 3, intent: { action: 'leave' } } }));
     });
 
     it('creates a new identity once and retries an uncertain invitation with its original roster consent', async () => {
@@ -98,10 +100,40 @@ describe('party browser consent', () => {
             }]
         });
         await test.owner.start();
-        await test.owner.respond('missing', 'accept');
+        await test.owner.respond(ref, 'missing', 'accept');
         expect(test.api.change).not.toHaveBeenCalled();
-        await test.owner.respond('invite', 'accept');
-        expect(test.api.change.mock.calls[0]?.[0].request).toEqual({ ref, expectedRosterRevision: null, intent: { action: 'accept', invitationId: 'invite' } });
+        await test.owner.respond(ref, 'invite', 'accept');
+        expect(test.api.change).toHaveBeenCalledWith(
+            expect.objectContaining({ request: { ref, expectedRosterRevision: null, intent: { action: 'accept', invitationId: 'invite' } } })
+        );
+    });
+
+    it.each(['accept', 'decline'] as const)('binds %s to the selected party when invitation IDs collide', async (action) => {
+        const test = browser();
+        const second = { ...ref, partyId: 'second-party' };
+        test.api.read.mockResolvedValue({
+            ...view,
+            party: null,
+            invitations: [ref, second].map((ref) => ({
+                ref,
+                invitationId: 'same-invitation-id',
+                principalId: 'alice',
+                senderPrincipalId: ref.partyId === 'party' ? 'bob' : 'carol',
+                createdAtEpochMs: 1,
+                expiresAtEpochMs: 2000
+            }))
+        });
+        await test.owner.start();
+        await test.owner.respond({ ...second, workspaceId: 'another-workspace' }, 'same-invitation-id', action);
+        expect(test.api.change).not.toHaveBeenCalled();
+        await test.owner.respond(second, 'same-invitation-id', action);
+        expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({
+            request: {
+                ref: second,
+                expectedRosterRevision: null,
+                intent: { action, invitationId: 'same-invitation-id' }
+            }
+        }));
     });
 
     it('refuses mismatched private views and keeps a misbound mutation unresolved', async () => {

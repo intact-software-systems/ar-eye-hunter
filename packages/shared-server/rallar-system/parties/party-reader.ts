@@ -54,7 +54,7 @@ export class PartyReader {
                         );
                     return {
                         ...member,
-                        displayName: snapshot?.principal.displayName ?? member.principalId,
+                        displayName: snapshot?.principal.displayName?.trim() || member.principalId,
                         presence: present ? 'present' : 'away'
                     };
                 }),

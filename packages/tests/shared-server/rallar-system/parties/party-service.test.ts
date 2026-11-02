@@ -91,6 +91,61 @@ describe('party mutations through authenticated AppInbox', () => {
         }
     });
 
+    it('rechecks a takeover after the absent leader reconnects before its conditional write', async () => {
+        const storage = await createResourceInboxTestStorage('party_takeover_reconnect');
+        try {
+            const fixture = await createRuntime(storage);
+            await fixture.run(fixture.command('alice', 'create', { ref, expectedRosterRevision: null, intent: { action: 'create' } }));
+            await fixture.run(fixture.command('alice', 'invite', {
+                ref,
+                expectedRosterRevision: 0,
+                intent: { action: 'invite', principalId: 'bob', invitationId: 'invite-bob' }
+            }));
+            await fixture.run(fixture.command('bob', 'accept', {
+                ref,
+                expectedRosterRevision: null,
+                intent: { action: 'accept', invitationId: 'invite-bob' }
+            }));
+            const session = (await fixture.clients.findSessionEntry({
+                ...ref,
+                principalId: 'alice',
+                clientInstanceId: 'browser-alice',
+                sessionId: 'session-alice'
+            }))!;
+            expect(await fixture.clients.updateSession({ ...session.value, expiresAtEpochMs: fixture.clock.now - 1 }, session.entry.revision))
+                .toMatchObject({ status: 'applied' });
+            const readPresence = fixture.clients.readPrincipalSnapshot.bind(fixture.clients);
+            let reconnected = false;
+            vi.spyOn(fixture.clients, 'readPrincipalSnapshot').mockImplementation(async (principalRef) => {
+                const observed = await readPresence(principalRef);
+                if (principalRef.principalId === 'alice' && !reconnected) {
+                    reconnected = true;
+                    // A reconnect advances the durable principal fence as well as the session lease.
+                    expect(await fixture.clients.updateSession(session.value, session.entry.revision + 1)).toMatchObject({ status: 'applied' });
+                    expect(
+                        await fixture.clients.updatePrincipal({
+                            ...observed!.principal.value,
+                            presenceVersion: observed!.principal.value.presenceVersion + 1,
+                            snapshotVersion: observed!.principal.value.snapshotVersion + 1
+                        }, observed!.principal.entry.revision)
+                    ).toMatchObject({ status: 'applied' });
+                }
+                return observed;
+            });
+            const before = await fixture.parties.read(ref);
+            const command = fixture.command('bob', 'takeover', { ref, expectedRosterRevision: 1, intent: { action: 'take-leadership' } });
+            const admitted = await fixture.service.mutate.enqueue({ command, traceId: 'reconnect-race' });
+            await fixture.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect(await fixture.parties.read(ref)).toEqual(before);
+            await fixture.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect((await admitted.right!.wait()).right).toMatchObject({ status: 'refused', code: 'leader-present' });
+            expect((await fixture.parties.read(ref)).record?.leaderPrincipalId).toBe('alice');
+        }
+        finally {
+            await storage.close();
+        }
+    });
+
     it('creating a party cancels the actor pending match for the entire cohort in the same transaction', async () => {
         const storage = await createResourceInboxTestStorage('party_invalidates_pending_match');
         try {

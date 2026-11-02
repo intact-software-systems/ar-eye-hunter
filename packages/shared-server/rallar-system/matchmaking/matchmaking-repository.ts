@@ -78,22 +78,7 @@ export class MatchmakingRepository {
         const initial = decodeStoredPool(scope, await this.runtime.findEntry(MATCHMAKING_POOLS_NAMESPACE, key));
         const active = activeMatchmakingSearches(initial.pool);
         const principals = [...new Set([...active.map((search) => search.principalId), ...principalIds])];
-        const selectors: RuntimeStateReadBatchSelector[] = [
-            { selectorId: 'pool', kind: 'key', namespace: MATCHMAKING_POOLS_NAMESPACE, key },
-            { selectorId: 'parties', kind: 'key', namespace: MATCHMAKING_PARTIES_NAMESPACE, key },
-            ...principals.map((principalId, index): RuntimeStateReadBatchSelector => ({
-                selectorId: `account:${index}`,
-                kind: 'key',
-                namespace: MATCHMAKING_ACCOUNTS_NAMESPACE,
-                key: matchmakingAccountKey(scope, principalId)
-            })),
-            ...principals.map((principalId, index): RuntimeStateReadBatchSelector => ({
-                selectorId: `party-account:${index}`,
-                kind: 'key',
-                namespace: PARTY_ACCOUNTS_NAMESPACE,
-                key: partyAccountKey(scope, principalId)
-            }))
-        ];
+        const selectors = matchmakingReadSelectors(scope, principals);
         const selections = assertRuntimeStateReadBatchResult(
             selectors,
             await this.runtime.readRuntimeStateBatch(selectors)
@@ -220,4 +205,24 @@ function decodeStoredPool(
         throw new TypeError('Matchmaking pool storage identity or lifetime differs');
     }
     return { entry, pool: decodeMatchmakingPool(JSON.parse(entry.value), scope) };
+}
+
+function matchmakingReadSelectors(scope: StateScope, principals: readonly string[]): RuntimeStateReadBatchSelector[] {
+    const key = groupStateScopeStorageKey(scope);
+    return [
+        { selectorId: 'pool', kind: 'key', namespace: MATCHMAKING_POOLS_NAMESPACE, key },
+        { selectorId: 'parties', kind: 'key', namespace: MATCHMAKING_PARTIES_NAMESPACE, key },
+        ...principals.map((principalId, index): RuntimeStateReadBatchSelector => ({
+            selectorId: `account:${index}`,
+            kind: 'key',
+            namespace: MATCHMAKING_ACCOUNTS_NAMESPACE,
+            key: matchmakingAccountKey(scope, principalId)
+        })),
+        ...principals.map((principalId, index): RuntimeStateReadBatchSelector => ({
+            selectorId: `party-account:${index}`,
+            kind: 'key',
+            namespace: PARTY_ACCOUNTS_NAMESPACE,
+            key: partyAccountKey(scope, principalId)
+        }))
+    ];
 }

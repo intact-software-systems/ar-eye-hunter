@@ -72,6 +72,29 @@ describe('private party recovery', () => {
         }
     });
 
+    it.each(['', '   '])('keeps the roster readable when a member has an empty display name (%j)', async (displayName) => {
+        const storage = await createResourceInboxTestStorage('party_empty_display_name');
+        try {
+            const fixture = await createRuntime(storage);
+            await fixture.run(fixture.command('alice', 'create', { ref, expectedRosterRevision: null, intent: { action: 'create' } }));
+            const snapshot = await fixture.clients.readSnapshot({ ...scope, principalId: 'alice' });
+            if (!snapshot) {
+                throw new Error('Expected the seeded client snapshot');
+            }
+            const reader = new PartyReader({
+                parties: fixture.parties,
+                clients: { readSnapshot: async () => ({ ...snapshot, principal: { ...snapshot.principal, displayName } }) },
+                nowEpochMs: () => fixture.clock.now
+            }, { defaultMaxMembers: 2, maxMembersByApplication: {} });
+            expect((await reader.read(scope, 'alice')).party?.members).toEqual([
+                { principalId: 'alice', joinedAtEpochMs: fixture.clock.now, displayName: 'alice', presence: 'present' }
+            ]);
+        }
+        finally {
+            await storage.close();
+        }
+    });
+
     it('hides expired invitations without repairing storage and rejects corrupt identities before expiry filtering', async () => {
         const storage = await createResourceInboxTestStorage('party_private_expiry');
         try {

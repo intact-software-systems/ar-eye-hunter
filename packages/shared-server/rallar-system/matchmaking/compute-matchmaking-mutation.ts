@@ -21,13 +21,15 @@ import { writeGroupMutation } from '../group-state/mutation/write/write-group-mu
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
 import { computeMatchmakingStorage } from './compute-matchmaking-storage.ts';
 import { computeMatchmaking } from './compute-matchmaking.ts';
+import type { MatchmakingCommand } from './matchmaking-command.ts';
 import { computeMatchmakingDeadlines } from './matchmaking-deadline.ts';
 import {
     areMatchmakingPartiesCurrent,
     computeMatchmakingPartyGuards,
     computeMatchmakingPartyStart
 } from './matchmaking-party-authority.ts';
-import type { MatchmakingActor, MatchmakingTransition } from './matchmaking-pool.ts';
+import type { MatchmakingPartyStart } from './matchmaking-party-search.ts';
+import type { MatchmakingActor, MatchmakingIntent, MatchmakingTransition } from './matchmaking-pool.ts';
 import type { MatchmakingService } from './matchmaking-service.ts';
 
 export interface MatchmakingMutation {
@@ -61,20 +63,12 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
     if (partyStart?.left !== undefined) {
         return refused(read, partyStart.left);
     }
-    const intent = {
-        ...command.request,
-        principalId: command.principalId,
-        sessionId: command.sessionId,
-        sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
-        sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
-        capturedAtEpochMs: command.capturedAtEpochMs
-    };
     const proposed = computeMatchmaking({
         partySearches: read.pool.partySearches,
         pool: read.pool.pool,
         policy: command.policy,
         nowEpochMs: read.nowEpochMs,
-        command: intent.action === 'start-party' ? { ...intent, party: partyStart!.right! } : intent
+        command: toMatchmakingIntent(command, command.capturedAtEpochMs, partyStart?.right ?? null)
     });
     const admissions = proposed.admission === null ? [] : computeAdmission(read, proposed);
     const transition = proposed.admission !== null && admissions.length === 0 ? failedAdmission(proposed) : proposed;
@@ -101,6 +95,27 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
             code: transition.rejection
         }
     };
+}
+
+function toMatchmakingIntent(
+    command: MatchmakingCommand,
+    capturedAtEpochMs: number,
+    party: MatchmakingPartyStart | null
+): MatchmakingIntent {
+    const actor = {
+        principalId: command.principalId,
+        sessionId: command.sessionId,
+        sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
+        capturedAtEpochMs
+    };
+    if (command.request.action === 'start-party') {
+        if (party === null) {
+            throw new TypeError('Party search intent requires its admitted roster');
+        }
+        return { ...command.request, ...actor, party };
+    }
+    return { ...command.request, ...actor };
 }
 
 function computeAuthorizedMatchmakingStorage(

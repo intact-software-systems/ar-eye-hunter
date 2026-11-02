@@ -154,19 +154,7 @@ export class GroupMoveService {
             throw new TypeError('Group move party selection differs from its proposal');
         }
         const pending = previous === null || previous.value.move.status === 'proposed';
-        const source = pending
-            ? computeGroupMoveSource(
-                await this.dependencies.groups.readPresenceSummaryEntries(command.source),
-                nowEpochMs
-            )
-            : null;
-        const party = pending && command.party !== undefined
-            ? await this.dependencies.parties.read({
-                applicationId: command.source.applicationId,
-                workspaceId: command.source.workspaceId,
-                partyId: command.party.partyId
-            })
-            : null;
+        const { source, party } = await this.readSourceAuthority(command, pending, nowEpochMs);
         const participants = previous?.value.move.participants ??
             source?.snapshot.members.filter((member) =>
                 member.status === 'active' && member.role !== 'spectator' &&
@@ -210,6 +198,27 @@ export class GroupMoveService {
             participantAuthorityLive,
             admissions
         };
+    }
+
+    private async readSourceAuthority(
+        command: GroupMoveCommand,
+        pending: boolean,
+        nowEpochMs: number
+    ): Promise<Pick<GroupMoveService.Read, 'source' | 'party'>> {
+        const source = pending
+            ? computeGroupMoveSource(
+                await this.dependencies.groups.readPresenceSummaryEntries(command.source),
+                nowEpochMs
+            )
+            : null;
+        const party = pending && command.party !== undefined
+            ? await this.dependencies.parties.read({
+                applicationId: command.source.applicationId,
+                workspaceId: command.source.workspaceId,
+                partyId: command.party.partyId
+            })
+            : null;
+        return { source, party };
     }
 
     private async readActor(

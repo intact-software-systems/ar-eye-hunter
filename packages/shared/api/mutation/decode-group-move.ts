@@ -86,21 +86,7 @@ export function decodeGroupMove(value: unknown): GroupMove {
             ['proposed', 'committed', 'cancelled', 'expired', 'denied'],
             'Group move status'
         ),
-        reason: move.reason === null
-            ? null
-            : requireOneOf(
-                move.reason,
-                [
-                    'participant-declined',
-                    'organizer-cancelled',
-                    'source-roster-changed',
-                    'party-roster-changed',
-                    'source-unavailable',
-                    'proposal-expired',
-                    'admission-denied'
-                ] as const,
-                'Group move reason'
-            ),
+        reason: decodeMoveReason(move.reason),
         admissionFailure: decodeAdmissionFailure(move.admissionFailure)
     };
     if (
@@ -223,4 +209,22 @@ function moveEpoch(value: unknown): number {
 
 function nullableMoveEpoch(value: unknown): number | null {
     return value === null ? null : moveEpoch(value);
+}
+
+function decodeMoveReason(value: unknown): GroupMove['reason'] {
+    return value === null
+        ? null
+        : requireOneOf(
+            value,
+            [
+                'participant-declined',
+                'organizer-cancelled',
+                'source-roster-changed',
+                'party-roster-changed',
+                'source-unavailable',
+                'proposal-expired',
+                'admission-denied'
+            ] as const,
+            'Group move reason'
+        );
 }

@@ -7,7 +7,12 @@ import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/
 import { groupStateScopeStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeMatchmakingPool } from './decode-matchmaking-pool.ts';
 import { decodeMatchmakingPartySearches, MATCHMAKING_PARTIES_NAMESPACE } from './matchmaking-party-search.ts';
-import { activeMatchmakingSearches, type MatchmakingSearch, type MatchmakingTransition } from './matchmaking-pool.ts';
+import {
+    activeMatchmakingSearches,
+    type MatchmakingPool,
+    type MatchmakingSearch,
+    type MatchmakingTransition
+} from './matchmaking-pool.ts';
 import type { MatchmakingRepository } from './matchmaking-repository.ts';
 import {
     MATCHMAKING_ACCOUNTS_NAMESPACE,
@@ -69,6 +74,15 @@ export function computeMatchmakingStorage(
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
     }
+    return computePoolStorage(read, pool, guardedEffects, inserts);
+}
+
+function computePoolStorage(
+    read: MatchmakingRepository.Read,
+    pool: MatchmakingPool,
+    guardedEffects: readonly RuntimeStateGuardedBatchEffect[],
+    inserts: readonly RuntimeStateInsert[]
+): RuntimeStateConditionalBatch {
     const batch = computeRuntimeStateGuardedBatchWrite({
         guard: {
             namespace: MATCHMAKING_POOLS_NAMESPACE,

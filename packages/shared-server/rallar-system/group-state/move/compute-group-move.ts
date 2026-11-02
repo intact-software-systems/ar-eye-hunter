@@ -64,40 +64,48 @@ export function computeGroupMove(input: GroupMoveComputationInput): Either<Group
                 : proposal
         );
     }
+    const invalidated = invalidatePendingMove(input, proposal);
+    if (invalidated !== null) {
+        return Either.ofRight(invalidated);
+    }
+    return applyConsent(input, proposal, participant);
+}
+
+function invalidatePendingMove(input: GroupMoveComputationInput, proposal: GroupMove): GroupMove | null {
     if (input.nowEpochMs >= proposal.expiresAtEpochMs) {
-        return Either.ofRight({
+        return {
             ...proposal,
             status: 'expired',
             reason: 'proposal-expired',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
     if (input.source === null || requireActiveGroup(input.source.group, input.nowEpochMs)) {
-        return Either.ofRight({
+        return {
             ...proposal,
             status: 'cancelled',
             reason: 'source-unavailable',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
     const selected = selectGroupMovePlayers(input);
     if (selected.left !== undefined) {
-        return Either.ofRight({
+        return {
             ...proposal,
             status: 'cancelled',
             reason: 'party-roster-changed',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
     if (!sameCohort(proposal.participants, selected.right!)) {
-        return Either.ofRight({
+        return {
             ...proposal,
             status: 'cancelled',
             reason: 'source-roster-changed',
             completedAtEpochMs: input.nowEpochMs
-        });
+        };
     }
-    return applyConsent(input, proposal, participant);
+    return null;
 }
 
 function applyConsent(

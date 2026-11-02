@@ -1,6 +1,7 @@
 import type { PartyMutationResult } from '@shared/api/parties/party-request.ts';
 import type { PartyRefusal } from '@shared/api/parties/party.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
@@ -11,7 +12,7 @@ import { validateComputedProjection, type ComputedDataValidationIssue } from '..
 import { FRIENDS_PROFILE_NAMESPACE } from '../friends/friends-profile.ts';
 import { computeMatchmakingStorage } from '../matchmaking/compute-matchmaking-storage.ts';
 import { computeMatchmakingInvalidation } from '../matchmaking/compute-matchmaking.ts';
-import { computePartyRoster } from './compute-party-roster.ts';
+import { computePartyRoster, type PartyRosterComputed } from './compute-party-roster.ts';
 import type { PartyService } from './party-service.ts';
 import { computePartyStorage } from './persistence/compute-party-storage.ts';
 
@@ -24,58 +25,8 @@ export interface PartyMutation {
 
 export function computePartyMutation(read: PartyService.Read): PartyMutation {
     const { command } = read;
-    const session = read.session?.value;
-    if (
-        session === undefined || session.clientId !== command.principalId || session.sessionId !== command.sessionId ||
-        session.issuedAtEpochMs !== command.sessionIssuedAtEpochMs ||
-        session.expiresAtEpochMs !== command.sessionExpiresAtEpochMs ||
-        session.expiresAtEpochMs <= read.nowEpochMs
-    ) {
-        return refused(read, 'unauthorized');
-    }
-    if (command.capturedAtEpochMs === null || command.policy === null) {
-        throw new TypeError('Party execution requires winning ingress facts');
-    }
-    const { intent, ref, expectedRosterRevision } = command.request;
-    const presentPrincipalIds = read.presence.filter((stored) =>
-        stored.snapshot.principal.status === 'active' &&
-        stored.snapshot.activeSessions.some((session) =>
-            session.status === 'active' && session.disconnectedAtEpochMs === null &&
-            session.expiresAtEpochMs > read.nowEpochMs
-        )
-    ).map((stored) => stored.snapshot.principal.principalId);
-    if (
-        (intent.action === 'create' || intent.action === 'accept') && !presentPrincipalIds.includes(command.principalId)
-    ) {
-        return refused(read, 'member-away');
-    }
-    const actor = read.party.accounts.find((stored) => stored.account.principalId === command.principalId);
-    if (actor === undefined) {
-        throw new TypeError('Party command is missing its exact actor account read');
-    }
-    const target = intent.action === 'invite'
-        ? read.party.accounts.find((stored) => stored.account.principalId === intent.principalId)
-        : undefined;
-    if (intent.action === 'invite' && target === undefined) {
-        throw new TypeError('Party invitation is missing its exact recipient account read');
-    }
-    const decision = computePartyRoster({
-        ref,
-        record: read.party.record,
-        actorPrincipalId: command.principalId,
-        actorPartyId: actor.account.partyId,
-        targetPartyId: target?.account.partyId ?? null,
-        targetInvitationCount: target?.account.invitations.filter((invitation) =>
-            invitation.expiresAtEpochMs > read.nowEpochMs
-        ).length ?? 0,
-        expectedRosterRevision,
-        intent,
-        friendship: read.friendship,
-        presentPrincipalIds,
-        capturedAtEpochMs: command.capturedAtEpochMs,
-        nowEpochMs: read.nowEpochMs,
-        policy: command.policy
-    });
+    const { ref } = command.request;
+    const decision = computePartyRosterDecision(read);
     if (decision.left !== undefined) {
         return refused(read, decision.left);
     }
@@ -95,6 +46,62 @@ export function computePartyMutation(read: PartyService.Read): PartyMutation {
         rosterChanged: computed.rosterChanged,
         result: { ref, principalId: command.principalId, requestId: command.requestId, status: 'applied', code: null }
     };
+}
+
+function computePartyRosterDecision(read: PartyService.Read): Either<PartyRefusal, PartyRosterComputed> {
+    const { command } = read;
+    const session = read.session?.value;
+    if (
+        session === undefined || session.clientId !== command.principalId || session.sessionId !== command.sessionId ||
+        session.issuedAtEpochMs !== command.sessionIssuedAtEpochMs ||
+        session.expiresAtEpochMs !== command.sessionExpiresAtEpochMs ||
+        session.expiresAtEpochMs <= read.nowEpochMs
+    ) {
+        return Either.ofLeft('unauthorized');
+    }
+    if (command.capturedAtEpochMs === null || command.policy === null) {
+        throw new TypeError('Party execution requires winning ingress facts');
+    }
+    const { intent, ref, expectedRosterRevision } = command.request;
+    const presentPrincipalIds = read.presence.filter((stored) =>
+        stored.snapshot.principal.status === 'active' &&
+        stored.snapshot.activeSessions.some((session) =>
+            session.status === 'active' && session.disconnectedAtEpochMs === null &&
+            session.expiresAtEpochMs > read.nowEpochMs
+        )
+    ).map((stored) => stored.snapshot.principal.principalId);
+    if (
+        (intent.action === 'create' || intent.action === 'accept') && !presentPrincipalIds.includes(command.principalId)
+    ) {
+        return Either.ofLeft('member-away');
+    }
+    const actor = read.party.accounts.find((stored) => stored.account.principalId === command.principalId);
+    if (actor === undefined) {
+        throw new TypeError('Party command is missing its exact actor account read');
+    }
+    const target = intent.action === 'invite'
+        ? read.party.accounts.find((stored) => stored.account.principalId === intent.principalId)
+        : undefined;
+    if (intent.action === 'invite' && target === undefined) {
+        throw new TypeError('Party invitation is missing its exact recipient account read');
+    }
+    return computePartyRoster({
+        ref,
+        record: read.party.record,
+        actorPrincipalId: command.principalId,
+        actorPartyId: actor.account.partyId,
+        targetPartyId: target?.account.partyId ?? null,
+        targetInvitationCount: target?.account.invitations.filter((invitation) =>
+            invitation.expiresAtEpochMs > read.nowEpochMs
+        ).length ?? 0,
+        expectedRosterRevision,
+        intent,
+        friendship: read.friendship,
+        presentPrincipalIds,
+        capturedAtEpochMs: command.capturedAtEpochMs,
+        nowEpochMs: read.nowEpochMs,
+        policy: command.policy
+    });
 }
 
 export function validatePartyMutation(

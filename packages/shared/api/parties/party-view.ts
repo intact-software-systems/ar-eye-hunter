@@ -102,16 +102,7 @@ function decodePartyRosterView(value: unknown, principalId: string, observedAtEp
     ) {
         throw new TypeError('Party roster view collections are invalid');
     }
-    const members = roster.members.map((value): PartyMemberView => {
-        const visible = requireRecord(value, 'Party member view');
-        const { displayName, presence, ...member } = visible;
-        requireString(displayName, 'Party member display name');
-        return {
-            ...decodePartyMember(member),
-            displayName,
-            presence: requireOneOf(presence, ['present', 'away'], 'Party member presence')
-        };
-    });
+    const members = roster.members.map(decodePartyMemberView);
     const memberIds = new Set<string>();
     let previous: string | null = null;
     for (const member of members) {
@@ -148,5 +139,16 @@ function decodePartyRosterView(value: unknown, principalId: string, observedAtEp
         leaderPrincipalId: roster.leaderPrincipalId,
         members,
         invitations
+    };
+}
+
+function decodePartyMemberView(value: unknown): PartyMemberView {
+    const visible = requireRecord(value, 'Party member view');
+    const { displayName, presence, ...member } = visible;
+    requireString(displayName, 'Party member display name');
+    return {
+        ...decodePartyMember(member),
+        displayName,
+        presence: requireOneOf(presence, ['present', 'away'], 'Party member presence')
     };
 }
