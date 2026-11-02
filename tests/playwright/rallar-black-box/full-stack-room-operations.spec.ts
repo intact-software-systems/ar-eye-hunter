@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { readBrowserAuthSession, readFullStackConfig, uniqueSuffix } from './full-stack-helpers.ts';
 
 const config = readFullStackConfig();
@@ -13,22 +14,7 @@ test.describe('operator room inspection through visible controls', () => {
             const session = await readBrowserAuthSession(page);
             const workspaceId = `inspection-${uniqueSuffix()}`;
             for (const applicationId of ['ar-eye-hunter', 'rallar-server']) {
-                const response = await request.post(
-                    `${config.apiBaseUrl}/api/state/apps/${applicationId}/workspaces/${workspaceId}/groups/requests/${crypto.randomUUID()}`,
-                    {
-                        headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId },
-                        data: {
-                            groupId: 'private-room',
-                            displayName: `Private ${applicationId}`,
-                            kind: 'room',
-                            joinMode: 'invite-only',
-                            directoryListing: 'unlisted',
-                            retention: { mode: 'temporary' },
-                            createdByPrincipalId: session.clientId
-                        }
-                    }
-                );
-                expect(response.status(), await response.text()).toBe(201);
+                await createPrivateRoom({ request, session, applicationId, workspaceId });
                 await page.getByLabel('Room application').fill(applicationId);
                 await page.getByLabel('Room workspace').fill(workspaceId);
                 await page.getByRole('button', { name: 'Find rooms', exact: true }).click();
@@ -41,8 +27,26 @@ test.describe('operator room inspection through visible controls', () => {
                 await expect(explanation).toContainText('unknown');
                 await page.getByRole('button', { name: 'Refresh room evidence', exact: true }).click();
                 await expect(explanation).toContainText('invite-only');
+                await page.getByRole('button', { name: 'Recompute room topology', exact: true }).click();
+                await expect(page.getByRole('region', { name: 'Room recovery outcome' })).toContainText(
+                    'Work completed',
+                    { timeout: 30_000 }
+                );
+                await expect(explanation).toContainText('away');
+                await expect(explanation).toContainText('Gameplay participation');
+                await expect(page.getByRole('region', { name: 'Room recovery outcome' })).toContainText(
+                    'not confirmed'
+                );
                 await page.screenshot({ path: testInfo.outputPath(`inspection-${applicationId}.png`), fullPage: true });
             }
+            await page.getByText('Global expired-record maintenance', { exact: true }).click();
+            await page.getByRole('button', { name: 'Preview global cleanup', exact: true }).click();
+            const maintenance = page.getByRole('region', { name: 'Global maintenance result' });
+            await expect(maintenance).toContainText('Preview complete');
+            await expect(page.getByRole('button', { name: 'Execute global cleanup', exact: true })).toBeDisabled();
+            await page.getByLabel('I understand cleanup affects all applications and workspaces.').check();
+            await page.getByRole('button', { name: 'Execute global cleanup', exact: true }).click();
+            await expect(maintenance).toContainText('Cleanup completed', { timeout: 30_000 });
             await page.getByLabel('Room workspace').fill(`${workspaceId}-empty`);
             await expect(page.getByRole('region', { name: 'Room explanation', exact: true })).toHaveCount(0);
             await page.getByRole('button', { name: 'Find rooms', exact: true }).click();
@@ -57,6 +61,55 @@ test.describe('operator room inspection through visible controls', () => {
             await expect(page.getByRole('button', { name: /^Inspect / })).toHaveCount(0);
         }
     );
+
+    test('recovers a lost committed response through the visible same-request retry', async ({ page, request }) => {
+        await signInOperator(page, 'admin', 'admin');
+        const session = await readBrowserAuthSession(page);
+        const workspaceId = `lost-response-${uniqueSuffix()}`;
+        await createPrivateRoom({ request, session, applicationId: 'ar-eye-hunter', workspaceId });
+        await selectPrivateRoom(page, 'ar-eye-hunter', workspaceId);
+        let committedUrl: string | null = null;
+        let retriedUrl: string | null = null;
+        await page.route('**/api/admin/operations/topology/recompute/requests/*', async (route) => {
+            if (committedUrl === null) {
+                committedUrl = route.request().url();
+                const committed = await route.fetch();
+                expect(committed.status(), await committed.text()).toBe(200);
+                await route.abort('failed');
+            }
+            else {
+                retriedUrl = route.request().url();
+                await route.continue();
+            }
+        });
+        await page.getByRole('button', { name: 'Recompute room topology', exact: true }).click();
+        await expect(page.getByText('Outcome uncertain.', { exact: false })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Recompute room topology', exact: true })).toBeDisabled();
+        await page.getByRole('button', { name: 'Retry same request', exact: true }).click();
+        await expect(page.getByRole('region', { name: 'Room recovery outcome' })).toContainText('Work completed', {
+            timeout: 30_000
+        });
+        expect(retriedUrl).toBe(committedUrl);
+        await expect(page.getByRole('button', { name: 'Retry same request', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('region', { name: 'Room explanation', exact: true })).toContainText('away');
+    });
+
+    test('clears private room evidence when authority is revoked before clicking recovery', async ({ page, request }) => {
+        await signInOperator(page, 'admin', 'admin');
+        const session = await readBrowserAuthSession(page);
+        const workspaceId = `revoked-recovery-${uniqueSuffix()}`;
+        await createPrivateRoom({ request, session, applicationId: 'rallar-server', workspaceId });
+        await selectPrivateRoom(page, 'rallar-server', workspaceId);
+        const revoked = await request.post(`${config.apiBaseUrl}/api/auth/logout/requests/${crypto.randomUUID()}`, {
+            headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId }
+        });
+        expect(revoked.status()).toBe(200);
+        await page.getByRole('button', { name: 'Recompute room topology', exact: true }).click();
+        await expect(page.getByRole('alert')).toContainText('401');
+        await expect(page.getByRole('region', { name: 'Room explanation', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /^Inspect / })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Retry same request', exact: true })).toHaveCount(0);
+    });
 
     test('shows an ordinary account the actual refusal without disclosing directory contents', async ({ page }) => {
         await signInOperator(page, 'test', 'test');
@@ -77,4 +130,40 @@ async function signInOperator(page: Page, username: string, password: string): P
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await page.getByText('Room operations and recovery', { exact: true }).click({ timeout: 15_000 });
+}
+
+interface CreatePrivateRoomInput {
+    readonly request: APIRequestContext;
+    readonly session: AuthSession;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+}
+
+async function createPrivateRoom(
+    { request, session, applicationId, workspaceId }: CreatePrivateRoomInput
+): Promise<void> {
+    const response = await request.post(
+        `${config.apiBaseUrl}/api/state/apps/${applicationId}/workspaces/${workspaceId}/groups/requests/${crypto.randomUUID()}`,
+        {
+            headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId },
+            data: {
+                groupId: 'private-room',
+                displayName: `Private ${applicationId}`,
+                kind: 'room',
+                joinMode: 'invite-only',
+                directoryListing: 'unlisted',
+                retention: { mode: 'temporary' },
+                createdByPrincipalId: session.clientId
+            }
+        }
+    );
+    expect(response.status(), await response.text()).toBe(201);
+}
+
+async function selectPrivateRoom(page: Page, applicationId: string, workspaceId: string): Promise<void> {
+    await page.getByLabel('Room application').fill(applicationId);
+    await page.getByLabel('Room workspace').fill(workspaceId);
+    await page.getByRole('button', { name: 'Find rooms', exact: true }).click();
+    await page.getByRole('button', { name: `Inspect Private ${applicationId}`, exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Room explanation', exact: true })).toContainText('away');
 }

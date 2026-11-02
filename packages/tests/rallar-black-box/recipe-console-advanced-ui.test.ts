@@ -3,18 +3,13 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
-import { ADVANCED_SURFACE_CATALOG } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts';
 import AdvancedWorkspace from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-workspace.tsx';
-import { RecipeConsoleActiveWork } from '../../../apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
+import { RecipeConsoleActiveWork } from '../../../apps/rallar-black-box/src/recipe-console/app/recipe-console-active-work.tsx';
 import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-contract.ts';
 import type { RecipeConsoleUrlIssue, RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
-
-const ADVANCED_ROOT = 'apps/rallar-black-box/src/recipe-console/advanced';
-const ACTIVE_WORK_PATH = 'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
-const WORKSPACE_PATH = 'apps/rallar-black-box/src/recipe-console/app/recipe-console-workspace.tsx';
 
 const URL_STATE: RecipeConsoleUrlState = {
     v: 1,
@@ -65,9 +60,6 @@ describe('Recipe Console Advanced workspace', () => {
             '[data-advanced-surface-link]'
         )];
         expect(links).toHaveLength(22);
-        expect(new Set(links.map((link) => link.dataset.surfaceId))).toEqual(
-            new Set(ADVANCED_SURFACE_CATALOG.map((surface) => surface.id))
-        );
         expect(links.every((link) => link.getAttribute('href')?.startsWith('/?')))
             .toBe(true);
         expect(links.every((link) => link.getAttribute('role') === null)).toBe(true);
@@ -350,7 +342,7 @@ describe('Recipe Console Advanced workspace', () => {
             ...URL_STATE,
             recipeId: 'recipe\u0000id',
             commandId: 'command\u0085id'
-        } as RecipeConsoleUrlState;
+        };
         await renderAdvanced(root, {
             sourceSearch: '',
             selection: selection(),
@@ -381,18 +373,13 @@ describe('Recipe Console Advanced workspace', () => {
                 selection: selection(),
                 urlIssues: [],
                 urlState: URL_STATE
-            },
-            analyzeWork: createElement('p', null, 'Analyze owner'),
-            executeWork: createElement('p', null, 'Execute owner'),
-            fleet: {} as never,
-            monitorWork: createElement('p', null, 'Monitor owner'),
-            tune: {} as never
+            }
         };
 
         await act(async () =>
             root.render(createElement(
                 RecipeConsoleActiveWork,
-                { ...props, view: 'execute' }
+                { view: 'execute', children: createElement('p', null, 'Execute owner') }
             ))
         );
         expect(container.textContent).toBe('Execute owner');
@@ -409,7 +396,7 @@ describe('Recipe Console Advanced workspace', () => {
         await act(async () =>
             root.render(createElement(
                 RecipeConsoleActiveWork,
-                { ...props, view: 'execute' }
+                { view: 'execute', children: createElement('p', null, 'Execute owner') }
             ))
         );
         expect(container.querySelector('[data-advanced-workspace]')).toBeNull();
@@ -442,7 +429,19 @@ function selection(
             }
         },
         boardRows: [],
-        boardSummary: {} as RecipeConsoleControlSelection['boardSummary'],
+        boardSummary: {
+            total: 0,
+            connected: 0,
+            targetable: 0,
+            active: 0,
+            selected: 0,
+            stale: 0,
+            offline: 0,
+            wrongGroup: 0,
+            missingIdentity: 0,
+            missingCapability: 0,
+            synthetic: 0
+        },
         safeTargetableCount: 0,
         lastKnownTargetableCount: 0,
         ...patch

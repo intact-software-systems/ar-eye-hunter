@@ -1149,6 +1149,147 @@
       }
     },
     {
+      "name": "queueRoomTopologyRecovery",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/topology/recompute/requests/adminops-recompute-{runId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "groupRef": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}",
+            "groupId": "adminops-group-{runId}"
+          },
+          "publish": true
+        },
+        "outputs": {
+          "topologyOutboxId": "body.outboxId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}",
+            "groupId": "adminops-group-{runId}"
+          },
+          "requestId": "adminops-recompute-{runId}",
+          "outboxId": "string"
+        }
+      }
+    },
+    {
+      "name": "replayTheSameTopologyRecoveryReceipt",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/topology/recompute/requests/adminops-recompute-{runId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "groupRef": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}",
+            "groupId": "adminops-group-{runId}"
+          },
+          "publish": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}",
+            "groupId": "adminops-group-{runId}"
+          },
+          "requestId": "adminops-recompute-{runId}",
+          "outboxId": "{topologyOutboxId}"
+        }
+      }
+    },
+    {
+      "name": "rejectPlayerTopologyOutcomeInspection",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/groups/adminops-group-{runId}/topology-work/{topologyOutboxId}",
+        "headers": {
+          "Authorization": "{scopeAuthHeader}",
+          "x-client-id": "{scopeClientId}"
+        }
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "doNotExposeTopologyOutcomeInAnotherWorkspace",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}-other/groups/adminops-group-{runId}/topology-work/{topologyOutboxId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "unknown",
+          "attempts": null,
+          "settledAtEpochMs": null
+        }
+      }
+    },
+    {
+      "name": "observeCompletedTopologyWorkAfterItsQueuedReceipt",
+      "type": "http.poll-until",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/groups/adminops-group-{runId}/topology-work/{topologyOutboxId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "poll": {
+          "maxAttempts": 12,
+          "maxDurationMs": 10000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "roomRef": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}",
+            "groupId": "adminops-group-{runId}"
+          },
+          "outboxId": "{topologyOutboxId}",
+          "status": "completed",
+          "attempts": "integer",
+          "settledAtEpochMs": "integer"
+        }
+      }
+    },
+    {
       "name": "theStateReadSeesOnlyThePopulatedScope",
       "type": "http",
       "connection": "api",

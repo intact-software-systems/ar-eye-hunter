@@ -25,6 +25,7 @@ function createApp(input: {
     const app = new Hono();
     registerAdminRoomRoutes(app, {
         adminClientIds: ['admin'],
+        topologyWork: { read: () => Promise.reject(new Error('Topology work must not be read')) },
         requireApiAuthSession: input.requireSession,
         directory: input.directory ?? new ReadAdminRoomDirectory({
             repository: { findEntriesByPrefixPage: () => Promise.resolve([]) },

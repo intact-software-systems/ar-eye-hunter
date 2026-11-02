@@ -171,7 +171,9 @@ export class AuthenticatedResource<View, Request> {
         }
         catch (error) {
             if (this.current(attempt) && revision === this.revision) {
-                this.publish({ ...this.state, view: null, error: toError(error).message });
+                const failure = toError(error);
+                this.invalidateLostAuthority(failure);
+                this.publish({ ...this.state, view: null, error: failure.message });
             }
         }
     }
@@ -202,6 +204,7 @@ export class AuthenticatedResource<View, Request> {
         catch (caught) {
             if (this.current(attempt)) {
                 const error = toError(caught);
+                this.invalidateLostAuthority(error);
                 if (isDefinitiveApiMutationFailure(error)) {
                     this.pending = null;
                 }
@@ -214,6 +217,12 @@ export class AuthenticatedResource<View, Request> {
         }
         finally {
             this.finishOperation(attempt);
+        }
+    }
+
+    private invalidateLostAuthority(error: Error): void {
+        if (error instanceof ApiHttpError && (error.status === 401 || error.status === 403)) {
+            this.invalidate();
         }
     }
 

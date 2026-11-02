@@ -6,7 +6,6 @@ import {
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeAdminPruneCommand, type AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
-import { type AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
 import {
     createAdminPruneIdempotencyIdentity,
     type AdminPruneIdempotencyIdentity,
@@ -31,6 +30,7 @@ import {
     type AdminPruneExpiredCategory,
     type AdminPruneExpiredRequest
 } from '@shared/api/admin-operations-types.ts';
+import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';

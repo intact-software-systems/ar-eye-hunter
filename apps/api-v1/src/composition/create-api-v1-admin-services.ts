@@ -1,5 +1,7 @@
+import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import { ReadAdminRoomDirectory } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-directory.ts';
+import { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type {
     AdminSupportTopologyQuery,
     AdminSupportUseCases,
@@ -43,6 +45,7 @@ export interface CreateApiV1AdminServicesInput extends CreateApiV1AdminOperation
 
 export interface ApiV1AdminServices {
     readonly rooms: ReadAdminRoomDirectory;
+    readonly topologyWork: ReadAdminRoomTopologyWork;
     readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: SpaStatisticsUseCases;
@@ -54,6 +57,10 @@ export function createApiV1AdminServices(
     return {
         rooms: new ReadAdminRoomDirectory({
             repository: new PSqlRuntimeStateRepository(input.database),
+            nowEpochMs: input.nowEpochMs
+        }),
+        topologyWork: new ReadAdminRoomTopologyWork({
+            repository: new PSqlResourceInboxEntryReader(input.database, () => new Date(input.nowEpochMs())),
             nowEpochMs: input.nowEpochMs
         }),
         operations: createApiV1AdminOperationUseCases(input),

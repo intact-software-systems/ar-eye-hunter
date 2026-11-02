@@ -1,3 +1,4 @@
+import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
@@ -81,6 +82,7 @@ export interface ApiV1RouteInstallerTopology {
 
 export interface ApiV1RouteInstallerAdminServices {
     readonly rooms: Pick<ReadAdminRoomDirectory, 'read'>;
+    readonly topologyWork: Pick<ReadAdminRoomTopologyWork, 'read'>;
     readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
@@ -288,6 +290,7 @@ function registerApiV1AdministrationRoutes<
     });
     registerAdminRoomRoutes(app, {
         directory: input.admin.rooms,
+        topologyWork: input.admin.topologyWork,
         adminClientIds: input.topology.adminClientIds,
         requireApiAuthSession: requireSession
     });

@@ -25,6 +25,24 @@ browser Rallar runtime for auth, connect, room join, realtime send, browser
 WebSocket, and browser HTTP commands when a real Rallar environment is
 configured.
 
+## Room operations and recovery
+
+Use the real browser provider, sign in with an API administrator account, open **Advanced**, and
+expand **Room operations and recovery**. Enter an application and workspace, choose **Find rooms**,
+and inspect a valid row. Read the membership/presence, admission/retention and formation evidence
+before choosing **Recompute room topology**. Use **Refresh room evidence** to observe the exact
+work result; the console also refreshes while active. Completion does not prove gameplay recovery.
+If a response is lost, **Retry same request** recovers that command instead of creating another.
+
+**Global expired-record maintenance** applies to all applications and workspaces, regardless of the
+room selected. Choose stores, preview the expired/deleted counts, then confirm global scope before
+execution. The server captures a new cutoff for execution, so counts can change. This surface does
+not expose app-data deletion or invalid-record repair. API admin credentials are separate from
+control-server credentials, and endpoints supplied through links cannot receive operator credentials.
+
+The real-API clickable coverage is `tests/playwright/rallar-black-box/full-stack-room-operations.spec.ts`;
+it exercises both game scopes, lost-response recovery, authority revocation and ordinary-player refusal.
+
 ## Documents
 
 - [Deployment](./deployment.md): explicit API CORS configuration for the browser console.

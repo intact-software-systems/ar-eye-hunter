@@ -1,4 +1,4 @@
-import { AdminRoomInspection } from '@shared-web/browser/admin-rooms/admin-room-inspection.ts';
+import { AdminRoomOperations } from '@shared-web/browser/admin-rooms/admin-room-operations.ts';
 import { BrowserActivity } from '@shared-web/browser/browser-activity.ts';
 import type {
     AdminRoomDirectoryEntry,
@@ -10,6 +10,7 @@ import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalS
 import { RoomExplanation } from './room-explanation.tsx';
 import { RoomOperatorContext } from './room-operations-provider.tsx';
 import styles from './room-operations.module.css';
+import { RoomRecoveryControls } from './room-recovery-controls.tsx';
 
 interface RoomSelection {
     readonly scope: StateScope;
@@ -86,7 +87,7 @@ interface RoomInspectionProps {
 
 function RoomInspection({ context, selection, onSelect }: RoomInspectionProps) {
     const owner = useMemo(() =>
-        new AdminRoomInspection({
+        new AdminRoomOperations({
             auth: context.auth,
             activity: new BrowserActivity(),
             timers: createDefaultTimers(),
@@ -106,12 +107,25 @@ function RoomInspection({ context, selection, onSelect }: RoomInspectionProps) {
     return (
         <div className={styles.stack}>
             <button type="button" onClick={() => void owner.refresh()}>Refresh room evidence</button>
-            {state.error !== null && <p role="alert">Room inspection failed: {state.error}</p>}
+            {state.error !== null && <p role="alert">Room operation or inspection failed: {state.error}</p>}
+            {state.busy && <p role="status">Submitting the command; its outcome is not yet confirmed.</p>}
+            {state.retryPending && (
+                <div>
+                    <p>
+                        Outcome uncertain. Retry the same request to recover its result without creating another
+                        command.
+                    </p>
+                    <button type="button" disabled={state.busy} onClick={() => void owner.retry()}>
+                        Retry same request
+                    </button>
+                </div>
+            )}
             {state.view === null && state.error === null && <p role="status">Reading room evidence…</p>}
             {state.view !== null && (
                 <>
                     <RoomDirectory directory={state.view.directory} selection={selection} onSelect={onSelect} />
                     {state.view.explanation !== null && <RoomExplanation narrative={state.view.explanation} />}
+                    <RoomRecoveryControls owner={owner} state={state} selectedGroupId={selection.selectedGroupId} />
                 </>
             )}
         </div>
@@ -182,7 +196,11 @@ function RoomDirectoryEntry({ entry, selection, onSelect }: RoomDirectoryEntryPr
             <button
                 type="button"
                 aria-pressed={selection.selectedGroupId === entry.room.roomRef.groupId}
-                onClick={() => onSelect({ ...selection, selectedGroupId: entry.room.roomRef.groupId })}
+                onClick={() => {
+                    if (selection.selectedGroupId !== entry.room.roomRef.groupId) {
+                        onSelect({ ...selection, selectedGroupId: entry.room.roomRef.groupId });
+                    }
+                }}
             >
                 Inspect {entry.room.displayName}
             </button>

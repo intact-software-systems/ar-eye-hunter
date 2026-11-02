@@ -109,3 +109,19 @@
     color: var(--rc-muted);
     font-size: 12px;
 }
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+.panel p {
+    overflow-wrap: anywhere;
+}
+
+.panel button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}

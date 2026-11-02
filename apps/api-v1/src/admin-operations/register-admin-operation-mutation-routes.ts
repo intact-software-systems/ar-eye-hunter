@@ -1,18 +1,18 @@
 import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
-import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     CrdtAdminCompactResult,
     CrdtAdminEraseResult
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import type { TopologyReconfigureInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import {
     ADMIN_PRUNE_EXPIRED_CATEGORIES,
     type AdminPruneExpiredCategory,
     type AdminPruneExpiredRequest,
     type AdminTopologyRecomputeRequest
 } from '@shared/api/admin-operations-types.ts';
+import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
+import type { TopologyReconfigureInboxResult } from '@shared/api/admin-rooms/decode-topology-inbox-result.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     fromCanonicalGroupTopologyConfigPatch,

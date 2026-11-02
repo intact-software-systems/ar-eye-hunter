@@ -16,48 +16,36 @@ const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));
 const FleetWorkspace = lazy(() => import('../fleet/FleetWorkspace.tsx'));
 const AdvancedWorkspace = lazy(() => import('../advanced/advanced-workspace.tsx'));
 
-type TuneWorkInput = Readonly<{
-    query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>;
-    retained: Readonly<{
+interface TuneWorkInput {
+    readonly query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>;
+    readonly retained: Readonly<{
         status: 'idle' | 'pending' | 'ready' | 'error';
         model?: AnalyzeTuneArtifactFacade;
         error?: string;
     }>;
-    urlState: RecipeConsoleUrlState;
+    readonly urlState: RecipeConsoleUrlState;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     onCopyLink(): void;
-    retention: RecipeConsoleControlRetentionCapability | undefined;
+    readonly retention: RecipeConsoleControlRetentionCapability | undefined;
     replace(patch: Partial<RecipeConsoleUrlState>): void;
     refreshAfterCurrent(): Promise<void>;
     onInspect(trigger: HTMLButtonElement): void;
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;
-}>;
+}
 
-export function RecipeConsoleActiveWork({
-    advanced,
-    analyzeWork,
-    executeWork,
-    fleet,
-    monitorWork,
-    tune,
-    view
-}: Readonly<{
-    advanced: AdvancedWorkspaceProps;
-    analyzeWork: ReactNode;
-    executeWork: ReactNode;
-    fleet: FleetWorkspaceProps;
-    monitorWork: ReactNode;
-    tune: TuneWorkInput;
-    view: DiagnosticBridgeSourceView;
-}>) {
-    switch (view) {
+export type RecipeConsoleActiveWorkProps =
+    | { readonly view: 'execute' | 'monitor' | 'analyze'; readonly children: ReactNode; }
+    | { readonly view: 'advanced'; readonly advanced: AdvancedWorkspaceProps; }
+    | { readonly view: 'fleet'; readonly fleet: FleetWorkspaceProps; }
+    | { readonly view: 'tune'; readonly tune: TuneWorkInput; };
+
+export function RecipeConsoleActiveWork(props: RecipeConsoleActiveWorkProps) {
+    switch (props.view) {
         case 'execute':
-            return executeWork;
         case 'monitor':
-            return monitorWork;
         case 'analyze':
-            return analyzeWork;
+            return props.children;
         case 'tune':
             return (
                 <Suspense
@@ -67,7 +55,7 @@ export function RecipeConsoleActiveWork({
                         </StatePanel>
                     }
                 >
-                    <TuneWorkspace {...tune} />
+                    <TuneWorkspace {...props.tune} />
                 </Suspense>
             );
         case 'fleet':
@@ -79,7 +67,7 @@ export function RecipeConsoleActiveWork({
                         </StatePanel>
                     }
                 >
-                    <FleetWorkspace {...fleet} />
+                    <FleetWorkspace {...props.fleet} />
                 </Suspense>
             );
         case 'advanced':
@@ -87,11 +75,11 @@ export function RecipeConsoleActiveWork({
                 <Suspense
                     fallback={
                         <StatePanel kind="empty" title="Loading Advanced tools">
-                            <p>The bounded legacy-tool catalog is loading.</p>
+                            <p>The diagnostics and room operations workspace is loading.</p>
                         </StatePanel>
                     }
                 >
-                    <AdvancedWorkspace {...advanced} />
+                    <AdvancedWorkspace {...props.advanced} />
                 </Suspense>
             );
     }

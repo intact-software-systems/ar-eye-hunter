@@ -12,16 +12,16 @@ import type {
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarCrdtDebugBundle, RallarCrdtDocumentMetadata, RallarCrdtIntegrityReport } from '@shared/crdt/mod.ts';
 
+import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
+import type { TopologyReconfigureInboxResult } from '@shared/api/admin-rooms/decode-topology-inbox-result.ts';
 import type { CrdtAdminCompactResult, CrdtAdminEraseResult } from '../crdt/mutation/crdt-mutation-contracts.ts';
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
-import type { TopologyReconfigureInboxResult } from '../topology/inbox/topology-app-inbox-handler.ts';
 import type {
     AdminOperationMutationRequest,
     AdminOperationReadRequest,
     AdminOperationWriteRequest
 } from './admin-operation-request.ts';
 import type { ExportAdminCrdtDebug } from './export-admin-crdt-debug.ts';
-import type { AdminPruneEnqueueResult } from './inbox/admin-prune-inbox-codec.ts';
 import type { VerifyAdminCrdtIntegrity } from './verify-admin-crdt-integrity.ts';
 
 export interface AdminOperationUseCase<TInput, TResponse> {

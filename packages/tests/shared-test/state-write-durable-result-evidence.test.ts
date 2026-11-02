@@ -5,7 +5,6 @@ import {
 } from 'vitest';
 
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
-import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import type {
@@ -16,6 +15,7 @@ import type {
     AuthoritativeReceiptEvidence,
     PersistedCommandEvidence
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
+import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
 const commandId = 'topology-command-1';

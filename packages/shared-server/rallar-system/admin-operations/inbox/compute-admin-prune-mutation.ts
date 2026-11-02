@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
+import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     toPgTimestamp,
@@ -26,7 +27,6 @@ import {
     toAdminPruneAggregateEntry
 } from '../prune/admin-prune-progress.ts';
 import type { AdminPruneCommand } from './admin-prune-command-codec.ts';
-import type { AdminPruneEnqueueResult } from './admin-prune-inbox-codec.ts';
 import type { AdminPruneValidationIssue } from './admin-prune-inbox-validation.ts';
 import type { AdminPruneAuthority } from './app-admin-inbox-service.ts';
 
@@ -126,23 +126,7 @@ export function validateAdminPruneMutation(
             status: 400
         }))
     );
-    issues.push(
-        ...validateComputedProjection(
-            {
-                outboxWrites: expected.outboxWrites,
-                aggregateWrite: expected.aggregateWrite
-            },
-            {
-                outboxWrites: computed.outboxWrites,
-                aggregateWrite: computed.aggregateWrite
-            },
-            'computed.persistence'
-        ).map((issue) => ({
-            code: 'admin-prune-computed-persistence-invalid',
-            message: issue.message,
-            status: 400
-        }))
-    );
+    issues.push(...validatePrunePersistence(expected, computed));
     issues.push(
         ...validateAppInboxCompletion(
             {
@@ -158,6 +142,17 @@ export function validateAdminPruneMutation(
         }))
     );
     return issues;
+}
+
+function validatePrunePersistence(
+    expected: AdminPruneComputed,
+    computed: AdminPruneComputed
+): readonly AdminPruneValidationIssue[] {
+    return validateComputedProjection(
+        { outboxWrites: expected.outboxWrites, aggregateWrite: expected.aggregateWrite },
+        { outboxWrites: computed.outboxWrites, aggregateWrite: computed.aggregateWrite },
+        'computed.persistence'
+    ).map((issue) => ({ code: 'admin-prune-computed-persistence-invalid', message: issue.message, status: 400 }));
 }
 
 function computeInitialAdminPrunePages(

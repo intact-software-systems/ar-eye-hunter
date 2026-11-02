@@ -3531,6 +3531,56 @@ paths:
           headers:
             x-request-id:
               $ref: '#/components/headers/XRequestId'
+  /api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-work/{outboxId}:
+    get:
+      tags: [Admin Operations]
+      summary: Observe the retained outcome of one room topology work receipt
+      description: >-
+        Requires current platform admin authorization. Reads the exact retained work for the room and
+        outboxId returned by topology recompute. Pending acceptance is not completion. Completed work
+        does not prove client delivery, formation or gameplay recovery. Unknown means that retained
+        evidence is absent or expired; it does not prove that the command failed or never ran.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - in: path
+          name: groupId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+        - in: path
+          name: outboxId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: A private, uncacheable observation of retained topology work.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema: { type: string, enum: ['private, no-store'] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoomTopologyWorkResponse'
+        '400':
+          description: Invalid room scope or receipt identity.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Inspection unavailable; no internal work payload is returned.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
   /api/admin/operations/state:
     get:
       parameters:
@@ -5839,6 +5889,19 @@ components:
           type: string
           pattern: '^[A-Za-z0-9_-]{1,128}$'
           description: The trace of the message's latest receipt fact.
+
+    AdminRoomTopologyWorkResponse:
+      type: object
+      additionalProperties: false
+      required: [roomRef, outboxId, observedAtEpochMs, status, attempts, settledAtEpochMs]
+      properties:
+        roomRef:
+          $ref: '#/components/schemas/GroupRef'
+        outboxId: { type: string, minLength: 1, maxLength: 256 }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        status: { type: string, enum: [unknown, pending, completed, failed] }
+        attempts: { type: integer, minimum: 0, nullable: true }
+        settledAtEpochMs: { type: integer, minimum: 0, nullable: true }
 
     AdminRoomDirectoryResponse:
       type: object

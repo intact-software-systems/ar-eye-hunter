@@ -232,6 +232,22 @@ Shared packages are the reusable surface. Apps are consumers.
   `packages/shared/alm/inbound/README.md` and
   `packages/shared/alm/outbound/README.md`.
 
+## Operating and recovering rooms
+
+The Black Box Recipe Console's Advanced view provides **Room operations and recovery** for
+API administrators. Find rooms within one application/workspace, inspect membership versus live
+presence and admission/retention facts, then request a topology recompute and observe its exact
+retained work outcome. Private and archived rooms are visible to operators without changing
+ordinary discovery or player admission. Invalid diagnostic rows are redacted and cannot be selected;
+unavailable evidence, including gameplay participation, remains unknown.
+
+A queued receipt is acceptance, not completion. The console rereads room evidence after observing
+work completion and does not claim that gameplay or connectivity recovered. An uncertain command
+can be retried with the same request identity. Global expired-record maintenance is separately
+labelled, requires preview followed by explicit execution, and affects all applications/workspaces
+for the selected stores. API authentication is independent of control-server tokens. Logout, lost
+authority, account replacement and room/scope changes discard the previous private view and work.
+
 ## Where to go next
 
 - Build something small: `docs/rallar-quickstart-and-recipes.md` and

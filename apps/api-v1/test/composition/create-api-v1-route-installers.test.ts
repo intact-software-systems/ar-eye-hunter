@@ -217,6 +217,7 @@ function createAuthRuntime(): Pick<ApiV1RouteInstallerRuntime, 'authSessionRepos
 function createAdmin(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology>['admin'] {
     return {
         rooms: { read: rejectUnusedOperation },
+        topologyWork: { read: rejectUnusedOperation },
         operations: {
             overview: { execute: rejectUnusedOperation },
             queues: { execute: rejectUnusedOperation },
