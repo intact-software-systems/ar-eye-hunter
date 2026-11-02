@@ -126,3 +126,7 @@ function decodeFinishedDestination(
     }
     return { roomRef: { ...scope, groupId: room.groupId }, leaderPrincipalId: search.leaderPrincipalId };
 }
+
+export const MATCHMAKING_POOLS_NAMESPACE = 'matchmaking:pools';
+export const MATCHMAKING_FINISHED_NAMESPACE = 'matchmaking:finished';
+export const MATCHMAKING_ACCOUNTS_NAMESPACE = 'matchmaking:accounts';

@@ -1,5 +1,5 @@
+import { computeMatchmakingStorage } from '@shared-server/rallar-system/matchmaking/compute-matchmaking-storage.ts';
 import { computeMatchmaking } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
-import { computeMatchmakingStorage } from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
 import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';

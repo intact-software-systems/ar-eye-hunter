@@ -21,13 +21,13 @@ import {
     validateMatchmakingMutation,
     writeMatchmakingMutation
 } from './compute-matchmaking-mutation.ts';
+import { computeMatchmakingStorage } from './compute-matchmaking-storage.ts';
 import { computeMatchmaking } from './compute-matchmaking.ts';
 import { readMatchmakingAdmission } from './matchmaking-admission.ts';
 import { decodeMatchmakingCommand, decodeMatchmakingResult, type MatchmakingCommand } from './matchmaking-command.ts';
 import { decodeMatchmakingDeadline, type MatchmakingDeadline } from './matchmaking-deadline.ts';
 import { readMatchmakingPartyAuthority, type MatchmakingPartyAuthority } from './matchmaking-party-authority.ts';
 import type { MatchmakingFinished, MatchmakingProposal } from './matchmaking-pool.ts';
-import { computeMatchmakingStorage } from './matchmaking-repository.ts';
 import type { MatchmakingRepository } from './matchmaking-repository.ts';
 
 export namespace MatchmakingService {

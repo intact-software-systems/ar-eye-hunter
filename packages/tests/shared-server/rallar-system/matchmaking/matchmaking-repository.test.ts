@@ -3,11 +3,9 @@ import { PartyRepository } from '@shared-server/rallar-system/parties/persistenc
 import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { describe, expect, it } from 'vitest';
 
+import { computeMatchmakingStorage } from '@shared-server/rallar-system/matchmaking/compute-matchmaking-storage.ts';
 import { computeMatchmaking, computeMatchmakingInvalidation } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
-import {
-    computeMatchmakingStorage,
-    MatchmakingRepository
-} from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
+import { MatchmakingRepository } from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';

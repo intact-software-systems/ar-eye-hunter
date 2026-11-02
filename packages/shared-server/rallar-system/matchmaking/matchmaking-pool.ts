@@ -82,3 +82,27 @@ export interface MatchmakingInvalidationInput {
     readonly nowEpochMs: number;
     readonly principalIds: readonly string[];
 }
+
+export function finishMatchmakingSearch(
+    search: MatchmakingSearch,
+    reason: MatchmakingFinished['reason'],
+    now: number
+): MatchmakingFinished {
+    return {
+        searchId: search.searchId,
+        principalId: search.principalId,
+        sessionId: search.sessionId,
+        sessionIssuedAtEpochMs: search.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: search.sessionExpiresAtEpochMs,
+        createdAtEpochMs: search.createdAtEpochMs,
+        expiresAtEpochMs: search.expiresAtEpochMs,
+        completedAtEpochMs: now,
+        reason,
+        roomRef: null,
+        leaderPrincipalId: null
+    };
+}
+
+export function activeMatchmakingSearches(pool: MatchmakingPool): readonly MatchmakingSearch[] {
+    return [...pool.searching, ...pool.proposals.flatMap((proposal) => proposal.participants)];
+}

@@ -19,6 +19,7 @@ import {
 import { computeNewGroupCohortAdmission } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { writeGroupMutation } from '../group-state/mutation/write/write-group-mutation.ts';
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
+import { computeMatchmakingStorage } from './compute-matchmaking-storage.ts';
 import { computeMatchmaking } from './compute-matchmaking.ts';
 import { computeMatchmakingDeadlines } from './matchmaking-deadline.ts';
 import {
@@ -27,9 +28,6 @@ import {
     computeMatchmakingPartyStart
 } from './matchmaking-party-authority.ts';
 import type { MatchmakingActor, MatchmakingTransition } from './matchmaking-pool.ts';
-import {
-    computeMatchmakingStorage
-} from './matchmaking-repository.ts';
 import type { MatchmakingService } from './matchmaking-service.ts';
 
 export interface MatchmakingMutation {

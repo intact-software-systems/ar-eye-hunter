@@ -9,8 +9,8 @@ import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-sto
 import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '../client-state/persistence/client-state-runtime-namespaces.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../computed-data-validation.ts';
 import { FRIENDS_PROFILE_NAMESPACE } from '../friends/friends-profile.ts';
+import { computeMatchmakingStorage } from '../matchmaking/compute-matchmaking-storage.ts';
 import { computeMatchmakingInvalidation } from '../matchmaking/compute-matchmaking.ts';
-import { computeMatchmakingStorage } from '../matchmaking/matchmaking-repository.ts';
 import { computePartyRoster } from './compute-party-roster.ts';
 import type { PartyService } from './party-service.ts';
 import { computePartyStorage } from './persistence/compute-party-storage.ts';
