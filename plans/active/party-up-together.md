@@ -23,10 +23,9 @@ Selected: a durable party composing the existing friends, matchmaking, room entr
 and rematch capabilities. Repeated ad-hoc room invitations would not retain the group. A tournament
 is a separate outcome requiring results and advancement, and is outside this delivery.
 
-The defaults below are implementation proposals for the approved outcome, not additional user
-rulings. Party search fills remaining seats from the public queue by the stated recommended assumption;
-a full party proceeds directly to confirmation. The maintainer can still steer this policy before
-its implementation. Roster implementation is independent of that choice.
+The maintainer approved keeping each party indivisible and filling remaining seats from the public
+queue. A full party proceeds directly to everyone's confirmation. Other defaults below are
+implementation proposals for the approved outcome, not additional user rulings.
 
 ## Behavior and authority
 
@@ -35,13 +34,16 @@ its implementation. Roster implementation is independent of that choice.
 - The leader invites existing mutual friends. Recipients accept or decline explicitly; duplicate
   invitation retries do not duplicate membership. Invitations expire after ten minutes by default.
   A blocked or no-longer-mutual contact cannot send or accept an invitation. Never disclose a
-  private roster to an outsider merely because they know a party ID.
+  private roster to an outsider merely because they know a party ID. Invitation lookup slots carry
+  their exact expiry. Writes reclaim expired slots while old party records may still retain the
+  expired invitation; complete decoding precedes expiry filtering and reads never repair storage.
 - Membership persists across reload, disconnect and game completion until explicit departure or
   disbanding. The last departure closes the party and cancels outstanding invitations. Party
   records are not room-owned saves and are not deleted when a previous game room is deleted.
 - Present/away reflects existing scoped client presence. Accepting a party makes that scoped
   presence visible to its members; it does not enable account-wide friends online sharing or reveal
-  a personal room. Multiple tabs count as one member.
+  a personal room. Multiple tabs count as one member. Creating or accepting a party requires live scoped client
+  presence; that durable principal also fences later leadership recovery against concurrent reconnects.
 - Leadership can be transferred to a member. Explicit leader departure transfers to the earliest
   joined remaining member, with ordinal account ID as tie-breaker. A temporary disconnect retains
   membership and leadership; a present member can explicitly take leadership only after the
