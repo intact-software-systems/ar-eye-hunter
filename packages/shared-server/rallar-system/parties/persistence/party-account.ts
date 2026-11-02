@@ -1,5 +1,5 @@
 import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
-import { decodePartyInvitationId } from '@shared/api/parties/party-request.ts';
+import { decodePartyInvitationId } from '@shared/api/parties/party.ts';
 import type { PartyRef } from '@shared/api/parties/party.ts';
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';

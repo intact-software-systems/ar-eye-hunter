@@ -1,4 +1,5 @@
 import { isSameGroupScope } from '../api-type-utils.ts';
+import { decodeStateScope } from '../decode-state-scope.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -9,7 +10,6 @@ import {
 import type { GroupRef } from '../group-types.ts';
 import { assertValidRallarGroupRef, assertValidRallarRouteId } from '../rallar-validation.ts';
 import type { StateScope } from '../state-types.ts';
-import { decodeMatchmakingScope } from './matchmaking-request.ts';
 
 export type MatchmakingEndedReason =
     | 'search-timeout'
@@ -46,7 +46,7 @@ export interface MatchmakingSnapshot {
 export function decodeMatchmakingSnapshot(value: unknown): MatchmakingSnapshot {
     const snapshot = requireRecord(value, 'Matchmaking snapshot');
     requireExactKeys(snapshot, ['scope', 'principalId', 'observedAtEpochMs', 'state'], 'Matchmaking snapshot');
-    const scope = decodeMatchmakingScope(snapshot.scope);
+    const scope = decodeStateScope(snapshot.scope);
     requireString(snapshot.principalId, 'Matchmaking account');
     requireEpoch(snapshot.observedAtEpochMs, 'Matchmaking observation time');
     const state = decodeState(snapshot.state);

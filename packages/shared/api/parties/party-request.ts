@@ -6,6 +6,7 @@ import {
     requireString
 } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
+import { decodePartyInvitationId } from './party.ts';
 import type { PartyPolicy, PartyRef, PartyRefusal, PartyRosterIntent } from './party.ts';
 
 export interface PartyRequest {
@@ -83,14 +84,6 @@ function decodePartyRosterIntent(value: unknown): PartyRosterIntent {
             requireExactKeys(intent, ['action'], 'Party roster action');
             return { action };
     }
-}
-
-export function decodePartyInvitationId(value: unknown): string {
-    const identity = assertValidRallarRouteId(value, '$', 'Party invitation identity');
-    if (identity.length > 128) {
-        throw new TypeError('Party invitation identity is too long');
-    }
-    return identity;
 }
 
 export function decodePartyPolicy(value: unknown): PartyPolicy {

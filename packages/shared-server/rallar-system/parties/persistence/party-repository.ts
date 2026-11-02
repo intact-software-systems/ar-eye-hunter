@@ -22,6 +22,12 @@ export namespace PartyRepository {
         readonly entry: RuntimeStateEntry | null;
         readonly account: PartyAccount;
     }
+    export interface Current {
+        readonly account: PartyAccount;
+        readonly party: PartyRecord | null;
+        readonly invitedParties: readonly PartyRecord[];
+        readonly observedAtEpochMs: number;
+    }
     export interface Read {
         readonly ref: PartyRef;
         readonly observedAtEpochMs: number;
@@ -79,6 +85,66 @@ export class PartyRepository {
         const observedAtEpochMs = this.nowEpochMs();
         assertPartyAccountLinks(current.record, accounts, observedAtEpochMs);
         return { ref, ...current, accounts, observedAtEpochMs };
+    }
+
+    async readCurrent(scope: StateScope, principalId: string): Promise<PartyRepository.Current> {
+        const initial = await this.readAccount(scope, principalId);
+        const partyIds = [
+            ...new Set([
+                ...(initial.account.partyId === null ? [] : [initial.account.partyId]),
+                ...initial.account.invitations.map((invitation) => invitation.partyId)
+            ])
+        ];
+        const selectors: RuntimeStateReadBatchSelector[] = [
+            {
+                selectorId: 'account',
+                kind: 'key',
+                namespace: PARTY_ACCOUNTS_NAMESPACE,
+                key: partyAccountKey(scope, principalId)
+            },
+            ...partyIds.map((partyId, index): RuntimeStateReadBatchSelector => ({
+                selectorId: `party:${index}`,
+                kind: 'key',
+                namespace: PARTY_RECORDS_NAMESPACE,
+                key: partyRecordKey({ ...scope, partyId })
+            }))
+        ];
+        const selections = assertRuntimeStateReadBatchResult(
+            selectors,
+            await this.runtime.readRuntimeStateBatch(selectors)
+        );
+        const current = decodePartyAccountEntry(selections[0].entries[0], scope, principalId);
+        if (initial.entry?.revision !== current.entry?.revision || initial.entry?.value !== current.entry?.value) {
+            throw new RuntimeStateWriteConflictError();
+        }
+        const records = partyIds.map((partyId, index) =>
+            decodeStoredParty(selections[index + 1].entries[0], { ...scope, partyId }).record
+        );
+        const party = records.find((record) => record?.ref.partyId === current.account.partyId) ?? null;
+        if (
+            current.account.partyId !== null &&
+            (party?.status !== 'active' || !party.members.some((member) => member.principalId === principalId))
+        ) {
+            throw new TypeError('Party account lost its exact membership');
+        }
+        const observedAtEpochMs = this.nowEpochMs();
+        const invitedParties = current.account.invitations.filter((invitation) =>
+            invitation.expiresAtEpochMs > observedAtEpochMs
+        )
+            .map((invitation) => {
+                const record = records.find((record) => record?.ref.partyId === invitation.partyId);
+                if (
+                    record?.status !== 'active' ||
+                    !record.invitations.some((stored) =>
+                        stored.invitationId === invitation.invitationId && stored.principalId === principalId &&
+                        stored.expiresAtEpochMs === invitation.expiresAtEpochMs
+                    )
+                ) {
+                    throw new TypeError('Party account lost its exact live invitation');
+                }
+                return record;
+            });
+        return { account: current.account, party, invitedParties, observedAtEpochMs };
     }
 
     async readAccount(scope: StateScope, principalId: string): Promise<PartyRepository.AccountRead> {

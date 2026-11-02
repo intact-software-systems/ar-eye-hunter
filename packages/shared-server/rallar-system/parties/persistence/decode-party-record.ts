@@ -5,8 +5,9 @@ import {
     requireRecord,
     requireString
 } from '@shared/api/exact-object-decoding.ts';
-import { decodePartyInvitationId, decodePartyRef } from '@shared/api/parties/party-request.ts';
-import type { PartyInvitation, PartyMember, PartyRef } from '@shared/api/parties/party.ts';
+import { decodePartyRef } from '@shared/api/parties/party-request.ts';
+import { decodePartyInvitation, decodePartyMember } from '@shared/api/parties/party.ts';
+import type { PartyRef } from '@shared/api/parties/party.ts';
 
 import type { PartyRecord } from './party-record.ts';
 
@@ -53,37 +54,6 @@ export function decodePartyRecord(value: unknown, expected: PartyRef): PartyReco
     return decoded;
 }
 
-function decodePartyMember(value: unknown): PartyMember {
-    const member = requireRecord(value, 'Party member');
-    requireExactKeys(member, ['principalId', 'joinedAtEpochMs'], 'Party member');
-    requireString(member.principalId, 'Party member principal');
-    requireEpoch(member.joinedAtEpochMs, 'Party membership time');
-    return { principalId: member.principalId, joinedAtEpochMs: member.joinedAtEpochMs };
-}
-
-function decodePartyInvitation(value: unknown): PartyInvitation {
-    const invitation = requireRecord(value, 'Party invitation');
-    requireExactKeys(invitation, [
-        'invitationId',
-        'senderPrincipalId',
-        'principalId',
-        'createdAtEpochMs',
-        'expiresAtEpochMs'
-    ], 'Party invitation');
-    const invitationId = decodePartyInvitationId(invitation.invitationId);
-    requireString(invitation.senderPrincipalId, 'Party invitation sender');
-    requireString(invitation.principalId, 'Party invitation recipient');
-    requireEpoch(invitation.createdAtEpochMs, 'Party invitation creation');
-    requireEpoch(invitation.expiresAtEpochMs, 'Party invitation expiry');
-    return {
-        invitationId,
-        senderPrincipalId: invitation.senderPrincipalId,
-        principalId: invitation.principalId,
-        createdAtEpochMs: invitation.createdAtEpochMs,
-        expiresAtEpochMs: invitation.expiresAtEpochMs
-    };
-}
-
 function assertPartyRoster(record: PartyRecord): void {
     const { members, leaderPrincipalId, status } = record;
     if (status === 'closed') {
@@ -119,8 +89,7 @@ function assertPartyInvitations(record: PartyRecord): void {
         if (
             !memberIds.has(invitation.senderPrincipalId) || memberIds.has(invitation.principalId) ||
             recipients.has(invitation.principalId) || (previous !== null && invitation.invitationId <= previous) ||
-            invitation.createdAtEpochMs < record.createdAtEpochMs ||
-            invitation.expiresAtEpochMs <= invitation.createdAtEpochMs
+            invitation.createdAtEpochMs < record.createdAtEpochMs
         ) {
             throw new TypeError('Party invitation identity, consent or lifetime is invalid');
         }

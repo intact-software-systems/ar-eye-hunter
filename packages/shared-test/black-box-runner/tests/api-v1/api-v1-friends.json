@@ -32,7 +32,7 @@
       "timeoutMs": 10000
     }
   },
-  "description": "Private account-level friendships: exact consent, replay, conflicting keys, blocked invitation revocation, scoped destination authority and default-hidden presence. Registers isolated accounts for this run.",
+  "description": "Private friendships and scoped parties: explicit consent, present membership, party invitation privacy and replay, whole-party matchmaking with every confirmation, retained room membership after party leave, and blocked friend invitation revocation.",
   "postRunAssertions": [
     {
       "name": "no failed steps",
@@ -74,7 +74,8 @@
           "aliceAccessToken": {
             "path": "body.accessToken",
             "secret": true
-          }
+          },
+          "aliceSessionId": "body.sessionId"
         }
       },
       "expect": {
@@ -129,7 +130,8 @@
           "bobAccessToken": {
             "path": "body.accessToken",
             "secret": true
-          }
+          },
+          "bobSessionId": "body.sessionId"
         }
       },
       "expect": {
@@ -399,6 +401,792 @@
             }
           ],
           "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyRequiresAuthentication",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "partyInitiallyEmpty",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{aliceClientId}",
+          "party": null,
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyRequiresPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyRequiresPresence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": null,
+          "intent": {
+            "action": "create"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "refused",
+          "code": "member-away"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyPrincipalalice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/party-principal-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "username": "friends-alice-{runId}",
+          "displayName": "alice",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyInstancealice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/party-alice-{runId}/requests/party-instance-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "status": "active",
+          "platform": "server",
+          "deviceLabel": "Party API recipe"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyPresencealice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/instances/party-alice-{runId}/sessions/{aliceSessionId}/requests/party-presence-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "party-generation-alice-{runId}",
+          "presenceState": "online",
+          "transport": "http"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyPrincipalbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/principal/requests/party-principal-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "username": "friends-bob-{runId}",
+          "displayName": "bob",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyInstancebob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/instances/party-bob-{runId}/requests/party-instance-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active",
+          "platform": "server",
+          "deviceLabel": "Party API recipe"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyPresencebob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}/instances/party-bob-{runId}/sessions/{bobSessionId}/requests/party-presence-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "party-generation-bob-{runId}",
+          "presenceState": "online",
+          "transport": "http"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "partyCreate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyCreate-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": null,
+          "intent": {
+            "action": "create"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyCreateReplay",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyCreate-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": null,
+          "intent": {
+            "action": "create"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyInviteBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyInviteBob-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": 0,
+          "intent": {
+            "action": "invite",
+            "principalId": "{bobClientId}",
+            "invitationId": "party-invite-bob-{runId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyInvitationIsPrivate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "party": null,
+          "invitations": [
+            {
+              "ref": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "partyId": "friends-party-{runId}"
+              },
+              "invitationId": "party-invite-bob-{runId}",
+              "principalId": "{bobClientId}",
+              "senderPrincipalId": "{aliceClientId}"
+            }
+          ]
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyAcceptBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyAcceptBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": null,
+          "intent": {
+            "action": "accept",
+            "invitationId": "party-invite-bob-{runId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyMembership",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "maxMembers": 2,
+          "party": {
+            "ref": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "partyId": "friends-party-{runId}"
+            },
+            "leaderPrincipalId": "{aliceClientId}",
+            "rosterRevision": 1,
+            "invitations": []
+          },
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyRosterHasBothAccounts",
+      "type": "assert",
+      "actual": {
+        "body": "{resultsByName.partyMembership.0.actual.body}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "body.party.members",
+            "length": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "partyNonLeaderCannotSearch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/party-nonleader-search-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "start-party",
+          "searchId": "party-search-{runId}",
+          "partyId": "friends-party-{runId}",
+          "rosterRevision": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "refused",
+          "code": "party-leader-required"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partySearch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/party-start-search-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "start-party",
+          "searchId": "party-search-{runId}",
+          "partyId": "friends-party-{runId}",
+          "rosterRevision": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyFullImmediatelyConfirms",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "partyBobSearchId": "body.state.searchId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "confirming",
+            "leaderPrincipalId": "{aliceClientId}"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyConfirmAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/party-confirm-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "action": "confirm",
+          "searchId": "party-search-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyStillNeedsBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "confirming"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyConfirmBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}/requests/party-confirm-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "action": "confirm",
+          "searchId": "{partyBobSearchId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyMatchedAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "partyMatchedRoomId": "body.state.roomRef.groupId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "matched"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyMatchedBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "state": {
+            "status": "matched",
+            "roomRef": {
+              "groupId": "{partyMatchedRoomId}"
+            }
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partySharedRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2,
+            "maxMembers": 2
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyLeaveBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyLeaveBob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": 1,
+          "intent": {
+            "action": "leave"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyFormerMemberHasNoRoster",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "party": null,
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyDisband",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyDisband-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": 2,
+          "intent": {
+            "action": "disband"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyReplayDoesNotRecreate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/party-command-partyCreate-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "ref": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "partyId": "friends-party-{runId}"
+          },
+          "expectedRosterRevision": null,
+          "intent": {
+            "action": "create"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyRemainsClosed",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/parties/apps/{applicationId}/workspaces/{workspaceId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "party": null,
+          "invitations": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "partyRoomMembershipSurvives",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{partyMatchedRoomId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 2,
+            "maxMembers": 2
+          }
         },
         "comparison": "compatible-complete"
       }

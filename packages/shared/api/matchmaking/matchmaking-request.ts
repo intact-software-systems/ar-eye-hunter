@@ -1,3 +1,4 @@
+import { decodeStateScope } from '../decode-state-scope.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -57,21 +58,10 @@ export function decodeMatchmakingRequest(value: unknown): MatchmakingRequest {
     };
 }
 
-export function decodeMatchmakingScope(value: unknown): StateScope {
-    const scope = requireRecord(value, 'Matchmaking scope');
-    requireExactKeys(scope, ['applicationId', 'workspaceId'], 'Matchmaking scope');
-    requireString(scope.applicationId, 'Matchmaking application');
-    requireString(scope.workspaceId, 'Matchmaking workspace');
-    return {
-        applicationId: assertValidRallarRouteId(scope.applicationId),
-        workspaceId: assertValidRallarRouteId(scope.workspaceId)
-    };
-}
-
 export function decodeMatchmakingMutationResult(value: unknown): MatchmakingMutationResult {
     const result = requireRecord(value, 'Matchmaking result');
     requireExactKeys(result, ['scope', 'principalId', 'requestId', 'status', 'searchId', 'code'], 'Matchmaking result');
-    const scope = decodeMatchmakingScope(result.scope);
+    const scope = decodeStateScope(result.scope);
     requireString(result.principalId, 'Matchmaking result account');
     requireString(result.requestId, 'Matchmaking result request');
     if (result.searchId !== null) {

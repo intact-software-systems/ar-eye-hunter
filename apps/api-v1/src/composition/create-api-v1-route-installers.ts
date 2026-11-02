@@ -6,6 +6,7 @@ import {
     registerMatchmakingRoutes,
     type MatchmakingRouteDependencies
 } from '../matchmaking/register-matchmaking-routes.ts';
+import { registerPartyRoutes, type PartyRouteDependencies } from '../parties/register-party-routes.ts';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -93,6 +94,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly crdtMutations: CrdtAdminMutations;
     readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
     readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: configRoutes.ConfigRouteDependencies['authentication'];
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
@@ -160,6 +162,7 @@ export function constructApiV1RouteInstallers<
         registerApiV1StateRoutes(app, construction);
         registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
         registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
+        registerPartyRoutes(app, { ...input.parties, requireSession: construction.requireSession });
         registerApiV1AdministrationRoutes(app, construction);
     }
     return {

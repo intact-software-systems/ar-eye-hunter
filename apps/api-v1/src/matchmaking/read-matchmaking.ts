@@ -1,4 +1,4 @@
-import { decodeMatchmakingScope } from '@shared/api/matchmaking/matchmaking-request.ts';
+import { decodeStateScope } from '@shared/api/decode-state-scope.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { Context } from 'jsr:@hono/hono@4.11.9';
 import { toApiMutationFailureResponse } from '../routes/api-mutation-route-failure.ts';
@@ -7,7 +7,7 @@ import type { MatchmakingRouteDependencies } from './register-matchmaking-routes
 export async function readMatchmaking(context: Context, dependencies: MatchmakingRouteDependencies): Promise<Response> {
     try {
         const session = await dependencies.requireSession(context.req);
-        const scope = decodeMatchmakingScope({
+        const scope = decodeStateScope({
             applicationId: context.req.param('applicationId'),
             workspaceId: context.req.param('workspaceId')
         });

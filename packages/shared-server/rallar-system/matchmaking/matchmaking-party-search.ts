@@ -1,5 +1,5 @@
+import { decodeStateScope } from '@shared/api/decode-state-scope.ts';
 import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
-import { decodeMatchmakingScope } from '@shared/api/matchmaking/matchmaking-request.ts';
 import { decodePartyRef } from '@shared/api/parties/party-request.ts';
 import type { PartyRef } from '@shared/api/parties/party.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -101,7 +101,7 @@ export function decodeMatchmakingPartyEntry(
     }
     const record = requireRecord(JSON.parse(entry.value), 'Matchmaking party storage');
     requireExactKeys(record, ['scope', 'parties'], 'Matchmaking party storage');
-    const scope = decodeMatchmakingScope(record.scope);
+    const scope = decodeStateScope(record.scope);
     if (scope.applicationId !== pool.scope.applicationId || scope.workspaceId !== pool.scope.workspaceId) {
         throw new TypeError('Matchmaking party storage scope differs');
     }

@@ -24,6 +24,7 @@ servers:
 
 tags:
   - name: Matchmaking
+  - name: Parties
   - name: Config
   - name: Auth
   - name: WebRTC
@@ -37,6 +38,91 @@ tags:
   - name: Docs
 
 paths:
+  /api/parties/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags:
+        - Parties
+      summary: Recover this account’s scoped party and received invitations
+      description: >-
+        Members see their own roster and present/away status. Invitees see only their invitation until
+        acceptance. Scope and account are authenticated; query parameters cannot select another account. Reads
+        validate persisted identities without repairing or deleting expired data.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Private account-scoped result.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyView'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/parties/apps/{applicationId}/workspaces/{workspaceId}/requests/{requestId}:
+    post:
+      tags:
+        - Parties
+      summary: Create or change a party through idempotent AppInbox
+      description: >-
+        The body reference must match the HTTP scope. Creation, acceptance and decline use null
+        expectedRosterRevision; other actions require the observed roster revision. Invitations require mutual
+        friendship. Capacity follows the game matchmaking policy. Roster changes cancel pending matchmaking
+        cohorts atomically. Party leadership never grants game authority; leaving a party preserves room
+        membership.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+      responses:
+        '200':
+          description: Private account-scoped result.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyMutationResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}:
     get:
       tags: [Matchmaking]
@@ -4291,6 +4377,318 @@ components:
             $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   schemas:
+    PartyRef:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - workspaceId
+        - partyId
+      properties:
+        applicationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+        workspaceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+        partyId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+    PartyInvitation:
+      type: object
+      additionalProperties: false
+      required:
+        - invitationId
+        - senderPrincipalId
+        - principalId
+        - createdAtEpochMs
+        - expiresAtEpochMs
+      properties:
+        invitationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+        senderPrincipalId:
+          type: string
+          minLength: 1
+        principalId:
+          type: string
+          minLength: 1
+        createdAtEpochMs:
+          type: integer
+          minimum: 0
+        expiresAtEpochMs:
+          type: integer
+          minimum: 0
+    PartyReceivedInvitation:
+      type: object
+      additionalProperties: false
+      required:
+        - ref
+        - invitationId
+        - senderPrincipalId
+        - principalId
+        - createdAtEpochMs
+        - expiresAtEpochMs
+      properties:
+        ref:
+          $ref: '#/components/schemas/PartyRef'
+        invitationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+        senderPrincipalId:
+          type: string
+          minLength: 1
+        principalId:
+          type: string
+          minLength: 1
+        createdAtEpochMs:
+          type: integer
+          minimum: 0
+        expiresAtEpochMs:
+          type: integer
+          minimum: 0
+    PartyMemberView:
+      type: object
+      additionalProperties: false
+      required:
+        - principalId
+        - joinedAtEpochMs
+        - displayName
+        - presence
+      properties:
+        principalId:
+          type: string
+          minLength: 1
+        joinedAtEpochMs:
+          type: integer
+          minimum: 0
+        displayName:
+          type: string
+          minLength: 1
+        presence:
+          type: string
+          enum:
+            - present
+            - away
+    PartyRosterView:
+      type: object
+      additionalProperties: false
+      required:
+        - ref
+        - rosterRevision
+        - leaderPrincipalId
+        - members
+        - invitations
+      properties:
+        ref:
+          $ref: '#/components/schemas/PartyRef'
+        rosterRevision:
+          type: integer
+          minimum: 0
+        leaderPrincipalId:
+          type: string
+          minLength: 1
+        members:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/PartyMemberView'
+        invitations:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/PartyInvitation'
+          description: Outgoing invitations are visible only to the current party leader.
+    PartyView:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - principalId
+        - observedAtEpochMs
+        - maxMembers
+        - party
+        - invitations
+      properties:
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        principalId:
+          type: string
+          minLength: 1
+        observedAtEpochMs:
+          type: integer
+          minimum: 0
+        maxMembers:
+          type: integer
+          minimum: 2
+          maximum: 16
+        party:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/PartyRosterView'
+        invitations:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/PartyReceivedInvitation'
+          description: Only invitations addressed to this authenticated account; invited party rosters are never included.
+    PartyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - ref
+        - expectedRosterRevision
+        - intent
+      properties:
+        ref:
+          $ref: '#/components/schemas/PartyRef'
+        expectedRosterRevision:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        intent:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - create
+                    - leave
+                    - disband
+                    - take-leadership
+            - type: object
+              additionalProperties: false
+              required:
+                - action
+                - principalId
+                - invitationId
+              properties:
+                action:
+                  const: invite
+                principalId:
+                  type: string
+                  minLength: 1
+                invitationId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+            - type: object
+              additionalProperties: false
+              required:
+                - action
+                - invitationId
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - accept
+                    - decline
+                    - revoke
+                invitationId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^(?!\.{1,2}$)[A-Za-z0-9._:-]+$
+            - type: object
+              additionalProperties: false
+              required:
+                - action
+                - principalId
+              properties:
+                action:
+                  const: transfer
+                principalId:
+                  type: string
+                  minLength: 1
+      allOf:
+        - if:
+            properties:
+              intent:
+                properties:
+                  action:
+                    enum:
+                      - create
+                      - accept
+                      - decline
+          then:
+            properties:
+              expectedRosterRevision:
+                type: 'null'
+          else:
+            properties:
+              expectedRosterRevision:
+                type: integer
+                minimum: 0
+    PartyMutationResult:
+      type: object
+      additionalProperties: false
+      required:
+        - ref
+        - principalId
+        - requestId
+        - status
+        - code
+      properties:
+        ref:
+          $ref: '#/components/schemas/PartyRef'
+        principalId:
+          type: string
+          minLength: 1
+        requestId:
+          type: string
+          minLength: 20
+          maxLength: 128
+        status:
+          type: string
+          enum:
+            - applied
+            - refused
+        code:
+          type:
+            - string
+            - 'null'
+          enum:
+            - null
+            - unauthorized
+            - already-in-party
+            - party-unavailable
+            - party-changed
+            - party-full
+            - invitation-capacity
+            - invitation-unavailable
+            - person-unavailable
+            - member-required
+            - leader-required
+            - leader-present
+            - member-away
+      oneOf:
+        - properties:
+            status:
+              const: applied
+            code:
+              const: null
+        - properties:
+            status:
+              const: refused
+            code:
+              type: string
     MatchmakingSearchId:
       type: string
       minLength: 1

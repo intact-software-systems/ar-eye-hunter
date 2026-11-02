@@ -1,3 +1,5 @@
+import { requireEpoch, requireExactKeys, requireRecord, requireString } from '../exact-object-decoding.ts';
+import { assertValidRallarRouteId } from '../rallar-validation.ts';
 import type { StateScope } from '../state-types.ts';
 
 export interface PartyRef extends StateScope {
@@ -46,4 +48,46 @@ export interface PartyPolicy {
     readonly maxMembers: number;
     readonly maxInvitations: number;
     readonly invitationLifetimeMs: number;
+}
+
+export function decodePartyInvitationId(value: unknown): string {
+    const identity = assertValidRallarRouteId(value, '$', 'Party invitation identity');
+    if (identity.length > 128) {
+        throw new TypeError('Party invitation identity is too long');
+    }
+    return identity;
+}
+
+export function decodePartyMember(value: unknown): PartyMember {
+    const member = requireRecord(value, 'Party member');
+    requireExactKeys(member, ['principalId', 'joinedAtEpochMs'], 'Party member');
+    requireString(member.principalId, 'Party member principal');
+    requireEpoch(member.joinedAtEpochMs, 'Party membership time');
+    return { principalId: member.principalId, joinedAtEpochMs: member.joinedAtEpochMs };
+}
+
+export function decodePartyInvitation(value: unknown): PartyInvitation {
+    const invitation = requireRecord(value, 'Party invitation');
+    requireExactKeys(invitation, [
+        'invitationId',
+        'senderPrincipalId',
+        'principalId',
+        'createdAtEpochMs',
+        'expiresAtEpochMs'
+    ], 'Party invitation');
+    const invitationId = decodePartyInvitationId(invitation.invitationId);
+    requireString(invitation.senderPrincipalId, 'Party invitation sender');
+    requireString(invitation.principalId, 'Party invitation recipient');
+    requireEpoch(invitation.createdAtEpochMs, 'Party invitation creation');
+    requireEpoch(invitation.expiresAtEpochMs, 'Party invitation expiry');
+    if (invitation.expiresAtEpochMs <= invitation.createdAtEpochMs) {
+        throw new TypeError('Party invitation lifetime is invalid');
+    }
+    return {
+        invitationId,
+        senderPrincipalId: invitation.senderPrincipalId,
+        principalId: invitation.principalId,
+        createdAtEpochMs: invitation.createdAtEpochMs,
+        expiresAtEpochMs: invitation.expiresAtEpochMs
+    };
 }

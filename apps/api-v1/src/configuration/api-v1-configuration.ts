@@ -296,6 +296,12 @@ export interface ApiV1FriendsConfiguration extends FriendsConfig {
     readonly rateLimit: ApiV1RateLimitConfiguration;
 }
 
+export interface ApiV1PartiesConfiguration {
+    readonly maxInvitations: number;
+    readonly invitationLifetimeMs: number;
+    readonly rateLimit: ApiV1RateLimitConfiguration;
+}
+
 export interface ApiV1MatchmakingConfiguration {
     readonly defaultPolicy: MatchmakingPolicy;
     readonly policiesByApplication: Readonly<Record<string, MatchmakingPolicy>>;
@@ -312,6 +318,7 @@ export interface ApiV1Configuration {
     readonly stateApi: ApiV1StateApiConfiguration;
     readonly friends: ApiV1FriendsConfiguration;
     readonly matchmaking: ApiV1MatchmakingConfiguration;
+    readonly parties: ApiV1PartiesConfiguration;
     readonly group: ApiV1GroupConfiguration;
     readonly topology: ApiV1TopologyConfiguration;
     readonly appInbox: ApiV1AppInboxConfiguration;
