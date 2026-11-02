@@ -156,10 +156,25 @@ async function revokePendingInvitation(host: Page, guest: Page, game: 'arena' | 
     await expect(hostPanel.getByRole('button', { name: 'Refresh friends', exact: true })).toBeEnabled();
     await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(guestPanel.getByRole('button', { name: 'Join invited room', exact: true })).toBeEnabled();
-    await hostPanel.getByRole('button', { name: 'Block', exact: true }).click();
-    await expect(hostPanel).toContainText('Blocked. Unblocking will not restore friendship.');
-    // Bob still sees the previously fetched invite. The click itself must recheck consent.
-    await guestPanel.getByRole('button', { name: 'Join invited room', exact: true }).click();
+    const endpoint = '**/api/friends/apps/*/workspaces/*';
+    const refreshPending = Promise.withResolvers<void>();
+    const releaseRefresh = Promise.withResolvers<void>();
+    await guest.route(endpoint, async (route) => {
+        refreshPending.resolve();
+        await releaseRefresh.promise;
+        await route.continue();
+    });
+    try {
+        // Hold a real refresh so automatic polling cannot remove the stale control before the click.
+        await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
+        await refreshPending.promise;
+        await hostPanel.getByRole('button', { name: 'Block', exact: true }).click();
+        await expect(hostPanel).toContainText('Blocked. Unblocking will not restore friendship.');
+        await guestPanel.getByRole('button', { name: 'Join invited room', exact: true }).click();
+    }
+    finally {
+        releaseRefresh.resolve();
+    }
     await expect(guestPanel.getByRole('alert')).toContainText('no longer available');
     await expect(guestPanel.getByRole('article', { name: 'Friend alice', exact: true })).toHaveCount(0);
     await hostPanel.getByRole('button', { name: 'Unblock', exact: true }).click();
