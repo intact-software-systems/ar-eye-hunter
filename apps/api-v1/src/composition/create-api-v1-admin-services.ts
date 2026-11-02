@@ -69,7 +69,10 @@ export function createApiV1AdminServices(
             serverId: input.serviceId,
             reader: new PSqlAdminSupportReader(input.database),
             clientStateService: input.clientStateService,
-            groupStateService: input.groupStateService,
+            groupStateService: {
+                readSnapshot: input.groupStateService.readCurrentSnapshot,
+                listRecentEvents: input.groupStateService.listRecentEvents
+            },
             topologyQuery: input.topologyQuery,
             readLifecyclePolicy: input.readLifecyclePolicy,
             wsStatus: input.readWebSocketStatus,

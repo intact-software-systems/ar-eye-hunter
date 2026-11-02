@@ -409,6 +409,8 @@ The entry-to-result map is:
 - `packages/shared-server/rallar-system/admin-operations/rooms/` owns bounded storage paging and
   exact retained queue-work observation. `admin-support/group-admin-support.ts` owns explanations;
   its narratives distinguish current live sessions, historical membership and unavailable facts.
+  API composition supplies the existing revision-probed `readCurrentSnapshot` reader so an old
+  event-fed cache entry cannot hide committed presence during diagnosis or post-action verification.
 - `packages/shared-web/browser/admin-rooms/admin-room-operations.ts` composes those reads with the
   existing topology/prune HTTP commands. `AuthenticatedResource` owns session cancellation,
   single-flight reads, original command identity on uncertain retry and immediate authority fencing.

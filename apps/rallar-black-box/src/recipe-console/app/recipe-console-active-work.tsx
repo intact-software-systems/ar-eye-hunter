@@ -1,6 +1,5 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { lazy, Suspense, type ReactNode } from 'react';
-import type { DiagnosticBridgeSourceView } from '../../app/diagnostic-bridge-url-contract.ts';
 import type { AdvancedWorkspaceProps } from '../advanced/advanced-workspace-contract.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import type {
