@@ -1,8 +1,9 @@
+import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { describe, expect, it } from 'vitest';
 
+import { computePartyStorage } from '@shared-server/rallar-system/parties/persistence/compute-party-storage.ts';
 import type { PartyRecord } from '@shared-server/rallar-system/parties/persistence/party-record.ts';
 import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
-import { computePartyStorage, writePartyStorage } from '@shared-server/rallar-system/parties/persistence/write-party-storage.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -32,8 +33,8 @@ describe('party membership conditional storage', () => {
             const second = party('second', 'alice');
             const firstWrite = computePartyStorage({ read: await repository.read(first.ref, ['alice']), party: first });
             const secondWrite = computePartyStorage({ read: await repository.read(second.ref, ['alice']), party: second });
-            await storage.sql.begin((transaction) => writePartyStorage(transaction, firstWrite));
-            await expect(storage.sql.begin((transaction) => writePartyStorage(transaction, secondWrite)))
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, firstWrite));
+            await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, secondWrite)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await repository.readAccount(scope, 'alice')).account.partyId).toBe('first');
             expect((await repository.read(second.ref)).record).toBeNull();
@@ -50,7 +51,7 @@ describe('party membership conditional storage', () => {
             const repository = new PartyRepository(new PSqlRuntimeStateRepository(storage.sql), () => 1000);
             const initial = party('together', 'alice');
             const created = computePartyStorage({ read: await repository.read(initial.ref, ['alice']), party: initial });
-            await storage.sql.begin((transaction) => writePartyStorage(transaction, created));
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, created));
             const read = await repository.read(initial.ref, ['bob', 'charlie']);
             const bob = computePartyStorage({
                 read,
@@ -68,8 +69,8 @@ describe('party membership conditional storage', () => {
                     members: [...initial.members, { principalId: 'charlie', joinedAtEpochMs: 2000 }]
                 }
             });
-            await storage.sql.begin((transaction) => writePartyStorage(transaction, bob));
-            await expect(storage.sql.begin((transaction) => writePartyStorage(transaction, charlie)))
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, bob));
+            await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, charlie)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await repository.read(initial.ref)).record?.members.map((member) => member.principalId)).toEqual(['alice', 'bob']);
             expect((await repository.readAccount(scope, 'charlie')).account.partyId).toBeNull();
@@ -83,7 +84,7 @@ describe('party membership conditional storage', () => {
                 }
             });
             await expect(storage.sql.begin(async (transaction) => {
-                await writePartyStorage(transaction, departure);
+                await writeRuntimeStateConditionalBatch(transaction, departure);
                 throw new Error('durable result failed');
             })).rejects.toThrow('durable result failed');
             expect((await repository.readAccount(scope, 'alice')).account.partyId).toBe('together');
@@ -102,7 +103,7 @@ describe('party membership conditional storage', () => {
             const initial = party('together', 'alice');
             const prepared = computePartyStorage({ read: await repository.read(initial.ref, ['alice']), party: initial });
             await runtime.upsert('parties:accounts', 'app=game:ws=default:principal=alice', 'unexpected expired value', 1);
-            await expect(storage.sql.begin((transaction) => writePartyStorage(transaction, prepared)))
+            await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, prepared)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await repository.read(initial.ref)).record).toBeNull();
             expect((await runtime.findEntry('parties:accounts', 'app=game:ws=default:principal=alice'))?.value)
@@ -130,7 +131,8 @@ describe('party membership conditional storage', () => {
                 }]
             };
             const firstRead = await repository.read(first.ref, ['alice', 'bob']);
-            await storage.sql.begin((transaction) => writePartyStorage(transaction, computePartyStorage({ read: firstRead, party: first })));
+            const firstWrite = computePartyStorage({ read: firstRead, party: first });
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, firstWrite));
             clock.now = 3000;
             const second = {
                 ...party('second', 'charlie'),
@@ -143,7 +145,8 @@ describe('party membership conditional storage', () => {
                 }]
             };
             const secondRead = await repository.read(second.ref, ['charlie', 'bob']);
-            await storage.sql.begin((transaction) => writePartyStorage(transaction, computePartyStorage({ read: secondRead, party: second })));
+            const secondWrite = computePartyStorage({ read: secondRead, party: second });
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, secondWrite));
             expect((await repository.readAccount(scope, 'bob')).account.invitations)
                 .toEqual([{ partyId: 'second', invitationId: 'second-invite', expiresAtEpochMs: 4000 }]);
             expect((await repository.read(first.ref)).record?.invitations).toEqual(first.invitations);
@@ -181,7 +184,7 @@ describe('party membership conditional storage', () => {
             await runtime.deleteByKey('parties:accounts', 'app=game:ws=default:principal=alice');
             const initial = party('together', 'alice');
             const prepared = computePartyStorage({ read: await repository.read(initial.ref, ['alice']), party: initial });
-            await storage.sql.begin((transaction) => writePartyStorage(transaction, prepared));
+            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, prepared));
             await runtime.deleteByKey('parties:accounts', 'app=game:ws=default:principal=alice');
             await expect(repository.read(initial.ref)).rejects.toThrow(/membership|lookup/i);
         }

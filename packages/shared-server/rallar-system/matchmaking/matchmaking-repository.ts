@@ -2,20 +2,24 @@ import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
-    RuntimeStateGuardedBatchEffect,
-    RuntimeStateGuardedBatchWrite
+    RuntimeStateGuardedBatchEffect
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { insertRuntimeState, type RuntimeStateInsert } from '../../runtime-state/postgres/insert-runtime-state.ts';
-import { writeRuntimeStateGuardedBatch } from '../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
+import type { RuntimeStateInsert } from '../../runtime-state/postgres/insert-runtime-state.ts';
+import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { assertRuntimeStateReadBatchResult } from '../../runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
 import type { RuntimeStateReadBatchSelector } from '../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import { groupStateScopeStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeMatchmakingPool } from './decode-matchmaking-pool.ts';
+import {
+    decodeMatchmakingPartyEntry,
+    decodeMatchmakingPartySearches,
+    MATCHMAKING_PARTIES_NAMESPACE,
+    type MatchmakingPartySearch
+} from './matchmaking-party-search.ts';
 import type {
     MatchmakingFinished,
     MatchmakingPool,
@@ -36,6 +40,8 @@ const ACCOUNTS_NAMESPACE = 'matchmaking:accounts';
 
 export namespace MatchmakingRepository {
     export interface Read {
+        readonly partyEntry: RuntimeStateEntry | null;
+        readonly partySearches: readonly MatchmakingPartySearch[];
         readonly entry: RuntimeStateEntry | null;
         readonly pool: MatchmakingPool;
         readonly accounts: Readonly<Record<string, RuntimeStateEntry | null>>;
@@ -63,11 +69,6 @@ export namespace MatchmakingRepository {
         readonly finished: MatchmakingFinished | null;
     }
 
-    export interface StorageWrite {
-        readonly batch: RuntimeStateGuardedBatchWrite;
-        readonly accountInserts: readonly RuntimeStateInsert[];
-    }
-
     export interface StorageInput {
         readonly read: Read;
         readonly transition: MatchmakingTransition;
@@ -90,6 +91,7 @@ export class MatchmakingRepository {
         const principals = [...new Set([...active.map((search) => search.principalId), ...principalIds])];
         const selectors: RuntimeStateReadBatchSelector[] = [
             { selectorId: 'pool', kind: 'key', namespace: POOLS_NAMESPACE, key },
+            { selectorId: 'parties', kind: 'key', namespace: MATCHMAKING_PARTIES_NAMESPACE, key },
             ...principals.map((principalId, index): RuntimeStateReadBatchSelector => ({
                 selectorId: `account:${index}`,
                 kind: 'key',
@@ -108,7 +110,7 @@ export class MatchmakingRepository {
         const searches = new Map(active.map((search) => [search.principalId, search]));
         const accounts = new Map<string, RuntimeStateEntry | null>();
         for (const [index, principalId] of principals.entries()) {
-            const entry = selections[index + 1].entries[0];
+            const entry = selections[index + 2].entries[0];
             const searchId = entry === undefined ? null : decodeMatchmakingAccountEntry(entry, { scope, principalId });
             const current = searches.get(principalId);
             if (
@@ -119,7 +121,13 @@ export class MatchmakingRepository {
             }
             accounts.set(principalId, entry ?? null);
         }
-        return { ...read, accounts: Object.fromEntries(accounts) };
+        const partyEntry = selections[1].entries[0];
+        return {
+            ...read,
+            partyEntry: partyEntry ?? null,
+            partySearches: decodeMatchmakingPartyEntry(partyEntry, read.pool),
+            accounts: Object.fromEntries(accounts)
+        };
     }
 
     async readCurrent(input: MatchmakingRepository.AccountRead): Promise<MatchmakingRepository.Current> {
@@ -131,15 +139,23 @@ export class MatchmakingRepository {
                 kind: 'key',
                 namespace: ACCOUNTS_NAMESPACE,
                 key: matchmakingAccountKey(scope, principalId)
+            },
+            {
+                selectorId: 'parties',
+                kind: 'key',
+                namespace: MATCHMAKING_PARTIES_NAMESPACE,
+                key: groupStateScopeStorageKey(scope)
             }
         ]);
         if (
-            selections.length !== 2 || selections[0].selectorId !== 'pool' || selections[1].selectorId !== 'account' ||
+            selections.length !== 3 || selections[0].selectorId !== 'pool' || selections[1].selectorId !== 'account' ||
+            selections[2].selectorId !== 'parties' ||
             selections.some((selection) => selection.entries.length > 1)
         ) {
             throw new TypeError('Matchmaking recovery batch identities differ');
         }
         const { pool } = decodeStoredPool(scope, selections[0].entries[0]);
+        decodeMatchmakingPartyEntry(selections[2].entries[0], pool);
         const active = activeSearches(pool).find((search) => search.principalId === principalId);
         const entry = selections[1].entries[0];
         const decodedSearchId = entry === undefined ? null : decodeMatchmakingAccountEntry(entry, input);
@@ -180,7 +196,7 @@ function decodeStoredPool(
 
 export function computeMatchmakingStorage(
     input: MatchmakingRepository.StorageInput
-): MatchmakingRepository.StorageWrite {
+): RuntimeStateConditionalBatch {
     const { read, transition, finishedRetentionMs } = input;
     const pool = decodeMatchmakingPool(transition.pool, read.pool.scope);
     requireEpoch(finishedRetentionMs, 'Finished search retention');
@@ -188,11 +204,11 @@ export function computeMatchmakingStorage(
         throw new TypeError('Finished search retention must be positive');
     }
     const effects = computeSearchEffects(read, transition, finishedRetentionMs);
-    const accountInserts: RuntimeStateInsert[] = [];
+    const inserts: RuntimeStateInsert[] = [];
     const guardedEffects: RuntimeStateGuardedBatchEffect[] = [];
     for (const effect of effects) {
         if (effect.namespace === ACCOUNTS_NAMESPACE && effect.operation === 'insert') {
-            accountInserts.push({
+            inserts.push({
                 namespace: effect.namespace,
                 key: effect.key,
                 value: effect.value,
@@ -203,32 +219,47 @@ export function computeMatchmakingStorage(
             guardedEffects.push(effect);
         }
     }
+    const parties = decodeMatchmakingPartySearches(transition.partySearches, pool);
+    const partyValue = JSON.stringify({ scope: pool.scope, parties });
+    if (read.partyEntry === null && parties.length > 0) {
+        inserts.push({
+            namespace: MATCHMAKING_PARTIES_NAMESPACE,
+            key: groupStateScopeStorageKey(pool.scope),
+            value: partyValue,
+            expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+        });
+    }
+    else if (read.partyEntry !== null && partyValue !== read.partyEntry.value) {
+        guardedEffects.push({
+            effectId: 'parties',
+            operation: 'update',
+            namespace: MATCHMAKING_PARTIES_NAMESPACE,
+            key: read.partyEntry.key,
+            expectedRevision: read.partyEntry.revision,
+            value: partyValue,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+    }
     const batch = computeRuntimeStateGuardedBatchWrite({
         guard: {
             namespace: POOLS_NAMESPACE,
             key: groupStateScopeStorageKey(pool.scope),
             value: JSON.stringify(pool),
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            ...(read.entry === null
-                ? { operation: 'insert' }
-                : { operation: 'update', expectedRevision: read.entry.revision })
+            operation: 'update',
+            expectedRevision: read.entry?.revision ?? 0
         },
         effects: guardedEffects
     });
-    return { batch, accountInserts };
-}
-
-export async function writeMatchmakingStorage(
-    transaction: PSqlSql,
-    storage: MatchmakingRepository.StorageWrite
-): Promise<void> {
-    const result = await writeRuntimeStateGuardedBatch(transaction, storage.batch);
-    if (result.guard.status !== 'applied' || result.effects.some((effect) => effect.status !== 'applied')) {
-        throw new RuntimeStateWriteConflictError();
-    }
-    for (const insert of storage.accountInserts) {
-        await insertRuntimeState(transaction, insert);
-    }
+    const creation = read.entry === null
+        ? {
+            namespace: POOLS_NAMESPACE,
+            key: groupStateScopeStorageKey(pool.scope),
+            value: JSON.stringify(pool),
+            expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+        }
+        : null;
+    return { creation, batch, inserts };
 }
 
 function computeSearchEffects(

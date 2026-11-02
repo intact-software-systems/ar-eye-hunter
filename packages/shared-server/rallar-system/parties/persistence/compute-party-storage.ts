@@ -1,14 +1,11 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
-    RuntimeStateGuardedBatchEffect,
-    RuntimeStateGuardedBatchWrite
+    RuntimeStateGuardedBatchEffect
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import { insertRuntimeState, type RuntimeStateInsert } from '../../../runtime-state/postgres/insert-runtime-state.ts';
-import { writeRuntimeStateGuardedBatch } from '../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
+import type { RuntimeStateInsert } from '../../../runtime-state/postgres/insert-runtime-state.ts';
+import type { RuntimeStateConditionalBatch } from '../../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { decodePartyRecord } from './decode-party-record.ts';
 import {
     decodePartyAccount,
@@ -26,24 +23,18 @@ export interface PartyStorageInput {
     readonly party: PartyRecord;
 }
 
-export interface PartyStorageWrite {
-    readonly creation: RuntimeStateInsert | null;
-    readonly batch: RuntimeStateGuardedBatchWrite;
-    readonly accountInserts: readonly RuntimeStateInsert[];
-}
-
-export function computePartyStorage(input: PartyStorageInput): PartyStorageWrite {
+export function computePartyStorage(input: PartyStorageInput): RuntimeStateConditionalBatch {
     const { read } = input;
     const party = decodePartyRecord(input.party, read.ref);
     const value = JSON.stringify(party);
     const accounts = computePartyAccounts(read, party);
-    const accountInserts: RuntimeStateInsert[] = [];
+    const inserts: RuntimeStateInsert[] = [];
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     for (const { entry, account } of accounts) {
         const key = partyAccountKey(account.scope, account.principalId);
         const value = JSON.stringify(decodePartyAccount(account, account.scope, account.principalId));
         if (entry === null) {
-            accountInserts.push(toInsert(PARTY_ACCOUNTS_NAMESPACE, key, value));
+            inserts.push(toInsert(PARTY_ACCOUNTS_NAMESPACE, key, value));
         }
         else {
             effects.push({
@@ -71,21 +62,8 @@ export function computePartyStorage(input: PartyStorageInput): PartyStorageWrite
             },
             effects
         }),
-        accountInserts
+        inserts
     };
-}
-
-export async function writePartyStorage(transaction: PSqlSql, computed: PartyStorageWrite): Promise<void> {
-    if (computed.creation !== null) {
-        await insertRuntimeState(transaction, computed.creation);
-    }
-    const result = await writeRuntimeStateGuardedBatch(transaction, computed.batch);
-    if (result.guard.status !== 'applied' || result.effects.some((effect) => effect.status !== 'applied')) {
-        throw new RuntimeStateWriteConflictError();
-    }
-    for (const insert of computed.accountInserts) {
-        await insertRuntimeState(transaction, insert);
-    }
 }
 
 function computePartyAccounts(read: PartyRepository.Read, party: PartyRecord): readonly PartyRepository.AccountRead[] {

@@ -1,5 +1,7 @@
-import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
+import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { decodePartyInvitationId } from '@shared/api/parties/party-request.ts';
 import type { PartyRef } from '@shared/api/parties/party.ts';
+import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import {
@@ -42,9 +44,7 @@ export function decodePartyAccount(value: unknown, scope: StateScope, principalI
     ) {
         throw new TypeError('Party account identity differs from its expected slot');
     }
-    if (account.partyId !== null) {
-        requireString(account.partyId, 'Current party identity');
-    }
+    const partyId = account.partyId === null ? null : assertValidRallarRouteId(account.partyId);
     if (!Array.isArray(account.invitations) || account.invitations.length > 256) {
         throw new TypeError('Party account invitation collection is invalid');
     }
@@ -54,18 +54,18 @@ export function decodePartyAccount(value: unknown, scope: StateScope, principalI
             throw new TypeError('Party account invitations have duplicate or noncanonical identities');
         }
     }
-    return { scope, principalId, partyId: account.partyId, invitations };
+    return { scope, principalId, partyId, invitations };
 }
 
 function decodeAccountInvitation(value: unknown): PartyAccountInvitation {
     const invitation = requireRecord(value, 'Party account invitation');
     requireExactKeys(invitation, ['partyId', 'invitationId', 'expiresAtEpochMs'], 'Party account invitation');
-    requireString(invitation.partyId, 'Inviting party identity');
-    requireString(invitation.invitationId, 'Party invitation identity');
+    const partyId = assertValidRallarRouteId(invitation.partyId);
+    const invitationId = decodePartyInvitationId(invitation.invitationId);
     requireEpoch(invitation.expiresAtEpochMs, 'Party invitation lookup expiry');
     return {
-        partyId: invitation.partyId,
-        invitationId: invitation.invitationId,
+        partyId,
+        invitationId,
         expiresAtEpochMs: invitation.expiresAtEpochMs
     };
 }

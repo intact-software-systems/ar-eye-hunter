@@ -2,6 +2,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
 import type { MatchmakingEndedReason } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { MatchmakingPartySearch, MatchmakingPartyStart } from './matchmaking-party-search.ts';
 
 export interface MatchmakingActor {
     readonly principalId: string;
@@ -43,6 +44,13 @@ export interface MatchmakingFinished extends MatchmakingSearch {
 
 export type MatchmakingIntent =
     | Readonly<{ action: 'expire'; }>
+    | Readonly<{ action: 'invalidate'; principalIds: readonly string[]; }>
+    | (
+        & MatchmakingActor
+        & Readonly<
+            { action: 'start-party'; searchId: string; capturedAtEpochMs: number; party: MatchmakingPartyStart; }
+        >
+    )
     | (
         & MatchmakingActor
         & Readonly<{
@@ -53,6 +61,7 @@ export type MatchmakingIntent =
     );
 
 export interface MatchmakingInput {
+    readonly partySearches: readonly MatchmakingPartySearch[];
     readonly pool: MatchmakingPool;
     readonly policy: MatchmakingPolicy;
     readonly nowEpochMs: number;
@@ -60,6 +69,7 @@ export interface MatchmakingInput {
 }
 
 export interface MatchmakingTransition {
+    readonly partySearches: readonly MatchmakingPartySearch[];
     readonly pool: MatchmakingPool;
     readonly finished: readonly MatchmakingFinished[];
     readonly admission: MatchmakingProposal | null;

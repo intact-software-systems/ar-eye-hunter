@@ -5,7 +5,7 @@ import {
     requireRecord,
     requireString
 } from '@shared/api/exact-object-decoding.ts';
-import { decodePartyRef } from '@shared/api/parties/party-request.ts';
+import { decodePartyInvitationId, decodePartyRef } from '@shared/api/parties/party-request.ts';
 import type { PartyInvitation, PartyMember, PartyRef } from '@shared/api/parties/party.ts';
 
 import type { PartyRecord } from './party-record.ts';
@@ -70,13 +70,13 @@ function decodePartyInvitation(value: unknown): PartyInvitation {
         'createdAtEpochMs',
         'expiresAtEpochMs'
     ], 'Party invitation');
-    requireString(invitation.invitationId, 'Party invitation identity');
+    const invitationId = decodePartyInvitationId(invitation.invitationId);
     requireString(invitation.senderPrincipalId, 'Party invitation sender');
     requireString(invitation.principalId, 'Party invitation recipient');
     requireEpoch(invitation.createdAtEpochMs, 'Party invitation creation');
     requireEpoch(invitation.expiresAtEpochMs, 'Party invitation expiry');
     return {
-        invitationId: invitation.invitationId,
+        invitationId,
         senderPrincipalId: invitation.senderPrincipalId,
         principalId: invitation.principalId,
         createdAtEpochMs: invitation.createdAtEpochMs,

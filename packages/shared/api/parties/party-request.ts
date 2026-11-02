@@ -65,12 +65,16 @@ function decodePartyRosterIntent(value: unknown): PartyRosterIntent {
         case 'invite':
             requireExactKeys(intent, ['action', 'principalId', 'invitationId'], 'Party invitation');
             requireString(intent.principalId, 'Party invitation recipient');
-            return { action, principalId: intent.principalId, invitationId: decodeInvitationId(intent.invitationId) };
+            return {
+                action,
+                principalId: intent.principalId,
+                invitationId: decodePartyInvitationId(intent.invitationId)
+            };
         case 'accept':
         case 'decline':
         case 'revoke':
             requireExactKeys(intent, ['action', 'invitationId'], 'Party invitation response');
-            return { action, invitationId: decodeInvitationId(intent.invitationId) };
+            return { action, invitationId: decodePartyInvitationId(intent.invitationId) };
         case 'transfer':
             requireExactKeys(intent, ['action', 'principalId'], 'Party leadership transfer');
             requireString(intent.principalId, 'Next party leader');
@@ -81,8 +85,8 @@ function decodePartyRosterIntent(value: unknown): PartyRosterIntent {
     }
 }
 
-function decodeInvitationId(value: unknown): string {
-    const identity = assertValidRallarRouteId(value);
+export function decodePartyInvitationId(value: unknown): string {
+    const identity = assertValidRallarRouteId(value, '$', 'Party invitation identity');
     if (identity.length > 128) {
         throw new TypeError('Party invitation identity is too long');
     }

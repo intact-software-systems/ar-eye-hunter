@@ -105,7 +105,11 @@ Use existing RuntimeState storage and strict conditional insert/CAS. Validate co
 canonical storage slots, scopes, identities and mirrored lookups before expiry handling. No
 read-side repair, unguarded upsert, domain lock or nested retry. Preserve existing matchmaking
 record shapes where possible: party membership/search binding is new owned state, not a reason
-to retain two matchmaking algorithms or an old-schema decoder.
+to retain two matchmaking algorithms or an old-schema decoder. Matchmaking party bindings live beside
+unchanged individual search/result records and commit with the pool CAS. Pure cohort allocation
+selects the earliest complete set of whole units that fits the configured player count. Strict
+creation, guarded updates and exact-absence inserts share `writeRuntimeStateConditionalBatch`; domain
+computation and AppInbox transaction ownership remain with each service.
 
 ## Implementation horizon
 

@@ -5,6 +5,10 @@ import type {
     RuntimeStateGuardedBatchEffect
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import {
+    writeRuntimeStateConditionalBatch,
+    type RuntimeStateConditionalBatch
+} from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { writeAppOutboxInserts, type AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../computed-data-validation.ts';
@@ -19,16 +23,14 @@ import { computeMatchmaking } from './compute-matchmaking.ts';
 import { computeMatchmakingDeadlines } from './matchmaking-deadline.ts';
 import type { MatchmakingActor, MatchmakingTransition } from './matchmaking-pool.ts';
 import {
-    computeMatchmakingStorage,
-    writeMatchmakingStorage,
-    type MatchmakingRepository
+    computeMatchmakingStorage
 } from './matchmaking-repository.ts';
 import type { MatchmakingService } from './matchmaking-service.ts';
 
 export interface MatchmakingMutation {
     readonly read: MatchmakingService.Read;
     readonly transition: MatchmakingTransition | null;
-    readonly storage: MatchmakingRepository.StorageWrite | null;
+    readonly storage: RuntimeStateConditionalBatch | null;
     readonly deadlines: readonly AppOutboxInsert[];
     readonly admissions: readonly GroupMutationComputedWrite[];
     readonly result: MatchmakingMutationResult;
@@ -46,6 +48,7 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
         throw new TypeError('Matchmaking execution requires winning ingress facts');
     }
     const proposed = computeMatchmaking({
+        partySearches: read.pool.partySearches,
         pool: read.pool.pool,
         policy: command.policy,
         nowEpochMs: read.nowEpochMs,
@@ -88,7 +91,7 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
 function computeAuthorizedMatchmakingStorage(
     read: MatchmakingService.Read,
     transition: MatchmakingTransition
-): MatchmakingRepository.StorageWrite {
+): RuntimeStateConditionalBatch {
     const prepared = computeMatchmakingStorage({
         read: read.pool,
         transition,
@@ -104,7 +107,8 @@ function computeAuthorizedMatchmakingStorage(
         expectedRevision: session.entry.revision
     }));
     return {
-        accountInserts: prepared.accountInserts,
+        creation: prepared.creation,
+        inserts: prepared.inserts,
         batch: computeRuntimeStateGuardedBatchWrite({
             ...prepared.batch,
             effects: [...prepared.batch.effects, ...authority]
@@ -123,7 +127,7 @@ export async function writeMatchmakingMutation(transaction: PSqlSql, computed: M
     if (computed.storage === null) {
         return;
     }
-    await writeMatchmakingStorage(transaction, computed.storage);
+    await writeRuntimeStateConditionalBatch(transaction, computed.storage);
     await writeAppOutboxInserts(transaction, computed.deadlines);
     for (const admission of computed.admissions) {
         await writeGroupMutation(transaction, admission);

@@ -3,6 +3,7 @@ import type { PartyRefusal } from '@shared/api/parties/party.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '../client-state/persistence/client-state-runtime-namespaces.ts';
@@ -10,10 +11,10 @@ import { validateComputedProjection, type ComputedDataValidationIssue } from '..
 import { FRIENDS_PROFILE_NAMESPACE } from '../friends/friends-profile.ts';
 import { computePartyRoster } from './compute-party-roster.ts';
 import type { PartyService } from './party-service.ts';
-import { computePartyStorage, type PartyStorageWrite } from './persistence/write-party-storage.ts';
+import { computePartyStorage } from './persistence/compute-party-storage.ts';
 
 export interface PartyMutation {
-    readonly storage: PartyStorageWrite | null;
+    readonly storage: RuntimeStateConditionalBatch | null;
     readonly result: PartyMutationResult;
     readonly rosterChanged: boolean;
 }

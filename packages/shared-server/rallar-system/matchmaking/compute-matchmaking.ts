@@ -1,7 +1,10 @@
 import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import { decodeMatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
 
+import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeMatchmakingCohorts } from './compute-matchmaking-cohorts.ts';
 import { decodeMatchmakingPool } from './decode-matchmaking-pool.ts';
+import { decodeMatchmakingPartySearches, type MatchmakingPartySearch } from './matchmaking-party-search.ts';
 import type {
     MatchmakingActor,
     MatchmakingFinished,
@@ -25,10 +28,33 @@ export function computeMatchmaking(input: MatchmakingInput): MatchmakingTransiti
     decodeMatchmakingPolicy(input.policy);
     requireEpoch(input.nowEpochMs, 'Matchmaking attempt time');
     const pool = decodeMatchmakingPool(input.pool, input.pool.scope);
-    const expired = expireSearches(pool, input.nowEpochMs);
+    const partySearches = decodeMatchmakingPartySearches(input.partySearches, pool);
+    const expired = retainActiveParties(expireSearches(pool, partySearches, input.nowEpochMs));
+    const transition = computeCommand(input, expired);
+    return retainActiveParties(transition);
+}
+
+function retainActiveParties(transition: MatchmakingTransition): MatchmakingTransition {
+    const activeIds = new Set(
+        [...transition.pool.searching, ...transition.pool.proposals.flatMap((proposal) => proposal.participants)]
+            .map((search) => search.searchId)
+    );
+    return {
+        ...transition,
+        partySearches: transition.partySearches.filter((party) => party.searchIds.some((id) => activeIds.has(id)))
+    };
+}
+
+function computeCommand(input: MatchmakingInput, expired: MatchmakingTransition): MatchmakingTransition {
     const command = input.command;
     if (command.action === 'expire') {
         return expired;
+    }
+    if (command.action === 'invalidate') {
+        return invalidateSearches(expired, command.principalIds, input.nowEpochMs);
+    }
+    if (command.action === 'start-party') {
+        return startSearch(input, expired, command);
     }
     if (
         expired.finished.some((search) =>
@@ -51,7 +77,11 @@ export function computeMatchmaking(input: MatchmakingInput): MatchmakingTransiti
         : confirmSearch({ previous: expired, current, actor: command, now: input.nowEpochMs });
 }
 
-function expireSearches(pool: MatchmakingPool, now: number): MatchmakingTransition {
+function expireSearches(
+    pool: MatchmakingPool,
+    partySearches: readonly MatchmakingPartySearch[],
+    now: number
+): MatchmakingTransition {
     const searching: MatchmakingSearch[] = [];
     const proposals: MatchmakingProposal[] = [];
     const finished: MatchmakingFinished[] = [];
@@ -73,6 +103,7 @@ function expireSearches(pool: MatchmakingPool, now: number): MatchmakingTransiti
     }
     return {
         pool: { ...pool, searching, proposals },
+        partySearches,
         finished,
         admission: null,
         searchId: null,
@@ -83,80 +114,116 @@ function expireSearches(pool: MatchmakingPool, now: number): MatchmakingTransiti
 function startSearch(
     input: MatchmakingInput,
     previous: MatchmakingTransition,
-    command: Exclude<MatchmakingIntent, { action: 'expire'; }>
+    command:
+        | Extract<MatchmakingIntent, { action: 'start-party'; }>
+        | Exclude<MatchmakingIntent, { action: 'expire' | 'invalidate' | 'start-party'; }>
 ): MatchmakingTransition {
     const { pool } = previous;
+    const party = command.action === 'start-party' ? command.party : null;
+    const actors = party === null ? [command] : party.members;
     if (
-        pool.searching.some((search) => search.searchId === command.searchId) ||
-        findProposal(pool, command.searchId) !== null
+        actors.length === 0 || actors.length > input.policy.players ||
+        new Set(actors.map((actor) => actor.principalId)).size !== actors.length ||
+        actors.some((actor) => findSearch(pool, actor.principalId) !== null) ||
+        (party !== null &&
+            (party.leaderPrincipalId !== command.principalId ||
+                !actors.some((actor) => actor.principalId === command.principalId)))
     ) {
         return { ...previous, searchId: command.searchId, rejection: 'search-not-current' };
     }
     const count = pool.searching.length +
         pool.proposals.reduce((total, proposal) => total + proposal.participants.length, 0);
-    if (count >= input.policy.maxSearching) {
+    if (count + actors.length > input.policy.maxSearching) {
         return { ...previous, searchId: command.searchId, rejection: 'search-capacity' };
     }
     requireEpoch(command.capturedAtEpochMs, 'Captured search time');
-    const search: MatchmakingSearch = {
-        searchId: command.searchId,
-        principalId: command.principalId,
-        sessionId: command.sessionId,
-        sessionIssuedAtEpochMs: command.sessionIssuedAtEpochMs,
-        sessionExpiresAtEpochMs: command.sessionExpiresAtEpochMs,
+    const additions: MatchmakingSearch[] = actors.toSorted((left, right) =>
+        Number(right.principalId === command.principalId) - Number(left.principalId === command.principalId) ||
+        (left.principalId < right.principalId ? -1 : left.principalId > right.principalId ? 1 : 0)
+    ).map((actor) => ({
+        principalId: actor.principalId,
+        sessionId: actor.sessionId,
+        sessionIssuedAtEpochMs: actor.sessionIssuedAtEpochMs,
+        sessionExpiresAtEpochMs: actor.sessionExpiresAtEpochMs,
+        searchId: actor.principalId === command.principalId ? command.searchId : computeSha256CanonicalJson({
+            partyRef: party!.ref,
+            searchId: command.searchId,
+            principalId: actor.principalId
+        }),
         createdAtEpochMs: command.capturedAtEpochMs,
         expiresAtEpochMs: command.capturedAtEpochMs + input.policy.searchTimeoutMs
-    };
-    if (search.expiresAtEpochMs <= input.nowEpochMs) {
+    }));
+    if (
+        additions.some((search) =>
+            pool.searching.some((current) => current.searchId === search.searchId) ||
+            findProposal(pool, search.searchId) !== null
+        )
+    ) {
+        return { ...previous, searchId: command.searchId, rejection: 'search-not-current' };
+    }
+    if (additions[0]!.expiresAtEpochMs <= input.nowEpochMs) {
         return {
             ...previous,
-            searchId: search.searchId,
-            finished: [...previous.finished, finishSearch(search, 'search-timeout', input.nowEpochMs)]
+            searchId: command.searchId,
+            finished: [
+                ...previous.finished,
+                ...additions.map((search) => finishSearch(search, 'search-timeout', input.nowEpochMs))
+            ]
         };
     }
-    const queued = [...pool.searching, search].sort((left, right) =>
-        left.createdAtEpochMs - right.createdAtEpochMs ||
-        (left.searchId < right.searchId ? -1 : left.searchId > right.searchId ? 1 : 0)
-    );
-    const formed = formCohorts(input, queued);
+    const partySearches = party === null ? previous.partySearches : [...previous.partySearches, {
+        ref: party.ref,
+        rosterRevision: party.rosterRevision,
+        leaderPrincipalId: party.leaderPrincipalId,
+        searchIds: additions.map((search) => search.searchId)
+    }];
+    const queued = [...pool.searching, ...additions];
+    decodeMatchmakingPartySearches(partySearches, { ...pool, searching: queued });
+    const formed = computeMatchmakingCohorts({
+        scope: input.pool.scope,
+        policy: input.policy,
+        nowEpochMs: input.nowEpochMs,
+        queued,
+        partySearches
+    });
     return {
         ...previous,
-        searchId: search.searchId,
+        searchId: command.searchId,
+        partySearches,
         pool: { ...pool, searching: formed.searching, proposals: [...pool.proposals, ...formed.proposals] }
     };
 }
 
-function formCohorts(
-    input: MatchmakingInput,
-    queued: readonly MatchmakingSearch[]
-): Pick<MatchmakingPool, 'searching' | 'proposals'> {
-    const searching = [...queued];
-    const proposals: MatchmakingProposal[] = [];
-    while (searching.length >= input.policy.players) {
-        const cohort = searching.splice(0, input.policy.players);
-        const leader = cohort[0]!;
-        proposals.push({
-            roomRef: { ...input.pool.scope, groupId: `match-${leader.searchId}` },
-            leaderPrincipalId: leader.principalId,
-            createdAtEpochMs: input.nowEpochMs,
-            expiresAtEpochMs: input.nowEpochMs + input.policy.confirmationTimeoutMs,
-            participants: cohort.map((search) => ({ ...search, confirmedAtEpochMs: null }))
-        });
+function invalidateSearches(
+    previous: MatchmakingTransition,
+    principalIds: readonly string[],
+    now: number
+): MatchmakingTransition {
+    let result = previous;
+    for (const principalId of principalIds) {
+        const current = findSearch(result.pool, principalId);
+        if (current !== null) {
+            result = cancelSearch(result, current, now);
+        }
     }
-    return { searching, proposals };
+    return { ...result, searchId: null };
 }
 
 function cancelSearch(previous: MatchmakingTransition, current: MatchmakingSearch, now: number): MatchmakingTransition {
     const proposal = findProposal(previous.pool, current.searchId);
+    const party = previous.partySearches.find((party) => party.searchIds.includes(current.searchId));
+    const cancelledIds = new Set(party?.searchIds ?? [current.searchId]);
     const finished = proposal === null
-        ? [finishSearch(current, 'cancelled', now)]
+        ? previous.pool.searching.filter((search) => cancelledIds.has(search.searchId)).map((search) =>
+            finishSearch(search, 'cancelled', now)
+        )
         : proposal.participants.map((player) => finishSearch(player, 'declined', now));
     return {
         ...previous,
         searchId: current.searchId,
         pool: {
             ...previous.pool,
-            searching: previous.pool.searching.filter((search) => search.searchId !== current.searchId),
+            searching: previous.pool.searching.filter((search) => !cancelledIds.has(search.searchId)),
             proposals: previous.pool.proposals.filter((candidate) => candidate !== proposal)
         },
         finished: [...previous.finished, ...finished]

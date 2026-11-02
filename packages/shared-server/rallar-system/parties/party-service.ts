@@ -2,6 +2,7 @@ import type { PartyMutationResult } from '@shared/api/parties/party-request.ts';
 import { decodePartyPolicy } from '@shared/api/parties/party-request.ts';
 import type { PartyPolicy } from '@shared/api/parties/party.ts';
 import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app-inbox.ts';
+import { writeRuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
@@ -17,7 +18,6 @@ import { computePartyMutation, validatePartyMutation } from './compute-party-mut
 import type { PartyInvitationConsent } from './compute-party-roster.ts';
 import { decodePartyCommand, decodePartyResult, type PartyCommand } from './party-command.ts';
 import type { PartyRepository } from './persistence/party-repository.ts';
-import { writePartyStorage } from './persistence/write-party-storage.ts';
 
 export namespace PartyService {
     export interface Config {
@@ -115,7 +115,7 @@ export class PartyService {
                     (transaction) =>
                         timeRallarAsync(timing, { ...event, operation: 'write' }, async () => {
                             if (computed.storage !== null) {
-                                await writePartyStorage(transaction, computed.storage);
+                                await writeRuntimeStateConditionalBatch(transaction, computed.storage);
                             }
                         })
                 )

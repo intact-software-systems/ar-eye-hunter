@@ -11,7 +11,7 @@ describe('private matchmaking recovery view', () => {
     it('exposes only the requesting account cohort and never session authority or a prospective room', async () => {
         let pool: MatchmakingRepository.Current['pool'] = { scope, searching: [], proposals: [] };
         for (const principalId of ['alice', 'bob', 'carol']) {
-            pool = computeMatchmaking({ pool, policy, nowEpochMs: 1000, command: start(principalId) }).pool;
+            pool = computeMatchmaking({ partySearches: [], pool, policy, nowEpochMs: 1000, command: start(principalId) }).pool;
         }
         const reader = new MatchmakingReader({ readCurrent: async () => ({ pool, searchId: 'alice-search', finished: null }) }, () => 1001);
         const snapshot = await reader.read({ scope, principalId: 'alice' });
@@ -26,7 +26,8 @@ describe('private matchmaking recovery view', () => {
     });
 
     it('shows expiry at the deadline even if the durable worker has not run', async () => {
-        const pool = computeMatchmaking({ pool: { scope, searching: [], proposals: [] }, policy, nowEpochMs: 1000, command: start('alice') }).pool;
+        const pool =
+            computeMatchmaking({ partySearches: [], pool: { scope, searching: [], proposals: [] }, policy, nowEpochMs: 1000, command: start('alice') }).pool;
         const reader = new MatchmakingReader({ readCurrent: async () => ({ pool, searchId: 'alice-search', finished: null }) }, () => 121000);
         expect((await reader.read({ scope, principalId: 'alice' })).state).toEqual({ status: 'ended', searchId: 'alice-search', reason: 'search-timeout' });
         expect(pool.searching).toHaveLength(1);

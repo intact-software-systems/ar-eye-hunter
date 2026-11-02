@@ -2,6 +2,7 @@ import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-poli
 import type { MatchmakingMutationResult } from '@shared/api/matchmaking/matchmaking-request.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app-inbox.ts';
+import { writeRuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { AppInboxCommandAttempt, AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
 import { toAppInboxCommandAttempt } from '../app-inbox/app-inbox-contracts.ts';
@@ -23,7 +24,7 @@ import { readMatchmakingAdmission } from './matchmaking-admission.ts';
 import { decodeMatchmakingCommand, decodeMatchmakingResult, type MatchmakingCommand } from './matchmaking-command.ts';
 import { decodeMatchmakingDeadline, type MatchmakingDeadline } from './matchmaking-deadline.ts';
 import type { MatchmakingFinished, MatchmakingProposal } from './matchmaking-pool.ts';
-import { computeMatchmakingStorage, writeMatchmakingStorage } from './matchmaking-repository.ts';
+import { computeMatchmakingStorage } from './matchmaking-repository.ts';
 import type { MatchmakingRepository } from './matchmaking-repository.ts';
 
 export namespace MatchmakingService {
@@ -125,6 +126,7 @@ export class MatchmakingService {
         }
         const read = await this.dependencies.repository.read(command.scope);
         const input = {
+            partySearches: read.partySearches,
             pool: read.pool,
             policy: this.config.defaultPolicy,
             nowEpochMs,
@@ -143,7 +145,7 @@ export class MatchmakingService {
         }
         return await this.dependencies.appInbox.commit(context, command, async (transaction) => {
             if (transition.finished.length > 0) {
-                await writeMatchmakingStorage(transaction, computed);
+                await writeRuntimeStateConditionalBatch(transaction, computed);
             }
         });
     }

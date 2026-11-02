@@ -13,6 +13,7 @@ function emptyPool(): MatchmakingPool {
 
 function start(pool: MatchmakingPool, principalId: string, at: number): MatchmakingTransition {
     return computeMatchmaking({
+        partySearches: [],
         pool,
         policy,
         nowEpochMs: at,
@@ -38,6 +39,7 @@ interface CommandInput {
 function command(input: CommandInput): MatchmakingTransition {
     const { pool, action, principalId, nowEpochMs, searchId = `search-${input.principalId}` } = input;
     return computeMatchmaking({
+        partySearches: [],
         pool,
         policy,
         nowEpochMs,
@@ -82,6 +84,7 @@ describe('matchmaking cohort intent', () => {
     it('keeps an account in exactly one search across tabs', () => {
         const first = start(emptyPool(), 'alice', 1000);
         const duplicate = computeMatchmaking({
+            partySearches: [],
             pool: first.pool,
             policy,
             nowEpochMs: 2000,
@@ -95,6 +98,7 @@ describe('matchmaking cohort intent', () => {
     it('refuses another account reusing an active search identity without changing the first search', () => {
         const first = start(emptyPool(), 'alice', 1000);
         const duplicate = computeMatchmaking({
+            partySearches: [],
             pool: first.pool,
             policy,
             nowEpochMs: 2000,
@@ -146,10 +150,18 @@ describe('matchmaking cohort intent', () => {
         let pool = emptyPool();
         for (const [index, principalId] of ['zoe', 'bob', 'alice', 'dan'].entries()) {
             pool = computeMatchmaking({
+                partySearches: [],
                 pool,
                 policy: four,
                 nowEpochMs: 1000 + index,
-                command: { action: 'start', principalId, sessionId: principalId, ...sessionLifetime, searchId: principalId, capturedAtEpochMs: 1000 + index }
+                command: {
+                    action: 'start',
+                    principalId,
+                    sessionId: principalId,
+                    ...sessionLifetime,
+                    searchId: principalId,
+                    capturedAtEpochMs: 1000 + index
+                }
             }).pool;
         }
         expect(pool.proposals[0].participants.map((player) => player.principalId)).toEqual(['zoe', 'bob', 'alice', 'dan']);
@@ -182,19 +194,21 @@ describe('matchmaking cohort intent', () => {
 
     it('rejects invalid configuration rather than silently clamping a cohort or timeout', () => {
         for (const invalid of [{ ...policy, players: 1 }, { ...policy, players: 2.5 }, { ...policy, confirmationTimeoutMs: 0 }]) {
-            expect(() => computeMatchmaking({ pool: emptyPool(), policy: invalid, nowEpochMs: 1000, command: { action: 'expire' } })).toThrow();
+            expect(() => computeMatchmaking({ partySearches: [], pool: emptyPool(), policy: invalid, nowEpochMs: 1000, command: { action: 'expire' } }))
+                .toThrow();
         }
     });
 
     it('sweeps abandoned searches without requiring an authenticated browser', () => {
         const waiting = start(emptyPool(), 'alice', 1000).pool;
-        const expired = computeMatchmaking({ pool: waiting, policy, nowEpochMs: 121_000, command: { action: 'expire' } });
+        const expired = computeMatchmaking({ partySearches: [], pool: waiting, policy, nowEpochMs: 121_000, command: { action: 'expire' } });
         expect(expired.pool).toEqual(emptyPool());
         expect(expired.finished).toMatchObject([{ principalId: 'alice', reason: 'search-timeout' }]);
     });
     it('does not recreate an expired search when its original start arrives late', () => {
         const waiting = start(emptyPool(), 'alice', 1000).pool;
         const late = computeMatchmaking({
+            partySearches: [],
             pool: waiting,
             policy,
             nowEpochMs: 121_000,
@@ -213,6 +227,7 @@ describe('matchmaking cohort intent', () => {
     it('rebinds confirmation to the new authenticated session after reload', () => {
         const paired = start(start(emptyPool(), 'alice', 1000).pool, 'bob', 2000).pool;
         const confirmed = computeMatchmaking({
+            partySearches: [],
             pool: paired,
             policy,
             nowEpochMs: 3000,
@@ -238,6 +253,7 @@ describe('matchmaking cohort intent', () => {
         let pool = emptyPool();
         for (const searchId of ['a', 'Z']) {
             pool = computeMatchmaking({
+                partySearches: [],
                 pool,
                 policy,
                 nowEpochMs: 1000,
