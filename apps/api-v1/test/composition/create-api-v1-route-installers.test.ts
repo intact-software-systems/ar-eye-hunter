@@ -63,6 +63,8 @@ Deno.test('route installers mount representative API and websocket behavior in o
     assert.equal((await app.request(`${movePath}/requests/request-1`, { method: 'POST' })).status, 401);
     assert.equal((await app.request('/api/friends/apps/app/workspaces/workspace')).status, 401);
     assert.equal((await app.request('/api/friends/requests/request-1', { method: 'POST' })).status, 401);
+    assert.equal((await app.request('/api/matchmaking/apps/app/workspaces/workspace')).status, 401);
+    assert.equal((await app.request('/api/matchmaking/apps/app/workspaces/workspace/requests/request-1', { method: 'POST' })).status, 401);
     assert.equal((await app.request('/api/docs')).status, 200);
 });
 
@@ -80,6 +82,11 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         runtime: createRuntime(),
         topology: createTopology(),
         admin: createAdmin(),
+        matchmaking: {
+            reader: { read: rejectUnusedOperation },
+            mutation: { submit: rejectUnusedOperation },
+            mutationQuota: { timebasedFilterMs: 60000, maxNumberToAllow: 30 }
+        },
         friends: {
             reader: { read: rejectUnusedOperation },
             mutation: { submit: rejectUnusedOperation },
@@ -90,22 +97,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used'))
         },
         authUserRepository: new AuthUserRepository(new UnusedRuntimeStateRepository()),
-        authentication: {
-            adminClientIds: ['admin'],
-            agentSessionTicketTtlMs: 60_000,
-            rateLimits: {
-                windowMs: 60_000,
-                loginIp: 30,
-                loginUsername: 5,
-                registrationIp: 20,
-                registrationUsername: 5,
-                webSocketTicket: 30
-            },
-            registrationMode: 'public',
-            sessionTtlMs: 2_592_000_000,
-            staticClients: [],
-            webSocketTicketTtlMs: 30_000
-        },
+        authentication: createAuthentication(),
         operatorToken: { mode: 'disabled', allowedClientIds: [], ttlMs: 86_400_000 },
         publicConfiguration: {
             apiBaseUrl: 'http://localhost:8080',
@@ -129,6 +121,25 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         strictReadAuthorization: false,
         nowEpochMs: () => 1_000,
         createTokenId: () => 'token-id'
+    };
+}
+
+function createAuthentication(): CreateApiV1RouteInstallersInput['authentication'] {
+    return {
+        adminClientIds: ['admin'],
+        agentSessionTicketTtlMs: 60_000,
+        rateLimits: {
+            windowMs: 60_000,
+            loginIp: 30,
+            loginUsername: 5,
+            registrationIp: 20,
+            registrationUsername: 5,
+            webSocketTicket: 30
+        },
+        registrationMode: 'public',
+        sessionTtlMs: 2_592_000_000,
+        staticClients: [],
+        webSocketTicketTtlMs: 30_000
     };
 }
 

@@ -1,5 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { insertRuntimeState } from '../../../runtime-state/postgres/insert-runtime-state.ts';
 
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type {
@@ -27,15 +28,7 @@ export async function writeAuthPersistenceOperation(
 ): Promise<void> {
     switch (operation.kind) {
         case 'insert': {
-            const rows = await transaction<Array<{ revision: number | string; }>>`
-                insert into runtime_state_store (store_namespace, store_key, store_value,
-                                                 expire_at_ts, updated_ts, revision)
-                values (${operation.namespace}, ${operation.key}, ${operation.value},
-                        ${operation.expireAtIsoTimestamp}, now(), 0)
-                on conflict (store_namespace, store_key) do nothing
-                returning revision
-            `;
-            requireApplied(rows);
+            await insertRuntimeState(transaction, operation);
             return;
         }
         case 'update': {

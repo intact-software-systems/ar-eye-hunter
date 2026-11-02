@@ -1,6 +1,8 @@
 import { FriendsPanel } from '@shared-react/friends-panel.tsx';
+import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
+import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
 import { useState, type FormEvent } from 'react';
@@ -44,6 +46,9 @@ export function ArenaOperations(props: ArenaOperationsProps) {
             refreshIntervalMs: 5_000
         })
     );
+    const [matchmaking] = useState(() =>
+        RallarMatchmaking.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
+    );
     const [friends] = useState(() =>
         RallarFriends.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 30_000 })
     );
@@ -65,6 +70,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
+            {arena.session && <MatchmakingPanel owner={matchmaking} findLabel="Find a game" />}
             {arena.session && (
                 <ScheduledSessionsPanel
                     owner={scheduledSessions}

@@ -26,6 +26,7 @@ import {
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import { type GroupMutationComputedWrite } from '../mutation/group-mutation-contracts.ts';
 import { constantTimeHexEqual } from '../mutation/group-state-crypto.ts';
+import type { GroupCohortAdmissionParticipant } from '../mutation/membership/compute-group-cohort-admission.ts';
 import { toGroupMutationAttemptFacts } from '../mutation/to-group-mutation-attempt-facts.ts';
 import { writeGroupMutation } from '../mutation/write/write-group-mutation.ts';
 import { groupStateUpdateGroupDescriptor } from '../persistence/aggregate/group-aggregate-write-descriptors.ts';
@@ -34,7 +35,7 @@ import {
     groupStateInsertPresenceAdmissionDescriptor,
     groupStateUpdatePresenceAdmissionDescriptor
 } from '../persistence/presence/group-presence-write-descriptors.ts';
-import { computeGroupMoveAdmission, type GroupMoveAdmissionParticipant } from './compute-group-move-admission.ts';
+import { computeGroupMoveAdmission, type GroupMoveAdmissionResult } from './compute-group-move-admission.ts';
 import { computeGroupMoveSource, type GroupMoveSource } from './compute-group-move-source.ts';
 import { computeGroupMove, type GroupMoveRejection } from './compute-group-move.ts';
 import { decodeGroupMoveRecord, type GroupMoveRecord } from './group-move-codec.ts';
@@ -45,7 +46,7 @@ import {
     type GroupMoveCommand,
     type GroupMoveIngress
 } from './group-move-command.ts';
-import { computeGroupMovePublication, decodeGroupMoveDeadline, type GroupMoveDeadline } from './group-move-outbox.ts';
+import { computeGroupMovePublication, type GroupMoveDeadline } from './group-move-outbox.ts';
 import { computeGroupMoveStorage, GroupMoveRepository, writeGroupMoveStorage } from './group-move-repository.ts';
 
 export namespace GroupMoveService {
@@ -68,7 +69,7 @@ export namespace GroupMoveService {
         readonly source: GroupMoveSource | null;
         readonly sessions: readonly RuntimeStateEntryValue<PersistedAuthSession>[];
         readonly participantAuthorityLive: boolean;
-        readonly admissions: readonly GroupMoveAdmissionParticipant[];
+        readonly admissions: readonly GroupCohortAdmissionParticipant[];
     }
     export interface ExpiryRead {
         readonly command: GroupMoveDeadline;
@@ -79,6 +80,12 @@ export namespace GroupMoveService {
     export interface ExpiryComputed {
         readonly result: GroupMove | null;
         readonly mutation: Computed | null;
+    }
+    export interface EffectsInput {
+        readonly read: Read;
+        readonly result: GroupMove;
+        readonly admission: GroupMoveAdmissionResult | null;
+        readonly prepared: RuntimeStateGuardedBatchWrite;
     }
     export interface Computed {
         readonly outbox: readonly AppOutboxInsert[];
@@ -141,8 +148,7 @@ export class GroupMoveService {
         });
     }
 
-    async read(value: unknown, attempt: AppInboxCommandAttempt): Promise<GroupMoveService.Read> {
-        const ingress = decodeGroupMoveIngress(value);
+    async read(ingress: GroupMoveIngress, attempt: AppInboxCommandAttempt): Promise<GroupMoveService.Read> {
         const { command } = ingress;
         const nowEpochMs = this.config.now();
         const actor = await this.readActor(ingress, nowEpochMs);
@@ -243,8 +249,8 @@ export class GroupMoveService {
         participantAuthorityLive: boolean,
         attempt: AppInboxCommandAttempt,
         nowEpochMs: number
-    ): Promise<GroupMoveAdmissionParticipant[]> {
-        const admissions: GroupMoveAdmissionParticipant[] = [];
+    ): Promise<GroupCohortAdmissionParticipant[]> {
+        const admissions: GroupCohortAdmissionParticipant[] = [];
         if (
             command.action === 'commit' && previous?.move.status === 'proposed' && participantAuthorityLive &&
             nowEpochMs < previous.move.expiresAtEpochMs &&
@@ -315,7 +321,7 @@ export class GroupMoveService {
     private computeWrite(
         read: GroupMoveService.Read,
         result: GroupMove,
-        admission: ReturnType<typeof computeGroupMoveAdmission> | null
+        admission: GroupMoveAdmissionResult | null
     ): Either<GroupMoveRejection, GroupMoveService.Computed> {
         const record = this.nextRecord(read, result);
         const prepared = computeGroupMoveStorage({
@@ -323,15 +329,11 @@ export class GroupMoveService {
             record,
             terminalRetentionMs: this.config.finishedRetentionMs
         });
-        return prepared.mapRight((storage) => this.computeEffects(read, result, admission, storage));
+        return prepared.mapRight((storage) => this.computeEffects({ read, result, admission, prepared: storage }));
     }
 
-    private computeEffects(
-        read: GroupMoveService.Read,
-        result: GroupMove,
-        admission: ReturnType<typeof computeGroupMoveAdmission> | null,
-        prepared: RuntimeStateGuardedBatchWrite
-    ): GroupMoveService.Computed {
+    private computeEffects(input: GroupMoveService.EffectsInput): GroupMoveService.Computed {
+        const { read, result, admission, prepared } = input;
         const publication = computeGroupMovePublication({
             move: result,
             revision: (read.storage.record?.entry.revision ?? -1) + 1,
@@ -398,8 +400,7 @@ export class GroupMoveService {
         }
     }
 
-    async readExpiry(value: unknown, traceId: string): Promise<GroupMoveService.ExpiryRead> {
-        const command = decodeGroupMoveDeadline(value);
+    async readExpiry(command: GroupMoveDeadline, traceId: string): Promise<GroupMoveService.ExpiryRead> {
         const previous = await this.dependencies.moves.find(command);
         return {
             command,
@@ -485,7 +486,7 @@ export class GroupMoveService {
 }
 
 function admissionAuthority(
-    participants: readonly GroupMoveAdmissionParticipant[],
+    participants: readonly GroupCohortAdmissionParticipant[],
     guardGroup: boolean
 ): RuntimeStateGuardedBatchEffect[] {
     const group = participants[0]?.read.group;

@@ -206,7 +206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: ['ar-eye', 'relic', 'relic-continuity', 'move-together']
+        lane: ['ar-eye', 'relic', 'relic-continuity', 'move-together', 'matchmaking']
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -299,6 +299,18 @@ jobs:
             tests/playwright/relic-hunters/full-stack-move-together.spec.ts \
             tests/playwright/relic-hunters/full-stack-scheduled-sessions.spec.ts \
             tests/playwright/relic-hunters/full-stack-friends.spec.ts --trace=retain-on-failure
+
+      - name: Run matchmaking browser tests in both games
+        if: ${{ matrix.lane == 'matchmaking' }}
+        env:
+          RALLAR_ARENA_FULL_STACK: '1'
+          RELIC_HUNTERS_FULL_STACK: '1'
+          RELIC_HUNTERS_BUILT_PREVIEW: '1'
+        run: |
+          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+            tests/playwright/ar-eye-hunter/matchmaking.spec.ts --project=desktop-delivery
+          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+            tests/playwright/relic-hunters/full-stack-matchmaking.spec.ts --trace=retain-on-failure
 
       - name: Upload room journey observations
         if: always()

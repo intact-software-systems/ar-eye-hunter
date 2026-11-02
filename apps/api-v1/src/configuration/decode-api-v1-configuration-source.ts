@@ -70,6 +70,7 @@ const DEFAULT_TOP_LEVEL_KEYS = new Set([
     'clientSessions',
     'stateApi',
     'friends',
+    'matchmaking',
     'group',
     'topology',
     'appInbox',
@@ -117,6 +118,9 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'registrationUsername',
         'webSocketTicket'
     ]),
+    matchmaking: new Set(['defaultPolicy', 'policiesByApplication', 'rateLimit']),
+    'matchmaking.defaultPolicy': new Set(['players', 'searchTimeoutMs', 'confirmationTimeoutMs', 'maxSearching']),
+    'matchmaking.rateLimit': new Set(['windowMs', 'requests']),
     friends: new Set(['maxContacts', 'maxInvitations', 'invitationLifetimeMs', 'rateLimit']),
     'friends.rateLimit': new Set(['windowMs', 'requests']),
     clientSessions: new Set(['disconnectedRetentionMs']),

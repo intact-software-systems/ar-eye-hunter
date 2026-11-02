@@ -3480,6 +3480,33 @@
         ]
       },
       "description": "Private account-level friendships: exact consent, replay, conflicting keys, blocked invitation revocation, scoped destination authority and default-hidden presence. Registers isolated accounts for this run."
+    },
+    {
+      "id": "api-v1-matchmaking",
+      "recipe": "tests/api-v1/api-v1-matchmaking.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-matchmaking"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-matchmaking",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Scoped two-player matchmaking: authenticated search, replay/conflict, whole-cohort decline, explicit retry, all-party confirmation, private recovery and atomic room membership."
     }
   ]
 }

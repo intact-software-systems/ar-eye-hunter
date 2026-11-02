@@ -177,5 +177,18 @@
       "windowMs": 60000,
       "requests": 60
     }
+  },
+  "matchmaking": {
+    "defaultPolicy": {
+      "players": 2,
+      "searchTimeoutMs": 120000,
+      "confirmationTimeoutMs": 30000,
+      "maxSearching": 256
+    },
+    "policiesByApplication": {},
+    "rateLimit": {
+      "windowMs": 60000,
+      "requests": 30
+    }
   }
 }

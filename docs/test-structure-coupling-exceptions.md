@@ -5173,6 +5173,96 @@ moved or changed test.
         "requiredConstraint": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read.",
         "failureRationale": "Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract."
       }
+    },
+    {
+      "id": "matchmaking-confirmation-blocks-admission",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "A confirming cohort cannot initiate room admission before its committed destination is recovered.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#recovers confirmation, binds commands to the recovered search, and enters only a committed destination",
+      "coverageRelation": "A confirming cohort cannot initiate room admission before its committed destination is recovered. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarMatchmaking entry.enter",
+        "observableEffect": "Room admission changes the active multiplayer room and participation.",
+        "requiredConstraint": "Entry remains unused while confirmation is pending.",
+        "failureRationale": "An unchanged confirmation view could coexist with an in-flight admission, so rendered state cannot prove the absence of premature entry."
+      }
+    },
+    {
+      "id": "matchmaking-ambiguous-command-blocks-replacement",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "After an ambiguous mutation response, Find and Cancel cannot replace the unresolved command; explicit retry preserves its semantic identity.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves",
+      "coverageRelation": "After an ambiguous mutation response, Find and Cancel cannot replace the unresolved command; explicit retry preserves its semantic identity. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking Api.change",
+        "observableEffect": "Each outbound mutation may commit independently on the server despite a missing response.",
+        "requiredConstraint": "Exactly the initial mutation is sent before explicit Retry; replacement controls produce no additional mutation.",
+        "failureRationale": "The same retry-pending view can hide a second remotely committed command; counting the mutation port excludes that ambiguity."
+      }
+    },
+    {
+      "id": "matchmaking-timeout-never-auto-requeues",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "Recovery of a timed-out cohort never starts another search without explicit consent.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#never requeues a timed-out cohort and uses a new identity only after an explicit new search",
+      "coverageRelation": "Recovery of a timed-out cohort never starts another search without explicit consent. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking Api.change",
+        "observableEffect": "A new search mutation allocates a queue position and may reserve another cohort.",
+        "requiredConstraint": "Only the explicitly requested cancel is sent before the later explicit Find action.",
+        "failureRationale": "An ended local snapshot can remain visible while an unsolicited search is in flight, so the mutation count independently proves consent."
+      }
+    },
+    {
+      "id": "matchmaking-failed-refresh-blocks-stale-entry",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "A failed fresh snapshot read prevents entry through an earlier matched destination.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#rejects another scope or account and prevents stale entry after a failed fresh read",
+      "coverageRelation": "A failed fresh snapshot read prevents entry through an earlier matched destination. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarMatchmaking entry.enter",
+        "observableEffect": "Admission can move the account into a stale room using previously recovered state.",
+        "requiredConstraint": "No room admission is initiated after the freshness read fails.",
+        "failureRationale": "Displaying Offline does not exclude a concurrent admission; the unused admission port proves fail-closed behavior."
+      }
+    },
+    {
+      "id": "matchmaking-polling-lifecycle",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "Inactive and stopped browser owners produce no polling traffic; foreground recovery coalesces concurrent refreshes and shutdown preserves the durable search.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search",
+      "coverageRelation": "Inactive and stopped browser owners produce no polling traffic; foreground recovery coalesces concurrent refreshes and shutdown preserves the durable search. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking Api.read and Api.change",
+        "observableEffect": "Read calls consume server capacity; mutation calls can cancel a durable account search.",
+        "requiredConstraint": "One initial read, one coalesced foreground recovery read, no inactive or stopped reads, and no shutdown mutation.",
+        "failureRationale": "The same final searching view can hide unnecessary network work or a remotely cancelled search; owned API observations prove lifecycle suppression."
+      }
+    },
+    {
+      "id": "matchmaking-http-retry-identity",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "One lost HTTP response is retried once with the identical scoped idempotency URL and authenticated command payload.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery",
+      "coverageRelation": "One lost HTTP response is retried once with the identical scoped idempotency URL and authenticated command payload. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "matchmakingHttpApi global fetch HTTP transport",
+        "observableEffect": "Requests at distinct request URLs can commit separate AppInbox mutations.",
+        "requiredConstraint": "The initial failed attempt and successful retry use the same application, workspace and request identity.",
+        "failureRationale": "A successful final response alone cannot exclude an earlier independently committed command with another identity."
+      }
     }
   ],
   "entries": [
@@ -10928,6 +11018,105 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
       "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-c88ec6352a5a9b62",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-confirmation-blocks-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Calling Enter while confirmation is pending must not reach the room admission port.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#recovers confirmation, binds commands to the recovered search, and enters only a committed destination"
+    },
+    {
+      "id": "test-structure-coupling-4d6bf15258f70094",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-ambiguous-command-blocks-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Find and Cancel must leave the original single outbound command unresolved rather than send replacements.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves"
+    },
+    {
+      "id": "test-structure-coupling-e21badfde30dee8f",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-timeout-never-auto-requeues",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Repeated recovery polling after timeout must not add a search mutation to the explicit cancellation.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#never requeues a timed-out cohort and uses a new identity only after an explicit new search"
+    },
+    {
+      "id": "test-structure-coupling-b20305207bf1ea7f",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-failed-refresh-blocks-stale-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "The old matched snapshot must not authorize entry when the required fresh read fails.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#rejects another scope or account and prevents stale entry after a failed fresh read"
+    },
+    {
+      "id": "test-structure-coupling-364f3127b1e77dfc",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Three background timer intervals must not add to the initial read.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-84a8ed91f83e0ebd",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Foreground notification and concurrent explicit refresh must coalesce into one additional recovery read.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-9ca97d0e017f5bb3",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Advancing timers after stop must not add further reads.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-e94d8e51dd3edd8b",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Stopping the local owner must leave the durable search intact by sending no mutation.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-bd3e89161872b5f7",
+      "path": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-http-retry-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Both captured transport attempts must use the same scoped request URL so an ambiguous response cannot create two logical commands.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery"
     }
   ]
 }
