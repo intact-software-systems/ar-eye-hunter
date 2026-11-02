@@ -74,15 +74,17 @@ export function computeMatchmakingStorage(
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
     }
-    return computePoolStorage(read, pool, guardedEffects, inserts);
+    return computePoolStorage({ read, pool, guardedEffects, inserts });
 }
 
-function computePoolStorage(
-    read: MatchmakingRepository.Read,
-    pool: MatchmakingPool,
-    guardedEffects: readonly RuntimeStateGuardedBatchEffect[],
-    inserts: readonly RuntimeStateInsert[]
-): RuntimeStateConditionalBatch {
+interface PoolStorageInput {
+    readonly read: MatchmakingRepository.Read;
+    readonly pool: MatchmakingPool;
+    readonly guardedEffects: readonly RuntimeStateGuardedBatchEffect[];
+    readonly inserts: readonly RuntimeStateInsert[];
+}
+
+function computePoolStorage({ read, pool, guardedEffects, inserts }: PoolStorageInput): RuntimeStateConditionalBatch {
     const batch = computeRuntimeStateGuardedBatchWrite({
         guard: {
             namespace: MATCHMAKING_POOLS_NAMESPACE,
