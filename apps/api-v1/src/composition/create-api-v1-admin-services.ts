@@ -1,4 +1,5 @@
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
+import { ReadAdminRoomDirectory } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-directory.ts';
 import type {
     AdminSupportTopologyQuery,
     AdminSupportUseCases,
@@ -17,6 +18,7 @@ import type {
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-status.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import {
@@ -40,6 +42,7 @@ export interface CreateApiV1AdminServicesInput extends CreateApiV1AdminOperation
 }
 
 export interface ApiV1AdminServices {
+    readonly rooms: ReadAdminRoomDirectory;
     readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: SpaStatisticsUseCases;
@@ -48,8 +51,11 @@ export interface ApiV1AdminServices {
 export function createApiV1AdminServices(
     input: CreateApiV1AdminServicesInput
 ): ApiV1AdminServices {
-    const readWebSocketStatus = input.readWebSocketStatus;
     return {
+        rooms: new ReadAdminRoomDirectory({
+            repository: new PSqlRuntimeStateRepository(input.database),
+            nowEpochMs: input.nowEpochMs
+        }),
         operations: createApiV1AdminOperationUseCases(input),
         support: createAdminSupportUseCases({
             now: input.nowEpochMs,
@@ -59,7 +65,7 @@ export function createApiV1AdminServices(
             groupStateService: input.groupStateService,
             topologyQuery: input.topologyQuery,
             readLifecyclePolicy: input.readLifecyclePolicy,
-            wsStatus: readWebSocketStatus,
+            wsStatus: input.readWebSocketStatus,
             crdtAdminRepository: input.crdtAdminRepository,
             timing: input.timing
         }),
@@ -67,7 +73,7 @@ export function createApiV1AdminServices(
             now: input.nowEpochMs,
             clientStateService: input.clientStateService,
             groupStateService: input.groupStateService,
-            wsStatus: readWebSocketStatus
+            wsStatus: input.readWebSocketStatus
         })
     };
 }

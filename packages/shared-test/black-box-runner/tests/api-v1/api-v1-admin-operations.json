@@ -53,6 +53,18 @@
   },
   "steps": [
     {
+      "name": "rejectMissingRoomInspectionAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
       "name": "rejectMissingAdminAuth",
       "type": "http",
       "connection": "api",
@@ -952,6 +964,98 @@
       },
       "expect": {
         "status": 201
+      }
+    },
+    {
+      "name": "rejectPlayerRoomInspection",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}",
+        "headers": {
+          "Authorization": "{scopeAuthHeader}",
+          "x-client-id": "{scopeClientId}"
+        }
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "inspectScopedRoomDirectory",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}?limit=1",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "completeness": "complete",
+          "scope": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}"
+          },
+          "entries": [
+            {
+              "status": "valid",
+              "room": {
+                "roomRef": {
+                  "applicationId": "{scopeApplicationId}",
+                  "workspaceId": "{scopeWorkspaceId}",
+                  "groupId": "adminops-group-{runId}"
+                },
+                "status": "active",
+                "joinMode": "open",
+                "activeMemberCount": 1
+              }
+            }
+          ],
+          "nextAfterGroupId": null
+        }
+      }
+    },
+    {
+      "name": "inspectAfterLastRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}?afterGroupId=adminops-group-{runId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [],
+          "nextAfterGroupId": null,
+          "completeness": "complete"
+        }
+      }
+    },
+    {
+      "name": "rejectUnboundedRoomInspection",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}?limit=101",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 400
       }
     },
     {
