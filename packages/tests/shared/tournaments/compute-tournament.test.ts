@@ -1,7 +1,8 @@
 import { createTournamentResult } from '@shared-server/rallar-system/tournaments/tournament-result.ts';
-import type { TournamentCommand } from '@shared/api/tournaments/tournament-request.ts';
+import { decodeTournament } from '@shared/api/tournaments/decode-tournament.ts';
 import type { Tournament, TournamentMatchBinding, TournamentMatchResult } from '@shared/api/tournaments/tournament-types.ts';
 import { computeTournament, createTournament } from '@shared/tournaments/compute-tournament.ts';
+import type { TournamentCommand } from '@shared/tournaments/tournament-command.ts';
 import { describe, expect, it } from 'vitest';
 
 const REF = { applicationId: 'game', workspaceId: 'default', tournamentId: 'cup' };
@@ -12,7 +13,9 @@ function created(grace = 600000): Tournament {
 }
 
 function act(state: Tournament, command: TournamentCommand, actorPrincipalId: string | null = 'host', nowEpochMs = START) {
-    return computeTournament({ state, command, actorPrincipalId, nowEpochMs, results: [] });
+    const decision = computeTournament({ state, command, actorPrincipalId, nowEpochMs, results: [] });
+    expect(decodeTournament(decision.state)).toEqual(decision.state);
+    return decision;
 }
 
 function bracket(grace = 600000): Tournament {
@@ -58,7 +61,9 @@ function result(state: Tournament, slot: TournamentMatchBinding['slot'], scores:
 }
 
 function reconcile(state: Tournament, results: readonly TournamentMatchResult[], nowEpochMs = START + 1000) {
-    return computeTournament({ state, command: { type: 'reconcile' }, actorPrincipalId: null, nowEpochMs, results }).state;
+    const decision = computeTournament({ state, command: { type: 'reconcile' }, actorPrincipalId: null, nowEpochMs, results });
+    expect(decodeTournament(decision.state)).toEqual(decision.state);
+    return decision.state;
 }
 
 describe('four-player tournament policy', () => {

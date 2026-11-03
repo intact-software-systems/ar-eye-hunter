@@ -1,7 +1,7 @@
 import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
 import { decodeStateScope } from '../state-types.ts';
-import type { TournamentMatchBinding } from './tournament-types.ts';
+import type { TournamentMatchBinding, TournamentRef } from './tournament-types.ts';
 
 export function decodeTournamentMatchBinding(value: unknown): TournamentMatchBinding {
     const binding = requireRecord(value, 'Tournament match binding');
@@ -10,10 +10,8 @@ export function decodeTournamentMatchBinding(value: unknown): TournamentMatchBin
         ['tournamentRef', 'slot', 'attemptId', 'roomRef', 'gameId', 'rulesId', 'principalIds'],
         'Tournament match binding'
     );
-    const ref = requireRecord(binding.tournamentRef, 'Tournament reference');
-    requireExactKeys(ref, ['applicationId', 'workspaceId', 'tournamentId'], 'Tournament reference');
-    const scope = decodeStateScope({ applicationId: ref.applicationId, workspaceId: ref.workspaceId });
-    requireString(ref.tournamentId, 'Tournament identity');
+    const ref = decodeTournamentRef(binding.tournamentRef);
+    const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
     const room = requireRecord(binding.roomRef, 'Tournament room');
     requireExactKeys(room, ['applicationId', 'workspaceId', 'groupId'], 'Tournament room');
     requireString(room.groupId, 'Tournament room identity');
@@ -34,7 +32,7 @@ export function decodeTournamentMatchBinding(value: unknown): TournamentMatchBin
         throw new TypeError('Tournament accounts must differ');
     }
     return {
-        tournamentRef: { ...scope, tournamentId: assertValidRallarRouteId(ref.tournamentId) },
+        tournamentRef: ref,
         slot: requireOneOf(binding.slot, ['semifinal-1', 'semifinal-2', 'final'], 'Tournament slot'),
         attemptId: assertValidRallarRouteId(binding.attemptId),
         roomRef: { ...scope, groupId: assertValidRallarRouteId(room.groupId) },
@@ -42,4 +40,11 @@ export function decodeTournamentMatchBinding(value: unknown): TournamentMatchBin
         rulesId: assertValidRallarRouteId(binding.rulesId),
         principalIds: [assertValidRallarRouteId(first), assertValidRallarRouteId(second)]
     };
+}
+
+export function decodeTournamentRef(value: unknown): TournamentRef {
+    const ref = requireRecord(value, 'Tournament reference');
+    requireExactKeys(ref, ['applicationId', 'workspaceId', 'tournamentId'], 'Tournament reference');
+    const scope = decodeStateScope({ applicationId: ref.applicationId, workspaceId: ref.workspaceId });
+    return { ...scope, tournamentId: assertValidRallarRouteId(ref.tournamentId) };
 }

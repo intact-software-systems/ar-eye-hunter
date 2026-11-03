@@ -1,15 +1,18 @@
-import { requireEpoch, requireString } from '../api/exact-object-decoding.ts';
+import { requireEpoch } from '../api/exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../api/rallar-validation.ts';
-import { decodeTournamentMatchBinding } from '../api/tournaments/decode-tournament-match-binding.ts';
-import type { TournamentCommand } from '../api/tournaments/tournament-request.ts';
+import {
+    decodeTournamentMatchBinding,
+    decodeTournamentRef
+} from '../api/tournaments/decode-tournament-match-binding.ts';
+import { decodeTournamentTitle } from '../api/tournaments/decode-tournament.ts';
 import type {
     Tournament,
     TournamentMatch,
     TournamentMatchResult,
-    TournamentRef,
-    TournamentResolution
+    TournamentRef
 } from '../api/tournaments/tournament-types.ts';
-import { jsonEquals } from '../repository/state-utils.ts';
+import { settleTournament } from './settle-tournament.ts';
+import type { TournamentCommand } from './tournament-command.ts';
 
 export interface CreateTournamentInput {
     readonly ref: TournamentRef;
@@ -35,16 +38,17 @@ export interface TournamentDecision {
 }
 
 export function createTournament(input: CreateTournamentInput): Tournament {
-    requireString(input.title, 'Tournament title');
+    const title = decodeTournamentTitle(input.title);
+    const ref = decodeTournamentRef(input.ref);
     requireEpoch(input.createdAtEpochMs, 'Tournament creation');
     requireEpoch(input.noShowGraceMs, 'Tournament no-show grace');
-    if (input.noShowGraceMs === 0 || input.title.trim() !== input.title || input.title.length > 120) {
+    if (input.noShowGraceMs === 0) {
         throw new TypeError('Tournament title or no-show grace is invalid');
     }
-    for (const value of [...Object.values(input.ref), input.organizerPrincipalId, input.rulesId]) {
+    for (const value of [input.organizerPrincipalId, input.rulesId]) {
         assertValidRallarRouteId(value);
     }
-    return { ...input, status: 'registration', entrants: [], matches: [], championPrincipalId: null };
+    return { ...input, ref, title, status: 'registration', entrants: [], matches: [], championPrincipalId: null };
 }
 
 /** Pure bracket policy. Persistence fences the complete predecessor, room admission and attempt authority together. */
@@ -69,7 +73,7 @@ export function computeTournament(input: ComputeTournamentInput): TournamentDeci
         return withdrawEntrant(current, actorPrincipalId);
     }
     if (command.type === 'check-in') {
-        return changeMatch(current, command);
+        return changeMatch(current, command, actorPrincipalId);
     }
     if (actorPrincipalId !== state.organizerPrincipalId) {
         return { state, refusal: 'organizer-required' };
@@ -89,10 +93,7 @@ export function computeTournament(input: ComputeTournamentInput): TournamentDeci
             refusal: null
         };
     }
-    if (command.type === 'schedule' || command.type === 'start') {
-        return changeMatch(current, command);
-    }
-    return { state, refusal: 'unsupported-command' };
+    return changeMatch(current, command, actorPrincipalId);
 }
 
 function registerEntrant(input: ComputeTournamentInput, principalId: string): TournamentDecision {
@@ -157,7 +158,8 @@ function launchTournament(state: Tournament): TournamentDecision {
 
 function changeMatch(
     input: ComputeTournamentInput,
-    command: Extract<TournamentCommand, { readonly slot: TournamentMatch['slot']; }>
+    command: Extract<TournamentCommand, { readonly slot: TournamentMatch['slot']; }>,
+    actorPrincipalId: string
 ): TournamentDecision {
     const { state } = input;
     const match = state.matches.find((candidate) => candidate.slot === command.slot);
@@ -177,7 +179,7 @@ function changeMatch(
     const withdrawn = state.entrants.filter((entrant) => entrant.withdrawnAtEpochMs !== null).map((entrant) =>
         entrant.principalId
     );
-    if (command.type === 'check-in' && input.actorPrincipalId !== null && withdrawn.includes(input.actorPrincipalId)) {
+    if (command.type === 'check-in' && withdrawn.includes(actorPrincipalId)) {
         return { state, refusal: 'entrant-withdrawn' };
     }
     const waitingForForfeit = match.status === 'unresolved' &&
@@ -187,15 +189,15 @@ function changeMatch(
         return { state, refusal: 'match-not-scheduled' };
     }
     if (command.type === 'check-in') {
-        if (input.actorPrincipalId === null || !match.principalIds.includes(input.actorPrincipalId)) {
+        if (!match.principalIds.includes(actorPrincipalId)) {
             return { state, refusal: 'not-a-competitor' };
         }
-        if (attempt.checkedInPrincipalIds.includes(input.actorPrincipalId)) {
+        if (attempt.checkedInPrincipalIds.includes(actorPrincipalId)) {
             return { state, refusal: null };
         }
         return replaceMatch(state, {
             ...match,
-            attempt: { ...attempt, checkedInPrincipalIds: [...attempt.checkedInPrincipalIds, input.actorPrincipalId] }
+            attempt: { ...attempt, checkedInPrincipalIds: [...attempt.checkedInPrincipalIds, actorPrincipalId] }
         });
     }
     if (attempt.checkedInPrincipalIds.length !== 2) {
@@ -258,109 +260,4 @@ function replaceMatch(state: Tournament, replacement: TournamentMatch): Tourname
         },
         refusal: null
     };
-}
-
-function settleTournament(input: ComputeTournamentInput): Tournament {
-    if (input.state.status !== 'active') {
-        return input.state;
-    }
-    const matches = input.state.matches.map((match) => settleMatch(input, match));
-    const first = matches.find((match) => match.slot === 'semifinal-1')!;
-    const second = matches.find((match) => match.slot === 'semifinal-2')!;
-    const finalIndex = matches.findIndex((match) => match.slot === 'final');
-    if (matches[finalIndex].principalIds === null && first.resolution !== null && second.resolution !== null) {
-        matches[finalIndex] = settleMatch(input, {
-            ...matches[finalIndex],
-            status: 'ready',
-            principalIds: [first.resolution.winnerPrincipalId, second.resolution.winnerPrincipalId]
-        });
-    }
-    const champion = matches[finalIndex].resolution?.winnerPrincipalId ?? null;
-    return {
-        ...input.state,
-        matches,
-        status: champion === null ? 'active' : 'complete',
-        championPrincipalId: champion
-    };
-}
-
-function settleMatch(input: ComputeTournamentInput, match: TournamentMatch): TournamentMatch {
-    if (match.principalIds === null || match.status === 'complete' || match.status === 'cancelled') {
-        return match;
-    }
-    const remaining = match.principalIds.filter((principalId) =>
-        input.state.entrants.some((entrant) =>
-            entrant.principalId === principalId && entrant.withdrawnAtEpochMs === null
-        )
-    );
-    if (remaining.length === 0) {
-        return { ...match, status: 'unresolved', resolution: null };
-    }
-    if (remaining.length === 1) {
-        const attempt = match.attempt;
-        if (
-            attempt !== null && input.nowEpochMs >= attempt.scheduledAtEpochMs + input.state.noShowGraceMs &&
-            attempt.checkedInPrincipalIds.includes(remaining[0])
-        ) {
-            return resolveMatch(match, {
-                winnerPrincipalId: remaining[0],
-                reason: 'withdrawal',
-                resolvedAtEpochMs: input.nowEpochMs,
-                resultId: null
-            });
-        }
-        return { ...match, status: 'unresolved', resolution: null };
-    }
-    const attempt = match.attempt;
-    if (attempt === null) {
-        return match;
-    }
-    if (match.status === 'scheduled' && input.nowEpochMs >= attempt.scheduledAtEpochMs + input.state.noShowGraceMs) {
-        if (attempt.checkedInPrincipalIds.length === 0) {
-            return { ...match, status: 'unresolved' };
-        }
-        if (attempt.checkedInPrincipalIds.length === 1) {
-            return resolveMatch(match, {
-                winnerPrincipalId: attempt.checkedInPrincipalIds[0],
-                reason: 'no-show',
-                resolvedAtEpochMs: input.nowEpochMs,
-                resultId: null
-            });
-        }
-    }
-    return settleScoredMatch(input, match);
-}
-
-function settleScoredMatch(input: ComputeTournamentInput, match: TournamentMatch): TournamentMatch {
-    const attempt = match.attempt;
-    if (match.status !== 'playing' || attempt === null || match.principalIds === null) {
-        return match;
-    }
-    const result = input.results.find((candidate) => jsonEquals(candidate.summary, attempt.binding));
-    if (result === undefined) {
-        return match;
-    }
-    if (result.startedAtEpochMs !== attempt.startedAtEpochMs || result.finishedAtEpochMs > input.nowEpochMs) {
-        throw new TypeError('Tournament result clock differs from its attempt');
-    }
-    const scores = match.principalIds.map((principalId) =>
-        result.standings.find((standing) => standing.principalId === principalId)?.metrics.points
-    );
-    if (scores.some((score) => typeof score !== 'number' || !Number.isSafeInteger(score))) {
-        throw new TypeError('Tournament result lacks native scores');
-    }
-    if (scores[0] === scores[1]) {
-        return { ...match, status: 'tied' };
-    }
-    const winner = scores[0]! > scores[1]! ? match.principalIds[0] : match.principalIds[1];
-    return resolveMatch(match, {
-        winnerPrincipalId: winner,
-        reason: 'score',
-        resolvedAtEpochMs: result.finishedAtEpochMs,
-        resultId: result.resultId
-    });
-}
-
-function resolveMatch(match: TournamentMatch, resolution: TournamentResolution): TournamentMatch {
-    return { ...match, status: 'complete', resolution };
 }
