@@ -12,7 +12,7 @@ import { decodeGroupMoveClaim, type GroupMoveClaim } from '@shared/api/mutation/
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
-import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { computeWsOutboxProvenanceRecord } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 

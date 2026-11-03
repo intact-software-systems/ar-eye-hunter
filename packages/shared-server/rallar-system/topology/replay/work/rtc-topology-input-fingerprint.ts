@@ -6,7 +6,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
-import { computeSha256CanonicalJson } from '../../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../persistence/rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../persistence/rtc-topology-identifiers.ts';

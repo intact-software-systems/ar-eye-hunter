@@ -1,3 +1,6 @@
+import type { RallarValidationIssue } from '../api/rallar-validation.ts';
+import { decodeBase64Any, decodeBase64Url, toBase64Url } from '../encoding/base64url.ts';
+import { Either } from '../resilience/Either.ts';
 import {
     formatRallarCrdtValidation,
     validateRallarCrdtOperationBatch,
@@ -18,22 +21,22 @@ import type {
     RallarCrdtUpdateEnvelope
 } from './crdt-types.ts';
 
-export type RallarCrdtEncryptionKeyMaterial = Readonly<{
-    keyId: string;
-    secret?: string;
-    rawKeyBase64?: string;
-    ownerPrincipalId?: string;
-    rotationEpochMs?: number;
-    revokedAtEpochMs?: number;
-}>;
+export interface RallarCrdtEncryptionKeyMaterial {
+    readonly keyId: string;
+    readonly secret?: string;
+    readonly rawKeyBase64?: string;
+    readonly ownerPrincipalId?: string;
+    readonly rotationEpochMs?: number;
+    readonly revokedAtEpochMs?: number;
+}
 
-export type RallarCrdtEncryptionKeyring = Readonly<{
-    activeKeyId: string;
-    keys: readonly RallarCrdtEncryptionKeyMaterial[];
-    visibleMetadataFields?: readonly string[];
-    now?: () => number;
-    randomBytes?: (length: number) => Uint8Array;
-}>;
+export interface RallarCrdtEncryptionKeyring {
+    readonly activeKeyId: string;
+    readonly keys: readonly RallarCrdtEncryptionKeyMaterial[];
+    readonly visibleMetadataFields?: readonly string[];
+    readonly now?: () => number;
+    readonly randomBytes?: (length: number) => Uint8Array;
+}
 
 export type RallarCrdtEncryptionKeyStatus =
     | 'active'
@@ -41,29 +44,36 @@ export type RallarCrdtEncryptionKeyStatus =
     | 'revoked'
     | 'material-missing';
 
-export type RallarCrdtEncryptionKeyDescriptor = Readonly<{
-    keyId: string;
-    status: RallarCrdtEncryptionKeyStatus;
-    ownerPrincipalId?: string;
-    rotationEpochMs?: number;
-    revokedAtEpochMs?: number;
-    hasMaterial: boolean;
-}>;
+export interface RallarCrdtEncryptionKeyDescriptor {
+    readonly keyId: string;
+    readonly status: RallarCrdtEncryptionKeyStatus;
+    readonly ownerPrincipalId?: string;
+    readonly rotationEpochMs?: number;
+    readonly revokedAtEpochMs?: number;
+    readonly hasMaterial: boolean;
+}
 
-type SnapshotPlaintextBody<TValue> = Readonly<{
-    value: TValue;
-    metadata: RallarCrdtSnapshotMetadata;
-}>;
+interface CrdtEncryptionAad {
+    readonly context: 'rallar.crdt.update.payload.v1' | 'rallar.crdt.snapshot.body.v1';
+    readonly plaintextHash: string;
+    readonly envelope: object;
+}
+
+interface SnapshotPlaintextBody<TValue> {
+    readonly value: TValue;
+    readonly metadata: RallarCrdtSnapshotMetadata;
+}
 
 export function isRallarCrdtEncryptedJsonEnvelope(
     value: unknown
 ): value is RallarCrdtEncryptedJsonEnvelope {
     return (
-        !!value &&
         typeof value === 'object' &&
-        (value as { kind?: unknown; }).kind === 'encrypted-json' &&
-        (value as { format?: unknown; }).format ===
-            'rallar.crdt.encrypted-json.v1'
+        value !== null &&
+        'kind' in value &&
+        value.kind === 'encrypted-json' &&
+        'format' in value &&
+        value.format === 'rallar.crdt.encrypted-json.v1'
     );
 }
 
@@ -73,12 +83,12 @@ export function isRallarCrdtEncryptedOperationBatch(
     & RallarCrdtOperationBatch
     & Readonly<{ encryption: RallarCrdtEncryptedJsonEnvelope; }> {
     return (
-        !!value &&
         typeof value === 'object' &&
-        (value as { kind?: unknown; }).kind === 'batch' &&
-        isRallarCrdtEncryptedJsonEnvelope(
-            (value as { encryption?: unknown; }).encryption
-        )
+        value !== null &&
+        'kind' in value &&
+        value.kind === 'batch' &&
+        'encryption' in value &&
+        isRallarCrdtEncryptedJsonEnvelope(value.encryption)
     );
 }
 
@@ -187,13 +197,13 @@ export async function decryptRallarCrdtUpdateEnvelope<
         return update as RallarCrdtUpdateEnvelope<TPayload>;
     }
 
-    const plaintextPayload = (await decryptJson(update.payload.encryption, {
+    const plaintextPayload = await decryptJson<TPayload>(update.payload.encryption, {
         keyring,
         aad: createUpdatePayloadAad(
             update,
             update.payload.encryption.plaintextHash
         )
-    })) as TPayload;
+    });
     const validation = validateRallarCrdtOperationBatch(
         plaintextPayload,
         '$.payload'
@@ -249,10 +259,10 @@ export async function decryptRallarCrdtSnapshotEnvelope<TValue>(
         return snapshot as RallarCrdtSnapshotEnvelope<TValue>;
     }
 
-    const body = (await decryptJson(snapshot.value, {
+    const body = await decryptJson<SnapshotPlaintextBody<TValue>>(snapshot.value, {
         keyring,
         aad: createSnapshotBodyAad(snapshot, snapshot.value.plaintextHash)
-    })) as SnapshotPlaintextBody<TValue>;
+    });
     const plaintextSnapshotWithoutHash = {
         ...withoutHash(snapshot),
         value: body.value,
@@ -270,17 +280,17 @@ export async function decryptRallarCrdtSnapshotEnvelope<TValue>(
 }
 
 async function encryptJson(
-    plaintext: unknown,
+    plaintext: object,
     input: Readonly<{
         keyring: RallarCrdtEncryptionKeyring;
         plaintextType: RallarCrdtEncryptedPlaintextType;
-        aad: unknown;
+        aad: CrdtEncryptionAad;
     }>
 ): Promise<RallarCrdtEncryptedJsonEnvelope> {
     const key = resolveActiveKey(input.keyring);
     const plaintextHash = hashRallarCrdtJson(plaintext);
     const aad = stripUndefined({
-        ...asRecord(input.aad),
+        ...input.aad,
         keyId: key.keyId,
         plaintextHash,
         plaintextType: input.plaintextType
@@ -304,8 +314,8 @@ async function encryptJson(
         format: 'rallar.crdt.encrypted-json.v1',
         algorithm: 'AES-GCM-256',
         keyId: key.keyId,
-        nonce: encodeBase64Url(nonce),
-        ciphertext: encodeBase64Url(new Uint8Array(ciphertext)),
+        nonce: toBase64Url(nonce),
+        ciphertext: toBase64Url(new Uint8Array(ciphertext)),
         plaintextHash,
         aadHash: hashRallarCrdtJson(aad),
         plaintextType: input.plaintextType,
@@ -316,16 +326,16 @@ async function encryptJson(
     };
 }
 
-async function decryptJson(
+async function decryptJson<TPlaintext>(
     encrypted: RallarCrdtEncryptedJsonEnvelope,
     input: Readonly<{
         keyring: RallarCrdtEncryptionKeyring;
-        aad: unknown;
+        aad: CrdtEncryptionAad;
     }>
-): Promise<unknown> {
+): Promise<TPlaintext> {
     const key = resolveKey(input.keyring, encrypted.keyId);
     const aad = stripUndefined({
-        ...asRecord(input.aad),
+        ...input.aad,
         keyId: encrypted.keyId,
         plaintextHash: encrypted.plaintextHash,
         plaintextType: encrypted.plaintextType
@@ -337,13 +347,13 @@ async function decryptJson(
     const plaintext = await subtle().decrypt(
         {
             name: 'AES-GCM',
-            iv: toArrayBuffer(decodeBase64Url(encrypted.nonce)),
+            iv: toArrayBuffer(toCrdtEncryptionBytes(decodeBase64Url(encrypted.nonce))),
             additionalData: toArrayBuffer(
                 encodeUtf8(canonicalRallarCrdtJson(aad))
             )
         },
         await importAesGcmKey(key),
-        toArrayBuffer(decodeBase64Url(encrypted.ciphertext))
+        toArrayBuffer(toCrdtEncryptionBytes(decodeBase64Url(encrypted.ciphertext)))
     );
     const parsed = JSON.parse(decodeUtf8(new Uint8Array(plaintext)));
     if (hashRallarCrdtJson(parsed) !== encrypted.plaintextHash) {
@@ -355,7 +365,7 @@ async function decryptJson(
 function createUpdatePayloadAad(
     update: RallarCrdtUpdateEnvelope,
     plaintextHash: string
-): Record<string, unknown> {
+): CrdtEncryptionAad {
     const { payload: _payload, hash: _hash, ...metadata } = update;
     return {
         context: 'rallar.crdt.update.payload.v1',
@@ -367,7 +377,7 @@ function createUpdatePayloadAad(
 function createSnapshotBodyAad(
     snapshot: RallarCrdtSnapshotEnvelope,
     plaintextHash: string
-): Record<string, unknown> {
+): CrdtEncryptionAad {
     const {
         value: _value,
         hash: _hash,
@@ -426,7 +436,7 @@ async function importAesGcmKey(
     key: RallarCrdtEncryptionKeyMaterial
 ): Promise<CryptoKey> {
     const bytes = key.rawKeyBase64
-        ? decodeBase64Url(key.rawKeyBase64)
+        ? toCrdtEncryptionBytes(decodeBase64Any(key.rawKeyBase64))
         : new Uint8Array(
             await subtle().digest(
                 'SHA-256',
@@ -470,12 +480,6 @@ function withoutHash<T extends { hash?: string; }>(value: T): Omit<T, 'hash'> {
     return without;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : {};
-}
-
 function encodeUtf8(value: string): Uint8Array {
     return new TextEncoder().encode(value);
 }
@@ -490,69 +494,25 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
     return copy.buffer;
 }
 
-function stripUndefined(value: unknown): unknown {
+function stripUndefined<TValue>(value: TValue): TValue {
     if (Array.isArray(value)) {
-        return value.map(stripUndefined);
+        return value.map(stripUndefined) as TValue;
     }
     if (value && typeof value === 'object') {
         return Object.fromEntries(
             Object.entries(value)
                 .filter(([, entryValue]) => entryValue !== undefined)
                 .map(([key, entryValue]) => [key, stripUndefined(entryValue)])
-        );
+        ) as TValue;
     }
     return value;
 }
 
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-function encodeBase64Url(bytes: Uint8Array): string {
-    let output = '';
-    for (let index = 0; index < bytes.length; index += 3) {
-        const first = bytes[index] ?? 0;
-        const second = bytes[index + 1] ?? 0;
-        const third = bytes[index + 2] ?? 0;
-        const chunk = (first << 16) | (second << 8) | third;
-        output += BASE64_ALPHABET[(chunk >> 18) & 63];
-        output += BASE64_ALPHABET[(chunk >> 12) & 63];
-        output += index + 1 < bytes.length ? BASE64_ALPHABET[(chunk >> 6) & 63] : '=';
-        output += index + 2 < bytes.length ? BASE64_ALPHABET[chunk & 63] : '=';
-    }
-    return output.replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-}
-
-function decodeBase64Url(encoded: string): Uint8Array {
-    const normalized = encoded.replaceAll('-', '+').replaceAll('_', '/');
-    const padded = normalized.padEnd(
-        normalized.length + ((4 - (normalized.length % 4)) % 4),
-        '='
+function toCrdtEncryptionBytes(decoded: Either<readonly RallarValidationIssue[], Uint8Array>): Uint8Array {
+    return decoded.fold(
+        () => {
+            throw new Error('Invalid base64url character in CRDT encryption value.');
+        },
+        (bytes) => bytes
     );
-    const bytes: number[] = [];
-    for (let index = 0; index < padded.length; index += 4) {
-        const chunk = (decodeBase64Char(padded[index] ?? 'A') << 18) |
-            (decodeBase64Char(padded[index + 1] ?? 'A') << 12) |
-            (decodeBase64Char(padded[index + 2] ?? 'A') << 6) |
-            decodeBase64Char(padded[index + 3] ?? 'A');
-        bytes.push((chunk >> 16) & 255);
-        if (padded[index + 2] !== '=') {
-            bytes.push((chunk >> 8) & 255);
-        }
-        if (padded[index + 3] !== '=') {
-            bytes.push(chunk & 255);
-        }
-    }
-    return new Uint8Array(bytes);
-}
-
-function decodeBase64Char(char: string): number {
-    if (char === '=') {
-        return 0;
-    }
-    const index = BASE64_ALPHABET.indexOf(char);
-    if (index < 0) {
-        throw new Error(
-            'Invalid base64url character in CRDT encryption value.'
-        );
-    }
-    return index;
 }

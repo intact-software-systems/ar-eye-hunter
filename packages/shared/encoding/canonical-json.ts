@@ -1,14 +1,8 @@
-import { createHash } from 'node:crypto';
-
 export type CanonicalJsonInput = null | boolean | number | string | object;
 
 interface CanonicalJsonObjectEntry {
     readonly key: string;
     readonly value: CanonicalJsonInput;
-}
-
-export function computeSha256CanonicalJson(value: CanonicalJsonInput): string {
-    return createHash('sha256').update(serializeCanonicalJson(value), 'utf8').digest('hex');
 }
 
 export function serializeCanonicalJson(value: CanonicalJsonInput): string {

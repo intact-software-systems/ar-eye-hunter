@@ -13,7 +13,7 @@ import type { FriendsProfileRead } from '../friends/friends-mutation-contracts.t
 import type { FriendsRepository } from '../friends/friends-repository.ts';
 import type { MatchmakingRepository } from '../matchmaking/matchmaking-repository.ts';
 import { timeRallarAsync, type RallarTimingSink } from '../observability/timing.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { computePartyMutation, validatePartyMutation } from './compute-party-mutation.ts';
 import type { PartyInvitationConsent } from './compute-party-roster.ts';

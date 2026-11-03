@@ -7,7 +7,7 @@ import { installMatchmakingDeadline } from '@shared-server/rallar-system/matchma
 import { MatchmakingRepository } from '@shared-server/rallar-system/matchmaking/matchmaking-repository.ts';
 import { MatchmakingService } from '@shared-server/rallar-system/matchmaking/matchmaking-service.ts';
 import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';

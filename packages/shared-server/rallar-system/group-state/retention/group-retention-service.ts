@@ -12,7 +12,7 @@ import { writeRoomOwnedAppData, type RoomOwnedAppData } from '../../../app-data/
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxIdempotencyConflictError, type AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../../computed-data-validation.ts';
-import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     GroupMutationComputedWrite,

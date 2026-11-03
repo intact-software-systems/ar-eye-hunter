@@ -6,7 +6,7 @@ import {
     computeAppOutboxInsert,
     type AppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import {
     computeWsOutboxProvenanceDigest,
     toWsOutboxProvenanceKey,

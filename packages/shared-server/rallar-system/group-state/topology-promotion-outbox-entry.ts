@@ -7,11 +7,11 @@ import {
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { fnv1a64, toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
-import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toExactJsonWireObject, toJsonWireObject } from '../protocol/to-json-wire-object.ts';
 

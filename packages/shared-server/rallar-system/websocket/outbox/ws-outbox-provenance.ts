@@ -29,7 +29,7 @@ import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-se
 
 import { readRuntimeStateKeyEntries } from '../../../runtime-state/read-batch/read-runtime-state-key-entries.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
 
 export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';

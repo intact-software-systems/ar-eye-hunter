@@ -4,9 +4,9 @@ import type {
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest
 } from '@shared/api/state-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
-import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
