@@ -1,5 +1,23 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Independent whole-file review: one room moderation view owns confirmation, server outcome,
+    // and explicit access-loss presentation. Existing room entry owns admission cancellation;
+    // timers and notifications reuse shared primitives. Splitting these short UI transitions
+    // would obscure the direct action-to-outcome path; this cap permits no additional complexity.
+    Object.freeze({
+        path: 'packages/shared-react/room-moderation-panel.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 60
+    }),
+    // A thrown value is untrusted; only ApiHttpError HTTP 403 with either exact membership
+    // revocation code becomes a domain status. Other values remain unclassified.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/read-room-membership-revocation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRoomMembershipRevocation',
+        maximumMagnitude: 1
+    }),
     // Whole-file review: one authenticated resource owns read generations, pending command identity,
     // authority revocation and cancellation. Splitting read/write state would separate the same race guard.
     // Notification, single-flight, subscription and timer mechanics already use shared owners.
@@ -1220,13 +1238,13 @@ export const reviewedBrowserDispositions = Object.freeze([
         maximumMagnitude: 1
     }),
     // The adjacent rooms README maps facade, admission/membership workflows, translation, events,
-    // and session handles. Those are direct room owners; another folder would add navigation
+    // session handles and exact membership-denial translation. Those are direct room owners; another folder would add navigation
     // without separating an independent lifecycle. Only these reviewed clusters are covered.
     Object.freeze({
         path: 'packages/shared-web/browser/rooms',
         rule: 'layout.directory-density',
         symbol: 'rooms',
-        maximumMagnitude: 22
+        maximumMagnitude: 23
     }),
     Object.freeze({
         path: 'packages/shared-web/browser/rooms',

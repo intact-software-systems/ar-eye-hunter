@@ -42,6 +42,7 @@ import {
     removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
+import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
 import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
@@ -505,21 +506,11 @@ async function refreshAuthenticatedRoom(
             toRallarCommandOptions(operationOptions)
         ).run();
         assertCurrent();
-        if (observed) {
-            refreshGroupStateSnapshotIfUnchanged(observed, response.snapshot);
-        }
-        await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
-        assertCurrent();
-        if (observed) {
-            acceptAuthoritativeGroupSessionLeaseAdvance({
-                expected: observed,
-                acquired: response.snapshot,
-                scope,
-                assertCanMutate: assertCurrent
-            });
-            await waitForGroupStateSnapshotChangesIdle();
-            assertCurrent();
-        }
+        await acceptRefreshedRoom(
+            input,
+            { context, clients: [], groups: [response.snapshot], scope, assertCurrent },
+            observed
+        );
         const [readThrough] = await hydrateGroupTopologyOverlays({
             groupSnapshots: [response.snapshot],
             sessionId: context.session.sessionId,
@@ -533,10 +524,46 @@ async function refreshAuthenticatedRoom(
         return readThrough?.outcome;
     }
     catch (error) {
+        if (readRoomMembershipRevocation(error) !== undefined && findGroupStateSnapshotByRef(roomRef) === observed) {
+            assertCurrent();
+            input.stateStore.clearCurrentRoomIfMatches(roomRef, true);
+            if (observed) {
+                await removeMissingRoomSnapshot(roomRef, observed);
+            }
+            await input.acceptSnapshots({ context, clients: [], groups: [], scope, assertCurrent });
+        }
         if (error instanceof ApiHttpError && error.status === 404 && observed) {
             await removeMissingRoomSnapshot(roomRef, observed);
         }
         throw error;
+    }
+}
+
+interface RefreshedRoomAcceptance extends RallarStateSnapshotAcceptanceInput {
+    readonly scope: StateScope;
+    readonly assertCurrent: () => void;
+}
+
+async function acceptRefreshedRoom(
+    input: CreateBrowserRallarRoomsInput,
+    acceptance: RefreshedRoomAcceptance,
+    observed: GroupSnapshot | undefined
+): Promise<void> {
+    const acquired = acceptance.groups[0];
+    if (observed) {
+        refreshGroupStateSnapshotIfUnchanged(observed, acquired);
+    }
+    await input.acceptSnapshots(acceptance);
+    acceptance.assertCurrent();
+    if (observed) {
+        acceptAuthoritativeGroupSessionLeaseAdvance({
+            expected: observed,
+            acquired,
+            scope: acceptance.scope,
+            assertCanMutate: acceptance.assertCurrent
+        });
+        await waitForGroupStateSnapshotChangesIdle();
+        acceptance.assertCurrent();
     }
 }
 

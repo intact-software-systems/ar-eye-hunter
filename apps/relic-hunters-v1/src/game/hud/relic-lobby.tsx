@@ -1,4 +1,6 @@
 import { hasRelicRematchParticipation } from '@relic-hunters/src/relic-rematch.ts';
+import { RoomModerationPanel } from '@shared-react/room-moderation-panel.tsx';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import { useState, type FormEvent } from 'react';
 
 import { hasUnfinishedRelicParticipation } from '@relic-hunters/mod.ts';
@@ -46,6 +48,11 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
             <label>
                 Your account reference<input value={game.session.clientId} readOnly />
             </label>
+            <RoomModerationPanel
+                accessCheckIntervalMs={5000}
+                session={game.session}
+                rooms={rallar.rooms}
+            />
             <RelicRoomHosting game={game} />
             {game.roomId && <RelicCurrentRoomActions game={game} />}
             <RelicRoomsList game={game} />

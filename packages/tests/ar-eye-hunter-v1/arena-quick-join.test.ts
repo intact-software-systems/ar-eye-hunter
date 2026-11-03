@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { arenaRoomRef, ArenaRuntimeTestHarness, arenaSnapshot, emitAuthState, mockRallar, session, waitForState } from './arena-runtime-test-harness.ts';
 
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,11 +15,16 @@ import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fi
 
 describe('AR Eye Quick Join action and controls', () => {
     const arena = new ArenaRuntimeTestHarness();
+    const roomStates = new SynchronousNotifications<RallarRoomState>((error) => {
+        throw error;
+    });
     let root: Root;
     let container: HTMLDivElement;
 
     beforeEach(async () => {
         arena.reset();
+        roomStates.clear();
+        mockRallar.rooms.onChange.mockImplementation((listener) => roomStates.subscribe(listener).unsubscribe);
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
         container = document.createElement('div');
@@ -137,12 +144,12 @@ describe('AR Eye Quick Join action and controls', () => {
             groupId: 'selected',
             sessionIds: ['session-1']
         });
-        const selectedState = { rooms: [], currentRoomId: 'selected', currentRoomRef: snapshot.group };
+        const selectedState = { rooms: [], members: [], currentRoomId: 'selected', currentRoomRef: snapshot.group };
         mockRallar.rooms.state.mockReturnValue(selectedState);
         mockRallar.rooms.refresh.mockResolvedValue(selectedState);
 
         await act(async () => {
-            mockRallar.rooms.onChange.mock.calls.at(-1)?.[0](selectedState);
+            roomStates.publishLatest(selectedState);
         });
 
         expect(button('Joining…').disabled).toBe(true);

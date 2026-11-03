@@ -553,7 +553,7 @@ describe('room group-state HTTP workflows', () => {
             generationId: 'generation-1'
         });
 
-        expect(result.group.groupId).toBe('group-1');
+        expect(result?.group.groupId).toBe('group-1');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
         expect(fetchCalls[0].body).toMatchObject({
             generationId: 'generation-1'

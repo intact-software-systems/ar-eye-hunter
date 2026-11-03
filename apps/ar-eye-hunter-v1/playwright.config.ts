@@ -80,6 +80,7 @@ export default defineConfig({
                 '**/room-entry-recovery.spec.ts',
                 '**/quick-join.spec.ts',
                 '**/move-together.spec.ts',
+                '**/room-moderation.spec.ts',
                 '**/scheduled-sessions.spec.ts',
                 '**/friends.spec.ts',
                 '**/matchmaking.spec.ts'

@@ -1,6 +1,7 @@
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import { describe, expect, it } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { createRevokedGroupMember } from '../shared-web/create-revoked-group-member.ts';
 
 const snapshot = createGroupSnapshotFixture({ applicationId: 'game', workspaceId: 'default', groupId: 'room', sessionIds: ['alice', 'bob'] });
 
@@ -11,6 +12,14 @@ describe('game participation authority', () => {
         expect(readRallarGameParticipants(snapshot, 60_000)).toEqual([]);
         expect(readRallarGameParticipants(undefined, 1)).toEqual([]);
         expect(readRallarGameParticipants({ ...snapshot, group: { ...snapshot.group, expiresAtEpochMs: 1 } }, 1)).toEqual([]);
+    });
+
+    it.each(['banned', 'removed'] as const)('excludes %s players from readiness despite retained sessions', (status) => {
+        const revoked = {
+            ...snapshot,
+            members: snapshot.members.map((member) => member.principalId === 'bob' ? createRevokedGroupMember(member, status) : member)
+        };
+        expect(readRallarGameParticipants(revoked, 1).map((entry) => entry.sessionId)).toEqual(['alice']);
     });
 
     it('preserves consent identity through heartbeat and transport reconnect but changes it on membership replacement', () => {
