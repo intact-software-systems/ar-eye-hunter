@@ -7,6 +7,7 @@ import {
     type GroupTopicSubscriptionResult
 } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
@@ -57,7 +58,7 @@ const SOCKET_CALLBACK_ID = 'rallar:topic-subscriptions';
  * The tab's elections to receive granted topics: tokens count per (GroupRef, topicId); the first token subscribes,
  * the last one releases, and the held keys renew on the heartbeat cadence and re-assert on every socket reopen.
  */
-export class BrowserTopicSubscriptions implements RallarLifecycleParticipant {
+export class BrowserTopicSubscriptions implements RallarLifecycleParticipant, RtcTopicSubscriptionReader {
     public readonly id = 'topic-subscriptions';
     public readonly order = 45;
     readonly #input: BrowserTopicSubscriptions.Input;
@@ -76,12 +77,16 @@ export class BrowserTopicSubscriptions implements RallarLifecycleParticipant {
     }
 
     public hold(hold: BrowserTopicSubscriptions.Hold): RallarTopicSubscription {
-        const key = `${toScopedGroupKey(hold.roomRef)}|${hold.topicId}`;
+        const key = toHeldTopicKey(hold.roomRef, hold.topicId);
         const held = this.#held.get(key) ?? this.#startHolding(key, hold);
         const token = new BrowserTopicSubscriptionToken((released) => this.#release(held, released));
         held.tokens.add(token);
         token.settle(held.status);
         return token;
+    }
+
+    public isSubscriptionActive(groupRef: GroupRef, topicId: string): boolean {
+        return this.#held.get(toHeldTopicKey(groupRef, topicId))?.status === 'active';
     }
 
     public attach(context: ApiMiddleware): void {
@@ -282,4 +287,8 @@ export class BrowserTopicSubscriptions implements RallarLifecycleParticipant {
         }
         held.tokens.clear();
     }
+}
+
+function toHeldTopicKey(roomRef: GroupRef, topicId: string): string {
+    return `${toScopedGroupKey(roomRef)}|${topicId}`;
 }

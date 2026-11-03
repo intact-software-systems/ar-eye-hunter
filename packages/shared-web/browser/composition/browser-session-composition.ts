@@ -24,6 +24,8 @@ import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-vol
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
 
 import type { BrowserMessagingComposition } from './browser-communication-composition.ts';
 import type { BrowserPeopleStatsComposition, BrowserRoomsComposition } from './browser-product-composition.ts';
@@ -55,6 +57,8 @@ export interface CreateBrowserSessionCoreCompositionInput {
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
     readonly grantedTopics: RtcGrantedTopicReader;
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
+    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
 }
 
 export interface CreateBrowserStartupCompositionInput {
@@ -89,7 +93,9 @@ export function createBrowserSessionCoreComposition(
         stateRuntime: input.foundation.runtime,
         lifecycle: input.foundation.lifecycle,
         publicationCrypto: input.foundation.publicationCrypto,
+        publicationVerifier: input.publicationVerifier,
         grantedTopics: input.grantedTopics,
+        topicSubscriptions: input.topicSubscriptions,
         emitState: () => input.state.stateStore.emit(),
         closeDataScopes: async (authSession) => {
             await Promise.all([

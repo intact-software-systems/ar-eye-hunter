@@ -7,6 +7,8 @@ import {
     createBrowserRealtimeCoreComposition,
     createBrowserResyncRecoveryComposition,
     createDefaultBrowserGrantedTopics,
+    createDefaultBrowserTopicSubscriptions,
+    createDefaultRtcPublicationProofVerifier,
     readBrowserSessionInboundDiagnostics,
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
@@ -169,10 +171,14 @@ function createBrowserSessionMessaging(
     const { nowMs, publicationStages, deliveries, sessionDeliveries } = delivery;
     const recovery = createBrowserResyncRecoveryComposition({ nowMs });
     const grantedTopics = createDefaultBrowserGrantedTopics(state);
+    const topicSubscriptions = createDefaultBrowserTopicSubscriptions();
+    const publicationVerifier = createDefaultRtcPublicationProofVerifier(foundation, state);
     const session = createBrowserSessionCoreComposition({
         foundation,
         state,
         grantedTopics,
+        topicSubscriptions,
+        publicationVerifier,
         sessionDeliveries,
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
@@ -194,6 +200,7 @@ function createBrowserSessionMessaging(
         state,
         session: sessionPort,
         grantedTopics,
+        topicSubscriptions,
         readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
     });
     return { session, stateEvents, messaging };

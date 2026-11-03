@@ -52,6 +52,8 @@ import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 interface RtcTransportManagerOptions {
     readonly qosProvider?: ALQosInputProvider;
@@ -596,7 +598,10 @@ function createManager(
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: 'self'
         })
     );
     onTestFinished(() => manager.dispose());

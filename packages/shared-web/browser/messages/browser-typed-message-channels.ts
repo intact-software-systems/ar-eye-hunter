@@ -136,12 +136,20 @@ export class BrowserTypedMessageChannels {
             return throwUnsupportedSubscribe();
         }
         const token = this.input.topicSubscriptions.hold({ roomRef, topicId });
-        const removeHandler = channel.onWs(handler);
+        const removeWsHandler = channel.onWs(handler);
+        // Not `onRtc`, which a granted channel refuses: a granted RTC frame reaches here only verified and admitted.
+        const removeRtcHandler = this.input.rtc.onMessage<T>(
+            { topicId, typeId: definition.typeId },
+            async (message) => {
+                await handler(message.payload, message);
+            }
+        );
         return {
             status: () => token.status(),
             wait: async () => await token.wait(),
             unsubscribe: async () => {
-                removeHandler();
+                removeWsHandler();
+                removeRtcHandler();
                 await token.unsubscribe();
             }
         };

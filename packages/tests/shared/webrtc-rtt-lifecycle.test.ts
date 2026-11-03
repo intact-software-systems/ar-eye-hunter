@@ -28,6 +28,8 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
@@ -262,7 +264,10 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: connectionService.input.sessionId
     });
     onTestFinished(() => multicast.dispose());
     const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });

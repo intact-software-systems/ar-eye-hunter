@@ -49,6 +49,8 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 export interface CapturedChannel {
     readonly channel: QRtcDataChannel;
@@ -146,7 +148,10 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO
+        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: 'a'
     });
     onTestFinished(() => manager.dispose());
     return { manager, resources, groups, overlays, channels, ready, settlements, diagnostics };

@@ -71,6 +71,8 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime,
@@ -1092,7 +1094,10 @@ class NativeAuthorityEndpoint {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: 'sender'
         });
         onTestFinished(() => this.multicast.dispose());
         this.streamer = createDefaultWebRtcRxStreamerService({

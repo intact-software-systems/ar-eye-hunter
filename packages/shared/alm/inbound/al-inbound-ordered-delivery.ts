@@ -26,12 +26,16 @@ export namespace ALInboundOrderedDelivery {
         | { readonly kind: 'ready' | 'waiting' | 'completed'; }
         | { readonly kind: 'resync-required'; readonly completedThrough: number; };
 
-    export interface Dependencies
-        extends
-            Pick<
-                ALInboundMessageRuntime.Dependencies,
-                'admissionStore' | 'planIncomingMessage' | 'clock' | 'effectPreparation' | 'onResyncRequired'
-            > {
+    export interface Dependencies extends
+        Pick<
+            ALInboundMessageRuntime.Dependencies,
+            | 'admissionStore'
+            | 'planIncomingMessage'
+            | 'verifyPublicationProof'
+            | 'clock'
+            | 'effectPreparation'
+            | 'onResyncRequired'
+        > {
         readonly signal: AbortSignal;
     }
 
@@ -68,6 +72,7 @@ export class ALInboundOrderedDelivery {
         if (!isAuthorizedStoredWsClientDelivery(read.snapshot.msg, read.source)) {
             throw new NonRetryableException('Stored WS client scope does not authorize buffered delivery');
         }
+        await this.dependencies.verifyPublicationProof?.(read.snapshot.msg);
         const plan = this.dependencies.planIncomingMessage(
             read.snapshot.msg,
             read.source,

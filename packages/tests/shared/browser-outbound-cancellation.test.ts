@@ -26,6 +26,8 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
@@ -97,7 +99,10 @@ function createRtcOwner(settlements: ALDeliverySettlement[]) {
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: 'self'
     });
     onTestFinished(() => multicast.dispose());
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });

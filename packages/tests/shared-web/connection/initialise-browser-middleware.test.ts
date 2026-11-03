@@ -18,7 +18,8 @@ import {
     toBrowserMiddleware,
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
-    type BrowserConnectOptions
+    type BrowserConnectOptions,
+    type BrowserTransportPublication
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
@@ -49,6 +50,8 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import {
     createAvailablePublicationCryptoFixture,
@@ -66,6 +69,11 @@ const SESSION: AuthSession = {
     expiresAtEpochMs: 60_000
 };
 
+const KEYLESS_PUBLICATION: BrowserTransportPublication = {
+    publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+    publicationVerifier: KEYLESS_PUBLICATION_VERIFIER
+};
+
 const OPTIONS: BrowserConnectOptions = {
     readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
@@ -76,7 +84,9 @@ const OPTIONS: BrowserConnectOptions = {
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
     publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
     grantedTopics: NO_RTC_GRANTED_TOPICS,
+    topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,
@@ -225,7 +235,7 @@ describe('browser connection construction identity', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const source = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('00000000-0000-0000-0000-000000000052');
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         expect(constructed.connectionId).toEqual({ status: 'observed', value: '00000000-0000-0000-0000-000000000052' });
         expect(constructed.creation.newConnectionRequestId()).not.toBe('00000000-0000-0000-0000-000000000052');
     });
@@ -236,7 +246,7 @@ describe('browser connection construction identity', () => {
             throw new Error('identity unavailable');
         });
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         expect(constructed.connectionId).toEqual({ status: 'unavailable', reason: 'identity-source-failed' });
         expect(constructed.clientData).toEqual({ clientId: 'client-1', sessionId: 'session-1', isOnline: true });
         expect(constructed.options).toBe(OPTIONS);
@@ -248,7 +258,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -273,7 +283,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
 
     it('bounds the budget by the limits the session reads', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const { budget } = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO).volatileBound;
+        const { budget } = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION).volatileBound;
         const nowMs = Date.now();
 
         const admissions = [1, 2, 3, 4].map((index) =>
@@ -289,7 +299,7 @@ describe('the durable work claim a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -311,7 +321,7 @@ describe('the transport faults a connect hands its RTC overlay', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -328,7 +338,7 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
         const publicationCrypto = await createAvailablePublicationCryptoFixture();
-        const input = createBrowserTransportInput(SESSION, OPTIONS, publicationCrypto);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -338,6 +348,22 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
         expect(rtc.publicationCrypto).toBe(publicationCrypto);
         expect(rtc.grantedTopics).toBe(OPTIONS.grantedTopics);
     });
+
+    it('gives the RTC overlay the page\'s one verifier, the tab\'s held tokens and the session\'s principal', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(rtc.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
+        expect(rtc.topicSubscriptions).toBe(OPTIONS.topicSubscriptions);
+        expect(rtc.selfPrincipalId).toBe(SESSION.clientId);
+    });
 });
 
 describe('the checkpoint stores a connect hands its carriers', () => {
@@ -345,7 +371,7 @@ describe('the checkpoint stores a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         onTestFinished(() => {
             input.checkpointStores.wsClient.checkpoint.dispose();
             input.checkpointStores.rtcOverlay.checkpoint.dispose();
@@ -416,7 +442,7 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
         const input = createBrowserTransportInput(
             SESSION,
             { ...OPTIONS, readPublicationStageLimits: () => limits },
-            UNAVAILABLE_PUBLICATION_CRYPTO
+            KEYLESS_PUBLICATION
         );
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
@@ -425,7 +451,7 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
 
     it('keeps the product defaults for a session that reads no limits', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
             .toBe(AL_PUBLICATION_STAGE_LIMITS);
@@ -436,7 +462,7 @@ describe('the page publication crypto stays off the public middleware', () => {
     it('keeps the awaited page crypto on the transport input and out of the middleware the advanced facade returns', async () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const publicationCrypto = await createAvailablePublicationCryptoFixture();
-        const input = createBrowserTransportInput(SESSION, OPTIONS, publicationCrypto);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
 
         expect(input.publicationCrypto).toBe(publicationCrypto);
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware))
@@ -449,7 +475,7 @@ describe('the page publication crypto stays off the public middleware', () => {
 describe('the outbound diagnostics sink a connect hands its middleware', () => {
     it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
 

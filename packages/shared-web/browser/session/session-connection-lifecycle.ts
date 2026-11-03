@@ -26,6 +26,8 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -62,7 +64,9 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
         readonly publicationCrypto: Promise<PublicationCrypto>;
+        readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
         readonly grantedTopics: RtcGrantedTopicReader;
+        readonly topicSubscriptions: RtcTopicSubscriptionReader;
         readonly clearCurrentRoom: () => void;
     }
 }
@@ -133,7 +137,9 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             readPublicationStageLimits: this.input.readPublicationStageLimits,
             deliverySettlements: this.input.sessionDeliveries.observers,
             publicationCrypto: this.input.publicationCrypto,
+            publicationVerifier: this.input.publicationVerifier,
             grantedTopics: this.input.grantedTopics,
+            topicSubscriptions: this.input.topicSubscriptions,
             onResyncRequired: (resync: ALInboundResyncRequired) => this.input.onResyncRequired(resync, storage)
         };
         const generation = this.connectionGeneration;
@@ -264,7 +270,9 @@ function toMiddlewareOptions(
     | 'readPublicationStageLimits'
     | 'onResyncRequired'
     | 'publicationCrypto'
+    | 'publicationVerifier'
     | 'grantedTopics'
+    | 'topicSubscriptions'
 > {
     return {
         ...toRallarOperationOptions(input.operationOptions),

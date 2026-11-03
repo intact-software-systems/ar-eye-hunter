@@ -151,6 +151,7 @@ export class WebRtcRxStreamerService {
                 planIncomingMessage: (msg, source, observations) => {
                     return this.multicast.planIncomingMessage(msg, source, observations);
                 },
+                verifyPublicationProof: async (msg) => await this.multicast.verifyPublicationProof(msg),
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => {
                     return await this.dispatchInboxEntry(entry, plan);

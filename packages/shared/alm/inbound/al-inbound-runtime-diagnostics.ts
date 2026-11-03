@@ -346,6 +346,11 @@ function toRejectionDiagnostics(rejection: ALMessageRejection): ALInboundAdmissi
     };
 }
 
+/** A room refusal drops `unauthorized`; a granted publication's refusal names its code after that head. */
+function isUnauthorizedDropReason(reason: string): boolean {
+    return reason === 'unauthorized' || reason.startsWith('unauthorized: ');
+}
+
 function toAcceptanceDiagnostics(
     acceptance: ALInboundMessageRuntime.Admission
 ): ALInboundAdmissionDiagnostics {
@@ -356,7 +361,7 @@ function toAcceptanceDiagnostics(
             return { outcome: 'pending', reason: 'pending-admission' };
         case 'not-admitted':
             return {
-                outcome: acceptance.reason === 'unauthorized' ? 'unauthorized' : 'rejected',
+                outcome: isUnauthorizedDropReason(acceptance.reason) ? 'unauthorized' : 'rejected',
                 reason: acceptance.reason
             };
         case 'control':

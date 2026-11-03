@@ -6,7 +6,8 @@ import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserTransportInput,
-    type BrowserConnectOptions
+    type BrowserConnectOptions,
+    type BrowserTransportPublication
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toBrowserHeartbeatOptions } from '@shared-web/browser/connection/to-browser-heartbeat-options.ts';
@@ -15,6 +16,8 @@ import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import {
     createAvailablePublicationCryptoFixture,
     UNAVAILABLE_PUBLICATION_CRYPTO
@@ -29,6 +32,11 @@ const SESSION: AuthSession = {
     expiresAtEpochMs: 60_000
 };
 
+const KEYLESS_PUBLICATION: BrowserTransportPublication = {
+    publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+    publicationVerifier: KEYLESS_PUBLICATION_VERIFIER
+};
+
 const OPTIONS: BrowserConnectOptions = {
     readIceCandidates: () => Promise.reject(new Error('No ICE read in a heartbeat translation.')),
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
@@ -39,7 +47,9 @@ const OPTIONS: BrowserConnectOptions = {
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
     publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
     grantedTopics: NO_RTC_GRANTED_TOPICS,
+    topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,
@@ -71,7 +81,7 @@ describe('the heartbeat options a connect hands its group heartbeats', () => {
 
 function readHeartbeatPublicationKey(publicationCrypto: PublicationCrypto): GroupPresencePublicationKey | null {
     configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-    const input = createBrowserTransportInput(SESSION, OPTIONS, publicationCrypto);
+    const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
     const { ownWsConnectionGeneration } = createDefaultApiMiddlewareTestDouble().middleware;
     return toBrowserHeartbeatOptions(input, ownWsConnectionGeneration).publicationKey;
 }

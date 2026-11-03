@@ -51,6 +51,8 @@ import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime
@@ -252,7 +254,10 @@ describe('browser RTC runtime composition', () => {
             webRtcConnectionService: fixture.service,
             qboxEngine,
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: fixture.service.input.sessionId
         });
         onTestFinished(() => manager.dispose());
         const oldMessage = newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId: 'old', contextId: 'group-1' }, group.group, 'alm.lifecycle', {
@@ -334,7 +339,10 @@ describe('browser RTC runtime composition', () => {
             webRtcConnectionService: fixture.service,
             qboxEngine,
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: fixture.service.input.sessionId
         });
         onTestFinished(() => manager.dispose());
 
@@ -415,7 +423,10 @@ describe('browser RTC runtime composition', () => {
             webRtcConnectionService: fixture.service,
             qboxEngine: new InboxOutboxEngine(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: fixture.service.input.sessionId
         });
         onTestFinished(() => manager.dispose());
 
@@ -454,7 +465,10 @@ describe('browser RTC runtime composition', () => {
             webRtcConnectionService: fixture.service,
             qboxEngine: new InboxOutboxEngine(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: fixture.service.input.sessionId
         });
         onTestFinished(() => manager.dispose());
 

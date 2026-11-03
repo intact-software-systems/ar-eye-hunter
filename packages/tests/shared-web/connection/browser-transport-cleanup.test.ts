@@ -30,6 +30,8 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -163,7 +165,9 @@ describe('Browser transport cleanup', () => {
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -219,7 +223,9 @@ describe('Browser transport cleanup', () => {
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -273,7 +279,9 @@ describe('Browser transport cleanup', () => {
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -328,7 +336,9 @@ describe('Browser transport cleanup', () => {
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -392,7 +402,9 @@ describe('Browser transport cleanup', () => {
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
-            grantedTopics: NO_RTC_GRANTED_TOPICS
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS
         });
         transportRuntime.shutdown();
         resolveMiddleware?.({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -475,7 +487,9 @@ describe('Browser transport cleanup', () => {
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -537,7 +551,9 @@ describe('Browser transport cleanup', () => {
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -595,7 +611,9 @@ describe('the session limit seams', () => {
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -752,7 +770,9 @@ function toInitOptions(): BrowserTransportInitOptions {
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         onResyncRequired: () => {},
         publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
-        grantedTopics: NO_RTC_GRANTED_TOPICS
+        publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS
     };
 }
 

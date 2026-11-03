@@ -28,6 +28,8 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
@@ -244,7 +246,10 @@ function createDefaultSnapshotAdmissionManager(
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: 'self'
     });
     onTestFinished(() => manager.dispose());
     return manager;

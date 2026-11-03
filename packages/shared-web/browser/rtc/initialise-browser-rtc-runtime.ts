@@ -38,6 +38,8 @@ import type {
 } from '@shared/api/api-config.ts';
 import type { WebRtcOverlayMulticaster } from '@shared/multicast/overlay-multicast-contracts.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -85,6 +87,11 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly grantedTopics: RtcGrantedTopicReader;
     /** The page's one key, which signs each granted RTC publication. */
     readonly publicationCrypto: PublicationCrypto;
+    /** The page's one verifier, which each granted RTC frame is verified by before it is forwarded or delivered. */
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
+    /** The session's principal, whose subscribe grant a granted frame's delivery reads. */
+    readonly selfPrincipalId: string;
 }
 
 export function initialiseRtcOverlayMulticastManager(
@@ -119,7 +126,10 @@ export function initialiseRtcOverlayMulticastManager(
         rateLimiter: toRateLimiter(),
         faultPort: input.faultPort,
         grantedTopics: input.grantedTopics,
-        publicationCrypto: input.publicationCrypto
+        publicationCrypto: input.publicationCrypto,
+        publicationVerifier: input.publicationVerifier,
+        topicSubscriptions: input.topicSubscriptions,
+        selfPrincipalId: input.selfPrincipalId
     });
 
     return webRtcOverlayMulticastManager;

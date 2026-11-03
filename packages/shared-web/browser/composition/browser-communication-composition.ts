@@ -39,6 +39,7 @@ import { readSession } from '@shared/api/auth.ts';
 import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
+import { RtcPublicationProofVerifier } from '@shared/multicast/rtc-publication-proof-verifier.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type {
     RallarBrowserFacadeRuntimeContext
@@ -90,6 +91,7 @@ export interface CreateBrowserMessagingCompositionInput {
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
     readonly grantedTopics: BrowserGrantedTopics;
+    readonly topicSubscriptions: BrowserTopicSubscriptions;
     readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
 }
 
@@ -122,14 +124,33 @@ export function createDefaultBrowserGrantedTopics(state: BrowserStateComposition
     });
 }
 
-export function createBrowserMessagingComposition(
-    input: CreateBrowserMessagingCompositionInput
-): BrowserMessagingComposition {
-    const topicSubscriptions = new BrowserTopicSubscriptions({
+/** Built before the session: each connect's RTC overlay reads the held tokens, and the room channels hold them. */
+export function createDefaultBrowserTopicSubscriptions(): BrowserTopicSubscriptions {
+    return new BrowserTopicSubscriptions({
         http: createBrowserTopicSubscriptionHttpApi(),
         timers: createDefaultTimers(),
         newRequestId: toApiMutationWorkflowRequestId
     });
+}
+
+/**
+ * Built once per page beside its key, so its verdicts outlive a reconnect; each connect's RTC overlay verifies
+ * granted frames with it against the room snapshot the page currently holds.
+ */
+export async function createDefaultRtcPublicationProofVerifier(
+    foundation: Pick<BrowserRuntimeFoundation, 'publicationCrypto'>,
+    state: BrowserStateComposition
+): Promise<RtcPublicationProofVerifier> {
+    return new RtcPublicationProofVerifier({
+        crypto: await foundation.publicationCrypto,
+        findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef),
+        nowEpochMs: Date.now
+    });
+}
+
+export function createBrowserMessagingComposition(
+    input: CreateBrowserMessagingCompositionInput
+): BrowserMessagingComposition {
     const messagesController = new BrowserRallarMessagesController({
         creation: {
             createUnicast: newALUnicastMessage,
@@ -144,7 +165,7 @@ export function createBrowserMessagingComposition(
         publicationStages: input.publicationStages,
         nowMs: input.nowMs,
         recoveryOwners: input.recoveryOwners,
-        topicSubscriptions,
+        topicSubscriptions: input.topicSubscriptions,
         connect: input.session.acquireConnection,
         readMiddleware: input.session.readMiddleware,
         requireMiddleware: input.session.requireMiddleware,
@@ -167,7 +188,7 @@ export function createBrowserMessagingComposition(
         }
     });
     return {
-        topicSubscriptions,
+        topicSubscriptions: input.topicSubscriptions,
         messagesController,
         messages: messagesController.operations
     };

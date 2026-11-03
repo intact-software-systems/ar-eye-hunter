@@ -72,6 +72,18 @@ describe('browser topic subscriptions', () => {
         expect(calls).toEqual([subscribeCall('room.feed', 'generation-1', 'request-1')]);
     });
 
+    it('reads a key\'s subscription active only while its held tokens are active', async () => {
+        const owner = createAttachedOwner();
+        const token = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+        const pending = owner.isSubscriptionActive(ROOM_REF, 'room.feed');
+        await token.wait();
+        const active = [owner.isSubscriptionActive(ROOM_REF, 'room.feed'), owner.isSubscriptionActive(OTHER_ROOM_REF, 'room.feed')];
+
+        await token.unsubscribe();
+
+        expect([pending, active, owner.isSubscriptionActive(ROOM_REF, 'room.feed')]).toEqual([false, [true, false], false]);
+    });
+
     it('a hold made before attach waits pending and is sent on attach', async () => {
         const owner = createOwner();
         const token = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });

@@ -5,7 +5,12 @@ import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@share
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import type { ALInboundRuntimeStores, ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundMessageRuntime,
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
@@ -16,8 +21,13 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
+import { readRtcGroupSnapshotByRef } from '@shared/multicast/read-rtc-outbound-observation.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import { RtcPublicationProofVerifier } from '@shared/multicast/rtc-publication-proof-verifier.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import {
     createPassThroughTransportFaultPort,
     type TransportFaultPort
@@ -32,6 +42,7 @@ import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { createOriginOverlay } from './rtc-origin-overlay-fixture.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 export interface RtcRelayOverlayFixtureInput {
     readonly selfPeerId: string;
@@ -46,6 +57,14 @@ export interface RtcRelayOverlayFixtureInput {
     readonly overlayIds?: readonly string[];
     /** The transport faults the relay's overlay reads; absent, a pass-through port. */
     readonly faultPort?: TransportFaultPort;
+    /** The page's granted topics; absent, none, so every frame is admitted by its room alone. */
+    readonly grantedTopics?: RtcGrantedTopicReader;
+    /** The relay page's own key, with which it verifies granted frames; absent, a keyless page. */
+    readonly publicationCrypto?: PublicationCrypto;
+    /** The tab's held subscription tokens; absent, none is active. */
+    readonly topicSubscriptions?: RtcTopicSubscriptionReader;
+    /** How long the relay's room snapshot stays readable without a renewal; absent, for ever. */
+    readonly groupCacheTtlMs?: number;
 }
 
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
@@ -58,6 +77,10 @@ export interface RtcRelayOverlayFixture {
     enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult>;
     /** Replaces the room this relay sees, as a membership change reaches it. */
     acceptSnapshot(snapshot: GroupSnapshot): void;
+    /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
+    forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
+    /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
+    readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
 }
 
 interface RtcRelayOverlayResources {
@@ -72,6 +95,7 @@ namespace RtcRelayOverlaySession {
         readonly connection: NativeRtcConnectionFixture;
         readonly service: shared.WebRtcRxStreamerService;
         readonly inboundStores: ALInboundRuntimeStores;
+        readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
     }
 }
 
@@ -79,9 +103,11 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     private readonly dependencies: RtcRelayOverlaySession.Dependencies;
     private readonly ready: Promise<void[]>;
     readonly delivered: ALMessage[] = [];
+    readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
 
     constructor(dependencies: RtcRelayOverlaySession.Dependencies, neighbourPeerIds: readonly string[]) {
         this.dependencies = dependencies;
+        this.diagnostics = dependencies.diagnostics;
         const { connection, service } = dependencies;
         service.setRttReportingPeerIds([]);
         service.onAllInboxMessagesDo({
@@ -122,6 +148,11 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     acceptSnapshot(snapshot: GroupSnapshot): void {
         this.dependencies.groups.accept('room', snapshot);
     }
+
+    async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
+        await this.dependencies.multicast.forwardRetriedCopy(copy);
+        await waitForOwnedQueueWork(this.dependencies.outboundResources.workQueue);
+    }
 }
 
 export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput): RtcRelayOverlayFixture {
@@ -141,22 +172,27 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
     onTestFinished(() => connection.dispose());
     const resources = createDefaultRelayOverlayResources(input, connection);
     const inboundStores = shared.createDefaultInMemoryALInboundRuntimeStores();
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const service = shared.createDefaultWebRtcRxStreamerService({
         multicast: resources.multicast,
         sessionId: input.selfPeerId,
         inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
-        roomAuthorityRefresh: undefined
+        roomAuthorityRefresh: undefined,
+        inboundDiagnostics: (event) => diagnostics.push(event)
     });
     onTestFinished(() => service.dispose());
-    return new RtcRelayOverlaySession({ ...resources, connection, service, inboundStores }, input.neighbourPeerIds);
+    return new RtcRelayOverlaySession(
+        { ...resources, connection, service, inboundStores, diagnostics },
+        input.neighbourPeerIds
+    );
 }
 
 function createDefaultRelayOverlayResources(
     input: RtcRelayOverlayFixtureInput,
     connection: NativeRtcConnectionFixture
 ): RtcRelayOverlayResources {
-    const groups = new LatestRepository<string, GroupSnapshot>();
+    const groups = new LatestRepository<string, GroupSnapshot>({ ttlMs: input.groupCacheTtlMs });
     onTestFinished(() => groups.dispose());
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
@@ -180,8 +216,15 @@ function createDefaultRelayOverlayResources(
         rateLimiter: toRateLimiter(),
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
-        grantedTopics: NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
+        grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: new RtcPublicationProofVerifier({
+            crypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+            findGroupSnapshot: (groupRef) => readRtcGroupSnapshotByRef(groups, groupRef),
+            nowEpochMs: Date.now
+        }),
+        topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: input.selfPeerId
     });
     onTestFinished(() => multicast.dispose());
     return { groups, overlays, outboundResources, multicast };

@@ -73,6 +73,8 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -113,8 +115,12 @@ export interface MiddlewareInitOptions {
     readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
     /** The page's one key, started by the composition root; each connect awaits it once. */
     readonly publicationCrypto: Promise<PublicationCrypto>;
+    /** Built once per page beside its key; each connect's RTC overlay verifies granted frames with it. */
+    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
     /** The page's granted topics, whose RTC publications the overlay signs with the page's key. */
     readonly grantedTopics: RtcGrantedTopicReader;
+    /** The tab's held subscription tokens, which a granted RTC frame's local delivery reads. */
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -182,8 +188,15 @@ export interface InitialiseBrowserTransportInput {
     readonly checkpointStores: BrowserALCheckpointStores;
     /** The page's one key, which each group heartbeat registers and the RTC overlay signs with. */
     readonly publicationCrypto: PublicationCrypto;
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
     readonly options: BrowserConnectOptions;
 }
+
+/** The page's publication capabilities, each started once per page and awaited by every connect. */
+export type BrowserTransportPublication = Pick<
+    InitialiseBrowserTransportInput,
+    'publicationCrypto' | 'publicationVerifier'
+>;
 
 interface BrowserWebSocketTransport {
     readonly qboxEngine: InboxOutboxEngine;
@@ -276,7 +289,10 @@ export async function initialiseMiddleware(
             options.scope ?? defaultStateScope(),
             { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
         );
-        const transportInput = createBrowserTransportInput(session, options, await options.publicationCrypto);
+        const transportInput = createBrowserTransportInput(session, options, {
+            publicationCrypto: await options.publicationCrypto,
+            publicationVerifier: await options.publicationVerifier
+        });
         webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
         rtcTransport = await initialiseBrowserRtcTransport({
             ...transportInput,
@@ -324,7 +340,7 @@ export async function initialiseMiddleware(
 export function createBrowserTransportInput(
     session: AuthSession,
     options: BrowserConnectOptions,
-    publicationCrypto: PublicationCrypto
+    publication: BrowserTransportPublication
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -349,7 +365,7 @@ export function createBrowserTransportInput(
         volatileBound,
         publicationStageLimits: options.readPublicationStageLimits?.() ?? AL_PUBLICATION_STAGE_LIMITS,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
-        publicationCrypto,
+        ...publication,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -460,7 +476,10 @@ export function toRtcOverlayMulticastManagerInput(
         outboundSettlements: input.options.deliverySettlements.rtc,
         faultPort: input.options.diagnosticsPorts.transportFaultPort,
         grantedTopics: input.options.grantedTopics,
-        publicationCrypto: input.publicationCrypto
+        publicationCrypto: input.publicationCrypto,
+        publicationVerifier: input.publicationVerifier,
+        topicSubscriptions: input.options.topicSubscriptions,
+        selfPrincipalId: input.clientData.clientId
     };
 }
 
