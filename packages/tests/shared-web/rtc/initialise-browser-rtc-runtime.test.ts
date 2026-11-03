@@ -50,10 +50,12 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
@@ -248,7 +250,9 @@ describe('browser RTC runtime composition', () => {
             checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: (event) => registry.record(event),
             webRtcConnectionService: fixture.service,
-            qboxEngine
+            qboxEngine,
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
         });
         onTestFinished(() => manager.dispose());
         const oldMessage = newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId: 'old', contextId: 'group-1' }, group.group, 'alm.lifecycle', {
@@ -328,7 +332,9 @@ describe('browser RTC runtime composition', () => {
             checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
-            qboxEngine
+            qboxEngine,
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
         });
         onTestFinished(() => manager.dispose());
 
@@ -407,7 +413,9 @@ describe('browser RTC runtime composition', () => {
             checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
-            qboxEngine: new InboxOutboxEngine()
+            qboxEngine: new InboxOutboxEngine(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
         });
         onTestFinished(() => manager.dispose());
 
@@ -444,7 +452,9 @@ describe('browser RTC runtime composition', () => {
             checkpointStores,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
-            qboxEngine: new InboxOutboxEngine()
+            qboxEngine: new InboxOutboxEngine(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
         });
         onTestFinished(() => manager.dispose());
 

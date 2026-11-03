@@ -26,6 +26,8 @@ import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
@@ -240,7 +242,9 @@ function createDefaultSnapshotAdmissionManager(
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         faultPort: createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
     });
     onTestFinished(() => manager.dispose());
     return manager;

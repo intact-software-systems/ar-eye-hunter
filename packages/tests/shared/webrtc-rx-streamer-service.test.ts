@@ -31,7 +31,9 @@ import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/qrtc-peer-connection.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
 import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface MediaFixture extends MediaPeerFixture {
@@ -131,7 +133,9 @@ function createMediaFixture(input: MediaFixtureInput = {}): MediaFixture {
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         faultPort: createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
     });
     onTestFinished(() => multicast.dispose());
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self', ...input });

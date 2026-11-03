@@ -3,6 +3,7 @@ import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
     createBrowserResyncRecoveryComposition,
+    createDefaultBrowserGrantedTopics,
     readBrowserSessionInboundDiagnostics,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
@@ -479,12 +480,14 @@ function createBlackBoxBrowserTransportComposition(
     const recovery = createBrowserResyncRecoveryComposition({
         nowMs: browserDeliveryComposition.nowMs
     });
+    const grantedTopics = createDefaultBrowserGrantedTopics(state);
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
         readVolatileSessionLimits: input.readVolatileSessionLimits,
         readPublicationStageLimits: input.readPublicationStageLimits,
         foundation,
         state,
+        grantedTopics,
         sessionDeliveries: browserDeliveryComposition.sessionDeliveries,
         onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
@@ -498,6 +501,7 @@ function createBlackBoxBrowserTransportComposition(
         recoveryOwners: recovery.recoveryOwners,
         state,
         session: session.session,
+        grantedTopics,
         readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
     });
     const realtime = createBrowserRealtimeCoreComposition({

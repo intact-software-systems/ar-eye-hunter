@@ -7,6 +7,7 @@ import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages
 import { BrowserRallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resync-recovery.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { createBrowserTopicSubscriptionHttpApi } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscription-http-api.ts';
@@ -88,6 +89,7 @@ export interface CreateBrowserMessagingCompositionInput {
     readonly recoveryOwners: BrowserChannelRecoveryOwners;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
+    readonly grantedTopics: BrowserGrantedTopics;
     readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
 }
 
@@ -111,6 +113,13 @@ export function createBrowserResyncRecoveryComposition(
         nowMs: input.nowMs
     });
     return { recoveryOwners, resyncRecovery };
+}
+
+/** Built before the session: each connect's RTC overlay reads them, and the typed channels declare theirs. */
+export function createDefaultBrowserGrantedTopics(state: BrowserStateComposition): BrowserGrantedTopics {
+    return new BrowserGrantedTopics({
+        findGroupSnapshot: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)
+    });
 }
 
 export function createBrowserMessagingComposition(
@@ -149,6 +158,7 @@ export function createBrowserMessagingComposition(
             input.state.readDefaults()?.messages?.maxPayloadBytes ??
                 RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
         readInboundDiagnostics: input.readInboundDiagnostics,
+        grantedTopics: input.grantedTopics,
         readPublicationPermissions: (roomRef, topicId) => {
             const snapshot = input.state.roomStateStore.findGroupSnapshot(roomRef);
             return snapshot === undefined

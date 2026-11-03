@@ -19,6 +19,7 @@ import type {
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { AL_VOLATILE_SESSION_MAX_AGE_MS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
+import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
 
 const CHAT_ROUTE = { topicId: 'app.chat', typeId: 'chat.message.v1' };
@@ -234,7 +235,8 @@ describe('a typed channel\'s recovery owner', () => {
                 hold: () => {
                     throw new Error('No channel in this test subscribes.');
                 }
-            }
+            },
+            grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
         });
 
         channels.channel({ ...CHAT_ROUTE, purpose: 'command', access: 'members', recovery });

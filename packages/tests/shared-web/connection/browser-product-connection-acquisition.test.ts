@@ -10,6 +10,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -156,6 +157,15 @@ describe('implicit product acquisition of the owned connection', () => {
         });
     });
 
+    it('hands the connect the session\'s granted topics, which its RTC overlay reads', async () => {
+        const session = await createOwnedSession();
+        onTestFinished(() => session.disconnect());
+
+        await session.acquireConnection();
+
+        expect(mocks.initialiseMiddleware.mock.calls[0]?.[2].grantedTopics).toBe(NO_RTC_GRANTED_TOPICS);
+    });
+
     it('snapshots explicit capture before acquisition yields to authentication', async () => {
         const session = await createOwnedSession();
         onTestFinished(() => session.disconnect());
@@ -183,6 +193,7 @@ async function createOwnedSession(): Promise<RallarSessionController> {
         sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, foundation.transportRuntime, mocks.readSession),
         onResyncRequired: () => {},
         publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
         connectionRuntime: foundation.connectionRuntime,
         transportRuntime: foundation.transportRuntime,
         authRuntime: foundation.authRuntime,

@@ -1,6 +1,7 @@
 import {
     decodeGroupPublicationGrant,
     GROUP_PUBLICATION_GRANT_LIMITS,
+    isGroupPublicationTopicGranted,
     resolveGroupPublicationPermissions,
     resolveMemberPublicationPermissions,
     validateGroupPublicationGrant,
@@ -188,5 +189,29 @@ describe('resolveMemberPublicationPermissions', () => {
             expect(resolveMemberPublicationPermissions(member, row, topicId))
                 .toEqual(resolveGroupPublicationPermissions(snapshot, 'bob', topicId));
         }
+    });
+});
+
+describe('isGroupPublicationTopicGranted', () => {
+    const ref = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+    const snapshot: GroupSnapshot = {
+        ...createGroupSnapshotFixture({ ...ref, sessionIds: [] }),
+        publicationGrants: [
+            { ...GRANT, ...ref, principalId: 'bob', topics: { 'room.feed': { publish: true, subscribe: false } } },
+            { ...GRANT, ...ref, principalId: 'sam', topics: { 'app.scores': { publish: false, subscribe: true } } }
+        ]
+    };
+
+    it.each([
+        { topicId: 'room.feed', expected: true },
+        { topicId: 'app.scores', expected: true },
+        { topicId: 'room.other', expected: false },
+        { topicId: 'constructor', expected: false }
+    ])('answers $expected for $topicId: a topic is granted when any grant row of the room names it', ({ topicId, expected }) => {
+        expect(isGroupPublicationTopicGranted(snapshot, topicId)).toBe(expected);
+    });
+
+    it('answers false for every topic of a room without grant rows', () => {
+        expect(isGroupPublicationTopicGranted({ ...snapshot, publicationGrants: [] }, 'room.feed')).toBe(false);
     });
 });

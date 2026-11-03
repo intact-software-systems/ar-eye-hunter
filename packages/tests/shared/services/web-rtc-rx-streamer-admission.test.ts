@@ -29,6 +29,8 @@ import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../multicast/rtc-granted-topic-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 interface ReceivingEndpoint {
@@ -185,7 +187,9 @@ function createMulticast(): WebRtcOverlayMulticastManager {
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         faultPort: createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
     });
     onTestFinished(() => multicast.dispose());
     return multicast;

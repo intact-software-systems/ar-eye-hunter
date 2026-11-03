@@ -20,6 +20,7 @@ import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import {
     AL_PUBLICATION_PROOF_DOMAIN_TAG,
     AL_PUBLICATION_PROOF_FIELD_CLASSES,
+    assertALPublicationProofSigningInputKept,
     signALPublicationProof,
     toALPublicationProofSigningInput,
     verifyALPublicationProof,
@@ -353,5 +354,17 @@ describe('ALM publication proof signing and verification', () => {
             kind: 'sign-failed',
             message: expect.stringMatching(/^Signing was refused: /)
         });
+    });
+});
+
+describe('assertALPublicationProofSigningInputKept', () => {
+    it.each(SIGNED_FIELD_CHANGES)('throws when a plan changes the signed $field', ({ signed, change }) => {
+        expect(() => assertALPublicationProofSigningInputKept(signed, change(signed))).toThrow(
+            `A plan changed a signed field of publication ${signed.id.msgId}.`
+        );
+    });
+
+    it.each(EXCLUDED_FIELD_CHANGES)('keeps a plan that changes only the excluded $field', ({ signed, change }) => {
+        expect(() => assertALPublicationProofSigningInputKept(signed, change(signed))).not.toThrow();
     });
 });

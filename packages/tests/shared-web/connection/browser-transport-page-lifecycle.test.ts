@@ -9,6 +9,7 @@ import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-
 import type { ALCheckpointPort } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import type { ALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { installFakePageLifecyclePerTest } from '../al-runtime/fake-page-lifecycle.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -135,6 +136,7 @@ function toInitOptions(): BrowserTransportInitOptions {
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         onResyncRequired: () => {},
-        publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO)
+        publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+        grantedTopics: NO_RTC_GRANTED_TOPICS
     };
 }

@@ -72,6 +72,7 @@ import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritativ
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -112,6 +113,8 @@ export interface MiddlewareInitOptions {
     readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
     /** The page's one key, started by the composition root; each connect awaits it once. */
     readonly publicationCrypto: Promise<PublicationCrypto>;
+    /** The page's granted topics, whose RTC publications the overlay signs with the page's key. */
+    readonly grantedTopics: RtcGrantedTopicReader;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -177,7 +180,7 @@ export interface InitialiseBrowserTransportInput {
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
-    /** The page's one key, which each group heartbeat registers. */
+    /** The page's one key, which each group heartbeat registers and the RTC overlay signs with. */
     readonly publicationCrypto: PublicationCrypto;
     readonly options: BrowserConnectOptions;
 }
@@ -455,7 +458,9 @@ export function toRtcOverlayMulticastManagerInput(
         durableWorkOwnership: input.options.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.rtc,
-        faultPort: input.options.diagnosticsPorts.transportFaultPort
+        faultPort: input.options.diagnosticsPorts.transportFaultPort,
+        grantedTopics: input.options.grantedTopics,
+        publicationCrypto: input.publicationCrypto
     };
 }
 

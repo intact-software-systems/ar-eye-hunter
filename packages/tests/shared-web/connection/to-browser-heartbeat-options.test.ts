@@ -14,6 +14,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createAvailablePublicationCryptoFixture,
     UNAVAILABLE_PUBLICATION_CRYPTO
@@ -38,6 +39,7 @@ const OPTIONS: BrowserConnectOptions = {
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
     publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    grantedTopics: NO_RTC_GRANTED_TOPICS,
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,

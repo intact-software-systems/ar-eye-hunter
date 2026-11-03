@@ -40,6 +40,8 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { ALWorkBatchTestObserver } from './alm/work/al-work-batch-test-observer.ts';
+import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -111,7 +113,9 @@ export class RtcEndpointFixture {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
         });
         const inboundDiagnostics: ALInboundRuntimeDiagnosticsSink = Object.assign(() => {}, {
             acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: this.inboundBatches.batchObservations }

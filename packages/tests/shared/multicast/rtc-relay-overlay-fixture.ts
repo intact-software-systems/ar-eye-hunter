@@ -28,7 +28,9 @@ import {
     installNativeRtcRuntime,
     type NativeRtcConnectionFixture
 } from '../native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { createOriginOverlay } from './rtc-origin-overlay-fixture.ts';
 
 export interface RtcRelayOverlayFixtureInput {
@@ -177,7 +179,9 @@ function createDefaultRelayOverlayResources(
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
     });
     onTestFinished(() => multicast.dispose());
     return { groups, overlays, outboundResources, multicast };

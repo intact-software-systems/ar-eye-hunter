@@ -35,6 +35,7 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
@@ -133,7 +134,8 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
         nowMs: Date.now,
-        readPublicationPermissions: () => undefined
+        readPublicationPermissions: () => undefined,
+        grantedTopics: NO_RTC_GRANTED_TOPICS
     });
     let sequence = 0;
     return {

@@ -26,6 +26,8 @@ import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavai
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import { resolveRtcGrantedPublicationShapeRefusal } from '@shared/multicast/compute-rtc-granted-publication-refusal.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
@@ -69,7 +71,7 @@ export namespace BrowserRallarMessageDispatch {
         readonly message: ALMessage;
         readonly canFallback: boolean;
         readonly payloadIssues: readonly RallarValidationIssue[];
-        /** A lane send's is `members`; a `granted` send is checked against the room's cached grants before its leg. */
+        /** A lane send's is `members`; a granted delivery is checked against the room's cached grants before its leg. */
         readonly access: RallarTypedMessageChannelDefinition['access'];
         readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
         /** Defined exactly for a live channel's send, which is staged and paced before its first leg (D471). */
@@ -84,6 +86,8 @@ export namespace BrowserRallarMessageDispatch {
         readonly nowMs: () => number;
         /** The session principal's effective permissions on a topic in the room's cached snapshot; none cached, undefined. */
         readPublicationPermissions(roomRef: GroupRef, topicId: string): GroupPublicationTopicPermissions | undefined;
+        /** A lane send on a granted topic is a granted delivery as a granted channel's send is. */
+        readonly grantedTopics: RtcGrantedTopicReader;
     }
 }
 
@@ -312,26 +316,35 @@ export class BrowserRallarMessageDispatch {
     }
 
     /**
-     * Only the WS server checks a publication grant, so a granted send names its room and takes WS. The cached snapshot's
-     * refusal is advisory and spares the carrier; without one the server decides (D500).
+     * A granted delivery names its room. The cached snapshot's publish refusal is advisory and spares either carrier;
+     * without one the server decides (D500). RTC carries it only as the room multicast without a receipt its origin signs.
      */
     private readPublicationRefusal(
         delivery: BrowserRallarMessageDispatch.Delivery
     ): ALDeliveryAdmissionVerdict | undefined {
-        if (delivery.access === 'members') {
+        const { message } = delivery;
+        const roomRef = readALTargetGroupRef(message);
+        if (!this.isGrantedDelivery(delivery, roomRef)) {
             return undefined;
         }
-        if (delivery.carrier === 'rtc') {
-            return { kind: 'refused', reason: 'unsupported', detail: 'RTC carries no publication grant.' };
-        }
-        const roomRef = readALTargetGroupRef(delivery.message);
         if (roomRef === undefined) {
             return { kind: 'refused', reason: 'unsupported', detail: 'A granted channel\'s send names a room.' };
         }
-        const permissions = this.input.readPublicationPermissions(roomRef, delivery.message.route.topicId);
-        return permissions === undefined || permissions.publish
-            ? undefined
-            : { kind: 'refused', reason: 'no-publish-grant', detail: 'The room grants this principal no publish.' };
+        const permissions = this.input.readPublicationPermissions(roomRef, message.route.topicId);
+        if (permissions !== undefined && !permissions.publish) {
+            return {
+                kind: 'refused',
+                reason: 'no-publish-grant',
+                detail: 'The room grants this principal no publish.'
+            };
+        }
+        const rtcRefusal = delivery.carrier === 'rtc' ? resolveRtcGrantedPublicationShapeRefusal(message) : undefined;
+        return rtcRefusal === undefined ? undefined : { kind: 'refused', reason: 'unsupported', detail: rtcRefusal };
+    }
+
+    private isGrantedDelivery(delivery: BrowserRallarMessageDispatch.Delivery, roomRef: GroupRef | undefined): boolean {
+        return delivery.access === 'granted' ||
+            (roomRef !== undefined && this.input.grantedTopics.isGrantedTopic(roomRef, delivery.message.route.topicId));
     }
 }
 

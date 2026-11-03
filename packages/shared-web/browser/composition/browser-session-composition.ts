@@ -23,6 +23,7 @@ import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
 
 import type { BrowserMessagingComposition } from './browser-communication-composition.ts';
 import type { BrowserPeopleStatsComposition, BrowserRoomsComposition } from './browser-product-composition.ts';
@@ -53,6 +54,7 @@ export interface CreateBrowserSessionCoreCompositionInput {
     readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
+    readonly grantedTopics: RtcGrantedTopicReader;
 }
 
 export interface CreateBrowserStartupCompositionInput {
@@ -87,6 +89,7 @@ export function createBrowserSessionCoreComposition(
         stateRuntime: input.foundation.runtime,
         lifecycle: input.foundation.lifecycle,
         publicationCrypto: input.foundation.publicationCrypto,
+        grantedTopics: input.grantedTopics,
         emitState: () => input.state.stateStore.emit(),
         closeDataScopes: async (authSession) => {
             await Promise.all([

@@ -43,6 +43,8 @@ import {
     type NativeRtcConnectionFixture,
     type SimulatedNativeRtcDataChannel
 } from '../native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginOverlay,
     createOriginSnapshot,
@@ -224,7 +226,9 @@ describe('exact RTC ACK boundary observations', () => {
                         circuitBreaker,
                         rateLimiter,
                         faultPort,
-                        dequeueResilience: createDefaultALOutboundDequeueResilience()
+                        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                        grantedTopics: NO_RTC_GRANTED_TOPICS,
+                        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
                     });
                     managers.set(sessionId, manager);
 

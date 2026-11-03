@@ -14,6 +14,7 @@ import type { RallarRtcFacade } from '@shared-web/browser/rallar-realtime.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
 const apiConfiguration: ApiConfigResponse = {
@@ -32,6 +33,7 @@ const options = {
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
     publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    grantedTopics: NO_RTC_GRANTED_TOPICS,
     scope: { applicationId: 'ice-refresh', workspaceId: 'test' }
 };
 let rallar: RallarFacade;

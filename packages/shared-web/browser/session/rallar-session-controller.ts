@@ -30,6 +30,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 export interface CreateRallarSessionControllerOptions {
@@ -44,6 +45,7 @@ export interface CreateRallarSessionControllerOptions {
     readonly stateRuntime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly publicationCrypto: Promise<PublicationCrypto>;
+    readonly grantedTopics: RtcGrantedTopicReader;
     readonly emitState: () => void;
     readonly closeDataScopes: (session: AuthSession) => Promise<void>;
 }
@@ -83,6 +85,7 @@ export function createRallarSessionController(
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
         publicationCrypto: options.publicationCrypto,
+        grantedTopics: options.grantedTopics,
         clearCurrentRoom: options.stateRuntime.clearCurrentRoom
     });
     const authLifecycle = new BrowserSessionAuthLifecycle({

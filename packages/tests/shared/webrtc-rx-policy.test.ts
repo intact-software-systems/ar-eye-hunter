@@ -30,8 +30,10 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 
 import { createAcceptedGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { ALWorkBatchTestObserver } from './alm/work/al-work-batch-test-observer.ts';
+import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -618,7 +620,9 @@ class RtcReceiveFixture {
             circuitBreaker: shared.toCircuitBreaker(),
             rateLimiter: shared.toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO
         });
         onTestFinished(() => this.multicast.dispose());
         const inboundDiagnostics: ALInboundRuntimeDiagnosticsSink = Object.assign(() => {}, {

@@ -21,6 +21,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
@@ -69,7 +70,8 @@ function createFallbackFixture(
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
         nowMs: Date.now,
-        readPublicationPermissions: () => undefined
+        readPublicationPermissions: () => undefined,
+        grantedTopics: NO_RTC_GRANTED_TOPICS
     });
     return {
         admissions,

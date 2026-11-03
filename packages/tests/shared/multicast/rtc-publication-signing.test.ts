@@ -1,0 +1,288 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import {
+    toALPublicationProofSigningInput,
+    verifyALPublicationProof
+} from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { reconstructALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/compute-rtc-granted-publication-refusal.ts';
+import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
+import {
+    signRtcPublication,
+    type RtcPublicationSigningFailure,
+    type SignRtcPublicationInput
+} from '@shared/multicast/sign-rtc-publication.ts';
+import { importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+
+import {
+    createAvailablePublicationCryptoFixture,
+    UNAVAILABLE_PUBLICATION_CRYPTO,
+    type AvailablePublicationCrypto
+} from '../signature/publication-crypto-fixtures.ts';
+import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
+import {
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    ORIGIN_ROOM,
+    toOriginFrozenTargets,
+    type RtcOriginOverlayFixture
+} from './rtc-origin-overlay-fixture.ts';
+
+const GRANTED_TOPIC_ID = 'room.granted-feed';
+
+describe('the RTC origin of a granted publication', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('signs the admitted room multicast once: the stored row and every transport copy carry one valid proof', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        const message = createGrantedMulticast('none');
+
+        const admitted = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
+        const stored = await readStoredMessage(fixture, admitted.entries[0]!);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.proof).toEqual({ alg: 'ES256', keyId: crypto.keyPair.keyId, signature: expect.any(String) });
+        expect(admitted.message.targets).toEqual(toOriginFrozenTargets(['b', 'c'], 3));
+        const copies = [...fixture.channels.b!.sent, ...fixture.channels.c!.sent];
+        expect(copies).toHaveLength(2);
+        for (const carried of [stored, ...copies]) {
+            expect(carried.proof).toEqual(admitted.message.proof);
+            expect(toALPublicationProofSigningInput(carried)).toBe(toALPublicationProofSigningInput(admitted.message));
+            expect((await verifyProof(crypto, carried)).left).toBeUndefined();
+        }
+    });
+
+    it.each(['admission', 'dequeue', 'replan', 'hand-over'] as const)(
+        'keeps a byte-identical signing input in its plan at %s, in the message and in every copy',
+        async (stage) => {
+            const crypto = await createAvailablePublicationCryptoFixture();
+            const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+            const admitted = await fixture.manager.enqueueLegIfAbsent(createGrantedMulticast('none'), 'hold');
+            const signingInput = toALPublicationProofSigningInput(admitted.message);
+
+            // The stage planner is the manager's own; element access reaches it without widening its type.
+            const plan = fixture.manager['planOutgoingMessage'](admitted.message, stage);
+
+            expect(plan.dropReasonCode, plan.dropReason).toBeUndefined();
+            const copies = plan.preparedMessages.map((prepared) => reconstructALOutboundTransportMessage(prepared, plan.msg));
+            expect(copies).toHaveLength(2);
+            for (const planned of [plan.msg, ...copies]) {
+                expect(planned.proof).toEqual(admitted.message.proof);
+                expect(toALPublicationProofSigningInput(planned)).toBe(signingInput);
+            }
+        }
+    );
+
+    it.each<[string, (crypto: AvailablePublicationCrypto) => PublicationCrypto, (crypto: AvailablePublicationCrypto) => GroupSnapshot]>([
+        ['a keyless page', () => UNAVAILABLE_PUBLICATION_CRYPTO, (crypto) => toKeyedSnapshot(crypto)],
+        ['a page its snapshot names by an older keyId', (crypto) => crypto, () => createOriginSnapshot(['a', 'b', 'c'], 3)]
+    ])('refuses %s before admission as unsupported, sending and storing nothing', async (_name, toCrypto, toSnapshot) => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(toCrypto(crypto), toSnapshot(crypto));
+        const message = createGrantedMulticast('none');
+
+        const refused = await enqueueLegAndDrain(fixture, message, 'hand-over');
+
+        expect(refused).toMatchObject({
+            verdict: { kind: 'refused', reason: 'unsupported', detail: expect.any(String) },
+            message,
+            entries: []
+        });
+        expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    it('refuses a granted leg that asks a receipt before any signing work', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        // A key WebCrypto cannot sign with: a leg that reached signing would be refused sign-failed instead.
+        const fixture = createGrantedFixture(toUnsignableCrypto(crypto), toKeyedSnapshot(crypto));
+
+        const refused = await enqueueLegAndDrain(fixture, createGrantedMulticast('receiver'), 'hand-over');
+
+        expect(refused.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: RTC_GRANTED_PUBLICATION_REFUSALS.receipt
+        });
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    it('refuses a granted message without a proof through enqueueIfAbsent, which never signs', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+
+        const refused = await fixture.manager.enqueueIfAbsent(createGrantedMulticast('none'));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(refused.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: RTC_GRANTED_PUBLICATION_REFUSALS.unsigned
+        });
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    it('holds the page key where no property of the manager reaches it', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        const manager: object = fixture.manager;
+
+        expect(Reflect.ownKeys(manager)).not.toContain('publicationCrypto');
+        expect(Object.values(manager)).not.toContain(crypto);
+    });
+
+    it('carries a publication on a topic that is not granted unsigned', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        const message = { ...createGrantedMulticast('none'), route: { ...createGrantedMulticast('none').route, topicId: 'room.chat' } };
+
+        const admitted = await enqueueLegAndDrain(fixture, message, 'hold');
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(fixture.channels.b!.sent.map((sent) => sent.proof)).toEqual([undefined]);
+    });
+});
+
+describe('signRtcPublication', () => {
+    it('signs a frozen room multicast with the key its own snapshot names', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const message = toFrozen(createGrantedMulticast('none'));
+
+        const signed = await signRtcPublication(toSigningInput(crypto, toKeyedSnapshot(crypto), message));
+
+        expect(signed.right).toEqual({ ...message, proof: { alg: 'ES256', keyId: crypto.keyPair.keyId, signature: expect.any(String) } });
+        expect((await verifyProof(crypto, signed.right!)).left).toBeUndefined();
+    });
+
+    it.each<[RtcPublicationSigningFailure['kind'], (crypto: AvailablePublicationCrypto) => SignRtcPublicationInput]>([
+        [
+            'signing-unavailable',
+            () => ({ crypto: UNAVAILABLE_PUBLICATION_CRYPTO, snapshot: null, selfSessionId: 'a', message: createGrantedMulticast('none') })
+        ],
+        ['no-authority', (crypto) => toSigningInput(crypto, null, createGrantedMulticast('none'))],
+        [
+            'key-not-registered',
+            (crypto) => toSigningInput(crypto, createOriginSnapshot(['a', 'b', 'c'], 3), createGrantedMulticast('none'))
+        ],
+        ['unfrozen-audience', (crypto) => toSigningInput(crypto, toKeyedSnapshot(crypto), createGrantedMulticast('none'))],
+        [
+            'sign-failed',
+            (crypto) => ({
+                ...toSigningInput(crypto, toKeyedSnapshot(crypto), toFrozen(createGrantedMulticast('none'))),
+                crypto: toUnsignableCrypto(crypto)
+            })
+        ]
+    ])('answers %s first among the failures the input still holds', async (kind, toInput) => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+
+        const signed = await signRtcPublication(toInput(crypto));
+
+        expect(signed.left).toEqual({ kind, message: expect.any(String) });
+    });
+
+    it('answers no-authority for a null snapshot before any later step, whose failure the input also holds', async () => {
+        const crypto = toUnsignableCrypto(await createAvailablePublicationCryptoFixture());
+
+        const signed = await signRtcPublication(toSigningInput(crypto, null, toFrozen(createGrantedMulticast('none'))));
+
+        expect(signed.left?.kind).toBe('no-authority');
+    });
+
+    it('answers key-not-registered for a snapshot naming another keyId of this session', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const older = await createAvailablePublicationCryptoFixture();
+
+        const signed = await signRtcPublication(toSigningInput(crypto, toKeyedSnapshot(older), toFrozen(createGrantedMulticast('none'))));
+
+        expect(signed.left?.kind).toBe('key-not-registered');
+    });
+});
+
+describe('toALOutboundMessage', () => {
+    it('returns a proof-carrying message unchanged: the origin normalized it before signing', () => {
+        const message = createGrantedMulticast('none');
+        const proven: ALMessage = {
+            ...message,
+            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
+        };
+
+        expect(toALOutboundMessage(proven, normalizeALQosPolicy(message).effective)).toBe(proven);
+        expect(toALOutboundMessage(message, normalizeALQosPolicy(message).effective)).not.toBe(message);
+    });
+});
+
+function createGrantedFixture(crypto: PublicationCrypto, snapshot: GroupSnapshot): RtcOriginOverlayFixture {
+    return createRtcOriginOverlayFixture({
+        snapshot,
+        nextHopPeerIds: ['b', 'c'],
+        grantedTopics: createRtcGrantedTopicsFixture([GRANTED_TOPIC_ID]),
+        publicationCrypto: crypto
+    });
+}
+
+/** The room of `a`, `b` and `c` whose snapshot attests `a`'s page key. */
+function toKeyedSnapshot(crypto: AvailablePublicationCrypto): GroupSnapshot {
+    const snapshot = createOriginSnapshot(['a', 'b', 'c'], 3);
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) =>
+            session.sessionId === 'a' ? { ...session, publicationKey: toGroupPresencePublicationKey(crypto) } : session
+        )
+    };
+}
+
+function createGrantedMulticast(ack: ALAckMode): ALMessage {
+    return newALMulticastMessage(
+        'a',
+        { topicId: GRANTED_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+        ORIGIN_ROOM,
+        'room.granted-feed.v1',
+        { text: 'feed' },
+        { ack, reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-rtc-publication-signing' }
+    );
+}
+
+/** The page's key pair with a private key WebCrypto refuses to sign with. */
+function toUnsignableCrypto(crypto: AvailablePublicationCrypto): AvailablePublicationCrypto {
+    return { ...crypto, keyPair: { ...crypto.keyPair, privateKey: {} as CryptoKey } };
+}
+
+function toFrozen(message: ALMessage): ALMessage {
+    return { ...message, targets: toOriginFrozenTargets(['b', 'c'], 3) };
+}
+
+function toSigningInput(crypto: PublicationCrypto, snapshot: GroupSnapshot | null, message: ALMessage): SignRtcPublicationInput {
+    return { crypto, snapshot, selfSessionId: 'a', message };
+}
+
+async function verifyProof(crypto: AvailablePublicationCrypto, message: ALMessage) {
+    const publicKey = (await importEcdsaP256PublicKey(crypto.subtle, crypto.keyPair.publicJwk)).right!;
+    return await verifyALPublicationProof({ subtle: crypto.subtle, publicKey, message });
+}
+
+async function readStoredMessage(fixture: RtcOriginOverlayFixture, entry: ALOutboundEnqueueResult['entries'][number]): Promise<ALMessage> {
+    return JSON.parse((await fixture.resources.workQueue.getItem(entry.key))!.resource) as ALMessage;
+}
+
+async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALMessage, carrierGap: RtcCarrierGapAdmission) {
+    const result = await fixture.manager.enqueueLegIfAbsent(message, carrierGap);
+    await vi.advanceTimersByTimeAsync(0);
+    return result;
+}

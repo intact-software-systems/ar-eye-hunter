@@ -6,6 +6,7 @@ import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
     createBrowserResyncRecoveryComposition,
+    createDefaultBrowserGrantedTopics,
     readBrowserSessionInboundDiagnostics,
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
@@ -167,9 +168,11 @@ function createBrowserSessionMessaging(
 ): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
     const { nowMs, publicationStages, deliveries, sessionDeliveries } = delivery;
     const recovery = createBrowserResyncRecoveryComposition({ nowMs });
+    const grantedTopics = createDefaultBrowserGrantedTopics(state);
     const session = createBrowserSessionCoreComposition({
         foundation,
         state,
+        grantedTopics,
         sessionDeliveries,
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
@@ -190,6 +193,7 @@ function createBrowserSessionMessaging(
         recoveryOwners: recovery.recoveryOwners,
         state,
         session: sessionPort,
+        grantedTopics,
         readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
     });
     return { session, stateEvents, messaging };

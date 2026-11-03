@@ -48,6 +48,7 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 
 import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import {
     createAvailablePublicationCryptoFixture,
@@ -75,6 +76,7 @@ const OPTIONS: BrowserConnectOptions = {
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
     publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    grantedTopics: NO_RTC_GRANTED_TOPICS,
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,
@@ -317,6 +319,24 @@ describe('the transport faults a connect hands its RTC overlay', () => {
         });
 
         expect(rtc.faultPort).toBe(OPTIONS.diagnosticsPorts.transportFaultPort);
+    });
+});
+
+describe('the page key and granted topics a connect hands its RTC overlay', () => {
+    it('gives the RTC overlay the page\'s awaited key and the page\'s granted topics, which its granted legs sign by', async () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const publicationCrypto = await createAvailablePublicationCryptoFixture();
+        const input = createBrowserTransportInput(SESSION, OPTIONS, publicationCrypto);
+
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(rtc.publicationCrypto).toBe(publicationCrypto);
+        expect(rtc.grantedTopics).toBe(OPTIONS.grantedTopics);
     });
 });
 

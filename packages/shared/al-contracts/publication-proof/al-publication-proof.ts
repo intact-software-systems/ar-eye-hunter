@@ -151,6 +151,13 @@ export function toALPublicationProofSigningInput(message: ALMessage): string {
     ]);
 }
 
+/** A planner never changes a signed field of a signed message: the copies it plans carry the origin's proof. */
+export function assertALPublicationProofSigningInputKept(signed: ALMessage, planned: ALMessage): void {
+    if (toALPublicationProofSigningInput(planned) !== toALPublicationProofSigningInput(signed)) {
+        throw new Error(`A plan changed a signed field of publication ${signed.id.msgId}.`);
+    }
+}
+
 export async function signALPublicationProof(
     input: SignALPublicationProofInput
 ): Promise<Either<ALPublicationProofFailure, ALMessage>> {

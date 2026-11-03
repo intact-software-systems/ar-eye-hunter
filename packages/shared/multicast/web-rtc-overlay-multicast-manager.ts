@@ -16,6 +16,7 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
+import { assertALPublicationProofSigningInputKept } from '../al-contracts/publication-proof/al-publication-proof.ts';
 import {
     resolveALOwnedChildPeerIds,
     toALAcceptedOverlayAdjacency
@@ -71,6 +72,7 @@ import { Either } from '../resilience/Either.ts';
 import type { RateLimiter } from '../resilience/rate-limiter.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
+import type { PublicationCrypto } from '../signature/publication-crypto.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 import type {
     QRtcDataChannel,
@@ -80,6 +82,10 @@ import type {
 } from '../webrtc/qrtc-data-channel.ts';
 import { computeRtcBackpressure } from './compute-rtc-backpressure.ts';
 import { computeRtcExclusiveRefusal } from './compute-rtc-exclusive-refusal.ts';
+import {
+    computeRtcGrantedPublicationRefusal,
+    resolveRtcGrantedPublicationShapeRefusal
+} from './compute-rtc-granted-publication-refusal.ts';
 import {
     computeRtcOutboundCarrierAvailability,
     isRtcCarrierGapHandedOver,
@@ -102,12 +108,14 @@ import {
     readRtcOutboundObservation,
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
+import type { RtcGrantedTopicReader } from './rtc-granted-topic-reader.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
+import { signRtcPublication } from './sign-rtc-publication.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import {
     computeRtcBroadcastScopeRefusal,
@@ -127,6 +135,13 @@ import {
 
 /** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
 type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
+
+/** An origin message as its admission carries it: frozen to its room audience and normalized. */
+interface RtcOriginAdmittedMessage {
+    readonly availability: RtcOutboundCarrierAvailability;
+    readonly policy: ALQosNormalizationResult;
+    readonly message: ALMessage;
+}
 
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
@@ -161,6 +176,9 @@ export namespace WebRtcOverlayMulticastManager {
         readonly rateLimiter: RateLimiter;
         /** The scripted transport faults; a `backpressure` fault holds this carrier backpressured for its messages. */
         readonly faultPort: TransportFaultPort;
+        /** A publication on a granted topic is carried only signed by the page's key. */
+        readonly grantedTopics: RtcGrantedTopicReader;
+        readonly publicationCrypto: PublicationCrypto;
     }
 }
 
@@ -184,6 +202,9 @@ export class WebRtcOverlayMulticastManager {
     private readonly rateLimiter: RateLimiter;
     private readonly quotaNow: () => number;
     private readonly faultPort: TransportFaultPort;
+    private readonly grantedTopics: RtcGrantedTopicReader;
+    /** An ES private field: the advanced middleware hands app code this manager, never the page key. */
+    readonly #publicationCrypto: PublicationCrypto;
     private readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
@@ -199,6 +220,8 @@ export class WebRtcOverlayMulticastManager {
         this.quotaNow = dependencies.quotaNow;
         this.qosProvider = dependencies.qosProvider;
         this.faultPort = dependencies.faultPort;
+        this.grantedTopics = dependencies.grantedTopics;
+        this.#publicationCrypto = dependencies.publicationCrypto;
         this.outboundDiagnostics = dependencies.outboundDiagnostics;
         this.clock = dependencies.outboundRuntime.clock;
         this.submission = new RtcOutboundSubmission({
@@ -290,10 +313,50 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /**
-     * One sender carrier leg. A leg with a fallback carrier (`hand-over`) answers a carrier gap with `no-route`
-     * at once, so the fallback takes the message; a leg without one (`hold`) lets a durable send wait it out.
+     * One sender carrier leg. A granted publication is signed once as its admission carries it, or refused as
+     * unsupported before admission, the refusal a fallback carrier takes over.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
+        if (this.disposed || !this.isGrantedPublication(msg)) {
+            return await this.enqueueCarriedLegIfAbsent(msg, carrierGap);
+        }
+        const signed = await this.signGrantedPublication(msg);
+        return await signed.fold(
+            async (detail) =>
+                WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                    kind: 'refused',
+                    reason: 'unsupported',
+                    detail
+                }),
+            async (carried) => await this.enqueueCarriedLegIfAbsent(carried, carrierGap)
+        );
+    }
+
+    /** A granted leg is refused for its shape before any signing work, else signed as its admission carries it. */
+    private async signGrantedPublication(msg: ALMessage): Promise<Either<string, ALMessage>> {
+        const admitted = this.toRtcOriginAdmittedMessage(msg).message;
+        const refusal = resolveRtcGrantedPublicationShapeRefusal(admitted);
+        if (refusal !== undefined) {
+            return Either.ofLeft(refusal);
+        }
+        const groupRef = readALTargetGroupRef(admitted);
+        const signed = await signRtcPublication({
+            crypto: this.#publicationCrypto,
+            snapshot: (groupRef && this.readGroupSnapshotByRef(groupRef)) ?? null,
+            selfSessionId: this.connectionService.input.sessionId,
+            message: admitted
+        });
+        return signed.mapLeft((failure) => `${failure.kind}: ${failure.message}`);
+    }
+
+    /**
+     * A leg with a fallback carrier (`hand-over`) answers a carrier gap with `no-route` at once, so the fallback
+     * takes the message; a leg without one (`hold`) lets a durable send wait it out.
+     */
+    private async enqueueCarriedLegIfAbsent(
+        msg: ALMessage,
+        carrierGap: RtcCarrierGapAdmission
+    ): Promise<ALOutboundEnqueueResult> {
         const availability = !this.disposed && isRtcCarrierGapHandedOver(msg, carrierGap)
             ? this.readCarrierAvailability(msg)
             : undefined;
@@ -381,7 +444,7 @@ export class WebRtcOverlayMulticastManager {
 
     private static toProtectedEnqueueResult(
         msg: ALMessage,
-        verdict: Extract<ALDeliveryAdmissionVerdict, { kind: 'unroutable' | 'failed'; }>
+        verdict: Extract<ALDeliveryAdmissionVerdict, { kind: 'refused' | 'unroutable' | 'failed'; }>
     ): ALOutboundEnqueueResult {
         return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
     }
@@ -571,6 +634,11 @@ export class WebRtcOverlayMulticastManager {
         return readRtcGroupSnapshotByRef(this.groupCache, ref);
     }
 
+    private isGrantedPublication(msg: ALMessage): boolean {
+        const groupRef = readALTargetGroupRef(msg);
+        return groupRef !== undefined && this.grantedTopics.isGrantedTopic(groupRef, msg.route.topicId);
+    }
+
     private planDirectDispatch(
         msg: ALMessage
     ): OverlayMulticastDispatchPlan {
@@ -611,21 +679,51 @@ export class WebRtcOverlayMulticastManager {
         );
     }
 
+    /** A plan that carries a signed message keeps every signed field: its copies carry the origin's proof. */
     private planOutgoingMessage(
         original: ALMessage,
         stage: RtcOutgoingPlanStage
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original);
+        const plan = this.computeOriginRefusal(msg, original, policy)
+            .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
+        const planned = toRtcFrozenAudienceDispatchPlan(
+            toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
+            this.connectionService.input.sessionId
+        );
+        if (original.proof !== undefined && planned.dropReasonCode === undefined) {
+            assertALPublicationProofSigningInputKept(original, planned.msg);
+        }
+        return planned;
+    }
+
+    /** The origin freezes its room send at the first plan whose room authority admits it, then normalizes it. */
+    private toRtcOriginAdmittedMessage(original: ALMessage): RtcOriginAdmittedMessage {
         const selfPeerId = this.connectionService.input.sessionId;
         const availability = this.readCarrierAvailability(original);
         const context = availability.kind === 'available' ? availability.context : undefined;
         const frozen = toRtcCarrierGapFrozenMessage(original, availability, selfPeerId) ??
             toRtcOriginFrozenMessage(original, context, selfPeerId);
         const policy = this.readOutgoingQosPolicy(frozen, context);
-        const msg = toALOutboundMessage(frozen, policy.effective);
-        const plan = computeRtcBroadcastScopeRefusal(msg)
+        return { availability, policy, message: toALOutboundMessage(frozen, policy.effective) };
+    }
+
+    private computeOriginRefusal(
+        msg: ALMessage,
+        original: ALMessage,
+        policy: ALQosNormalizationResult
+    ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
+        return computeRtcBroadcastScopeRefusal(msg)
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
                 (carried) => computeRtcExclusiveRefusal(carried, original, policy.effective)
+            )
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
+                (carried) =>
+                    this.isGrantedPublication(carried)
+                        ? computeRtcGrantedPublicationRefusal(carried, original)
+                        : Either.ofRight(carried)
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
@@ -643,9 +741,7 @@ export class WebRtcOverlayMulticastManager {
             .flatMap(
                 (refusal) => Either.ofLeft(refusal),
                 (carried) => computeRtcLeaderRefusal(carried, original)
-            )
-            .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
-        return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);
+            );
     }
 
     private planOriginatingDispatch(
