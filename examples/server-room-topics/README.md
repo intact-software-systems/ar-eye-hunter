@@ -112,7 +112,8 @@ Every topic declares its `participation`. `members` lets every active member of
 the room publish and reaches every live member session. `granted` restricts the
 topic to the room's publication grants: only principals an owner or admin
 granted `publish` on this exact topic may publish, only the live sessions of
-principals granted `subscribe` receive, and only the server producers listed in
+principals granted `subscribe` that subscribed to the topic receive, and only
+the server producers listed in
 `serverProducerIds` may publish from the server, naming themselves as
 `producerId`:
 
@@ -135,4 +136,9 @@ A granted topic needs `scope: 'room'`, and one `topicId` has one
 participation. The server refuses a publication without a grant with the NACK
 reason `no-publish-grant`, and a server publish whose producer the topic does
 not list with `status: 'refused'`. A granted topic does not travel over RTC, so
-the browser channel on it declares `access: 'granted'` and sends over WS.
+the browser channel on it declares `access: 'granted'` and sends over WS. A
+browser session receives the topic once it calls the channel's
+`subscribe(handler)`, which returns a `RallarTopicSubscription` token that
+renews itself, re-subscribes after a reconnect and releases on
+`unsubscribe()`; owners and admins grant with `rooms.grantTopic` and revoke with
+`rooms.revokeTopic`.

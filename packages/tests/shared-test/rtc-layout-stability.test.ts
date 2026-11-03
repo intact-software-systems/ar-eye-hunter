@@ -5,6 +5,8 @@ import { createAlmScaleSetupCommands } from '@shared-test/rallar-bb-test/conform
 import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
+import { toConformanceInput } from './alm-conformance-test-input.ts';
+
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 interface LayoutTransitionFixture {
@@ -79,14 +81,8 @@ describe('RTC layout stability before a measured send', () => {
 });
 
 it.each(['rtc', 'rtc-with-ws-fallback'] as const)('settles %s before starting the paced-fairness lead admission clock', (carrier) => {
-    const scenario = createAlmConformanceRecipes({
-        group: roomRef,
-        carrier,
-        senderConnection: 'sender',
-        receiverConnection: 'receiver',
-        typeId: 'test',
-        deadlineMs: 18_000
-    }).find((candidate) => candidate.scenarioId === 'paced-fairness')!;
+    const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
+        .find((candidate) => candidate.scenarioId === 'paced-fairness')!;
     const commands = scenario.sender.commands;
     const lead = commands.findIndex((command) => command.kind === 'messages.send');
 

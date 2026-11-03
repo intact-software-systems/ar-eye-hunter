@@ -27,13 +27,14 @@ import {
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     runWithRallarReceiverPage,
+    startRecipeRun,
     startRecipientRecipeRun,
     type RecipePairRun,
     type RecipeRun
 } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 
+import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
-import { runRecipeTrioOnThreeAgents } from '../../../tests/playwright/rallar-black-box/full-stack-three-agent-run.ts';
 
 let browser: Playwright.Browser;
 
@@ -275,7 +276,9 @@ describe('recipient recipe promise ownership', () => {
             typeId: 'lifetime',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const participant = { agentId: 'recipient', actor: 'recipient', connection: 'recipient', context, page };
         const run: RecipeRun = {
@@ -351,7 +354,9 @@ describe('recipient barrier failure', () => {
             typeId: 'lifetime',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const participant = { agentId: 'recipient', actor: 'recipient', connection: 'recipient', context, page };
         let reads = 0;
@@ -391,6 +396,116 @@ describe('recipient barrier failure', () => {
             await context.close();
             server.closeAllConnections();
             await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+    });
+});
+
+describe('control poll timeouts', () => {
+    interface AcceptingControlRequest {
+        readonly request: Playwright.APIRequestContext;
+        close(): Promise<void>;
+    }
+
+    /** A request whose every command enqueue the control server accepts. */
+    async function openAcceptingControlRequest(): Promise<AcceptingControlRequest> {
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
+        const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        vi.spyOn(request, 'post').mockImplementation(
+            async (_url, options) => await post(`http://127.0.0.1:${address.port}`, options)
+        );
+        return {
+            request,
+            close: async () => {
+                await request.dispose();
+                await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            }
+        };
+    }
+
+    const baseline = createAlmConformanceRecipes({
+        group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+        carrier: 'ws',
+        typeId: 'poll-timeout',
+        senderConnection: 'sender',
+        receiverConnection: 'receiver',
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
+    }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+
+    interface SilentRun {
+        readonly run: RecipeRun;
+        readCount(): number;
+    }
+
+    // Each read moves the clock by `stepMs` and finds neither a result nor an event.
+    function createSilentRun(request: Playwright.APIRequestContext, stepMs: number): SilentRun {
+        let nowEpochMs = 1_000;
+        let reads = 0;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        const run: RecipeRun = {
+            request,
+            runId: 'poll-timeout',
+            readSnapshot: async () => {
+                reads += 1;
+                nowEpochMs += stepMs;
+                return { ...snapshot, runId: 'poll-timeout' };
+            }
+        };
+        return { run, readCount: () => reads };
+    }
+
+    it('reports a recipe run with no control result by its deadline as a failed outcome, not a rejection', async () => {
+        const control = await openAcceptingControlRequest();
+        try {
+            const { run, readCount } = createSilentRun(control.request, 60_000);
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            await expect(started.readOutcome()).resolves.toEqual({
+                commandId: `${baseline.sender.recipeId}-run`,
+                ok: false,
+                summary: 'no control result within 180000 ms'
+            });
+            expect(readCount()).toBe(3);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('warns and releases the sender when the receiver neither connects nor ends within the barrier timeout', async () => {
+        const control = await openAcceptingControlRequest();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const { run, readCount } = createSilentRun(control.request, 30_000);
+            const connectCommandId = baseline.receiver.commands.find((command) => command.kind === 'rtc.connect')
+                ?.commandId;
+
+            const started = await startRecipientRecipeRun(run, { agentId: 'receiver' }, baseline.receiver);
+
+            expect(started.commandId).toBe(`${baseline.receiver.recipeId}-run`);
+            expect(readCount()).toBe(2);
+            expect(warn).toHaveBeenCalledExactlyOnceWith('Receiver connect barrier timed out; releasing the sender anyway', {
+                runId: 'poll-timeout',
+                connectCommandId,
+                runCommandId: started.commandId,
+                timeoutMs: 60_000
+            });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
         }
     });
 });
@@ -456,9 +571,9 @@ it('validates the mandatory auth handoff at actual browser storage', async () =>
 describe('recipient outcome ownership after its connect barrier', () => {
     it.each(
         [
-            { runner: 'three-agent', fault: 'snapshot', held: 'third enqueue' },
+            { runner: 'agents', fault: 'snapshot', held: 'third enqueue' },
             { runner: 'same-context', fault: 'snapshot', held: 'owner enqueue' },
-            { runner: 'three-agent', fault: 'operation', held: 'third enqueue' },
+            { runner: 'agents', fault: 'operation', held: 'third enqueue' },
             { runner: 'same-context', fault: 'operation', held: 'owner enqueue' },
             { runner: 'same-context', fault: 'page end', held: 'owner page close' },
             { runner: 'pair', fault: 'operation', held: 'sender enqueue' }
@@ -470,7 +585,9 @@ describe('recipient outcome ownership after its connect barrier', () => {
             typeId: 'outcome-owner',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline');
         if (baseline === undefined) {
             throw new Error('Expected the real delivery-baseline recipes.');
@@ -559,7 +676,7 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 }
             });
             const post = request.post.bind(request);
-            const heldCommandId = runner === 'three-agent' ? `${third.recipeId}-run` : senderCommandId;
+            const heldCommandId = runner === 'agents' ? `${third.recipeId}-run` : senderCommandId;
             vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
                 const data = options?.data;
                 if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
@@ -589,17 +706,17 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 receiver: { agentId: 'recipient' },
                 readSnapshot: () => readControlRun(request, 'outcome-owner')
             };
-            const running = runner === 'three-agent'
-                ? runRecipeTrioOnThreeAgents({ ...run, third: { agentId: 'third' } }, {
-                    sender: baseline.sender,
-                    receiver: baseline.receiver,
-                    third
-                })
+            const running = runner === 'agents'
+                ? runRecipesOnAgents({
+                    ...run,
+                    agents: new Map([['sender', run.sender], ['receiver', run.receiver], ['recipient-b', { agentId: 'third' }]])
+                }, new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['recipient-b', third]]))
                 : runner === 'same-context'
                 ? runRecipeTrioOnSameContext(run, {
                     owner: { ...run.sender, page },
                     successor: { agentId: 'successor' },
-                    ownerEnd: 'close'
+                    ownerEnd: 'close',
+                    successorGate: undefined
                 }, { sender: baseline.sender, receiver: baseline.receiver, successor })
                 : runRecipePairOnTwoAgents(run, { sender: baseline.sender, receiver: baseline.receiver });
             const observed = running.then(() => undefined, (error: unknown) => error);

@@ -1,11 +1,23 @@
 import type { CDPSession } from '@playwright/test';
-import { startRepeating } from '../shared/resilience/start-repeating.ts';
 import type { Timers } from '../shared/resilience/timers.ts';
+import { startRepeating } from '../shared/resilience/timing/start-repeating.ts';
 
 const RENDERER_METRICS = new Set([
-    'Timestamp', 'TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration',
-    'TaskOtherDuration', 'V8CompileDuration', 'JSHeapUsedSize', 'JSHeapTotalSize',
-    'Nodes', 'Documents', 'Frames', 'JSEventListeners', 'LayoutCount', 'RecalcStyleCount'
+    'Timestamp',
+    'TaskDuration',
+    'ScriptDuration',
+    'LayoutDuration',
+    'RecalcStyleDuration',
+    'TaskOtherDuration',
+    'V8CompileDuration',
+    'JSHeapUsedSize',
+    'JSHeapTotalSize',
+    'Nodes',
+    'Documents',
+    'Frames',
+    'JSEventListeners',
+    'LayoutCount',
+    'RecalcStyleCount'
 ]);
 
 export namespace BrowserTimingCapture {
@@ -93,7 +105,12 @@ export class BrowserTimingCapture {
         }
         try {
             for (const [channel, startedAtEpochMs] of this.pending) {
-                this.record({ kind: 'incomplete', channel, startedAtEpochMs, stoppedAtEpochMs: this.input.timers.nowMs() });
+                this.record({
+                    kind: 'incomplete',
+                    channel,
+                    startedAtEpochMs,
+                    stoppedAtEpochMs: this.input.timers.nowMs()
+                });
             }
         }
         finally {
@@ -117,15 +134,27 @@ export class BrowserTimingCapture {
             if (channel === 'renderer') {
                 const { metrics } = await this.input.renderer.send('Performance.getMetrics');
                 observation = {
-                    kind: 'renderer', startedAtEpochMs, completedAtEpochMs: this.input.timers.nowMs(),
-                    metrics: Object.fromEntries(metrics.filter((metric) => RENDERER_METRICS.has(metric.name)).map((metric) => [metric.name, metric.value]))
+                    kind: 'renderer',
+                    startedAtEpochMs,
+                    completedAtEpochMs: this.input.timers.nowMs(),
+                    metrics: Object.fromEntries(
+                        metrics.filter((metric) => RENDERER_METRICS.has(metric.name)).map((
+                            metric
+                        ) => [metric.name, metric.value])
+                    )
                 };
             }
             else {
                 const { processInfo } = await this.input.browser.send('SystemInfo.getProcessInfo');
                 observation = {
-                    kind: 'processes', startedAtEpochMs, completedAtEpochMs: this.input.timers.nowMs(),
-                    processes: processInfo.map((process) => ({ id: process.id, type: process.type, cpuTimeSeconds: process.cpuTime }))
+                    kind: 'processes',
+                    startedAtEpochMs,
+                    completedAtEpochMs: this.input.timers.nowMs(),
+                    processes: processInfo.map((process) => ({
+                        id: process.id,
+                        type: process.type,
+                        cpuTimeSeconds: process.cpuTime
+                    }))
                 };
             }
         }

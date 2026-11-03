@@ -11,8 +11,8 @@ import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distribute
 import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ControlSnapshotRevision } from './control-service-snapshots.ts';

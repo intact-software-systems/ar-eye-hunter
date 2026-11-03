@@ -1,4 +1,5 @@
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
+import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -11,6 +12,10 @@ import type {
     GroupPublicationGrant,
     GroupPublicationTopicGrants
 } from '@shared/api/group-publication/group-publication-grants.ts';
+import type {
+    GroupTopicSubscription,
+    GroupTopicSubscriptionOutcome
+} from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     AuditStamp,
@@ -63,6 +68,8 @@ interface GroupMutationCommandBase {
 }
 
 export type GroupPublicationGrantOperation = 'grantGroupPublication' | 'revokeGroupPublication';
+
+export type GroupTopicSubscriptionOperation = 'subscribeGroupTopic' | 'unsubscribeGroupTopic';
 
 export type GroupMutationCommand =
     | (
@@ -423,6 +430,19 @@ export type GroupMutationCommand =
                     expiresAtEpochMs: number | null;
                 }>;
         }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            operation: GroupTopicSubscriptionOperation;
+            sessionId: string;
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    topicId: RallarWsUserTopicId;
+                    connectionGenerationId: string;
+                }>;
+        }>
     );
 
 export interface GroupMutationReceipt {
@@ -439,6 +459,8 @@ export interface GroupMutationReceipt {
     readonly outboxIds: readonly string[];
     readonly joinCode: string | null;
     readonly joinCodeExpiresAtEpochMs: number | null;
+    /** What a subscribe or unsubscribe did, so a replay answers it again; null for every other operation. */
+    readonly subscriptionOutcome: GroupTopicSubscriptionOutcome | null;
     readonly rejection: string | null;
 }
 
@@ -474,6 +496,15 @@ export interface GroupMutationRead {
     readonly presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
     /** The target's publication-grant row, loaded only for the grant commands and departures the read scope names. */
     readonly targetPublicationGrant: RuntimeStateEntryValue<GroupPublicationGrant> | null;
+    /** The live row for the command's (session, topic), loaded only for subscribe and unsubscribe. */
+    readonly targetTopicSubscription: RuntimeStateEntryValue<GroupTopicSubscription> | null;
+    /**
+     * The command session's active client-state rows, one per client instance that holds the session, loaded only for
+     * subscribe and unsubscribe; the instance id is caller-supplied, so several rows are a valid state.
+     */
+    readonly targetClientSessions: readonly RuntimeStateEntryValue<ClientSession>[] | null;
+    /** Every live subscription row of the target in the group, loaded only for a revoke of subscribe and departures. */
+    readonly targetPrincipalSubscriptions: readonly RuntimeStateEntryValue<GroupTopicSubscription>[] | null;
     /** Loaded only for the operations the read scope's policy rule names. */
     readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     /**
@@ -595,6 +626,16 @@ export type PresenceGuardCandidate =
         expectedRevision: number;
     }>;
 
+export type SubscriptionGuardCandidate =
+    | Readonly<{ kind: 'subscription'; operation: 'insert'; ref: GroupRef; value: GroupTopicSubscription; }>
+    | Readonly<{
+        kind: 'subscription';
+        operation: 'update' | 'delete';
+        ref: GroupRef;
+        value: GroupTopicSubscription;
+        expectedRevision: number;
+    }>;
+
 export type PresenceAdmissionCandidate =
     | Readonly<{
         operation: 'insert';
@@ -617,15 +658,23 @@ export interface GroupSessionReservationWrite {
     readonly expectedRevision: number;
 }
 
+/** One subscription row a revoke of subscribe or a departure deletes, guarded by the revision the read observed. */
+export type GroupTopicSubscriptionDeleteEffect = Readonly<{
+    ref: GroupRef;
+    value: GroupTopicSubscription;
+    expectedRevision: number;
+}>;
+
 export interface GroupMutationDomainWrite {
     readonly sessionIntentEffect: RuntimeStateGuardedBatchEffect | null;
     readonly sessionReservationWrite: GroupSessionReservationWrite | null;
     readonly outcome: 'write';
-    readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
+    readonly guard: GroupGuardCandidate | PresenceGuardCandidate | SubscriptionGuardCandidate;
     readonly members: readonly GroupMember[];
     readonly initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
     readonly presenceAdmission: PresenceAdmissionCandidate | null;
-    readonly event: GroupEvent;
+    /** Null for a subscription write, which records no event. */
+    readonly event: GroupEvent | null;
     readonly receipt: GroupMutationReceipt;
     readonly idempotency: GroupMutationIdempotencyRecord | null;
     readonly outboxWrites: readonly AppOutboxInsert[];
@@ -637,6 +686,7 @@ export interface GroupMutationDomainWrite {
     readonly layoutTombstones: GroupLayoutTombstones | null;
     readonly connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
     readonly publicationGrantEffects: readonly GroupPublicationGrantEffect[];
+    readonly subscriptionEffects: readonly GroupTopicSubscriptionDeleteEffect[];
 }
 
 export interface GroupMutationPersistence {
@@ -650,11 +700,13 @@ export interface GroupMutationPersistence {
             updatedAtIsoTimestamp: string;
         }>
         | null;
-    readonly eventWrite: Readonly<{
-        event: GroupEvent;
-        workspaceKey: string;
-        eventJson: string;
-    }>;
+    readonly eventWrite:
+        | Readonly<{
+            event: GroupEvent;
+            workspaceKey: string;
+            eventJson: string;
+        }>
+        | null;
 }
 
 export type GroupMutationComputedWrite =

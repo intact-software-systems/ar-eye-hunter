@@ -71,7 +71,12 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+            planner: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send' }]
+            })
         });
         onTestFinished(async () => {
             resume.resolve();
@@ -97,7 +102,12 @@ describe('outbound admission observation order', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'changed' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'changed' }]
+            }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
                 return { status: 'sent', submissionAttempted: true };

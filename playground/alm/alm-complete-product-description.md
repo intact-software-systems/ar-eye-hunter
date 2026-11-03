@@ -261,8 +261,8 @@ audience (D486). On a granted topic one pure `computeRoomPublicationAdmission`
 ([`compute-room-publication-admission.ts`](../../packages/shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.ts))
 admits a session holding effective `publish`, or a server producer the topic's
 `serverProducerIds` lists (else `topic-not-granted`), and its audience is the
-live sessions of the principals holding `subscribe`, narrowed by targeting. The
-room authorizer runs it at socket admission, pending replay, inbox dispatch and
+live sessions of the principals holding `subscribe` that elected to receive it
+(S2-ii, below), narrowed by targeting. The room authorizer runs it at socket admission, pending replay, inbox dispatch and
 `route`; a proxy's result is admitted on the original sender's grant for the
 result topic (D487, D496, D497). A refused session is NACKed `no-publish-grant`
 at socket admission and at `route`, terminal on its handle whatever the receipt;
@@ -279,9 +279,45 @@ no recipients. The receipt never shrinks: a recipient revoked after admission
 stays expected and reads unconfirmed. api-v1 installs its granted topics from
 `grantedWsTopics` (D499). **Limit:** RTC carries no granted topic, and a granted
 browser channel refuses `rtc` `unsupported` (D491); restricted RTC parity is the
-addendum's first later outcome. Session subscriptions and the audience
-intersection are S2-ii, so until then a granted topic reaches every live session
-of a subscribe-granted principal.
+addendum's first later outcome.
+
+**CURRENT — S2-ii, session subscriptions:** holding `subscribe` makes a
+principal eligible; a session receives a granted topic only after it elects to,
+with a leased subscription asserted by its current connection generation. One
+row of `group-state:subscriptions` per (group, session, topic)
+([`group-topic-subscriptions.ts`](../../packages/shared/api/group-publication/group-topic-subscriptions.ts))
+names the principal, the asserting `connectionGenerationId`, the lease's end and
+the admitting group revision, and the 120 s lease is its store expiry (D489,
+D502). The self-session `subscribe` and `unsubscribe` routes take
+`{ topicId, connectionGenerationId }` and answer `subscribed`, `renewed` (the
+same generation again, extending the lease), `unsubscribed` or `not-subscribed`;
+a subscribe is refused `no-subscribe-grant`, `stale-generation` or
+`no-live-session`, the generation matched as a value against the session's live
+client-state rows, and only the row's live generation releases it (D503, D507).
+The write is the row alone: no event, no group revision, no delta, nothing
+replanned. A revoke of `subscribe` and every departure delete the rows in the
+same write; a grant that adds `subscribe` and a write that activates the member
+delete a row a cross-server race left; retirement deletes them (D504). On a
+granted topic the server reads the topic's rows and the sessions' live
+generations in one fresh statement beside the probed snapshot, never through
+the cached snapshot, and the audience is the live sessions of active members
+holding effective `subscribe` whose leased row a live generation of the session
+asserted, narrowed by targeting and the leader, on every pass and for live-only
+sends, the cluster's live notice and the outbox alike (D508). Each recipient's
+generation is captured in the outbound policy and compared at dequeue, repair
+and the awaited-connection send, so a reopened session never inherits an old
+row's obligation; an empty audience is admitted with zero recipients, a leader
+without a subscription is NACKed `no-leader`, and a room unicast to an
+unsubscribed session `unauthorized`. The browser room facade exposes each
+member's effective `topicGrants`, the session's `topicRole(topicId)` and the
+owner and admin workflows `rooms.grantTopic` and `rooms.revokeTopic`; a granted
+channel's `subscribe(handler)` returns a `RallarTopicSubscription` token
+(`pending`, `active`, `refused`, `lapsed`), counted per tab, room and topic,
+renewed on the heartbeat cadence, re-asserted under the new generation when the
+socket reopens and released at session end (D490, D509). **Limit:** a
+same-session WS reconnect leaves the session's room presence closed, so the
+reopened session receives no granted publication although its subscription is
+re-asserted (D506); the four-role cells run on the local lane only (D505).
 
 ## Logical audiences
 

@@ -550,7 +550,12 @@ export class WsQueueBoxServerReceiptAggregation {
 function toWsQueueBoxServerReceiptDispatchPlan(
     message: ALMessage
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] };
+    return {
+        msg: message,
+        dropReasonCode: undefined,
+        lane: 'durable',
+        preparedMessages: []
+    };
 }
 
 /** Every reason this ACK may not count; an absent aggregate makes the rest moot. */

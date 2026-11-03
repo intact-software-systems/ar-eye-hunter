@@ -669,7 +669,9 @@ it('delivers the canonical generated supersedence specimen through the page deco
         typeId: 'generated',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 30_000
+        deadlineMs: 30_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     })
         .find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
     const sends = scenario.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).filter((command) =>

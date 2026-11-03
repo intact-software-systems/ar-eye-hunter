@@ -53,6 +53,11 @@ validation.
    stored beside membership; absence means no rights.
    [decodeGroupPublicationGrant](./group-publication/group-publication-grants.ts#decodeGroupPublicationGrant)
    decodes a row at a trust boundary and reports every issue.
+9. [GroupTopicSubscription](./group-publication/group-topic-subscriptions.ts#GroupTopicSubscription)
+   is one session's leased election to receive one granted topic, asserted by
+   its connection generation; server-only, never on a snapshot.
+   [decodeGroupTopicSubscription](./group-publication/group-topic-subscriptions.ts#decodeGroupTopicSubscription)
+   decodes a row at a trust boundary and reports every issue.
 
 ## Boundaries
 

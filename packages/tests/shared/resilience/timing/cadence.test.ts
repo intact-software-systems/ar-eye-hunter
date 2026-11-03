@@ -1,4 +1,4 @@
-import { computeCadenceBoundaryAtMs, computeNextCadenceAtMs, isCadenceDue } from '@shared/resilience/cadence.ts';
+import { computeCadenceBoundaryAtMs, computeNextCadenceAtMs, isCadenceDue } from '@shared/resilience/timing/cadence.ts';
 import { describe, expect, it } from 'vitest';
 
 const CADENCE_MS = 100;

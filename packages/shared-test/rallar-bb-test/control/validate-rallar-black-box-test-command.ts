@@ -81,7 +81,6 @@ const REQUIRED_FIELDS_WITH_OWN_MESSAGE: {
     'http.request': ['request'],
     'messages.send': ['carrier', 'typeId', 'payload'],
     'messages.observe': ['state'],
-    'fault.inject': ['match'],
     'director.intent': ['intent']
 };
 const UNSUPPORTED_COMMAND_ISSUE = toControlCommandIssue('Command must be an object with a supported kind.');
@@ -210,6 +209,9 @@ function validateServiceCommandFields(
         case 'messages.control':
         case 'messages.awaitReply':
         case 'messages.reply':
+        case 'messages.subscribe':
+        case 'messages.unsubscribe':
+        case 'messages.subscriptions':
         case 'fault.inject':
         case 'storage.counters':
         case 'agent.reload':

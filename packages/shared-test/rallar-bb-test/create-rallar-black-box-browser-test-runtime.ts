@@ -155,6 +155,9 @@ class BrowserCommandAdapter {
             case 'messages.control':
             case 'messages.awaitReply':
             case 'messages.reply':
+            case 'messages.subscribe':
+            case 'messages.unsubscribe':
+            case 'messages.subscriptions':
             case 'fault.inject':
             case 'storage.counters':
             case 'agent.reload':

@@ -69,7 +69,12 @@ describe('AL outbound durable effect lifecycle', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+            })
         });
         await runtime.enqueueIfAbsent(createOutboundMessage('expires-during-receipt-read', { ttlMs: 1_000 }));
         await waitForSettledOutboundWork(stores.workQueue, stores.admissionStore.namespace);
@@ -89,7 +94,12 @@ describe('AL outbound durable effect lifecycle', () => {
                 sent.push(String(prepared.msgId));
                 return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent', submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+            })
         });
         onTestFinished(() => settlement.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage('retained-completion-failure');
@@ -117,7 +127,12 @@ describe('AL outbound durable effect lifecycle', () => {
                 attempts.push(String(prepared.msgId));
                 return { status: 'queued', settled: settlement.promise };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+            })
         });
         onTestFinished(() => settlement.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage(`retained-${status}`);
@@ -648,7 +663,12 @@ describe('AL outbound durable effect lifecycle', () => {
                     sent.push(String(prepared.msgId));
                     return { status: 'sent', submissionAttempted: true };
                 },
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+                planOutgoingMessage: (msg) => ({
+                    msg,
+                    dropReasonCode: undefined,
+                    lane: 'volatile',
+                    preparedMessages: []
+                })
             });
             const closing = runtime.dispose();
             onTestFinished(async () => {
@@ -706,7 +726,12 @@ describe('AL outbound durable effect lifecycle', () => {
                 sent.push(String(prepared.msgId));
                 return { status: 'sent', submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            })
         });
         const message = newALReceiptControlMessage(
             { v: 4, msgId: 'overlapping-receipt', ts: 1, senderId: 'server', traceId: 'trace-al-outbound-durable-effects' },
@@ -828,7 +853,12 @@ describe('AL outbound durable effect lifecycle', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(Math.max(0, retryAt - Date.now()));

@@ -78,8 +78,18 @@ describe('ALOutboundMessageRuntime', () => {
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ resourceId: msg.route.resourceId }] }),
-            planDequeuedMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ resourceId: msg.route.resourceId }]
+            }),
+            planDequeuedMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            }),
             afterDequeueAdmission: undefined,
             planRepairMessage: undefined,
             sendPreparedMessage: async (prepared) => {
@@ -118,7 +128,12 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send' }]
+            })
         });
         onTestFinished(() => runtime.dispose());
         const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
@@ -239,7 +254,12 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
-        const plan = (msg: ALMessage) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile' as const, preparedMessages: [] });
+        const plan = (msg: ALMessage) => ({
+            msg: msg,
+            dropReasonCode: undefined,
+            lane: 'volatile' as const,
+            preparedMessages: []
+        });
         const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
@@ -327,7 +347,12 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(24);
@@ -372,7 +397,12 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);

@@ -29,6 +29,7 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'];
 const ADDRESSED_KEYS = ['ws-unicast-receipt', 'unicast-fallback', 'server-command', ...VOLATILE_BOUND_KEYS];
@@ -80,7 +81,7 @@ function bodyOf(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCo
 function shapeOf(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String(command.remaining)}`;
+            return toFaultInjectShape(command);
         case 'wait':
             return `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`;
         case 'messages.received':

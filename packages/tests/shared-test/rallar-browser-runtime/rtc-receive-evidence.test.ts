@@ -28,7 +28,7 @@ it.each([
             transport: 'messages.rtc',
             typeId: 'sample',
             topicId: 'samples',
-            ...(explicitSelector ? { messageSelector: { typeId: 'sample', topicId: 'samples' } } : {})
+            ...(explicitSelector ? { messageSelector: { typeId: 'sample', topicId: 'samples', access: 'members' as const } } : {})
         }
     } as const;
     await runtime.connect(connection);

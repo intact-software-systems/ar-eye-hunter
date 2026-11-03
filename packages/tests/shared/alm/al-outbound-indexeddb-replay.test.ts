@@ -67,7 +67,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
 
@@ -193,7 +198,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: engine,
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ text: 'engine-owned' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ text: 'engine-owned' }]
+            }),
             sendPreparedMessage: async (message) => {
                 sent.push(message.text ?? '');
                 return sent.length === 1
@@ -248,7 +258,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ text: 'retained' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ text: 'retained' }]
+            }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => ({
                 status: 'queued',
                 settled: new Promise<ALOutboundSettledSendResult>((resolve) => {
@@ -455,7 +470,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         let beforeCleanup: readonly (ResourceEntry | undefined)[] | undefined;
         const runtime1 = createDefaultOutboundTestRuntime({
             stores,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ text: 'captured' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ text: 'captured' }]
+            }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
         let disposing: Promise<void> | undefined;
@@ -476,7 +496,12 @@ describe('outbound IndexedDB durable queue replay', () => {
             const sent: string[] = [];
             const runtime2 = createDefaultOutboundTestRuntime({
                 stores,
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ text: 'replanned' }] }),
+                planOutgoingMessage: (msg) => ({
+                    msg,
+                    dropReasonCode: undefined,
+                    lane: 'durable',
+                    preparedMessages: [{ text: 'replanned' }]
+                }),
                 sendPreparedMessage: async (prepared) => {
                     sent.push(prepared.text ?? '');
                     return { status: 'sent', submissionAttempted: true };

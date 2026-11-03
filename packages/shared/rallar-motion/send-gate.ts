@@ -1,4 +1,4 @@
-import { computeCadenceBoundaryAtMs, isCadenceDue } from '../resilience/cadence.ts';
+import { computeCadenceBoundaryAtMs, isCadenceDue } from '../resilience/timing/cadence.ts';
 import { distanceRallarMotionVec3, distanceRallarMotionWrappedVec3 } from './math.ts';
 import type {
     RallarMotionSendGate,

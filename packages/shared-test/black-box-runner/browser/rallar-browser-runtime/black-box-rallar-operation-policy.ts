@@ -305,12 +305,11 @@ function toNormalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupR
 function toNormalizedMessageSelector(
     selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector']
 ): BlackBoxRallarConfig['messageSelector'] {
-    return typeof selector === 'string'
-        ? selector
-        : selector
+    return selector
         ? {
             topicId: selector.topicId,
-            typeId: selector.typeId
+            typeId: selector.typeId,
+            access: selector.access
         }
         : undefined;
 }

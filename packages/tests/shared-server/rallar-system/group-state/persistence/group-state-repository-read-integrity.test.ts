@@ -197,6 +197,7 @@ describe('convergent group and presence state', () => {
                 outboxIds: [],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
+                subscriptionOutcome: null,
                 rejection: null
             }
         };

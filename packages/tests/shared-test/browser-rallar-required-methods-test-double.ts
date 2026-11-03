@@ -9,6 +9,9 @@ type BrowserRallarRequiredTestMethods = Pick<
     | 'readReceipts'
     | 'awaitReply'
     | 'reply'
+    | 'subscribeTopic'
+    | 'unsubscribeTopic'
+    | 'readTopicSubscriptions'
     | 'submitControl'
     | 'injectFault'
     | 'readStorageCounters'
@@ -32,6 +35,9 @@ export function createBrowserRallarRequiredMethodsTestDouble(): BrowserRallarReq
         readReceipts: unsupported,
         awaitReply: unsupported,
         reply: unsupported,
+        subscribeTopic: unsupported,
+        unsubscribeTopic: unsupported,
+        readTopicSubscriptions: unsupported,
         submitControl: unsupported,
         injectFault: unsupported,
         readStorageCounters: unsupported,

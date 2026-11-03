@@ -226,6 +226,30 @@
           "handleId": "messages-reply-v1-handle"
         },
         {
+          "kind": "messages.subscribe",
+          "commandId": "messages-subscribe-v1",
+          "connection": "goldenWs",
+          "subscriptionId": "golden-granted-subscription"
+        },
+        {
+          "kind": "messages.subscriptions",
+          "commandId": "messages-subscriptions-v1",
+          "connection": "goldenWs"
+        },
+        {
+          "kind": "messages.unsubscribe",
+          "commandId": "messages-unsubscribe-v1",
+          "connection": "goldenWs",
+          "subscriptionId": "golden-granted-subscription"
+        },
+        {
+          "kind": "fault.inject",
+          "commandId": "fault-inject-product-socket-v1",
+          "faultId": "golden-product-socket-drop",
+          "carrier": "product-socket",
+          "action": "close"
+        },
+        {
           "kind": "fault.inject",
           "commandId": "fault-inject-v1",
           "faultId": "golden-drop-one-nack",

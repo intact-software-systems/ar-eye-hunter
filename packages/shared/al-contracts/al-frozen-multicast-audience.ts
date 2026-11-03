@@ -79,8 +79,11 @@ export function isALFreezeOfMessage(original: ALMessage, candidate: ALMessage): 
  * multicast's frozen recipients when it carries them. A frozen audience can narrow, never widen, whom the message is
  * delivered to. The WS server's receipt aggregate is the one reader that may expect more: it keeps a frozen audience
  * verbatim, so a frozen recipient the authority no longer admits reads unconfirmed (S3c-i C11). The origin stays in
- * it, as it does in an unfrozen audience, so a narrowed audience is never empty: every consumer already excludes the
- * origin, and the handling policy reads an empty member set as unrestricted.
+ * it when the authority admits it, as it does in an unfrozen audience; every consumer already excludes the origin. A
+ * granted topic's authorized audience holds only its subscribed sessions, so it may omit the origin and be empty: that
+ * audience reaches nobody and its receipt completes as admitted. The WS server never hands the handling policy an empty
+ * member set for it, since an admitted multicast's member set always names the server itself, and the policy reads an
+ * empty member set as unrestricted.
  */
 export function resolveALAdmittedRoomAudience(
     message: ALMessage,

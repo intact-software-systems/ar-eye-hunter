@@ -141,7 +141,9 @@ it('satisfies the authored newest-N wait using actual session-wide publication d
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
     }).find((candidate) => candidate.scenarioId === 'paced-newest-n');
     const wait = scenario?.sender.commands.find((command) => command.kind === 'wait' && command.match.topic === 'rallar.browser.alm.outbound_diagnostics');
     if (wait === undefined) {

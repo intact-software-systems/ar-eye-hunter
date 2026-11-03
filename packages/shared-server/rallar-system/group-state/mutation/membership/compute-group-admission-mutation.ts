@@ -97,7 +97,8 @@ export function computeGrantGroupAdmission(
         facts,
         members: [transitionGroupMemberLifecycle({ ...existing, updated: audit }, 'active', audit)],
         eventType: 'member-joined',
-        publicationGrantEffects: []
+        publicationGrantEffects: [],
+        subscriptionEffects: []
     });
 }
 
@@ -130,7 +131,8 @@ export function computeDeclineGroupAdmission(
         facts,
         members: [transitionGroupMemberLifecycle({ ...existing, updated: audit }, 'left', audit)],
         eventType: 'member-left',
-        publicationGrantEffects: []
+        publicationGrantEffects: [],
+        subscriptionEffects: []
     });
 }
 

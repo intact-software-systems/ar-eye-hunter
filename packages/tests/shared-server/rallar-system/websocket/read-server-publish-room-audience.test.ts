@@ -10,6 +10,7 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
         const snapshot = createGroupSnapshot(3, ['session-1', 'session-2']);
         const reader = createServerPublishRoomAudienceReader({
             readGroupSnapshot: async (ref) => ref.groupId === snapshot.group.groupId ? snapshot : undefined,
+            readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
             nowEpochMs: Date.now
         });
         const message = newALBroadcastMessage(
@@ -47,7 +48,7 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
             .toBeUndefined();
     });
 
-    it('admits a listed producer on a granted topic to the subscribe-granted sessions and refuses an unlisted one (D496)', async () => {
+    it('admits a listed producer on a granted topic to the subscribed sessions and refuses an unlisted one (D496, D489)', async () => {
         const base = createGroupSnapshot(3, ['session-1', 'session-2']);
         const snapshot = {
             ...base,
@@ -61,7 +62,21 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
             }]
         };
         const reader = createServerPublishRoomAudienceReader({
-            readGroupSnapshot: async () => snapshot,
+            readGroupSnapshot: () => Promise.reject(new Error('A granted topic reads its publication authority.')),
+            readPublicationAuthority: async (_ref, topicId) => ({
+                snapshot,
+                subscriptions: snapshot.activeSessions.map((session) => ({
+                    sessionId: session.sessionId,
+                    principalId: session.principalId,
+                    topicId,
+                    connectionGenerationId: `client-generation-${session.sessionId}`,
+                    leaseExpiresAtEpochMs: Date.now() + 120_000,
+                    admittedAtGroupRevision: 3
+                })),
+                liveSessionGenerations: Object.fromEntries(
+                    snapshot.activeSessions.map((session) => [session.sessionId, [`client-generation-${session.sessionId}`]])
+                )
+            }),
             nowEpochMs: Date.now
         });
         const message = newALBroadcastMessage(
@@ -77,7 +92,9 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
         const listed = await reader({ message, topic, producerId: 'snapshot-producer' });
         const unlisted = await reader({ message, topic, producerId: 'other-producer' });
 
+        // session-1 subscribed but holds no grant; session-2 holds subscribe and a live subscription.
         expect(listed?.right?.sessions.map((session) => session.sessionId)).toEqual(['session-2']);
+        expect(listed?.right?.recipientConnectionGenerationIds).toEqual({ 'session-2': 'client-generation-session-2' });
         expect(unlisted?.left?.code).toBe('topic-not-granted');
     });
 });

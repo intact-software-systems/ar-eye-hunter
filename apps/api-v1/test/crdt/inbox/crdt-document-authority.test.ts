@@ -119,6 +119,44 @@ Deno.test('room authority reads membership before one current-session expiry clo
     assert.deepEqual(events, ['group', 'clock']);
 });
 
+Deno.test('room authority refuses an expired or disconnected session and admits neither to the audience', async () => {
+    const sessions = [
+        { principalId: 'alice', sessionId: 'session-1', status: 'active' as const, expiresAtEpochMs: NOW + 1_000 },
+        { principalId: 'alice', sessionId: 'expired-session', status: 'active' as const, expiresAtEpochMs: NOW },
+        { principalId: 'alice', sessionId: 'disconnected-session', status: 'disconnected' as const, expiresAtEpochMs: NOW + 1_000 }
+    ];
+    const authorizeDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
+        readGroupSnapshot: () =>
+            Promise.resolve({
+                group: ROOM_DOCUMENT.roomRef!,
+                members: [{ principalId: 'alice', status: 'active' as const, role: 'member' as const }],
+                activeSessions: sessions
+            }),
+        readClientSnapshot: () => Promise.resolve(undefined),
+        nowEpochMs: () => NOW
+    });
+    const authorize = (sessionId: string) => authorizeDocumentAccess({ document: ROOM_DOCUMENT, actorPrincipalId: 'alice', sessionId });
+
+    assert.deepEqual(await authorize('expired-session'), {
+        allowed: false,
+        code: 'authorization-scope-denied',
+        publicationAuthority: null
+    });
+    assert.deepEqual(await authorize('disconnected-session'), {
+        allowed: false,
+        code: 'authorization-scope-denied',
+        publicationAuthority: null
+    });
+    assert.deepEqual(await authorize('session-1'), {
+        allowed: true,
+        code: 'allowed',
+        publicationAuthority: {
+            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            admittedAudience: ['session-1']
+        }
+    });
+});
+
 Deno.test('principal authority reads current client before one session expiry clock', async () => {
     const events: string[] = [];
     const authorizeDocumentAccess = createApiCrdtDocumentAccessAuthorizer({

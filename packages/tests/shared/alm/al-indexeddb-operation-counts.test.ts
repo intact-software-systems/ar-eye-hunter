@@ -236,7 +236,12 @@ describe('outbound default send IndexedDB volume', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-default-send' }),
             nowMs: () => laneNowMs,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ kind: 'send' }]
+            }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 

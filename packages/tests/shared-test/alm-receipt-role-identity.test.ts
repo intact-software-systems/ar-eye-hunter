@@ -19,7 +19,9 @@ function toRetryScenario(carrier: AlmConformanceCarrier) {
         typeId: 'receipt-roles',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 18_000
+        deadlineMs: 18_000,
+        laneFamilies: ['three-agent'],
+        principalIdsByRole: {}
     }).find((candidate) => candidate.scenarioKey === 'missing-recipient-retry');
     if (scenario?.recipientB === undefined) {
         throw new Error('The generated retry scenario must declare recipient-b.');

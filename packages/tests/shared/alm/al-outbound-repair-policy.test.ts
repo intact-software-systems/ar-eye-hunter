@@ -46,7 +46,12 @@ describe('AL outbound repair policy', () => {
             planRepairMessage: async (msg) =>
                 scenario.noCurrentRecipient
                     ? undefined
-                    : { msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
+                    : {
+                        msg: msg,
+                        dropReasonCode: undefined,
+                        lane: 'volatile',
+                        preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
+                    },
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
 

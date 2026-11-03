@@ -835,7 +835,108 @@ describe('Rallar typed message channel', () => {
                 issues: [expect.objectContaining({ path: '$.strategy', code: 'unsupported' })]
             });
     });
+    it('a granted room channel\'s subscribe returns a token and registers the handler', async () => {
+        const wsCallbacks = captureWsInboxCallbacks();
+        const subscribeUrls = stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition());
+        const received: ChatMessage[] = [];
+
+        const token = channel.subscribe((payload) => {
+            received.push(payload);
+        });
+        const settled = await token.wait();
+        await deliverWsFeed(wsCallbacks, 'ws-feed-1');
+
+        expect([settled, received]).toEqual(['active', [{ text: 'feed' }]]);
+        expect(subscribeUrls).toEqual([
+            expect.stringMatching(/\/groups\/room-1\/sessions\/session-1\/subscribe\/requests\/[\w-]{20,}$/)
+        ]);
+    });
+
+    it('unsubscribe detaches only that token\'s handler', async () => {
+        const wsCallbacks = captureWsInboxCallbacks();
+        const subscribeUrls = stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition());
+        const received: string[] = [];
+        const first = channel.subscribe(() => {
+            received.push('first');
+        });
+        const second = channel.subscribe(() => {
+            received.push('second');
+        });
+        await Promise.all([first.wait(), second.wait()]);
+
+        await first.unsubscribe();
+        await deliverWsFeed(wsCallbacks, 'ws-feed-1');
+
+        expect(received).toEqual(['second']);
+        expect([first.status(), second.status()]).toEqual(['lapsed', 'active']);
+        expect(subscribeUrls).toHaveLength(1);
+    });
+
+    it('subscribe on a members channel or a room-less channel throws unsupported', () => {
+        const facade = createFacade();
+        const members = facade.messages.room<ChatMessage>({ ...toGrantedFeedDefinition(), access: 'members' });
+        const { roomRef: _roomRef, ...roomless } = toGrantedFeedDefinition();
+        const unsupported = expect.objectContaining({
+            name: 'RallarValidationError',
+            issues: [expect.objectContaining({ code: 'unsupported' })]
+        });
+
+        expect(() => members.subscribe(() => {})).toThrow(unsupported);
+        expect(() => facade.messages.channel<ChatMessage>(roomless).subscribe(() => {})).toThrow(unsupported);
+    });
 });
+
+function toGrantedFeedDefinition(): RallarRoomMessageChannelDefinition {
+    return {
+        topicId: 'room.feed',
+        typeId: 'room.feed.v1',
+        roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+        purpose: 'notification',
+        access: 'granted'
+    };
+}
+
+type WsInboxCallback = Parameters<typeof webSocketQueueBox.onAnyInboxMessageDo>[1];
+
+function captureWsInboxCallbacks(): Map<string, WsInboxCallback> {
+    const wsCallbacks = new Map<string, WsInboxCallback>();
+    webSocketQueueBox.onAnyInboxMessageDo.mockImplementation((id, callback) => {
+        wsCallbacks.set(id, callback);
+        return webSocketQueueBox;
+    });
+    webSocketQueueBox.removeAnyInboxMessageCallback.mockImplementation((id) => wsCallbacks.delete(id));
+    return wsCallbacks;
+}
+
+async function deliverWsFeed(wsCallbacks: Map<string, WsInboxCallback>, msgId: string): Promise<void> {
+    const message = newALBroadcastMessage('peer-1', newALRoute('room.feed', 'room-1', msgId), 'room', 'room.feed.v1', {
+        text: 'feed'
+    });
+    for (const callback of wsCallbacks.values()) {
+        await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
+    }
+}
+
+/** Answers every topic subscription request `subscribed` and records the subscribe URLs it was sent. */
+function stubTopicSubscriptionFetch(): string[] {
+    const subscribeUrls: string[] = [];
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+        if (String(url).includes('/subscribe/')) {
+            subscribeUrls.push(String(url));
+        }
+        return new Response(JSON.stringify({ outcome: 'subscribed' }), { status: 200 });
+    });
+    onTestFinished(() => {
+        vi.unstubAllGlobals();
+    });
+    return subscribeUrls;
+}
 
 function mockRtcNoRoute(): void {
     vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)

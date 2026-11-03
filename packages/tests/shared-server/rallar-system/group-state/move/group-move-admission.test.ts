@@ -1,4 +1,5 @@
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GROUP_SESSION_RESERVATIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/schedule/group-session-reservation-storage.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +12,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { createGroupAuthorityFacts, groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
+import { subscriptionRowFor, writeSubscriptionRow } from '../mutation/group-topic-subscription-test-runtime.ts';
 
 async function createDestination(maxMembers: number, maxSessionsPerMember: number | null = null, scheduled = false) {
     const runtime = new FakeRuntimeStateRepository();
@@ -174,6 +176,26 @@ describe('group move admission', () => {
         ]);
         expect(result.mutations.map((mutation) => mutation.sessionIntentEffect?.operation)).toEqual(['insert', 'insert']);
         expect((await repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual(['bob', 'carol']);
+    });
+
+    it('deletes an entrant\'s stale destination subscription rows in its own admission batch', async () => {
+        const { repository, runtime } = await createDestination(3);
+        const ref = groupRef('pure-room');
+        const orphan = subscriptionRowFor('bob', 'bob-session', 'room.feed');
+        const key = await writeSubscriptionRow(runtime, ref, orphan);
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('alice', 'alice-session', 'room.feed'));
+
+        const result = computeGroupMoveAdmission({ participants: [await readJoin(repository, 'bob')] });
+
+        if (result.status !== 'admitted') {
+            throw new Error('Expected the entrant to fit');
+        }
+        expect(result.mutations.map((mutation) => mutation.subscriptionEffects)).toEqual([
+            [{ ref, value: orphan, expectedRevision: 0 }]
+        ]);
+        expect(result.mutations[0].persistence.guardedBatch.effects).toContainEqual(
+            expect.objectContaining({ operation: 'delete', namespace: SUBSCRIPTIONS_NAMESPACE, key })
+        );
     });
 
     it('does not charge another player place for an existing member', async () => {

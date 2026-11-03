@@ -184,6 +184,7 @@ describe('GroupStateRepository persistence', () => {
                 outboxIds: [],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
+                subscriptionOutcome: null,
                 rejection: null
             }
         };
@@ -365,6 +366,9 @@ function createMutationRead(): GroupMutationRead {
         targetPublicationGrant: null,
         sessionReservations: null,
         sessionIntent: null,
+        targetTopicSubscription: null,
+        targetClientSessions: null,
+        targetPrincipalSubscriptions: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         activeMembers: null,

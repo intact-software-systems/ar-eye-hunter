@@ -173,7 +173,7 @@ Requirements:
 Wrap a domain payload in a typed Rallar message channel.
 
 Requirements:
-- Use rallar.messages.channel<T> with a stable topicId/typeId, a required purpose ('command' or 'notification') and a required access ('members', or 'granted' for a topic restricted by publication grants, which sends over WS only).
+- Use rallar.messages.channel<T> with a stable topicId/typeId, a required purpose ('command' or 'notification') and a required access ('members', or 'granted' for a topic restricted by publication grants, which sends over WS only and receives only after subscribe(handler)).
 - Expose sendWs, sendRtc, onWs, and onRtc through a small domain module.
 - Add tests that verify topic/type selectors and payload forwarding.
 ```

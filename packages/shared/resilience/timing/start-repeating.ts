@@ -1,6 +1,6 @@
-import { FailureBackoff } from './failure-backoff.ts';
-import type { Timers } from './timers.ts';
-import { toError } from './to-error.ts';
+import { FailureBackoff } from '../failure-backoff.ts';
+import type { Timers } from '../timers.ts';
+import { toError } from '../to-error.ts';
 
 export namespace StartRepeating {
     export interface Input {

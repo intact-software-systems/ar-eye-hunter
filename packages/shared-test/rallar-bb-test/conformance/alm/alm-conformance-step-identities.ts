@@ -10,7 +10,14 @@ export const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 /** A `room.` topic makes any send room-scoped, so the world cell publishes under `app.`. */
 export const ALM_CONFORMANCE_WORLD_TOPIC_ID = 'app.alm-conformance.world';
 
+/** The granted topic the lanes' API profiles install; only a session that elected to receive it is sent its messages. */
+export const ALM_CONFORMANCE_GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
+
+/** A scenario whose selector is granted publishes and listens on that selector's topic. */
 export function toScenarioTopicId(step: AlmConformanceStepInput): string {
+    if (step.messageSelector?.access === 'granted') {
+        return step.messageSelector.topicId;
+    }
     return step.scenarioId === 'world-routing' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
 }
 
@@ -54,7 +61,10 @@ function toHandleId(step: AlmConformanceStepInput, index: number | string): stri
     return `alm-${step.input.carrier}-${step.scenarioKey}-${origin}send-${index}`;
 }
 
-/** The successor is a second page of the sender's session: it shares the sender's connection and its handles. */
+/**
+ * The successor is a second page of the sender's session: it shares the sender's connection and its handles.
+ * `publisher-b` produces too, but on an agent of its own, so its handles name its role as a recipient's do.
+ */
 function isSenderPage(role: AlmConformanceRole): boolean {
     return role === 'sender' || role === 'successor';
 }

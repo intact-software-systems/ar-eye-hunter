@@ -53,7 +53,12 @@ describe('outbound message expiry', () => {
         const store = stores.admissionStore;
         const read = await store.readOutgoingMessage({
             msg: original,
-            planner: () => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ message: JSON.stringify(msg) }] }),
+            planner: () => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ message: JSON.stringify(msg) }]
+            }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -239,7 +244,12 @@ describe('outbound message expiry', () => {
                 carrier: 'ws',
                 hopPeerIds: undefined
             }),
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: []
+            }),
             planRepairMessage: undefined,
             hopPeerIds: undefined,
             diagnostics: undefined,

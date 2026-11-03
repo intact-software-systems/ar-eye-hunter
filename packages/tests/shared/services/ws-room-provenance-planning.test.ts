@@ -24,7 +24,13 @@ interface RoomProvenanceFixture {
 describe('room publication identity at WS planning', () => {
     it('plans canonical room fan-out as peer recipients and a direct room row as room recipients', () => {
         const { planner, message, socket } = createFixture();
-        const request = { message, phase: 'dequeue' as const, clusterPublisherRegistered: false, admittedAudience: ['frozen'] };
+        const request = {
+            message,
+            phase: 'dequeue' as const,
+            clusterPublisherRegistered: false,
+            admittedAudience: ['frozen'],
+            admittedConnectionGenerationIds: undefined
+        };
         const canonical = planner.planOutboundMessage({ ...request, referenceKey: CANONICAL_KEY });
         expect(canonical.preparedMessages).toMatchObject([{ kind: 'recipient', peerId: 'frozen', connectionId: 'peer-socket' }]);
         expect(canonical.ackTracking?.expectedPeerIds).toEqual(['frozen']);
@@ -47,6 +53,7 @@ describe('room publication identity at WS planning', () => {
             phase: 'dequeue',
             clusterPublisherRegistered: false,
             admittedAudience: ['frozen'],
+            admittedConnectionGenerationIds: undefined,
             recipientScope: SCOPE,
             referenceKey
         });
@@ -62,6 +69,7 @@ describe('room publication identity at WS planning', () => {
             completedHopPeerIds: [],
             missingRanges: [],
             admittedAudience: ['frozen'],
+            admittedConnectionGenerationIds: undefined,
             referenceKey
         });
         expect(repair?.preparedMessages).toMatchObject([

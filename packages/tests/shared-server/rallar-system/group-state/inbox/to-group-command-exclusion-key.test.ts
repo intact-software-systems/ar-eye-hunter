@@ -40,6 +40,29 @@ describe('toGroupCommandExclusionKey', () => {
         }
     });
 
+    it('keys a topic subscribe and unsubscribe by their group aggregate, so they order against grants and departures', () => {
+        for (const type of [AppInboxType.GROUP_TOPIC_SUBSCRIBE, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE] as const) {
+            const entry = toEntry({
+                traceId: 'trace-test-fixture',
+                type,
+                topicId: type,
+                resourceId: `${type}-bob`,
+                contextId: 'caller=bob',
+                data: { scope: SCOPE, groupId: 'group-1', sessionId: 'session-bob', request: {} }
+            });
+            const revoke = toEntry({
+                traceId: 'trace-test-fixture',
+                type: AppInboxType.GROUP_PUBLICATION_REVOKE,
+                topicId: AppInboxType.GROUP_PUBLICATION_REVOKE,
+                resourceId: 'revoke-bob',
+                contextId: 'caller=alice',
+                data: { scope: SCOPE, groupId: 'group-1', principalId: 'bob', request: {} }
+            });
+            expect(toGroupCommandExclusionKey(entry)).toBe(`${GROUP_KEY}:aggregate`);
+            expect(isOrderedBehind(entry, revoke)).toBe(true);
+        }
+    });
+
     it('keeps a server-issued command on its group key and a session cleanup on its scope key', () => {
         expect(toGroupCommandExclusionKey(publicationEntry())).toBe(GROUP_KEY);
         expect(toGroupCommandExclusionKey(cleanupEntry())).toBe(SCOPE_KEY);

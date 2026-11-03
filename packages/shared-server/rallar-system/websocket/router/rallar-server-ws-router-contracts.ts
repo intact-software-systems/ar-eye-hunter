@@ -135,6 +135,8 @@ export interface RallarServerWsRoomAudience {
     readonly sessions: readonly GroupPresenceSession[];
     /** The snapshot version the sessions were read at. */
     readonly snapshotVersion: number;
+    /** On a granted topic, the connection generation each audience session's live subscription asserts; empty otherwise. */
+    readonly recipientConnectionGenerationIds: Readonly<Record<string, string>>;
 }
 
 export interface RallarServerWsRoomAuthorizationDenied {

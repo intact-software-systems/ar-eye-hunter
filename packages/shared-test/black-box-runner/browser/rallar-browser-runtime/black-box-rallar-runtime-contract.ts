@@ -27,6 +27,7 @@ import type {
     BlackBoxRallarSendInput,
     BlackBoxRallarWsSendDiagnostics
 } from './black-box-rallar-operation-contracts.ts';
+import type { BlackBoxRallarTopicSubscriptions } from './messaging/black-box-rallar-topic-subscriptions.ts';
 
 export interface BlackBoxRallarRoomRefreshOptions {
     /** `when-absent`: a room snapshot already in the store is kept current by state sync, so nothing is read. */
@@ -89,6 +90,9 @@ export interface BlackBoxRallarRuntime {
     awaitReply(input: unknown): Promise<BlackBoxRallarReplyWaitDiagnostics>;
     reply(input: unknown): Promise<BlackBoxRallarReplyDiagnostics>;
     submitControl(input: unknown): Promise<BlackBoxRallarControlSubmitDiagnostics>;
+    subscribeTopic(input: unknown): Promise<BlackBoxRallarTopicSubscriptions.Diagnostics>;
+    unsubscribeTopic(input: unknown): Promise<BlackBoxRallarTopicSubscriptions.Diagnostics>;
+    readTopicSubscriptions(input: unknown): Promise<BlackBoxRallarTopicSubscriptions.Readout>;
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
     /**

@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 publication grants over REST. The creator's declared initial grant is on the 201 snapshot; an owner grants a member publish on one exact topic, the 200 snapshot and a later read carry the row, the group revision advances, and the event log names publication-grant-changed with the resulting permissions. A change-less grant under a new requestId is a no-op: the group revision stays and no event is written. A changed body under the grant's requestId is an idempotency conflict, and replaying it after the revoke answers the first result. forbidden-role names its branch: an admin cannot grant an admin, a member cannot grant itself, and a spectator is never granted publish. A principal holds at most 64 topics, so the 65th is refused capacity with limit topics-per-principal. A revoke removes the row, and a member who leaves, or is banned, unbanned and rejoins, comes back holding no grant.",
+  "description": "No-browser API-v1 publication grants over REST. The creator's declared initial grant is on the 201 snapshot; an owner grants a member publish on one exact topic, the 200 snapshot and a later read carry the row, the group revision advances, and the event log names publication-grant-changed with the resulting permissions. A change-less grant under a new requestId is a no-op: the group revision stays and no event is written. A changed body under the grant's requestId is an idempotency conflict, and replaying it after the revoke answers the first result. A grant on an unknown group is refused 400 group-mutation-rejected. forbidden-role names its branch: an admin cannot grant an admin, a member cannot grant itself, and a spectator is never granted publish. A principal holds at most 64 topics, so the 65th is refused capacity with limit topics-per-principal. A revoke removes the row, and a member who leaves, or is banned, unbanned and rejoins, comes back holding no grant.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -769,6 +769,34 @@
           "version": "canonical.v2",
           "code": "app-inbox-idempotency-conflict",
           "status": 409
+        }
+      }
+    },
+    {
+      "name": "grantOnAnUnknownGroupIsRejected",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/pubgrant-missing-group-{runId}/publication-grants/{bobClientId}/grant/requests/pubgrant-grant-bob-missing-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "topicId": "room.pubgrant-feed",
+          "publish": true,
+          "subscribe": false
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Group not found: pubgrant-missing-group-{runId}"
         }
       }
     },

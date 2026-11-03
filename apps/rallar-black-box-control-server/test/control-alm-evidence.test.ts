@@ -255,7 +255,9 @@ function toLifecycleManifest(): RallarBlackBoxDistributedRunManifest {
             typeId: 'alm.conformance',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
-            deadlineMs: 18_000
+            deadlineMs: 18_000,
+            laneFamilies: ['two-agent'],
+            principalIdsByRole: {}
         }).find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!
     );
     return {

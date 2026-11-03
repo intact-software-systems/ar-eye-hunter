@@ -5338,6 +5338,21 @@ moved or changed test.
         "requiredConstraint": "Exactly one takeover mutation is sent when the server definitively refuses that revision.",
         "failureRationale": "A refreshed view and cleared local retry flag could hide a second mutation using fresh consent that the user never approved."
       }
+    },
+    {
+      "id": "full-stack-receiver-barrier-timeout-warns-once",
+      "domain": "Full-stack ALM harness receiver connect barrier",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "When the receiver neither connects nor ends within the barrier timeout, the harness records one warning naming the run, the connect and run commands and the timeout, and releases the sender anyway. Executable assertion: “warns and releases the sender when the receiver neither connects nor ends within the barrier timeout”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout",
+      "coverageRelation": "The test starts a real recipient recipe run through startRecipientRecipeRun against a control run whose snapshots never show the receiver's connect or result while each read moves the clock, then observes the console warning port and the started run the barrier returns.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.warn, the diagnostic port waitForReceiverConnectBarrier reports its timeout reaction through",
+        "observableEffect": "The warning is the only record a lane leaves that its sender was released without the receiver's connect barrier, so a cell's evidence reads one warning as one unbarriered release.",
+        "requiredConstraint": "One barrier timeout emits exactly one warning with the exact run, connect command, run command and timeout payload, and the barrier then returns the started run instead of throwing.",
+        "failureRationale": "The started run is returned identically whether the barrier warned once, once per poll or not at all, so only the warning count distinguishes the single timeout reaction from a per-read warning or a silent release."
+      }
     }
   ],
   "entries": [
@@ -11280,6 +11295,17 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The definitive party-changed response completes the one attempted takeover without a replacement write.",
       "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent"
+    },
+    {
+      "id": "test-structure-coupling-96096a8f4d754973",
+      "path": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "full-stack-receiver-barrier-timeout-warns-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The exactly-once matcher on the warning spy is the only observation that the barrier's timeout reaction ran once with its exact payload; the returned started run is the same for a silent or repeated warning.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout"
     }
   ]
 }

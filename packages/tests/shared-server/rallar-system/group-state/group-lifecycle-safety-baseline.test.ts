@@ -169,6 +169,9 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         targetPublicationGrant: null,
         sessionReservations: null,
         sessionIntent: null,
+        targetTopicSubscription: null,
+        targetClientSessions: null,
+        targetPrincipalSubscriptions: null,
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         activeMembers: null,
@@ -183,6 +186,7 @@ function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         ...baseRead(lifecycleState),
         actorMember: null,
         actorMemberEntry: null,
+        targetPrincipalSubscriptions: [],
         activeMemberPrincipalIds: null,
         activeMembers: [member('alice', 'owner'), member('bob', 'member')],
         lifecyclePolicy: {

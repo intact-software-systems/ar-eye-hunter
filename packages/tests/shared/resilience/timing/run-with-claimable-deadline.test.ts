@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { runWithClaimableDeadline } from '@shared/resilience/run-with-claimable-deadline.ts';
+import { runWithClaimableDeadline } from '@shared/resilience/timing/run-with-claimable-deadline.ts';
 
-import { createManualTimers } from './manual-timers.ts';
+import { createManualTimers } from '../manual-timers.ts';
 
 describe('runWithClaimableDeadline', () => {
     it('settles with the work outcome and cancels the deadline when the work finishes first', async () => {

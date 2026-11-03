@@ -977,6 +977,8 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
         targetResolver: createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet(), findGroupSnapshotByRef: () => state.cached })
     });
     const authorizeRoomMessage = createApiV1RoomWsAuthorizer({
+        // The room's topics are members topics, which never read a publication authority.
+        readCurrentPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
         readCurrentSnapshot: (ref) => {
             assert.deepEqual(ref, ROOM);
             state.authorityReads += 1;

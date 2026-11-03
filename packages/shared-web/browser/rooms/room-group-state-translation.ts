@@ -21,6 +21,7 @@ import type {
     CreateStateGroupBody,
     CreateStateGroupInviteBody,
     DisconnectStateGroupPresenceSessionBody,
+    GrantStateGroupPublicationBody,
     JoinStateGroupBody,
     ReconfigureStateGroupLifecycleBody,
     RemoveStateGroupMemberBody,
@@ -35,11 +36,13 @@ import type {
 } from '../api/state-mutation-http-contracts.ts';
 
 import type { RallarCreateRoomInput, RallarRoomState, RallarRoomSummary } from './rallar-room-contracts.ts';
+import { toRoomTopicGrants } from './topic-grants/room-topic-roles.ts';
 
 export type {
     GroupEvent,
     GroupEventType,
     GroupJoinMode,
+    GroupMember,
     GroupMemberStatus,
     GroupRef,
     GroupRole,
@@ -356,6 +359,19 @@ export function toSetRoomMemberRoleGroupStateRequest(
     };
 }
 
+/** A grant and a revoke carry the same fields: each true permission is the one the change adds or removes. */
+export function toRoomTopicGrantGroupStateRequest(
+    input: RoomGroupStateRequestInput<GrantStateGroupPublicationBody>
+): GrantStateGroupPublicationBody {
+    return {
+        topicId: input.request.topicId,
+        publish: input.request.publish,
+        subscribe: input.request.subscribe,
+        ...toMutationAuditFields(input.request),
+        ...toActorRequest(input)
+    };
+}
+
 export function toTransferRoomOwnershipGroupStateRequest(
     input: RoomGroupStateRequestInput<TransferStateGroupOwnershipBody>
 ): TransferStateGroupOwnershipBody {
@@ -460,6 +476,7 @@ function toRallarRoomMembers(
         sessionIds.push(session.sessionId);
         sessionIdsByPrincipalId.set(session.principalId, sessionIds);
     }
+    const grantByPrincipalId = new Map(currentRoom.publicationGrants.map((grant) => [grant.principalId, grant]));
     return currentRoom.members
         .map((member) => {
             const client = clients.find(
@@ -475,7 +492,8 @@ function toRallarRoomMembers(
                 isOwner: member.role === 'owner',
                 isOnline: sessionIds.length > 0,
                 sessionIds,
-                client
+                client,
+                topicGrants: toRoomTopicGrants(member, grantByPrincipalId.get(member.principalId))
             };
         })
         .sort((left, right) => (left.displayName ?? left.username).localeCompare(right.displayName ?? right.username));

@@ -86,7 +86,12 @@ it.each(['memory', 'indexeddb'] as const)(
         const runtime = createDefaultOutboundTestRuntime({
             stores: createStores(kind),
             diagnostics: (event) => diagnostics.push(event),
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ kind: 'send' }]
+            }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
@@ -151,7 +156,12 @@ it('charges the drain its own commit rather than leaving it on the next send', a
         stores,
         queueEngine: engine,
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] }),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'volatile',
+            preparedMessages: [{ kind: 'send' }]
+        }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
@@ -179,7 +189,12 @@ it('names the origin a queued send waited behind', async () => {
     const runtime = createDefaultOutboundTestRuntime({
         stores: createStores('memory'),
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] }),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'volatile',
+            preparedMessages: [{ kind: 'send' }]
+        }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 

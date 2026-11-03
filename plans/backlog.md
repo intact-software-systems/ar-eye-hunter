@@ -156,6 +156,15 @@ and it has no status list.
   need to wait for a grant the way `rosterVersion` lets them wait for a roster.
 - Batched subscription renewal (S2-ii, D489), if the per-subscription renew
   traffic shows in the state-write gate.
+- A hosted four-agent manifest for the four-role topic subscription cells
+  (S2-ii, D505): the cells name each role's principal, which a static hosted
+  manifest cannot, so today only the local lane runs them.
+- A same-session WS reconnect leaves the session's room presence closed
+  (S2-ii, D506; task_6dcb2b11): cleanup closes the closed socket's
+  generation's presence row and nothing re-writes it when the socket reopens,
+  so the reopened session receives no granted publication although its
+  re-asserted subscription is active; the reconnect cells pin today's
+  behaviour.
 - The measured pub/sub operating envelope: subscription and permission churn,
   multi-group producers and slow consumers.
 - The page snapshot read lists each group's publication grants after its three

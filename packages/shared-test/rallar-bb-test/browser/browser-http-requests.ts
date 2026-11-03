@@ -6,8 +6,10 @@ import type {
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestHttpRequestCommand,
-    RallarBlackBoxTestJsonValue
+    RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestState
 } from '../rallar-black-box-test-contracts.ts';
+import { resolveResultReferencesInText } from '../wait/resolve-wait-match-result-references.ts';
 
 import { createBrowserCommandAbortScope } from './browser-command-cancellation.ts';
 import type { CommandWithId, WebSocketTicketResolution } from './browser-command-contracts.ts';
@@ -40,6 +42,8 @@ interface BrowserHttpRequest {
     readonly url: string;
     readonly headers: HeadersInit | undefined;
     readonly resolvedRequest: HttpRequestCommand['request'];
+    /** The body as sent, its result references replaced by the values earlier commands returned. */
+    readonly body: string | undefined;
 }
 
 interface BrowserHttpResponse {
@@ -97,7 +101,7 @@ export class BrowserHttpRequests {
             const response = await requireBrowserCommandFetch(this.environment)(prepared.url, {
                 method: prepared.resolvedRequest.method,
                 headers: prepared.headers,
-                body: toRequestBody(prepared.resolvedRequest.body),
+                body: prepared.body,
                 credentials: prepared.resolvedRequest.credentials,
                 mode: prepared.resolvedRequest.mode,
                 signal: abort.signal
@@ -163,7 +167,8 @@ export class BrowserHttpRequests {
         const headers = shouldAttachRallarAuth(config, url)
             ? withRallarAuthHeaders(resolvedRequest.headers, session)
             : resolvedRequest.headers;
-        return { url, headers, resolvedRequest };
+        const body = toReferencedRequestBody(resolvedRequest.body, context.state().resultCache);
+        return { url, headers, resolvedRequest, body };
     }
 }
 
@@ -237,11 +242,23 @@ function toHeadersRecord(headers: Headers): Record<string, string> {
     return result;
 }
 
-function toRequestBody(body: RallarBlackBoxTestHttpRequestCommand['request']['body']): string | undefined {
+/**
+ * A `{resultCache.<commandId>.<path>}` token in the body stands for the string or number an earlier command returned,
+ * so a request can name an identity the recipe cannot know when it is authored, such as a connection generation.
+ */
+function toReferencedRequestBody(
+    body: RallarBlackBoxTestHttpRequestCommand['request']['body'],
+    resultCache: RallarBlackBoxTestState['resultCache']
+): string | undefined {
     if (body === undefined) {
         return undefined;
     }
-    return typeof body === 'string' ? body : JSON.stringify(body);
+    return resolveResultReferencesInText(typeof body === 'string' ? body : JSON.stringify(body), resultCache).fold(
+        ({ reference }) => {
+            throw new TypeError(`http.request names ${reference}, which no earlier command of this recipe returned.`);
+        },
+        (resolved) => resolved
+    );
 }
 
 async function readHttpBody(

@@ -444,7 +444,8 @@ export async function readOutboundTestAdmission<TPrepared>(
 ): Promise<ALOutboundCommitBundle<TPrepared>> {
     const read = await input.store.readOutgoingMessage({
         msg: input.message,
-        planner: input.planner ?? ((msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })),
+        planner: input.planner ??
+            ((msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });

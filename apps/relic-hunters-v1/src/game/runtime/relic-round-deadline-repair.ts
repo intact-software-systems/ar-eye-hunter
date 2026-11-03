@@ -1,6 +1,6 @@
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 interface RelicRoundRepair {
     readonly key: string;

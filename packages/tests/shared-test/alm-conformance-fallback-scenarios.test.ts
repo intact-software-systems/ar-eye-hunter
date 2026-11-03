@@ -23,6 +23,7 @@ import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { toRtcAckTrackingPlan } from '@shared/multicast/to-rtc-ack-tracking-plan.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const FALLBACK_SCENARIO_KEYS = [
     'fallback-within-deadline',
@@ -49,7 +50,7 @@ function bodyOf(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCo
 function shapeOf(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String(command.remaining)}`;
+            return toFaultInjectShape(command);
         case 'wait':
             return `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`;
         case 'messages.received':

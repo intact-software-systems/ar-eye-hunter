@@ -1,8 +1,10 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
+import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { GroupPublicationAuthority } from '../../group-state/group-state-service-contracts.ts';
 import { requireActiveGroup } from '../../group-state/policy/group-policy-primitives.ts';
 import type {
     RallarServerWsRoomAudience,
@@ -18,6 +20,10 @@ export namespace RoomPublicationAdmission {
     export interface Input {
         /** The probed snapshot, grants included. */
         readonly snapshot: GroupSnapshot;
+        /** The topic's subscription rows, read fresh after the probe; a members topic passes none. */
+        readonly subscriptions: readonly GroupTopicSubscription[];
+        /** Each candidate session's active client-state generations, read with the rows; a members topic passes none. */
+        readonly liveSessionGenerations: Readonly<Record<string, readonly string[]>>;
         readonly topic: RallarServerWsTopicAccess & Readonly<{ topicId: string; }>;
         readonly publisher: Publisher;
         readonly message: AuthorizedRoomAudienceMessage;
@@ -35,8 +41,9 @@ export namespace RoomPublicationAdmission {
 /**
  * The one WS publication decision (D487): a `members` topic reaches the room's authorized audience; a `granted` topic
  * admits a session holding effective `publish` or a listed server producer, and reaches only the sessions of the
- * principals holding effective `subscribe`. A group that is not active (archived, deleted, expired) holds no effective
- * grant (D485). Targeting and the leader receipt only narrow either audience.
+ * principals holding effective `subscribe` that hold a live subscription asserted by one of their live connection
+ * generations (D489). A group that is not active (archived, deleted, expired) holds no effective grant (D485).
+ * Targeting and the leader receipt only narrow either audience.
  */
 export function computeRoomPublicationAdmission(
     input: RoomPublicationAdmission.Input
@@ -65,7 +72,37 @@ export function computeRoomPublicationAudience(
             .map((grant) => grant.principalId)
             .filter((principalId) => resolveGroupPublicationPermissions(snapshot, principalId, topic.topicId).subscribe)
     );
-    return { ...audience, sessions: audience.sessions.filter((session) => subscribers.has(session.principalId)) };
+    const subscribed = audience.sessions.flatMap((session) => {
+        const row = subscribers.has(session.principalId) ? resolveLiveSubscription(input, session) : undefined;
+        return row === undefined ? [] : [{ session, connectionGenerationId: row.connectionGenerationId }];
+    });
+    return {
+        ...audience,
+        sessions: subscribed.map(({ session }) => session),
+        recipientConnectionGenerationIds: Object.fromEntries(
+            subscribed.map(({ session, connectionGenerationId }) => [session.sessionId, connectionGenerationId])
+        )
+    };
+}
+
+/** The session's row on the topic whose lease outlasts the decision and whose generation an active client row carries. */
+function resolveLiveSubscription(
+    input: Omit<RoomPublicationAdmission.Input, 'publisher'>,
+    session: GroupPresenceSession
+): GroupTopicSubscription | undefined {
+    const liveGenerations = Object.hasOwn(input.liveSessionGenerations, session.sessionId)
+        ? input.liveSessionGenerations[session.sessionId]
+        : [];
+    return input.subscriptions.find((row) =>
+        row.sessionId === session.sessionId && row.principalId === session.principalId &&
+        row.topicId === input.topic.topicId && row.leaseExpiresAtEpochMs > input.nowEpochMs &&
+        liveGenerations.includes(row.connectionGenerationId)
+    );
+}
+
+/** A members topic's audience reads the snapshot alone: no subscription row and no generation enter it. */
+export function toMembersTopicPublicationAuthority(snapshot: GroupSnapshot): GroupPublicationAuthority {
+    return { snapshot, subscriptions: [], liveSessionGenerations: {} };
 }
 
 /** A granted topic is grants of one room: a publication that names no room's GroupRef is refused (§5.2). */

@@ -28,6 +28,7 @@ import { decodePayloadPathValue } from '@shared-test/rallar-bb-test/wait/wait-ev
 
 import { OUTBOUND_LEASE_RECOVERY_BOUND_MS } from '../shared/alm/outbound-runtime-test-fixture.ts';
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
@@ -48,7 +49,7 @@ function toScenarioCommands(commands: readonly RallarBlackBoxTestCommand[]): rea
 function toShape(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String(command.remaining)}`;
+            return toFaultInjectShape(command);
         case 'messages.send':
             return 'replayOnCarrier' in command ? 'replay' : `send:${command.durability ?? 'volatile'}:${command.ack ?? 'none'}`;
         case 'messages.observe':

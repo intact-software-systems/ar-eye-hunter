@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    IDEMPOTENT_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import type { ChangeGroupSessionRequest } from '@shared/api/group-sessions/group-session-schedule.ts';
 import {
     createAuthorityHarness,
@@ -9,6 +13,7 @@ import {
     SCOPE,
     type AuthorityHarness
 } from '../inbox/group-state-inbox-test-runtime.ts';
+import { subscriptionRowFor, writeSubscriptionRow } from '../mutation/group-topic-subscription-test-runtime.ts';
 
 const groupId = 'scheduled-session';
 const ref = { ...SCOPE, groupId };
@@ -314,6 +319,35 @@ describe('scheduled session commands through AppInbox', () => {
         expect((await harness.groupStateService.sessionDirectory.listForPrincipal(SCOPE, 'alice', null)).sessions)
             .toContainEqual(expect.objectContaining({ roomRef: ref, timing: expect.objectContaining({ phase: 'cancelled' }) }));
     });
+
+    it('changes reservations and the schedule without touching a member subscription row', async () => {
+        const harness = await createSession();
+        const ownerRow = subscriptionRowFor('owner', 'owner-session', 'room.feed');
+        const key = await writeSubscriptionRow(harness.runtimeRepository, ref, ownerRow);
+        const changes: readonly (readonly [string, ChangeGroupSessionRequest])[] = [
+            ['alice', { requestId: 'alice-reserve', action: 'reserve', expectedScheduleRevision: 1, startsAtEpochMs: null }],
+            ['alice', { requestId: 'alice-withdraw', action: 'withdraw', expectedScheduleRevision: 1, startsAtEpochMs: null }],
+            ['owner', { requestId: 'owner-reschedule', action: 'reschedule', expectedScheduleRevision: 1, startsAtEpochMs: harness.nowEpochMs + 7_200_000 }],
+            ['owner', { requestId: 'owner-cancel', action: 'cancel', expectedScheduleRevision: 2, startsAtEpochMs: null }]
+        ];
+
+        for (const [principalId, request] of changes) {
+            const before = await readReceiptKeys(harness);
+            requireGroupStateResult(await change(harness, principalId, request));
+            const records = (await harness.runtimeRepository.findAllEntries(IDEMPOTENT_NAMESPACE))
+                .filter((entry) => !before.has(entry.key))
+                .map((entry) => JSON.parse(entry.value));
+            expect(records, request.requestId).toEqual([
+                expect.objectContaining({
+                    receipt: expect.objectContaining({ outcome: 'applied', subscriptionOutcome: null })
+                })
+            ]);
+        }
+
+        expect((await harness.repository.readSnapshot(ref))?.members.map((member) => member.status)).toEqual(['active']);
+        const entry = await harness.runtimeRepository.findEntry(SUBSCRIPTIONS_NAMESPACE, key);
+        expect(entry === undefined ? undefined : JSON.parse(entry.value)).toEqual(ownerRow);
+    });
 });
 
 async function createSession(startOffsetMs = 3_600_000): Promise<AuthorityHarness> {
@@ -346,6 +380,10 @@ async function createSession(startOffsetMs = 3_600_000): Promise<AuthorityHarnes
         })
     );
     return harness;
+}
+
+async function readReceiptKeys(harness: AuthorityHarness): Promise<ReadonlySet<string>> {
+    return new Set((await harness.runtimeRepository.findAllEntries(IDEMPOTENT_NAMESPACE)).map((entry) => entry.key));
 }
 
 function change(harness: AuthorityHarness, principalId: string, request: ChangeGroupSessionRequest) {

@@ -28,6 +28,9 @@ export type RallarBlackBoxTestAlmCommandKind =
     | 'messages.control'
     | 'messages.awaitReply'
     | 'messages.reply'
+    | 'messages.subscribe'
+    | 'messages.unsubscribe'
+    | 'messages.subscriptions'
     | 'fault.inject'
     | 'storage.counters'
     | 'agent.reload';
@@ -55,6 +58,14 @@ export function validateAlmControlCommand(
             ];
         case 'messages.reply':
             return validateMessagesReplyCommand(command);
+        case 'messages.subscribe':
+        case 'messages.unsubscribe':
+            return [
+                ...validateStringField(command, 'connection', kind),
+                ...validateStringField(command, 'subscriptionId', kind)
+            ];
+        case 'messages.subscriptions':
+            return validateStringField(command, 'connection', kind);
         case 'fault.inject':
             return validateFaultInjectCommand(command);
         case 'storage.counters':
@@ -286,9 +297,39 @@ function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly
             path,
             allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultCarrier
         }),
+        ...(command.carrier === 'product-socket'
+            ? validateProductSocketFaultFields(command)
+            : validateMatchedFaultFields(command))
+    ];
+}
+
+/** A product-socket fault acts on the page's one socket, so it matches no frame and counts no matches. */
+function validateProductSocketFaultFields(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const path = 'fault.inject';
+    return [
+        ...(['match', 'remaining'] as const).flatMap((field) =>
+            command[field] === undefined
+                ? []
+                : [toControlCommandIssue(`${path}.${field} is not allowed on the product-socket carrier.`)]
+        ),
+        ...validateEnumField({
+            record: command,
+            key: 'action',
+            path,
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.productSocketFaultAction
+        })
+    ];
+}
+
+function validateMatchedFaultFields(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const path = 'fault.inject';
+    return [
         ...(command.carrier === 'storage'
             ? [...validateStorageFaultMatchField(command), ...validateStorageFaultActionField(command)]
             : [...validateFaultMatchField(command), ...validateFaultActionField(command)]),
+        ...(command.remaining === undefined
+            ? [toControlCommandIssue(`${path}.remaining is required on the ${String(command.carrier)} carrier.`)]
+            : []),
         ...(command.remaining === 'until-cleared' ? [] : validateNumberField(command, 'remaining', path))
     ];
 }

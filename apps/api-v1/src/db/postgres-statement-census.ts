@@ -1,7 +1,7 @@
 import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 /** The statements of one shape since the previous take. */
 export interface PostgresStatementShape {

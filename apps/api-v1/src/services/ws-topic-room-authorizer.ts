@@ -11,11 +11,13 @@ export interface ApiV1RoomWsAuthorizerDependencies {
 }
 
 export function createApiV1RoomWsAuthorizer(
-    groupStateService: Pick<CachedGroupStateService, 'readCurrentSnapshot'>,
+    groupStateService: Pick<CachedGroupStateService, 'readCurrentSnapshot' | 'readCurrentPublicationAuthority'>,
     dependencies: ApiV1RoomWsAuthorizerDependencies
 ) {
     return createGroupRoomWsAuthorizer({
         readGroupSnapshot: async (ref) => await groupStateService.readCurrentSnapshot(ref),
+        readPublicationAuthority: async (ref, topicId) =>
+            await groupStateService.readCurrentPublicationAuthority(ref, topicId),
         readPreActivationAppData: async (ref) => {
             const read = await dependencies.readLifecyclePolicy(ref);
             // Absent preserves the workstream invariant: a group with no policy

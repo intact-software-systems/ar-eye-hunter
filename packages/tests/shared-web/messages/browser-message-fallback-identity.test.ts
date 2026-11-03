@@ -109,7 +109,13 @@ describe('typed message fallback identity', () => {
         const detail = 'ack receiver is unsupported for rtc multicast targets';
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
-            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({
+                msg,
+                lane: 'volatile',
+                preparedMessages: [],
+                dropReason: detail,
+                dropReasonCode: 'unsupported'
+            })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack: 'receiver' });
 
@@ -158,7 +164,13 @@ describe('typed message fallback identity', () => {
         const detail = 'ack receiver is unsupported for rtc multicast targets';
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
-            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({
+                msg,
+                lane: 'volatile',
+                preparedMessages: [],
+                dropReason: detail,
+                dropReasonCode: 'unsupported'
+            })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
 
@@ -187,7 +199,13 @@ describe('typed message fallback identity', () => {
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
             firstDurationMs: 101,
-            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: 'unsupported', dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({
+                msg,
+                lane: 'volatile',
+                preparedMessages: [],
+                dropReason: 'unsupported',
+                dropReasonCode: 'unsupported'
+            })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 100, ack: 'receiver' });
 
@@ -581,7 +599,12 @@ function createChannel(input: ChannelInput): ChannelFixture {
         sender,
         rtc: { onMessage: () => () => {} },
         ws: { onMessage: () => () => {} },
-        recoveryOwners: new BrowserChannelRecoveryOwners()
+        recoveryOwners: new BrowserChannelRecoveryOwners(),
+        topicSubscriptions: {
+            hold: () => {
+                throw new Error('No channel in this test subscribes.');
+            }
+        }
     });
     return {
         originalRoom: admission.originalRoom,

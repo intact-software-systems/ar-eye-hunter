@@ -23,8 +23,8 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
-import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/timing/run-with-claimable-deadline.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createManualTimers } from '../../../../shared/resilience/manual-timers.ts';

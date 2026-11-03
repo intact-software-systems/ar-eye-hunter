@@ -184,6 +184,7 @@ describe('durable AppInbox result evidence', () => {
                 outboxIds: [physicalEffectId],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
+                subscriptionOutcome: null,
                 rejection: null
             })
         };
@@ -215,6 +216,34 @@ describe('durable AppInbox result evidence', () => {
                 outboxId: `${presenceCommandId}:group-presence-summary:1`
             }]
         });
+    });
+
+    it.each([
+        ['GROUP_TOPIC_SUBSCRIBE', 'applied', 'subscribed'],
+        ['GROUP_TOPIC_SUBSCRIBE', 'applied', 'renewed'],
+        ['GROUP_TOPIC_UNSUBSCRIBE', 'applied', 'unsubscribed'],
+        ['GROUP_TOPIC_UNSUBSCRIBE', 'no-op', 'not-subscribed']
+    ])('validates %s as its %s receipt with no event and no effect (%s)', (commandType, outcome, subscriptionOutcome) => {
+        expect(subscriptionEvidence(commandType, { outcome, subscriptionOutcome })).toMatchObject({
+            atomicCompletionFailures: 0,
+            statusResultFailures: 0,
+            appInbox: [{ receipt: { identityKind: 'physical-resource-id' } }]
+        });
+    });
+
+    it.each([
+        ['a recorded event', { eventId: 'group-event-1' }],
+        ['an applied receipt without its outcome', { subscriptionOutcome: null }],
+        ['an outcome the receipt outcome cannot carry', { outcome: 'no-op', subscriptionOutcome: 'subscribed' }],
+        ['a rejected receipt carrying an outcome', { outcome: 'rejected', rejection: 'denied' }]
+    ])('rejects a subscription receipt with %s', (_case, overrides) => {
+        expect(subscriptionEvidence('GROUP_TOPIC_SUBSCRIBE', overrides)).toMatchObject({ statusResultFailures: 1 });
+    });
+
+    it('rejects a snapshot-shaped result for a subscription command', () => {
+        const snapshotShaped = { status: 'ok', result: { snapshot: {}, event: null } };
+
+        expect(subscriptionEvidence('GROUP_TOPIC_SUBSCRIBE', {}, snapshotShaped)).toMatchObject({ statusResultFailures: 1 });
     });
 
     it.each([
@@ -702,3 +731,42 @@ describe('durable AppInbox result evidence', () => {
         });
     });
 });
+
+/** One completed subscription command whose durable result is its receipt, with the fields a case overrides. */
+function subscriptionEvidence(
+    commandType: string,
+    overrides: Readonly<Record<string, string | null>>,
+    resultResource?: object
+) {
+    const subscriptionCommandId = `${commandType}-command-1`;
+    const receipt = {
+        commandId: subscriptionCommandId,
+        requestId: subscriptionCommandId,
+        commandHash,
+        aggregateRef: topologyGroupRef,
+        outcome: 'applied',
+        attemptCount: 1,
+        acceptedStorageRevision: 0,
+        snapshotVersion: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
+        eventId: null,
+        outboxIds: [],
+        joinCode: null,
+        joinCodeExpiresAtEpochMs: null,
+        subscriptionOutcome: 'subscribed',
+        rejection: null,
+        ...overrides
+    };
+    return deriveApiV1StateWriteEvidence({
+        spec: { match: 'scope', commandTypes: [commandType] },
+        rawRows: [{
+            ...command,
+            ri_resource_id: subscriptionCommandId,
+            ri_resource: JSON.stringify({
+                payload: { typeId: commandType, resource: JSON.stringify({ commandId: subscriptionCommandId }) }
+            }),
+            result_resource: JSON.stringify(resultResource ?? receipt)
+        }],
+        rawOutboxRows: []
+    });
+}

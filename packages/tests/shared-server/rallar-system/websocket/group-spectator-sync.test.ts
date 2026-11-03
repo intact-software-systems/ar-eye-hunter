@@ -26,6 +26,7 @@ const sync = {
 
 async function authorize(resource: object, typeId = sync.typeId) {
     const authorizer = createGroupRoomWsAuthorizer({
+        readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
         readGroupSnapshot: async () => ({
             ...snapshot,
             members: snapshot.members.map((member) =>

@@ -13,7 +13,13 @@ import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import {
+    ALM_CONFORMANCE_FOUR_ROLE_ROLES,
+    ALM_CONFORMANCE_ROLES,
+    ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES,
+    ALM_CONFORMANCE_THREE_AGENT_ROLES,
+    type AlmConformanceRole
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type {
     AlmConformanceLaneFamily,
     CreateAlmConformanceRecipesInput
@@ -38,9 +44,20 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
     assessAlmConformanceIdentity,
-    hasAlmIdentityEvidence
+    hasAlmIdentityEvidence,
+    type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import { assessSubscriptionRevokeDisconnected } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
+import { toSubscriptionSuccessorGateCommandId } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    closeAgentConnections,
+    createAgentRun,
+    runRecipesOnAgents,
+    toAgentRunPrincipalIds,
+    type AgentRun
+} from './full-stack-agent-run.ts';
 import {
     createTwoAgentRun,
     readFullStackConfig,
@@ -52,18 +69,12 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same-context-run.ts';
-import {
-    createThreeAgentRun,
-    runRecipeTrioOnThreeAgents,
-    type ThirdAgentRole,
-    type ThreeAgentRun
-} from './full-stack-three-agent-run.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
-type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent' | 'same-context' | 'same-principal'>;
+type TwoAgentScenarioFamily = Extract<AlmConformanceLaneFamily, 'two-agent' | 'addressed'>;
 
-type ThreeAgentScenarioFamily = Extract<AlmConformanceLaneFamily, 'three-agent' | 'same-principal'>;
+type AgentScenarioFamily = Extract<AlmConformanceLaneFamily, 'three-agent' | 'same-principal' | 'four-role'>;
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
@@ -82,7 +93,11 @@ interface ScenarioRoleEvidence {
 }
 
 interface ScenarioSelectionInput
-    extends Pick<CreateAlmConformanceRecipesInput, 'group' | 'senderConnection' | 'receiverConnection'> {}
+    extends
+        Pick<
+            CreateAlmConformanceRecipesInput,
+            'group' | 'senderConnection' | 'receiverConnection' | 'principalIdsByRole'
+        > {}
 
 interface ObservationRegimeInput {
     readonly snapshot: ControlRunSnapshot;
@@ -107,10 +122,11 @@ interface SameContextCell {
     readonly participants: TwoAgentRunParticipant[];
 }
 
-/** The role of each three-agent family's third agent, the one it adds to the sender and the receiver. */
-const THIRD_AGENT_ROLES: Readonly<Record<ThreeAgentScenarioFamily, ThirdAgentRole>> = {
-    'three-agent': 'recipient-b',
-    'same-principal': 'sibling'
+/** The roles of each family that runs on an agent per role; each scenario of the family declares exactly these. */
+const AGENT_FAMILY_ROLES: Readonly<Record<AgentScenarioFamily, readonly AlmConformanceRole[]>> = {
+    'three-agent': ALM_CONFORMANCE_THREE_AGENT_ROLES,
+    'same-principal': ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES,
+    'four-role': ALM_CONFORMANCE_FOUR_ROLE_ROLES
 };
 
 const config = readFullStackConfig();
@@ -182,24 +198,26 @@ test.describe('ALM conformance lane', () => {
             });
         }
 
-        for (const family of ['three-agent', 'same-principal'] as const) {
+        for (const family of ['three-agent', 'same-principal', 'four-role'] as const) {
             test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
                 test.skip(
                     selectScenarios(toPlanningSelection(), carrier, family).length === 0,
-                    `no ${scope} ALM scenario over ${carrier} declares the ${THIRD_AGENT_ROLES[family]} role`
+                    `no ${scope} ALM scenario over ${carrier} declares the ${
+                        AGENT_FAMILY_ROLES[family].join(', ')
+                    } roles`
                 );
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
 
-                const run = await createThreeAgentRun({
+                const run = await createAgentRun({
                     browser,
                     request,
                     testInfo,
                     runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
-                    thirdRole: THIRD_AGENT_ROLES[family]
+                    roles: AGENT_FAMILY_ROLES[family]
                 });
                 let scenarioFailed = false;
                 try {
-                    await runThreeAgentScenarios(run, carrier, family);
+                    await runAgentScenarios(run, carrier, family);
                 }
                 catch (scenarioError) {
                     scenarioFailed = true;
@@ -209,7 +227,7 @@ test.describe('ALM conformance lane', () => {
                     await recordObservation({
                         run,
                         family,
-                        participants: [run.sender, run.receiver, run.third],
+                        participants: [...run.agents.values()],
                         testInfo,
                         carrier,
                         cellOutcome: toCellOutcome(testInfo, scenarioFailed)
@@ -286,24 +304,35 @@ function selectScenarios(
         carrier,
         typeId: CONFORMANCE_TYPE_ID,
         deadlineMs: CONFORMANCE_DEADLINE_MS,
+        laneFamilies: [family],
         recoveryOwner: 'record'
     }).filter((scenario) =>
-        scenario.laneFamily === family &&
         (scope === 'full' || scenario.tags.includes('smoke')) &&
         !skippedScenarioIds.includes(scenario.scenarioId)
     );
 }
 
-function toRunSelection(run: TwoAgentRun): ScenarioSelectionInput {
-    return { group: run.group, senderConnection: run.sender.connection, receiverConnection: run.receiver.connection };
+/** A same-context successor is the sender's own principal on a second page of its context. */
+function toRunSelection(run: TwoAgentRun | AgentRun): ScenarioSelectionInput {
+    return {
+        group: run.group,
+        senderConnection: run.sender.connection,
+        receiverConnection: run.receiver.connection,
+        principalIdsByRole: 'agents' in run ? toAgentRunPrincipalIds(run) : {
+            sender: run.sender.principalId,
+            successor: run.sender.principalId,
+            receiver: run.receiver.principalId
+        }
+    };
 }
 
-/** Only the roles decide the selection, so a placeholder group and connections plan a cell before its agents open. */
+/** Only the roles decide the selection, so a placeholder group, connections and principals plan a cell before its agents open. */
 function toPlanningSelection(): ScenarioSelectionInput {
     return {
         group: { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: config.roomId },
         senderConnection: 'planning-sender',
-        receiverConnection: 'planning-receiver'
+        receiverConnection: 'planning-receiver',
+        principalIdsByRole: Object.fromEntries(ALM_CONFORMANCE_ROLES.map((role) => [role, `planning-${role}`]))
     };
 }
 
@@ -422,34 +451,105 @@ async function runAlmConformanceScenarios(
     }
 }
 
-async function runThreeAgentScenarios(
-    run: ThreeAgentRun,
+async function runAgentScenarios(
+    run: AgentRun,
     carrier: AlmConformanceCarrier,
-    family: ThreeAgentScenarioFamily
+    family: AgentScenarioFamily
 ): Promise<void> {
-    const thirdRole = THIRD_AGENT_ROLES[family];
-    for (const scenario of selectScenarios(toRunSelection(run), carrier, family)) {
-        const third = toAlmConformanceRoleRecipe(scenario, thirdRole);
-        if (third === undefined) {
-            throw new Error(`${scenario.scenarioKey} declares three roles without a ${thirdRole} recipe.`);
-        }
-        const outcome = await runRecipeTrioOnThreeAgents(run, {
-            sender: scenario.sender,
-            receiver: scenario.receiver,
-            third
-        });
-        for (const role of ['receiver', 'third', 'sender'] as const) {
-            const name = role === 'third' ? thirdRole : role;
-            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${name}: ${outcome[role].summary}`).toBe(true);
+    for (const planned of selectScenarios(toRunSelection(run), carrier, family)) {
+        const scenario = family === 'four-role' ? toOwnRoomScenario(run, carrier, planned) : planned;
+        const recipes = new Map(scenario.roles.map((role) => [role, requireRoleRecipe(scenario, role)] as const));
+        const outcomes = await runRecipesOnAgents(run, recipes);
+        const evidence = scenario.roles.map((role) => ({
+            role,
+            agent: requireRoleAgent(run, role),
+            outcome: requireRoleOutcome(outcomes, role)
+        }));
+        for (const { role, outcome } of evidence) {
+            expect.soft(outcome.ok, `${scenario.scenarioKey} ${role}: ${outcome.summary}`).toBe(true);
         }
         if (hasAlmIdentityEvidence(scenario.sender)) {
-            await assertScenarioIdentity(run, scenario, [
-                { role: 'sender', agent: run.sender, outcome: outcome.sender },
-                { role: 'receiver', agent: run.receiver, outcome: outcome.receiver },
-                { role: thirdRole, agent: run.third, outcome: outcome.third }
-            ]);
+            await assertScenarioIdentity(run, scenario, evidence);
+        }
+        if (scenario.scenarioId === 'subscription-revoke-disconnected') {
+            await assertRevokeDisconnectedReceipts(run, scenario, evidence);
+        }
+        if (family === 'four-role') {
+            await closeAgentConnections(run, scenario.scenarioKey);
         }
     }
+}
+
+/**
+ * A four-role cell runs in a room of its own, and the lane closes every agent's connection after it. A connect to an
+ * unchanged room reuses the open connection without a join, so a sibling whose dropped socket closed its room
+ * presence carried that closed presence into the next cell's readiness.
+ */
+function toOwnRoomScenario(
+    run: AgentRun,
+    carrier: AlmConformanceCarrier,
+    planned: AlmConformanceScenario
+): AlmConformanceScenario {
+    const group = { ...run.group, groupId: `${run.group.groupId}-${planned.scenarioKey}` };
+    const scenario = selectScenarios({ ...toRunSelection(run), group }, carrier, 'four-role')
+        .find((candidate) => candidate.scenarioId === planned.scenarioId);
+    if (scenario === undefined) {
+        throw new Error(`${planned.scenarioKey} is not planned in its own room.`);
+    }
+    return scenario;
+}
+
+/** Neither receipt of the revoke-disconnected cell may confirm the sibling. */
+async function assertRevokeDisconnectedReceipts(
+    run: AgentRun,
+    scenario: AlmConformanceScenario,
+    evidence: readonly ScenarioRoleEvidence[]
+): Promise<void> {
+    const participants = toIdentityParticipants(await run.readSnapshot(), scenario, evidence);
+    const issues = assessSubscriptionRevokeDisconnected({
+        runId: run.runId,
+        sender: requireRoleParticipant(participants, 'sender'),
+        sibling: requireRoleParticipant(participants, 'sibling')
+    });
+    expect.soft(issues, `${scenario.scenarioKey}: no receipt confirms the sibling`).toEqual([]);
+}
+
+function requireRoleParticipant(
+    participants: readonly AlmConformanceIdentityParticipant[],
+    role: AlmConformanceRole
+): AlmConformanceIdentityParticipant {
+    const participant = participants.find((candidate) => candidate.role === role);
+    if (participant === undefined) {
+        throw new Error(`The run recorded no participant for ${role}.`);
+    }
+    return participant;
+}
+
+function requireRoleRecipe(scenario: AlmConformanceScenario, role: AlmConformanceRole): RallarBlackBoxTestRecipe {
+    const recipe = toAlmConformanceRoleRecipe(scenario, role);
+    if (recipe === undefined) {
+        throw new Error(`${scenario.scenarioKey} declares ${role} without its recipe.`);
+    }
+    return recipe;
+}
+
+function requireRoleAgent(run: AgentRun, role: AlmConformanceRole): TwoAgentRunParticipant {
+    const agent = run.agents.get(role);
+    if (agent === undefined) {
+        throw new Error(`The run opened no agent for ${role}.`);
+    }
+    return agent;
+}
+
+function requireRoleOutcome(
+    outcomes: ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>,
+    role: AlmConformanceRole
+): RecipeRunOutcome {
+    const outcome = outcomes.get(role);
+    if (outcome === undefined) {
+        throw new Error(`The run reported no outcome for ${role}.`);
+    }
+    return outcome;
 }
 
 /**
@@ -466,7 +566,10 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
         const successor = await openSuccessorPage({ testInfo, run, owner });
         participants.push(successor);
         const ownerEnd = scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close';
-        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd }, {
+        const successorGate = scenario.scenarioId === 'subscription-successor'
+            ? toSubscriptionSuccessorGateCommandId(scenario.sender)
+            : undefined;
+        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd, successorGate }, {
             ...scenario,
             successor: scenario.successor
         });
@@ -482,24 +585,32 @@ async function assertScenarioIdentity(
     scenario: AlmConformanceScenario,
     evidence: readonly ScenarioRoleEvidence[]
 ): Promise<void> {
-    const snapshot = await run.readSnapshot();
     const issues = assessAlmConformanceIdentity({
         runId: run.runId,
         roles: scenario.roles,
-        participants: evidence.flatMap(({ role, agent, outcome }) => {
-            const recipe = toAlmConformanceRoleRecipe(scenario, role);
-            const recorded = snapshot.results.find((result) => result.commandId === outcome.commandId);
-            const decoded = parseControlClientMessage(recorded);
-            return recipe === undefined ? [] : [{
-                role,
-                agentId: agent.agentId,
-                recipe,
-                commandId: outcome.commandId,
-                result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
-            }];
-        })
+        participants: toIdentityParticipants(await run.readSnapshot(), scenario, evidence)
     });
     expect.soft(issues, 'ALM actual identity evidence for every declared role').toEqual([]);
+}
+
+/** Each declared role's recipe joined to the result envelope its run recorded in the control snapshot. */
+function toIdentityParticipants(
+    snapshot: ControlRunSnapshot,
+    scenario: AlmConformanceScenario,
+    evidence: readonly ScenarioRoleEvidence[]
+): readonly AlmConformanceIdentityParticipant[] {
+    return evidence.flatMap(({ role, agent, outcome }) => {
+        const recipe = toAlmConformanceRoleRecipe(scenario, role);
+        const recorded = snapshot.results.find((result) => result.commandId === outcome.commandId);
+        const decoded = parseControlClientMessage(recorded);
+        return recipe === undefined ? [] : [{
+            role,
+            agentId: agent.agentId,
+            recipe,
+            commandId: outcome.commandId,
+            result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
+        }];
+    });
 }
 
 /** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */

@@ -1,10 +1,13 @@
-import { PUBLICATION_GRANTS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import {
+    PUBLICATION_GRANTS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createService } from '../presence/group-presence-test-runtime.ts';
-import { SCOPE } from './group-mutation-test-runtime.ts';
+import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
 import {
     applyPublicationMutation,
     computePublicationMutation,
@@ -16,6 +19,7 @@ import {
     writeGrantRow,
     type PublicationDescriptorInput
 } from './group-publication-grant-test-runtime.ts';
+import { subscriptionRowFor, writeSubscriptionRow } from './group-topic-subscription-test-runtime.ts';
 
 const BOB_PUBLISH: PublicationDescriptorInput = {
     operation: 'grantGroupPublication',
@@ -106,7 +110,7 @@ describe('group publication grant mutation', () => {
                 value: expect.objectContaining({ topics: { 'room.feed': { publish: true, subscribe: true } } })
             }
         ]);
-        expect(requireWrite(computed).event.payload).toEqual({
+        expect(requireWrite(computed).event?.payload).toEqual({
             principalId: 'bob',
             topicId: 'room.feed',
             permissions: { publish: true, subscribe: true }
@@ -142,7 +146,7 @@ describe('group publication grant mutation', () => {
                 value: read.targetPublicationGrant?.value
             }
         ]);
-        expect(requireWrite(computed).event.payload).toEqual({
+        expect(requireWrite(computed).event?.payload).toEqual({
             principalId: 'bob',
             topicId: 'room.feed',
             permissions: { publish: false, subscribe: false }
@@ -306,5 +310,87 @@ describe('group publication grant mutation', () => {
         expect(service.validate(command, read, computed)).toEqual([]);
         expect(service.validate(command, read, altered)).not.toEqual([]);
         expect(write.persistence.guardedBatch.effects.filter((effect) => effect.namespace === PUBLICATION_GRANTS_NAMESPACE)).toHaveLength(1);
+    });
+
+    it('a revoke of subscribe deletes the principal\'s subscription rows for that topic in the grant batch', async () => {
+        const runtime = await seededRoom();
+        const ref = groupRef(GRANT_ROOM);
+        await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: true, subscribe: true }, 'app.scores': { publish: false, subscribe: true } });
+        const feedRows = [subscriptionRowFor('bob', 'bob-phone', 'room.feed'), subscriptionRowFor('bob', 'bob-session', 'room.feed')];
+        const feedKeys = [];
+        for (const row of feedRows) {
+            feedKeys.push(await writeSubscriptionRow(runtime, ref, row));
+        }
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('bob', 'bob-session', 'app.scores'));
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('erin', 'erin-session', 'room.feed'));
+
+        const { computed } = await computePublicationMutation(runtime, {
+            ...BOB_PUBLISH,
+            operation: 'revokeGroupPublication',
+            publish: false,
+            subscribe: true,
+            requestId: 'revoke-bob-feed-subscribe'
+        });
+        const write = requireWrite(computed);
+
+        expect(write.subscriptionEffects).toEqual(feedRows.map((value) => ({ ref, value, expectedRevision: 0 })));
+        expect(write.persistence.guardedBatch.guard).toMatchObject({ namespace: 'group-state:groups' });
+        expect(write.persistence.guardedBatch.effects.map((effect) => [effect.effectId, effect.operation])).toEqual([
+            ['publication-grant:bob', 'update'],
+            ['topic-subscription:bob-phone:room.feed', 'delete'],
+            ['topic-subscription:bob-session:room.feed', 'delete'],
+            ['receipt', 'insert']
+        ]);
+        expect(
+            write.persistence.guardedBatch.effects.filter((effect) => effect.namespace === SUBSCRIPTIONS_NAMESPACE)
+                .map((effect) => effect.key)
+        ).toEqual(feedKeys);
+    });
+
+    it('a revoke of publish only keeps them', async () => {
+        const runtime = await seededRoom();
+        await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: true, subscribe: true } });
+        await writeSubscriptionRow(runtime, groupRef(GRANT_ROOM), subscriptionRowFor('bob', 'bob-session', 'room.feed'));
+
+        const { read, computed } = await computePublicationMutation(runtime, {
+            ...BOB_PUBLISH,
+            operation: 'revokeGroupPublication',
+            requestId: 'revoke-bob-feed-publish-only'
+        });
+
+        expect(read.targetPrincipalSubscriptions).toBeNull();
+        expect(requireWrite(computed).subscriptionEffects).toEqual([]);
+    });
+
+    it('a grant that adds subscribe deletes the principal\'s existing rows for that topic in the grant batch', async () => {
+        const runtime = await seededRoom();
+        const ref = groupRef(GRANT_ROOM);
+        await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: true, subscribe: false } });
+        const orphan = subscriptionRowFor('bob', 'bob-session', 'room.feed');
+        const key = await writeSubscriptionRow(runtime, ref, orphan);
+        await writeSubscriptionRow(runtime, ref, subscriptionRowFor('bob', 'bob-session', 'app.scores'));
+
+        const { computed } = await computePublicationMutation(runtime, {
+            ...BOB_PUBLISH,
+            publish: false,
+            subscribe: true,
+            requestId: 'grant-bob-feed-subscribe-over-orphan'
+        });
+        const write = requireWrite(computed);
+
+        expect(write.subscriptionEffects).toEqual([{ ref, value: orphan, expectedRevision: 0 }]);
+        expect(write.persistence.guardedBatch.effects.filter((effect) => effect.namespace === SUBSCRIPTIONS_NAMESPACE))
+            .toEqual([expect.objectContaining({ operation: 'delete', key })]);
+    });
+
+    it('a grant of publish only reads and deletes no subscription row', async () => {
+        const runtime = await seededRoom();
+        await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: false, subscribe: true } });
+        await writeSubscriptionRow(runtime, groupRef(GRANT_ROOM), subscriptionRowFor('bob', 'bob-session', 'room.feed'));
+
+        const { read, computed } = await computePublicationMutation(runtime, BOB_PUBLISH);
+
+        expect(read.targetPrincipalSubscriptions).toBeNull();
+        expect(requireWrite(computed).subscriptionEffects).toEqual([]);
     });
 });

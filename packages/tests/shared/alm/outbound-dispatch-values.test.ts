@@ -190,7 +190,12 @@ describe('outbound dispatch value ownership', () => {
         });
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ resourceId: message.route.resourceId }] }),
+            planner: () => ({
+                msg: message,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [{ resourceId: message.route.resourceId }]
+            }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
             origin: intent === 'enqueue' ? 'send' : 'drain',

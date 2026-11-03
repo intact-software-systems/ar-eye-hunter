@@ -16,11 +16,11 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 import {
     runWithClaimableDeadline,
     type ClaimableDeadlineClaim
-} from '@shared/resilience/run-with-claimable-deadline.ts';
-import type { Timers } from '@shared/resilience/timers.ts';
+} from '@shared/resilience/timing/run-with-claimable-deadline.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {

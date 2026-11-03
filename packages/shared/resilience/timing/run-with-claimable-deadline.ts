@@ -1,4 +1,4 @@
-import type { Timers } from './timers.ts';
+import type { Timers } from '../timers.ts';
 
 /** The work's view of its deadline, claimed before an effect that must not take place after the deadline. */
 export interface ClaimableDeadlineClaim {

@@ -148,6 +148,7 @@ function registerBrowserFacadeLifecycle(
         lifecycle: foundation.lifecycle,
         messageSubscriptions: compositions.messaging.messagesController.subscriptions,
         wsInbox: compositions.stateEvents.wsInbox,
+        topicSubscriptions: compositions.messaging.topicSubscriptions,
         wsController: compositions.realtime.wsController,
         realtimeReceive: compositions.realtime.realtimeReceive,
         rtcLifecycle: compositions.realtime.rtcController.lifecycle

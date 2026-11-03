@@ -12,6 +12,7 @@ const PATHS = {
     groupMembership: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     groupPresence: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
     groupPublication: 'apps/api-v1/src/group-state/register-group-publication-routes.ts',
+    groupTopicSubscription: 'apps/api-v1/src/group-state/register-group-topic-subscription-routes.ts',
     quickJoin: 'apps/api-v1/src/group-state/register-group-quick-join-route.ts',
     groupRetentionReconciliation: 'packages/shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts',
     groupRoot: 'apps/api-v1/src/group-state/register-group-state-routes.ts',

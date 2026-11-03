@@ -604,7 +604,11 @@ function createSharedOutboundStores(outbox: InMemoryQueueBox): ALOutboundRuntime
 }
 
 async function enqueueDurableOutboxEntry(service: WsQueueBoxServerService, message: ALMessage): Promise<ResourceEntry> {
-    const admission = await service.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
+    const admission = await service.enqueueOutboxIfAbsent(message, {
+        admittedAudience: undefined,
+        admittedConnectionGenerationIds: undefined,
+        recipientScope: RECIPIENT_SCOPE
+    });
     expect(admission.verdict.kind).toBe('admitted');
     expect(admission.entries).toHaveLength(1);
     expect(admission.entries[0]).toMatchObject({ typeId: EnqueuedType.WS_OUTBOX });

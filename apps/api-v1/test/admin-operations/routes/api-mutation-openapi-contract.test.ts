@@ -115,6 +115,14 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
         method: 'post',
         path: `${GROUP_ITEM_PATH}/sessions/{sessionId}/disconnect${REQUEST_PATH}`
     },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/sessions/{sessionId}/subscribe${REQUEST_PATH}`
+    },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/sessions/{sessionId}/unsubscribe${REQUEST_PATH}`
+    },
     { method: 'put', path: `${TOPOLOGY_PATH}/config${REQUEST_PATH}` },
     { method: 'delete', path: `${TOPOLOGY_PATH}/config${REQUEST_PATH}` },
     { method: 'put', path: `${TOPOLOGY_PATH}/override${REQUEST_PATH}` },

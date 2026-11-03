@@ -1,6 +1,6 @@
 import type { ALPublicationPolicy } from '../../../al-contracts/publication/al-publication-policy.ts';
 import { retainNewest } from '../../../cache/retain-newest.ts';
-import { computeNextCadenceAtMs } from '../../../resilience/cadence.ts';
+import { computeNextCadenceAtMs } from '../../../resilience/timing/cadence.ts';
 import type { ALPublicationSelectionCandidate } from './compute-al-publication-selection.ts';
 
 export interface ComputeALPublicationReconfigurationInput<T extends ALPublicationSelectionCandidate> {

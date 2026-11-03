@@ -417,6 +417,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
     new RallarServerWsRouter(service, {
         grantedTopics: new WsGrantedTopicSet(),
         authorizeRoomMessage: createGroupRoomWsAuthorizer({
+            readPublicationAuthority: () => Promise.reject(new Error('A members topic reads no publication authority.')),
             readGroupSnapshot: (ref) => {
                 expect(ref).toEqual(ORIGIN_ROOM);
                 return snapshot;

@@ -24,7 +24,8 @@ import {
     PRESENCE_ADMISSIONS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
     PUBLICATION_GRANTS_NAMESPACE,
-    SESSIONS_NAMESPACE
+    SESSIONS_NAMESPACE,
+    SUBSCRIPTIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { canonicalStoredMember } from './membership/group-membership-repository.ts';
 import {
@@ -33,6 +34,7 @@ import {
     canonicalStoredSummary
 } from './presence/group-presence-repository.ts';
 import { canonicalStoredPublicationGrant } from './publication/group-publication-grant-codec.ts';
+import { canonicalStoredTopicSubscription } from './subscription/group-topic-subscription-codec.ts';
 
 export interface GroupRetirementEntry {
     readonly namespace: string;
@@ -58,6 +60,7 @@ export async function readGroupRetirementEntries(
             PRESENCE_ADMISSIONS_NAMESPACE,
             SESSIONS_NAMESPACE,
             PUBLICATION_GRANTS_NAMESPACE,
+            SUBSCRIPTIONS_NAMESPACE,
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE
         ].map((namespace) => ({
             selectorId: namespace,
@@ -106,6 +109,9 @@ function validateRetirementEntry(namespace: string, entry: RuntimeStateEntry, re
                 return;
             case GROUP_SESSION_RESERVATIONS_NAMESPACE:
                 canonicalStoredGroupSessionReservations(stored, ref);
+                return;
+            case SUBSCRIPTIONS_NAMESPACE:
+                canonicalStoredTopicSubscription(stored, ref);
                 return;
             case GROUP_LIFECYCLE_POLICIES_NAMESPACE:
                 if (entry.key !== groupStateGroupStorageKey(ref)) {

@@ -10,6 +10,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     createActiveGroupMemberFixture,
     createActiveGroupPresenceSessionFixture,
+    createAuditStampFixture,
     createClientSnapshotFixture,
     createGroupSnapshotFixture
 } from '../authoritative-group-fixtures.ts';
@@ -90,7 +91,8 @@ describe('room state projection translation', () => {
                 isOwner: false,
                 isOnline: false,
                 sessionIds: [],
-                client: bob
+                client: bob,
+                topicGrants: {}
             },
             {
                 principalId: 'alice',
@@ -101,7 +103,8 @@ describe('room state projection translation', () => {
                 isOwner: true,
                 isOnline: true,
                 sessionIds: ['session-1', 'session-2'],
-                client: alice
+                client: alice,
+                topicGrants: {}
             }
         ]);
         const crossScope = toRallarRoomState({
@@ -112,6 +115,37 @@ describe('room state projection translation', () => {
         });
         expect([crossScope.currentRoom, crossScope.members]).toEqual([selected, state.members]);
         expectTypeOf(toRallarRoomState).returns.toEqualTypeOf<RallarRoomState>();
+    });
+
+    it('members carry topicGrants from the snapshot\'s publicationGrants and {} without a row', () => {
+        const selected = createSelectedRoomSnapshot();
+        const granted: GroupSnapshot = {
+            ...selected,
+            publicationGrants: [{
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'selected',
+                principalId: 'alice',
+                topics: { 'room.feed': { publish: true, subscribe: true }, 'room.score': { publish: false, subscribe: true } },
+                updated: createAuditStampFixture(1, 'alice')
+            }]
+        };
+
+        const state = toRallarRoomState({
+            groupSnapshots: [granted],
+            clientSnapshots: [],
+            sessionId: 'session-1',
+            currentRoomRef: granted.group,
+            currentRoom: granted
+        });
+
+        expect(state.members.map((member) => [member.principalId, member.topicGrants])).toEqual([
+            ['alice', {
+                'room.feed': { publish: true, subscribe: true, role: 'publisher-subscriber' },
+                'room.score': { publish: false, subscribe: true, role: 'subscriber' }
+            }],
+            ['bob', {}]
+        ]);
     });
 
     it('resolves transport peers and identity only from the accepted server layout', () => {

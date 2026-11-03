@@ -19,11 +19,12 @@ import {
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
+import { readWsQueueBoxServerEligibleAudience } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
-import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import {
     isWsQueueBoxServerCapturedSessionRow,
-    toWsQueueBoxServerCapturedSendInput
+    toWsQueueBoxServerCapturedSendInput,
+    toWsQueueBoxServerHeldSessionPolicy
 } from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-captured-send-input.ts';
 import type { WsQueueBoxServerClusterPublication } from '@shared/services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts';
 import type {
@@ -521,7 +522,7 @@ function deferAwaitedCapturedRecipients(
                 sessionId,
                 () =>
                     sendToCapturedLocalTargets(
-                        { ...input, policy: { ...policy, admittedAudience: [sessionId] } },
+                        { ...input, policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId) },
                         options
                     )
             ).catch((error) => console.error('Held WebSocket send failed:', error));
@@ -569,10 +570,12 @@ async function readCapturedEligibleSessionIds(
     if (filter === undefined) {
         return frozen ? [] : undefined;
     }
-    return await filter({
+    return await readWsQueueBoxServerEligibleAudience({
         message,
-        candidateSessionIds: captured,
-        recipientScope: resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope)
+        admittedAudience: captured,
+        admittedConnectionGenerationIds: policy?.admittedConnectionGenerationIds,
+        provenScope: policy?.recipientScope,
+        filterEligibleCapturedSessionIds: filter
     });
 }
 

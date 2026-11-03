@@ -1757,6 +1757,8 @@ paths:
         publish (`forbidden-role`), and a principal holds at most 64 topics
         (`capacity`, limit `topics-per-principal`). The body names at least one
         permission; a grant that changes nothing is a no-op.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1789,8 +1791,6 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
-        '404':
-          $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
 
@@ -1804,6 +1804,8 @@ paths:
         and a row left with no topic is deleted. Only owners and admins may
         revoke, an admin only from a regular member. The body names at least
         one permission; a revoke that changes nothing is a no-op.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1835,8 +1837,6 @@ paths:
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/ApiMutationFailure'
-        '404':
           $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
@@ -2568,6 +2568,8 @@ paths:
       description: |
         Creates or refreshes live group presence for the authenticated session.
         The caller must already have an `active` membership in the group.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -2594,11 +2596,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/ApiMutationFailure'
-        '404':
           $ref: '#/components/responses/ApiMutationFailure'
         '429':
           $ref: '#/components/responses/RateLimitedApiMutationFailure'
@@ -2606,6 +2608,10 @@ paths:
     post:
       tags: [Group State]
       summary: Heartbeat self group presence session
+      description: >
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found"), and a session with no presence row in the group
+        `400` `group-mutation-rejected` ("Group presence session not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -2632,16 +2638,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/ApiMutationFailure'
-        '404':
           $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect/requests/{requestId}:
     post:
       tags: [Group State]
       summary: Disconnect self group presence session
+      description: >
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found"), and a session with no presence row in the group
+        `400` `group-mutation-rejected` ("Group presence session not found").
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -2668,12 +2678,140 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
-        '404':
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/subscribe/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Subscribe self session to a granted group topic
+      description: >
+        Elects the authenticated session, asserting its current WebSocket
+        connection generation, to receive one granted topic for a lease of
+        120 seconds; the same subscribe within the lease renews it
+        (`renewed`), a new generation replaces the row (`subscribed`). The
+        caller must be an active member holding `subscribe` on the topic
+        (`no-subscribe-grant`), the generation must be the session's live one
+        (`stale-generation`), and the session must hold a live client-state
+        session (`no-live-session`). The row is deleted when `subscribe` is
+        revoked and on every departure; a re-grant or rejoin never revives
+        it. The write bumps no group revision.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscribeGroupTopicRequest'
+      responses:
+        '200':
+          description: What the command did; a replay of the same request answers it again.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupTopicSubscriptionResult'
+        '400':
           $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/unsubscribe/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Unsubscribe self session from a group topic
+      description: >
+        Releases the authenticated session's subscription to one topic. Only
+        the generation that holds the row and is still the session's live one
+        releases it (`unsubscribed`); any other generation, or no row, is
+        `not-subscribed` and deletes nothing.
+        An unknown group is refused `400` `group-mutation-rejected`
+        ("Group not found").
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnsubscribeGroupTopicRequest'
+      responses:
+        '200':
+          description: What the command did; a replay of the same request answers it again.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupTopicSubscriptionResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/subscriptions:
+    get:
+      tags: [Group State]
+      summary: List self session topic subscriptions in a group
+      description: >
+        Lists the authenticated session's live topic subscriptions in the
+        group, in topic order; a lapsed row is absent and an unknown group
+        lists none. Always authenticated, independent of
+        `RALLAR_STATE_STRICT_READ_AUTH`; a session reads only its own rows.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: The session's live subscriptions.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupTopicSubscriptionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/summary:
     get:
       tags: [SPA Statistics]
@@ -5123,6 +5261,9 @@ components:
         - group-admission-capacity-reached
         - group-data-blocked-until-active
         - capacity
+        - no-subscribe-grant
+        - stale-generation
+        - no-live-session
 
     ErrorResponse:
       type: object
@@ -7813,6 +7954,59 @@ components:
         subscribe:
           type: boolean
 
+    GroupTopicSubscription:
+      type: object
+      additionalProperties: false
+      description: One session's leased election to receive one granted topic, asserted by one connection generation.
+      required:
+        - sessionId
+        - principalId
+        - topicId
+        - connectionGenerationId
+        - leaseExpiresAtEpochMs
+        - admittedAtGroupRevision
+      properties:
+        sessionId:
+          type: string
+          minLength: 1
+        principalId:
+          type: string
+          minLength: 1
+        topicId:
+          $ref: '#/components/schemas/RallarWsUserTopicId'
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: The asserting WebSocket connection generation.
+        leaseExpiresAtEpochMs:
+          type: integer
+          minimum: 1
+          description: The write instant plus the 120 second lease.
+        admittedAtGroupRevision:
+          type: integer
+          minimum: 1
+          description: The group's snapshotVersion the write read.
+
+    GroupTopicSubscriptionResult:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [subscribed, renewed, unsubscribed, not-subscribed]
+
+    GroupTopicSubscriptionList:
+      type: object
+      additionalProperties: false
+      required: [subscriptions]
+      properties:
+        subscriptions:
+          type: array
+          description: The session's live rows, in topicId order.
+          items:
+            $ref: '#/components/schemas/GroupTopicSubscription'
+
     GroupEvent:
       type: object
       required:
@@ -8492,6 +8686,32 @@ components:
           type: boolean
         subscribe:
           type: boolean
+        reason:
+          type: string
+    SubscribeGroupTopicRequest:
+      type: object
+      additionalProperties: false
+      required: [topicId, connectionGenerationId]
+      properties:
+        topicId:
+          $ref: '#/components/schemas/RallarWsUserTopicId'
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: The session's current WebSocket connection generation.
+        reason:
+          type: string
+    UnsubscribeGroupTopicRequest:
+      type: object
+      additionalProperties: false
+      required: [topicId, connectionGenerationId]
+      properties:
+        topicId:
+          $ref: '#/components/schemas/RallarWsUserTopicId'
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: The session's current WebSocket connection generation.
         reason:
           type: string
     AcceptGroupInviteRequest:

@@ -38,7 +38,9 @@ describe('local paired reload enqueue', () => {
                     typeId: 'probe',
                     senderConnection: 'sender',
                     receiverConnection: 'receiver',
-                    deadlineMs: 18_000
+                    deadlineMs: 18_000,
+                    laneFamilies: ['two-agent'],
+                    principalIdsByRole: {}
                 }).find((candidate) => candidate.scenarioId === 'delivery-reload')!;
                 const posted: PostedCommand[] = [];
                 let readBeforeBothEnqueued = false;

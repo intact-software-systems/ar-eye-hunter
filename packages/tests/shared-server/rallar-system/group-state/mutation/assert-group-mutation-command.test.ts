@@ -130,6 +130,30 @@ describe('group mutation command validation', () => {
         );
     });
 
+    it('accepts a topic subscription command naming a session, a user topic and a generation', () => {
+        const command = {
+            ...createMutationCommand(),
+            operation: 'subscribeGroupTopic',
+            sessionId: 'alice-session',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                topicId: 'room.feed',
+                connectionGenerationId: 'alice-ws-generation-1'
+            }
+        };
+
+        expect(() => assertGroupMutationCommand(command)).not.toThrow();
+        expect(() => assertGroupMutationCommand({ ...command, operation: 'unsubscribeGroupTopic' })).not.toThrow();
+        expect(() => assertGroupMutationCommand({ ...command, input: { ...command.input, connectionGenerationId: '' } }))
+            .toThrow(/connectionGenerationId/);
+        expect(() => assertGroupMutationCommand({ ...command, input: { ...command.input, topicId: 'rallar.feed' } }))
+            .toThrow(/reserved/i);
+        const { sessionId: _sessionId, ...sessionless } = command;
+        expect(() => assertGroupMutationCommand(sessionless)).toThrow();
+    });
+
     it('accepts presence commands without lifecycle fields', () => {
         expect(() =>
             assertGroupMutationCommand(

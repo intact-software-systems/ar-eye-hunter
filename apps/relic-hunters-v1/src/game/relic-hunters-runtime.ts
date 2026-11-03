@@ -32,8 +32,8 @@ import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {

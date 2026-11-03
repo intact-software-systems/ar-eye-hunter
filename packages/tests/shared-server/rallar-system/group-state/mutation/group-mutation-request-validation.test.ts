@@ -44,6 +44,26 @@ describe('group mutation request validation', () => {
         ]);
     });
 
+    it('an empty connectionGenerationId and a reserved topic are refused', () => {
+        const request = {
+            topicId: 'room.feed',
+            connectionGenerationId: 'ws-generation-1',
+            actorPrincipalId: 'bob',
+            actorSessionId: 'bob-session',
+            requestId: 'subscribe-request'
+        };
+
+        for (const operation of ['subscribeGroupTopic', 'unsubscribeGroupTopic'] as const) {
+            expect(validateGroupMutationRequest(operation, request)).toEqual([]);
+            expect(validateGroupMutationRequest(operation, { ...request, connectionGenerationId: '' }).map((issue) => issue.message))
+                .toEqual([`Group ${operation} connectionGenerationId must be a non-empty string`]);
+            expect(validateGroupMutationRequest(operation, { ...request, topicId: 'rallar.feed' }).map((issue) => issue.message))
+                .toEqual([`Group ${operation} topicId is invalid: Rallar WS topic is reserved: rallar.feed.`]);
+            expect(validateGroupMutationRequest(operation, { ...request, principalId: 'bob' }).map((issue) => issue.message))
+                .toEqual([`Group ${operation} request has unexpected key: principalId`]);
+        }
+    });
+
     it('a reserved topic id is refused', () => {
         const request = { publish: true, subscribe: false, actorPrincipalId: 'owner-1', actorSessionId: 'owner-session', requestId: 'grant-request' };
 

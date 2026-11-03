@@ -20,6 +20,7 @@ export function computeALOutboundDispatchPlan<TPrepared>(
         source,
         authority === undefined ? undefined : {
             admittedAudience: toAttemptAudience(authority.admittedAudience, readRecheckedAudience(outgoing, stored)),
+            admittedConnectionGenerationIds: stored?.policy.admittedConnectionGenerationIds,
             recipientScope: authority.recipientScope,
             principalTargetId: authority.principalTargetId,
             sessionInvalidation: authority.sessionInvalidation,

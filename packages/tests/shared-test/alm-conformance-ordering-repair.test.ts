@@ -317,7 +317,11 @@ describe('repair-exhausted', () => {
             'received-2',
             'stats'
         ]);
-        expect(sender.commands.filter((command) => command.kind === 'fault.inject' && command.remaining === 0).map((command) => command.commandId))
+        expect(
+            sender.commands.filter((command) => command.kind === 'fault.inject' && command.carrier !== 'product-socket' && command.remaining === 0).map((
+                command
+            ) => command.commandId)
+        )
             .toEqual(toHoldNames(carrier, 'release').map((name) => `alm-${carrier}-repair-exhausted-sender-${name}`));
     });
 

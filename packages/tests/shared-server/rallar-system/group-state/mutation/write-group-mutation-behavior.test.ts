@@ -54,7 +54,7 @@ describe('GroupStateService guarded batch write boundary', () => {
         const computed = group.durable.compute(command, read);
         expect(group.durable.validate(command, read, computed)).toEqual([]);
         expect(computed.outcome).toBe('write');
-        if (computed.outcome !== 'write') {
+        if (computed.outcome !== 'write' || computed.guard.kind !== 'group' || computed.persistence.eventWrite === null) {
             throw new TypeError('Expected group write');
         }
 
