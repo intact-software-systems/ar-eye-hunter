@@ -1,4 +1,5 @@
 import { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
@@ -99,4 +100,25 @@ describe('authenticated resource command lifetime', () => {
         await start;
         expect(test.owner.getState().view).toEqual({ name: 'alice' });
     });
+});
+
+it.each([401, 403])('clears private state and pending work immediately when an action loses authority (%s)', async (status) => {
+    const test = browser();
+    await test.owner.start();
+    test.api.change.mockRejectedValueOnce(new ApiHttpError('POST', '/private-command', status, 'Refused'));
+    await test.owner.act({ name: 'change' });
+    expect(test.owner.getState()).toMatchObject({ view: null, busy: false, retryPending: false });
+    expect(test.owner.getState().error).toContain(String(status));
+});
+
+it('discards an uncertain command when a subsequent read discovers revoked authority', async () => {
+    const test = browser();
+    await test.owner.start();
+    test.api.change.mockRejectedValueOnce(new Error('Response lost'));
+    await test.owner.act({ name: 'change' });
+    expect(test.owner.getState().retryPending).toBe(true);
+    test.api.read.mockRejectedValueOnce(new ApiHttpError('GET', '/private-evidence', 403, 'Refused'));
+    await test.owner.refresh();
+    expect(test.owner.getState()).toMatchObject({ view: null, busy: false, retryPending: false });
+    expect(test.owner.getState().error).toContain('403');
 });

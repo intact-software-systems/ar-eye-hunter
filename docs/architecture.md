@@ -393,3 +393,35 @@ The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped
 traffic goes through `rallar.realtime.room<T>(...)` or
 `rallar.messages.room<T>(...)` rather than hand-wired RTC readiness and sends.
+
+## Operator room evidence and recovery
+
+The operator console composes existing admin command owners with bounded diagnostic reads. It
+adds no room mutation repository, repair writer or corruption-tolerant authoritative reader.
+The directory admits an invalid row only when canonical storage identity proves authorized scope;
+it reports a partial page with redacted errors. Infrastructure or ambiguous-scope failures fail the
+read. Existing game/group readers retain strict validation.
+
+The entry-to-result map is:
+
+- `apps/api-v1/src/admin-operations/register-admin-room-routes.ts` checks current API admin authority
+  before each directory or exact topology-work read and returns private, non-cacheable responses.
+- `packages/shared-server/rallar-system/admin-operations/rooms/` owns bounded storage paging and
+  exact retained queue-work observation. `admin-support/group-admin-support.ts` owns explanations;
+  its narratives distinguish current live sessions, historical membership and unavailable facts.
+  API composition supplies the existing revision-probed `readCurrentSnapshot` reader so an old
+  event-fed cache entry cannot hide committed presence during diagnosis or post-action verification.
+- `packages/shared-web/browser/admin-rooms/admin-room-operations.ts` composes those reads with the
+  existing topology/prune HTTP commands. `AuthenticatedResource` owns session cancellation,
+  single-flight reads, original command identity on uncertain retry and immediate authority fencing.
+- `apps/rallar-black-box/src/recipe-console/rooms/` owns API-session integration, visible controls,
+  global cleanup confirmation and outcome presentation. Control-server credentials confer no API authority.
+- Topology recompute continues through `TopologyAppInboxHandler` and its optimistic mutation owner.
+  The returned outbox ID identifies the exact QueueBox row; completed work does not prove client delivery.
+  An absent/expired row yields unknown, and room rereads occur after the work observation.
+- Maintenance continues through `AppAdminInboxService`, whose command and page workers recheck
+  current authority. Preview and execution have separate request identities; execution waits for the
+  aggregate result. Runtime-state, ResourceInbox and result cleanup are global categories.
+
+Shared response decoders serve both durable server results and browser transport. No compatibility
+exports, migration readers or game-owned save payloads are added to operator evidence.

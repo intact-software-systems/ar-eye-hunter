@@ -1,14 +1,12 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 import {
     constructApiV1RouteInstallers,
@@ -17,14 +15,16 @@ import {
     type ApiV1RouteInstallerTopology,
     type CreateApiV1RouteInstallersInput
 } from '../../src/composition/create-api-v1-route-installers.ts';
+import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 Deno.test('route installers mount representative API and websocket behavior in order', async () => {
     const app = new Hono();
     const installers = constructApiV1RouteInstallers(createInput(), TEST_OPERATIONS);
 
     installers.webSocket(app);
-    assert.equal(installers.rest.length, 1, 'the fixed API inventory has one aggregate mount boundary');
-    installers.rest[0](app);
+    for (const install of installers.rest) {
+        install(app);
+    }
 
     assert.equal((await app.request('/api/ws/session-1')).status, 426);
     const config = await (await app.request('/api/config')).json();
@@ -53,6 +53,7 @@ Deno.test('route installers mount representative API and websocket behavior in o
         401
     );
     assert.equal((await app.request('/api/admin/operations/overview')).status, 401);
+    assert.equal((await app.request('/api/admin/operations/rooms/apps/app/workspaces/workspace')).status, 401);
     assert.equal(
         (await app.request('/api/admin/support/explain/queue-item', { method: 'POST' })).status,
         401
@@ -153,17 +154,7 @@ function createAuthentication(): CreateApiV1RouteInstallersInput['authentication
 function createRuntime(): ApiV1RouteInstallerRuntime {
     return {
         wsQBoxServerService: { socket: new JsonWebSocketServer() },
-        authSessionRepository: {},
-        appAuthInboxService: {
-            registerUser: rejectUnusedOperation,
-            issueSession: rejectUnusedOperation,
-            logoutSession: rejectUnusedOperation,
-            replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
-            issueWebSocketTicket: rejectUnusedOperation,
-            issueAgentSessionTickets: rejectUnusedOperation,
-            consumeAgentSessionTicket: rejectUnusedOperation
-        },
-        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
+        ...createAuthRuntime(),
         appClientInboxService: {
             writeAuthorisedWsClientConnect: rejectUnusedOperation,
             enqueueAuthorisedWsClientDisconnect: rejectUnusedOperation,
@@ -207,8 +198,26 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
     };
 }
 
+function createAuthRuntime(): Pick<ApiV1RouteInstallerRuntime, 'authSessionRepository' | 'appAuthInboxService' | 'passwordDerivationAdmission'> {
+    return {
+        authSessionRepository: {},
+        appAuthInboxService: {
+            registerUser: rejectUnusedOperation,
+            issueSession: rejectUnusedOperation,
+            logoutSession: rejectUnusedOperation,
+            replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
+            issueWebSocketTicket: rejectUnusedOperation,
+            issueAgentSessionTickets: rejectUnusedOperation,
+            consumeAgentSessionTicket: rejectUnusedOperation
+        },
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
+    };
+}
+
 function createAdmin(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology>['admin'] {
     return {
+        rooms: { read: rejectUnusedOperation },
+        topologyWork: { read: rejectUnusedOperation },
         operations: {
             overview: { execute: rejectUnusedOperation },
             queues: { execute: rejectUnusedOperation },

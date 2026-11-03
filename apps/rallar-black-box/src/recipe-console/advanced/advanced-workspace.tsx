@@ -1,3 +1,4 @@
+import { RoomOperationsPanel } from '../rooms/room-operations-panel.tsx';
 import type { AdvancedWorkspaceProps } from './advanced-workspace-contract.ts';
 import { createAdvancedWorkspaceModel } from './advanced-workspace-model.ts';
 import { AdvancedContextSummary } from './AdvancedContextSummary.tsx';
@@ -12,6 +13,7 @@ export default function AdvancedWorkspace(props: AdvancedWorkspaceProps) {
             data-advanced-workspace
             data-preview-view="advanced"
         >
+            <RoomOperationsPanel />
             <AdvancedContextSummary model={model} />
             <AdvancedSurfaceSections sections={model.sections} />
         </div>

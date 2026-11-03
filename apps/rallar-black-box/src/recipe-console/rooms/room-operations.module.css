@@ -1,0 +1,127 @@
+.panel {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.panel summary {
+    cursor: pointer;
+    font-weight: 700;
+    padding-block: 8px;
+}
+
+.stack {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+}
+
+.search label {
+    display: grid;
+    gap: 4px;
+    flex: 1 1 180px;
+}
+
+.panel input, .panel button {
+    min-height: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    background: var(--rc-surface);
+    color: var(--rc-text);
+}
+
+.panel button {
+    cursor: pointer;
+}
+
+.panel button[aria-pressed="true"] {
+    background: var(--rc-selected-bg);
+    border-color: var(--rc-selected-border);
+}
+
+.panel :focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+.rooms {
+    display: grid;
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+}
+
+.rooms li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.facts {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.facts > div {
+    padding: 10px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.facts dt {
+    font-weight: 700;
+}
+
+.facts dd {
+    margin: 4px 0 8px;
+}
+
+.facts dd dl > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.facts dd dl dd {
+    margin: 0;
+}
+
+.certainty {
+    display: block;
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+.panel p {
+    overflow-wrap: anywhere;
+}
+
+.panel button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}

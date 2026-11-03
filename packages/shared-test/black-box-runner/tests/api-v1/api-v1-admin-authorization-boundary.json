@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 admin authorization boundary: the whole admin surface against an authenticated NON-admin principal. One conceptual denial reaches the client in four different shapes, and two of them are wrong. The CRDT admin reads answer 400 rather than 403, because forbidden() carries 403 but toAuthErrorResponse honours only RequestAuthFailure -- and that guard is the only authorization on those routes, never executed by any existing test, which all run with requireAuth false. The admin operations mutations answer 500 api-mutation-unexpected rather than 403, because the guard throws a statusless Error that falls through to the unexpected-failure fallback. Every denial is compared exactly, so a refusal that leaked a diagnostic payload alongside it would fail.",
+  "description": "No-browser API-v1 admin authorization boundary against an authenticated non-admin principal. Admin operations mutations return canonical authorization-denied 403 responses. Existing CRDT diagnostic reads currently return 400 denials; their route behavior is checked separately. Exact denial comparisons reject leaked diagnostic data.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -350,7 +350,7 @@
       }
     },
     {
-      "name": "anUnauthorizedAdminMutationIsReportedAsAServerFault",
+      "name": "aNonAdminCannotPruneExpiredData",
       "type": "http",
       "connection": "api",
       "request": {
@@ -363,22 +363,26 @@
         "body": {}
       },
       "expect": {
-        "status": 500,
+        "status": 403,
         "comparison": "exact",
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v2",
-          "code": "api-mutation-unexpected",
-          "status": 500,
-          "message": "API mutation failed unexpectedly",
+          "code": "authorization-denied",
+          "status": 403,
+          "message": "Forbidden: platform admin authorization required",
           "issues": null,
-          "denial": null,
+          "denial": {
+            "code": "authorization-denied",
+            "message": "Forbidden: platform admin authorization required",
+            "details": null
+          },
           "retry": null
         }
       }
     },
     {
-      "name": "theSameFaultShapeOnASecondAdminMutation",
+      "name": "aNonAdminCannotRecomputeTopology",
       "type": "http",
       "connection": "api",
       "request": {
@@ -391,16 +395,20 @@
         "body": {}
       },
       "expect": {
-        "status": 500,
+        "status": 403,
         "comparison": "exact",
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v2",
-          "code": "api-mutation-unexpected",
-          "status": 500,
-          "message": "API mutation failed unexpectedly",
+          "code": "authorization-denied",
+          "status": 403,
+          "message": "Forbidden: platform admin authorization required",
           "issues": null,
-          "denial": null,
+          "denial": {
+            "code": "authorization-denied",
+            "message": "Forbidden: platform admin authorization required",
+            "details": null
+          },
           "retry": null
         }
       }

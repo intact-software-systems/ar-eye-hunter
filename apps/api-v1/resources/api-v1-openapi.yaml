@@ -3481,6 +3481,106 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags: [Admin Operations]
+      summary: Inspect a bounded page of rooms in an authorized scope
+      description: >-
+        Requires platform admin authorization. Includes private, unlisted and archived rooms.
+        Invalid payloads appear only as redacted diagnostic entries; authoritative readers stay strict.
+        Each page projects at most limit rows, with one extra row read to detect continuation. Removed or expired rows may produce fewer entries.
+        Follow nextAfterGroupId until null, even after an empty page. Concurrent changes are not snapshot isolated.
+        Completeness describes validity of this page, not whether more pages remain.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: afterGroupId
+          description: Exclusive group identity from the preceding page in the same scope.
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+      responses:
+        '200':
+          description: A private, uncacheable diagnostic page.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema: { type: string, enum: ['private, no-store'] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoomDirectoryResponse'
+        '400':
+          description: Invalid scope or pagination query.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Inspection unavailable; no internal row payload is returned.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+  /api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-work/{outboxId}:
+    get:
+      tags: [Admin Operations]
+      summary: Observe the retained outcome of one room topology work receipt
+      description: >-
+        Requires current platform admin authorization. Reads the exact retained work for the room and
+        outboxId returned by topology recompute. Pending acceptance is not completion. Completed work
+        does not prove client delivery, formation or gameplay recovery. Unknown means that retained
+        evidence is absent or expired; it does not prove that the command failed or never ran.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - in: path
+          name: groupId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+        - in: path
+          name: outboxId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: A private, uncacheable observation of retained topology work.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema: { type: string, enum: ['private, no-store'] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoomTopologyWorkResponse'
+        '400':
+          description: Invalid room scope or receipt identity.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Inspection unavailable; no internal work payload is returned.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
   /api/admin/operations/state:
     get:
       parameters:
@@ -5789,6 +5889,74 @@ components:
           type: string
           pattern: '^[A-Za-z0-9_-]{1,128}$'
           description: The trace of the message's latest receipt fact.
+
+    AdminRoomTopologyWorkResponse:
+      type: object
+      additionalProperties: false
+      required: [roomRef, outboxId, observedAtEpochMs, status, attempts, settledAtEpochMs]
+      properties:
+        roomRef:
+          $ref: '#/components/schemas/GroupRef'
+        outboxId: { type: string, minLength: 1, maxLength: 256 }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        status: { type: string, enum: [unknown, pending, completed, failed] }
+        attempts: { type: integer, minimum: 0, nullable: true }
+        settledAtEpochMs: { type: integer, minimum: 0, nullable: true }
+
+    AdminRoomDirectoryResponse:
+      type: object
+      additionalProperties: false
+      required: [scope, observedAtEpochMs, completeness, entries, nextAfterGroupId]
+      properties:
+        scope:
+          type: object
+          additionalProperties: false
+          required: [applicationId, workspaceId]
+          properties:
+            applicationId: { type: string }
+            workspaceId: { type: string }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        completeness: { type: string, enum: [complete, partial] }
+        nextAfterGroupId: { type: string, nullable: true }
+        entries:
+          type: array
+          maxItems: 100
+          items:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [status, room]
+                properties:
+                  status: { type: string, enum: [valid] }
+                  room:
+                    $ref: '#/components/schemas/AdminRoomSummary'
+              - type: object
+                additionalProperties: false
+                required: [status, roomRef, reason]
+                properties:
+                  status: { type: string, enum: [invalid] }
+                  roomRef:
+                    $ref: '#/components/schemas/GroupRef'
+                  reason: { type: string, enum: [invalid-room-record] }
+
+    AdminRoomSummary:
+      type: object
+      additionalProperties: false
+      required: [roomRef, displayName, kind, status, joinMode, directoryListing, activeMemberCount, maxMembers, expiresAtEpochMs]
+      properties:
+        roomRef:
+          $ref: '#/components/schemas/GroupRef'
+        displayName: { type: string, minLength: 1 }
+        kind: { type: string, enum: [party, room, team, custom] }
+        status: { type: string, enum: [active, archived] }
+        joinMode: { type: string, enum: [open, code, invite-only] }
+        directoryListing: { type: string, enum: [listed, unlisted] }
+        activeMemberCount:
+          type: integer
+          minimum: 1
+          description: Durable membership count, not live presence or gameplay participation.
+        maxMembers: { type: integer, minimum: 1, nullable: true }
+        expiresAtEpochMs: { type: integer, minimum: 0, nullable: true }
 
     AdminOperationsStateResponse:
       allOf:

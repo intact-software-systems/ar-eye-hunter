@@ -2664,6 +2664,18 @@ Read routes:
 - `GET /api/admin/operations/system` returns runtime-state, app-data,
   state-event, and safe SQL/pubsub mode summaries.
 
+Room inspection routes also require current API admin authority and return `Cache-Control: private, no-store`:
+
+- `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId` accepts `limit`
+  (default 50, maximum 100) and optional `afterGroupId`. It returns scope, observation time,
+  `complete`/`partial` completeness, bounded valid or redacted invalid entries, and a nullable next cursor.
+  Deleted/expired records are absent. Private, unlisted, scheduled and archived rooms remain eligible.
+- `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-work/:outboxId`
+  observes the exact receipt's retained queue work. Its mandatory fields are `roomRef`, `outboxId`,
+  `observedAtEpochMs`, `status`, `attempts` and `settledAtEpochMs`. Status is `unknown`, `pending`,
+  `completed` or `failed`; missing/expired evidence has null attempts and settlement time. Completion
+  proves queue work settlement, not client delivery or gameplay recovery. Read room evidence afterward.
+
 Write routes are intentionally narrow:
 
 - `POST /api/admin/operations/metrics/reset` resets the resettable in-memory
@@ -2683,7 +2695,7 @@ Write routes are intentionally narrow:
   AppInbox. Debug exports keep payloads redacted by default unless an admin
   explicitly disables redaction.
 
-Read routes, `metrics/reset`, and `maintenance/prune-expired` responses include
+Statistics read routes, `metrics/reset`, and `maintenance/prune-expired` responses include
 `generatedAtEpochMs`, `serverId` when known, and `warnings` for partial or
 process-local sources. `topology/recompute` returns the queued topology receipt
 (`status`, `groupRef`, `requestId`, `outboxId`). The CRDT routes return the
@@ -2708,10 +2720,6 @@ Prune pages are persisted application queue work. Their canonical AL target is
 one page worker; these targets do not publish the page to browser sockets or RTC
 peers. The worker still checks the current admin session, expiry, page bounds,
 aggregate identity, and reservation before committing deletion.
-
-The prune page codec has no compatibility reader for the earlier
-`{ mode: "all", scope: "global" }` target. A database that still holds prune
-pages written in that shape has to be cleared before this build reads it.
 
 ### Admin Support REST
 
