@@ -13,6 +13,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
     toAcknowledgedCommands,
@@ -23,17 +24,9 @@ import {
 } from './volatile-bound-commands.ts';
 
 /**
- * The scenario is deterministic only while 3 * F = maxBytes and 2 * S + H <= maxBytes, where F is the filler, S is the
- * envelope of one send and H is the headroom kept for the platform traffic that arrives during the sends. An envelope
- * always weighs more than its filler, so the admitted sends, counted until their 30 s deadline, refuse the third
- * however small the envelope: 3 * S > 3 * 12 000 = 36 000. A planned send weighs 1 039 to 1 410 bytes over its filler
- * on the three carriers, so the second send leaves at least 36 000 - 2 * 13 410 = 9 180 bytes, above 8 KB. The
- * reconnect joins the room again (the close keeps the membership), and the lowered session admits the platform state
- * sync inbound (`group-state.event`, `client-state.snapshot` and `event`, 6 entries and about 26 KB in a fresh
- * two-member room), counted for at most 30 s; the sender waits that long after the reconnect before its first send,
- * so that sync has left the budget. The count bound keeps its constant, so bytes alone decide. An own send is
- * refused only once its own pool would also pass its share, half the bound (D189): with the sync gone the own pool is
- * the sends themselves, which the second already takes past 18 000, so the total decides and refuses the third.
+ * Two envelopes of at most 13,410 bytes leave 9,180 bytes in the 36 KB budget. Require at most 8 KB already
+ * occupied before sending. Three envelopes always exceed the bound because each contains 12 KB of filler.
+ * The initial window lets reconnect sync begin; only the subsequent ledger reading establishes headroom.
  */
 const CAPACITY_FILLER = 'x'.repeat(12_000);
 const CAPACITY_LIMITS = {
@@ -42,6 +35,9 @@ const CAPACITY_LIMITS = {
 };
 const REJOIN_SETTLE_MS = AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS + 1_000;
 const REJOIN_SETTLE_TOPIC = 'rallar.black-box.alm.capacity-rejoin-settled';
+const HEADROOM_TIMEOUT_MS = 30_000;
+const HEADROOM_INTERVAL_MS = 500;
+const BACKGROUND_HEADROOM_BYTES = 8 * 1024;
 const ADMITTED_INDEXES = [1, 2] as const;
 const REFUSED_INDEX = 3;
 
@@ -58,9 +54,32 @@ export const capacity: AlmConformanceScenarioDefinition = {
     laneFamily: 'addressed',
     toSenderCommands: toCapacitySenderCommands,
     toRecipientCommands: (receiver) => [
-        toReconnectedArrivalsCommand(receiver, ADMITTED_INDEXES.length, REJOIN_SETTLE_MS)
+        toReconnectedArrivalsCommand(receiver, ADMITTED_INDEXES.length, REJOIN_SETTLE_MS + HEADROOM_TIMEOUT_MS)
     ]
 };
+
+function toCapacityHeadroomWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const commandId = toCommandId(sender, 'headroom');
+    const stats = toStatsCommand(sender, 'headroom-stats');
+    return {
+        kind: 'loop',
+        commandId,
+        until: 'first-success',
+        count: HEADROOM_TIMEOUT_MS / HEADROOM_INTERVAL_MS,
+        intervalMs: HEADROOM_INTERVAL_MS,
+        timeoutMs: HEADROOM_TIMEOUT_MS,
+        commands: [
+            stats,
+            {
+                kind: 'assert',
+                commandId: toCommandId(sender, 'assert-headroom'),
+                source: `resultCache.${commandId}:i{loop.iteration}:c1:${stats.commandId}.value.rallar.alm.usage.bytes`,
+                operator: 'lte',
+                expected: BACKGROUND_HEADROOM_BYTES
+            }
+        ]
+    };
+}
 
 function toCapacitySenderCommands(
     sender: AlmConformanceStepInput
@@ -68,6 +87,7 @@ function toCapacitySenderCommands(
     return [
         ...toBoundReconnectCommands(sender, 'lowered', CAPACITY_LIMITS),
         toRejoinSettleWait(sender),
+        toCapacityHeadroomWait(sender),
         ...ADMITTED_INDEXES.flatMap((
             index
         ) => [toCapacitySend(sender, index), ...toAdmissionCommands({ ...sender, index })]),
@@ -78,7 +98,7 @@ function toCapacitySenderCommands(
     ];
 }
 
-/** Holds the whole window: nothing emits the topic, so it only lets the rejoin's state sync leave the budget. */
+/** Avoid reading an empty ledger before reconnect state publications have begun. */
 function toRejoinSettleWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     return {
         kind: 'wait',

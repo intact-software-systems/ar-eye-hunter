@@ -143,6 +143,7 @@ function useArenaMessageHandlers(
     publishMatchLifecycleOutput: ArenaMatchDelivery['publishMatchLifecycleOutput']
 ) {
     const stateAcceptance = useArenaStateAcceptance({
+        setError: state.setError,
         nowMs: Date.now,
         publishMatchLifecycleOutput,
         arenaMatchRef: state.arenaMatchRef,

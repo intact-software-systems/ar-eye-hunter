@@ -20,6 +20,13 @@ its job log line ends in `family=three-agent`. Its page-diagnostics file carries
 role `sender`, `receiver` or `recipient-b`. The snapshot decoder attributes only the `alm-sender-` and
 `alm-receiver-` agent ids, so the inbound events of the `recipient-b` page read `unattributed`.
 
+A four-role cell (the `four-role family over <carrier>` test, which runs only the topic subscription
+scenarios of the `four-role` lane family, each in a room of its own) writes the same three files as
+`<carrier>-<scope>-four-role*.json`, and its job log line ends in `family=four-role`. Its
+page-diagnostics file carries all four pages, with role `sender`, `publisher-b`, `receiver` or
+`sibling`; the `publisher-b` and `sibling` agent ids start `alm-publisher-b-` and `alm-sibling-`, which
+the snapshot decoder does not attribute, so their inbound events read `unattributed`.
+
 A same-context cell (the `same-context family over <carrier>` test, which runs only the scenarios of
 the `same-context` lane family) writes the same three files as `<carrier>-<scope>-same-context*.json`,
 and its job log line ends in `family=same-context`. Its page-diagnostics file carries the sender's and

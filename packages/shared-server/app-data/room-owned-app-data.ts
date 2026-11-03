@@ -1,13 +1,13 @@
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 
-import type { PSqlSql } from '../postgres/p-sql-sql.ts';
 import {
     requireEpoch,
     requireExactKeys,
     requirePositiveInteger,
     requireRecord,
     requireString
-} from '../rallar-system/protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
+import type { PSqlSql } from '../postgres/p-sql-sql.ts';
 import {
     serializeCanonicalMutationCommand,
     type JsonWireValue

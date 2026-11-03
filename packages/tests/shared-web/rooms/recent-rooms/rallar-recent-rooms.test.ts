@@ -109,7 +109,7 @@ class RecoveryBrowser {
 
     public async visit(groupId: string): Promise<void> {
         this.now += 1;
-        this.entry.enter({ roomRef: { ...SCOPE, groupId }, joinCode: 'secret-code', participation: 'preserve' });
+        this.entry.enter({ intent: 'join', roomRef: { ...SCOPE, groupId }, joinCode: 'secret-code', participation: 'preserve' });
         await this.entry.resume();
         await Promise.all(this.histories.map((history) => history.whenIdle()));
     }
@@ -150,7 +150,7 @@ describe('recent room navigation history', () => {
             failure: null,
             rooms: [{ roomRef, visitedAtEpochMs: browser.now }]
         });
-        expect(browser.entry.getState().destination).toEqual({ roomRef, joinCode: null, participation: 'preserve' });
+        expect(browser.entry.getState().destination).toEqual({ intent: 'join', roomRef, joinCode: null, participation: 'preserve' });
     });
 
     it('persists ten distinct visits newest first and rehydrates without credentials', async () => {
@@ -246,7 +246,12 @@ describe('recent room navigation history', () => {
         await history.start();
         await browser.visit('previous-room');
         await history.stop();
-        const destination = { roomRef: { ...SCOPE, groupId: 'new-invitation' }, joinCode: 'new-code', participation: 'preserve' as const };
+        const destination = {
+            intent: 'join' as const,
+            roomRef: { ...SCOPE, groupId: 'new-invitation' },
+            joinCode: 'new-code',
+            participation: 'preserve' as const
+        };
         browser.entry.enter(destination);
         await history.start();
 

@@ -14,6 +14,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { computeGroupSessionMembershipEffects } from '../schedule/compute-group-session-membership-effects.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
@@ -32,6 +33,7 @@ import type {
     GroupMutationRead,
     GroupMutationReceipt,
     GroupPublicationGrantEffect,
+    GroupSessionReservationWrite,
     GroupTopicSubscriptionDeleteEffect,
     PresenceAdmissionCandidate,
     PresenceGuardCandidate,
@@ -50,6 +52,8 @@ import { toGroupMutationActor, toGroupMutationEvent } from './to-group-mutation-
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface GroupMutationWriteInput {
+    readonly sessionIntentEffect?: RuntimeStateGuardedBatchEffect;
+    readonly sessionReservationWrite?: GroupSessionReservationWrite;
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
@@ -156,8 +160,11 @@ export function computeGroupMutationWriteResult(
         subscriptionOutcome: input.subscriptionOutcome,
         rejection: null
     });
+    const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const computed: GroupMutationDomainWrite = {
         outcome: 'write',
+        sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
+        sessionReservationWrite: input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite,
         guard: input.guard,
         members: input.members,
         initialPresenceSummary: input.initialPresenceSummary,

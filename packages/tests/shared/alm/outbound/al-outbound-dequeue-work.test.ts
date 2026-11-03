@@ -102,8 +102,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             afterDequeueAdmission: async (_msg, entry) => {
                 publicationEntry = entry;
@@ -170,8 +169,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
@@ -204,8 +202,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared.msgId);
@@ -245,8 +242,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -281,8 +277,7 @@ describe('AL outbound dequeue work', () => {
                     dropReason: 'Dropped before a route exists',
                     dropReasonCode,
                     lane: 'volatile',
-                    preparedMessages: [],
-                    admittedConnectionGenerationIds: undefined
+                    preparedMessages: []
                 }),
                 afterDequeueAdmission: async (msg) => {
                     published.push(msg.id.msgId);
@@ -322,8 +317,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -368,8 +362,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -401,8 +394,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -436,13 +428,12 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) =>
                 msg.route.resourceId === 'no-route'
-                    ? { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined }
+                    ? { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }
                     : {
                         msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
                         dropReasonCode: undefined,
                         lane: 'volatile',
-                        preparedMessages: [],
-                        admittedConnectionGenerationIds: undefined
+                        preparedMessages: []
                     },
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -476,8 +467,7 @@ describe('AL outbound dequeue work', () => {
                 dropReason: 'No outbound transport route',
                 dropReasonCode: 'no-route',
                 lane: 'volatile',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -524,8 +514,7 @@ describe('AL outbound dequeue work', () => {
                 msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -552,8 +541,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -591,8 +579,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -638,8 +625,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -681,8 +667,7 @@ describe('AL outbound dequeue work', () => {
                 lane: 'durable',
                 preparedMessages: [],
                 admittedAudience: ['peer-1'],
-                recipientScope: { applicationId: 'app', workspaceId: 'workspace' },
-                admittedConnectionGenerationIds: undefined
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
             }),
             afterDequeueAdmission: async (msg, entry, committedPolicy) => {
                 handed.push({ msgId: msg.id.msgId, entry, committedPolicy });
@@ -723,8 +708,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             afterDequeueAdmission: async (msg, entry, committedPolicy) => {
                 handed.push({ msgId: msg.id.msgId, entry, committedPolicy });
@@ -781,8 +765,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -831,8 +814,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -874,8 +856,7 @@ describe('AL outbound dequeue work', () => {
             msg,
             dropReasonCode: undefined,
             lane: 'durable' as const,
-            preparedMessages: [],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: []
         });
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             ...createDefaultALOutboundRuntimeResources({
@@ -960,7 +941,7 @@ it('separates held claim and execution from reservation logging in one completed
             await runRelease.promise;
             return undefined;
         },
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     onTestFinished(async () => {
@@ -1064,8 +1045,7 @@ it.each(['committed', 'conflict', 'error', 'decision-error'] as const)(
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             afterDequeueAdmission: async (msg) => {
                 sent.push(msg.id.msgId);
@@ -1140,8 +1120,7 @@ it('keeps simultaneous owner reservations separate and reports an empty claim wi
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });

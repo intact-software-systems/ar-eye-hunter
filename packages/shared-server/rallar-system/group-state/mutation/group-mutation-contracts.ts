@@ -16,6 +16,7 @@ import type {
     GroupTopicSubscription,
     GroupTopicSubscriptionOutcome
 } from '@shared/api/group-publication/group-topic-subscriptions.ts';
+import type { GroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     AuditStamp,
     Group,
@@ -33,6 +34,8 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import type { StoredGroupSessionIntent } from '../schedule/group-session-intent-storage.ts';
+import type { StoredGroupSessionReservations } from '../schedule/group-session-reservation-storage.ts';
 
 import type {
     RuntimeStateGuardedBatchEffect,
@@ -69,6 +72,13 @@ export type GroupPublicationGrantOperation = 'grantGroupPublication' | 'revokeGr
 export type GroupTopicSubscriptionOperation = 'subscribeGroupTopic' | 'unsubscribeGroupTopic';
 
 export type GroupMutationCommand =
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            operation: 'changeGroupSession';
+            input: NullableActorInput & GroupSessionChange;
+        }>
+    )
     | (
         & GroupMutationCommandBase
         & Readonly<{
@@ -462,6 +472,8 @@ export interface GroupMutationIdempotencyRecord {
 }
 
 export interface GroupMutationRead {
+    readonly sessionIntent: RuntimeStateEntryValue<StoredGroupSessionIntent> | null;
+    readonly sessionReservations: RuntimeStateEntryValue<StoredGroupSessionReservations> | null;
     readonly idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
     readonly group: RuntimeStateEntryValue<Group> | null;
     readonly retiredGroup: RetiredGroupIdentity | null;
@@ -641,6 +653,11 @@ export type GroupPublicationGrantEffect =
     | Readonly<{ operation: 'update'; value: GroupPublicationGrant; expectedRevision: number; }>
     | Readonly<{ operation: 'delete'; value: GroupPublicationGrant; expectedRevision: number; }>;
 
+export interface GroupSessionReservationWrite {
+    readonly value: StoredGroupSessionReservations;
+    readonly expectedRevision: number;
+}
+
 /** One subscription row a revoke of subscribe or a departure deletes, guarded by the revision the read observed. */
 export type GroupTopicSubscriptionDeleteEffect = Readonly<{
     ref: GroupRef;
@@ -649,6 +666,8 @@ export type GroupTopicSubscriptionDeleteEffect = Readonly<{
 }>;
 
 export interface GroupMutationDomainWrite {
+    readonly sessionIntentEffect: RuntimeStateGuardedBatchEffect | null;
+    readonly sessionReservationWrite: GroupSessionReservationWrite | null;
     readonly outcome: 'write';
     readonly guard: GroupGuardCandidate | PresenceGuardCandidate | SubscriptionGuardCandidate;
     readonly members: readonly GroupMember[];

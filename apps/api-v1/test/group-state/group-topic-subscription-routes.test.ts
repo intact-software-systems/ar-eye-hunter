@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import {
+    GroupMutationRejectedError,
+    type GroupMutationReceipt
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 
 import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
+import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
 import {
     captureGroupStateRouteWrite,
     createGroupStateRouteSnapshot,
@@ -239,6 +243,20 @@ Deno.test('the response is { outcome } from the receipt', async () => {
         assert.equal(response.status, 200, outcome);
         assert.deepEqual(await response.json(), { outcome }, outcome);
     }
+});
+
+Deno.test('a rejected receipt answers as a rejected group mutation', () => {
+    const receipt: GroupMutationReceipt = {
+        ...createSubscriptionReceipt(null),
+        outcome: 'rejected',
+        acceptedStorageRevision: null,
+        rejection: 'Topic subscription rejected by current authority'
+    };
+
+    assert.throws(
+        () => toGroupStateResponse({ kind: 'subscription', receipt }),
+        new GroupMutationRejectedError('Topic subscription rejected by current authority')
+    );
 });
 
 Deno.test('the subscriptions read lists the session\'s rows and refuses another session', async () => {

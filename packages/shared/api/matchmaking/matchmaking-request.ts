@@ -1,0 +1,97 @@
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireOneOf,
+    requireRecord,
+    requireString
+} from '../exact-object-decoding.ts';
+import { assertValidRallarRouteId } from '../rallar-validation.ts';
+import { decodeStateScope, type StateScope } from '../state-types.ts';
+
+export type MatchmakingRequest =
+    | Readonly<{ action: 'start' | 'confirm' | 'cancel'; searchId: string; }>
+    | Readonly<{ action: 'start-party'; searchId: string; partyId: string; rosterRevision: number; }>;
+
+export type MatchmakingRefusal =
+    | 'unauthorized'
+    | 'search-not-current'
+    | 'search-capacity'
+    | 'search-ended'
+    | 'party-required'
+    | 'party-changed'
+    | 'party-leader-required'
+    | 'party-member-away';
+
+export interface MatchmakingMutationResult {
+    readonly scope: StateScope;
+    readonly principalId: string;
+    readonly requestId: string;
+    readonly status: 'applied' | 'refused';
+    readonly searchId: string | null;
+    readonly code: MatchmakingRefusal | null;
+}
+
+export function decodeMatchmakingRequest(value: unknown): MatchmakingRequest {
+    const request = requireRecord(value, 'Matchmaking request');
+    requireExactKeys(
+        request,
+        request.action === 'start-party' ? ['action', 'searchId', 'partyId', 'rosterRevision'] : ['action', 'searchId'],
+        'Matchmaking request'
+    );
+    requireString(request.searchId, 'Search identity');
+    if (request.searchId.length > 96) {
+        throw new TypeError('Search identity must contain at most 96 characters');
+    }
+    if (request.action === 'start-party') {
+        requireEpoch(request.rosterRevision, 'Party search roster revision');
+        return {
+            action: 'start-party',
+            searchId: assertValidRallarRouteId(request.searchId),
+            partyId: assertValidRallarRouteId(request.partyId),
+            rosterRevision: request.rosterRevision
+        };
+    }
+    return {
+        action: requireOneOf(request.action, ['start', 'confirm', 'cancel'], 'Matchmaking action'),
+        searchId: assertValidRallarRouteId(request.searchId)
+    };
+}
+
+export function decodeMatchmakingMutationResult(value: unknown): MatchmakingMutationResult {
+    const result = requireRecord(value, 'Matchmaking result');
+    requireExactKeys(result, ['scope', 'principalId', 'requestId', 'status', 'searchId', 'code'], 'Matchmaking result');
+    const scope = decodeStateScope(result.scope);
+    requireString(result.principalId, 'Matchmaking result account');
+    requireString(result.requestId, 'Matchmaking result request');
+    if (result.searchId !== null) {
+        requireString(result.searchId, 'Matchmaking result search');
+    }
+    const status = requireOneOf(result.status, ['applied', 'refused'], 'Matchmaking result status');
+    const code = result.code === null
+        ? null
+        : requireOneOf(
+            result.code,
+            [
+                'unauthorized',
+                'search-not-current',
+                'search-capacity',
+                'search-ended',
+                'party-required',
+                'party-changed',
+                'party-leader-required',
+                'party-member-away'
+            ],
+            'Matchmaking refusal'
+        );
+    if ((status === 'applied') !== (code === null)) {
+        throw new TypeError('Matchmaking result and refusal disagree');
+    }
+    return {
+        scope,
+        principalId: result.principalId,
+        requestId: result.requestId,
+        status,
+        searchId: result.searchId,
+        code
+    };
+}

@@ -7,7 +7,9 @@ import {
 } from '@playwright/test';
 import type {
     ControlAgentSnapshot,
-    ControlRunSnapshot
+    ControlRunSnapshot,
+    ControlRunToken,
+    ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
@@ -86,7 +88,7 @@ test('holds lifecycle actions while a new cohort registers beside existing agent
     await expect(runway.getByRole('status')).toContainText(
         '0 of 3 browser agents ready'
     );
-    expect(control.tokenRequests).toHaveLength(3);
+    await expect.poll(() => control.tokenRequests.length).toBe(3);
 
     control.registerAgent('cohort-run', control.tokenRequests[0].agentId);
     await runway.getByRole('button', { name: 'Refresh' }).click();
@@ -285,7 +287,7 @@ test('mints only reserved tabs and keeps each partially blocked identity copyabl
     });
     await expect(copyBlocked).toHaveCount(1);
     await copyBlocked.click();
-    expect(control.tokenRequests).toHaveLength(3);
+    await expect.poll(() => control.tokenRequests.length).toBe(3);
     await expect(
         page.locator('[data-execute-agent-setup]').getByRole('status')
     ).toContainText('3 launched browser agents are ready and selected as targets.');
@@ -549,7 +551,15 @@ function connectedAgent(runId: string, agentId: string, now: number): ControlAge
     };
 }
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
+interface ControlErrorResponse {
+    readonly error: string;
+}
+
+async function fulfillJson(
+    route: Route,
+    body: ControlRunToken | ControlRunSnapshot | ControlServerSnapshot | ControlErrorResponse,
+    status = 200
+): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',

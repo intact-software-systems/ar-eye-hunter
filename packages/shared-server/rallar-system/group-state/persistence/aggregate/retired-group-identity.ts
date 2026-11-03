@@ -5,14 +5,14 @@ import type {
 } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import {
     requireEpoch,
     requireExactKeys,
     requirePositiveInteger,
     requireRecord,
     requireString
-} from '../../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     assertGroupRefIdentity,

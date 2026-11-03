@@ -53,7 +53,7 @@ Provider-mode examples:
 | `examples/rtc-rallar-browser-messages-rtc-multicast.json` | Send one app-level `messages.rtc` payload to a room and assert two peers receive it.              |
 | `examples/rtc-rallar-browser-provider-mode-parity.json`   | Parameterize the RTC provider so the same recipe runs locally or through `rallar-remote-browser`. |
 | `examples/rtc-rallar-browser-scoped-workspaces.json`      | Pass scoped `roomRef` values through browser RTC and assert same-room-id workspace isolation.     |
-| `examples/rtc-rallar-browser-not-yet-in-sync.json`        | Pass `minSnapshotVersion` and assert an observable `not-yet-in-sync` NACK.                        |
+| `examples/rtc-rallar-browser-not-yet-in-sync.json`        | Pass `minSnapshotVersion` and assert the receiver’s correlated `not-yet-in-sync` rejection.                        |
 | `examples/rtc-rallar-browser-readiness-diagnostics.json`  | Wait for browser-provider readiness diagnostics and health.                                       |
 | `examples/rtc-rallar-browser-timeout-diagnostics.json`    | Intentionally fail a diagnostic wait to show timeout diagnostics.                                 |
 | `examples/rtc-rallar-memory-delivery-semantics.json`      | Deterministically assert direct and room broadcast delivery metadata.                             |
@@ -96,7 +96,9 @@ For realtime sends, prefer `expect.connection` instead of hardcoding `peerIds`:
 
 The provider resolves `bobRtc` to Bob's browser-side Rallar `sessionId` and passes it as `peerIds` to `rallar.realtime.sendJson`.
 
-For app-level Rallar RTC messages, use `transport: "messages.rtc"` and configure at least `typeId`:
+For app-level Rallar RTC messages, use `transport: "messages.rtc"`, an explicit `roomRef`, and at least `typeId`. Without `topicId`, the typed channel uses `typeId` as its topic; use `messageSelector` for an explicit broader subscription. After all participants connect, wait for each participating room’s `rallar.browser.formation.room-status` diagnostic with `data.room.state: "open"` before sending. A completed join alone does not prove an accepted RTC route.
+
+An application-message assertion uses the typed payload envelope:
 
 ```json
 {
@@ -117,7 +119,7 @@ For app-level Rallar RTC messages, use `transport: "messages.rtc"` and configure
       "typeId": "chat.message",
       "topicId": "chat",
       "data": {
-        "text": "hello bob"
+        "payload": { "text": "hello bob" }
       }
     }
   }
@@ -182,3 +184,10 @@ are normalized into `rtcMessages`, `rtcDiagnostics`, and `rtcCloseEvents`.
 Remote RTC messages use the same event-shaped payload style as
 `rallar-browser`: `matchedMessage.data.kind`, `matchedMessage.data.topic`, and
 `matchedMessage.data.data` are available for assertions and output extraction.
+For `messages.rtc`, that data is the canonical typed envelope: application content lives at
+`matchedMessage.data.data.payload`, beside `msgId`, `typeId`, transport and trace identity.
+Each SDK arrival produces one recorded message and one increment of `stats.counters.messages`.
+The event retains local `peerId`, remote `remotePeerId` and `senderId` for topology evidence.
+Raw `realtime` JSON continues to use `matchedMessage.data.data` directly.
+
+Control NACKs belong to ALM diagnostics, not application-message counts. The snapshot-fence example matches the receiver’s admission rejection by the submitted message handle and type, then checks its reason. Send handles are asynchronous; payload arrival proves delivery, and the examples do not claim a synchronous `sendResult.status: "sent"`.

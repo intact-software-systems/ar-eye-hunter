@@ -1,5 +1,6 @@
+import path from 'node:path';
+
 import react from '@vitejs/plugin-react';
-import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -8,6 +9,7 @@ export default defineConfig({
     resolve: {
         alias: {
             '@relic-hunters': path.resolve(__dirname, '../../packages/relic-hunters'),
+            '@shared-react': path.resolve(__dirname, '../../packages/shared-react'),
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
             '@shared-server': path.resolve(__dirname, '../../packages/shared-server'),
             '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),

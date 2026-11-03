@@ -52,6 +52,35 @@ interface DescriptorCase {
 
 const descriptorCases: readonly DescriptorCase[] = [
     {
+        name: 'session-change',
+        enqueue: {
+            traceId: 'session-contract',
+            type: AppInboxType.GROUP_SESSION_CHANGE,
+            resourceId: 'reserve',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: {
+                    ...actor,
+                    requestId: 'reserve',
+                    action: 'reserve',
+                    expectedScheduleRevision: 1,
+                    startsAtEpochMs: null
+                }
+            }
+        },
+        descriptor: {
+            operation: 'changeGroupSession',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'reserve', action: 'reserve', expectedScheduleRevision: 1, startsAtEpochMs: null }
+        }
+    },
+    {
         name: 'create',
         enqueue: {
             traceId: 'trace-test-fixture',

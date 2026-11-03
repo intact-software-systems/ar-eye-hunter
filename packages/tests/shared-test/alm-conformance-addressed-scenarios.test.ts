@@ -29,6 +29,7 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'];
 const ADDRESSED_KEYS = ['ws-unicast-receipt', 'unicast-fallback', 'server-command', ...VOLATILE_BOUND_KEYS];
@@ -80,7 +81,7 @@ function bodyOf(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCo
 function shapeOf(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`;
+            return toFaultInjectShape(command);
         case 'wait':
             return `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`;
         case 'messages.received':
@@ -206,6 +207,7 @@ describe('the addressed-send family (C11)', () => {
                 'close',
                 'rtc.connect',
                 'wait:diagnostic:absent',
+                'loop',
                 ...['messages.send', 'messages.observe', 'assert'],
                 ...['messages.send', 'messages.observe', 'assert'],
                 ...['messages.send', 'messages.observe', 'assert', 'assert', 'assert', 'assert'],
@@ -226,16 +228,14 @@ describe('the addressed-send family (C11)', () => {
             const connects = body.flatMap((command) => command.kind === 'rtc.connect' ? [command] : []);
             expect(connects.map((command) => command.rallar?.almVolatileLimits), carrier)
                 .toEqual([CAPACITY_LIMITS, undefined]);
-            // The state sync the reconnect admits counts for at most 30 s, so the first send waits it out.
-            expect(body[2], carrier).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 31_000 });
             const [arrivals, ...rest] = bodyOf(scenario.receiver);
             expect(rest, carrier).toEqual([]);
             // The sender reconnects and waits before it sends, so the receiver's positive wait owns both.
             expect(arrivals, carrier).toMatchObject({
                 kind: 'messages.received',
                 count: 2,
-                windowMs: 88_000,
-                timeoutMs: 89_000
+                windowMs: 118_000,
+                timeoutMs: 119_000
             });
         }
     });

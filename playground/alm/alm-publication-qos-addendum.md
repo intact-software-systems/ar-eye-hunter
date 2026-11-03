@@ -1,10 +1,9 @@
 # ALM publication QoS and pub/sub addendum
 
-Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing) and the
-first of Slice 2's two pull requests (S2-i, publication grants and their WS
-enforcement) are implemented and recorded as applied in §7; the rest of Slice 2
-and the later outcomes remain a proposed extension, not implemented behavior or
-an adopted change to `docs/product.md`.
+Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing) and Slice 2
+(authorized WS pub/sub, as S2-i and S2-ii) are implemented and recorded as
+applied in §7; the later outcomes remain a proposed extension, not implemented
+behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -606,6 +605,51 @@ topics from `grantedWsTopics` (`RALLAR_GRANTED_WS_TOPICS_JSON`). The recipes
 `api-v1-group-publication-grants.json` and its cluster twin prove persisted
 readback, idempotency, conflict, the denials and a revocation's WS refusal across
 three servers. Decisions D483–D501 are in the roadmap; S2-ii is next.
+
+As applied (S2-ii): a session elects to receive a granted topic with a leased
+subscription, one row of `group-state:subscriptions` per (group, session,
+topic) (`packages/shared/api/group-publication/group-topic-subscriptions.ts`),
+naming the principal, the asserting `connectionGenerationId`, the lease's end
+and the group revision it was admitted at; the 120 s lease is the row's store
+expiry. `POST .../sessions/{sessionId}/subscribe` and `.../unsubscribe` under
+`/requests/{requestId}` take `{ topicId, connectionGenerationId }`, since the
+HTTP request is bound to no socket, and answer `{ outcome }`: `subscribed`,
+`renewed` (the same generation again, which extends the lease), `unsubscribed`
+or `not-subscribed`; `GET .../sessions/{sessionId}/subscriptions` lists the
+session's live rows. All three run under the self-session guard. A subscribe
+needs an active member (`member-not-active`) holding effective `subscribe`
+(`no-subscribe-grant`), a live client-state session (`no-live-session`) and a generation that is one of
+the session's live ones (`stale-generation`); only the generation that holds a
+row and is still live releases it. The write is the row alone, guarded by
+itself: no event, no group revision, no delta, nothing replanned. A revoke of
+`subscribe` and every departure delete the principal's rows in the same write,
+and a grant that adds `subscribe` or a write that activates the member deletes
+any row a cross-server race left, so a re-grant or a rejoin never revives one.
+The server reads the publication authority fresh on every pass, the probed
+snapshot plus one statement for the topic's rows and the sessions' live client
+generations, never from the cached snapshot: the audience is the live sessions
+of active members holding `subscribe` whose lease holds and whose row a live
+generation of the session asserted, intersected with targeting and the leader.
+Each recipient's generation is captured in the outbound policy and compared at
+dequeue, repair and the awaited-connection send, so a reconnected session never
+inherits an old obligation; the receipt keeps the frozen set, and an empty
+audience is admitted with zero recipients. Live-only sends, the cluster's live
+notice and the outbox audience take the same intersection at `route`. In the
+browser, `RallarRoomMember.topicGrants`, `RallarRoomSession.topicRole(topicId)`
+and `rooms.grantTopic` / `rooms.revokeTopic` expose the roles, and a granted
+channel's `subscribe(handler)` returns a `RallarTopicSubscription` token
+(`pending`, `active`, `refused`, `lapsed`); one owner per tab counts tokens per
+room and topic, renews on the 20 s heartbeat cadence, re-asserts under the new
+generation when the socket reopens, sends nothing from a replaced tab and
+releases at session end. The local four-role family (two producers, the
+receiver and a second session of the first producer's principal) proves
+subscribe then publish, two tokens on one page, a revoke while disconnected and
+a reconnect over `ws` and `rtc-with-ws-fallback`, and a same-context successor;
+the held-dispatch revocation is proven by api-v1's server tests. The recipe
+`api-v1-group-topic-subscriptions.json` and the cluster recipe's subscribe
+steps prove readback, idempotency, the refusals and revoke and re-grant. No
+hosted manifest carries the four-role cells. Decisions D502–D511 are in the
+roadmap, and Slice 2 is complete.
 
 ### Later outcomes
 

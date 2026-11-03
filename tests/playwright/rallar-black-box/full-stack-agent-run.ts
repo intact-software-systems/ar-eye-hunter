@@ -10,7 +10,9 @@ import {
     cleanupRallarPage,
     createTwoAgentRun,
     enqueueControlCommand,
+    findControlResult,
     openBrowserControlAgent,
+    readControlRunUntil,
     readFullStackConfig,
     startRecipeRun,
     startRecipientRecipeRun,
@@ -108,7 +110,6 @@ export async function runRecipesOnAgents(
 
 /** A close releases the page's room connection and its subscriptions; well under a recipe's own budget. */
 const CLOSE_TIMEOUT_MS = 30_000;
-const CLOSE_POLL_INTERVAL_MS = 250;
 
 /** Ends every agent's room connection, so the next cell's connect may name a room of its own. */
 export async function closeAgentConnections(run: AgentRecipeRun, cellKey: string): Promise<void> {
@@ -125,18 +126,13 @@ export async function closeAgentConnections(run: AgentRecipeRun, cellKey: string
             command: { kind: 'close' }
         });
     }
-    const commandIds = closes.map(({ commandId }) => commandId);
-    const deadlineEpochMs = Date.now() + CLOSE_TIMEOUT_MS;
-    while (Date.now() < deadlineEpochMs) {
-        const snapshot = await run.readSnapshot();
-        if (
-            commandIds.every((commandId) =>
-                snapshot.results.some((result) => result.commandId === commandId && result.ok)
-            )
-        ) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, CLOSE_POLL_INTERVAL_MS));
+    const read = await readControlRunUntil(run, {
+        timeoutMs: CLOSE_TIMEOUT_MS,
+        select: (snapshot) => closes.every(({ commandId }) => findControlResult(snapshot, commandId)?.ok === true),
+        accept: (closed) => closed
+    });
+    if (read.kind === 'accepted') {
+        return;
     }
     throw new Error(`${cellKey}: not every agent closed its room connection within ${CLOSE_TIMEOUT_MS} ms.`);
 }

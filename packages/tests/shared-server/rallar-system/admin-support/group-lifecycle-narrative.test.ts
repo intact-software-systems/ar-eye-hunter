@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectGroupAdminSupportNarrative } from '@shared-server/rallar-system/admin-support/narratives/project-group-admin-support-narrative.ts';
+import { toGroupAdminSupportNarrative } from '@shared-server/rallar-system/admin-support/narratives/to-group-admin-support-narrative.ts';
 import type { AdminSupportJsonValue } from '@shared/api/admin-support/admin-support-types.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -189,14 +189,13 @@ function narrativeFor(
         onlineMemberCount: 0,
         publicationGrants: []
     };
-    return projectGroupAdminSupportNarrative({
+    return toGroupAdminSupportNarrative({
         request: { groupRef: GROUP_REF },
         snapshot,
         recentEvents: [],
         topologyView: undefined,
         hasGroupStateService: true,
         hasTopologyQuery: true,
-        hasLifecyclePolicyReader: true,
         policy,
         generatedAtEpochMs: NOW
     });

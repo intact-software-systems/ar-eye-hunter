@@ -8,6 +8,8 @@ import type {
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import type { GroupMoveService } from '@shared-server/rallar-system/group-state/move/group-move-service.ts';
+import type { GroupSessionDirectory } from '@shared-server/rallar-system/group-state/schedule/group-session-directory.ts';
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
@@ -16,6 +18,7 @@ import type {
     StateSyncCacheHydrationInput,
     StateSyncCacheHydrationResult
 } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
+import type { ChangeGroupSessionRequest } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupStateSnapshotReadOptions, StateSnapshotReadResult } from '@shared/api/state-snapshot-read.ts';
 import type {
@@ -76,6 +79,14 @@ interface GroupStateRouteCommandInputBase {
 type GroupStateRouteRequestWithId<T> = T & Readonly<{ requestId: string; }>;
 
 export type GroupStateRouteCommandInput =
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'change-group-session';
+            groupId: string;
+            request: ChangeGroupSessionRequest & Readonly<{ requestId: string; }>;
+        }>
+    )
     | (
         & GroupStateRouteCommandInputBase
         & Readonly<{
@@ -358,6 +369,7 @@ export interface GroupStateRouteScopeContext {
 }
 
 export interface GroupStateRouteDependencies {
+    readonly sessionDirectory: Pick<GroupSessionDirectory, 'read' | 'listForPrincipal'>;
     readonly groupStateService: GroupStateRouteService;
     readonly rtcRttRepository: Pick<RtcRttRepository, 'listMeasurementEntriesForEndpoints'>;
     readonly requireApiAuthSession: (
@@ -365,6 +377,8 @@ export interface GroupStateRouteDependencies {
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
     readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];
+    readonly processGroupMove: GroupStateInboxService['processGroupMoveUntilCompletion'];
+    readonly listGroupMoves: GroupMoveService['listForPrincipal'];
     readonly groupAdmissionQuota: GroupAdmissionQuota;
     readonly strictReadAuthorization: boolean;
     readonly groupDefaultMaxMembers: number | null;

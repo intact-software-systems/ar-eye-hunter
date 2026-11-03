@@ -6,6 +6,7 @@ import {
 } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
 
+import { isClientSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { denyGroupPolicy, GROUP_POLICY_ALLOWED } from './group-policy-result.ts';
 
 export interface CanSubscribeGroupTopicInput {
@@ -26,7 +27,7 @@ export function canSubscribeGroupTopic(input: CanSubscribeGroupTopicInput): Grou
     if (input.member?.status !== 'active') {
         return denyGroupPolicy('member-not-active', 'Only an active member subscribes to a topic.');
     }
-    const live = input.clientSessions.filter((session) => isLiveClientSession(session, input.nowEpochMs));
+    const live = input.clientSessions.filter((session) => isClientSnapshotSessionLive(session, input.nowEpochMs));
     if (live.length === 0) {
         return denyGroupPolicy('no-live-session', 'The subscribing session is not live.');
     }
@@ -45,10 +46,6 @@ export function holdsLiveGeneration(
     nowEpochMs: number
 ): boolean {
     return sessions.some((session) =>
-        isLiveClientSession(session, nowEpochMs) && session.generationId === generationId
+        isClientSnapshotSessionLive(session, nowEpochMs) && session.generationId === generationId
     );
-}
-
-function isLiveClientSession(session: ClientSession, nowEpochMs: number): boolean {
-    return session.status === 'active' && session.expiresAtEpochMs > nowEpochMs;
 }

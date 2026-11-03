@@ -33,7 +33,7 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 const TOPIC_SUBSCRIPTION_IDS = [
     'subscription-delivery',
     'subscription-token-count',
-    'subscription-revoke-held',
+    'subscription-revoke-disconnected',
     'subscription-reconnect',
     'subscription-successor'
 ] as const;

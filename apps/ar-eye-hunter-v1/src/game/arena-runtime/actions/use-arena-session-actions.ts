@@ -190,6 +190,7 @@ function useArenaRoomActions(
     ]);
     const watchRoom = useCallback(async (roomId: string) => {
         arenaRoomEntry.enter({
+            intent: 'join',
             roomRef: { ...ARENA_ROOM_SCOPE, groupId: roomId },
             joinCode: null,
             participation: 'spectator'

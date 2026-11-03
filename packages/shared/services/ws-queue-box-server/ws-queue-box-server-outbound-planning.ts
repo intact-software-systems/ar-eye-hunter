@@ -148,8 +148,7 @@ export class WsQueueBoxServerOutboundPlanning {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReasonCode: 'unauthorized',
-                dropReason: 'WS message has no verified scoped audience',
-                admittedConnectionGenerationIds: undefined
+                dropReason: 'WS message has no verified scoped audience'
             };
         }
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
@@ -365,8 +364,7 @@ function toNoRouteDispatchPlan(
         dropReason,
         dropReasonCode: 'no-route',
         lane: 'volatile',
-        preparedMessages: [],
-        admittedConnectionGenerationIds: undefined
+        preparedMessages: []
     };
 }
 

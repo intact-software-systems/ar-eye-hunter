@@ -101,6 +101,95 @@ The next game stays in the same room and includes only eligible consenting playe
 their characters and resets expedition progress; AR Eye starts fresh score baselines. Finished results
 remain visible until accepted start. Reset and the old start controls cannot bypass this consent flow.
 
+## Scheduled sessions
+
+AR Eye and Relic let an organizer schedule an unlisted temporary room, copy its session link,
+and change or cancel the schedule before its lobby opens. Following the link previews the session
+without leaving the current game. Signed-in accounts can reserve one player seat, withdraw that
+reservation, and find their sessions again after reload. The organizer occupies one player seat.
+Rescheduling releases reservations and asks interested accounts to review and confirm the new time.
+
+The lobby opens ten minutes before the scheduled start. Entry claims the account's reserved seat;
+accounts without reservations can enter only if an unreserved seat is available. The current host
+starts gameplay explicitly at or after the scheduled time. Passing the start time never starts a
+game automatically. Unclaimed reservations expire ten minutes after start, releasing their seats.
+Spectators use the separate spectator capacity. Reservation identities are private to each account;
+shared room events carry only an anonymous change notification.
+
+A future session survives an empty room until the reservation deadline, then receives the usual
+reconnect grace. Live presence keeps the room active. Normal temporary-room archival and seven-day
+deletion apply afterward, including private session records and room-owned game saves.
+
+## Find players and start together
+
+AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and
+workspace. Each account has one active search in that scope. Defaults are two players, two minutes
+to find a group and thirty seconds for everyone to confirm; operators can configure these per game.
+Nobody enters until all players confirm and the server admits the whole group to one unlisted,
+temporary room. Each player then chooses Enter matched room and uses the normal game lobby;
+the director or Keeper starts gameplay explicitly.
+
+Cancel, decline and timeout end the whole pending group. They never automatically requeue players.
+A new search is always an explicit choice, including after a successful match. Reload recovers the
+account's current search or result. An uncertain write offers Retry with the same request identity.
+Signing out clears the browser view; server deadlines continue without an open browser. Quick Join
+continues to offer immediate admission to an existing suitable room.
+
+## Parties that stay together
+
+AR Eye and Relic let mutual friends create a party, invite each other and explicitly accept or
+decline. Parties belong to one game and workspace; each account can belong to one party in that
+scope. The roster distinguishes Present from Away. Invitations expire after ten minutes by default;
+party capacity follows the game's configured match size.
+
+The party leader searches for everyone while all members are present. A party stays indivisible;
+other searching parties or solo players fill remaining seats. A full party proceeds directly to
+confirmation. Every member confirms separately. A roster change cancels a pending search or
+confirmation, and nobody enters unless the whole matched group can be admitted.
+
+Party membership survives reload, gameplay, Play again and Move together. The leader can transfer
+leadership or disband; leaving transfers leadership to the earliest remaining member. When the
+leader's server presence expires, a present member can explicitly take leadership. Reconnecting
+does not reclaim it. Party leadership grants no director or Keeper authority. Leaving the party
+keeps existing room memberships and game participation.
+
+## Friends and invitations
+
+AR Eye and Relic share an account-wide friend list. Enter an exact username to send a request;
+the recipient explicitly accepts or declines. Sending a reciprocal request never accepts it.
+Either person can remove the friendship. Blocking removes requests, friendship and pending
+invitations in both directions; unblocking does not restore consent. These actions do not remove
+independent room memberships.
+
+Online sharing is off by default and can be turned off again. Mutual friends see only whether a
+sharing account is online in the current game and workspace, never its current room or sessions.
+The panel refreshes while foreground and online, every thirty seconds, and on explicit Refresh.
+Room location is disclosed only by an explicit invitation. Invitations expire after seven days by
+default. Opening one rechecks consent and uses the normal room admission or scheduled-session
+preview and RSVP flow; it grants no seat, membership, join code, or gameplay authority by itself.
+Reload restores the private list. An uncertain write offers Retry with the same request identity;
+signing out clears the view and pending browser work.
+
+## Moving together
+
+AR Eye and Relic let present players propose another room in the same application and workspace.
+When in a party, only its leader proposes and every party member must be present in the source
+room; unrelated room members stay. Without a party, the proposal includes the room's present players.
+Every selected player session confirms, then the organizer explicitly chooses Move everyone.
+Spectators stay. Capacity and current access rules are checked for the whole group at commit;
+if one player cannot enter, no destination membership changes.
+
+Admission and arrival are separate: each browser connects to the destination before disconnecting
+its source presence. Old-room memberships and governance remain. The roster labels members
+Present or Away; Away members retain access subject to current bans, room lifecycle and entry
+rules. Membership alone neither keeps a temporary room live nor makes somebody a gameplay player.
+Explicit Leave room remains available separately.
+
+A two-minute proposal can be withdrawn, declined or cancelled before commit. Reload and retries
+recover the server decision. A failed browser entry shows an explicit retry while retaining its
+admitted membership. AR Eye blocks departure during an active match. Relic requires unfinished
+hunters to finish or explicitly Leave expedition, and destination Join Expedition stays explicit.
+
 ## Fit
 
 | Kind of product                              | Fit                         | What to use                                                                                      |
@@ -142,6 +231,22 @@ Shared packages are the reusable surface. Apps are consumers.
   `playground/alm/alm-complete-product-description.md`. The code maps are
   `packages/shared/alm/inbound/README.md` and
   `packages/shared/alm/outbound/README.md`.
+
+## Operating and recovering rooms
+
+The Black Box Recipe Console's Advanced view provides **Room operations and recovery** for
+API administrators. Find rooms within one application/workspace, inspect membership versus live
+presence and admission/retention facts, then request a topology recompute and observe its exact
+retained work outcome. Private and archived rooms are visible to operators without changing
+ordinary discovery or player admission. Invalid diagnostic rows are redacted and cannot be selected;
+unavailable evidence, including gameplay participation, remains unknown.
+
+A queued receipt is acceptance, not completion. The console rereads room evidence after observing
+work completion and does not claim that gameplay or connectivity recovered. An uncertain command
+can be retried with the same request identity. Global expired-record maintenance is separately
+labelled, requires preview followed by explicit execution, and affects all applications/workspaces
+for the selected stores. API authentication is independent of control-server tokens. Logout, lost
+authority, account replacement and room/scope changes discard the previous private view and work.
 
 ## Where to go next
 

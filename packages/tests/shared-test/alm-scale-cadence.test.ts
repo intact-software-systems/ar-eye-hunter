@@ -496,6 +496,7 @@ class ScaleCohort {
     private readonly joinedSessionIds: string[] = [];
     private leaderSessionId: string | undefined;
     private acceptedLayoutIdentity: GroupLayoutIdentity | undefined;
+    private plannedLayoutIdentity: GroupLayoutIdentity | undefined;
     private acceptedUpdatedAtMs: number | undefined;
     private groupRevision = 56;
     private groupRevisionAtMs = Date.now();
@@ -531,8 +532,10 @@ class ScaleCohort {
     readLayoutReadiness(): RallarBlackBoxTestRecord {
         return {
             readyAtEpochMs: Date.now(),
+            hasPendingLayout: this.plannedLayoutIdentity !== undefined,
             formation: {
                 roomRef: GROUP,
+                ...(this.plannedLayoutIdentity === undefined ? {} : { planned: { identity: { ...this.plannedLayoutIdentity } } }),
                 causalRevision: { groupRevision: this.groupRevision, presenceRevision: this.presenceRevision },
                 ...(this.acceptedUpdatedAtMs === undefined
                     ? {}
@@ -540,7 +543,7 @@ class ScaleCohort {
             },
             ...(this.acceptedLayoutIdentity === undefined
                 ? {}
-                : { acceptedHeldSinceEpochMs: this.groupRevisionAtMs })
+                : { acceptedHeldSinceEpochMs: this.groupRevisionAtMs, acceptedHeldForMs: Date.now() - this.groupRevisionAtMs })
         };
     }
 
@@ -558,11 +561,15 @@ class ScaleCohort {
             rootSessionId: this.leaderSessionId,
             sessionIds: [...this.joinedSessionIds]
         });
+        this.plannedLayoutIdentity = identity;
         this.publishLayout({ kind: 'layoutPlanned', role: 'planned', identity });
         const plannedAtMs = Date.now();
         setTimeout(() => {
             this.advanceGroupRevision();
             this.acceptedLayoutIdentity = identity;
+            if (this.plannedLayoutIdentity === identity) {
+                this.plannedLayoutIdentity = undefined;
+            }
             this.acceptedUpdatedAtMs = plannedAtMs;
             this.publishLayout({ kind: 'layoutAccepted', role: 'accepted', identity });
         }, this.policy.promotionMs);

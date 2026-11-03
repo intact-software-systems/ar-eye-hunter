@@ -1,6 +1,6 @@
 import type { RallarCrdtIntegrityReport, RallarCrdtValidationIssue } from '@shared/crdt/mod.ts';
 
-import { requireEpoch, requireExactOptionalKeys, requireString } from '../../../protocol/exact-object-decoding.ts';
+import { requireEpoch, requireExactOptionalKeys, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { requireCrdtJsonWireObject } from '../decoding/require-crdt-json-wire-object.ts';
 

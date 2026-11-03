@@ -2,7 +2,7 @@ import {
     requireExactKeys,
     requireRecord,
     requireString
-} from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import {
     isRelicCommand,
     RELIC_PROTOCOL_VERSION,

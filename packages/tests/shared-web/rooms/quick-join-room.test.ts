@@ -65,7 +65,8 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         expect(requests).toHaveLength(2);
         expect(requests[0]).toMatchObject({ method: 'POST', body: { kind: 'room', q: 'eye hunter', includeEmpty: true } });
         expect(requests[0].url).toMatch(/\/apps\/app-1\/workspaces\/workspace-1\/groups\/quick-join\/requests\//);
-        expect(requests[1]).toMatchObject({ method: 'PUT', body: { principalId: 'principal-1', generationId: 'generation-session-1' } });
+        expect(requests[1]).toMatchObject({ method: 'PUT', body: { principalId: 'principal-1', generationId: expect.any(String) } });
+        expect(requests[1].body).not.toMatchObject({ generationId: runtime.context.middleware.heartbeat.generationId });
         expect(requests[1].url).toMatch(/\/groups\/selected\/sessions\/session-1\/requests\//);
         expect(currentWhenLeaving).toEqual([connected]);
         expect(facade.rooms.current()).toEqual(connected);

@@ -86,6 +86,8 @@ const mockRallar = vi.hoisted(() => ({
         logout: vi.fn()
     },
     start: vi.fn(),
+    people: { onChange: () => () => undefined },
+    messages: { ws: { onMessage: () => () => undefined } },
     rooms: {
         state: vi.fn(),
         onChange: vi.fn(),
@@ -177,6 +179,12 @@ export class ArenaRuntimeTestHarness {
         arenaRoomEntry.stop();
         arenaRoomEntry.cancel();
         this.current = undefined;
+        vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+            if (String(input).endsWith('/group-moves')) {
+                return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+            }
+            throw new Error(`Unexpected arena fixture HTTP request: ${input}`);
+        });
         resetArenaSessionFixture();
         resetArenaRoomsFixture();
         resetArenaRealtimeFixture();
@@ -258,7 +266,8 @@ function resetArenaSessionFixture(): void {
                 {
                     roomId: 'arena-1',
                     groupId: 'arena-1',
-                    name: 'Arena: Vector Circuit'
+                    name: 'Arena: Vector Circuit',
+                    snapshot: arenaMembershipSnapshot()
                 }
             ],
             currentRoomId: 'arena-1'

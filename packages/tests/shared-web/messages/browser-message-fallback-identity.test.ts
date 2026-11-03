@@ -114,8 +114,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: detail,
-                dropReasonCode: 'unsupported',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'unsupported'
             })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack: 'receiver' });
@@ -170,8 +169,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: detail,
-                dropReasonCode: 'unsupported',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'unsupported'
             })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
@@ -206,8 +204,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'unsupported',
-                dropReasonCode: 'unsupported',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'unsupported'
             })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 100, ack: 'receiver' });
@@ -254,8 +251,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'The session is over its volatile bound.',
-                dropReasonCode: 'capacity',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'capacity'
             })
         });
         const handle = await fixture.channel.send({ action: 'ready' });
@@ -311,8 +307,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'No route',
-                dropReasonCode: 'no-route',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'no-route'
             })
         });
         const result = await fixture.channel.send({ action: 'ready' });
@@ -404,8 +399,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'ack receiver is unsupported for rtc multicast targets',
-                dropReasonCode: 'unsupported',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'unsupported'
             })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver', traceId: 'trace-fallback' });
@@ -427,8 +421,7 @@ describe('typed message fallback identity', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'ack receiver is unsupported for rtc multicast targets',
-                dropReasonCode: 'unsupported',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'unsupported'
             })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ack: 'receiver' });

@@ -3,6 +3,17 @@ set -Eeuo pipefail
 
 RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"
 
+# Deno services and cache warming use only their explicit import maps.
+configure_rallar_deno_environment() {
+	local systemd_directory="$1"
+	local service
+	export DENO_NO_PACKAGE_JSON=1
+	for service in rallar-api-v1 rallar-black-box-control; do
+		install -d -m 0755 "${systemd_directory}/${service}.service.d"
+		printf '[Service]\nEnvironment=DENO_NO_PACKAGE_JSON=1\n' >"${systemd_directory}/${service}.service.d/deno-runtime.conf"
+	done
+}
+
 parse_rallar_semver() {
 	local version="${1#deno }"
 	version="${version#v}"

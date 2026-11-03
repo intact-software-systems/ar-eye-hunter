@@ -21,8 +21,8 @@ import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;
 export const SESSION_HEARTBEAT_RETRY_MS = 5_000;

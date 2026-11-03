@@ -9,7 +9,8 @@ import type {
     RallarBlackBoxTestMessagesSendCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
+import { createStableRtcLayoutWait } from '../../../../fixtures/create-stable-rtc-layout-wait.ts';
+import { CONNECT_READINESS_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toLoopIterationSendHandleId } from '../../alm-conformance-step-identities.ts';
@@ -111,6 +112,11 @@ export function toPublicationLeadCommands(
     recipientPeer: BlackBoxRallarRecipientPeer | undefined
 ): readonly RallarBlackBoxTestCommand[] {
     return [
+        ...(step.input.carrier === 'ws' ? [] : [createStableRtcLayoutWait({
+            group: step.input.group,
+            prefix: toCommandId(step, 'publication'),
+            timeoutMs: CONNECT_READINESS_TIMEOUT_MS
+        })]),
         toLiveSendCommand({
             step,
             index: 0,

@@ -1,5 +1,5 @@
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 const RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS = 60_000;

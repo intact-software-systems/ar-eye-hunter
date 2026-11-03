@@ -149,7 +149,9 @@ it('serializes concurrent connects that share a target but use different transpo
 
     expect(facade.records.connectionAttempts).toHaveLength(2);
     expect(facade.records.realtimeSubscriptions.length).toBe(1);
-    expect(facade.records.rtcMessageSubscriptions.length).toBe(1);
+    expect(facade.records.typedRtcHandlers).toHaveLength(1);
+    await runtime.close();
+    expect(facade.records.typedUnsubscribeCount).toBe(2);
     expect(facade.records.realtimeUnsubscribeCount).toBe(1);
 });
 

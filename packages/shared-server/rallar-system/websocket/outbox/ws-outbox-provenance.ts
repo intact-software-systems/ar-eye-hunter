@@ -52,6 +52,42 @@ export interface WsOutboxProvenance {
     readonly digest: string;
 }
 
+export interface WsOutboxProvenanceRecord {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtTimestamp: number;
+}
+
+export interface ComputeWsOutboxProvenanceRecordInput {
+    readonly entry: ResourceEntry;
+    readonly message: ALMessage;
+    readonly producerKind: WsOutboxProvenance['producerKind'];
+    readonly target: WsOutboxProvenance['target'];
+    readonly expiresAtMs: number;
+}
+
+/** Serializes row-bound proof facts after the producer has validated its publication authority. */
+export function computeWsOutboxProvenanceRecord(input: ComputeWsOutboxProvenanceRecordInput): WsOutboxProvenanceRecord {
+    const { entry, message, producerKind, target, expiresAtMs } = input;
+    const facts: Omit<WsOutboxProvenance, 'digest'> = {
+        version: 1,
+        producerKind,
+        queueKey: entry.key,
+        typeId: entry.typeId,
+        messageId: message.id.msgId,
+        senderId: message.id.senderId,
+        expiresAtMs,
+        target
+    };
+    return {
+        namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+        key: toWsOutboxProvenanceKey(entry.key),
+        value: JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) }),
+        expireAtTimestamp: expiresAtMs
+    };
+}
+
 export interface WsOutboxInvalidatedSessionTarget {
     readonly kind: 'exact-invalidated-session';
     readonly sessionInvalidation: ALSessionInvalidationAuthority;

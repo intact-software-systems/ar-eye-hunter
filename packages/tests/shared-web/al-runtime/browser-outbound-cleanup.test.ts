@@ -335,8 +335,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [toALOutboundTransportMessage(msg)],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
     });
@@ -371,8 +370,7 @@ async function saveCheckpointForSession(sessionId: string) {
             msg,
             dropReasonCode: undefined,
             lane: 'checkpoint',
-            preparedMessages: [toALOutboundTransportMessage(msg)],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
     });

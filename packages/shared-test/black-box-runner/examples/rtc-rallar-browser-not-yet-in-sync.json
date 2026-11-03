@@ -36,7 +36,6 @@
     },
     "messageTypeId": "black-box.stale-state.message",
     "topicId": "black-box.stale-state",
-    "nackTypeId": "al.control.nack.v2",
     "futureSnapshotVersion": 999999
   },
   "connections": {
@@ -61,9 +60,6 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "messageSelector": {
-          "typeId": "{nackTypeId}"
-        },
         "contextId": "{applicationId}:{workspaceId}:{roomId}",
         "timeoutMs": 15000
       }
@@ -89,7 +85,8 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "timeoutMs": 15000
+        "timeoutMs": 15000,
+        "almDiagnostics": true
       }
     }
   },
@@ -100,9 +97,41 @@
       "connection": "aliceRtc"
     },
     {
-      "name": "connectBobNackObserver",
+      "name": "connectBob",
       "type": "rtc.connect",
       "connection": "bobRtc"
+    },
+    {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
     },
     {
       "name": "aliceSendsWithFutureSnapshot",
@@ -122,19 +151,46 @@
             "from": "alice",
             "text": "this send requires a future group snapshot"
           }
-        }
-      },
+        },
+        "output": "futureMessageId",
+        "outputPath": "sendResult.message.handleId"
+      }
+    },
+    {
+      "name": "bobRejectsFutureSnapshot",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
       "expect": {
-        "connection": "aliceRtc",
         "withinMs": 10000,
-        "message": {
-          "kind": "message",
-          "topic": "rallar.browser.messages.rtc.message",
-          "typeId": "{nackTypeId}",
+        "diagnostic": {
+          "topic": "rallar.browser.alm.inbound_diagnostics",
           "data": {
-            "reason": "not-yet-in-sync"
+            "kind": "admission-outcome",
+            "msgId": "{futureMessageId}",
+            "typeId": "{messageTypeId}",
+            "carrier": "rtc",
+            "outcome": "rejected"
           }
         }
+      },
+      "request": {
+        "output": "snapshotRejectionReason",
+        "outputPath": "matchedDiagnostic.data.reason"
+      }
+    },
+    {
+      "name": "assertSnapshotFenceReason",
+      "type": "assert",
+      "actual": {
+        "reason": "{snapshotRejectionReason}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "reason",
+            "matches": "^not-yet-in-sync:"
+          }
+        ]
       }
     },
     {

@@ -476,8 +476,7 @@ const OUTBOUND_ONE_COPY_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) 
     msg,
     dropReasonCode: undefined,
     lane: 'volatile',
-    preparedMessages: [{ text: msg.id.msgId }],
-    admittedConnectionGenerationIds: undefined
+    preparedMessages: [{ text: msg.id.msgId }]
 });
 
 /** The same copy, with the sender asking its own outbound for the track's next sequence. */

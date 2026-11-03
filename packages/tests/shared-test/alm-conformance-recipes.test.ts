@@ -26,6 +26,7 @@ import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-li
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 /** A `room.` topic makes any send room-scoped, so the world cell publishes under `app.`. */
@@ -83,12 +84,12 @@ const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routi
 
 /** A granted topic is WS-only: the topic subscription cells run over ws and the fallback cell, on four roles. */
 const FOUR_ROLE_KEYS_BY_CARRIER = {
-    ws: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-held', 'subscription-reconnect'],
+    ws: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect'],
     rtc: [],
     'rtc-with-ws-fallback': [
         'subscription-delivery',
         'subscription-token-count',
-        'subscription-revoke-held',
+        'subscription-revoke-disconnected',
         'subscription-reconnect'
     ]
 } as const;
@@ -919,7 +920,7 @@ describe('alm-conformance recipe family', () => {
             recipe.commands.slice(recipe.commands.findIndex((command) => command.kind === 'rtc.connect') + 1, -1);
         const shapeOf = (command: RallarBlackBoxTestCommand) =>
             command.kind === 'fault.inject'
-                ? `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`
+                ? toFaultInjectShape(command)
                 : command.kind === 'wait'
                 ? `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`
                 : command.kind === 'messages.received'

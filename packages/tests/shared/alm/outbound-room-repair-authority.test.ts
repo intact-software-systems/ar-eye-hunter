@@ -87,8 +87,7 @@ function toPlan(msg: ALMessage, timeoutMs: number): ALOutboundDispatchPlan<Outbo
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         admittedAudience: ['frozen-session'],
         ackTracking: { enabled: true, timeoutMs, maxAttempts: 1, expectedPeerIds: ['frozen-session'], nextHopPeerIds: ['frozen-session'], mode: 'receiver' },
-        repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 2 },
-        admittedConnectionGenerationIds: undefined
+        repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 2 }
     };
 }
 

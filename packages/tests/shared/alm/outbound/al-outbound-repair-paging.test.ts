@@ -67,8 +67,7 @@ describe('a repair hint is served in pages', () => {
                 dropReasonCode: undefined,
                 lane: 'durable',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
-                admittedConnectionGenerationIds: undefined
+                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
             }),
             planRepairMessage: async (msg, request) => ({
                 msg,
@@ -78,8 +77,7 @@ describe('a repair hint is served in pages', () => {
                     kind: 'repair',
                     seq: String(msg.ordering?.seq),
                     hint: toALSeqRangesText(request.missingRanges)
-                }],
-                admittedConnectionGenerationIds: undefined
+                }]
             }),
             sendPreparedMessage: async (prepared) => {
                 if (prepared.kind === 'repair') {

@@ -2794,7 +2794,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 publication grants over REST: the creator's declared initial grant, an owner's grant read back on the snapshot and named by publication-grant-changed, a change-less grant that writes no revision and no event, a changed-body idempotency conflict and a replay after the revoke that answers the first result, forbidden-role for an admin granting an admin, a member granting itself and a publish grant to a spectator, the 65th topic refused capacity with limit topics-per-principal, a revoke removing the row, and a member who leaves or is banned and rejoins coming back holding no grant."
+      "description": "No-browser API-v1 publication grants over REST: the creator's declared initial grant, an owner's grant read back on the snapshot and named by publication-grant-changed, a change-less grant that writes no revision and no event, a changed-body idempotency conflict and a replay after the revoke that answers the first result, a grant on an unknown group refused 400 group-mutation-rejected, forbidden-role for an admin granting an admin, a member granting itself and a publish grant to a spectator, the 65th topic refused capacity with limit topics-per-principal, a revoke removing the row, and a member who leaves or is banned and rejoins coming back holding no grant."
     },
     {
       "id": "api-v1-group-topic-subscriptions",
@@ -3425,6 +3425,114 @@
         ]
       },
       "description": "Independent player/spectator capacity, role recovery, failed promotion, governed bypass denial, promotion and directory counts through authenticated HTTP."
+    },
+    {
+      "id": "api-v1-group-move",
+      "recipe": "tests/api-v1/api-v1-group-move.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-group-move"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-move",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Move together: exact-session consent, whole-cohort capacity denial, durable participant recovery, atomic admission, preserved source membership and request replay."
+    },
+    {
+      "id": "api-v1-group-sessions",
+      "recipe": "tests/api-v1/api-v1-group-sessions.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-group-sessions"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-sessions",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Scheduled sessions: private account discovery, reserved capacity, pre-lobby denial, idempotent replay, rescheduling and reconfirmation, cancellation, and claimed lobby seats."
+    },
+    {
+      "id": "api-v1-friends",
+      "recipe": "tests/api-v1/api-v1-friends.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-friends"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-friends",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Private account-level friendships: exact consent, replay, conflicting keys, blocked invitation revocation, scoped destination authority and default-hidden presence. Registers isolated accounts for this run."
+    },
+    {
+      "id": "api-v1-matchmaking",
+      "recipe": "tests/api-v1/api-v1-matchmaking.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-matchmaking"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-matchmaking",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Scoped two-player matchmaking: authenticated search, replay/conflict, whole-cohort decline, explicit retry, all-party confirmation, private recovery and atomic room membership."
     }
   ]
 }

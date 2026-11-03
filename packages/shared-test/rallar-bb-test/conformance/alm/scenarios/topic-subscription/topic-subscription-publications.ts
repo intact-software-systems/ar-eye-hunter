@@ -144,16 +144,6 @@ export function toPublicationWait(
     });
 }
 
-/** The first probe of a readiness loop the page received: proof its election held while that loop ran. */
-export function toProbeWait(step: AlmConformanceStepInput, probe: string): RallarBlackBoxTestWaitCommand {
-    return toPayloadWait({
-        step,
-        name: `received-${probe}`,
-        payload: toPublicationPayload(step, probe, 'probe'),
-        absent: false
-    });
-}
-
 /**
  * A cue travels on the members topic under the cell's type. A role hears it only through the typed channel its own
  * send there opens, so every role that waits for a cue sends this one first, before any cue it waits for can be sent.

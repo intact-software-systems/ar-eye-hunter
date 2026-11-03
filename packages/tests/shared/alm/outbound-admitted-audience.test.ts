@@ -639,8 +639,7 @@ describe('captured outbound audience read', () => {
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
-            admittedAudience: ['session-a', 'session-b'],
-            admittedConnectionGenerationIds: undefined
+            admittedAudience: ['session-a', 'session-b']
         });
 
         expect(toWsQueueBoxServerHeldSessionPolicy(policy, 'session-b')).toEqual({
@@ -733,8 +732,7 @@ async function createFixture(
             lane: 'durable',
             preparedMessages: [],
             admittedAudience,
-            ...(recipientScope === undefined ? {} : { recipientScope }),
-            admittedConnectionGenerationIds: undefined
+            ...(recipientScope === undefined ? {} : { recipientScope })
         }),
         creationExpiry: captureALOutboundCreationExpiry(message)
     };

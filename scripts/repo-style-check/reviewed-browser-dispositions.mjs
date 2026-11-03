@@ -1,5 +1,36 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Whole-file review: one authenticated resource owns read generations, pending command identity,
+    // authority revocation and cancellation. Splitting read/write state would separate the same race guard.
+    // Notification, single-flight, subscription and timer mechanics already use shared owners.
+    Object.freeze({
+        path: 'packages/shared-web/browser/api/authenticated-resource.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // The literal property `unknown` is a decoded topology status, not the TypeScript unknown type.
+    // This presentation function accepts only the canonical outcome and maps statuses to human text.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/recipe-console/rooms/room-recovery-controls.tsx',
+        rule: 'boundary.unknown',
+        symbol: 'TopologyOutcome',
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP JSON is decoded immediately by exact friends contract decoders before reaching browser state.
+    Object.freeze({
+        path: 'packages/shared-web/browser/friends/friends-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // One account-bound lifecycle owns read generations, pending mutation identity and invitation admission handoff.
+    // Notifications, single flight, timers, browser activity and subscription cleanup already use shared owners.
+    Object.freeze({
+        path: 'packages/shared-web/browser/friends/rallar-friends.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
     // Reviewed deterministic scalar/vector arithmetic owner; all exports have direct consumers.
     Object.freeze({
         path: 'apps/ar-eye-hunter-v1/src/game/arena-math.ts',
@@ -1164,12 +1195,13 @@ export const reviewedBrowserDispositions = Object.freeze([
     }),
     // Private entry owns one destination lifecycle: capture, authenticated admission, replacement,
     // cancellation, and persistence. The pure codecs remain next to that stateful owner, while
-    // membership transport and server admission policy stay in their existing owners.
+    // membership transport and server admission policy stay in their existing owners. Schedule preview
+    // extends this same destination lifecycle; it does not create a second admission owner.
     Object.freeze({
         path: 'packages/shared-web/browser/rooms/entry/rallar-room-entry.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 107
+        maximumMagnitude: 112
     }),
     // Tab storage is untrusted JSON. The decoder narrows the record, principal, scoped reference,
     // and credential state before constructing a SavedEntry; unchecked values never reach join.

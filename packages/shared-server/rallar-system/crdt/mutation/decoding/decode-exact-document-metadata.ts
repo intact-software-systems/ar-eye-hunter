@@ -7,7 +7,7 @@ import {
     requireOneOf,
     requirePositiveInteger,
     requireString
-} from '../../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeExactDocumentRef } from './decode-exact-document-ref.ts';
 import { decodeExactProjectionIds } from './decode-exact-projection-ids.ts';
@@ -15,27 +15,29 @@ import { decodeExactQuotaPolicy } from './decode-exact-quota-policy.ts';
 import { decodeExactRetentionPolicy } from './decode-exact-retention-policy.ts';
 import { requireCrdtJsonWireObject } from './require-crdt-json-wire-object.ts';
 
+const DOCUMENT_METADATA_FIELDS = [
+    'document',
+    'documentKey',
+    'documentRevision',
+    'lifecycle',
+    'createdAtEpochMs',
+    'updatedAtEpochMs',
+    'archivedAtEpochMs',
+    'destroyedAtEpochMs',
+    'lastAppendSequence',
+    'updateCount',
+    'snapshotCount',
+    'storedUpdateBytes',
+    'retention',
+    'quota',
+    'projectionIds'
+];
+
 export function decodeExactDocumentMetadata(value: JsonWireValue): RallarCrdtDocumentMetadata {
     const metadata = requireCrdtJsonWireObject(value, 'CRDT document metadata');
     requireExactKeys(
         metadata,
-        [
-            'document',
-            'documentKey',
-            'documentRevision',
-            'lifecycle',
-            'createdAtEpochMs',
-            'updatedAtEpochMs',
-            'archivedAtEpochMs',
-            'destroyedAtEpochMs',
-            'lastAppendSequence',
-            'updateCount',
-            'snapshotCount',
-            'storedUpdateBytes',
-            'retention',
-            'quota',
-            'projectionIds'
-        ],
+        DOCUMENT_METADATA_FIELDS,
         'CRDT document metadata'
     );
     const document = decodeExactDocumentRef(metadata.document, 'CRDT metadata document');

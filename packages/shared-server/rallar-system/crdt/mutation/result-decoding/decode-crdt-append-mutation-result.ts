@@ -5,7 +5,7 @@ import {
     type RallarCrdtValidationResult
 } from '@shared/crdt/mod.ts';
 
-import { requireExactKeys, requireOneOf, requireString } from '../../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireOneOf, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from '../crdt-append-rejection.ts';
 import type { CrdtAppendMutationResult } from '../crdt-mutation-contracts.ts';
@@ -96,6 +96,51 @@ function decodeRejectedAppendMutationResult(
     envelope: Extract<DecodedCrdtMutationResultEnvelope, { status: 'rejected'; }>,
     fields: JsonWireObject
 ): CrdtAppendMutationResult {
+    const common = decodeAppendRejectionDetails(envelope, fields);
+    const { code } = common;
+    if (isAppendRejectionRetryable(code)) {
+        if (fields.retryable !== true) {
+            throw new TypeError('CRDT append rejection retryable differs from code');
+        }
+        return {
+            ...envelope,
+            operation: 'append',
+            appendResult: { ...common, code, retryable: true }
+        };
+    }
+    if (fields.retryable !== false) {
+        throw new TypeError('CRDT append rejection retryable differs from code');
+    }
+    return {
+        ...envelope,
+        operation: 'append',
+        appendResult: { ...common, code, retryable: false }
+    };
+}
+
+function decodeOptionalValidation(
+    value: JsonWireValue | undefined
+): RallarCrdtValidationResult | undefined {
+    return value === undefined ? undefined : decodeExactValidationResult(value);
+}
+
+function decodeOptionalDocument(
+    value: JsonWireValue | undefined
+): RallarCrdtDocumentMetadata | undefined {
+    return value === undefined ? undefined : decodeExactDocumentMetadata(value);
+}
+
+function requireResultValue(value: JsonWireValue | undefined, label: string): JsonWireValue {
+    if (value === undefined) {
+        throw new TypeError(`${label} is missing`);
+    }
+    return value;
+}
+
+function decodeAppendRejectionDetails(
+    envelope: Extract<DecodedCrdtMutationResultEnvelope, { status: 'rejected'; }>,
+    fields: JsonWireObject
+) {
     const keys = [
         'status',
         'update',
@@ -145,41 +190,5 @@ function decodeRejectedAppendMutationResult(
         ...(validation === undefined ? {} : { validation }),
         ...(document === undefined ? {} : { document })
     };
-    if (isAppendRejectionRetryable(code)) {
-        if (fields.retryable !== true) {
-            throw new TypeError('CRDT append rejection retryable differs from code');
-        }
-        return {
-            ...envelope,
-            operation: 'append',
-            appendResult: { ...common, code, retryable: true }
-        };
-    }
-    if (fields.retryable !== false) {
-        throw new TypeError('CRDT append rejection retryable differs from code');
-    }
-    return {
-        ...envelope,
-        operation: 'append',
-        appendResult: { ...common, code, retryable: false }
-    };
-}
-
-function decodeOptionalValidation(
-    value: JsonWireValue | undefined
-): RallarCrdtValidationResult | undefined {
-    return value === undefined ? undefined : decodeExactValidationResult(value);
-}
-
-function decodeOptionalDocument(
-    value: JsonWireValue | undefined
-): RallarCrdtDocumentMetadata | undefined {
-    return value === undefined ? undefined : decodeExactDocumentMetadata(value);
-}
-
-function requireResultValue(value: JsonWireValue | undefined, label: string): JsonWireValue {
-    if (value === undefined) {
-        throw new TypeError(`${label} is missing`);
-    }
-    return value;
+    return common;
 }

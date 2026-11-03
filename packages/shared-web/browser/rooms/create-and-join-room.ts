@@ -9,6 +9,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { leaveRoom } from './leave-room.ts';
 import type { RallarCreateRoomInput, RallarRoomSwitchPartialFailureError } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
@@ -62,11 +63,13 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
         assertCurrent: () => fence.assertCurrent(context)
     });
     try {
-        fence.assertCurrent(context);
-        input.stateStore.setCurrentRoom(snapshot);
-        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
-        fence.assertCurrent(context);
-        return snapshot;
+        return await adoptJoinedRoom({
+            dependencies: input,
+            context,
+            snapshot,
+            options: operationOptions,
+            assertCurrent: fence.assertCurrent
+        });
     }
     catch (cause) {
         throw createRoomJoinPartialFailureError(snapshot, toError(cause));

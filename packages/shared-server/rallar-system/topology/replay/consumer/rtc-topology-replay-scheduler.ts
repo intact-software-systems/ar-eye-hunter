@@ -1,5 +1,5 @@
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 export interface RtcTopologyReplayServiceScheduler {
     repeat(task: () => void, intervalMs: number): () => void;

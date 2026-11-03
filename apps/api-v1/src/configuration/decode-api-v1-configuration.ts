@@ -6,6 +6,7 @@ import {
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { decodeApiV1Matchmaking } from './decode-api-v1-matchmaking.ts';
 
 import type {
     ApiV1AppInboxConfiguration,
@@ -17,11 +18,13 @@ import type {
     ApiV1CrdtConfiguration,
     ApiV1DatabaseConfiguration,
     ApiV1DatabasePoolConfiguration,
+    ApiV1FriendsConfiguration,
     ApiV1GroupConfiguration,
     ApiV1HttpConfiguration,
     ApiV1IceConfiguration,
     ApiV1ObservabilityConfiguration,
     ApiV1OperatorTokenConfiguration,
+    ApiV1PartiesConfiguration,
     ApiV1PGliteEvidenceConfiguration,
     ApiV1PublicApiConfiguration,
     ApiV1StateApiConfiguration,
@@ -71,6 +74,9 @@ export function decodeApiV1Configuration(
         clientSessions: decodeClientSessions(decoder, authentication),
         stateApi: decodeStateApi(decoder),
         group: decodeGroup(decoder),
+        friends: decodeFriends(decoder),
+        matchmaking: decodeApiV1Matchmaking(decoder),
+        parties: decodeParties(decoder),
         topology: decodeTopology(decoder),
         appInbox: decodeAppInbox(decoder),
         ice: decodeIce(decoder, secrets),
@@ -727,4 +733,27 @@ function decodeRoomOwnedBindings(decoder: ApiV1ConfigurationValueDecoder): reado
         );
         return [];
     }
+}
+
+function decodeFriends(decoder: ApiV1ConfigurationValueDecoder): ApiV1FriendsConfiguration {
+    return {
+        maxContacts: decoder.integer('friends.maxContacts', 1, 1000),
+        maxInvitations: decoder.integer('friends.maxInvitations', 1, 1000),
+        invitationLifetimeMs: decoder.integer('friends.invitationLifetimeMs', 1, 2_592_000_000),
+        rateLimit: {
+            windowMs: decoder.integer('friends.rateLimit.windowMs', 1, 3_600_000),
+            requests: decoder.integer('friends.rateLimit.requests', 1, 10_000)
+        }
+    };
+}
+
+function decodeParties(decoder: ApiV1ConfigurationValueDecoder): ApiV1PartiesConfiguration {
+    return {
+        maxInvitations: decoder.integer('parties.maxInvitations', 1, 256),
+        invitationLifetimeMs: decoder.integer('parties.invitationLifetimeMs', 1000, 86400000),
+        rateLimit: {
+            windowMs: decoder.integer('parties.rateLimit.windowMs', 1, 3600000),
+            requests: decoder.integer('parties.rateLimit.requests', 1, 10000)
+        }
+    };
 }

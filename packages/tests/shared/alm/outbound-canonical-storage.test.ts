@@ -73,8 +73,7 @@ describe('canonical outbound payload storage', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ peer: 'captured' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'captured' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -108,8 +107,7 @@ describe('canonical outbound payload storage', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ peer: 'other-session' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'other-session' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -179,8 +177,7 @@ describe('canonical outbound payload storage', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ peer: 'first' }, { peer: 'second' }, { peer: 'third' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'first' }, { peer: 'second' }, { peer: 'third' }]
             }),
             sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
         });
@@ -218,8 +215,7 @@ describe('canonical outbound payload storage', () => {
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ peer: 'captured' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'captured' }]
             }),
             sendPreparedMessage: async () => {
                 sends.push('sent');
@@ -270,8 +266,7 @@ describe('canonical outbound payload storage', () => {
                     msg,
                     dropReasonCode: undefined,
                     lane: 'durable',
-                    preparedMessages: [{ peer: 'captured' }],
-                    admittedConnectionGenerationIds: undefined
+                    preparedMessages: [{ peer: 'captured' }]
                 }),
                 sendPreparedMessage: async () => {
                     throw new Error('Expired work must never send');
@@ -368,8 +363,7 @@ describe('canonical outbound payload storage', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ peer: 'receiver' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'receiver' }]
             }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -438,8 +432,7 @@ describe('canonical outbound payload storage', () => {
                     msg,
                     dropReasonCode: undefined,
                     lane: 'durable',
-                    preparedMessages: [{ peer: namespace }],
-                    admittedConnectionGenerationIds: undefined
+                    preparedMessages: [{ peer: namespace }]
                 }),
                 sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
             });

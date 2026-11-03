@@ -142,8 +142,7 @@ function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntim
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [{ kind: 'send' }],
-            ackTracking: input.ackTracking,
-            admittedConnectionGenerationIds: undefined
+            ackTracking: input.ackTracking
         }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });

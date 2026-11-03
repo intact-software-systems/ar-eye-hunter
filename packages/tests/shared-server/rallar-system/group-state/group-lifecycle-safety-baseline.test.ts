@@ -167,6 +167,8 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         targetPublicationGrant: null,
+        sessionReservations: null,
+        sessionIntent: null,
         targetTopicSubscription: null,
         targetClientSessions: null,
         targetPrincipalSubscriptions: null,

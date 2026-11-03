@@ -53,7 +53,9 @@ async function leaveAuthenticatedRoom(input: LeaveRoomInput): Promise<GroupSnaps
         groupId: roomId,
         principalId: session.clientId,
         sessionId: session.sessionId,
-        generationId: context.middleware.heartbeat.generationId,
+        generationId: input.stateStore.findGroupSnapshot(roomRef ?? roomId)?.activeSessions.find((presence) =>
+            presence.sessionId === session.sessionId
+        )?.generationId ?? context.middleware.heartbeat.generationId,
         scope,
         authSession: session,
         assertCurrent: input.sessionFence?.assertCurrent,

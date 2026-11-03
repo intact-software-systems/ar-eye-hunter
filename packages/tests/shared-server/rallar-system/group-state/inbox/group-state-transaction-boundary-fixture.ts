@@ -21,7 +21,7 @@ import type { CreateGroupRequest, StateScope } from '@shared/api/state-types.ts'
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/timing/run-with-claimable-deadline.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';

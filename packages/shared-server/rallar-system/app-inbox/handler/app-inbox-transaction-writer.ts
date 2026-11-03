@@ -1,7 +1,7 @@
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/timing/run-with-claimable-deadline.ts';
 
 import { createPSqlCounterScope } from '../../../postgres/create-p-sql-counter-scope.ts';
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';

@@ -11,8 +11,10 @@ import {
     resolveBlackBoxRallarTransport
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-policy.ts';
 import { toRallarBrowserEventInput } from '@shared-test/rallar-bb-test/browser/to-rallar-browser-event-input.ts';
+import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { toControlEventEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { toDistributedRunRuntimeDiagnosticRows } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-run-runtime-diagnostic-rows.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
@@ -35,7 +37,7 @@ interface RecordedStage {
 beforeEach(() => resetFacade());
 
 /** A stage whose diagnostics sink is the harness's own outbound port, recording what the page would publish. */
-function createRecordedStage(): RecordedStage {
+function createRecordedStage(maxStagedValues = 2): RecordedStage {
     const clock = { atMs: START_MS };
     const emitted: BlackBoxRallarEvent[] = [];
     const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
@@ -59,7 +61,7 @@ function createRecordedStage(): RecordedStage {
         submit: async () => {},
         settle: () => {},
         diagnostics: (event) => ports.outboundDiagnostics(event),
-        limits: { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 }
+        limits: { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues }
     });
     return { clock, engine, stage, emitted };
 }
@@ -129,4 +131,57 @@ it('keeps the producer\'s message for an outbound diagnostic of another kind, an
         'rallar.browser.alm.outbound_diagnostics',
         'rallar.browser.alm.outbound_diagnostics'
     ]);
+});
+
+it('satisfies the authored newest-N wait using actual session-wide publication diagnostics', async () => {
+    const recorded = createRecordedStage(3);
+    const scenario = createAlmConformanceRecipes({
+        group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+        carrier: 'rtc',
+        typeId: 'alm.conformance',
+        senderConnection: 'sender',
+        receiverConnection: 'receiver',
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
+    }).find((candidate) => candidate.scenarioId === 'paced-newest-n');
+    const wait = scenario?.sender.commands.find((command) => command.kind === 'wait' && command.match.topic === 'rallar.browser.alm.outbound_diagnostics');
+    if (wait === undefined) {
+        throw new Error('The newest-N sender must observe its publication opportunity.');
+    }
+    for (let seq = 0; seq <= 4; seq++) {
+        const msg = newALUnicastMessage(
+            'self',
+            { topicId: 'room.alm-conformance', resourceId: 'pose', contextId: 'room-1' },
+            'peer-1',
+            'alm.conformance.rtc.paced-newest-n',
+            { seq }
+        );
+        recorded.stage.stage({
+            msg: { ...msg, constraints: { expiresAtMs: START_MS + 6_000 } },
+            carrier: 'rtc',
+            policy: { cadenceMs: 2_000, retainNewest: 3, drain: { messages: 2, bytes: 65_536 } },
+            bytes: 96,
+            context: String(seq)
+        });
+        if (seq === 0) {
+            await recorded.engine.executeOnce();
+        }
+        recorded.clock.atMs += 10;
+    }
+    recorded.clock.atMs = START_MS + 2_000;
+    await recorded.engine.executeOnce();
+    await recorded.engine.stop();
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    for (const { kind, topic, severity, atEpochMs, data } of recorded.emitted) {
+        runtime.recordEvent(toRallarBrowserEventInput({ kind, topic, severity, atEpochMs, data }));
+    }
+    expect(await runtime.execute(wait)).toMatchObject({
+        ok: true,
+        value: {
+            event: {
+                payload: { data: { kind: 'publication-opportunity', selected: 2, deferred: 1, expired: 0 } }
+            }
+        }
+    });
 });

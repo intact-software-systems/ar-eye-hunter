@@ -9,7 +9,6 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { requireRecord } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
@@ -20,6 +19,7 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type {
     Group,

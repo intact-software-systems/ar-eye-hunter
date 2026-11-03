@@ -142,8 +142,7 @@ function createPendingAdmissionInput(store: ALOutboundAdmissionStore<OutboundTes
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ peer: 'captured' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'captured' }]
             }),
             preparedMessages: [{ peer: 'captured' }]
         }

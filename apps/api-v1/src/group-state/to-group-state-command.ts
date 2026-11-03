@@ -19,6 +19,8 @@ export function toGroupStateCommand(
     input: GroupStateRouteCommandInput
 ): AuthenticatedGroupMutationEnqueue {
     switch (input.operation) {
+        case 'change-group-session':
+            return toChangeGroupSessionCommand(input);
         case 'create-group':
             return toCreateGroupCommand(input);
         case 'update-group':
@@ -82,6 +84,25 @@ export function toGroupStateCommand(
         case 'unsubscribe-group-topic':
             return toUnsubscribeGroupTopicCommand(input);
     }
+}
+
+function toChangeGroupSessionCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'change-group-session'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_SESSION_CHANGE> {
+    const request = withActor(input);
+    const issues = validateGroupMutationRequest('changeGroupSession', request);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+    return {
+        type: AppInboxType.GROUP_SESSION_CHANGE,
+        topicId: AppInboxType.GROUP_SESSION_CHANGE,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        traceId: input.traceId,
+        data: { scope: input.scope, groupId: input.groupId, request }
+    };
 }
 
 function toCreateGroupCommand(

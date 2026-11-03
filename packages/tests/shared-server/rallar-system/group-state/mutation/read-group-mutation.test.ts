@@ -87,6 +87,18 @@ describe('GroupStateService mutation exact reads', () => {
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
                 },
                 {
+                    selectorId: 'session-intent',
+                    kind: 'key',
+                    namespace: 'group-state:session-intents',
+                    key: 'app=batch-read-app:ws=batch-read-workspace:principal=bob:group=membership'
+                },
+                {
+                    selectorId: 'session-reservations',
+                    kind: 'key',
+                    namespace: 'group-state:session-reservations',
+                    key: groupStateGroupStorageKey(ref)
+                },
+                {
                     selectorId: 'lifecycle-policy',
                     kind: 'key',
                     namespace: 'group-state:lifecycle-policies',
@@ -155,6 +167,8 @@ describe('GroupStateService mutation exact reads', () => {
                 'presence-summary',
                 'presence-sessions',
                 'publication-grants',
+                'session-intent',
+                'session-reservations',
                 'lifecycle-policy',
                 'idempotency:0',
                 'member:0',
@@ -245,6 +259,12 @@ describe('GroupStateService mutation exact reads', () => {
                     kind: 'prefix',
                     namespace: 'group-state:publication-grants',
                     keyPrefix: groupStateGroupStorageKey(ref) + ':'
+                },
+                {
+                    selectorId: 'session-reservations',
+                    kind: 'key',
+                    namespace: 'group-state:session-reservations',
+                    key: groupStateGroupStorageKey(ref)
                 },
                 {
                     selectorId: 'idempotency:0',

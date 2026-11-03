@@ -221,6 +221,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         groupStateService: mutation.groupStateService,
+        sessionDirectory: mutation.groupStateService.sessionDirectory,
         rtcRttRepository: new RtcRttRepository(mutation.runtimeStateRepository),
         requireApiAuthSession: (request) => requireApiAuthSession(request, mutation.authSessionRepository),
         processGroupAppInbox: async (authority, enqueue) => {
@@ -233,6 +234,8 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
                 throw toApiMutationRouteFailure(failure);
             }, (value) => value);
         },
+        processGroupMove: (input, authority) => groupInbox.processGroupMoveUntilCompletion(input, authority),
+        listGroupMoves: (scope, principalId) => mutation.groupStateService.move.listForPrincipal(scope, principalId),
         processQuickJoin: (input, authority) => groupInbox.processQuickJoinUntilCompletion(input, authority),
         groupAdmissionQuota: createGroupAdmissionQuota(defaults.group.admission),
         strictReadAuthorization: true,

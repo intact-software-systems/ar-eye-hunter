@@ -27,16 +27,17 @@ import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-syste
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateEntryRead } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
     requireEpoch,
     requireExactKeys,
     requireOneOf,
     requireRecord,
     requireString
-} from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateEntryRead } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+} from '@shared/api/exact-object-decoding.ts';
+import { groupSessionStartRefusal } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
@@ -223,7 +224,7 @@ export class RelicGameMutationService {
     }
 
     needsInitialState(read: RelicGameMutationService.Read): boolean {
-        if (authorizeRelicGameMutation(read) !== null) {
+        if (authorizeRelicGameMutation(read) !== null || scheduledRelicStartRefusal(read) !== null) {
             return false;
         }
         const { command } = read.ingress;
@@ -421,10 +422,27 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
             provenance: []
         };
     }
+    const scheduledStartRefusal = scheduledRelicStartRefusal(read);
+    if (scheduledStartRefusal !== null) {
+        return {
+            ...refused(command, { ...scheduledStartRefusal, httpStatus: 409 }),
+            guard,
+            ...computeRelicGamePublications({ read, previous, next: null, refusal: scheduledStartRefusal.message })
+        };
+    }
     const missingProposal = evaluateRelicGameProposal(command, previous, read.ingress.initial);
     if (missingProposal !== null) {
         return { result: missingProposal, guard: null, save: null, outboxWrites: [], provenance: [] };
     }
+    return computeRelicGameTransitionResult(read, previous, guard);
+}
+
+function computeRelicGameTransitionResult(
+    read: RelicGameMutationService.Attempt,
+    previous: RelicGameState | null,
+    guard: RelicGameMutationService.GroupGuard
+): RelicGameMutationService.Computed {
+    const { command } = read.ingress;
     const transition = computeRelicGameTransition(read, previous);
     if (transition.left !== undefined) {
         return {
@@ -708,4 +726,11 @@ function evaluateRelicGameProposal(
     }
 
     return null;
+}
+
+function scheduledRelicStartRefusal(read: RelicGameMutationService.Read) {
+    const move = read.ingress.command.move;
+    return read.group !== null && (move?.kind === 'start-expedition' || move?.kind === 'start-rematch')
+        ? groupSessionStartRefusal(read.group.snapshot.group.metadata, read.attemptAtEpochMs)
+        : null;
 }

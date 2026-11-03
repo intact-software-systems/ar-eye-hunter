@@ -1,4 +1,10 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
+import type { MatchmakingRouteDependencies } from '../matchmaking/register-matchmaking-routes.ts';
+import type { PartyRouteDependencies } from '../parties/register-party-routes.ts';
+import { createApiV1FriendsServices } from './create-api-v1-friends-services.ts';
+import { createApiV1MatchmakingServices } from './create-api-v1-matchmaking-services.ts';
+import { createApiV1PartyServices } from './create-api-v1-party-services.ts';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -92,46 +98,19 @@ function constructDefaultRallarServer(
     const timing = startConfiguredApiTiming(configuration.observability, backgroundTasks);
     const grantedTopics = new WsGrantedTopicSet();
     const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing, grantedTopics });
-
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {
         policies: configuration.crdt.documentTypePolicies
     });
-    const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
-    const authUserRepository = new AuthUserRepository(runtimeStateRepository);
-    const topology = runtime.topologyServices;
-
-    const { admin, crdtAdminMutations } = createDefaultApiV1AdminServices({
+    const wsOptions = createDefaultRallarServerWsOptions({ input, runtime, nowEpochMs, grantedTopics });
+    const systemInstallers = createDefaultApiV1SystemInstallers({
         input,
         runtime,
         nowEpochMs,
         timing,
-        crdtLogRepository
-    });
-
-    const wsOptions = createDefaultRallarServerWsOptions({ input, runtime, nowEpochMs, grantedTopics });
-    const systemInstallers = createApiV1SystemInstallers({
-        database,
-        serviceId: myServerId,
-        nowEpochMs,
-        finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
-        topology,
         crdtLogRepository,
-        crdtPolicies: configuration.crdt.documentTypePolicies,
-        grantedWsTopics: configuration.grantedWsTopics,
-        livePublication: wsOptions.livePublication,
-        timing,
-        recomputeTiming: toTimingOnSink(configuration.observability, timing)
+        wsOptions
     });
-    const routeInstallers = createDefaultApiV1RouteInstallers({
-        configuration,
-        runtime,
-        admin,
-        crdtLogRepository,
-        crdtAdminMutations,
-        authUserRepository,
-        nowEpochMs
-    });
-
+    const routeInstallers = createDefaultApiV1RestServices({ input, runtime, nowEpochMs, timing, crdtLogRepository });
     return createRallarServer({
         runtime,
         repositories: defaultRepositoryManager,
@@ -140,6 +119,34 @@ function constructDefaultRallarServer(
         ws: wsOptions,
         systemInstallers,
         routeInstallers
+    });
+}
+
+interface DefaultApiV1SystemInstallersInput {
+    readonly input: CreateDefaultRallarServerInput;
+    readonly runtime: ApiV1Runtime;
+    readonly nowEpochMs: () => number;
+    readonly timing: RallarTimingSink;
+    readonly crdtLogRepository: PSqlCrdtLogRepository;
+    readonly wsOptions: RallarServerWsRouterOptions;
+}
+
+function createDefaultApiV1SystemInstallers(
+    { input, runtime, nowEpochMs, timing, crdtLogRepository, wsOptions }: DefaultApiV1SystemInstallersInput
+) {
+    const configuration = input.configuration;
+    return createApiV1SystemInstallers({
+        database: input.databaseLifecycle.database,
+        serviceId: myServerId,
+        nowEpochMs,
+        finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
+        topology: runtime.topologyServices,
+        crdtLogRepository,
+        crdtPolicies: configuration.crdt.documentTypePolicies,
+        grantedWsTopics: configuration.grantedWsTopics,
+        livePublication: wsOptions.livePublication,
+        timing,
+        recomputeTiming: toTimingOnSink(configuration.observability, timing)
     });
 }
 
@@ -209,18 +216,6 @@ function createConfiguredApiV1Runtime(
 ): ApiV1Runtime {
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
-    const planning = configuration.topology.planning;
-    const rtcTopologyOptions = {
-        topologyKind: planning.topologyKind,
-        degreeLimit: planning.degreeLimit,
-        rttReportingDegreeLimit: planning.rttReportingDegreeLimit,
-        treeMinSize: planning.treeMinSize,
-        meshMinSize: planning.meshMinSize,
-        meshParamK: planning.meshParamK,
-        meshExitWidth: planning.meshExitWidth,
-        treeExitWidth: planning.treeExitWidth,
-        rttReplanMinimumLayoutAgeMs: planning.rttReplanMinimumLayoutAgeMs
-    };
 
     return createApiV1Runtime({
         database,
@@ -259,7 +254,7 @@ function createConfiguredApiV1Runtime(
         topologyReplay: configuration.topology.replay,
         topologyDelivery: configuration.topology.delivery,
         adminClientIds: configuration.authentication.adminClientIds,
-        rtcTopologyOptions,
+        rtcTopologyOptions: configuration.topology.planning,
         rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
         grantedTopics,
@@ -271,7 +266,7 @@ function createConfiguredApiV1Runtime(
     });
 }
 
-interface DefaultApiV1AdminServicesInput {
+interface DefaultApiV1RestInput {
     readonly input: CreateDefaultRallarServerInput;
     readonly runtime: ApiV1Runtime;
     readonly nowEpochMs: () => number;
@@ -285,7 +280,7 @@ interface DefaultApiV1AdminServices {
 }
 
 function createDefaultApiV1AdminServices(
-    { input, runtime, nowEpochMs, timing, crdtLogRepository }: DefaultApiV1AdminServicesInput
+    { input, runtime, nowEpochMs, timing, crdtLogRepository }: DefaultApiV1RestInput
 ): DefaultApiV1AdminServices {
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
@@ -331,6 +326,50 @@ function createDefaultApiV1AdminServices(
     return { admin, crdtAdminMutations };
 }
 
+/** Construct REST mutation owners before AppInbox registrations are sealed at server start. */
+function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
+    const { input, runtime, nowEpochMs, timing, crdtLogRepository } = rest;
+    const configuration = input.configuration;
+    const runtimeStateRepository = new PSqlRuntimeStateRepository(input.databaseLifecycle.database);
+    const authUserRepository = new AuthUserRepository(runtimeStateRepository);
+    const friends = createApiV1FriendsServices({
+        configuration,
+        runtime,
+        runtimeStateRepository,
+        authUserRepository,
+        nowEpochMs,
+        timing: toTimingOnSink(configuration.observability, timing)
+    });
+    const matchmaking = createApiV1MatchmakingServices({
+        configuration,
+        runtime,
+        runtimeStateRepository,
+        nowEpochMs,
+        serviceId: myServerId,
+        timing: toTimingOnSink(configuration.observability, timing)
+    });
+    const parties = createApiV1PartyServices({
+        configuration,
+        runtime,
+        runtimeStateRepository,
+        nowEpochMs,
+        timing: toTimingOnSink(configuration.observability, timing)
+    });
+    const { admin, crdtAdminMutations } = createDefaultApiV1AdminServices(rest);
+    return createDefaultApiV1RouteInstallers({
+        configuration,
+        runtime,
+        admin,
+        crdtLogRepository,
+        crdtAdminMutations,
+        friends,
+        matchmaking,
+        parties,
+        authUserRepository,
+        nowEpochMs
+    });
+}
+
 interface DefaultApiV1RouteInstallersInput {
     readonly configuration: ApiV1Configuration;
     readonly runtime: ApiV1Runtime;
@@ -338,6 +377,9 @@ interface DefaultApiV1RouteInstallersInput {
     readonly crdtLogRepository: PSqlCrdtLogRepository;
     readonly crdtAdminMutations: CrdtAdminMutations;
     readonly authUserRepository: AuthUserRepository;
+    readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
+    readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly nowEpochMs: () => number;
 }
 
@@ -347,6 +389,9 @@ function createDefaultApiV1RouteInstallers({
     admin,
     crdtLogRepository,
     crdtAdminMutations,
+    friends,
+    matchmaking,
+    parties,
     authUserRepository,
     nowEpochMs
 }: DefaultApiV1RouteInstallersInput) {
@@ -357,6 +402,9 @@ function createDefaultApiV1RouteInstallers({
         admin,
         crdtLogRepository,
         crdtMutations: crdtAdminMutations,
+        friends,
+        matchmaking,
+        parties,
         authUserRepository,
         authentication: {
             adminClientIds: configuration.authentication.adminClientIds,

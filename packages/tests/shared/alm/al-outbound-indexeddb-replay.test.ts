@@ -71,8 +71,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -124,8 +123,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                     expectedPeerIds: ['peer-1', 'peer-2'],
                     nextHopPeerIds: ['peer-1', 'peer-2'],
                     mode: 'hop'
-                },
-                admittedConnectionGenerationIds: undefined
+                }
             }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
@@ -204,8 +202,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ text: 'engine-owned' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ text: 'engine-owned' }]
             }),
             sendPreparedMessage: async (message) => {
                 sent.push(message.text ?? '');
@@ -265,8 +262,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ text: 'retained' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ text: 'retained' }]
             }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => ({
                 status: 'queued',
@@ -350,8 +346,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ text: 'captured-recipient' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ text: 'captured-recipient' }]
             }),
             // A send held through the crash assertions keeps its claim, so the row survives the runtime as a reservation.
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
@@ -479,8 +474,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ text: 'captured' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ text: 'captured' }]
             }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
@@ -506,8 +500,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                     msg,
                     dropReasonCode: undefined,
                     lane: 'durable',
-                    preparedMessages: [{ text: 'replanned' }],
-                    admittedConnectionGenerationIds: undefined
+                    preparedMessages: [{ text: 'replanned' }]
                 }),
                 sendPreparedMessage: async (prepared) => {
                     sent.push(prepared.text ?? '');

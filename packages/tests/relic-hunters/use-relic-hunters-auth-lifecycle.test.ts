@@ -302,7 +302,7 @@ describe('useRelicHunters auth lifecycle', () => {
         const admitted = relicRoomFixture(destination.groupId);
         mockRallar.auth.restore.mockReturnValue(undefined);
         mockRallar.session.mockReturnValue(undefined);
-        const invitation = toRoomEntryUrl(window.location.href, { roomRef: destination, participation: 'preserve', joinCode: 'private-code' });
+        const invitation = toRoomEntryUrl(window.location.href, { intent: 'join', roomRef: destination, participation: 'preserve', joinCode: 'private-code' });
         if (!invitation.right) {
             throw new Error('The private invitation must encode successfully');
         }
@@ -332,6 +332,37 @@ describe('useRelicHunters auth lifecycle', () => {
             destination: { roomRef: destination, participation: 'preserve', joinCode: null }
         });
         expect(window.sessionStorage.getItem('rallar.room-entry:["rallar-server","default"]')).not.toContain('private-code');
+    });
+
+    it.each(['connected', 'bootstrap'] as const)('previews a scheduled destination while preserving the current expedition (%s)', async (phase) => {
+        const game = requireRelicCommandApplied(applyRelicCommand(createRelicGame('relic-room-1', 'relic-room-1', 1), {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'relic-room-1',
+            username: session.username,
+            kind: 'join-expedition'
+        }, { presentPlayerIds: [session.sessionId], senderId: session.sessionId, now: 2 })).state;
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game));
+        const destination = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'next-week' };
+        if (phase === 'bootstrap') {
+            const link = toRoomEntryUrl(window.location.href, { intent: 'preview-session', roomRef: destination, joinCode: null, participation: 'player' });
+            if (!link.right) {
+                throw new Error('Expected a valid session preview link');
+            }
+            window.history.replaceState(null, '', link.right);
+        }
+        await renderHook();
+        await waitForState(() => current?.diagnostics.middlewareConnected === true && current.snapshot !== undefined);
+        const before = current?.snapshot;
+        mockRallar.rooms.join.mockClear();
+        if (phase === 'connected') {
+            await act(async () => {
+                current?.roomEntry.enter({ intent: 'preview-session', roomRef: destination, joinCode: null, participation: 'player' });
+            });
+        }
+        expect(current?.roomEntry.getState()).toMatchObject({ status: 'preview', destination: { roomRef: destination } });
+        expect(current?.roomId).toBe('relic-room-1');
+        expect(current?.snapshot).toEqual(before);
+        expect(mockRallar.rooms.join).not.toHaveBeenCalled();
     });
 
     it('discards bootstrap hydration that finishes after sign-out', async () => {
@@ -370,7 +401,7 @@ describe('useRelicHunters auth lifecycle', () => {
             kind: 'join-expedition'
         }, { presentPlayerIds: [keeperSessionId], senderId: keeperSessionId, now: 2 })).state;
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game));
-        const link = toRoomEntryUrl(window.location.href, { roomRef: snapshot.group, participation: 'spectator', joinCode: null });
+        const link = toRoomEntryUrl(window.location.href, { intent: 'join', roomRef: snapshot.group, participation: 'spectator', joinCode: null });
         if (!link.right) {
             throw new Error('Expected a valid watch link');
         }
@@ -398,7 +429,7 @@ describe('useRelicHunters auth lifecycle', () => {
         });
         const deps = browserRelicRuntimeDeps();
         deps.roomEntry.start();
-        deps.roomEntry.enter({ roomRef: room.snapshot.group, participation: 'spectator', joinCode: null });
+        deps.roomEntry.enter({ intent: 'join', roomRef: room.snapshot.group, participation: 'spectator', joinCode: null });
         if (failure === 'abort') {
             vi.mocked(fetchRelicSnapshot).mockImplementation(async () => {
                 deps.roomEntry.cancel();

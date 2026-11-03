@@ -421,8 +421,7 @@ it('observes a retained pending admission without storage reads and wakes on the
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [{ kind: 'send' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ kind: 'send' }]
         }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });

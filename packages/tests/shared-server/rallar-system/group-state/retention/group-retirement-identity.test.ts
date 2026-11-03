@@ -97,6 +97,8 @@ describe('permanently retired scoped identities', () => {
             includeGroup: true,
             includePresenceSummary: true,
             includeLifecyclePolicy: false,
+            includeSessionReservations: false,
+            sessionIntentPrincipalId: null,
             includeGroupSnapshot: false,
             authSessionId: null,
             requestIds: [],

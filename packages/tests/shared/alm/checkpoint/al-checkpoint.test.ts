@@ -248,8 +248,7 @@ describe('ALCheckpoint', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async () => await Promise.resolve({ status: 'sent', submissionAttempted: true })
         });

@@ -1,4 +1,5 @@
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
+import type { ChangeGroupSessionRequest } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -38,6 +39,7 @@ import type {
     GroupAcceptedLayoutRow,
     GroupPlannedLayoutRow
 } from './mutation/aggregate/compute-planned-layout-promotion.ts';
+import type { GroupSessionDirectory } from './schedule/group-session-directory.ts';
 
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { RoomOwnedAppData } from '../../app-data/room-owned-app-data.ts';
@@ -49,6 +51,7 @@ import type { RallarTimingSink } from '../observability/timing.ts';
 import type { GroupStateEventStore } from '../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
+import type { GroupMoveService } from './move/group-move-service.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -137,6 +140,7 @@ interface GroupMutationDescriptorIdentity {
 }
 
 interface GroupMutationRequests {
+    readonly changeGroupSession: ChangeGroupSessionRequest;
     readonly createGroup: CreateGroupRequest;
     readonly updateGroup: UpdateGroupRequest;
     readonly appointDirector: AppointGroupDirectorRequest;
@@ -221,8 +225,10 @@ export interface GroupStateMutationService {
 export type GroupStateService =
     & GroupStateMutationService
     & Readonly<{
+        sessionDirectory: GroupSessionDirectory;
         sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
         quickJoin: GroupQuickJoinService;
+        move: GroupMoveService;
         retention: GroupRetentionService;
         authorizeMutation(
             descriptor: GroupMutationDescriptor,

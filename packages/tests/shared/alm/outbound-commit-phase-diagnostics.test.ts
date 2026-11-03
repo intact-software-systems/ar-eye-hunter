@@ -90,8 +90,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -161,8 +160,7 @@ it('charges the drain its own commit rather than leaving it on the next send', a
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ kind: 'send' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ kind: 'send' }]
         }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
@@ -195,8 +193,7 @@ it('names the origin a queued send waited behind', async () => {
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ kind: 'send' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ kind: 'send' }]
         }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
@@ -234,8 +231,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 dropReasonCode: undefined,
                 lane: 'durable',
                 preparedMessages: [{ kind: 'send' }],
-                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' },
-                admittedConnectionGenerationIds: undefined
+                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' }
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -297,8 +293,7 @@ it('names the lane on the commit, readiness and drain events each store lane sta
             msg,
             dropReasonCode: undefined,
             lane: msg.id.msgId === durable.id.msgId ? 'durable' : 'volatile',
-            preparedMessages: [{ kind: 'send' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ kind: 'send' }]
         }),
         sendPreparedMessage: async () => {
             sent.push('send');

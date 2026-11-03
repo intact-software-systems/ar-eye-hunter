@@ -333,8 +333,7 @@ function createDefaultControlRuntime(
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ transport: 'ws' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ transport: 'ws' }]
         }),
         sendPreparedMessage: async () => {
             sendPreparedMessage();

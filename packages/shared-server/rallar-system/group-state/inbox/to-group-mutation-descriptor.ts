@@ -17,6 +17,7 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_FORMATION_RESET:
         case AppInboxType.GROUP_ACTIVATE:
         case AppInboxType.GROUP_RECONFIGURE:
+        case AppInboxType.GROUP_SESSION_CHANGE:
         case AppInboxType.GROUP_JOIN_CODE_ROTATE:
             return toAggregateMutationDescriptor(enqueue);
         case AppInboxType.GROUP_JOIN:
@@ -108,6 +109,7 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'resumeGroupTransport':
         case 'joinGroup':
         case 'acceptGroupInvite':
+        case 'changeGroupSession':
         case 'rotateGroupJoinCode':
             return { targetPrincipalId: null, sessionId: null };
         default: {
@@ -130,6 +132,7 @@ function toAggregateMutationDescriptor(
         | { readonly type: typeof AppInboxType.GROUP_FORMATION_RESET; }
         | { readonly type: typeof AppInboxType.GROUP_ACTIVATE; }
         | { readonly type: typeof AppInboxType.GROUP_RECONFIGURE; }
+        | { readonly type: typeof AppInboxType.GROUP_SESSION_CHANGE; }
         | { readonly type: typeof AppInboxType.GROUP_JOIN_CODE_ROTATE; }
     >
 ): GroupMutationDescriptor {
@@ -160,6 +163,8 @@ function toAggregateMutationDescriptor(
             return mutationDescriptor({ ...common, operation: 'activateGroup' });
         case AppInboxType.GROUP_RECONFIGURE:
             return mutationDescriptor({ ...common, operation: 'reconfigureGroup' });
+        case AppInboxType.GROUP_SESSION_CHANGE:
+            return mutationDescriptor({ ...common, operation: 'changeGroupSession' });
         case AppInboxType.GROUP_JOIN_CODE_ROTATE:
             return mutationDescriptor({ ...common, operation: 'rotateGroupJoinCode' });
         default:

@@ -1,0 +1,43 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:@js-temporal/polyfill@~0.5.1": "0.5.1",
+    "npm:fflate@0.8.2": "0.8.2",
+    "npm:graphology@0.26.0": "0.26.0_graphology-types@0.24.8"
+  },
+  "npm": {
+    "@js-temporal/polyfill@0.5.1": {
+      "integrity": "sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==",
+      "dependencies": [
+        "jsbi"
+      ]
+    },
+    "events@3.3.0": {
+      "integrity": "sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q=="
+    },
+    "fflate@0.8.2": {
+      "integrity": "sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A=="
+    },
+    "graphology-types@0.24.8": {
+      "integrity": "sha512-hDRKYXa8TsoZHjgEaysSRyPdT6uB78Ci8WnjgbStlQysz7xR52PInxNsmnB7IBOM1BhikxkNyCVEFgmPKnpx3Q=="
+    },
+    "graphology@0.26.0_graphology-types@0.24.8": {
+      "integrity": "sha512-8SSImzgUUYC89Z042s+0r/vMibY7GX/Emz4LDO5e7jYXhuoWfHISPFJYjpRLUSJGq6UQ6xlenvX1p/hJdfXuXg==",
+      "dependencies": [
+        "events",
+        "graphology-types"
+      ]
+    },
+    "jsbi@4.3.2": {
+      "integrity": "sha512-9fqMSQbhJykSeii05nxKl4m6Eqn2P6rOlYiS+C5Dr/HPIU/7yZxu5qzbs40tgaFORiw2Amd0mirjxatXYMkIew=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@std/path@^1.0.9",
+      "npm:fflate@0.8.2",
+      "npm:graphology@0.26.0",
+      "npm:postgres@^3.4.9"
+    ]
+  }
+}

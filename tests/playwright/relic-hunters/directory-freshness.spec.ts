@@ -47,6 +47,7 @@ test(
         await expect(page.getByRole('region', { name: 'Expedition hosting' }).getByText('room-1', { exact: true }))
             .toBeVisible();
         await expect(page.getByRole('button', { name: '✓ Ready', exact: true })).toBeDisabled();
+        await expect(page.getByRole('alert')).toHaveCount(0);
         unavailable = true;
         await page.clock.fastForward(30_000);
         await expect(page.getByRole('alert')).toContainText('Previous results are shown.');

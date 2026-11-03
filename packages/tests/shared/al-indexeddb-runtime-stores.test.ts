@@ -759,8 +759,7 @@ describe('IndexedDB AL runtime stores', () => {
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                },
-                admittedConnectionGenerationIds: undefined
+                }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
@@ -772,8 +771,7 @@ describe('IndexedDB AL runtime stores', () => {
                         msgId: plannedMsg.id.msgId,
                         trigger: request.trigger
                     }
-                ],
-                admittedConnectionGenerationIds: undefined
+                ]
             })
         });
 
@@ -869,8 +867,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput): ALO
                     enabled: true,
                     algo: 'retransmit',
                     maxAttempts: 1
-                },
-                admittedConnectionGenerationIds: undefined
+                }
             })),
             planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
                 msg: msg,
@@ -882,8 +879,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput): ALO
                         msgId: msg.id.msgId,
                         trigger: request.trigger
                     }
-                ],
-                admittedConnectionGenerationIds: undefined
+                ]
             })),
             sendPreparedMessage: input.sendPreparedMessage ?? (async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
@@ -906,8 +902,7 @@ function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
             enabled: true,
             algo: 'retransmit',
             maxAttempts: 1
-        },
-        admittedConnectionGenerationIds: undefined
+        }
     });
 }
 

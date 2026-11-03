@@ -114,20 +114,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Setup deployment toolchains
+        uses: ./.github/actions/release-gate-setup
         with:
+          deno: 'true'
           deno-version: 2.9.5
-
-      - name: Cache Deno + npm
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/deno
-            ~/.npm
-          key: ${{ runner.os }}-deno-${{ hashFiles('apps/api-v1/deno.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-deno-
 
       # Archive commits ("perf(rtc): archive ...") change only performance-observations/**, which the
       # paths-ignore above excludes from this workflow, so they must not count as a newer deploy of
@@ -219,20 +210,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Setup deployment toolchains
+        uses: ./.github/actions/release-gate-setup
         with:
+          deno: 'true'
           deno-version: 2.9.5
-
-      - name: Cache Deno + npm
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/deno
-            ~/.npm
-          key: ${{ runner.os }}-deno-${{ hashFiles('apps/relic-hunter-server-v1/deno.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-deno-
 
       # Archive commits ("perf(rtc): archive ...") change only performance-observations/**, which the
       # paths-ignore above excludes from this workflow, so they must not count as a newer deploy of

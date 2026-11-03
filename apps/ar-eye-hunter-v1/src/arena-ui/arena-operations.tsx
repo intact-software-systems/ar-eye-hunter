@@ -1,4 +1,16 @@
+import { FriendsPanel } from '@shared-react/friends-panel.tsx';
+import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
+import { PartyPanel } from '@shared-react/party-panel.tsx';
+import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
+import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
+import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
+import { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
 import { useState, type FormEvent } from 'react';
+import { GAME_ROOM_NAME } from '../game/arena-contracts.ts';
+import { ARENA_ROOM_SCOPE, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
+import { ArenaRoomMove } from './arena-room-move.tsx';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import { ArenaRoomEntry } from './arena-room-entry.tsx';
@@ -30,55 +42,103 @@ interface ArenaAuthFormProps {
 
 export function ArenaOperations(props: ArenaOperationsProps) {
     const { arena } = props;
+    const [scheduledSessions] = useState(() =>
+        RallarScheduledSessions.createBrowser(rallar, arenaRoomEntry, {
+            scope: ARENA_ROOM_SCOPE,
+            refreshIntervalMs: 5_000
+        })
+    );
+    const [party] = useState(() =>
+        RallarParty.createBrowser(rallar, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
+    );
+    const [matchmaking] = useState(() =>
+        RallarMatchmaking.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
+    );
+    const [friends] = useState(() =>
+        RallarFriends.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 30_000 })
+    );
     const [fields, setFields] = useState<ArenaAuthFields>({
         mode: 'login',
         username: '',
         displayName: '',
         password: ''
     });
-    const submit = async (event: FormEvent) => {
-        event.preventDefault();
-        if (fields.mode === 'login') {
-            await arena.login(fields.username.trim(), fields.password);
-        }
-        else {
-            await arena.register(fields.username.trim(), fields.password, fields.displayName.trim());
-        }
-    };
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
+            {arena.session && <PartyPanel owner={party} friends={friends} />}
+            {arena.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find a game" />}
+            {arena.session && (
+                <ScheduledSessionsPanel
+                    owner={scheduledSessions}
+                    connected={arena.connectionState === 'connected'}
+                    defaultName={GAME_ROOM_NAME}
+                    maxPlayers={16}
+                />
+            )}
+            {arena.session && (
+                <FriendsPanel
+                    owner={friends}
+                    sessions={scheduledSessions}
+                    enabled={true}
+                    scope={ARENA_ROOM_SCOPE}
+                    roomRef={arena.roomId ? { ...ARENA_ROOM_SCOPE, groupId: arena.roomId } : null}
+                />
+            )}
+            {arena.session && <ArenaRoomMove arena={arena} party={party} />}
             {arena.connectionState === 'signed-out' || !arena.session
-                ? <ArenaAuthForm fields={fields} setFields={setFields} submit={submit} />
+                ? (
+                    <ArenaAuthForm
+                        fields={fields}
+                        setFields={setFields}
+                        submit={(event) => submitArenaAuth(event, fields, arena)}
+                    />
+                )
                 : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
             {arena.error && <div className="panel error-panel">{arena.error}</div>}
-            <div className="panel compact">
-                {arena.spectating
-                    ? <p>Watching the live arena. Join as player to move and fight.</p>
-                    : (
-                        <div className="control-grid">
-                            {[
-                                'WASD',
-                                'Move',
-                                'Shift',
-                                'Sprint',
-                                'E',
-                                'Dash',
-                                'C/Ctrl',
-                                'Slide',
-                                'Space',
-                                'Jump',
-                                'Mouse',
-                                'Look',
-                                'Click',
-                                'Fire',
-                                'Right click',
-                                'Scan'
-                            ].map((label) => <span key={label}>{label}</span>)}
-                        </div>
-                    )}
-            </div>
+            <ArenaControlHints spectating={arena.spectating} />
         </section>
+    );
+}
+
+async function submitArenaAuth(event: FormEvent, fields: ArenaAuthFields, arena: ArenaConnection): Promise<void> {
+    event.preventDefault();
+    if (fields.mode === 'login') {
+        await arena.login(fields.username.trim(), fields.password);
+    }
+    else {
+        await arena.register(fields.username.trim(), fields.password, fields.displayName.trim());
+    }
+}
+
+function ArenaControlHints({ spectating }: Readonly<{ spectating: boolean; }>) {
+    return (
+        <div className="panel compact">
+            {spectating
+                ? <p>Watching the live arena. Join as player to move and fight.</p>
+                : (
+                    <div className="control-grid">
+                        {[
+                            'WASD',
+                            'Move',
+                            'Shift',
+                            'Sprint',
+                            'E',
+                            'Dash',
+                            'C/Ctrl',
+                            'Slide',
+                            'Space',
+                            'Jump',
+                            'Mouse',
+                            'Look',
+                            'Click',
+                            'Fire',
+                            'Right click',
+                            'Scan'
+                        ].map((label) => <span key={label}>{label}</span>)}
+                    </div>
+                )}
+        </div>
     );
 }
 

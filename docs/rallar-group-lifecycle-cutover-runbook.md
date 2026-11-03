@@ -20,7 +20,7 @@ Two independent mechanisms make old rows unreadable.
 **Full `GroupSnapshot`s are embedded in durable queue rows.** An AppInbox command, its result row and
 the outbox entries it produced all carry the aggregate as serialized JSON. On dequeue those are
 re-validated with **exact-key strictness** — `requireExactKeys` in
-`packages/shared-server/rallar-system/protocol/exact-object-decoding.ts` compares the sorted key list
+`packages/shared/api/exact-object-decoding.ts` compares the sorted key list
 and throws `TypeError` on any difference, in **both** directions. A row queued before the lifecycle
 fields existed is missing keys the decoder now requires; a row queued before `activationStatus` was
 added carries one fewer key than the current list. Either is a throw.

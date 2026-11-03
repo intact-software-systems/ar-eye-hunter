@@ -18,7 +18,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { auditStamp, createMutationCommand, createMutationFacts, createMutationRead, memberFor } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
-import { createCorruptionMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('rejects contradictory persisted terminal member audits', () => {
@@ -67,7 +67,7 @@ describe('GroupStateRepository persistence', () => {
             workspaceId: 'wrong-scope-list-workspace'
         };
         const explicitSentinelGroup: Group = {
-            ...createCorruptionMutationRead().group!.value,
+            ...createPersistenceMutationRead().group!.value,
             ...absentScope,
             workspaceId: '_',
             groupId: 'wrong-scope-list-group',
@@ -108,7 +108,7 @@ describe('GroupStateRepository persistence', () => {
                 namespace: 'group-state:members',
                 key: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
                 value: {
-                    ...createCorruptionMutationRead().actorMember!,
+                    ...createPersistenceMutationRead().actorMember!,
                     ...ref,
                     principalId: 'mallory'
                 } satisfies GroupMember,
@@ -236,7 +236,7 @@ describe('GroupStateRepository persistence', () => {
             groupId: 'stored-number-group'
         };
         const key = groupStateGroupStorageKey(ref);
-        const storedText = JSON.stringify({ ...createCorruptionMutationRead().group!.value, ...ref });
+        const storedText = JSON.stringify({ ...createPersistenceMutationRead().group!.value, ...ref });
         for (
             const corruptText of [
                 storedText.replace('"presenceVersion":0', '"presenceVersion":-0'),

@@ -25,6 +25,7 @@ describe('arena recent-room navigation', () => {
             for (const groupId of ['room-a', 'room-b']) {
                 await act(async () => {
                     arenaRoomEntry.enter({
+                        intent: 'join',
                         roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId },
                         joinCode: null,
                         participation: 'preserve'

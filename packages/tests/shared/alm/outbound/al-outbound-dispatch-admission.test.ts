@@ -245,8 +245,7 @@ it.each(['rejected', 'settled'] as const)(
                     dropReason: 'Skipping unauthorized test member',
                     dropReasonCode: 'unauthorized' as const,
                     lane: 'durable' as const,
-                    preparedMessages: [],
-                    admittedConnectionGenerationIds: undefined
+                    preparedMessages: []
                 })
             }
             : toDispatch(first);

@@ -3058,6 +3058,22 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-paced-newest-n-sender-two-selected-one-deferred",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "publication-opportunity",
+                "data.laneKey": "room.alm-conformance/alm.conformance.ws.paced-newest-n",
+                "data.selected": 2,
+                "data.deferred": 1,
+                "data.expired": 0
+              }
+            },
+            "timeoutMs": 18000
+          },
+          {
             "kind": "messages.observe",
             "commandId": "alm-ws-paced-newest-n-sender-observe-transport-accepted-2",
             "connection": "almConformanceSender",
@@ -5315,6 +5331,40 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-latest-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-latest-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-latest-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-latest-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-latest-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-latest-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-paced-latest-sender-send-0",
             "connection": "almConformanceSender",
@@ -5577,6 +5627,40 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-newest-n-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-newest-n-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-newest-n-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-newest-n-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-newest-n-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-newest-n-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-paced-newest-n-sender-send-0",
             "connection": "almConformanceSender",
@@ -5714,6 +5798,22 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-paced-newest-n-sender-two-selected-one-deferred",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "publication-opportunity",
+                "data.laneKey": "room.alm-conformance/alm.conformance.rtc.paced-newest-n",
+                "data.selected": 2,
+                "data.deferred": 1,
+                "data.expired": 0
+              }
+            },
+            "timeoutMs": 18000
+          },
+          {
             "kind": "messages.observe",
             "commandId": "alm-rtc-paced-newest-n-sender-observe-transport-accepted-2",
             "connection": "almConformanceSender",
@@ -5789,6 +5889,40 @@
             "commandId": "alm-rtc-paced-expiry-sender-storage-counters-connected",
             "reset": false,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-expiry-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-expiry-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-expiry-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-expiry-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-expiry-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-expiry-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -5931,6 +6065,40 @@
             "commandId": "alm-rtc-paced-fairness-sender-storage-counters-connected",
             "reset": false,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-fairness-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-fairness-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-fairness-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-fairness-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-fairness-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-fairness-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -6147,6 +6315,40 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-cancel-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-cancel-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-cancel-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-cancel-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-cancel-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-cancel-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-paced-cancel-sender-send-0",
             "connection": "almConformanceSender",
@@ -6304,6 +6506,40 @@
             "commandId": "alm-rtc-paced-isolation-resources-sender-storage-counters-connected",
             "reset": false,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-isolation-resources-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-isolation-resources-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-isolation-resources-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-isolation-resources-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-isolation-resources-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -8778,6 +9014,40 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-send-0",
             "connection": "almConformanceSender",
@@ -9040,6 +9310,40 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-send-0",
             "connection": "almConformanceSender",
@@ -9177,6 +9481,22 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-two-selected-one-deferred",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "publication-opportunity",
+                "data.laneKey": "room.alm-conformance/alm.conformance.rtc-with-ws-fallback.paced-newest-n",
+                "data.selected": 2,
+                "data.deferred": 1,
+                "data.expired": 0
+              }
+            },
+            "timeoutMs": 18000
+          },
+          {
             "kind": "messages.observe",
             "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-observe-transport-accepted-2",
             "connection": "almConformanceSender",
@@ -9252,6 +9572,40 @@
             "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-storage-counters-connected",
             "reset": false,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -9394,6 +9748,40 @@
             "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-storage-counters-connected",
             "reset": false,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -9610,6 +9998,40 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-send-0",
             "connection": "almConformanceSender",
@@ -9767,6 +10189,40 @@
             "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-storage-counters-connected",
             "reset": false,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -10023,6 +10479,28 @@
             },
             "absent": true,
             "timeoutMs": 31000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-ws-capacity-sender-headroom",
+            "until": "first-success",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "alm-ws-capacity-sender-headroom-stats",
+                "timeoutMs": 3000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-ws-capacity-sender-assert-headroom",
+                "source": "resultCache.alm-ws-capacity-sender-headroom:i{loop.iteration}:c1:alm-ws-capacity-sender-headroom-stats.value.rallar.alm.usage.bytes",
+                "operator": "lte",
+                "expected": 8192
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -10843,6 +11321,28 @@
             "timeoutMs": 31000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-capacity-sender-headroom",
+            "until": "first-success",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "alm-rtc-capacity-sender-headroom-stats",
+                "timeoutMs": 3000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-capacity-sender-assert-headroom",
+                "source": "resultCache.alm-rtc-capacity-sender-headroom:i{loop.iteration}:c1:alm-rtc-capacity-sender-headroom-stats.value.rallar.alm.usage.bytes",
+                "operator": "lte",
+                "expected": 8192
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-capacity-sender-send-1",
             "connection": "almConformanceSender",
@@ -11272,6 +11772,40 @@
             }
           },
           {
+            "kind": "loop",
+            "commandId": "alm-rtc-paced-capacity-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-paced-capacity-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-capacity-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-capacity-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-capacity-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-capacity-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-paced-capacity-sender-send-0",
             "connection": "almConformanceSender",
@@ -11684,6 +12218,28 @@
             },
             "absent": true,
             "timeoutMs": 31000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-capacity-sender-headroom",
+            "until": "first-success",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "alm-rtc-with-ws-fallback-capacity-sender-headroom-stats",
+                "timeoutMs": 3000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-capacity-sender-assert-headroom",
+                "source": "resultCache.alm-rtc-with-ws-fallback-capacity-sender-headroom:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-capacity-sender-headroom-stats.value.rallar.alm.usage.bytes",
+                "operator": "lte",
+                "expected": 8192
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -12113,6 +12669,40 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-stable",
+            "count": 60,
+            "intervalMs": 500,
+            "timeoutMs": 30000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-publication-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-publication-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
+              }
+            ]
           },
           {
             "kind": "messages.send",
@@ -13350,115 +13940,6 @@
             "typeId": "alm.conformance.ws.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-0",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 0
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-not-yet-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-ws-paced-newest-n-receiver-arrived-seq-0.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-ws-paced-newest-n-receiver-received-3",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.ws.paced-newest-n",
-            "count": 3,
-            "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-3",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 3
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-not-yet-seq-4",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 4
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-ws-paced-newest-n-receiver-arrived-seq-3.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-ws-paced-newest-n-receiver-received-4",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.ws.paced-newest-n",
-            "count": 4,
-            "absent": false,
             "windowMs": 33000,
             "timeoutMs": 34000
           },
@@ -13478,6 +13959,24 @@
               }
             },
             "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "specimen": "paced",
+                "seq": 1
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.ws.paced-newest-n"
+              }
+            },
+            "timeoutMs": 4000,
+            "absent": true
           },
           {
             "kind": "messages.received",
@@ -14470,8 +14969,8 @@
             "typeId": "alm.conformance.rtc.paced-latest",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -14516,8 +15015,8 @@
             "typeId": "alm.conformance.rtc.paced-latest",
             "count": 2,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -14570,117 +15069,8 @@
             "typeId": "alm.conformance.rtc.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-0",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 0
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-not-yet-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-paced-newest-n-receiver-arrived-seq-0.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-paced-newest-n-receiver-received-3",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc.paced-newest-n",
-            "count": 3,
-            "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-3",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 3
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-not-yet-seq-4",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 4
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-paced-newest-n-receiver-arrived-seq-3.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-paced-newest-n-receiver-received-4",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc.paced-newest-n",
-            "count": 4,
-            "absent": false,
-            "windowMs": 33000,
-            "timeoutMs": 34000
+            "windowMs": 63000,
+            "timeoutMs": 64000
           },
           {
             "kind": "wait",
@@ -14698,6 +15088,24 @@
               }
             },
             "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "specimen": "paced",
+                "seq": 1
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.rtc.paced-newest-n"
+              }
+            },
+            "timeoutMs": 4000,
+            "absent": true
           },
           {
             "kind": "messages.received",
@@ -14733,8 +15141,8 @@
             "typeId": "alm.conformance.rtc.paced-expiry",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -14787,8 +15195,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -14833,8 +15241,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 2,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -14879,8 +15287,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 3,
             "absent": false,
-            "windowMs": 33000,
-            "timeoutMs": 34000
+            "windowMs": 63000,
+            "timeoutMs": 64000
           },
           {
             "kind": "wait",
@@ -14925,8 +15333,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 4,
             "absent": false,
-            "windowMs": 35000,
-            "timeoutMs": 36000
+            "windowMs": 65000,
+            "timeoutMs": 66000
           },
           {
             "kind": "wait",
@@ -14979,8 +15387,8 @@
             "typeId": "alm.conformance.rtc.paced-cancel",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -15025,8 +15433,8 @@
             "typeId": "alm.conformance.rtc.paced-cancel",
             "count": 2,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -15079,8 +15487,8 @@
             "typeId": "alm.conformance.rtc.paced-isolation-resources",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -15125,8 +15533,8 @@
             "typeId": "alm.conformance.rtc.paced-isolation-resources",
             "count": 3,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -16045,8 +16453,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-latest",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -16091,8 +16499,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-latest",
             "count": 2,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -16145,117 +16553,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-0",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 0
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-not-yet-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-0.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-received-3",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
-            "count": 3,
-            "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-3",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 3
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-not-yet-seq-4",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 4
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-3.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-received-4",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
-            "count": 4,
-            "absent": false,
-            "windowMs": 33000,
-            "timeoutMs": 34000
+            "windowMs": 63000,
+            "timeoutMs": 64000
           },
           {
             "kind": "wait",
@@ -16273,6 +16572,24 @@
               }
             },
             "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "specimen": "paced",
+                "seq": 1
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
+              }
+            },
+            "timeoutMs": 4000,
+            "absent": true
           },
           {
             "kind": "messages.received",
@@ -16308,8 +16625,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-expiry",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -16362,8 +16679,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -16408,8 +16725,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 2,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -16454,8 +16771,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 3,
             "absent": false,
-            "windowMs": 33000,
-            "timeoutMs": 34000
+            "windowMs": 63000,
+            "timeoutMs": 64000
           },
           {
             "kind": "wait",
@@ -16500,8 +16817,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 4,
             "absent": false,
-            "windowMs": 35000,
-            "timeoutMs": 36000
+            "windowMs": 65000,
+            "timeoutMs": 66000
           },
           {
             "kind": "wait",
@@ -16554,8 +16871,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-cancel",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -16600,8 +16917,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-cancel",
             "count": 2,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -16654,8 +16971,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-isolation-resources",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
+            "windowMs": 59000,
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -16700,8 +17017,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-isolation-resources",
             "count": 3,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -16771,8 +17088,8 @@
             "typeId": "alm.conformance.ws.capacity",
             "count": 2,
             "absent": false,
-            "windowMs": 88000,
-            "timeoutMs": 89000
+            "windowMs": 118000,
+            "timeoutMs": 119000
           },
           {
             "kind": "stats",
@@ -16915,8 +17232,8 @@
             "typeId": "alm.conformance.rtc.capacity",
             "count": 2,
             "absent": false,
-            "windowMs": 88000,
-            "timeoutMs": 89000
+            "windowMs": 118000,
+            "timeoutMs": 119000
           },
           {
             "kind": "stats",
@@ -16942,8 +17259,8 @@
             "typeId": "alm.conformance.rtc.paced-capacity",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 89000,
+            "timeoutMs": 90000
           },
           {
             "kind": "wait",
@@ -16988,8 +17305,8 @@
             "typeId": "alm.conformance.rtc.paced-capacity",
             "count": 3,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",
@@ -17059,8 +17376,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.capacity",
             "count": 2,
             "absent": false,
-            "windowMs": 88000,
-            "timeoutMs": 89000
+            "windowMs": 118000,
+            "timeoutMs": 119000
           },
           {
             "kind": "stats",
@@ -17086,8 +17403,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-capacity",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 89000,
+            "timeoutMs": 90000
           },
           {
             "kind": "wait",
@@ -17132,8 +17449,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-capacity",
             "count": 3,
             "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
+            "windowMs": 61000,
+            "timeoutMs": 62000
           },
           {
             "kind": "wait",

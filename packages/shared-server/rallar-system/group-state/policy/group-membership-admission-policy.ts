@@ -1,7 +1,12 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
+import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { countGroupPlayers, isGroupSpectator, readGroupSpectatorCapacity } from '@shared/api/group-spectating.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    countGroupSessionOccupiedSeats,
+    type GroupSessionReservations
+} from '../schedule/group-session-reservations.ts';
 import { denyUnlessGroupLifecycleManager } from './group-lifecycle-manager-policy.ts';
 import {
     denyForBlockedGroupMember,
@@ -22,6 +27,7 @@ export interface CanJoinGroupInput {
     readonly actor: GroupPolicyActor;
     readonly nowEpochMs?: number;
     readonly capacity?: GroupPolicyCapacityConfig;
+    readonly sessionReservations?: GroupSessionReservations;
     readonly participation?: 'player' | 'spectator';
     readonly joinCode?: string;
     readonly joinCodeVerifier?: string;
@@ -42,6 +48,7 @@ export interface CanActivateGroupMemberInput {
     readonly targetPrincipalId: string;
     readonly nowEpochMs?: number;
     readonly capacity?: GroupPolicyCapacityConfig;
+    readonly sessionReservations?: GroupSessionReservations;
 }
 
 export interface CanDecideGroupAdmissionInput {
@@ -53,7 +60,8 @@ export interface CanDecideGroupAdmissionInput {
 }
 
 export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
-    const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs);
+    const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs) ??
+        denyClosedScheduledLobby(input.snapshot, input.nowEpochMs);
     if (lifecycleDenial) {
         return lifecycleDenial;
     }
@@ -77,10 +85,23 @@ export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
         snapshot: input.snapshot,
         member,
         role,
-        capacity: input.capacity
+        capacity: input.capacity,
+        targetPrincipalId: principalId,
+        sessionReservations: input.sessionReservations,
+        nowEpochMs: input.nowEpochMs
     });
     if (capacityDenial) {
         return capacityDenial;
+    }
+    return canUseGroupAdmissionCredentials(input);
+}
+
+/** Shared by immediate admission and advance reservations; this does not admit membership. */
+export function canUseGroupAdmissionCredentials(input: CanJoinGroupInput): GroupPolicyResult {
+    const member = input.actor.principalId ? findGroupMember(input.snapshot, input.actor.principalId) : undefined;
+    const blocked = denyForBlockedGroupMember(member);
+    if (blocked) {
+        return blocked;
     }
     // Credentials authorize admission; they do not revoke existing membership.
     if (member?.status === 'active') {
@@ -99,7 +120,8 @@ export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
 export function canConnectGroupPresenceSession(
     input: CanConnectGroupPresenceSessionInput
 ): GroupPolicyResult {
-    const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs);
+    const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs) ??
+        denyClosedScheduledLobby(input.snapshot, input.nowEpochMs);
     if (lifecycleDenial) {
         return lifecycleDenial;
     }
@@ -145,7 +167,8 @@ export function canChangeOwnGroupMembership(
 export function canActivateGroupMember(
     input: CanActivateGroupMemberInput
 ): GroupPolicyResult {
-    const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs);
+    const lifecycleDenial = requireActiveGroup(input.snapshot.group, input.nowEpochMs) ??
+        denyClosedScheduledLobby(input.snapshot, input.nowEpochMs);
     if (lifecycleDenial) {
         return lifecycleDenial;
     }
@@ -154,7 +177,10 @@ export function canActivateGroupMember(
         snapshot: input.snapshot,
         member,
         role: input.role ?? member?.role ?? 'member',
-        capacity: input.capacity
+        capacity: input.capacity,
+        targetPrincipalId: input.targetPrincipalId,
+        sessionReservations: input.sessionReservations,
+        nowEpochMs: input.nowEpochMs
     }) ??
         GROUP_POLICY_ALLOWED;
 }
@@ -220,11 +246,15 @@ interface DenyGroupParticipationCapacityInput {
     readonly member: GroupMember | undefined;
     readonly role: GroupMember['role'];
     readonly capacity: GroupPolicyCapacityConfig | undefined;
+    readonly targetPrincipalId: string;
+    readonly sessionReservations: GroupSessionReservations | undefined;
+    readonly nowEpochMs: number | undefined;
 }
 
 function denyGroupParticipationCapacity(
-    { snapshot, member, role, capacity }: DenyGroupParticipationCapacityInput
+    admission: DenyGroupParticipationCapacityInput
 ): GroupPolicyResult | undefined {
+    const { snapshot, member, role, capacity } = admission;
     const spectator = role === 'spectator';
     if (member?.status === 'active' && (member.role === 'spectator') === spectator) {
         return undefined;
@@ -235,11 +265,61 @@ function denyGroupParticipationCapacity(
     const cap = spectator
         ? readGroupSpectatorCapacity(snapshot.group.metadata)
         : snapshot.group.maxMembers ?? capacity?.defaultMaxMembers ?? null;
-    const count = spectator ? snapshot.members.filter(isGroupSpectator).length : countGroupPlayers(snapshot);
+    const count = spectator
+        ? snapshot.members.filter(isGroupSpectator).length
+        : countPlayerSeatsBeforeAdmission(admission);
     return cap !== null && count >= cap
         ? denyGroupPolicy(
             'group-full',
             spectator ? 'Spectator capacity has been reached.' : 'Player capacity has been reached.'
         )
         : undefined;
+}
+
+function denyClosedScheduledLobby(
+    snapshot: GroupSnapshot,
+    nowEpochMs: number | undefined
+): GroupPolicyResult | undefined {
+    const schedule = readGroupSessionSchedule(snapshot.group.metadata);
+    if (schedule === null) {
+        return undefined;
+    }
+    if (nowEpochMs === undefined) {
+        throw new TypeError('Scheduled admission requires the current attempt clock');
+    }
+    const timing = toGroupSessionTiming(schedule, nowEpochMs);
+    return timing.phase === 'upcoming' || timing.phase === 'cancelled'
+        ? denyGroupPolicy(
+            'group-admission-closed',
+            timing.phase === 'cancelled'
+                ? 'This scheduled session was cancelled.'
+                : 'This scheduled lobby has not opened yet.'
+        )
+        : undefined;
+}
+
+function countPlayerSeatsBeforeAdmission(admission: DenyGroupParticipationCapacityInput): number {
+    const schedule = readGroupSessionSchedule(admission.snapshot.group.metadata);
+    if (schedule === null) {
+        return countGroupPlayers(admission.snapshot);
+    }
+    if (admission.sessionReservations === undefined || admission.nowEpochMs === undefined) {
+        throw new TypeError('Scheduled player admission requires its reservation read and current attempt clock');
+    }
+    const activePlayerPrincipalIds = admission.snapshot.members
+        .filter((member) => member.status === 'active' && member.role !== 'spectator')
+        .map((member) => member.principalId);
+    if (activePlayerPrincipalIds.length !== countGroupPlayers(admission.snapshot)) {
+        throw new TypeError('Scheduled player admission requires the complete active roster');
+    }
+    const count = countGroupSessionOccupiedSeats({
+        schedule,
+        reservations: admission.sessionReservations,
+        activePlayerPrincipalIds,
+        nowEpochMs: admission.nowEpochMs
+    });
+    const phase = toGroupSessionTiming(schedule, admission.nowEpochMs).phase;
+    const exchangesReservation = phase !== 'cancelled' && phase !== 'reservations-expired' &&
+        admission.sessionReservations.principalIds.includes(admission.targetPrincipalId);
+    return count - (exchangesReservation ? 1 : 0);
 }

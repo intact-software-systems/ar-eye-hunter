@@ -10,8 +10,8 @@ import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distr
 import { Either } from '@shared/resilience/Either.ts';
 import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 import { toArtifactRunDirectory, toRunDirectoryName } from '../control-artifact-storage.ts';
 import { toBoundedTail } from '../control-runtime-retention.ts';

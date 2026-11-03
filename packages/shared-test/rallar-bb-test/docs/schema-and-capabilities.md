@@ -514,15 +514,19 @@ the result events of `messages.subscriptions` and of the subscription rows read,
 - `subscription-token-count`: the receiver's two tokens hold one election and one row; releasing
   the first lapses it alone, a publication still arrives, and releasing the last deletes the row,
   so the next publication reaches the subscribed sibling and not the receiver.
-- `subscription-revoke-held`: the sibling's product socket drops, a publication leaves while it is
-  down, and the receiver then revokes the principal's `subscribe`. The reopened socket's
-  re-assertion is refused and a second publication follows. The receiver receives both, the
-  sibling neither, and the lane fails a receipt that confirms the sibling. Whether the first
-  publication's expected set names the sibling depends on when the server stops counting the
-  dropped socket live: the lane records it as the test's `subscription-revoke-held` annotation.
-- `subscription-reconnect`: the sibling's socket drops and reopens under a new generation, its
-  token turns `active` again and the session's row names the new generation; a publication
-  reaches it and the receiver.
+- `subscription-revoke-disconnected`: revoke while disconnected. The sibling's product socket
+  drops, a publication leaves while it is down, and the receiver then revokes the principal's
+  `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
+  The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
+  sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
+  for it; the held-dispatch revocation is proven server-side by
+  `apps/api-v1/test/services/ws-room-granted-delivery.test.ts` ("a revoke between enqueue and
+  dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
+  generation changed is not sent when its socket opens").
+- `subscription-reconnect`: the sibling's socket drops and reopens under a new generation; its
+  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A
+  publication reaches the receiver and not the reopened sibling, whose room presence closed with
+  the old socket.
 
 `subscription-successor` runs in the `same-context` family: the successor page opens while the
 owner page still runs, once the owner read its own generation, and its connect replaces the
@@ -767,14 +771,16 @@ third `not-ready` attempt hands it to WS; the sender reads `attemptCarriers` con
 `admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to `toPeer:
 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole window that
 nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with `rallar.almVolatileLimits` `{
-maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s, sends two ≈13.4 KB messages (a 12 000-byte filler) that are
+maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s for reconnect publications to begin, then polls the session
+ledger every 500 ms for at most 30 s until its occupied bytes are at most 8 KB. It then sends two ≈13.4 KB messages (a 12 000-byte filler) that are
 admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }` and
 `attempts` 0, so no fallback; then it closes and reconnects without the field, restoring the constants. The close keeps
 the membership, and the reconnect joins the room again, so the lowered session counts the platform's own state sync it
 admits inbound (about 26 KB in 6 entries in the local lane, larger in a long-lived hosted room) for at most 30 s; the 31
-s wait lets it leave the budget before the first send (R-S3c-ii-9). The limit is three fillers, so the two counted sends
+s wait alone cannot establish headroom because state can arrive after reconnect completion. The bounded ledger
+check accounts for those late admissions and fails setup if headroom never becomes available. The limit is three fillers, so the two counted sends
 alone refuse the third, and the second keeps at least 9 180 bytes of headroom. Its receiver's window adds one readiness
-budget and the 31 s wait, since the sender reconnects and waits before it sends. In manifest 18 the three `capacity`
+budget, the 31 s initial window and the 30 s headroom bound, since the sender reconnects and waits before it sends. In manifest 18 the three `capacity`
 blocks run after every other block. Two more cells of the family prove the age and track limits over every carrier, and
 manifest 18 withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and
 sends one message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with `failure: {

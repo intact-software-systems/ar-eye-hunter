@@ -720,6 +720,65 @@ describe('arena game realtime acceptance and egress', () => {
         expect(publishedSnapshots.map((snapshot) => snapshot.roomId)).toEqual([]);
     });
 
+    it.each(['current', 'expired', 'reappointed'] as const)('revalidates director authority after a deferred start permission (%s)', async (change) => {
+        let status = localDirectorMatchStatus();
+        mockMatch.status.mockImplementation(() => status);
+        const waiting = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<void>();
+        const accepted: boolean[] = [];
+        const input: ArenaMatchRuntimeInput = {
+            acceptRematchIntent: async () => {},
+            nowMs: Date.now,
+            arenaMatchRef: { current: undefined },
+            arenaSnapshotRef: { current: undefined },
+            roomIdRef: { current: 'arena-1' },
+            isCurrentNetworkGeneration: () => true,
+            acceptDirectorOutput: () => {},
+            acceptPeerShot: () => {},
+            acceptMatchStartIntent: async (_intent, isCurrent) => {
+                waiting.resolve();
+                await resume.promise;
+                accepted.push(isCurrent());
+            },
+            acceptMotionMessage: () => {},
+            acceptPickup: () => {},
+            acceptPlayerHit: () => {},
+            setActiveEvent: () => {},
+            setArenaSnapshot: () => {},
+            setRemoteEvents: () => {}
+        };
+        input.arenaMatchRef.current = createArenaMatchRuntime(input, 1, 'arena-1');
+        const completion = acceptArenaMatchIntent(
+            input,
+            1,
+            createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' },
+                senderId: session.sessionId,
+                senderGenerationId: 'generation-local',
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: Date.now(),
+                payload: {
+                    protocol: 'ar-eye-hunter.v1',
+                    kind: 'match-start-intent',
+                    intent: { matchId: 'scheduled', directorSessionId: session.sessionId, durationMs: 60000, sentAtEpochMs: Date.now() }
+                }
+            })
+        );
+        await waiting.promise;
+        if (change === 'expired') {
+            status = { ...status, directorIsFresh: false };
+        }
+        if (change === 'reappointed') {
+            status = { ...status, directorEpoch: 2 };
+        }
+        resume.resolve();
+        await completion;
+        expect(accepted).toEqual([change === 'current']);
+    });
+
     it.each(['hit', 'pickup'] as const)('fences accepted %s continuation when its network ends with its match still installed', async (kind) => {
         const fixture = acceptedIntentFixture(kind, Date.now());
         const eventDone = Promise.withResolvers<void>();

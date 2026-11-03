@@ -5,6 +5,10 @@ inputs:
     description: Install Deno and restore its cache.
     required: false
     default: 'false'
+  deno-version:
+    description: Deno version required by this lane.
+    required: false
+    default: v2.x
   playwright:
     description: Install Playwright Chromium and its system dependencies.
     required: false
@@ -27,7 +31,12 @@ runs:
       if: ${{ inputs.deno == 'true' }}
       uses: denoland/setup-deno@v2
       with:
-        deno-version: v2.x
+        deno-version: ${{ inputs.deno-version }}
+
+    - name: Isolate Deno from npm workspace tooling
+      if: ${{ inputs.deno == 'true' }}
+      shell: bash
+      run: echo 'DENO_NO_PACKAGE_JSON=1' >> "$GITHUB_ENV"
 
     - name: Restore Deno cache without save permission
       if: ${{ inputs.deno == 'true' && inputs.save-deno-cache != 'true' }}
@@ -36,7 +45,7 @@ runs:
         path: |
           ~/.cache/deno
           ~/.deno
-        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock', 'packages/**/deno.lock') }}
         restore-keys: |
           ${{ runner.os }}-deno-
 
@@ -47,13 +56,18 @@ runs:
         path: |
           ~/.cache/deno
           ~/.deno
-        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock', 'packages/**/deno.lock') }}
         restore-keys: |
           ${{ runner.os }}-deno-
 
     - name: Install dependencies
       shell: bash
       run: npm ci
+
+    - name: Cache the native RTC CLI for offline admission tests
+      if: ${{ inputs.deno == 'true' }}
+      shell: bash
+      run: deno cache --frozen --config packages/shared-rtc-bench/deno.json packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts
 
     - name: Install Playwright Chromium
       if: ${{ inputs.playwright == 'true' }}

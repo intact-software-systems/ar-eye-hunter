@@ -37,6 +37,13 @@ import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';
 import {
+    registerGroupMoveInbox,
+    submitGroupMove,
+    toGroupMoveExpiryEnqueue,
+    type GroupMoveInboxRequest
+} from '../move/group-move-inbox.ts';
+import type { GroupMoveDeadline } from '../move/group-move-outbox.ts';
+import {
     toGroupSessionCleanupEnqueue,
     writeGroupSessionCleanup
 } from '../presence/group-presence-service.ts';
@@ -149,6 +156,8 @@ export class GroupStateInboxService {
         this.handlers.assertRegistrationComplete([
             ...GROUP_MUTATION_INBOX_TYPES,
             AppInboxType.GROUP_QUICK_JOIN,
+            AppInboxType.GROUP_MOVE,
+            AppInboxType.GROUP_MOVE_EXPIRE,
             AppInboxType.GROUP_RETENTION_RECONCILE
         ]);
     }
@@ -261,6 +270,19 @@ export class GroupStateInboxService {
         );
     }
 
+    async enqueueGroupMoveExpiry(command: GroupMoveDeadline, traceId: string): Promise<ResourceEntry> {
+        return await this.queueEntryWriter.enqueue({ ...toGroupMoveExpiryEnqueue(command, this.serviceId), traceId });
+    }
+
+    async processGroupMoveUntilCompletion(input: GroupMoveInboxRequest, authority: IssuedAuthSession) {
+        return await submitGroupMove({
+            input,
+            authority,
+            service: this.groupStateService.move,
+            client: this.commandClient
+        });
+    }
+
     async processQuickJoinUntilCompletion(
         input: GroupQuickJoinInput,
         authority: IssuedAuthSession
@@ -357,6 +379,13 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
+        registerGroupMoveInbox(this.handlers, {
+            service: this.groupStateService.move,
+            timing: this.timing,
+            serviceId: this.serviceId,
+            transactionWriter: this.transactionWriter,
+            wakeQueue: this.wakeQueue
+        });
         registerGroupRetentionInbox(this.handlers, {
             service: this.groupStateService.retention,
             transactionWriter: this.transactionWriter,
@@ -370,6 +399,24 @@ export class GroupStateInboxService {
             encodeResult: (result: QuickJoinGroupResult) => encodeAppInboxResult(result, 'Quick Join result'),
             handle: async (command, context) => await this.processQuickJoin(command, context)
         });
+        this.registerGroupMutationHandlers();
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+            decodeCommand: decodeGroupPresenceSessionCleanupAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Group cleanup AppInbox result'),
+            handle: async (payload, context) =>
+                await writeGroupSessionCleanup({
+                    facts: payload,
+                    attemptCount: context.entry.dequeueAudit.attempts,
+                    laneNowEpochMs: this.nowEpochMs(),
+                    context,
+                    groupStateService: this.groupStateService,
+                    transactionWriter: this.transactionWriter,
+                    wakeQueue: this.wakeQueue
+                })
+        });
+    }
+    private registerGroupMutationHandlers(): void {
         const encodeGroupStateResult = (result: GroupStateInboxDurableResult) =>
             encodeAppInboxResult(result, 'Group state AppInbox result');
         const writeGroupStateMutation = async (
@@ -394,20 +441,5 @@ export class GroupStateInboxService {
                 handle: writeGroupStateMutation
             });
         }
-        this.handlers.registerHandler({
-            type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-            decodeCommand: decodeGroupPresenceSessionCleanupAppInboxPayload,
-            encodeResult: (result) => encodeAppInboxResult(result, 'Group cleanup AppInbox result'),
-            handle: async (payload, context) =>
-                await writeGroupSessionCleanup({
-                    facts: payload,
-                    attemptCount: context.entry.dequeueAudit.attempts,
-                    laneNowEpochMs: this.nowEpochMs(),
-                    context,
-                    groupStateService: this.groupStateService,
-                    transactionWriter: this.transactionWriter,
-                    wakeQueue: this.wakeQueue
-                })
-        });
     }
 }

@@ -2,6 +2,10 @@ import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import {
+    isSuccessfulPollingAttempt,
+    toSuccessfulPollingAttempts
+} from '@shared-test/rallar-bb-test/control/control-successful-polling.ts';
 import type {
     ControlFleetAgentLabel,
     ControlFleetFailureSignature,
@@ -152,9 +156,13 @@ function toRollupFailureObservations(distributedRun: ControlDistributedRunSnapsh
 function toDiagnosticFailureObservations(
     { distributedRun, controlRun }: FleetRunFailureInput
 ): FleetFailureObservation[] {
+    const pollingAttempts = toSuccessfulPollingAttempts(distributedRun, controlRun);
     return (controlRun?.events ?? []).flatMap((event) => {
         const diagnostic = isFleetLinkedEvent(distributedRun, event) ? decodeFleetDiagnostic(event.payload) : undefined;
-        if (!diagnostic || (diagnostic.severity !== 'error' && diagnostic.severity !== 'warning')) {
+        if (
+            !diagnostic || (diagnostic.severity !== 'error' && diagnostic.severity !== 'warning') ||
+            isSuccessfulPollingAttempt(event, pollingAttempts)
+        ) {
             return [];
         }
         return [{

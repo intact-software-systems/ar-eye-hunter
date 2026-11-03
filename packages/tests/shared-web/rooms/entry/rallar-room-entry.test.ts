@@ -20,11 +20,36 @@ import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.t
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 const DESTINATION: RallarRoomEntry.Destination = {
+    intent: 'join',
     roomRef: { ...SCOPE, groupId: 'private-room' },
     joinCode: 'CODE +/&?',
     participation: 'preserve'
 };
 const FRAGMENT = '#rallar-room?applicationId=ar-eye-hunter&workspaceId=default&groupId=private-room';
+
+describe('scheduled-session link entry', () => {
+    it('keeps a shared session through sign-in and reload without admitting until the player chooses entry', async () => {
+        const browser = new EntryBrowser();
+        browser.url = 'https://game.example/#rallar-session?applicationId=ar-eye-hunter&workspaceId=default&groupId=scheduled';
+        const entry = browser.createEntry();
+        entry.start();
+        await entry.resume();
+        expect(browser.requests).toEqual([]);
+        browser.authenticate();
+        expect((await entry.resume()).status).toBe('preview');
+        entry.stop();
+        const restored = browser.createEntry();
+        restored.start();
+        expect((await restored.resume()).status).toBe('preview');
+        expect(browser.requests).toEqual([]);
+        restored.enterScheduledLobby();
+        await restored.resume();
+        expect(browser.requests).toHaveLength(1);
+        expect(browser.requests[0].roomRef.groupId).toBe('scheduled');
+        expect(restored.getState().status).toBe('entered');
+        restored.stop();
+    });
+});
 
 describe('private-room share links', () => {
     it('round-trips the exact scoped destination and keeps the code out of the request URL', () => {
@@ -299,7 +324,7 @@ describe('pending room entry lifecycle', () => {
         browser.authenticate();
         const entry = browser.createEntry();
         entry.start();
-        entry.enter({ roomRef: { ...SCOPE, groupId: 'old-room' }, joinCode: null, participation: 'preserve' });
+        entry.enter({ intent: 'join', roomRef: { ...SCOPE, groupId: 'old-room' }, joinCode: null, participation: 'preserve' });
         await entry.resume();
         entry.stop();
         browser.url = shareLink(DESTINATION);
@@ -388,7 +413,7 @@ describe('pending room entry lifecycle', () => {
         const repeated = entry.resume();
         await started.promise;
         expect(browser.requests).toHaveLength(1);
-        const next = { roomRef: { ...SCOPE, groupId: 'next-room' }, joinCode: 'NEXT', participation: 'preserve' as const };
+        const next = { intent: 'join' as const, roomRef: { ...SCOPE, groupId: 'next-room' }, joinCode: 'NEXT', participation: 'preserve' as const };
 
         entry.enter(next);
         await entry.resume();
@@ -491,7 +516,7 @@ describe('pending room entry lifecycle', () => {
         entry.enter(DESTINATION);
         const pending = entry.resume();
         await started.promise;
-        const next = { roomRef: { ...SCOPE, groupId: 'new-link' }, joinCode: 'NEW', participation: 'preserve' as const };
+        const next = { intent: 'join' as const, roomRef: { ...SCOPE, groupId: 'new-link' }, joinCode: 'NEW', participation: 'preserve' as const };
 
         browser.navigate(shareLink(next));
         expect(entry.getState()).toMatchObject({ status: 'pending', destination: next });

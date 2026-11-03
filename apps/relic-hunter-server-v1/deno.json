@@ -23,11 +23,11 @@
     "graphology": "npm:graphology@0.26.0"
   },
   "tasks": {
-    "dev": "deno run --watch --allow-net --allow-env --allow-read src/main.ts",
-    "start": "deno run --allow-net --allow-env --allow-read src/main.ts",
-    "check": "deno check src/main.ts test/",
-    "lint": "deno lint",
-    "test": "deno test --allow-env --allow-read"
+    "dev": "DENO_NO_PACKAGE_JSON=1 deno run --watch --allow-net --allow-env --allow-read src/main.ts",
+    "start": "DENO_NO_PACKAGE_JSON=1 deno run --allow-net --allow-env --allow-read src/main.ts",
+    "check": "DENO_NO_PACKAGE_JSON=1 deno check src/main.ts test/",
+    "lint": "DENO_NO_PACKAGE_JSON=1 deno lint",
+    "test": "DENO_NO_PACKAGE_JSON=1 deno test --allow-env --allow-read"
   },
   "deploy": {
     "org": "intact-software-systems",

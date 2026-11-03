@@ -5,7 +5,7 @@ import {
     requireExactOptionalKeys,
     requirePositiveInteger,
     requireString
-} from '../../../protocol/exact-object-decoding.ts';
+} from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeExactDocumentRef } from './decode-exact-document-ref.ts';
 import { decodeExactEncryptedEnvelopeShape } from './decode-exact-operation-shapes.ts';
@@ -55,7 +55,22 @@ export function decodeExactSnapshotEnvelope(value: JsonWireValue): RallarCrdtSna
     ) {
         throw new TypeError('CRDT snapshot included update IDs are invalid');
     }
-    const metadata = requireCrdtJsonWireObject(snapshot.metadata, 'CRDT snapshot metadata');
+    decodeSnapshotMetadata(snapshot.metadata);
+    if ('hash' in snapshot) {
+        requireString(snapshot.hash, 'snapshot hash');
+    }
+    if (!validateRallarCrdtSnapshotEnvelope(snapshot).valid) {
+        throw new TypeError('CRDT snapshot envelope is invalid');
+    }
+    return snapshot as RallarCrdtSnapshotEnvelope;
+}
+
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
+}
+
+function decodeSnapshotMetadata(value: JsonWireValue | undefined): void {
+    const metadata = requireCrdtJsonWireObject(value, 'CRDT snapshot metadata');
     requireExactOptionalKeys({
         value: metadata,
         required: ['updateCount'],
@@ -86,15 +101,4 @@ export function decodeExactSnapshotEnvelope(value: JsonWireValue): RallarCrdtSna
     if ('sequenceState' in metadata) {
         decodeExactSequenceState(metadata.sequenceState);
     }
-    if ('hash' in snapshot) {
-        requireString(snapshot.hash, 'snapshot hash');
-    }
-    if (!validateRallarCrdtSnapshotEnvelope(snapshot).valid) {
-        throw new TypeError('CRDT snapshot envelope is invalid');
-    }
-    return snapshot as RallarCrdtSnapshotEnvelope;
-}
-
-function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
-    return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
 }

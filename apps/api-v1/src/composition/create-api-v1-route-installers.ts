@@ -1,9 +1,11 @@
-import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
-import type { AdminSupportUseCases } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
+import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
+import type { ReadAdminRoomDirectory } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-directory.ts';
+import type { AdminSupportUseCases } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
@@ -13,6 +15,7 @@ import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
 import { registerAdminOperationsRoutes } from '../admin-operations/register-admin-operations-routes.ts';
+import { registerAdminRoomRoutes } from '../admin-operations/register-admin-room-routes.ts';
 import type {
     ApiV1GroupAdmissionConfiguration,
     ApiV1IceConfiguration,
@@ -21,6 +24,12 @@ import type {
 import { createApiCrdtDocumentAccessAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import * as crdtAdminRoutes from '../crdt/register-crdt-admin-routes.ts';
+import { registerFriendsRoutes, type FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
+import {
+    registerMatchmakingRoutes,
+    type MatchmakingRouteDependencies
+} from '../matchmaking/register-matchmaking-routes.ts';
+import { registerPartyRoutes, type PartyRouteDependencies } from '../parties/register-party-routes.ts';
 import * as adminSupportRoutes from '../routes/admin-support-routes.ts';
 import * as configRoutes from '../routes/config-route.ts';
 import * as graphTopologyRoutes from '../routes/graph-topology-routes.ts';
@@ -72,6 +81,8 @@ export interface ApiV1RouteInstallerTopology {
 }
 
 export interface ApiV1RouteInstallerAdminServices {
+    readonly rooms: Pick<ReadAdminRoomDirectory, 'read'>;
+    readonly topologyWork: Pick<ReadAdminRoomTopologyWork, 'read'>;
     readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
@@ -86,6 +97,9 @@ export interface CreateApiV1RouteInstallersInput<
     readonly admin: ApiV1RouteInstallerAdminServices;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtMutations: CrdtAdminMutations;
+    readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
+    readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: configRoutes.ConfigRouteDependencies['authentication'];
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
@@ -151,6 +165,9 @@ export function constructApiV1RouteInstallers<
     const construction = createApiV1RouteConstruction(input, operations);
     function installApiV1RestRoutes(app: Hono): void {
         registerApiV1StateRoutes(app, construction);
+        registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
+        registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
+        registerPartyRoutes(app, { ...input.parties, requireSession: construction.requireSession });
         registerApiV1AdministrationRoutes(app, construction);
     }
     return {
@@ -270,6 +287,12 @@ function registerApiV1AdministrationRoutes<
         requireApiUserSession: async (context) => await requireSession(context.req),
         authorizeCatchUp: ({ document, session }) =>
             authorizeCrdtDocumentAccess({ document, actorPrincipalId: session.username, sessionId: session.sessionId })
+    });
+    registerAdminRoomRoutes(app, {
+        directory: input.admin.rooms,
+        topologyWork: input.admin.topologyWork,
+        adminClientIds: input.topology.adminClientIds,
+        requireApiAuthSession: requireSession
     });
     registerAdminOperationsRoutes(app, {
         adminClientIds: input.topology.adminClientIds,

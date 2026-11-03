@@ -88,8 +88,7 @@ function planSend(
         dropReasonCode: undefined,
         lane: 'durable',
         preparedMessages: [PREPARED],
-        ackTracking,
-        admittedConnectionGenerationIds: undefined
+        ackTracking
     });
 }
 

@@ -182,8 +182,7 @@ describe('public WS unicast scope', () => {
             lane: 'durable',
             preparedMessages: [],
             dropReasonCode: undefined,
-            recipientScope,
-            admittedConnectionGenerationIds: undefined
+            recipientScope
         });
         recipientScope.workspaceId = 'changed-after-capture';
         expect(decodeALOutboundCapturedPolicy(JSON.parse(JSON.stringify(policy))))

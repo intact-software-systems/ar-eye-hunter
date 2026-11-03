@@ -28,6 +28,83 @@ interface RetentionFixture {
 }
 
 describe('temporary room retention decisions', () => {
+    it('keeps an empty scheduled room through the no-show window and then starts the full grace', async () => {
+        const fixture = await createFixture();
+        const startsAtEpochMs = fixture.nowEpochMs + 3_600_000;
+        const current = await group(fixture);
+        await fixture.harness.repository.putGroup({
+            ...current,
+            maxMembers: 4,
+            metadata: {
+                ...current.metadata,
+                rallarSessionSchedule: { revision: 1, startsAtEpochMs, cancelledAtEpochMs: null }
+            }
+        });
+
+        await reconcile(fixture, 'upcoming');
+        expect(await group(fixture)).toMatchObject({ status: 'active', emptySinceEpochMs: null });
+        fixture.nowEpochMs = startsAtEpochMs + 599_999;
+        await reconcile(fixture, 'no-shows-waiting');
+        expect(await group(fixture)).toMatchObject({ status: 'active', emptySinceEpochMs: null });
+        fixture.nowEpochMs += 1;
+        await reconcile(fixture, 'no-shows-expired');
+        expect(await group(fixture)).toMatchObject({ status: 'active', emptySinceEpochMs: fixture.nowEpochMs });
+        fixture.nowEpochMs += 999;
+        await reconcile(fixture, 'grace-waiting');
+        expect((await group(fixture)).status).toBe('active');
+        fixture.nowEpochMs += 1;
+        await reconcile(fixture, 'grace-expired');
+        expect((await group(fixture)).status).toBe('archived');
+    });
+
+    it('clears old idle observations during a schedule hold and releases the hold on cancellation', async () => {
+        const fixture = await createFixture();
+        await reconcile(fixture, 'old-idle');
+        const current = await group(fixture);
+        const schedule = { revision: 1, startsAtEpochMs: fixture.nowEpochMs + 3_600_000, cancelledAtEpochMs: null };
+        await fixture.harness.repository.putGroup({
+            ...current,
+            maxMembers: 4,
+            metadata: { ...current.metadata, rallarSessionSchedule: schedule }
+        });
+        fixture.nowEpochMs += 10_000;
+        await reconcile(fixture, 'held');
+        const held = await group(fixture);
+        expect(held).toMatchObject({ status: 'active', emptySinceEpochMs: null });
+        await fixture.harness.repository.putGroup({
+            ...held,
+            metadata: {
+                ...held.metadata,
+                rallarSessionSchedule: { ...schedule, cancelledAtEpochMs: fixture.nowEpochMs }
+            }
+        });
+        await reconcile(fixture, 'cancelled');
+        expect(await group(fixture)).toMatchObject({ status: 'active', emptySinceEpochMs: fixture.nowEpochMs });
+        fixture.nowEpochMs += 1_000;
+        await reconcile(fixture, 'cancelled-grace-expired');
+        expect((await group(fixture)).status).toBe('archived');
+    });
+
+    it('does not reuse pre-schedule idle time when maintenance resumes after the no-show deadline', async () => {
+        const fixture = await createFixture();
+        await reconcile(fixture, 'before-scheduling');
+        const current = await group(fixture);
+        const startsAtEpochMs = fixture.nowEpochMs + 3_600_000;
+        await fixture.harness.repository.putGroup({
+            ...current,
+            maxMembers: 4,
+            metadata: {
+                ...current.metadata,
+                rallarSessionSchedule: { revision: 1, startsAtEpochMs, cancelledAtEpochMs: null }
+            }
+        });
+        fixture.nowEpochMs = startsAtEpochMs + 700_000;
+
+        await reconcile(fixture, 'maintenance-recovered');
+
+        expect(await group(fixture)).toMatchObject({ status: 'active', emptySinceEpochMs: fixture.nowEpochMs });
+    });
+
     it('starts grace at the fresh observation and archives at its exact deadline', async () => {
         const fixture = await createFixture();
         const initial = await reconcile(fixture, 'first');

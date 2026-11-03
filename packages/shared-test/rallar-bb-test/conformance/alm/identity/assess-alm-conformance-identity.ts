@@ -1,4 +1,5 @@
 import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '../../../alm/is-rallar-black-box-test-messages-send-command.ts';
 import { isRallarBlackBoxTestResult } from '../../../composite-results.ts';
@@ -54,10 +55,13 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
     if (roleIssues.length > 0) {
         return roleIssues;
     }
-    const issues: string[] = [];
-    const recorded = input.participants.map((participant) => readParticipant(input.runId, participant, issues));
-    const sender = recorded.find((participant) => participant?.participant.role === 'sender');
-    const receiver = recorded.find((participant) => participant?.participant.role === 'receiver');
+    const readings = input.participants.map((participant) =>
+        toRecordedAlmConformanceParticipant(input.runId, participant)
+    );
+    const issues = EitherCollectors.toListFoldLefts(readings);
+    const recorded = EitherCollectors.toListFoldRights(readings);
+    const sender = recorded.find((participant) => participant.participant.role === 'sender');
+    const receiver = recorded.find((participant) => participant.participant.role === 'receiver');
     if (issues.length > 0 || !sender || !receiver) {
         return issues;
     }
@@ -67,9 +71,7 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
     const sends = sender.participant.recipe.commands.filter(isIdentitySend);
     issues.push(...assessAlmReceiptRoleIdentity({
         sender,
-        recipients: recorded.filter((participant): participant is RecordedAlmConformanceParticipant =>
-            participant !== undefined && participant !== sender
-        )
+        recipients: recorded.filter((participant) => participant !== sender)
     }));
     issues.push(...assessSendIdentities({ sends, sender, receiver }));
     issues.push(...assessAlmReloadIdentity(
@@ -109,11 +111,10 @@ function validateAlmConformanceRoles({ roles, participants }: AlmConformanceIden
 }
 
 /** Full authored roots stay under the existing result bounds; compacted or partial evidence cannot pass. */
-function readParticipant(
+export function toRecordedAlmConformanceParticipant(
     runId: string,
-    participant: AlmConformanceIdentityParticipant,
-    issues: string[]
-): RecordedAlmConformanceParticipant | undefined {
+    participant: AlmConformanceIdentityParticipant
+): Either<string, RecordedAlmConformanceParticipant> {
     const envelope = participant.result;
     const root = envelope?.result;
     const value = root?.value;
@@ -123,8 +124,7 @@ function readParticipant(
         root.commandId !== participant.commandId || root.kind !== 'recipe.run' || !isJsonRecordValue(value) ||
         value.recipeId !== participant.recipe.recipeId || !Array.isArray(value.results)
     ) {
-        issues.push(`${participant.role}: missing, mismatched or failed recipe envelope.`);
-        return undefined;
+        return Either.ofLeft(`${participant.role}: missing, mismatched or failed recipe envelope.`);
     }
     const recorded = value.results.filter(isRallarBlackBoxTestResult);
     const results = new Map(recorded.map((result) => [result.commandId, result]));
@@ -138,10 +138,11 @@ function readParticipant(
             return !result?.ok || result.status !== 'ok' || result.kind !== command.kind;
         })
     ) {
-        issues.push(`${participant.role}: malformed, missing, duplicated or failed authored command evidence.`);
-        return undefined;
+        return Either.ofLeft(
+            `${participant.role}: malformed, missing, duplicated or failed authored command evidence.`
+        );
     }
-    return { participant, results };
+    return Either.ofRight({ participant, results });
 }
 
 interface SendIdentitiesInput {

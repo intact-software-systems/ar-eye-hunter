@@ -4961,6 +4961,398 @@ moved or changed test.
         "requiredConstraint": "No task failure is reported for an opportunity whose submit rejected, because the stage already settled each selected value.",
         "failureRationale": "A stage that settled each value and then rethrew would still produce the expected admission failed settlement; only the absent reporter call shows the failure stayed with the stage."
       }
+    },
+    {
+      "id": "group-move-retains-memberships",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Moving the active session must not revoke source or destination account membership.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#connects destination presence and disconnects source without removing either membership",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "leaveStateGroup",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Moving the active session must not revoke source or destination account membership.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "group-move-protects-third-room",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Retrying an old move from a third room must not emit HTTP effects.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the current third room unchanged when an old move is explicitly retried",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Browser fetch HTTP request transport",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Retrying an old move from a third room must not emit HTTP effects.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "group-move-retains-source-after-failure",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Failed destination presence must not revoke membership in the source.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the source selected when destination presence fails",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "leaveStateGroup",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Failed destination presence must not revoke membership in the source.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "group-move-rejects-uncommitted-authority",
+      "domain": "Move together browser activation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Uncommitted or other-account moves must be rejected before any HTTP effect.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#refuses an uncommitted or other-account move before any HTTP effect",
+      "coverageRelation": "The test invokes the real facade activation with the specified move and observes the outbound port alongside current-room or rejection assertions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Browser fetch HTTP request transport",
+        "observableEffect": "The port sends a request that can change server membership or presence independently of local selected-room state.",
+        "requiredConstraint": "Uncommitted or other-account moves must be rejected before any HTTP effect.",
+        "failureRationale": "A rejected activation or unchanged local room cannot exclude a mutation that already escaped to the server."
+      }
+    },
+    {
+      "id": "scheduled-preview-never-enters-before-permission",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Previewing a scheduled session must not request joining it; explicit entry requires fresh server admission permission.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay",
+      "coverageRelation": "The test selects a preview and attempts entry before permission, observing no entry request. After fresh permission it invokes entry again and verifies an entry request exists; duplicate idempotent port calls are not pinned.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarRoomEntry.enterScheduledLobby",
+        "observableEffect": "The entry port publishes a pending join destination; the consuming app then owns eligibility, admission and active-room switching.",
+        "requiredConstraint": "Preview selection and an early entry attempt emit zero join-intent requests; an explicit permitted attempt must request entry, without requiring an exact invocation count.",
+        "failureRationale": "Preview state can look correct while an unintended join destination is already queued. Conversely, permitted entry must actually request that destination."
+      }
+    },
+    {
+      "id": "scheduled-entry-fails-closed-after-refresh-failure",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "A failed current preview refresh cannot reuse old admission permission.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#clears stale admission permission when its current refresh fails",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. After the fresh permission read fails, no lobby-entry effect is emitted.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomEntry.enterScheduledLobby",
+        "observableEffect": "The entry port publishes the pending join destination that app admission consumes.",
+        "requiredConstraint": "After the fresh permission read fails, no join-intent request is emitted.",
+        "failureRationale": "A cleared local preview does not prove that a join destination was not already queued."
+      }
+    },
+    {
+      "id": "scheduled-ambiguous-write-replays-identical-command",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Explicit retry after a lost RSVP response replays the identical logical command.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#retries an ambiguous write with the same identity and reviewed revision",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. One initial attempt followed by one explicit retry emits two requests in that order, with identical request identity, action and reviewed revision.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarScheduledSessions.Api.change",
+        "observableEffect": "The API port delivers the reservation command to AppInbox.",
+        "requiredConstraint": "One initial attempt followed by one explicit retry emits two requests in that order, with identical request identity, action and reviewed revision.",
+        "failureRationale": "Retry state alone cannot exclude a second logical reservation or accidental duplicate deliveries."
+      }
+    },
+    {
+      "id": "scheduled-creation-deduplicates-pending-clicks",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Repeated creation clicks while a request is pending create only one scheduled room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. Two overlapping clicks emit exactly one creation request before it settles.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarScheduledSessions.Api.create",
+        "observableEffect": "The API port creates a durable scheduled room.",
+        "requiredConstraint": "Two overlapping clicks emit exactly one creation request before it settles.",
+        "failureRationale": "One final selected room can hide a second orphan room created by a duplicate request."
+      },
+      "sharedCoverageGroup": "scheduled-creation-pending-click-and-logout-lifecycle"
+    },
+    {
+      "id": "scheduled-creation-completion-respects-logout",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "A creation result from a logged-out account cannot replace the current room destination.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. When creation completes after logout, no destination-entry request is emitted.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomEntry.enter",
+        "observableEffect": "The entry port publishes a destination that may resume through later authentication.",
+        "requiredConstraint": "When creation completes after logout, no destination-entry request is emitted.",
+        "failureRationale": "Empty session UI state alone cannot prove that a stale destination was not queued for later entry."
+      },
+      "sharedCoverageGroup": "scheduled-creation-pending-click-and-logout-lifecycle"
+    },
+    {
+      "id": "scheduled-reservation-click-does-not-enter-lobby",
+      "domain": "Scheduled-session browser interactions",
+      "owner": "Rallar browser maintainers",
+      "summary": "Reserving a seat is distinct from explicit lobby entry.",
+      "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview",
+      "coverageRelation": "The executable test invokes the named user action and observes its outbound effect port together with visible state. Clicking Reserve a seat must emit the reserve action and no lobby-entry action.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ScheduledSessionsPanel owner.enterLobby",
+        "observableEffect": "The lobby action starts a fresh permission check and may publish a pending join destination for app-owned admission.",
+        "requiredConstraint": "Clicking Reserve a seat must emit the reserve action and must not invoke the separate lobby-entry action.",
+        "failureRationale": "A disabled Enter lobby button alone does not rule out the reserve handler accidentally invoking entry."
+      }
+    },
+    {
+      "id": "friends-ambiguous-request-identity",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "A manual retry resubmits the unresolved HTTP mutation with its original request identity and payload.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#loads the private view and preserves exact command identity after an ambiguous failure",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarFriends.Api.change",
+        "observableEffect": "A manual retry resubmits the unresolved HTTP mutation with its original request identity and payload.",
+        "requiredConstraint": "The initial delivery and explicit retry carry identical actor, request identity and command data.",
+        "failureRationale": "A locally cleared error does not prove the server received the same idempotency identity; a new identity could execute the mutation twice."
+      }
+    },
+    {
+      "id": "friends-terminal-request-recovery",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "A user can submit a new social action after the previous durable command exhausts its retry budget.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#releases a terminal exhausted request so a new action can proceed",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarFriends.Api.change",
+        "observableEffect": "A user can submit a new social action after the previous durable command exhausts its retry budget.",
+        "requiredConstraint": "The next action reaches the mutation port with its own payload and a different request identity.",
+        "failureRationale": "Reusing a terminal identity only replays exhaustion; local enabled controls alone cannot prove a new command is admitted."
+      }
+    },
+    {
+      "id": "friends-stale-invitation-no-entry",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "Invitation clicks may request room admission only after current consent and game scope are verified.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomEntry.enter",
+        "observableEffect": "Invitation clicks may request room admission only after current consent and game scope are verified.",
+        "requiredConstraint": "A removed invitation or an invitation scoped to a different game emits no room entry intent.",
+        "failureRationale": "An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly."
+      }
+    },
+    {
+      "id": "friends-background-read-suppression",
+      "domain": "Private friends browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "Inactive browsers stop private presence polling and resume with one coalesced current read on activation.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read",
+      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarFriends.Api.read",
+        "observableEffect": "Inactive browsers stop private presence polling and resume with one coalesced current read on activation.",
+        "requiredConstraint": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read.",
+        "failureRationale": "Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract."
+      }
+    },
+    {
+      "id": "matchmaking-confirmation-blocks-admission",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "A confirming cohort cannot initiate room admission before its committed destination is recovered.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#recovers confirmation, binds commands to the recovered search, and enters only a committed destination",
+      "coverageRelation": "A confirming cohort cannot initiate room admission before its committed destination is recovered. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarMatchmaking entry.enter",
+        "observableEffect": "Room admission changes the active multiplayer room and participation.",
+        "requiredConstraint": "Entry remains unused while confirmation is pending.",
+        "failureRationale": "An unchanged confirmation view could coexist with an in-flight admission, so rendered state cannot prove the absence of premature entry."
+      }
+    },
+    {
+      "id": "matchmaking-ambiguous-command-blocks-replacement",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "After an ambiguous mutation response, Find and Cancel cannot replace the unresolved command; explicit retry preserves its semantic identity.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves",
+      "coverageRelation": "After an ambiguous mutation response, Find and Cancel cannot replace the unresolved command; explicit retry preserves its semantic identity. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking Api.change",
+        "observableEffect": "Each outbound mutation may commit independently on the server despite a missing response.",
+        "requiredConstraint": "Exactly the initial mutation is sent before explicit Retry; replacement controls produce no additional mutation.",
+        "failureRationale": "The same retry-pending view can hide a second remotely committed command; counting the mutation port excludes that ambiguity."
+      }
+    },
+    {
+      "id": "matchmaking-timeout-never-auto-requeues",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "Recovery of a timed-out cohort never starts another search without explicit consent.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#never requeues a timed-out cohort and uses a new identity only after an explicit new search",
+      "coverageRelation": "Recovery of a timed-out cohort never starts another search without explicit consent. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking Api.change",
+        "observableEffect": "A new search mutation allocates a queue position and may reserve another cohort.",
+        "requiredConstraint": "Only the explicitly requested cancel is sent before the later explicit Find action.",
+        "failureRationale": "An ended local snapshot can remain visible while an unsolicited search is in flight, so the mutation count independently proves consent."
+      }
+    },
+    {
+      "id": "matchmaking-failed-refresh-blocks-stale-entry",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "A failed fresh snapshot read prevents entry through an earlier matched destination.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#rejects another scope or account and prevents stale entry after a failed fresh read",
+      "coverageRelation": "A failed fresh snapshot read prevents entry through an earlier matched destination. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarMatchmaking entry.enter",
+        "observableEffect": "Admission can move the account into a stale room using previously recovered state.",
+        "requiredConstraint": "No room admission is initiated after the freshness read fails.",
+        "failureRationale": "Displaying Offline does not exclude a concurrent admission; the unused admission port proves fail-closed behavior."
+      }
+    },
+    {
+      "id": "matchmaking-polling-lifecycle",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "Inactive and stopped browser owners produce no polling traffic; foreground recovery coalesces concurrent refreshes and shutdown preserves the durable search.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search",
+      "coverageRelation": "Inactive and stopped browser owners produce no polling traffic; foreground recovery coalesces concurrent refreshes and shutdown preserves the durable search. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking Api.read and Api.change",
+        "observableEffect": "Read calls consume server capacity; mutation calls can cancel a durable account search.",
+        "requiredConstraint": "One initial read, one coalesced foreground recovery read, no inactive or stopped reads, and no shutdown mutation.",
+        "failureRationale": "The same final searching view can hide unnecessary network work or a remotely cancelled search; owned API observations prove lifecycle suppression."
+      }
+    },
+    {
+      "id": "matchmaking-http-retry-identity",
+      "domain": "Browser matchmaking consent and recovery",
+      "owner": "Rallar browser matchmaking maintainers",
+      "summary": "One lost HTTP response is retried once with the identical scoped idempotency URL and authenticated command payload.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery",
+      "coverageRelation": "One lost HTTP response is retried once with the identical scoped idempotency URL and authenticated command payload. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "matchmakingHttpApi global fetch HTTP transport",
+        "observableEffect": "Requests at distinct request URLs can commit separate AppInbox mutations.",
+        "requiredConstraint": "The initial failed attempt and successful retry use the same application, workspace and request identity.",
+        "failureRationale": "A successful final response alone cannot exclude an earlier independently committed command with another identity."
+      }
+    },
+    {
+      "id": "authenticated-command-immutable-retry",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "An uncertain command excludes replacement writes and retries the same original immutable request and identity.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.change",
+        "observableEffect": "Each call sends an authoritative authenticated mutation.",
+        "requiredConstraint": "Only the original write is sent before explicit retry; retry repeats its exact identity and original payload even if the caller mutates its input.",
+        "failureRationale": "An unchanged local view cannot exclude a duplicate remote mutation or a changed payload under the same idempotency identity."
+      }
+    },
+    {
+      "id": "authenticated-retry-account-isolation",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "A late response from the previous account cannot replace the current account pending command.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#does not let a late write clear a replacement account command or expose its result",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "AuthenticatedResource.Api.change",
+        "observableEffect": "Retry sends a mutation authenticated as the currently active account.",
+        "requiredConstraint": "After account replacement and late prior-account completion, explicit retry repeats the current account command and identity.",
+        "failureRationale": "Local error state could remain correct while retry sends the old account command; the outbound identities expose that security failure."
+      }
+    },
+    {
+      "id": "party-uncertain-consent-retry",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "An uncertain party invitation retains its original roster revision and identity despite refreshed roster state.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarParty.Api.change",
+        "observableEffect": "Writes invite another account or change the durable party roster.",
+        "requiredConstraint": "Create and the original invitation are the only writes before explicit retry; disband is suppressed, and retry repeats the original invitation exactly.",
+        "failureRationale": "Rendered roster state cannot prove that a replacement disband was never sent or that retry retained the originally approved roster revision."
+      }
+    },
+    {
+      "id": "party-consent-requires-displayed-invitation",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "An invitation absent from the private view cannot initiate acceptance.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#accepts only a displayed invitation and preserves explicit null roster consent",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarParty.Api.change",
+        "observableEffect": "An acceptance request can add the account to a party.",
+        "requiredConstraint": "Responding with an unknown invitation ID sends no mutation; responding to the displayed invitation sends its exact scoped consent.",
+        "failureRationale": "Local state may remain unchanged even if an unauthorized or stale acceptance request reaches the server."
+      }
+    },
+    {
+      "id": "party-definitive-refusal-no-retry",
+      "domain": "Authenticated party browser commands",
+      "owner": "Rallar browser maintainers",
+      "summary": "A definitive party revision refusal does not silently retry with new roster consent.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent",
+      "coverageRelation": "The test drives the public browser owner and observes commands at its injected HTTP API port alongside caller-visible recovery state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarParty.Api.change",
+        "observableEffect": "Each takeover attempt asserts consent to a specific roster revision.",
+        "requiredConstraint": "Exactly one takeover mutation is sent when the server definitively refuses that revision.",
+        "failureRationale": "A refreshed view and cleared local retry flag could hide a second mutation using fresh consent that the user never approved."
+      }
+    },
+    {
+      "id": "full-stack-receiver-barrier-timeout-warns-once",
+      "domain": "Full-stack ALM harness receiver connect barrier",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "When the receiver neither connects nor ends within the barrier timeout, the harness records one warning naming the run, the connect and run commands and the timeout, and releases the sender anyway. Executable assertion: “warns and releases the sender when the receiver neither connects nor ends within the barrier timeout”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout",
+      "coverageRelation": "The test starts a real recipient recipe run through startRecipientRecipeRun against a control run whose snapshots never show the receiver's connect or result while each read moves the clock, then observes the console warning port and the started run the barrier returns.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.warn, the diagnostic port waitForReceiverConnectBarrier reports its timeout reaction through",
+        "observableEffect": "The warning is the only record a lane leaves that its sender was released without the receiver's connect barrier, so a cell's evidence reads one warning as one unbarriered release.",
+        "requiredConstraint": "One barrier timeout emits exactly one warning with the exact run, connect command, run command and timeout payload, and the barrier then returns the started run instead of throwing.",
+        "failureRationale": "The started run is returned identically whether the barrier warned once, once per poll or not at all, so only the warning count distinguishes the single timeout reaction from a per-read warning or a silent release."
+      }
     }
   ],
   "entries": [
@@ -10507,6 +10899,413 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent task failure report is the witness that the rejected submit stayed with the stage after it settled the value failed.",
       "semanticCoverage": "packages/tests/shared/alm/outbound/publication/al-outbound-publication-stage.test.ts#settles each selected value failed when submit throws and keeps the engine task healthy"
+    },
+    {
+      "id": "test-structure-coupling-ff2b94d5e880ebcb",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-retains-memberships",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Moving the active session must not revoke source or destination account membership. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#connects destination presence and disconnects source without removing either membership"
+    },
+    {
+      "id": "test-structure-coupling-72efb33fdb10edc1",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-protects-third-room",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Retrying an old move from a third room must not emit HTTP effects. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the current third room unchanged when an old move is explicitly retried"
+    },
+    {
+      "id": "test-structure-coupling-eb881cb29c937149",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-retains-source-after-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Failed destination presence must not revoke membership in the source. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#keeps the source selected when destination presence fails"
+    },
+    {
+      "id": "test-structure-coupling-354f33252f92dd47",
+      "path": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "group-move-rejects-uncommitted-authority",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Uncommitted or other-account moves must be rejected before any HTTP effect. The absence assertion excludes remote side effects that local state cannot prove.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#refuses an uncommitted or other-account move before any HTTP effect"
+    },
+    {
+      "id": "test-structure-coupling-0ea82a76def8a2de",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-never-enters-before-permission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Selecting a session preview must emit no join-intent request.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay"
+    },
+    {
+      "id": "test-structure-coupling-617a0a3295b7b5e6",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-never-enters-before-permission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "An explicit attempt before server permission must still emit no join-intent request.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay"
+    },
+    {
+      "id": "test-structure-coupling-1c814d95cd1783c2",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-never-enters-before-permission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The permitted explicit attempt must request entry; existence is observable while an exact count for the idempotent port is incidental.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#loads personal sessions and previews without entering gameplay"
+    },
+    {
+      "id": "test-structure-coupling-79dd99e01c9d920d",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-entry-fails-closed-after-refresh-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The failed refresh must prevent a join-intent request, in addition to clearing visible permission.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#clears stale admission permission when its current refresh fails"
+    },
+    {
+      "id": "test-structure-coupling-ff908e48df5ee115",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-ambiguous-write-replays-identical-command",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial action and its one explicit retry must emit exactly two deliveries.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#retries an ambiguous write with the same identity and reviewed revision"
+    },
+    {
+      "id": "test-structure-coupling-080eeb3d4b339414",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-ambiguous-write-replays-identical-command",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Comparing first and second request data proves replay identity and reviewed revision remain unchanged across the lost response.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#retries an ambiguous write with the same identity and reviewed revision"
+    },
+    {
+      "id": "test-structure-coupling-d3926c5bba27c2b3",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-creation-deduplicates-pending-clicks",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Two pending clicks must cause only one durable room creation attempt.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout"
+    },
+    {
+      "id": "test-structure-coupling-95632c2ee4cb2469",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-creation-completion-respects-logout",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The completed stale request must not enqueue a destination after logout.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout"
+    },
+    {
+      "id": "test-structure-coupling-fb3e7a0c520b76fc",
+      "path": "packages/tests/shared-react/scheduled-sessions-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-reservation-click-does-not-enter-lobby",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The actual reserve button click must not cause the separate lobby-entry effect.",
+      "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview"
+    },
+    {
+      "id": "test-structure-coupling-5c2d0e5ac23944ed",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-ambiguous-request-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial delivery and explicit retry carry identical actor, request identity and command data. A locally cleared error does not prove the server received the same idempotency identity; a new identity could execute the mutation twice.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#loads the private view and preserves exact command identity after an ambiguous failure"
+    },
+    {
+      "id": "test-structure-coupling-d6c2c71cc350a46b",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-terminal-request-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The next action reaches the mutation port with its own payload and a different request identity. Reusing a terminal identity only replays exhaustion; local enabled controls alone cannot prove a new command is admitted.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#releases a terminal exhausted request so a new action can proceed"
+    },
+    {
+      "id": "test-structure-coupling-d7c78613092fde22",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-stale-invitation-no-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+    },
+    {
+      "id": "test-structure-coupling-3cdfc58ebbfc0866",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-stale-invitation-no-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+    },
+    {
+      "id": "test-structure-coupling-7fa28eddd4ee743a",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-9adfe00fdd70b6d5",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-c88ec6352a5a9b62",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-confirmation-blocks-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Calling Enter while confirmation is pending must not reach the room admission port.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#recovers confirmation, binds commands to the recovered search, and enters only a committed destination"
+    },
+    {
+      "id": "test-structure-coupling-4d6bf15258f70094",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-ambiguous-command-blocks-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Find and Cancel must leave the original single outbound command unresolved rather than send replacements.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves"
+    },
+    {
+      "id": "test-structure-coupling-e21badfde30dee8f",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-timeout-never-auto-requeues",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Repeated recovery polling after timeout must not add a search mutation to the explicit cancellation.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#never requeues a timed-out cohort and uses a new identity only after an explicit new search"
+    },
+    {
+      "id": "test-structure-coupling-b20305207bf1ea7f",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-failed-refresh-blocks-stale-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "The old matched snapshot must not authorize entry when the required fresh read fails.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#rejects another scope or account and prevents stale entry after a failed fresh read"
+    },
+    {
+      "id": "test-structure-coupling-364f3127b1e77dfc",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Three background timer intervals must not add to the initial read.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-84a8ed91f83e0ebd",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Foreground notification and concurrent explicit refresh must coalesce into one additional recovery read.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-9ca97d0e017f5bb3",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Advancing timers after stop must not add further reads.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-e94d8e51dd3edd8b",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-polling-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Stopping the local owner must leave the durable search intact by sending no mutation.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-bd3e89161872b5f7",
+      "path": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-http-retry-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Both captured transport attempts must use the same scoped request URL so an ambiguous response cannot create two logical commands.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery"
+    },
+    {
+      "id": "test-structure-coupling-2970147a21a60564",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The attempted replacement must not add a second outbound mutation while the original response is uncertain.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-f1fa04c53fa25bc3",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The two transport attempts must carry the identical logical request and request ID so server replay cannot create a second mutation.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-d4f1cb938c4a83d1",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retried payload must retain the original name despite caller mutation; matching two mutated attempts would not prove immutable capture.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-75109cb9edba3489",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-retry-account-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retry must equal the current account pending request, not the older account request that completed late.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#does not let a late write clear a replacement account command or expose its result"
+    },
+    {
+      "id": "test-structure-coupling-c9442fba7470603a",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-uncertain-consent-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Attempting Disband while the invitation is unresolved must not add a third mutation to Create and Invite.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
+    },
+    {
+      "id": "test-structure-coupling-13dd643abfb0c6f4",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-uncertain-consent-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retried invitation must retain the original scoped party, recipient, roster revision and idempotency identity despite refresh.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
+    },
+    {
+      "id": "test-structure-coupling-d5a09476296cfe2f",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-consent-requires-displayed-invitation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The unknown invitation produces no outbound consent before the known invitation is accepted.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#accepts only a displayed invitation and preserves explicit null roster consent"
+    },
+    {
+      "id": "test-structure-coupling-dcd0d429e44bba70",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-definitive-refusal-no-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The definitive party-changed response completes the one attempted takeover without a replacement write.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent"
+    },
+    {
+      "id": "test-structure-coupling-96096a8f4d754973",
+      "path": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "full-stack-receiver-barrier-timeout-warns-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The exactly-once matcher on the warning spy is the only observation that the barrier's timeout reaction ran once with its exact payload; the returned started run is the same for a silent or repeated warning.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout"
     }
   ]
 }

@@ -19,14 +19,14 @@ import {
     seedGrantRoom,
     writeGrantRow
 } from '../mutation/group-publication-grant-test-runtime.ts';
-import { createSnapshotAssemblyMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('fails closed when persisted active membership exceeds maxMembers', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = createTestGroupStateRepository(runtime);
         const ref = groupRef('over-capacity-roster');
-        const read = createSnapshotAssemblyMutationRead();
+        const read = createPersistenceMutationRead();
         requireMutationGroupAndActor(read);
         const group: Group = {
             ...read.group.value,
@@ -57,13 +57,13 @@ describe('GroupStateRepository persistence', () => {
             groupId: 'incomplete-contract-group'
         };
         const completeGroup: Group = {
-            ...createSnapshotAssemblyMutationRead().group!.value,
+            ...createPersistenceMutationRead().group!.value,
             ...ref,
             activeMemberCount: 1,
             ownerPrincipalId: 'alice'
         };
         const completeMember: GroupMember = {
-            ...requireActiveMember(createSnapshotAssemblyMutationRead().actorMember),
+            ...requireActiveMember(createPersistenceMutationRead().actorMember),
             ...ref,
             principalId: 'alice',
             role: 'owner',
@@ -294,11 +294,11 @@ describe('GroupStateRepository persistence', () => {
             groupId: 'snapshot-child-group'
         };
         const group: Group = {
-            ...createSnapshotAssemblyMutationRead().group!.value,
+            ...createPersistenceMutationRead().group!.value,
             ...ref
         };
         const wrongScopeMember: GroupMember = {
-            ...createSnapshotAssemblyMutationRead().actorMember!,
+            ...createPersistenceMutationRead().actorMember!,
             ...ref,
             workspaceId: '_'
         };

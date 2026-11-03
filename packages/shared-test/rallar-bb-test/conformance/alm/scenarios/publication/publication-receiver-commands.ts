@@ -3,7 +3,11 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
+import {
+    CONNECT_READINESS_TIMEOUT_MS,
+    NON_EXPIRING_SEND_TIMEOUT_MS,
+    RESPONSE_MARGIN_MS
+} from '../../alm-conformance-budgets.ts';
 import { toPayloadWait, toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
@@ -29,7 +33,10 @@ export function toArrivalCountCommand(
     count: number,
     opportunity: number
 ): RallarBlackBoxTestMessagesReceivedCommand {
+    // Receiver observation starts before sender setup; include its bounded RTC settling time.
+    // Publication admission, TTL and negative-arrival windows keep their own unchanged budgets.
     const timeoutMs = receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS +
+        (receiver.input.carrier === 'ws' ? 0 : CONNECT_READINESS_TIMEOUT_MS) +
         (opportunity + 1) * PUBLICATION_CADENCE_MS;
     return {
         ...toReceivedCommand({ ...receiver, index: count, count, absent: false }),

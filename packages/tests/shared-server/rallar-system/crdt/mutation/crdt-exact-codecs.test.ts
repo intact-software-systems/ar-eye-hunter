@@ -132,6 +132,21 @@ describe('CRDT mutation exact nested codecs', () => {
         ).toThrow(/bundle|fields|exact/i);
     });
 
+    it.each(['metadata', 'snapshot'] as const)('rejects a debug bundle containing another document’s %s', (field) => {
+        const otherDocument = { ...DOCUMENT, documentId: 'other-document' };
+        const nested = field === 'metadata'
+            ? { ...metadata(), document: otherDocument, documentKey: toRallarCrdtDocumentKey(otherDocument) }
+            : { ...compactCommand().snapshot, document: otherDocument };
+        const bundle = createRallarCrdtDebugBundle({
+            exportedAtEpochMs: 2_000,
+            reason: 'inspect',
+            document: DOCUMENT,
+            records: [],
+            redaction: { payloadsRedacted: false }
+        });
+        expect(() => decodeExactDebugBundle(JSON.parse(JSON.stringify({ ...bundle, [field]: nested })))).toThrow(/document.*differ/i);
+    });
+
     it.each([
         ['numeric health fields', { lastServerAppendSequence: -1 }],
         ['sync error', { lastSyncError: 1 }],

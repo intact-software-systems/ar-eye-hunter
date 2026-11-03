@@ -15,7 +15,11 @@ import { toALPublicationLaneKey } from '@shared/al-contracts/publication/to-al-p
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
+import {
+    ALOutboundPublicationStage,
+    toIdleALOutboundPublicationStageReport,
+    type ALOutboundPublicationStageReport
+} from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -128,6 +132,10 @@ export class AlmReloadPublicationLane {
                 trackedReceiptAlgo: 'none'
             });
         }
+    }
+
+    readReport(): ALOutboundPublicationStageReport {
+        return this.current?.stage.readReport() ?? toIdleALOutboundPublicationStageReport(this.limits);
     }
 
     /** False when the stage holds no such value: one an opportunity selected is its carrier's to cancel. */

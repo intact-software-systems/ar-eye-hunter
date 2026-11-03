@@ -11,8 +11,8 @@ import {
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { ResultCaptureReceipt } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 
 import {
     ControlArtifactStorage,

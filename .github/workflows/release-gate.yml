@@ -184,6 +184,20 @@ jobs:
       - name: Run in-memory full-stack browser tests
         run: npm run test:full-stack:memory
 
+      - name: Validate reopened member readiness windows
+        env:
+          DENO_NO_PACKAGE_JSON: '1'
+        run: npm run test:rallar:full-stack:memory:live-rtc-3:lifecycle -- --grep 'monotonic readiness' --workers=1 --trace=retain-on-failure
+
+      - name: Upload reopening readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reopening-readiness
+          path: apps/rallar-black-box/test-results
+          if-no-files-found: warn
+          retention-days: 7
+
   e2e-game-rooms:
     name: Browser tests (game rooms ${{ matrix.lane }})
     runs-on: ubuntu-latest
@@ -192,7 +206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: ['ar-eye', 'relic', 'relic-continuity']
+        lane: ['ar-eye', 'relic', 'relic-continuity', 'move-together', 'matchmaking']
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -234,6 +248,7 @@ jobs:
             tests/playwright/ar-eye-hunter/director-capability-delivery.spec.ts \
             tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts \
             tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
+            tests/playwright/ar-eye-hunter/room-entry-recovery.spec.ts \
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
 
       - name: Upload AR Eye browser timing
@@ -256,6 +271,7 @@ jobs:
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
+            tests/playwright/relic-hunters/full-stack-room-entry-recovery.spec.ts \
             tests/playwright/relic-hunters/full-stack-http.spec.ts \
             tests/playwright/relic-hunters/full-stack-spectating.spec.ts --trace=retain-on-failure
 
@@ -267,6 +283,34 @@ jobs:
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-continuity.spec.ts --trace=retain-on-failure
+
+      - name: Run Move together, scheduling and friends browser tests in both games
+        if: ${{ matrix.lane == 'move-together' }}
+        env:
+          RALLAR_ARENA_FULL_STACK: '1'
+          RELIC_HUNTERS_FULL_STACK: '1'
+          RELIC_HUNTERS_BUILT_PREVIEW: '1'
+        run: |
+          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+            tests/playwright/ar-eye-hunter/move-together.spec.ts \
+            tests/playwright/ar-eye-hunter/scheduled-sessions.spec.ts \
+            tests/playwright/ar-eye-hunter/friends.spec.ts --project=desktop-delivery
+          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+            tests/playwright/relic-hunters/full-stack-move-together.spec.ts \
+            tests/playwright/relic-hunters/full-stack-scheduled-sessions.spec.ts \
+            tests/playwright/relic-hunters/full-stack-friends.spec.ts --trace=retain-on-failure
+
+      - name: Run matchmaking browser tests in both games
+        if: ${{ matrix.lane == 'matchmaking' }}
+        env:
+          RALLAR_ARENA_FULL_STACK: '1'
+          RELIC_HUNTERS_FULL_STACK: '1'
+          RELIC_HUNTERS_BUILT_PREVIEW: '1'
+        run: |
+          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
+            tests/playwright/ar-eye-hunter/matchmaking.spec.ts --project=desktop-delivery
+          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+            tests/playwright/relic-hunters/full-stack-matchmaking.spec.ts --trace=retain-on-failure
 
       - name: Upload room journey observations
         if: always()

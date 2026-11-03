@@ -1,4 +1,4 @@
-import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import type { RelicPublicSnapshot, RelicRoundTransitionEvent } from '@relic-hunters/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { ALDeliveryState } from '@shared-web/browser/rallar.ts';
@@ -111,5 +111,56 @@ export function toRelicRoomDiagnostics(
         authorityReady: connected && roomReady && !!authority?.started,
         authorityPhase: authority?.phase,
         authorityPeerAssistReadyPeers: authority?.peerAssist.readyPeerIds.length ?? 0
+    };
+}
+
+export interface AcceptedRelicSnapshotDiagnosticsInput {
+    readonly state: RelicHuntersRuntime.Connection;
+    readonly authority: RallarGameAuthorityClientStatus | undefined;
+    readonly snapshot: RelicPublicSnapshot;
+    readonly source: RelicSnapshotSource;
+    readonly nowEpochMs: number;
+}
+
+export function toAcceptedRelicSnapshotDiagnostics(
+    { state, authority, snapshot, source, nowEpochMs }: AcceptedRelicSnapshotDiagnosticsInput
+): RelicRuntimeDiagnostics {
+    return {
+        ...state.diagnostics,
+        ...toRelicRoomDiagnostics(state, authority),
+        snapshotReady: true,
+        lastSnapshotSource: source,
+        lastAcceptedSnapshot: toRelicRuntimeSnapshotSummary(snapshot, source),
+        lastIgnoredSnapshotReason: undefined,
+        lastIgnoredSnapshot: undefined,
+        lastHydratedAtEpochMs: nowEpochMs
+    };
+}
+
+export interface IgnoredRelicSnapshotDiagnosticsInput {
+    readonly diagnostics: RelicRuntimeDiagnostics;
+    readonly snapshot: RelicPublicSnapshot;
+    readonly source: RelicSnapshotSource;
+    readonly reason: RelicSnapshotRejectionReason;
+}
+
+export function toIgnoredRelicSnapshotDiagnostics(
+    { diagnostics, snapshot, source, reason }: IgnoredRelicSnapshotDiagnosticsInput
+): Partial<RelicRuntimeDiagnostics> {
+    return {
+        ignoredSnapshotCount: diagnostics.ignoredSnapshotCount + 1,
+        lastIgnoredSnapshotReason: reason,
+        lastIgnoredSnapshot: toRelicRuntimeSnapshotSummary(snapshot, source)
+    };
+}
+
+/** Retain a bounded presentation history alongside the other runtime observations. */
+export function toRelicRoundTransitionDiagnostics(
+    diagnostics: RelicRuntimeDiagnostics,
+    event: RelicRoundTransitionEvent
+): RelicRuntimeDiagnostics {
+    return {
+        ...diagnostics,
+        roundTransitionCues: [...diagnostics.roundTransitionCues, `${event.round}:${event.transition}`].slice(-16)
     };
 }

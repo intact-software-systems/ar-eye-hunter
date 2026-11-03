@@ -4,7 +4,7 @@ import type {
 } from '@shared/api/admin-support/admin-support-types.ts';
 import { toReadGroupLifecyclePolicy } from '../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { AdminSupportWriteInput, GroupAdminSupportDependencies } from './admin-support-contracts.ts';
-import { projectGroupAdminSupportNarrative } from './narratives/project-group-admin-support-narrative.ts';
+import { toGroupAdminSupportNarrative } from './narratives/to-group-admin-support-narrative.ts';
 import { readAdminSupportRecentEventLimit } from './read-admin-support-recent-event-limit.ts';
 import { readTimedAdminSupportNarrative } from './read-timed-admin-support-narrative.ts';
 
@@ -38,7 +38,7 @@ export class GroupAdminSupport {
                     topologyQuery?.readTopologyView(groupRef),
                     readPolicy?.(groupRef)
                 ]);
-                return projectGroupAdminSupportNarrative({
+                return toGroupAdminSupportNarrative({
                     request: input.request,
                     generatedAtEpochMs: this.dependencies.now(),
                     serverId: this.dependencies.serverId,
@@ -47,7 +47,6 @@ export class GroupAdminSupport {
                     snapshot,
                     recentEvents,
                     topologyView,
-                    hasLifecyclePolicyReader: Boolean(readPolicy),
                     policy: policyRead === undefined ? null : toReadGroupLifecyclePolicy(policyRead)
                 });
             }

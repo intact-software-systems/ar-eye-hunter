@@ -6,8 +6,13 @@ import {
     RallarStateStore,
     type RallarStateCacheReadPort
 } from '@shared-web/browser/state-cache/rallar-state-store.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { setClientStateSnapshots } from '@shared/repository/client-state-snapshots-repository.ts';
-import { setGroupStateSnapshots } from '@shared/repository/group-state-snapshots-repository.ts';
+import {
+    onGroupStateSnapshotChange,
+    setGroupStateSnapshots,
+    waitForGroupStateSnapshotChangesIdle
+} from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     beforeEach,
     describe,
@@ -16,11 +21,68 @@ import {
     vi
 } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { createDefaultTestSession } from '../api-middleware-test-double.ts';
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
 
 describe('Rallar state store', () => {
     beforeEach(() => {
         configureTestCacheRepositories();
+    });
+
+    it.each([false, true])('preserves explicit selection during attached-cache hydration with session superseded=%s', async (superseded) => {
+        const context = {
+            session: createDefaultTestSession(),
+            middleware: { webRtcGroupManager: createWebRtcGroupManager() }
+        };
+        const { roomStateStore, stateStore } = createStateStoreFixture({}, () => context.session);
+        const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+        const previous = createGroupSnapshotFixture({ ...scope, groupId: 'previous', sessionIds: ['session-1'] });
+        const selected = createGroupSnapshotFixture({ ...scope, groupId: 'selected', sessionIds: ['session-1'] });
+        setGroupStateSnapshots([previous]);
+        roomStateStore.setCurrentRoom(previous);
+        await waitForGroupStateSnapshotChangesIdle();
+        stateStore.attachCache();
+        let current = true;
+        const stop = onGroupStateSnapshotChange(() => {
+            if (superseded) {
+                current = false;
+            }
+        });
+        const observed: (string | undefined)[] = [];
+        roomStateStore.onChange((state) => {
+            observed.push(state.currentRoomRef?.groupId);
+        }, { emitCurrent: false });
+        const adoption = stateStore.acceptSnapshots({
+            context,
+            clients: [],
+            groups: [selected],
+            scope,
+            currentRoom: selected,
+            assertCurrent: () => {
+                if (!current) {
+                    throw new Error('Entry session superseded');
+                }
+            }
+        });
+        try {
+            if (superseded) {
+                await expect(adoption).rejects.toThrow('Entry session superseded');
+                expect(roomStateStore.resolveCurrentRoomRef()).toEqual(previous.group);
+                expect(observed.length).toBeGreaterThan(0);
+                expect(observed.every((groupId) => groupId === 'previous')).toBe(true);
+            }
+            else {
+                await adoption;
+                expect(roomStateStore.resolveCurrentRoomRef()).toEqual(selected.group);
+                expect(observed.at(-1)).toBe('selected');
+                expect(observed.slice(0, -1).every((groupId) => groupId === 'previous')).toBe(true);
+            }
+        }
+        finally {
+            stateStore.detachCache();
+            stop();
+        }
     });
 
     it('emits room, people, then derived state observers', () => {
@@ -253,7 +315,8 @@ interface StateStoreFixture {
 }
 
 function createStateStoreFixture(
-    cacheOverrides: Partial<RallarStateCacheReadPort> = {}
+    cacheOverrides: Partial<RallarStateCacheReadPort> = {},
+    readSession: () => AuthSession | undefined = () => undefined
 ): StateStoreFixture {
     const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
     const stateCache: RallarStateCacheReadPort = {
@@ -262,7 +325,7 @@ function createStateStoreFixture(
     };
     const roomStateStore = new RoomStateStore({
         runtime,
-        readSession: () => undefined,
+        readSession,
         stateCache
     });
     const stateStore = new RallarStateStore({

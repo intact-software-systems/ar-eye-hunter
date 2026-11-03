@@ -3,9 +3,9 @@ import {
     computeTopologyHttpMutationSemanticDigest,
     toTopologyAppInboxCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-import type { TopologyReconfigureInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { AdminTopologyRecomputeRequest } from '@shared/api/admin-operations-types.ts';
+import type { TopologyReconfigureInboxResult } from '@shared/api/admin-rooms/decode-topology-inbox-result.ts';
 
 export namespace RecomputeApiAdminTopology {
     export interface Input {

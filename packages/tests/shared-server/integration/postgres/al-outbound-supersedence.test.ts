@@ -38,8 +38,7 @@ const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     dropReasonCode: undefined,
     lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }],
-    mintsSequence: true,
-    admittedConnectionGenerationIds: undefined
+    mintsSequence: true
 });
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -163,8 +162,7 @@ async function readSupersedingDecision(
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ text: msg.id.msgId }],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' },
-            admittedConnectionGenerationIds: undefined
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
         }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'

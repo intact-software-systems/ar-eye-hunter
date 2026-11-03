@@ -14,6 +14,8 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
+import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -43,6 +45,7 @@ import {
     decodeAlmReloadPublicationLimits,
     toAlmReloadLiveCommand
 } from './alm-reload-publication-lane.ts';
+import { AlmReloadVolatileSession } from './alm-reload-volatile-session.ts';
 
 type MessagesPortKind =
     | 'messages.send'
@@ -168,7 +171,6 @@ const HOLD_MSG_ID_REFERENCE = /^\{resultCache\.(.+)\.value\.msgId\}$/u;
 
 interface AlmReloadAdmissionPayload {
     readonly marker: string | undefined;
-    readonly index: number | undefined;
     readonly seq: number | undefined;
 }
 
@@ -197,6 +199,11 @@ export class AlmReloadPorts {
     /** Whether the receiver's connect installed the recording recovery owner on its channel. */
     recoveryOwnerInstalled = false;
     private deliveries = 0;
+    private readonly volatileSessions: Readonly<Record<PortRole, AlmReloadVolatileSession>> = {
+        sender: new AlmReloadVolatileSession(),
+        receiver: new AlmReloadVolatileSession(),
+        'recipient-b': new AlmReloadVolatileSession()
+    };
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
@@ -216,6 +223,8 @@ export class AlmReloadPorts {
     private readonly receiverBarrierFaults = new Map<string, readonly RallarBlackBoxTestFaultInjectCommand[]>();
     private readonly publicationLane: AlmReloadPublicationLane;
     private readonly liveArrivals = new AlmReloadLiveArrivals();
+    /** This transport fixture has a fixed ready cohort; each connect starts its page's observation clock. */
+    private readonly acceptedLayoutSince = new Map<PortRole, number>();
 
     constructor(replacesDocument: boolean, participants: readonly AlmReloadParticipant[]) {
         this.participants = [...participants];
@@ -267,6 +276,8 @@ export class AlmReloadPorts {
         if (this.replacesDocument) {
             this.senderDocument += 100;
         }
+        this.acceptedLayoutSince.delete('sender');
+        this.volatileSessions.sender.close();
         this.handles.clear();
         this.holds.clear();
         this.writes.sender = 1;
@@ -295,6 +306,8 @@ export class AlmReloadPorts {
                 // The page returns from its absence with every lane opportunity due meanwhile run at its own time.
                 await this.publicationLane.advanceTo(this.now + duration, () => false);
             },
+            readAlmUsage: async () =>
+                this.volatileSessions[role].readUsage(this.now, this.publicationLane.readReport()),
             commandExecutor: (command) => this.executePort(role, command)
         });
     }
@@ -302,7 +315,7 @@ export class AlmReloadPorts {
     private executePort(
         role: PortRole,
         command: RallarBlackBoxTestCommand
-    ): RallarBlackBoxTestCommandOutcome | Promise<RallarBlackBoxTestCommandOutcome> | undefined {
+    ): RallarBlackBoxTestCommandOutcome | Promise<RallarBlackBoxTestCommandOutcome | undefined> | undefined {
         this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const participant = this.participants.find((participant) => participant.role === role);
@@ -312,6 +325,8 @@ export class AlmReloadPorts {
             case 'http.request':
                 return this.requestGroup(role, command);
             case 'rtc.connect':
+                this.volatileSessions[role].connect(command);
+                this.acceptedLayoutSince.set(role, this.now);
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
@@ -323,6 +338,8 @@ export class AlmReloadPorts {
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
                 return { status: 'ok', value: { document, ...session } };
+            case 'formation.readiness':
+                return this.readFormationReadiness(role);
             case 'health':
                 return { status: 'ok', value: { rallar: { document, session } } };
             case 'storage.counters':
@@ -336,19 +353,55 @@ export class AlmReloadPorts {
             case 'messages.received':
                 return this.executeMessagesPort(role, command);
             case 'close':
+                this.volatileSessions[role].close();
+                this.acceptedLayoutSince.delete(role);
                 if (role === 'sender') {
                     this.publicationLane.close();
                 }
                 return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
                 return this.releaseBarrier(role, command.barrierId);
-            case 'assert':
             case 'wait':
+                return this.prepareWait(role, command);
+            case 'assert':
             case 'loop':
                 return undefined; // These acceptance and composite commands execute in the real runtime.
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
+    }
+
+    /** Advance only the fixture-owned publication clock and unread arrivals; the real runtime judges the wait. */
+    private async prepareWait(role: PortRole, command: PortCommand<'wait'>): Promise<undefined> {
+        if (command.absent === true) {
+            return undefined;
+        }
+        const runtime = role === 'sender' ? this.sender : role === 'receiver' ? this.receiver : this.recipientB;
+        const matched = (): boolean => resolveLatestWaitEvent(runtime.state().events, command.match) !== undefined;
+        if (command.match.topic === 'rallar.browser.alm.outbound_diagnostics') {
+            const deadline = computeWaitDeadlineEpochMs(command, this.now);
+            await this.publicationLane.advanceTo(deadline, matched);
+        }
+        const typeId = command.match.payloadFields?.['data.typeId'];
+        if (command.match.kind === 'message' && typeof typeId === 'string') {
+            this.liveArrivals.readUntil(role, typeId, matched);
+        }
+        return undefined;
+    }
+
+    private readFormationReadiness(role: PortRole): RallarBlackBoxTestCommandOutcome {
+        const acceptedHeldSinceEpochMs = this.acceptedLayoutSince.get(role);
+        assert(acceptedHeldSinceEpochMs !== undefined, 'readiness requires a connected participant');
+        return {
+            status: 'ok',
+            value: {
+                readyAtEpochMs: this.now,
+                hasPendingLayout: false,
+                acceptedHeldSinceEpochMs,
+                acceptedHeldForMs: this.now - acceptedHeldSinceEpochMs,
+                formation: {}
+            }
+        };
     }
 
     private async releaseBarrier(role: PortRole, barrierId: string): Promise<RallarBlackBoxTestCommandOutcome> {
@@ -770,8 +823,8 @@ export class AlmReloadPorts {
         command: RallarBlackBoxTestMessagesSendCommand,
         payload: AlmReloadAdmissionPayload
     ): AlmReloadSendAdmission {
-        // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
-        const capacityRefused = payload.marker === 'capacity' && payload.index === 3;
+        const msgId = `port-message-${this.messages.length + 1}`;
+        const capacityRefused = !this.volatileSessions.sender.admit(command, msgId, this.now);
         const requestedDurability = command.durability ?? 'volatile';
         const durable = requestedDurability !== 'volatile';
         const checkpointed = command.durability === 'local-checkpoint';
@@ -785,7 +838,7 @@ export class AlmReloadPorts {
         const recipientRoles = resolvePortRecipientRoles(command, this.participants, this.group);
         const message: PortMessage = {
             command,
-            msgId: `port-message-${this.messages.length + 1}`,
+            msgId,
             admittedAtMs: this.now,
             checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
             state: storageRefused ? 'failed' : rejected ? 'rejected' : payload.seq === 300 ? 'queued' : 'accepted',
@@ -1411,7 +1464,6 @@ function toAlmReloadAdmissionPayload(
     assert(isJsonRecordValue(payload));
     return {
         marker: typeof payload.marker === 'string' ? payload.marker : undefined,
-        index: typeof payload.index === 'number' ? payload.index : undefined,
         seq: typeof payload.seq === 'number' ? payload.seq : undefined
     };
 }

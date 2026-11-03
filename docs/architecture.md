@@ -131,6 +131,118 @@ Automatic directory reads call only `rooms.directory`. Explicit full room refres
 action and owns its separate current-room guard. Existing HTTP private revalidation is reused without
 an app-owned ETag cache; 304 does not promise less database work. Listing is not access control.
 
+## React package boundary
+
+Common React components and hooks belong in `packages/shared-react`, which may consume
+`packages/shared` and `packages/shared-web`. The `shared`, `shared-web`, `shared-test`,
+`shared-server` and `shared-graph` packages have no React dependency or React-owned code.
+Apps import React components directly from their owning files; there are no forwarding exports
+in the framework-independent packages.
+
+## Consensual room moves
+
+`RallarRoomMove` is imported directly from `browser/rooms/move/rallar-room-move.ts`; its optional
+React view is `packages/shared-react/room-move-panel.tsx`. One owner handles consent, authenticated recovery,
+notification coalescing and arrival in both games. Game participation checks stay in the app.
+
+The [Move together navigation map](../packages/shared-server/rallar-system/group-state/move/README.md)
+traces HTTP, AppInbox, optimistic admission, deadline delivery and browser activation. All destination
+memberships and the committed move share one transaction. Presence activation remains a separate,
+retryable session operation. Source memberships remain; present and away are projections of live
+sessions, not different access rights. Fresh entry generations prevent a disconnected presence
+tombstone from accepting an old connect, and arrival waits for the authoritative presence summary.
+
+## Scheduled room sessions
+
+`GroupSessionDirectory` projects caller-specific previews from one current room snapshot, private
+reservations and private account interest. Schedule revision and start/cancellation times live in
+reserved room metadata; private interest survives rescheduling so accounts can discover the change.
+`GROUP_SESSION_CHANGE` enters the existing group-state AppInbox path. Each delivery reads fresh
+state, computes the complete write, validates it, then commits the group CAS, reservation/interest
+changes, receipt, event and outbox atomically. Conflicts return to QueueBox for a fresh attempt.
+The same admission policy protects normal joins, membership changes and all-or-none room moves.
+Private RSVP events redact actor and request identity; durable receipt replay checks that exact
+anonymous event contract without weakening identity checks for other mutations.
+
+`RallarScheduledSessions` owns account-fenced reads, stable mutation identities, recovery and refresh.
+It reuses `RallarRoomEntry` for saved preview intent and explicit lobby entry. The common view lives
+in `packages/shared-react/scheduled-sessions-panel.tsx`; both games import it directly. Relic checks
+start time in its authoritative AppInbox attempt. AR Eye checks fresh server permission and rechecks
+current director authority before accepting the start into the latest simulation snapshot.
+
+## Scoped matchmaking
+
+`MatchmakingService` registers public intent and private expiry operations with the server AppInbox
+before workers start. Authenticated routes bind account and session; winning ingress captures time,
+policy and service identity once. Each delivery reads the scoped pool, account records and current
+session authority, computes persistence-ready data, validates it, then commits behind RuntimeState
+compare-and-set guards. Conflicts return to QueueBox for a complete fresh attempt. Final confirmation
+reuses ordinary group creation and cohort admission; room, memberships, private results, deadline
+outbox records and AppInbox completion commit atomically. Read validation and new-room staging have
+separate owners beside the one shared cohort admission algorithm also used by Move together.
+
+`MatchmakingReader` returns only the requesting account's state and confirmed cohort, without session
+authority or unrelated searchers. The destination appears only after admission commits. Durable
+outbox deadlines submit private expiry operations; overdue reads also project the terminal outcome
+without writing. Old timers cannot cancel a newer search. API configuration supplies
+`matchmaking.defaultPolicy`, complete `matchmaking.policiesByApplication` overrides and a mutation
+rate limit. The authenticated scoped GET and request-keyed POST are described in OpenAPI.
+
+`RallarMatchmaking` owns account-fenced recovery, foreground/online polling and exact ambiguous-write
+retry. It reuses notifications, single-flight reads, timers and subscription cleanup. The shared HTTP
+mutation retry classifier distinguishes definitive outcomes from transport ambiguity. `MatchmakingPanel`
+in `packages/shared-react` supplies both games' visible consent controls. Explicit matched-room entry
+uses `RallarRoomEntry`; game participation and director/Keeper authority stay with their existing owners.
+
+## Durable scoped parties
+
+`PartyService` registers `app:rallar-parties:mutate` with the server AppInbox. Each attempt reads
+the complete party and account pointers, authenticated session and relevant friendship/presence
+facts, computes and validates serialized writes, then commits exact conditional guards and the
+durable replay result together. A conflict returns to the existing outer QueueBox retry. Private
+`PartyReader` views validate mirrored membership and invitation records from one snapshot; reads
+never repair corruption. The scoped HTTP API exposes only the authenticated account's view.
+
+Party capacity derives from matchmaking policy. Whole-unit allocation remains in the existing
+matchmaker: earliest complete cohorts fill the configured size without splitting parties. Party
+searches bind the leader and roster revision; every member supplies their own confirmation. Roster
+changes fence the matchmaking pool and cancel affected pending cohorts in the same transaction.
+Final admission rechecks party, session and presence authority. Party-aware Move together binds the
+same roster revision and one selected source session per account to the existing all-or-none
+admission write. Room-wide movement is a separate selection choice, not an alternate implementation.
+
+`RallarParty`, `RallarFriends` and `RallarMatchmaking` share `AuthenticatedResource` for private-view
+lifetime, active-browser refresh, single-flight reads, cancellation, immutable pending commands and
+exact retry. Their adapters own protocol/account/scope validation and refusal messages. Account
+replacement or disposal fences late responses. `PartyPanel`, `MatchmakingPanel` and `RoomMovePanel`
+in `packages/shared-react` subscribe to one party owner per game UI; React never enters shared-web,
+shared-server or Deno dependencies. Existing entry and game owners retain admission and gameplay
+start authority.
+
+## Private friends and invitations
+
+`FriendsService` registers `app:rallar-friends:mutate` with `RallarServerAppInbox` during default
+API composition, before workers start. Authenticated routes capture the actor and session lifetime;
+clients supply only intent and request identity. Each delivery reads the paired profiles in one
+RuntimeState batch, the current auth session and any destination authority snapshot. Pure computation
+produces serialized profile writes, auth and destination guards, and the exact result before the
+AppInbox transaction. Validation recomputes that candidate. Conditional writes fence both accounts
+and authority; conflict rolls back and returns to QueueBox for a fresh complete attempt. The AppInbox
+owner commits the durable replay result atomically. This capability has no outbox or after-commit
+effect. The invitation creation time is captured once by the winner materializer and reused.
+
+`FriendsRepository` owns account-scoped private records and rejects malformed or wrong-slot data.
+`FriendsReader` projects consent and opt-in presence without authentication material or room location.
+`GET /api/friends/apps/:applicationId/workspaces/:workspaceId` is authenticated self-only and no-store;
+`POST /api/friends/requests/:requestId` is rate limited and idempotent. Configuration bounds contacts,
+invitations, invitation lifetime and mutation rate. No schema migration or predecessor reader exists.
+
+`RallarFriends` uses `AuthenticatedResource` for account-fenced refresh, cancellation and exact
+request retry. It refreshes only in an active browser and delegates explicit invitation opening to
+`RallarRoomEntry`. `FriendsPanel` in
+`packages/shared-react` supplies both games' controls. Scheduled previews, reservations, room admission
+and gameplay authority remain with their existing owners; social invitations never bypass them.
+
 ## Temporary retention is a separate group-state capability
 
 Creation accepts `retention: { mode: 'temporary', reconnectGraceMs? }` or persistent intent. Absence
@@ -281,3 +393,35 @@ The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped
 traffic goes through `rallar.realtime.room<T>(...)` or
 `rallar.messages.room<T>(...)` rather than hand-wired RTC readiness and sends.
+
+## Operator room evidence and recovery
+
+The operator console composes existing admin command owners with bounded diagnostic reads. It
+adds no room mutation repository, repair writer or corruption-tolerant authoritative reader.
+The directory admits an invalid row only when canonical storage identity proves authorized scope;
+it reports a partial page with redacted errors. Infrastructure or ambiguous-scope failures fail the
+read. Existing game/group readers retain strict validation.
+
+The entry-to-result map is:
+
+- `apps/api-v1/src/admin-operations/register-admin-room-routes.ts` checks current API admin authority
+  before each directory or exact topology-work read and returns private, non-cacheable responses.
+- `packages/shared-server/rallar-system/admin-operations/rooms/` owns bounded storage paging and
+  exact retained queue-work observation. `admin-support/group-admin-support.ts` owns explanations;
+  its narratives distinguish current live sessions, historical membership and unavailable facts.
+  API composition supplies the existing revision-probed `readCurrentSnapshot` reader so an old
+  event-fed cache entry cannot hide committed presence during diagnosis or post-action verification.
+- `packages/shared-web/browser/admin-rooms/admin-room-operations.ts` composes those reads with the
+  existing topology/prune HTTP commands. `AuthenticatedResource` owns session cancellation,
+  single-flight reads, original command identity on uncertain retry and immediate authority fencing.
+- `apps/rallar-black-box/src/recipe-console/rooms/` owns API-session integration, visible controls,
+  global cleanup confirmation and outcome presentation. Control-server credentials confer no API authority.
+- Topology recompute continues through `TopologyAppInboxHandler` and its optimistic mutation owner.
+  The returned outbox ID identifies the exact QueueBox row; completed work does not prove client delivery.
+  An absent/expired row yields unknown, and room rereads occur after the work observation.
+- Maintenance continues through `AppAdminInboxService`, whose command and page workers recheck
+  current authority. Preview and execution have separate request identities; execution waits for the
+  aggregate result. Runtime-state, ResourceInbox and result cleanup are global categories.
+
+Shared response decoders serve both durable server results and browser transport. No compatibility
+exports, migration readers or game-owned save payloads are added to operator evidence.

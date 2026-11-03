@@ -40,8 +40,7 @@ function planByTypeId(
         msg: toALOutboundMessage(msg, normalizeALQosPolicy(msg, normalization).effective),
         dropReasonCode: undefined,
         lane: msg.payload.typeId === DURABLE_TYPE_ID ? 'durable' : 'volatile',
-        preparedMessages: [{ kind: 'send' }],
-        admittedConnectionGenerationIds: undefined
+        preparedMessages: [{ kind: 'send' }]
     };
 }
 

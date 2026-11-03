@@ -1,4 +1,5 @@
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
+import { groupSessionIntentPrincipal } from './group-mutation-read-scope.ts';
 
 import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-repository.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
@@ -17,6 +18,7 @@ import {
     readsGroupActiveMemberPrincipalIds,
     readsGroupActiveMembers,
     readsGroupLifecyclePolicy,
+    readsGroupSessionReservations,
     readsTargetPublicationGrant
 } from './group-mutation-read-scope.ts';
 import {
@@ -53,6 +55,8 @@ export async function readExactGroupMutation({
         includeGroup: true,
         includePresenceSummary: true,
         includeLifecyclePolicy: readsGroupLifecyclePolicy(command.operation),
+        sessionIntentPrincipalId: groupSessionIntentPrincipal(command),
+        includeSessionReservations: readsGroupSessionReservations(command.operation),
         includeGroupSnapshot: includeGroupSnapshot || readsGroupActiveMembers(command.operation),
         authSessionId,
         requestIds: idempotencyKey === null ? [] : [idempotencyKey],
@@ -108,6 +112,8 @@ function assembleExactGroupMutationRead(
         targetPublicationGrant: exactEntry(read.publicationGrants, targetPrincipalId),
         ...toGroupMutationSubscriptionRead(command, read),
         lifecyclePolicy: read.lifecyclePolicy,
+        sessionReservations: read.sessionReservations,
+        sessionIntent: read.sessionIntent,
         activeMemberPrincipalIds: readsGroupActiveMemberPrincipalIds(command.operation)
             ? activeMembers?.filter((member) => member.role !== 'spectator').map((member) => member.principalId)
                 .sort() ?? null

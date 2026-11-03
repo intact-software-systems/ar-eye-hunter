@@ -52,7 +52,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 topic: 'explicit-info-cause',
                 severity: 'info',
                 routineBrowserDiagnostic: true,
-                error: { name: 'Error', message: 'failed', stack: undefined }
+                error: { name: 'Error', message: 'failed', stack: undefined, cause: null }
             },
             { kind: 'diagnostic', topic: 'explicit-info-status', severity: 'info', routineBrowserDiagnostic: true, data: { status: 'failed' } },
             { kind: 'diagnostic', topic: 'explicit-info-unavailable', severity: 'info', routineBrowserDiagnostic: true, data: { status: 'no-peers' } },

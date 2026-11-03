@@ -1724,7 +1724,7 @@
             "commandId": "alm-scale-director-layout-stable",
             "count": 90,
             "intervalMs": 500,
-            "timeoutMs": 48500,
+            "timeoutMs": 45000,
             "until": "first-success",
             "commands": [
               {
@@ -1738,20 +1738,18 @@
                 "timeoutMs": 5000
               },
               {
-                "kind": "wait",
-                "commandId": "alm-scale-director-layout-replan",
-                "absent": true,
-                "timeoutMs": 3500,
-                "timeoutFrom": "{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.acceptedHeldSinceEpochMs}",
-                "match": {
-                  "topic": "rallar.browser.formation.layout",
-                  "payloadFields": {
-                    "data.kind": "layoutPlanned",
-                    "data.role": "planned"
-                  },
-                  "payloadPath": "data.identity",
-                  "contains": "\"groupRevision\":{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.formation.causalRevision.groupRevision},"
-                }
+                "kind": "assert",
+                "commandId": "alm-scale-director-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-scale-director-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
               }
             ]
           },
@@ -5031,7 +5029,7 @@
             "commandId": "alm-scale-player-layout-stable",
             "count": 90,
             "intervalMs": 500,
-            "timeoutMs": 48500,
+            "timeoutMs": 45000,
             "until": "first-success",
             "commands": [
               {
@@ -5045,20 +5043,18 @@
                 "timeoutMs": 5000
               },
               {
-                "kind": "wait",
-                "commandId": "alm-scale-player-layout-replan",
-                "absent": true,
-                "timeoutMs": 3500,
-                "timeoutFrom": "{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.acceptedHeldSinceEpochMs}",
-                "match": {
-                  "topic": "rallar.browser.formation.layout",
-                  "payloadFields": {
-                    "data.kind": "layoutPlanned",
-                    "data.role": "planned"
-                  },
-                  "payloadPath": "data.identity",
-                  "contains": "\"groupRevision\":{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.formation.causalRevision.groupRevision},"
-                }
+                "kind": "assert",
+                "commandId": "alm-scale-player-assert-no-pending-layout",
+                "operator": "equals",
+                "source": "resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.hasPendingLayout",
+                "expected": false
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-scale-player-assert-layout-stable",
+                "operator": "gte",
+                "source": "resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.acceptedHeldForMs",
+                "expected": 3500
               }
             ]
           },

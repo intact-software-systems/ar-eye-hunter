@@ -29,6 +29,7 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
     const submit = (event: FormEvent) => {
         event.preventDefault();
         arenaRoomEntry.enter({
+            intent: 'join',
             roomRef: { ...ARENA_ROOM_SCOPE, groupId: reference.trim() },
             joinCode: code.trim() || null,
             participation

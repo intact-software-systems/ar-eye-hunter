@@ -34,7 +34,9 @@ export interface ApiV1StateSnapshotRouteRuntime {
     >;
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
-        'processAuthenticatedGroupEntryUntilCompletion' | 'processQuickJoinUntilCompletion'
+        | 'processAuthenticatedGroupEntryUntilCompletion'
+        | 'processQuickJoinUntilCompletion'
+        | 'processGroupMoveUntilCompletion'
     >;
     readonly clientStateService: Pick<
         ApiV1Runtime['clientStateService'],
@@ -46,17 +48,22 @@ export interface ApiV1StateSnapshotRouteRuntime {
         | 'readPresenceSnapshot'
         | 'readSnapshot'
     >;
-    readonly groupStateService: Pick<
-        ApiV1Runtime['groupStateService'],
-        | 'listEventPage'
-        | 'listEvents'
-        | 'listRecentEvents'
-        | 'listSnapshots'
-        | 'listSnapshotsForPrincipal'
-        | 'readCurrentSnapshot'
-        | 'readGroupSessionTopicSubscriptions'
-        | 'readSnapshot'
-    >;
+    readonly groupStateService:
+        & Pick<
+            ApiV1Runtime['groupStateService'],
+            | 'listEventPage'
+            | 'listEvents'
+            | 'listRecentEvents'
+            | 'listSnapshots'
+            | 'listSnapshotsForPrincipal'
+            | 'readCurrentSnapshot'
+            | 'readGroupSessionTopicSubscriptions'
+            | 'readSnapshot'
+        >
+        & Readonly<{
+            move: Pick<ApiV1Runtime['groupStateService']['move'], 'listForPrincipal'>;
+            sessionDirectory: Pick<ApiV1Runtime['groupStateService']['sessionDirectory'], 'read' | 'listForPrincipal'>;
+        }>;
     readonly clientRestSnapshotReadSelector: Pick<ApiV1Runtime['clientRestSnapshotReadSelector'], 'read'>;
     readonly groupRestSnapshotReadSelector: Pick<ApiV1Runtime['groupRestSnapshotReadSelector'], 'read'>;
 }
@@ -104,6 +111,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                sessionDirectory: runtime.groupStateService.sessionDirectory,
                 rtcRttRepository: runtime.topologyServices.rttRepository,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 groupDefaultMaxMembers: policy.groupDefaultMaxMembers,
@@ -111,24 +119,13 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
                 groupAdmissionQuota,
+                processGroupMove: (input, authority) =>
+                    runtime.groupStateInboxService.processGroupMoveUntilCompletion(input, authority),
+                listGroupMoves: (scope, principalId) =>
+                    runtime.groupStateService.move.listForPrincipal(scope, principalId),
                 processQuickJoin: (input, authority) =>
                     runtime.groupStateInboxService.processQuickJoinUntilCompletion(input, authority),
-                processGroupAppInbox: async (
-                    authority: GroupStateRouteAuthSession,
-                    enqueue: AuthenticatedGroupMutationEnqueue
-                ): Promise<GroupStateInboxDurableResult> => {
-                    const result = await runtime.groupStateInboxService
-                        .processAuthenticatedGroupEntryUntilCompletion(
-                            enqueue,
-                            authority
-                        );
-                    return result.fold(
-                        (error) => {
-                            throw toApiMutationRouteFailure(error);
-                        },
-                        (value) => value
-                    );
-                },
+                processGroupAppInbox: (authority, enqueue) => processGroupMutation(runtime, authority, enqueue),
                 hydrateStateSyncSnapshotCaches,
                 findStateSyncGroupSnapshot: (ref) => findGroupStateSnapshotByRef(ref),
                 readGroupSnapshot: (ref, options) => runtime.groupRestSnapshotReadSelector.read(ref, options)
@@ -137,4 +134,18 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
             readCurrentSnapshot: (ref: GroupRef) => runtime.groupStateService.readCurrentSnapshot(ref)
         }
     };
+}
+
+async function processGroupMutation(
+    runtime: ApiV1StateSnapshotRouteRuntime,
+    authority: GroupStateRouteAuthSession,
+    enqueue: AuthenticatedGroupMutationEnqueue
+): Promise<GroupStateInboxDurableResult> {
+    const result = await runtime.groupStateInboxService.processAuthenticatedGroupEntryUntilCompletion(
+        enqueue,
+        authority
+    );
+    return result.fold((error) => {
+        throw toApiMutationRouteFailure(error);
+    }, (value) => value);
 }

@@ -92,6 +92,8 @@ function RendererInspection() {
                         originalSceneDisposed: initial.current?.scene.isDisposed,
                         originalFloorEffectDisposed: initial.current?.floorEffect.isDisposed,
                         sameFloorEffect: floorEffect !== undefined && floorEffect === initial.current?.floorEffect,
+                        multisampling: engine?.getRenderingCanvas()?.getContext('webgl2')?.getContextAttributes()?.antialias ?? false,
+                        effectLayers: scene?.effectLayers?.length ?? 0,
                         scenes: engine?.scenes.length ?? 0,
                         loops: engine?.activeRenderLoops.length ?? 0
                     }));

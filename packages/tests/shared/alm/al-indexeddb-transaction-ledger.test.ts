@@ -202,8 +202,7 @@ async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger>
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [{ kind: 'send' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ kind: 'send' }]
         }),
         sendPreparedMessage: async () => {
             recorded.setPhase(phaseAtSend);

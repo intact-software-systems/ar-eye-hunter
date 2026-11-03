@@ -39,6 +39,7 @@ export const AppTopics = {
     clientStateEvent: 'client-state.event',
     groupStateSnapshot: 'group-state.snapshot',
     groupStateEvent: 'group-state.event',
+    groupMoveChanged: 'group-move.changed',
     groupDirectorySnapshot: 'group-directory.snapshot',
     overlayTopology: 'overlay.topology',
     rtt: 'rtt'

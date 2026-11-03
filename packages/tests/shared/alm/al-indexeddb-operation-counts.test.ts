@@ -240,8 +240,7 @@ describe('outbound default send IndexedDB volume', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -278,8 +277,7 @@ describe('outbound volatile send IndexedDB volume', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -332,8 +330,7 @@ describe('outbound local-checkpoint send IndexedDB volume', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'checkpoint',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -381,8 +378,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');
@@ -419,8 +415,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
                 sent.push('send');

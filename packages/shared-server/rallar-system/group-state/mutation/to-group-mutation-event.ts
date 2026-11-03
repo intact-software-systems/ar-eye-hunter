@@ -47,8 +47,16 @@ export function toGroupMutationActor(
     return { kind: 'service', serviceId: facts.serviceId };
 }
 
+export function isPrivateGroupReservationCommand(command: GroupMutationCommand): boolean {
+    return command.operation === 'changeGroupSession' &&
+        (command.input.action === 'reserve' || command.input.action === 'withdraw');
+}
+
 export function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
     const { causalRevision, command, eventType, facts, group } = input;
+    // Reservations are private account intent. Publish only an anonymous invalidation;
+    // the authenticated command and receipt retain the authoritative audit identity.
+    const privateReservation = isPrivateGroupReservationCommand(command);
     return {
         applicationId: group.applicationId,
         workspaceId: group.workspaceId,
@@ -58,10 +66,12 @@ export function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent
         snapshotVersion: group.snapshotVersion,
         causalRevision,
         occurredAtEpochMs: facts.nowEpochMs,
-        actor: toGroupMutationActor(command, facts, undefined),
-        reason: command.input.reason,
-        traceId: facts.traceId,
-        requestId: command.requestId,
+        actor: privateReservation
+            ? { kind: 'service', serviceId: facts.serviceId }
+            : toGroupMutationActor(command, facts, undefined),
+        reason: privateReservation ? null : command.input.reason,
+        traceId: privateReservation ? facts.eventId : facts.traceId,
+        requestId: privateReservation ? null : command.requestId,
         payload: toGroupEventPayload(input)
     };
 }

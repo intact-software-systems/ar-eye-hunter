@@ -35,8 +35,7 @@ describe('outbound planner validation boundary', () => {
                 msg: planned as ALMessage,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             })
         });
         const result = await runtime.enqueueIfAbsent(original);
@@ -72,8 +71,7 @@ describe('outbound planner validation boundary', () => {
                 msg: planned as ALMessage,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             })
         });
 
@@ -99,8 +97,7 @@ describe('outbound planner validation boundary', () => {
                 lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'No route',
-                dropReasonCode: 'no-route',
-                admittedConnectionGenerationIds: undefined
+                dropReasonCode: 'no-route'
             })
         });
         const result = await runtime.enqueueIfAbsent(original);

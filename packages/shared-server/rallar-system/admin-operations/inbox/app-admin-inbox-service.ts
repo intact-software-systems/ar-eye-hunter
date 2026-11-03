@@ -4,6 +4,7 @@ import {
     type AdminPruneExpiredCategory,
     type AdminPruneExpiredRequest
 } from '@shared/api/admin-operations-types.ts';
+import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -58,8 +59,7 @@ import {
 } from './admin-prune-command-codec.ts';
 import {
     decodeAdminPruneEnqueueResultForCommand,
-    decodeAdminPruneRequest,
-    type AdminPruneEnqueueResult
+    decodeAdminPruneRequest
 } from './admin-prune-inbox-codec.ts';
 import {
     ADMIN_APP_INBOX_TOPIC,

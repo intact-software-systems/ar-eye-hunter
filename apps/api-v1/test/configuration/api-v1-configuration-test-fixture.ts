@@ -70,6 +70,18 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
             webSocketTicket: 30
         }
     },
+    parties: { maxInvitations: 16, invitationLifetimeMs: 600000, rateLimit: { windowMs: 60000, requests: 60 } },
+    matchmaking: {
+        defaultPolicy: { players: 2, searchTimeoutMs: 120000, confirmationTimeoutMs: 30000, maxSearching: 256 },
+        policiesByApplication: {},
+        rateLimit: { windowMs: 60000, requests: 30 }
+    },
+    friends: {
+        maxContacts: 200,
+        maxInvitations: 100,
+        invitationLifetimeMs: 604_800_000,
+        rateLimit: { windowMs: 60_000, requests: 60 }
+    },
     clientSessions: {
         disconnectedRetentionMs: 604_800_000
     },

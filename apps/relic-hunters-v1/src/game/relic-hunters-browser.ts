@@ -7,6 +7,7 @@ import {
 import { rallar, type RallarJoinRoomOptions, type RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
 import { RallarRecentRooms } from '@shared-web/browser/rooms/recent-rooms/rallar-recent-rooms.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -41,28 +42,10 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         fetchSnapshot: fetchRelicSnapshot
     });
     const authority = createRelicAuthorityClientBridge(rallar);
-    const roomEntry = RallarRoomEntry.createBrowser({
-        auth: rallar.auth,
-        session: () => rallar.session(),
-        rooms: {
-            onChange: (handler, options) => rallar.rooms.onChange(handler, options),
-            join: (roomRef, options) =>
-                changeRelicRoom(expeditionParticipation, () => joinRelicRoom(roomRef, options), roomRef.groupId)
-        }
-    }, { scope: RELIC_ROOM_SCOPE });
-    const recentRooms = RallarRecentRooms.createBrowser(rallar, roomEntry, { scope: RELIC_ROOM_SCOPE });
     return {
         withParticipationLock: withRelicParticipationLock,
         data: rallar.data,
-        roomEntry,
-        recentRooms,
-        directory: RallarRoomDirectory.createBrowser(rallar, {
-            scope: RELIC_ROOM_SCOPE,
-            request: { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
-            refreshIntervalMs: 30_000,
-            timeoutMs: 10_000,
-            maxAttempts: 1
-        }),
+        ...createRelicRoomCapabilities(expeditionParticipation),
         timers: createDefaultTimers(),
         restoreSession: () => rallar.auth.restore(),
         login: (username, password) => rallar.auth.login({ username, password }),
@@ -216,4 +199,35 @@ async function changeRelicRoom<T>(
         }
         return await change();
     });
+}
+
+function createRelicRoomCapabilities(
+    expeditionParticipation: RelicExpeditionParticipation
+): Pick<RelicHuntersRuntime.Dependencies, 'roomEntry' | 'recentRooms' | 'roomMove' | 'directory'> {
+    const roomEntry = RallarRoomEntry.createBrowser({
+        auth: rallar.auth,
+        session: () => rallar.session(),
+        rooms: {
+            onChange: (handler, options) => rallar.rooms.onChange(handler, options),
+            join: (roomRef, options) =>
+                changeRelicRoom(expeditionParticipation, () => joinRelicRoom(roomRef, options), roomRef.groupId)
+        }
+    }, { scope: RELIC_ROOM_SCOPE });
+    const recentRooms = RallarRecentRooms.createBrowser(rallar, roomEntry, { scope: RELIC_ROOM_SCOPE });
+    return {
+        roomEntry,
+        recentRooms,
+        roomMove: RallarRoomMove.createBrowser(
+            rallar,
+            (destination, run) => changeRelicRoom(expeditionParticipation, run, destination.groupId),
+            { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 15000 }
+        ),
+        directory: RallarRoomDirectory.createBrowser(rallar, {
+            scope: RELIC_ROOM_SCOPE,
+            request: { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
+            refreshIntervalMs: 30_000,
+            timeoutMs: 10_000,
+            maxAttempts: 1
+        })
+    };
 }

@@ -1,20 +1,21 @@
+import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-export type ApiAdminAuthDependencies = Readonly<{
-    adminClientIds: readonly string[];
-    requireApiAuthSession: (
-        req: { header(name: string): string | undefined; }
+export interface ApiAdminAuthDependencies {
+    readonly adminClientIds: readonly string[];
+    readonly requireApiAuthSession: (
+        request: { header(name: string): string | undefined; }
     ) => Promise<IssuedAuthSession>;
-}>;
+}
 
 export async function requireApiAdminSession(
-    req: { header(name: string): string | undefined; },
+    request: { header(name: string): string | undefined; },
     dependencies: ApiAdminAuthDependencies
 ): Promise<IssuedAuthSession> {
-    const session = await dependencies.requireApiAuthSession(req);
+    const session = await dependencies.requireApiAuthSession(request);
 
     if (!dependencies.adminClientIds.includes(session.clientId)) {
-        throw new Error('Forbidden: platform admin authorization required');
+        throw authorizationDenied('Forbidden: platform admin authorization required');
     }
 
     return session;

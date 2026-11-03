@@ -87,8 +87,9 @@ The configuration reader recognizes only these operational overrides:
 - Granted WS topics: `RALLAR_GRANTED_WS_TOPICS_JSON`, overriding the top-level `grantedWsTopics` (empty by default).
   Each entry is exactly `{ topicId, typeId?, fanout, serverProducerIds }`: an `app.` or `room.` topic id, a fanout of
   `live-only`, `outbox` or `none`, and the server producers that may publish on it. api-v1 installs each as a
-  room-scoped `participation: 'granted'` topic (D499): only principals holding a publication grant publish and
-  receive, and an invalid entry rejects startup.
+  room-scoped `participation: 'granted'` topic (D499): only principals holding a publication grant publish, only the
+  live sessions of principals granted `subscribe` that subscribed to the topic receive, and an invalid entry rejects
+  startup.
 - Black-box token issue: `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`,
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
 

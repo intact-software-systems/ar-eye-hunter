@@ -294,8 +294,8 @@ roomBrowserTest(
     'plays a two-hunter expedition through visible move, escape, and matching finale controls',
     { annotation: { type: 'room-journey', description: 'repeat-play' } },
     async ({ page: host, guest }, testInfo) => {
-        // Six transitions retain their 30 s limits; setup and two rendered clients' actions have two more minutes.
-        roomBrowserTest.setTimeout(6 * automaticReviewTransitionTimeoutMs + 120_000);
+        // Seven transitions retain their 30 s limits; setup, screenshots, reload, and both clients need additional time.
+        roomBrowserTest.setTimeout(7 * automaticReviewTransitionTimeoutMs + 240_000);
         roomBrowserTest.skip(
             !['1', 'true'].includes(process.env.RELIC_HUNTERS_FULL_STACK ?? ''),
             'Requires the paired Relic server.'
@@ -510,14 +510,36 @@ roomBrowserTest(
         await guest.goto(secondLink);
         await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
         await expect(history.getByRole('button', { name: `Return to ${firstRef}`, exact: true })).toBeVisible();
-        await guest.reload();
-        await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+        const hydrationStarted = Promise.withResolvers<void>();
+        const releaseHydration = Promise.withResolvers<void>();
+        const snapshotPath = `**/api/relic/games/${secondRef}`;
+        await guest.route(snapshotPath, async (route) => {
+            hydrationStarted.resolve();
+            await releaseHydration.promise;
+            await route.fulfill({ status: 503, json: { error: 'Expedition snapshot unavailable' } });
+        });
         const admissionPath = `**/groups/${firstRef}/join/requests/*`;
         await guest.route(
             admissionPath,
             (route) => route.fulfill({ status: 403, json: { error: 'Room no longer available' } })
         );
-        await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+        try {
+            await guest.reload();
+            await expect(guest.getByText(`Entered ${secondRef}.`, { exact: true })).toBeVisible();
+            await hydrationStarted.promise;
+            await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
+            await expect(guest.getByRole('status')).toContainText(
+                'Checking the current expedition before changing rooms'
+            );
+            await expect(guest.getByText(`Room destination: ${firstRef}`, { exact: true })).toBeVisible();
+        }
+        finally {
+            releaseHydration.resolve();
+        }
+        await expect(guest.getByRole('alert')).toContainText('Expedition state could not be checked');
+        await expect(guest.getByText(`Room destination: ${firstRef}`, { exact: true })).toBeVisible();
+        await guest.unroute(snapshotPath);
+        await guest.getByRole('button', { name: 'Retry expedition state', exact: true }).click();
         await expect(guest.getByRole('alert')).toContainText('Room entry was denied');
         await guest.unroute(admissionPath);
         await history.getByRole('button', { name: `Return to ${firstRef}`, exact: true }).click();
@@ -569,11 +591,13 @@ test(
         }
         const history = page.getByRole('region', { name: 'Recent rooms', exact: true });
         await expect(history.getByRole('button', { name: `Return to ${reference}`, exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
         await page.getByRole('button', { name: 'New Room', exact: true }).click();
         await expect(linkField).not.toHaveValue(firstLink);
         await expect(linkField).toHaveValue(/#rallar-room\?/);
         const currentLink = await linkField.inputValue();
         const currentName = await page.locator('.room-row.active span').innerText();
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
         const createBody = response.request().postDataJSON();
         const authorization = await response.request().headerValue('authorization');
         if (!authorization) {

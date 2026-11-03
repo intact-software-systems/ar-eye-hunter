@@ -17,7 +17,10 @@ import { newALReplyMessage } from '@shared/al-contracts/reply/new-al-reply-messa
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupSessionPage } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
+import type { PartyView } from '@shared/api/parties/party-view.ts';
 import {
     createRallarAiJsonResult,
     createRallarAiMockProvider,
@@ -196,6 +199,30 @@ class RelicBrowserBackend {
         if (path.startsWith('/api/relic/')) {
             await this.respondExpedition(route, path);
         }
+        else if (
+            path === '/api/matchmaking/apps/rallar-server/workspaces/default' && route.request().method() === 'GET'
+        ) {
+            await route.fulfill({
+                json: {
+                    scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+                    principalId: session.clientId,
+                    observedAtEpochMs: Date.now(),
+                    state: { status: 'idle' }
+                } satisfies MatchmakingSnapshot
+            });
+        }
+        else if (path === '/api/parties/apps/rallar-server/workspaces/default' && route.request().method() === 'GET') {
+            await route.fulfill({
+                json: {
+                    scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+                    principalId: session.clientId,
+                    observedAtEpochMs: Date.now(),
+                    maxMembers: 2,
+                    party: null,
+                    invitations: []
+                } satisfies PartyView
+            });
+        }
         else if (path.startsWith('/api/state/')) {
             await this.respondPlatformState(route, path);
         }
@@ -239,6 +266,12 @@ class RelicBrowserBackend {
             const created = createGroupSnapshot({ onlineMemberCount: 1 });
             this.rooms = [created];
             await route.fulfill({ status: 201, json: created });
+        }
+        else if (path.endsWith('/group-moves') && route.request().method() === 'GET') {
+            await route.fulfill({ json: [] });
+        }
+        else if (path.endsWith('/group-sessions') && route.request().method() === 'GET') {
+            await route.fulfill({ json: { sessions: [], nextKey: null } satisfies GroupSessionPage });
         }
         else if (path.endsWith('/groups') && route.request().method() === 'GET') {
             await route.fulfill({ json: this.rooms });

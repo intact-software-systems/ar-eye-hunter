@@ -167,8 +167,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
                         msg: message,
                         dropReasonCode: undefined,
                         lane: 'volatile',
-                        preparedMessages: [{ peer: 'held' }],
-                        admittedConnectionGenerationIds: undefined
+                        preparedMessages: [{ peer: 'held' }]
                     }),
                     preparedMessages: [{ peer: 'held' }]
                 }
@@ -449,8 +448,7 @@ function toFenceSendDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<
             msg: planned,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [{ text: planned.id.msgId }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ text: planned.id.msgId }]
         }),
         intent: 'enqueue',
         phase: 'immediate',
@@ -524,8 +522,7 @@ async function readSupersedingBundle(
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ text: msg.id.msgId }],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' },
-            admittedConnectionGenerationIds: undefined
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
         })
     });
 }
@@ -557,8 +554,7 @@ async function readPendingAdmissionBundle(
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ peer: 'held' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ peer: 'held' }]
         }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'

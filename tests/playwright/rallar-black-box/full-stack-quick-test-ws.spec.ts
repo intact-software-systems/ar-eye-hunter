@@ -78,7 +78,8 @@ test.describe('full-stack Rallar Quick Test WS delivery', () => {
             await quickB.getByRole('button', { name: 'Join group', exact: true }).click();
             await expect(quickB).toContainText('completed', { timeout: 30_000 });
             await quickB.getByRole('button', { name: 'Subscribe WS', exact: true }).click();
-            await expect(quickB).toContainText('listening', { timeout: 30_000 });
+            await expect(quickB.getByLabel('Quick Test received messages').getByText('listening', { exact: true }))
+                .toBeVisible({ timeout: 30_000 });
 
             for (const index of [1, 2]) {
                 const payloadId = `quick-ws-${suffix}-${index}`;

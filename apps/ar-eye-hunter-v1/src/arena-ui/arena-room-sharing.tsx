@@ -32,6 +32,7 @@ export function ArenaRoomSharing({ snapshot, code, busy, rotate }: ArenaRoomShar
     const [copyStatus, setCopyStatus] = useState('');
     const codeMatches = code && isSameGroupRef(code.snapshot.group, snapshot.group);
     const destination = {
+        intent: 'join' as const,
         roomRef: snapshot.group,
         joinCode: codeMatches ? code.joinCode : null,
         participation: 'preserve' as const

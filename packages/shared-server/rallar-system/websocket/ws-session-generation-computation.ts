@@ -1,9 +1,9 @@
+import { requireEpoch, requireExactKeys, requireString } from '@shared/api/exact-object-decoding.ts';
 import type {
     RuntimeStateGuardedBatchInsert,
     RuntimeStateGuardedBatchUpdate
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateComputedProjection } from '../computed-data-validation.ts';
-import { requireEpoch, requireExactKeys, requireString } from '../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export type WsSessionHighWaterScope =
@@ -173,6 +173,16 @@ export function validateWsSessionConnectGuard(
     );
 }
 
+const HIGH_WATER_FIELDS = [
+    'version',
+    'status',
+    'scope',
+    'sessionId',
+    'generationId',
+    'generationStartedAtEpochMs',
+    'expireAtEpochMs'
+];
+
 export function decodeWsSessionCloseHighWaterState(
     value: JsonWireValue,
     identity: WsSessionHighWaterIdentity
@@ -183,27 +193,7 @@ export function decodeWsSessionCloseHighWaterState(
     }
     requireExactKeys(
         state,
-        state.status === 'closed'
-            ? [
-                'version',
-                'status',
-                'scope',
-                'sessionId',
-                'generationId',
-                'generationStartedAtEpochMs',
-                'disconnectedAtEpochMs',
-                'reason',
-                'expireAtEpochMs'
-            ]
-            : [
-                'version',
-                'status',
-                'scope',
-                'sessionId',
-                'generationId',
-                'generationStartedAtEpochMs',
-                'expireAtEpochMs'
-            ],
+        state.status === 'closed' ? [...HIGH_WATER_FIELDS, 'disconnectedAtEpochMs', 'reason'] : HIGH_WATER_FIELDS,
         'WebSocket session close high-water state'
     );
     const scope = decodeWsSessionHighWaterScope(state.scope);
@@ -231,21 +221,7 @@ export function decodeWsSessionCloseHighWaterState(
     };
 
     if (state.status === 'closed') {
-        const disconnectedAtEpochMs = decodeEpoch(
-            state.disconnectedAtEpochMs,
-            'WebSocket disconnect'
-        );
-        requireString(state.reason, 'WebSocket disconnect reason');
-        const decoded: WsSessionClosedHighWaterState = {
-            version: 3,
-            status: 'closed',
-            ...generation,
-            disconnectedAtEpochMs,
-            reason: state.reason,
-            expireAtEpochMs
-        };
-        requireCloseFacts(decoded);
-        return decoded;
+        return decodeClosedHighWater(state, generation, expireAtEpochMs);
     }
 
     const decoded: WsSessionOpenGuardState = {
@@ -478,4 +454,26 @@ function requireJsonWireObject(value: JsonWireValue, label: string): JsonWireObj
         throw new TypeError(`${label} must be an exact object`);
     }
     return value as JsonWireObject;
+}
+
+function decodeClosedHighWater(
+    state: JsonWireObject,
+    generation: WsSessionGenerationFacts,
+    expireAtEpochMs: number
+): WsSessionClosedHighWaterState {
+    const disconnectedAtEpochMs = decodeEpoch(
+        state.disconnectedAtEpochMs,
+        'WebSocket disconnect'
+    );
+    requireString(state.reason, 'WebSocket disconnect reason');
+    const decoded: WsSessionClosedHighWaterState = {
+        version: 3,
+        status: 'closed',
+        ...generation,
+        disconnectedAtEpochMs,
+        reason: state.reason,
+        expireAtEpochMs
+    };
+    requireCloseFacts(decoded);
+    return decoded;
 }

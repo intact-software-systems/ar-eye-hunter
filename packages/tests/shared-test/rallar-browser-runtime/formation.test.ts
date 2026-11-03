@@ -33,6 +33,7 @@ import type {
     RallarRoomFormation,
     RallarRoomFormationCommandOptions,
     RallarRoomFormationStatus,
+    RallarRoomLayout,
     RallarRoomLayoutEvent,
     RallarRoomLayoutListener,
     RallarRoomReconfigureOptions
@@ -940,7 +941,7 @@ it('retains exactly the first ten short desired and ready identities in original
     });
 });
 
-function toAcceptedLayout(harness: FormationHarness, identity: GroupLayoutIdentity) {
+function toAcceptedLayout(harness: FormationHarness, identity: GroupLayoutIdentity): RallarRoomLayout {
     return { role: 'accepted' as const, identity, overlay: createAcceptedOverlayFixture(harness.snapshot, identity.version, []) };
 }
 
@@ -969,7 +970,9 @@ it('reports when the page first held the accepted layout at the readiness revisi
     unsubscribe();
 
     expect(settled.acceptedHeldSinceEpochMs).toBe(10_000);
+    expect(settled).toHaveProperty('acceptedHeldForMs', 10_000);
     expect(advanced.acceptedHeldSinceEpochMs).toBe(21_000);
+    expect(advanced).toHaveProperty('acceptedHeldForMs', 1_000);
 });
 
 it('counts the hold from the readiness itself when the page observed no earlier change', async () => {
@@ -991,4 +994,39 @@ it('reports no hold while no layout is accepted', async () => {
     const result = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
 
     expect(result).not.toHaveProperty('acceptedHeldSinceEpochMs');
+});
+
+it('restarts the accepted hold after a group-first transition temporarily removes the layout body', async () => {
+    const harness = createOpenFormationHarness();
+    const unsubscribe = harness.controller.installDiagnostics(roomRef);
+    harness.nowEpochMs = 10_000;
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+    harness.nowEpochMs = 11_000;
+    harness.emitChange({ accepted: undefined });
+    harness.nowEpochMs = 12_000;
+    harness.emitChange({ accepted: toAcceptedLayout(harness, { ...PLANNED, version: PLANNED.version + 1 }) });
+    harness.nowEpochMs = 12_500;
+
+    const recovered = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    unsubscribe();
+
+    expect(recovered).toMatchObject({ acceptedHeldSinceEpochMs: 12_000, acceptedHeldForMs: 500 });
+});
+
+it.each([
+    { planned: undefined, pending: false },
+    { planned: PLANNED, pending: false },
+    { planned: { ...PLANNED, version: PLANNED.version + 1 }, pending: true },
+    { planned: { ...PLANNED, state: 'removed' as const }, pending: true }
+])('distinguishes a pending layout from the already accepted identity: $pending', async ({ planned, pending }) => {
+    const harness = createOpenFormationHarness();
+    const accepted = toAcceptedLayout(harness, PLANNED);
+    harness.emitChange({
+        accepted,
+        planned: planned === undefined ? undefined : { ...accepted, role: 'planned', identity: planned }
+    });
+
+    const observation = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(observation).toHaveProperty('hasPendingLayout', pending);
 });

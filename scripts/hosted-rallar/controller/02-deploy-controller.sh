@@ -59,6 +59,8 @@ chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 echo "==> Installing npm dependencies"
 runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 
+configure_rallar_deno_environment /etc/systemd/system
+
 echo "==> Warming Deno caches"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
 	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \

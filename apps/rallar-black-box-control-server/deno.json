@@ -9,10 +9,10 @@
     "@shared-test/": "../../packages/shared-test/"
   },
   "tasks": {
-    "dev": "deno run --watch --allow-net --allow-env --allow-read --allow-write src/main.ts",
-    "start": "deno run --allow-net --allow-env --allow-read --allow-write src/main.ts",
-    "check": "deno check src/main.ts test/",
-    "test": "deno test --allow-run --allow-net --allow-env --allow-read --allow-write"
+    "dev": "DENO_NO_PACKAGE_JSON=1 deno run --watch --allow-net --allow-env --allow-read --allow-write src/main.ts",
+    "start": "DENO_NO_PACKAGE_JSON=1 deno run --allow-net --allow-env --allow-read --allow-write src/main.ts",
+    "check": "DENO_NO_PACKAGE_JSON=1 deno check src/main.ts test/",
+    "test": "DENO_NO_PACKAGE_JSON=1 deno test --allow-run --allow-net --allow-env --allow-read --allow-write"
   },
   "deploy": {
     "org": "intact-software-systems",

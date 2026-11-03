@@ -3,7 +3,7 @@ import {
     validateAuthoritativeClientSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
 
-import { requireExactKeys } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateWritten } from '../client-state-service-contracts.ts';
 

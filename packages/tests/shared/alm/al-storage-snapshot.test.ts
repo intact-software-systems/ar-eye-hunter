@@ -253,8 +253,7 @@ async function sendOutboundWorkload(
             dropReasonCode: undefined,
             lane: volatileStores === undefined ? 'durable' : 'volatile',
             preparedMessages: [{ message: JSON.stringify(msg) }],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: toSupersedenceKey(msg) },
-            admittedConnectionGenerationIds: undefined
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: toSupersedenceKey(msg) }
         }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });

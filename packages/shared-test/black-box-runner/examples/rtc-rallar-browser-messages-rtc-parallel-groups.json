@@ -129,6 +129,38 @@
       "connection": "bobRtc"
     },
     {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "parallelRtcTraffic",
       "type": "parallel",
       "maxConcurrency": 2,
@@ -169,10 +201,12 @@
                   "typeId": "{messageTypeId}",
                   "topicId": "{topicId}",
                   "data": {
-                    "from": "alice",
-                    "to": "bob",
-                    "flow": "live-parallel",
-                    "text": "parallel hello from alice"
+                    "payload": {
+                      "from": "alice",
+                      "to": "bob",
+                      "flow": "live-parallel",
+                      "text": "parallel hello from alice"
+                    }
                   }
                 }
               }
@@ -214,10 +248,12 @@
                   "typeId": "{messageTypeId}",
                   "topicId": "{topicId}",
                   "data": {
-                    "from": "bob",
-                    "to": "alice",
-                    "flow": "live-parallel",
-                    "text": "parallel hello from bob"
+                    "payload": {
+                      "from": "bob",
+                      "to": "alice",
+                      "flow": "live-parallel",
+                      "text": "parallel hello from bob"
+                    }
                   }
                 }
               }

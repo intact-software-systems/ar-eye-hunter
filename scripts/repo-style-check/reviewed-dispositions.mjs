@@ -5,6 +5,244 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hasIdentifierOutsideFunctions',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'findCallsOutsideFunctions',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visitOutsideFunctions',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visit',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-http-registration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: bounded all-or-none admission keeps staged group, roster and reservation predecessors visible together.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/move/compute-group-move-admission.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    // Whole-file review: canonical outcome, receipt, event privacy and outbox assembly; scheduling membership policy remains in its existing owner.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
+    // Whole-file review: persisted group/member shapes share identity and audit invariants; formation and transport have named subchecks.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // Whole-file review: admission credentials, timing and capacity are one pure policy family without a persistence or lifecycle shell.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 66
+    }),
+    // Whole-file review: one account-bound lifecycle owns current reads, action state, replacement fencing and ambiguous request replay.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 73
+    }),
+    // Whole-file review: inbound simulation acceptance shares one projection and publication owner; fresh start authorization is a named gate.
+    Object.freeze({
+        path: 'apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 61
+    }),
+    // Untrusted persisted account arrays are checked for bounded length, strings and uniqueness before entering reservation computation.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/schedule/group-session-reservations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeGroupSessionReservations',
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP JSON is immediately decoded as an exact bounded account-specific session page.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/scheduled-session-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: 'listSessions',
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP JSON is immediately decoded as a complete scoped session preview with exact timing and permissions.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/scheduled-session-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readSession',
+        maximumMagnitude: 1
+    }),
+    // Untrusted HTTP acknowledgement must contain exactly accepted:true; no private command or snapshot data is admitted.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/sessions/scheduled-session-http-api.ts',
+        rule: 'boundary.unknown',
+        symbol: 'changeSession',
+        maximumMagnitude: 1
+    }),
+    // Reviewed cohesive optional view: proposal, consent, history and room-presence rendering.
+    Object.freeze({
+        path: 'packages/shared-react/room-move-panel.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    // Whole-owner review: move claims, atomic admission, and browser recovery each retain their own coherent lifecycle; named phases expose decisions.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/move/group-move-repository.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 65
+    }),
+    // Whole-owner review: move claims, atomic admission, and browser recovery each retain their own coherent lifecycle; named phases expose decisions.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/move/group-move-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 75
+    }),
+    // Whole-owner review: move claims, atomic admission, and browser recovery each retain their own coherent lifecycle; named phases expose decisions.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 57
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/exact-object-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRecord',
+        maximumMagnitude: 3
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/exact-object-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireExactKeys',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/exact-object-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/exact-object-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireEpoch',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/exact-object-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requirePositiveInteger',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/exact-object-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireNullableEpoch',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/move/group-move-service.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
+        rule: 'boundary.unknown',
+        symbol: 'listMoves',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rooms/move/rallar-room-move.ts',
+        rule: 'boundary.unknown',
+        symbol: 'mutateMove',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/mutation/decode-group-move.ts',
+        rule: 'boundary.unknown',
+        symbol: 'moveIdentifier',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/mutation/decode-group-move.ts',
+        rule: 'boundary.unknown',
+        symbol: 'moveEpoch',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: untrusted wire values are checked at this decoder boundary; malformed nested identity remains regression-tested.
+    Object.freeze({
+        path: 'packages/shared/api/mutation/decode-group-move.ts',
+        rule: 'boundary.unknown',
+        symbol: 'nullableMoveEpoch',
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: these negative fixtures deliberately construct untrusted command and health fields for exact decoder rejection.
+    Object.freeze({
+        path: 'packages/tests/shared-server/rallar-system/crdt/mutation/crdt-exact-codecs.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Whole-file review: these negative fixtures deliberately construct untrusted command and health fields for exact decoder rejection.
+    Object.freeze({
+        path: 'packages/tests/shared-server/rallar-system/crdt/mutation/crdt-exact-codecs.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'debugBundleWithHealth',
+        maximumMagnitude: 1
+    }),
     // Independent whole-owner review: Room adoption and authenticated session actions share the same lifecycle fence.
     Object.freeze({
         path: 'apps/ar-eye-hunter-v1/src/game/arena-runtime/actions/use-arena-session-actions.ts',
@@ -209,13 +447,13 @@ export const reviewedDispositions = Object.freeze([
         maximumMagnitude: 3
     }),
     // These direct group contract owners serve reusable API consumers. Retention
-    // sits beside the existing group contracts; a forwarding directory would add
+    // and member presence sit beside the existing group contracts; a forwarding directory would add
     // a navigation hop without introducing a new feature or lifecycle boundary.
     Object.freeze({
         path: 'packages/shared/api',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:group',
-        maximumMagnitude: 8
+        maximumMagnitude: 9
     }),
     // Task17 whole-file self-review: this fixed local module is admitted as an
     // object with the one named callable before invocation. Import errors remain
@@ -1050,12 +1288,14 @@ export const reviewedDispositions = Object.freeze([
     }),
     // API state files expose separate mutation, event-cursor, point-read and
     // paged-dissemination contracts. Their direct consumers and README recover
-    // each owner without another folder or forwarding module.
+    // each owner without another folder or forwarding module. Exact object decoding
+    // is shared by browser/server boundaries; member presence is a distinct projection,
+    // avoiding coupling a new room UI to unrelated client/group compatibility views.
     Object.freeze({
         path: 'packages/shared/api',
         rule: 'layout.directory-density',
         symbol: 'api',
-        maximumMagnitude: 25
+        maximumMagnitude: 27
     }),
     Object.freeze({
         path: 'packages/shared/api',

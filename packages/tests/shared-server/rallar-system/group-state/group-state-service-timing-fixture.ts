@@ -124,6 +124,8 @@ export function createGroupStateServiceTimingFake(
     const service: GroupStateService = {
         // Opaque capabilities are only forwarded by this timing decorator; their domain methods are never invoked here.
         quickJoin: Object.freeze({}) as never,
+        sessionDirectory: Object.freeze({}) as never,
+        move: Object.freeze({}) as never,
         retention: Object.freeze({}) as never,
         sessionGenerationLifecycle: Object.freeze({}) as never,
         ...createIngressCaptureFake(record),

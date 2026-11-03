@@ -1,4 +1,5 @@
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
+import { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
@@ -22,6 +23,8 @@ import {
     type GroupStateServiceDependencies
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
+import { GroupMoveRepository } from './move/group-move-repository.ts';
+import { GroupMoveService } from './move/group-move-service.ts';
 import { assertGroupMutationAuthority } from './mutation/command-validation/assert-group-mutation-authority.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import type {
@@ -46,6 +49,7 @@ import {
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import { GroupRetentionService } from './retention/group-retention-service.ts';
+import { GroupSessionDirectory } from './schedule/group-session-directory.ts';
 
 export class GroupMutationIdempotencyConflictError extends Error {
     readonly status = 409;
@@ -80,7 +84,20 @@ export function createGroupStateRuntime(
         authorityDependencies: createAuthorityDependencies({ dependencies, authSessions, now, randomId }),
         captureInternalMutationIngress: createInternalMutationIngressCapture(dependencies)
     };
+    const ingressOperations = createIngressCaptureOperations(owners);
+    const mutationOperations = createMutationOperations(owners);
     const service: GroupStateService = {
+        sessionDirectory: new GroupSessionDirectory({ repository: repositoryFor(runtime), now }),
+        move: new GroupMoveService({
+            groups: repositoryFor(runtime),
+            moves: new GroupMoveRepository(runtime, now),
+            parties: new PartyRepository(runtime, now),
+            authSessions,
+            mutations: {
+                captureMutationIngress: ingressOperations.captureMutationIngress,
+                read: mutationOperations.read
+            }
+        }, { serviceId: dependencies.serviceId, finishedRetentionMs: dependencies.finishedRetentionMs, now }),
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         quickJoin: new GroupQuickJoinService(
             { repository: repositoryFor(runtime), authSessions },
@@ -98,9 +115,9 @@ export function createGroupStateRuntime(
             serviceId: dependencies.serviceId,
             now
         }),
-        ...createIngressCaptureOperations(owners),
+        ...ingressOperations,
         ...createQueryOperations(owners),
-        ...createMutationOperations(owners)
+        ...mutationOperations
     };
     return {
         service: createTimedGroupStateService({

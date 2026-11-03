@@ -87,7 +87,7 @@ export type AlmConformanceScenarioId =
     | 'storage-unavailable'
     | 'subscription-delivery'
     | 'subscription-reconnect'
-    | 'subscription-revoke-held'
+    | 'subscription-revoke-disconnected'
     | 'subscription-successor'
     | 'subscription-token-count'
     | 'unicast-fallback'

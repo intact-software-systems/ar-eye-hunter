@@ -892,6 +892,8 @@ test('keeps Direction A Advanced contained across desktop, tablet, and genuine t
                 );
                 await selectedNavigation.focus();
                 await page.keyboard.press('Tab');
+                await expect(advanced.getByText('Room operations and recovery', { exact: true })).toBeFocused();
+                await page.keyboard.press('Tab');
                 await expect(firstLink).toBeFocused();
                 await page.keyboard.press('Tab');
                 await expect(links.nth(1)).toBeFocused();
@@ -925,6 +927,12 @@ test('keeps Advanced motionless and keyboard-operable without hover', async ({ b
         await page.locator(
             '[data-primary-navigation] button[aria-current="page"]'
         ).focus();
+        await page.keyboard.press('Tab');
+        const roomOperations = advanced.getByText('Room operations and recovery', { exact: true });
+        await expect(roomOperations).toBeFocused();
+        await roomOperations.press('Enter');
+        await expect(advanced.getByText('Sign in with an API administrator account to inspect rooms.')).toBeVisible();
+        await roomOperations.press('Enter');
         await page.keyboard.press('Tab');
         await page.keyboard.press('Tab');
         await expect(auth).toBeFocused();

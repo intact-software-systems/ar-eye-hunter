@@ -120,8 +120,7 @@ describe('outbound storage unavailability', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });

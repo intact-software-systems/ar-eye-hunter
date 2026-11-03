@@ -89,6 +89,9 @@ function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeRe
 }
 
 function toGroupTopicSubscriptionResponse(receipt: GroupReceiptInboxDurableResult): GroupTopicSubscriptionResult {
+    if ('commandId' in receipt && receipt.outcome === 'rejected') {
+        throw new GroupMutationRejectedError(receipt.rejection ?? 'Group topic subscription rejected');
+    }
     if (!('commandId' in receipt) || receipt.subscriptionOutcome === null) {
         throw new TypeError('A topic subscription receipt carries its outcome');
     }

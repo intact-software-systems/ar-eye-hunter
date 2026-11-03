@@ -1,6 +1,6 @@
 import { validateRallarCrdtUpdateEnvelope, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
-import { requireExactKeys } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys } from '@shared/api/exact-object-decoding.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
 import {
