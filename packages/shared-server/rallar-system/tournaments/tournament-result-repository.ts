@@ -1,4 +1,5 @@
 import { requireEpoch, requireExactKeys, requireOneOf, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeTournamentMatchBinding } from '@shared/api/tournaments/decode-tournament-match-binding.ts';
 import type { TournamentMatchBinding, TournamentMatchResult } from '@shared/api/tournaments/tournament-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -8,6 +9,8 @@ import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/
 import { assertRuntimeStateReadBatchResult } from '../../runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
 import type { RuntimeStateReadBatchSelector } from '../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
+import { groupStateGroupStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { decodeJsonWireText, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeTournamentResult, tournamentResultKey } from './tournament-result.ts';
 
 export const TOURNAMENT_ATTEMPTS_NAMESPACE = 'tournaments:attempts';
@@ -36,17 +39,36 @@ export namespace TournamentResultRepository {
 
 /** Private rows: no AppData publication or client mutation surface can manufacture a trusted result. */
 export class TournamentResultRepository {
-    private readonly runtime: Pick<RuntimeStateRepositoryLike, 'readRuntimeStateBatch'>;
+    private readonly runtime: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>;
 
-    constructor(runtime: Pick<RuntimeStateRepositoryLike, 'readRuntimeStateBatch'>) {
+    constructor(runtime: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>) {
         this.runtime = runtime;
+    }
+
+    async readRoom(ref: GroupRef): Promise<TournamentResultRepository.Read | null> {
+        const key = groupStateGroupStorageKey(ref);
+        const entry = await this.runtime.findEntry(TOURNAMENT_ATTEMPTS_NAMESPACE, key);
+        if (entry === undefined) {
+            return null;
+        }
+        const stored = requireRecord(readStoredValue(entry, key), 'Tournament room attempt');
+        const binding = decodeTournamentMatchBinding(stored.binding);
+        if (!jsonEquals(binding.roomRef, ref)) {
+            throw new TypeError('Tournament attempt room differs from its storage slot');
+        }
+        return await this.read(binding);
     }
 
     async read(expected: TournamentMatchBinding): Promise<TournamentResultRepository.Read> {
         const binding = decodeTournamentMatchBinding(expected);
         const key = tournamentResultKey(binding);
         const selectors: RuntimeStateReadBatchSelector[] = [
-            { selectorId: 'attempt', kind: 'key', namespace: TOURNAMENT_ATTEMPTS_NAMESPACE, key },
+            {
+                selectorId: 'attempt',
+                kind: 'key',
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: groupStateGroupStorageKey(binding.roomRef)
+            },
             { selectorId: 'result', kind: 'key', namespace: TOURNAMENT_RESULTS_NAMESPACE, key }
         ];
         const selections = assertRuntimeStateReadBatchResult(
@@ -57,7 +79,10 @@ export class TournamentResultRepository {
         const resultEntry = selections[1].entries[0] ?? null;
         const attempt = attemptEntry === null
             ? null
-            : decodeTournamentAttempt(readStoredValue(attemptEntry, key), binding);
+            : decodeTournamentAttempt(
+                readStoredValue(attemptEntry, groupStateGroupStorageKey(binding.roomRef)),
+                binding
+            );
         const result = resultEntry === null ? null : decodeTournamentResult(readStoredValue(resultEntry, key), binding);
         if ((attempt?.status === 'finished') !== (result !== null)) {
             throw new TypeError('Tournament finished attempt and result must exist together');
@@ -96,7 +121,7 @@ export function computeTournamentResultPublication(
                 guard: {
                     operation: 'update',
                     namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
-                    key,
+                    key: groupStateGroupStorageKey(read.binding.roomRef),
                     expectedRevision: read.attemptEntry.revision,
                     value: JSON.stringify({ ...read.attempt, status: 'finished' }),
                     expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
@@ -141,9 +166,9 @@ export function decodeTournamentAttempt(
     return { binding: storedBinding, status, startedAtEpochMs };
 }
 
-function readStoredValue(entry: RuntimeStateEntry, key: string): unknown {
+function readStoredValue(entry: RuntimeStateEntry, key: string): JsonWireValue {
     if (entry.key !== key || entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP) {
         throw new TypeError('Tournament storage identity or lifetime differs');
     }
-    return JSON.parse(entry.value);
+    return decodeJsonWireText(entry.value, 'Tournament stored value');
 }
