@@ -3063,7 +3063,6 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
-              "connection": "almConformanceSender",
               "payloadFields": {
                 "data.kind": "publication-opportunity",
                 "data.laneKey": "room.alm-conformance/alm.conformance.ws.paced-newest-n",
@@ -5804,7 +5803,6 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
-              "connection": "almConformanceSender",
               "payloadFields": {
                 "data.kind": "publication-opportunity",
                 "data.laneKey": "room.alm-conformance/alm.conformance.rtc.paced-newest-n",
@@ -9488,7 +9486,6 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
-              "connection": "almConformanceSender",
               "payloadFields": {
                 "data.kind": "publication-opportunity",
                 "data.laneKey": "room.alm-conformance/alm.conformance.rtc-with-ws-fallback.paced-newest-n",

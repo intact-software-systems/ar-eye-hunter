@@ -4,7 +4,6 @@ import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import {
     toCommandId,
-    toConnectionName,
     toScenarioTopicId,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
@@ -62,7 +61,6 @@ export const pacedNewestN: AlmConformanceScenarioDefinition = {
             match: {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
-                connection: toConnectionName(sender),
                 payloadFields: {
                     'data.kind': 'publication-opportunity',
                     'data.laneKey': `${toScenarioTopicId(sender)}/${toScenarioTypeId(sender)}`,

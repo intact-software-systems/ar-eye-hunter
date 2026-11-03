@@ -66,7 +66,6 @@ it.each([
     runtime.recordEvent({
         kind: 'diagnostic',
         topic: 'rallar.browser.alm.outbound_diagnostics',
-        connection: 'sender',
         payload: { data: { kind: 'publication-opportunity', laneKey: 'room.alm-conformance/alm.conformance.rtc.paced-newest-n', selected, deferred, expired } }
     });
     const burstIndex = scenario.sender.commands.findIndex((command) => command.kind === 'loop');

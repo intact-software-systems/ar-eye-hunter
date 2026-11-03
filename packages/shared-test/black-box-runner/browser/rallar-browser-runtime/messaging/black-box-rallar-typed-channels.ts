@@ -47,6 +47,7 @@ interface TypedChannelMessageEvent {
     readonly topic: string;
     readonly transport: BlackBoxRallarEvent['transport'];
     readonly message: RallarMessage<RallarMessagePayload>;
+    readonly peerId: string | undefined;
 }
 
 /** `messages.reply` names a request by its arrival among the last this many of its type the page received. */
@@ -128,15 +129,17 @@ export class BlackBoxRallarTypedChannels {
         }
         const key = JSON.stringify({ kind: 'typed', typeId: route.typeId, topicId: route.topicId });
         this.#input.resources.ensureWsSubscription(key, () => {
+            const peerId = this.#input.connection.session()?.sessionId;
             const unsubscribeWs = channel.onWs((_payload, message) => {
-                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
+                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message, peerId });
             });
             const unsubscribeRtc = channel.onRtc((_payload, message) => {
                 this.#recordMessage({
                     config,
                     topic: 'rallar.browser.messages.rtc.message',
                     transport: 'messages.rtc',
-                    message
+                    message,
+                    peerId
                 });
             });
             return () => {
@@ -185,8 +188,9 @@ export class BlackBoxRallarTypedChannels {
         const rtcTypeIds = resolveRtcSelectorTypeIds(config, selector);
         const key = JSON.stringify({ kind: 'selector', selector, rtcTypeIds });
         this.#input.resources.ensureWsSubscription(key, () => {
+            const peerId = this.#input.connection.session()?.sessionId;
             const unsubscribeWs = this.#input.messages.ws.onMessage<RallarMessagePayload>(selector, (message) => {
-                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
+                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message, peerId });
             });
             const unsubscribeRtc = rtcTypeIds.map((typeId) =>
                 this.#input.messages.rtc.onMessage<RallarMessagePayload>(
@@ -196,7 +200,8 @@ export class BlackBoxRallarTypedChannels {
                             config,
                             topic: 'rallar.browser.messages.rtc.message',
                             transport: 'messages.rtc',
-                            message
+                            message,
+                            peerId
                         });
                     }
                 )
@@ -229,7 +234,7 @@ export class BlackBoxRallarTypedChannels {
             transport,
             roomId: message.roomId ?? config.roomId,
             ...blackBoxRallarScopeDiagnosticsOf(config),
-            peerId: this.#input.connection.session()?.sessionId,
+            peerId: event.peerId,
             remotePeerId: message.senderId,
             senderId: message.senderId,
             typeId: message.typeId,
