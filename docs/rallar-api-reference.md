@@ -258,7 +258,14 @@ raise `RallarRoomSwitchPartialFailureError` with `operation: 'quick-join'` while
 default room, or the current room without joining.
 
 `RallarRoomSession` exposes `roomId`, `roomRef`, `snapshot()`, `summary()`,
-`leave()`, `refresh()`, `message(...)`, `realtime(...)`, and `formation`.
+`leave()`, `refresh()`, `message(...)`, `realtime(...)`, `topicRole(topicId)`,
+and `formation`. `topicRole(topicId)` is the signed-in principal's effective
+`RallarRoomTopicRole` on a granted topic in the room's cached snapshot:
+`publisher`, `subscriber`, `publisher-subscriber`, or `none` with no snapshot
+cached, when signed out, or without a grant. Each `RallarRoomMember` carries
+`topicGrants`, `{ [topicId]: { publish, subscribe, role } }` for the topics of
+its publication grant (`{}` without one), effective as the server decides: a
+member that is not active holds nothing and a spectator never publishes.
 
 `rooms.formation(room?)` returns a `RallarRoomFormation` bound to an explicit room, the default
 room, or the current room; `RallarRoomSession` exposes the same handle as `formation`. It carries
@@ -349,7 +356,11 @@ principal activate that membership.
 `rooms.unbanMember(room, principalId, options?)`,
 `rooms.setMemberRole({ room, principalId, role, options? })`, and
 `rooms.transferOwnership(room, principalId, options?)` are the browser-safe
-membership governance workflows. They call server-side policy endpoints instead
+membership governance workflows. `rooms.grantTopic({ room, principalId,
+options? }, topicId, { publish, subscribe })` adds publication permissions on
+one granted topic and `rooms.revokeTopic({ room, principalId, options? },
+topicId)` removes both; each answers the written `GroupSnapshot` (see Group
+Policy And State Routes below). They call server-side policy endpoints instead
 of exposing raw membership mutation. The legacy self-upsert route remains
 limited to self `active` or `left` transitions and ignores role changes.
 
@@ -502,6 +513,8 @@ mutation request id only as the trailing `/requests/{requestId}` path segment
 - `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/{requestId}`
 - `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{principalId}/grant/requests/{requestId}`
 - `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/publication-grants/{principalId}/revoke/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/subscribe/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/unsubscribe/requests/{requestId}`
 
 Publication grants decide who publishes on, and who receives, a room topic
 declared `participation: 'granted'` (see `ws.defineTopic` under Server
@@ -536,8 +549,34 @@ of them left with no row. Leave, remove, ban and any membership write out of
 no grant; an archived, expired or deleted group keeps its rows and grants
 nothing. `CreateGroupRequest.publicationGrants` declares the creator's own
 initial grant, `{ [topicId]: { publish, subscribe } }`; absent, the creator
-holds none. Grants are currently exposed through these REST routes; the browser
-room facade has no grant workflow yet.
+holds none. The browser room facade grants and revokes through
+`rooms.grantTopic` and `rooms.revokeTopic` (see Rooms above).
+
+Holding `subscribe` makes a principal eligible; a session receives a granted
+topic only once it subscribes. The subscribe and unsubscribe routes act on the
+authenticated session only (another `sessionId` is a `403`) and take
+`{ topicId, connectionGenerationId, reason? }`, where `connectionGenerationId` is
+the session's current WebSocket connection generation, since the HTTP request
+is bound to no socket. Both answer `200` with `{ outcome }`: `subscribed` (a new
+subscription, or a new generation replacing one), `renewed` (the same
+generation again, which extends the lease), `unsubscribed`, or `not-subscribed`
+(no subscription, or one held by another generation, which is left in place);
+a replay answers the same outcome, and a reused `requestId` with a changed body
+is `409`. A subscription lasts 120 seconds from its last subscribe, so a holder
+renews it by subscribing again within the lease. A subscribe needs an active
+member holding effective `subscribe` on the topic (`no-subscribe-grant`), a live
+client-state session (`no-live-session`) and a generation that is one of that
+session's live ones (`stale-generation`); an unknown group is `400`
+`group-mutation-rejected`. A subscription bumps no group revision and writes no
+event. Revoking `subscribe`, and leaving, removal or a ban, delete the
+principal's subscriptions in the same write, so a re-grant or a rejoin starts
+unsubscribed. `GET .../groups/{groupId}/sessions/{sessionId}/subscriptions`
+lists the authenticated session's live subscriptions in topic order, each
+`{ sessionId, principalId, topicId, connectionGenerationId,
+leaseExpiresAtEpochMs, admittedAtGroupRevision }`; it is always authenticated,
+whatever `RALLAR_STATE_STRICT_READ_AUTH` says, and an unknown group lists none.
+Browser code subscribes through a granted channel's `subscribe(handler)` (see
+WS And RTC Messages), which sends, renews and releases these requests itself.
 
 Join-code rotation is currently exposed through lower-level API integration and
 workflow helpers. The plaintext code is returned only by the rotation response;
@@ -1036,6 +1075,46 @@ with `failure: { kind: 'relay-rejected', rejection }`, `rejection.reason`
 no NACK, and a receipted handle then reads its recipients unconfirmed. The
 cached check is advisory: a cache older than a grant refuses the send until the
 grant's delta lands.
+
+A granted channel reaches only sessions that subscribed: `subscribe(handler)`
+registers the handler and returns a `RallarTopicSubscription` token whose
+`status()` is `pending` until the server first answers, `active` while the
+subscription holds, `refused` when the server denies it (no `subscribe` grant,
+not an active member, no such room), and `lapsed` once it ended otherwise
+(unsubscribed, the session ended or its tab was replaced, or no renewal
+succeeded within the lease); `wait()` settles when the status first leaves
+`pending`, and `unsubscribe()` detaches the handler. A members channel, or one
+without a `roomRef`, throws the `unsupported` issue; a room session's
+`message(...)` binds its `roomRef`. One owner per tab counts
+tokens per room and topic: the first token subscribes and the last one
+unsubscribes, the held subscriptions renew on the 20 s session heartbeat and
+re-subscribe under the new connection generation whenever the socket reopens, a
+tab whose socket was replaced sends nothing, and session end releases them.
+REST errors become statuses and never throw.
+
+```ts
+const roomFeed = rallar.rooms.session().message<FeedItem>({
+    topicId: 'room.feed',
+    typeId: 'feed.item.v1',
+    purpose: 'notification',
+    access: 'granted'
+});
+const subscription = roomFeed.subscribe((item) => showHeadline(item.headline));
+if ((await subscription.wait()) === 'refused') {
+    showSubscribeNotGranted();
+}
+// later
+await subscription.unsubscribe();
+```
+
+On the server, the audience of a granted publication is the live sessions of
+active members holding effective `subscribe` whose subscription their current
+connection generation asserted and whose lease holds, narrowed by the send's
+targeting and leader. A dispatch step drops a recipient whose connection
+generation changed since admission, and an empty audience is admitted with no
+recipients. A send asking `ack: 'group-leader'` whose leader has not
+subscribed is NACKed `no-leader`, and a room unicast to an unsubscribed session
+`unauthorized`.
 
 ```ts
 interface FeedItem {

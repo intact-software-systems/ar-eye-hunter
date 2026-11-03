@@ -815,5 +815,22 @@ await server.ws.publish({ message: feedMessage, producerId: 'feed-service' });
 ```
 
 A member without a `publish` grant is refused `no-publish-grant`, and a granted
-topic does not travel over RTC (see `docs/rallar-api-reference.md`, Group Policy
-And State Routes and WS And RTC Messages).
+topic does not travel over RTC. A browser session receives a granted topic only
+after it subscribes, holding `subscribe`, on a granted channel bound to its room:
+
+```ts
+const room = rallar.rooms.session();
+const feed = room.message<{ headline: string; }>({
+    topicId: 'room.feed',
+    typeId: 'feed.item.v1',
+    purpose: 'notification',
+    access: 'granted'
+});
+const subscription = feed.subscribe((item) => showHeadline(item.headline));
+await subscription.wait(); // 'active', or 'refused' without a subscribe grant
+```
+
+Owners and admins grant with
+`rooms.grantTopic({ room, principalId }, 'room.feed', { publish: false, subscribe: true })`
+(see `docs/rallar-api-reference.md`, Group Policy And State Routes and WS And
+RTC Messages).
