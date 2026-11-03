@@ -1,9 +1,9 @@
-import { readALTargetGroupRef, type ALMessage } from '../al-contracts/al-contract.ts';
-import { resolvePublicationKey } from '../api/group-presence/resolve-publication-key.ts';
-import { resolveGroupPublicationPermissions } from '../api/group-publication/group-publication-grants.ts';
-import type { GroupSnapshot } from '../api/group-types.ts';
-import { Either } from '../resilience/Either.ts';
-import { resolveRoomObservationDenial } from './rtc-room-snapshot-admission.ts';
+import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { resolvePublicationKey } from '../../api/group-presence/resolve-publication-key.ts';
+import { resolveGroupPublicationPermissions } from '../../api/group-publication/group-publication-grants.ts';
+import type { GroupSnapshot } from '../../api/group-types.ts';
+import { Either } from '../../resilience/Either.ts';
+import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts';
 
 export interface RtcPublicationAdmissionInput {
     readonly message: ALMessage;

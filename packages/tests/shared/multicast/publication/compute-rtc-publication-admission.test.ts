@@ -6,9 +6,9 @@ import {
     computeRtcPublicationAdmission,
     type RtcPublicationAdmissionInput,
     type RtcPublicationRefusalCode
-} from '@shared/multicast/compute-rtc-publication-admission.ts';
+} from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
 
-import { ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
+import { ORIGIN_ROOM } from '../rtc-origin-overlay-fixture.ts';
 import {
     createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
@@ -16,7 +16,7 @@ import {
     PUBLISH_ONLY,
     SUBSCRIBE_ONLY,
     type PublicationRoomInput
-} from './rtc-publication-proof-fixtures.ts';
+} from '../rtc-publication-proof-fixtures.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-01-01T00:00:00Z');
 

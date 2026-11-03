@@ -1,8 +1,8 @@
-import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
-import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
-import { Either } from '../resilience/Either.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
+import type { ALOutboundDispatchPlan } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
+import { Either } from '../../resilience/Either.ts';
 
 export const RTC_GRANTED_PUBLICATION_REFUSALS = {
     notMulticast: 'RTC carries a granted publication only as a room multicast.',

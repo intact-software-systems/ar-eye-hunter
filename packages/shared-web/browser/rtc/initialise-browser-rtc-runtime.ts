@@ -37,9 +37,9 @@ import type {
     OverlayId
 } from '@shared/api/api-config.ts';
 import type { WebRtcOverlayMulticaster } from '@shared/multicast/overlay-multicast-contracts.ts';
-import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
-import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
-import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';

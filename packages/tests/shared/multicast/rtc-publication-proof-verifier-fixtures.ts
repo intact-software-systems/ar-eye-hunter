@@ -1,5 +1,5 @@
-import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
-import { RtcPublicationProofVerifier } from '@shared/multicast/rtc-publication-proof-verifier.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
 
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 

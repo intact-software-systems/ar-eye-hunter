@@ -4,20 +4,20 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { RtcPublicationProofVerifier } from '@shared/multicast/rtc-publication-proof-verifier.ts';
+import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import {
     createAvailablePublicationCryptoFixture,
     UNAVAILABLE_PUBLICATION_CRYPTO,
     type AvailablePublicationCrypto
-} from '../signature/publication-crypto-fixtures.ts';
+} from '../../signature/publication-crypto-fixtures.ts';
 import {
     createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
     PUBLISH_AND_SUBSCRIBE,
     signPublication
-} from './rtc-publication-proof-fixtures.ts';
+} from '../rtc-publication-proof-fixtures.ts';
 
 interface VerifierFixture {
     readonly verifier: RtcPublicationProofVerifier;

@@ -10,13 +10,13 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-m
 import { reconstructALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/compute-rtc-granted-publication-refusal.ts';
 import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
+import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 import {
     signRtcPublication,
     type RtcPublicationSigningFailure,
     type SignRtcPublicationInput
-} from '@shared/multicast/sign-rtc-publication.ts';
+} from '@shared/multicast/publication/sign-rtc-publication.ts';
 import { importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 

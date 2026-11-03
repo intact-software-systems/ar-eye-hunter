@@ -11,7 +11,7 @@ import { resolveRallarGroupLeaderSessionId } from '../api/group-director.ts';
 import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
 import type { Either } from '../resilience/Either.ts';
-import type { RtcPublicationAdmitted, RtcPublicationRefusal } from './compute-rtc-publication-admission.ts';
+import type { RtcPublicationAdmitted, RtcPublicationRefusal } from './publication/compute-rtc-publication-admission.ts';
 import {
     resolveRtcRoomPeerDenial,
     resolveRtcRoomRosterPosition,

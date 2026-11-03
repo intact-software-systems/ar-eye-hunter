@@ -1,4 +1,4 @@
-import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 
 /** A tab with no active subscription token: a granted frame it admits is forwarded, never delivered. */
 export const NO_RTC_TOPIC_SUBSCRIPTIONS: RtcTopicSubscriptionReader = { isSubscriptionActive: () => false };

@@ -1,6 +1,6 @@
 import { isGroupPublicationTopicGranted } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 
 export namespace BrowserGrantedTopics {
     export interface Input {

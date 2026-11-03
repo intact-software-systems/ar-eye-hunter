@@ -26,8 +26,8 @@ import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavai
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
-import { resolveRtcGrantedPublicationShapeRefusal } from '@shared/multicast/compute-rtc-granted-publication-refusal.ts';
-import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
+import { resolveRtcGrantedPublicationShapeRefusal } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';

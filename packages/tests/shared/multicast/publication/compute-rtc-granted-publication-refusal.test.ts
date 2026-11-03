@@ -11,9 +11,9 @@ import {
     computeRtcGrantedPublicationRefusal,
     resolveRtcGrantedPublicationShapeRefusal,
     RTC_GRANTED_PUBLICATION_REFUSALS
-} from '@shared/multicast/compute-rtc-granted-publication-refusal.ts';
+} from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 
-import { ORIGIN_ROOM, toOriginFrozenTargets } from './rtc-origin-overlay-fixture.ts';
+import { ORIGIN_ROOM, toOriginFrozenTargets } from '../rtc-origin-overlay-fixture.ts';
 
 const ROUTE = { topicId: 'room.granted-feed', resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId };
 const PROOF = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) } as const;

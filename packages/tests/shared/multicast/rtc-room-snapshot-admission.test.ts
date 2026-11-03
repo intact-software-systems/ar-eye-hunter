@@ -8,7 +8,7 @@ import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RtcPublicationRefusalCode } from '@shared/multicast/compute-rtc-publication-admission.ts';
+import type { RtcPublicationRefusalCode } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcPublicationHandlingPlan,

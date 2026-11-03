@@ -1,10 +1,10 @@
-import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { signALPublicationProof } from '../al-contracts/publication-proof/al-publication-proof.ts';
-import { resolvePublicationKey } from '../api/group-presence/resolve-publication-key.ts';
-import type { GroupSnapshot } from '../api/group-types.ts';
-import { Either } from '../resilience/Either.ts';
-import type { PublicationCrypto } from '../signature/publication-crypto.ts';
-import { isRtcUnfrozenRoomMessage } from './web-rtc-overlay-frozen-audience.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { signALPublicationProof } from '../../al-contracts/publication-proof/al-publication-proof.ts';
+import { resolvePublicationKey } from '../../api/group-presence/resolve-publication-key.ts';
+import type { GroupSnapshot } from '../../api/group-types.ts';
+import { Either } from '../../resilience/Either.ts';
+import type { PublicationCrypto } from '../../signature/publication-crypto.ts';
+import { isRtcUnfrozenRoomMessage } from '../web-rtc-overlay-frozen-audience.ts';
 
 export interface SignRtcPublicationInput {
     readonly crypto: PublicationCrypto;

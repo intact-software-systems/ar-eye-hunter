@@ -30,9 +30,9 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { RtcGrantedTopicReader } from '@shared/multicast/rtc-granted-topic-reader.ts';
-import type { RtcPublicationProofVerifierPort } from '@shared/multicast/rtc-publication-proof-verifier-port.ts';
-import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 export interface CreateRallarSessionControllerOptions {

@@ -13,7 +13,6 @@ import {
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
     shouldAwaitALRoute,
-    type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
 import { assertALPublicationProofSigningInputKept } from '../al-contracts/publication-proof/al-publication-proof.ts';
@@ -39,7 +38,6 @@ import {
     toALOutboundCongestionDrop,
     writeALOutboundRuntimeDiagnostic,
     type ALOutboundCancelOutcome,
-    type ALOutboundDropReasonCode,
     type ALOutboundEnqueueResult,
     type ALOutboundPreparedSendResult,
     type ALOutboundRtcHandoffRefusal,
@@ -62,7 +60,6 @@ import { isSessionInGroup, readGroupMemberSessionIds } from '../api/group-client
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
-import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
@@ -82,10 +79,6 @@ import type {
 import { computeRtcBackpressure } from './compute-rtc-backpressure.ts';
 import { computeRtcExclusiveRefusal } from './compute-rtc-exclusive-refusal.ts';
 import {
-    computeRtcGrantedPublicationRefusal,
-    resolveRtcGrantedPublicationShapeRefusal
-} from './compute-rtc-granted-publication-refusal.ts';
-import {
     computeRtcOutboundCarrierAvailability,
     isRtcCarrierGapHandedOver,
     isRtcCarrierGapHeld,
@@ -95,7 +88,6 @@ import {
     type RtcCarrierGapAdmission,
     type RtcOutboundCarrierAvailability
 } from './compute-rtc-outbound-carrier-availability.ts';
-import { computeRtcPublicationAdmission } from './compute-rtc-publication-admission.ts';
 import { isRtcEnqueueBreakerSuccess } from './is-rtc-enqueue-breaker-success.ts';
 import {
     OverlayMulticastDispatchPlan,
@@ -104,22 +96,29 @@ import {
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
 import {
+    computeRtcGrantedPublicationRefusal,
+    resolveRtcGrantedPublicationShapeRefusal
+} from './publication/compute-rtc-granted-publication-refusal.ts';
+import { computeRtcPublicationAdmission } from './publication/compute-rtc-publication-admission.ts';
+import type { RtcGrantedTopicReader } from './publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from './publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from './publication/rtc-topic-subscription-reader.ts';
+import { signRtcPublication, type RtcPublicationSigningFailure } from './publication/sign-rtc-publication.ts';
+import {
     readRtcGroupSnapshotByRef,
     readRtcOutboundObservation,
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
-import type { RtcGrantedTopicReader } from './rtc-granted-topic-reader.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
-import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcPublicationHandlingPlan,
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
-import type { RtcTopicSubscriptionReader } from './rtc-topic-subscription-reader.ts';
-import { signRtcPublication, type RtcPublicationSigningFailure } from './sign-rtc-publication.ts';
+import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-drop-reason-code-from-handling-plan.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
+import { toRtcControlHandoffError } from './to-rtc-control-handoff-error.ts';
 import { toRtcOutboundMessage } from './to-rtc-outbound-message.ts';
 import {
     computeRtcBroadcastScopeRefusal,
@@ -1284,48 +1283,4 @@ export class WebRtcOverlayMulticastManager {
 /** A shape refusal reads as its own text; a signing failure names its kind first. */
 function toRtcGrantedLegRefusalDetail(refusal: RtcGrantedLegRefusal): string {
     return refusal.kind === 'unsupported-shape' ? refusal.message : `${refusal.kind}: ${refusal.message}`;
-}
-
-function toRtcControlHandoffError(result: ALOutboundEnqueueResult): Error | undefined {
-    switch (result.verdict.kind) {
-        case 'pending':
-        case 'admitted':
-        case 'duplicate':
-            return;
-        case 'deferred':
-        case 'unroutable':
-        case 'storage-unavailable':
-        case 'failed':
-            return new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
-        case 'refused':
-        case 'skipped':
-        case 'superseded':
-        case 'expired':
-            return new NonRetryableException(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
-    }
-}
-
-/** The six codes shared with inbound handling carry over; an inbound-only code has no outbound route concept. */
-function toALOutboundDropReasonCodeFromHandlingPlan(
-    code: ALMessageDropReasonCode | undefined
-): ALOutboundDropReasonCode {
-    switch (code) {
-        case 'duplicate':
-        case 'superseded':
-        case 'expired':
-        case 'not-yet-in-sync':
-        case 'unauthorized':
-        case 'congested':
-            return code;
-        case 'overloaded':
-            return 'capacity';
-        case 'membership-fenced':
-            return 'unauthorized';
-        case 'unmet-requirements':
-        case 'ordering-rejected':
-        case 'resync-required':
-        case 'held-by-other':
-        case undefined:
-            return 'planner-drop';
-    }
 }

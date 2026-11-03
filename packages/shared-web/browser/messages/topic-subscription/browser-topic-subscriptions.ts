@@ -7,7 +7,7 @@ import {
     type GroupTopicSubscriptionResult
 } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RtcTopicSubscriptionReader } from '@shared/multicast/rtc-topic-subscription-reader.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
