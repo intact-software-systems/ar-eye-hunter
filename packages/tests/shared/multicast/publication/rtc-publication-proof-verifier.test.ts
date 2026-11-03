@@ -5,7 +5,10 @@ import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-gro
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
-import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+import {
+    toPublicationVerificationCrypto,
+    type PublicationVerificationCrypto
+} from '@shared/signature/publication-crypto.ts';
 
 import {
     createAvailablePublicationCryptoFixture,
@@ -137,11 +140,18 @@ describe('RtcPublicationProofVerifier', () => {
         ]).toEqual([false, false]);
     });
 
+    it('takes the page\'s WebCrypto without its key pair, and a keyless page as keyless', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+
+        expect(toPublicationVerificationCrypto(crypto)).toEqual({ kind: 'available', subtle: crypto.subtle });
+        expect(toPublicationVerificationCrypto(UNAVAILABLE_PUBLICATION_CRYPTO)).toEqual({ kind: 'unavailable' });
+    });
+
     it('answers every frame unverified on a keyless page', async () => {
         const fixture = await createVerifierFixture();
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));
         const keyless = new RtcPublicationProofVerifier({
-            crypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            crypto: toPublicationVerificationCrypto(UNAVAILABLE_PUBLICATION_CRYPTO),
             findGroupSnapshot: () => fixture.groups.read('room'),
             nowEpochMs: Date.now
         });
@@ -180,7 +190,10 @@ function createFeed(resourceId: string): ALMessage {
 }
 
 /** The receiver page's WebCrypto, counting the digests and verifications the verifier asks of it. */
-function toCountingCrypto(crypto: AvailablePublicationCrypto, calls: { digest: number; verify: number; }): PublicationCrypto {
+function toCountingCrypto(
+    crypto: AvailablePublicationCrypto,
+    calls: { digest: number; verify: number; }
+): PublicationVerificationCrypto {
     const subtle = crypto.subtle;
     const counting = Object.create(subtle) as SubtleCrypto;
     Object.assign(counting, {
@@ -194,5 +207,5 @@ function toCountingCrypto(crypto: AvailablePublicationCrypto, calls: { digest: n
         },
         importKey: (...input: Parameters<SubtleCrypto['importKey']>) => subtle.importKey(...input)
     });
-    return { ...crypto, subtle: counting };
+    return { kind: 'available', subtle: counting };
 }

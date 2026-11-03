@@ -907,6 +907,32 @@ describe('Rallar typed message channel', () => {
         expect(received).toEqual(['rtc']);
     });
 
+    it('a granted subscribe handler never receives an RTC unicast on its topic, nor another room\'s multicast', async () => {
+        const rtcCallbacks = captureRtcInboxCallbacks();
+        stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const rooms = ['room-1', 'room-2'] as const;
+        const received: string[] = [];
+        for (const groupId of rooms) {
+            const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition(groupId));
+            await channel.subscribe((_payload, event) => {
+                received.push(`${groupId}:${event.resourceId}`);
+            }).wait();
+        }
+        const unicast = newALUnicastMessage('peer-1', newALRoute('room.feed', 'room-1', 'unicast-1'), 'session-1', 'room.feed.v1', {
+            text: 'feed'
+        });
+
+        for (const message of [unicast, createGrantedFeedMulticast('room-2-feed', 'room-2')]) {
+            for (const callback of rtcCallbacks.values()) {
+                await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
+            }
+        }
+
+        expect(received).toEqual(['room-2:room-2-feed']);
+    });
+
     it('a granted subscribe handler sees one delivery when the RTC and WS copies of one publication both arrive', async () => {
         const wsCallbacks = captureWsInboxCallbacks();
         const rtcCallbacks = captureRtcInboxCallbacks();
@@ -945,11 +971,11 @@ describe('Rallar typed message channel', () => {
     });
 });
 
-function toGrantedFeedDefinition(): RallarRoomMessageChannelDefinition {
+function toGrantedFeedDefinition(groupId = 'room-1'): RallarRoomMessageChannelDefinition {
     return {
         topicId: 'room.feed',
         typeId: 'room.feed.v1',
-        roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+        roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId },
         purpose: 'notification',
         access: 'granted'
     };
@@ -996,9 +1022,9 @@ async function deliverRtcFeed(rtcCallbacks: Map<string, RtcInboxCallback>, msgId
 }
 
 /** A granted room publication as its origin admits it: frozen to the room's audience. */
-function createGrantedFeedMulticast(msgId: string): ALMessage {
-    const roomRef = toGrantedFeedDefinition().roomRef!;
-    const message = newALMulticastMessage('peer-1', newALRoute('room.feed', 'room-1', msgId), roomRef, 'room.feed.v1', {
+function createGrantedFeedMulticast(msgId: string, groupId = 'room-1'): ALMessage {
+    const roomRef = toGrantedFeedDefinition(groupId).roomRef!;
+    const message = newALMulticastMessage('peer-1', newALRoute('room.feed', groupId, msgId), roomRef, 'room.feed.v1', {
         text: 'feed'
     });
     return {

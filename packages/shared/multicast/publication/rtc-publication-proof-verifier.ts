@@ -9,7 +9,7 @@ import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '../..
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { toBase64Url } from '../../encoding/base64url.ts';
 import { computeEcdsaP256JwkThumbprint, importEcdsaP256PublicKey } from '../../signature/ecdsa-p256-signature.ts';
-import type { PublicationCrypto } from '../../signature/publication-crypto.ts';
+import type { PublicationVerificationCrypto } from '../../signature/publication-crypto.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 
 const UTF8_ENCODER = new TextEncoder();
@@ -17,7 +17,7 @@ const UTF8_ENCODER = new TextEncoder();
 export namespace RtcPublicationProofVerifier {
     export interface Dependencies {
         /** The page's WebCrypto; a keyless page verifies nothing, so every granted frame stays unverified. */
-        readonly crypto: PublicationCrypto;
+        readonly crypto: PublicationVerificationCrypto;
         /**
          * The page's readable snapshot of a room, from which a sender's registered key is read. The page outlives each
          * connect's group cache, so the snapshot is found when a frame is verified.
@@ -33,8 +33,7 @@ export namespace RtcPublicationProofVerifier {
  * exact message object that was verified.
  */
 export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierPort {
-    /** An ES private field: the advanced middleware hands app code the manager that holds this verifier. */
-    readonly #crypto: PublicationCrypto;
+    readonly #crypto: PublicationVerificationCrypto;
     readonly #findGroupSnapshot: (groupRef: GroupRef) => GroupSnapshot | undefined;
     readonly #nowEpochMs: () => number;
     readonly #publicKeys = new LatestRepository<string, CryptoKey>({ maxEntries: 256 });

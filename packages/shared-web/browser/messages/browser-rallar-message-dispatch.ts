@@ -344,7 +344,7 @@ export class BrowserRallarMessageDispatch {
 
     private isGrantedDelivery(delivery: BrowserRallarMessageDispatch.Delivery, roomRef: GroupRef | undefined): boolean {
         return delivery.access === 'granted' ||
-            (roomRef !== undefined && this.input.grantedTopics.isGrantedTopic(roomRef, delivery.message.route.topicId));
+            this.input.grantedTopics.isGrantedTopic(roomRef, delivery.message.route.topicId);
     }
 }
 

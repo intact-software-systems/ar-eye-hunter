@@ -609,9 +609,8 @@ export class WebRtcOverlayMulticastManager {
         });
         const plan = this.planRoomMessageHandling({ msg, fromPeerId, admission, overlay, observations, nowMs });
         const roomPlan = toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
-        const grantedRoomRef = this.resolveGrantedPublicationRoomRef(msg);
         // A granted frame without a readable snapshot fails closed; one its room refused keeps the room's refusal.
-        if (grantedRoomRef === undefined || (snapshot !== undefined && admission.kind !== 'authorized')) {
+        if (!this.isGrantedPublication(msg) || (snapshot !== undefined && admission.kind !== 'authorized')) {
             return roomPlan;
         }
         return toRtcPublicationHandlingPlan(
@@ -621,7 +620,8 @@ export class WebRtcOverlayMulticastManager {
                 snapshot: snapshot ?? null,
                 selfPrincipalId: this.selfPrincipalId,
                 signatureValid: this.publicationVerifier.getVerifiedSignature(msg),
-                ownSubscriptionActive: this.topicSubscriptions.isSubscriptionActive(grantedRoomRef, msg.route.topicId),
+                ownSubscriptionActive: groupRef !== undefined &&
+                    this.topicSubscriptions.isSubscriptionActive(groupRef, msg.route.topicId),
                 nowEpochMs: nowMs
             }),
             fromPeerId
@@ -697,15 +697,9 @@ export class WebRtcOverlayMulticastManager {
         return readRtcGroupSnapshotByRef(this.groupCache, ref);
     }
 
+    /** By topic, whatever the target: a granted topic's frame naming no room is still judged, and refused unbound. */
     private isGrantedPublication(msg: ALMessage): boolean {
-        return this.resolveGrantedPublicationRoomRef(msg) !== undefined;
-    }
-
-    private resolveGrantedPublicationRoomRef(msg: ALMessage): GroupRef | undefined {
-        const groupRef = readALTargetGroupRef(msg);
-        return groupRef !== undefined && this.grantedTopics.isGrantedTopic(groupRef, msg.route.topicId)
-            ? groupRef
-            : undefined;
+        return this.grantedTopics.isGrantedTopic(readALTargetGroupRef(msg), msg.route.topicId);
     }
 
     private planDirectDispatch(

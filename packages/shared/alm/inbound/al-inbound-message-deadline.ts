@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { assertALPublicationProofSigningInputKept } from '../../al-contracts/publication-proof/al-publication-proof.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 
 /** A message whose retained deadline is part of its type, so no reader has to assert one. */
@@ -18,14 +19,23 @@ export function decodeALDeadlinedMessage(msg: ALMessage): ALDeadlinedMessage {
     return { ...msg, constraints: { ...msg.constraints, expiresAtMs } };
 }
 
+/**
+ * A signed message keeps its origin's expiry, a signed field: the receiver's own earlier deadline is the one its
+ * plan resolves and its work rows carry. Every other message takes the earlier of the two.
+ */
 export function toALInboundMessageWithDeadline(msg: ALMessage, expireAtTimestamp: number): ALDeadlinedMessage {
-    return {
+    const ownExpiresAtMs = msg.constraints?.expiresAtMs ?? expireAtTimestamp;
+    const deadlined = {
         ...msg,
         constraints: {
             ...msg.constraints,
-            expiresAtMs: Math.min(msg.constraints?.expiresAtMs ?? expireAtTimestamp, expireAtTimestamp)
+            expiresAtMs: msg.proof === undefined ? Math.min(ownExpiresAtMs, expireAtTimestamp) : ownExpiresAtMs
         }
     };
+    if (msg.proof !== undefined) {
+        assertALPublicationProofSigningInputKept(msg, deadlined);
+    }
+    return deadlined;
 }
 
 export function toALInboundDispatchEntry(

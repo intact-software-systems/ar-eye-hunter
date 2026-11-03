@@ -41,6 +41,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
 import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { toPublicationVerificationCrypto } from '@shared/signature/publication-crypto.ts';
 import type {
     RallarBrowserFacadeRuntimeContext
 } from './browser-facade-runtime-state.ts';
@@ -142,7 +143,7 @@ export async function createDefaultRtcPublicationProofVerifier(
     state: BrowserStateComposition
 ): Promise<RtcPublicationProofVerifier> {
     return new RtcPublicationProofVerifier({
-        crypto: await foundation.publicationCrypto,
+        crypto: toPublicationVerificationCrypto(await foundation.publicationCrypto),
         findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef),
         nowEpochMs: Date.now
     });

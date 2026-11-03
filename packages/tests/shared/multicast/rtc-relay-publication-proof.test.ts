@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
+import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
@@ -37,10 +39,14 @@ interface RelayHopInput {
     readonly crypto?: PublicationCrypto;
     readonly subscribed?: boolean;
     readonly groupCacheTtlMs?: number;
+    /** The topic the relay's page declared granted; absent, the room feed topic. */
+    readonly grantedTopicId?: string;
+    /** The receiver session's QoS provider; absent, the carrier's capabilities alone. */
+    readonly qosProvider?: ALQosInputProvider;
 }
 
-/** The browser's group snapshot cache TTL (`BROWSER_STATE_CACHE_TTL_MS`): a snapshot no delta or heartbeat renews lapses. */
-const GROUP_CACHE_TTL_MS = 60_000;
+/** A granted topic outside the `room.` prefix: room admission alone never refuses a frame on it that names no room. */
+const APP_TOPIC_ID = 'app.granted-feed';
 
 const GRANTS_WITH_UNSUBSCRIBED_RELAY = { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY } as const;
 
@@ -99,6 +105,27 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(readAdmissionReasons(relay)).toEqual(['not-yet-in-sync: unknown-key']);
     });
 
+    it.each<[string, (message: ALMessage) => ALMessage['targets']]>([
+        ['a unicast', () => ({ mode: 'unicast', toPeerId: 'r' })],
+        ['a world broadcast', () => ({ mode: 'broadcast', scope: 'world' })]
+    ])('drops %s naming no room on a granted app topic as unbound, never delivering or forwarding it', async (_name, toTargets) => {
+        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true, grantedTopicId: APP_TOPIC_ID });
+        const forged = newALUnicastMessage(
+            'a',
+            { topicId: APP_TOPIC_ID, resourceId: 'forged-1', contextId: ORIGIN_ROOM.groupId },
+            'r',
+            'room.granted-feed.v1',
+            { text: 'forged' },
+            { ttlMs: 30_000, traceId: 'trace-forged' }
+        );
+
+        await relay.receive({ ...forged, targets: toTargets(forged) }, 'a');
+
+        expect([relay.delivered, await relay.readSent('c')]).toEqual([[], []]);
+        expect(readAdmissionReasons(relay)).toEqual(['unauthorized: unbound-target']);
+    });
+
     it('drops a frame without a proof at the first hop', async () => {
         const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
@@ -155,6 +182,28 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
     });
 
+    it('keeps the signed expiry of a frame whose receiver computes an earlier deadline, so it still verifies and delivers', async () => {
+        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        // The receiver cannot honour the origin's `expires-at`: it falls back to `fresh-until` over the unsigned audit time.
+        const relay = createRelayHop(chain, {
+            selfPeerId: 'r',
+            subscribed: true,
+            qosProvider: { capabilitiesForMessage: () => ({ supportedExpiry: ['fresh-until'] }) }
+        });
+        const signed = await publishFromOrigin(chain, 'feed-1');
+        // An upstream hop stamps an earlier audit time, which the proof excludes: the receiver's deadline falls first.
+        const restamped: ALMessage = { ...signed, audit: { ...signed.audit, createdTs: signed.id.ts - 40_000 } };
+
+        await relay.receive(restamped, 'a');
+        const forwarded = await relay.readSent('c');
+
+        expect(readAdmissionReasons(relay)).toEqual(['admitted']);
+        expect(relay.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
+        expect(forwarded.map((message) => toALPublicationProofSigningInput(message))).toEqual([
+            toALPublicationProofSigningInput(signed)
+        ]);
+    });
+
     it('delivers a members-topic frame without a proof as before: only granted topics are judged by proof', async () => {
         const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: false });
@@ -173,20 +222,20 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(await relay.readSent('c')).toHaveLength(1);
     });
 
-    it('keeps a snapshot readable for its cache TTL: delivered at +59 s, dropped no-authority at +61 s', async () => {
+    it('keeps a snapshot readable for its cache TTL: delivered a second before it lapses, dropped no-authority a second after', async () => {
         const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, {
             selfPeerId: 'r',
             subscribed: true,
-            groupCacheTtlMs: GROUP_CACHE_TTL_MS
+            groupCacheTtlMs: BROWSER_STATE_CACHE_TTL_MS
         });
 
-        await vi.advanceTimersByTimeAsync(59_000);
-        await relay.receive(await publishFromOrigin(chain, 'feed-59'), 'a');
+        await vi.advanceTimersByTimeAsync(BROWSER_STATE_CACHE_TTL_MS - 1_000);
+        await relay.receive(await publishFromOrigin(chain, 'feed-before'), 'a');
         await vi.advanceTimersByTimeAsync(2_000);
-        await relay.receive(await publishFromOrigin(chain, 'feed-61'), 'a');
+        await relay.receive(await publishFromOrigin(chain, 'feed-after'), 'a');
 
-        expect(relay.delivered.map((message) => message.route.resourceId)).toEqual(['feed-59']);
+        expect(relay.delivered.map((message) => message.route.resourceId)).toEqual(['feed-before']);
         expect(readAdmissionReasons(relay)).toEqual(['admitted', 'unauthorized: no-authority']);
     });
 
@@ -233,12 +282,13 @@ function createRelayHop(chain: RelayChain, input: RelayHopInput): RtcRelayOverla
         selfPeerId: input.selfPeerId,
         snapshot: input.snapshot ?? chain.snapshot,
         neighbourPeerIds: input.selfPeerId === 'r' ? ['a', 'c'] : ['r'],
-        grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
+        grantedTopics: createRtcGrantedTopicsFixture([input.grantedTopicId ?? PUBLICATION_TOPIC_ID]),
         publicationCrypto: input.crypto ?? chain.keys[input.selfPeerId],
         topicSubscriptions: input.subscribed
             ? createRtcTopicSubscriptionsFixture([PUBLICATION_TOPIC_ID])
             : NO_RTC_TOPIC_SUBSCRIPTIONS,
-        groupCacheTtlMs: input.groupCacheTtlMs
+        groupCacheTtlMs: input.groupCacheTtlMs,
+        qosProvider: input.qosProvider
     });
 }
 

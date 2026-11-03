@@ -22,11 +22,11 @@ export class BrowserGrantedTopics implements RtcGrantedTopicReader {
         this.declaredTopicIds.add(topicId);
     }
 
-    public isGrantedTopic(groupRef: GroupRef, topicId: string): boolean {
+    public isGrantedTopic(groupRef: GroupRef | undefined, topicId: string): boolean {
         if (this.declaredTopicIds.has(topicId)) {
             return true;
         }
-        const snapshot = this.input.findGroupSnapshot(groupRef);
+        const snapshot = groupRef === undefined ? undefined : this.input.findGroupSnapshot(groupRef);
         return snapshot !== undefined && isGroupPublicationTopicGranted(snapshot, topicId);
     }
 }

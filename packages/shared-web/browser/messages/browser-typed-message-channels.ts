@@ -19,7 +19,10 @@ import type {
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
@@ -137,11 +140,13 @@ export class BrowserTypedMessageChannels {
         }
         const token = this.input.topicSubscriptions.hold({ roomRef, topicId });
         const removeWsHandler = channel.onWs(handler);
-        // Not `onRtc`, which a granted channel refuses: a granted RTC frame reaches here only verified and admitted.
+        // Not `onRtc`, which a granted channel refuses: only its own room's admitted granted multicast reaches here.
         const removeRtcHandler = this.input.rtc.onMessage<T>(
             { topicId, typeId: definition.typeId },
             async (message) => {
-                await handler(message.payload, message);
+                if (isRoomMulticast(message.raw, roomRef)) {
+                    await handler(message.payload, message);
+                }
             }
         );
         return {
@@ -154,6 +159,13 @@ export class BrowserTypedMessageChannels {
             }
         };
     }
+}
+
+/** A granted room frame is a multicast to that room: a unicast or another room's frame is never this channel's. */
+function isRoomMulticast(message: ALMessage, roomRef: GroupRef): boolean {
+    const targetRoomRef = readALTargetGroupRef(message);
+    return message.targets?.mode === 'multicast' && targetRoomRef !== undefined &&
+        isSameGroupRef(targetRoomRef, roomRef);
 }
 
 /** The send a channel hands its sender: a live channel's is refused here, where its policy is known, before a handle opens. */

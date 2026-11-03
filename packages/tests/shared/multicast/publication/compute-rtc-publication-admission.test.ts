@@ -60,8 +60,20 @@ describe('computeRtcPublicationAdmission', () => {
     ])('refuses %s as %s', (_name, override, code) => {
         const admission = computeRtcPublicationAdmission({ ...toAdmissionInput(), ...override });
 
-        expect(admission.left?.code).toBe(code);
-        expect(admission.left?.logMessage).toEqual(expect.any(String));
+        expect(admission.left).toEqual({ code });
+    });
+
+    it.each<[string, ALMessage['targets']]>([
+        ['a unicast', { mode: 'unicast', toPeerId: 'b' }],
+        ['a world broadcast', { mode: 'broadcast', scope: 'world' }]
+    ])('refuses %s naming no room as unbound before it reads a snapshot or a proof', (_name, targets) => {
+        const admission = computeRtcPublicationAdmission({
+            ...toAdmissionInput(),
+            snapshot: null,
+            message: { ...createSignedLookingMulticast({ proof: undefined }), targets }
+        });
+
+        expect(admission.left).toEqual({ code: 'unbound-target' });
     });
 
     it('fails closed on a null snapshot before it reads anything else of the frame', () => {
@@ -116,7 +128,7 @@ describe('computeRtcPublicationAdmission', () => {
         expect([revoked.left?.code, subscribed.right]).toEqual(['no-publish-grant', { delivery: 'deliver' }]);
     });
 
-    it('carries no payload resource in any refusal it explains', () => {
+    it('carries no payload resource in any refusal it returns', () => {
         const message = createSignedLookingMulticast({ text: 'secret-resource-text' });
         const refusals = [
             { snapshot: null },

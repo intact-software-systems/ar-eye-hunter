@@ -376,7 +376,7 @@ describe('a granted publication\'s admission on its room plan', () => {
     it.each<RtcPublicationRefusalCode>(['unknown-key', 'authority-ahead'])(
         'drops %s as not yet in sync, the code after the head the room refresh reads, and NACKs its hop',
         (code) => {
-            const refused = toRtcPublicationHandlingPlan(plan, Either.ofLeft({ code, logMessage: 'log' }), 'origin');
+            const refused = toRtcPublicationHandlingPlan(plan, Either.ofLeft({ code }), 'origin');
 
             expect(refused).toMatchObject({
                 dropReason: `not-yet-in-sync: ${code}`,
@@ -395,7 +395,7 @@ describe('a granted publication\'s admission on its room plan', () => {
         'invalid-signature',
         'no-publish-grant'
     ])('drops %s as unauthorized with no NACK and no forward', (code) => {
-        const refused = toRtcPublicationHandlingPlan(plan, Either.ofLeft({ code, logMessage: 'log' }), 'origin');
+        const refused = toRtcPublicationHandlingPlan(plan, Either.ofLeft({ code }), 'origin');
 
         expect(refused).toMatchObject({
             dropReason: `unauthorized: ${code}`,
@@ -410,7 +410,7 @@ describe('a granted publication\'s admission on its room plan', () => {
     it('keeps the expiry drop the ALM policy owns', () => {
         const expired = { ...plan, dropReason: 'expired', dropReasonCode: 'expired' as const };
 
-        expect(toRtcPublicationHandlingPlan(expired, Either.ofLeft({ code: 'invalid-signature', logMessage: 'log' }), 'origin'))
+        expect(toRtcPublicationHandlingPlan(expired, Either.ofLeft({ code: 'invalid-signature' }), 'origin'))
             .toBe(expired);
     });
 

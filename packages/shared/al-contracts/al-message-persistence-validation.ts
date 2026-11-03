@@ -223,6 +223,17 @@ function assertProvenanceSections(message: PersistedALRecord): void {
     }
     if (message.proof !== undefined) {
         assertPersistedALProof(message.proof);
+        assertProofBindsExpiry(message);
+    }
+}
+
+/** The origin signs its admitted, expiry-bound message, so a receiver keeps that expiry instead of setting one. */
+function assertProofBindsExpiry(message: PersistedALRecord): void {
+    const constraints = message.constraints === undefined
+        ? undefined
+        : requirePersistedALRecord(message.constraints, 'constraints');
+    if (constraints?.expiresAtMs === undefined) {
+        throw new TypeError('A publication proof binds its message expiry');
     }
 }
 

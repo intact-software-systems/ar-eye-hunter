@@ -27,9 +27,9 @@ export type RtcPublicationRefusalCode =
     | 'invalid-signature'
     | 'no-publish-grant';
 
+/** What a relay or receiver refuses: the code its drop reason carries, and nothing of the frame. */
 export interface RtcPublicationRefusal {
     readonly code: RtcPublicationRefusalCode;
-    readonly logMessage: string;
 }
 
 export interface RtcPublicationAdmitted {
@@ -38,57 +38,61 @@ export interface RtcPublicationAdmitted {
 
 /**
  * A granted publication a relay or receiver judges against its own readable snapshot: it forwards only an admitted
- * frame, and delivers one only to a principal that may subscribe and holds an active token.
+ * frame, and delivers one only to a principal that may subscribe and holds an active token. A frame naming no room
+ * is unbound before anything else, since no snapshot of a room can attest it.
  */
 export function computeRtcPublicationAdmission(
     input: RtcPublicationAdmissionInput
 ): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
     const { message, snapshot } = input;
-    if (snapshot === null || resolveUnobservableRoom(message, snapshot, input.nowEpochMs)) {
-        return toRefusal('no-authority', 'No readable, active room snapshot attests the publication.');
+    const roomRef = readALTargetGroupRef(message);
+    if (roomRef === undefined) {
+        return toRefusal('unbound-target');
+    }
+    if (snapshot === null || resolveRoomObservationDenial(roomRef, snapshot, input.nowEpochMs) !== undefined) {
+        return toRefusal('no-authority');
     }
     const proof = message.proof;
     if (proof === undefined) {
-        return toRefusal('missing-proof', 'A granted publication carries no proof.');
+        return toRefusal('missing-proof');
     }
     const targets = message.targets;
     if (targets?.mode !== 'multicast' || targets.snapshotVersion === undefined) {
-        return toRefusal('unbound-target', 'A granted publication is a multicast frozen at a snapshot version.');
+        return toRefusal('unbound-target');
     }
     if (resolvePublicationKey(snapshot, message.id.senderId)?.keyId !== proof.keyId) {
-        return toRefusal('unknown-key', 'The room snapshot does not name the proof\'s key for its sender.');
+        return toRefusal('unknown-key');
     }
     if (snapshot.group.snapshotVersion < targets.snapshotVersion) {
-        return toRefusal('authority-ahead', 'The publication was frozen at a newer snapshot than this one.');
+        return toRefusal('authority-ahead');
     }
     if (!input.signatureValid) {
-        return toRefusal('invalid-signature', 'The proof does not verify against the sender\'s key.');
+        return toRefusal('invalid-signature');
     }
-    const topicId = message.route.topicId;
-    const senderPrincipalId = resolveSessionPrincipalId(snapshot, message.id.senderId);
+    return toPublicationDelivery(input, snapshot);
+}
+
+/** After the proof and its key: the sender must hold publish, and the receiver delivers only what it may subscribe. */
+function toPublicationDelivery(
+    input: RtcPublicationAdmissionInput,
+    snapshot: GroupSnapshot
+): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
+    const topicId = input.message.route.topicId;
+    const senderPrincipalId = resolveSessionPrincipalId(snapshot, input.message.id.senderId);
     if (
         senderPrincipalId === undefined ||
         !resolveGroupPublicationPermissions(snapshot, senderPrincipalId, topicId).publish
     ) {
-        return toRefusal('no-publish-grant', 'The sender holds no effective publish grant on the topic.');
+        return toRefusal('no-publish-grant');
     }
     const subscribed = resolveGroupPublicationPermissions(snapshot, input.selfPrincipalId, topicId).subscribe;
     return Either.ofRight({ delivery: subscribed && input.ownSubscriptionActive ? 'deliver' : 'forward-only' });
-}
-
-/** After an `authorized` room admission this never fires; a snapshot read without one is judged here alone. */
-function resolveUnobservableRoom(message: ALMessage, snapshot: GroupSnapshot, nowEpochMs: number): boolean {
-    const roomRef = readALTargetGroupRef(message);
-    return roomRef === undefined || resolveRoomObservationDenial(roomRef, snapshot, nowEpochMs) !== undefined;
 }
 
 function resolveSessionPrincipalId(snapshot: GroupSnapshot, sessionId: string): string | undefined {
     return snapshot.activeSessions.find((session) => session.sessionId === sessionId)?.principalId;
 }
 
-function toRefusal(
-    code: RtcPublicationRefusalCode,
-    logMessage: string
-): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
-    return Either.ofLeft({ code, logMessage });
+function toRefusal(code: RtcPublicationRefusalCode): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
+    return Either.ofLeft({ code });
 }

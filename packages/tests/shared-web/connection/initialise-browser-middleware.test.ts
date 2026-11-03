@@ -159,6 +159,60 @@ describe('native observation handoff cleanup', () => {
     });
 });
 
+describe('the inbound stores a connect hands its two carriers', () => {
+    it('gives the WS client and the RTC receiver the one session store pair, so a second carrier\'s copy is a duplicate', async () => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const capture = createBrowserRtcCapture({
+            configuration: { mode: 'off', origin: 'step' },
+            connectionId: { status: 'observed', value: 'stores' },
+            record: () => {},
+            nowEpochMs: () => 1
+        });
+        const service = new WebRtcConnectionService({ connect: async () => {}, send: async () => {} }, {
+            sessionId: SESSION.sessionId,
+            token: 'test',
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
+        }, {
+            nowEpochMs: () => 1,
+            createOfferId: () => 'offer',
+            faultPort: createPassThroughTransportFaultPort(),
+            writeRetainedSignalsDueNow: async () => []
+        });
+        const middleware = createDefaultApiMiddlewareTestDouble({
+            middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
+        });
+        const carriers: { ws?: unknown[]; rtc?: unknown[]; } = {};
+        const stop = new Error('the stores were handed over');
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' }
+        });
+        vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
+            carriers.ws = [input.inboundStores, input.inboundVolatileStores];
+            return middleware.middleware.webSocketQueueBox;
+        });
+        vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
+        vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(middleware.middleware.webRtcOverlayMulticastManager);
+        vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockImplementation((input) => {
+            carriers.rtc = [input.inboundStores, input.inboundVolatileStores];
+            throw stop;
+        });
+
+        await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(stop);
+
+        expect(carriers.ws).toHaveLength(2);
+        expect(carriers.rtc?.[0]).toBe(carriers.ws?.[0]);
+        expect(carriers.rtc?.[1]).toBe(carriers.ws?.[1]);
+    });
+});
+
 describe('browser RTC layout adoption composition', () => {
     it('applies an offer the browser held for its layout as soon as the connect adopts that layout', async () => {
         const nativeRuntime = installNativeRtcRuntime();

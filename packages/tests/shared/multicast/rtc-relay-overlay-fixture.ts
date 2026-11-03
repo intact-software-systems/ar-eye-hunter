@@ -27,7 +27,7 @@ import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/r
 import { readRtcGroupSnapshotByRef } from '@shared/multicast/read-rtc-outbound-observation.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
-import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+import { toPublicationVerificationCrypto, type PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import {
     createPassThroughTransportFaultPort,
     type TransportFaultPort
@@ -219,7 +219,7 @@ function createDefaultRelayOverlayResources(
         grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
         publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
         publicationVerifier: new RtcPublicationProofVerifier({
-            crypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+            crypto: toPublicationVerificationCrypto(input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO),
             findGroupSnapshot: (groupRef) => readRtcGroupSnapshotByRef(groups, groupRef),
             nowEpochMs: Date.now
         }),

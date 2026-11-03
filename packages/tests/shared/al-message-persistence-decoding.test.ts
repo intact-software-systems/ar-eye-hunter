@@ -326,7 +326,7 @@ describe('the persisted publication proof section', () => {
     });
 
     it('round-trips a well-formed proof through the serialized envelope', () => {
-        const proven = { ...currentPersistedALMessage(), proof: WELL_FORMED_PROOF };
+        const proven = toProvenPersistedALMessage(WELL_FORMED_PROOF);
 
         expect(decodeALMessage(JSON.stringify(proven)).right).toEqual(proven);
     });
@@ -342,7 +342,14 @@ describe('the persisted publication proof section', () => {
         { label: 'a numeric key id', proof: { ...WELL_FORMED_PROOF, keyId: 43 } },
         { label: 'a proof that is not a record', proof: 'ES256' }
     ])('refuses $label as malformed', ({ proof }) => {
-        expect(decodeALMessageValue({ ...currentPersistedALMessage(), proof }).left?.code).toBe('malformed');
+        expect(decodeALMessageValue(toProvenPersistedALMessage(proof)).left?.code).toBe('malformed');
+    });
+
+    it('refuses a proof on a frame that binds no expiry: the signed message carries the expiry its receivers keep', () => {
+        expect(decodeALMessageValue({ ...currentPersistedALMessage(), proof: WELL_FORMED_PROOF }).left).toEqual({
+            code: 'malformed',
+            message: 'A publication proof binds its message expiry'
+        });
     });
 
     it('still refuses an unknown section as malformed', () => {
@@ -366,13 +373,24 @@ describe('the persisted publication proof section', () => {
             overlayNeighborPeerIds: ['next']
         };
 
-        const decoded = decodeALMessage(JSON.stringify({ ...membersFrame, proof: WELL_FORMED_PROOF }));
+        const bound = { ...membersFrame, constraints: { ...membersFrame.constraints, expiresAtMs: membersFrame.id.ts + 30_000 } };
+        const decoded = decodeALMessage(JSON.stringify({ ...bound, proof: WELL_FORMED_PROOF }));
 
         expect(decoded.right?.proof).toEqual(WELL_FORMED_PROOF);
         expect(decoded.fold(() => undefined, (message) => planALMessageHandling(message, context)))
-            .toEqual(planALMessageHandling(membersFrame, context));
+            .toEqual(planALMessageHandling(bound, context));
     });
 });
+
+/** A frame whose proof binds its expiry, as every signing origin's admitted message does. */
+function toProvenPersistedALMessage(proof: unknown):
+    & MutablePersistedALMessageFixture
+    & Readonly<{
+        constraints: { expiresAtMs: number; };
+        proof: unknown;
+    }> {
+    return { ...currentPersistedALMessage(), constraints: { expiresAtMs: 1_800_000_000_000 }, proof };
+}
 
 function currentPersistedALMessage(): MutablePersistedALMessageFixture {
     return {
