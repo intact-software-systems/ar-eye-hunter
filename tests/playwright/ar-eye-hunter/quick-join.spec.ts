@@ -90,7 +90,7 @@ roomBrowserTest(
         roomBrowserTest.setTimeout(180_000);
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         await alice.addInitScript(installAnimationFrameGate);
-        await bob.clock.install();
+        await bob.addInitScript(installRematchClockFault);
         const [aliceOperations, bobOperations] = await Promise.all([signIn(alice, 'alice'), signIn(bob, 'bob')]);
         const created = alice.waitForResponse((response) =>
             response.request().method() === 'POST' && /\/groups\/requests\//.test(response.url())
@@ -138,13 +138,10 @@ roomBrowserTest(
             await expect(startAgain).toBeDisabled();
             await aliceResults.getByRole('button', { name: 'Play again', exact: true }).click();
             await expect(startAgain).toBeDisabled();
-            await bob.clock.pauseAt(await bob.evaluate(() => Date.now() + 1_000));
-            await bob.clock.setSystemTime(new Date(Date.now() + 65_000));
+            await bob.evaluate(() => window.dispatchEvent(new Event('test-expire-next-click')));
             await bobResults.getByRole('button', { name: 'Play again', exact: true }).click();
             await expect(bobResults.getByRole('alert')).toContainText(/director|presence/i);
             await expect(startAgain).toBeDisabled();
-            await bob.clock.setSystemTime(new Date());
-            await bob.clock.resume();
             await bobResults.getByRole('button', { name: 'Play again', exact: true }).click();
             await expect(startAgain).toBeEnabled();
             await bob.reload();
@@ -206,6 +203,27 @@ async function assertRunningMatch(host: Locator, guest: Locator): Promise<void> 
         await expect(guest.locator('.match-panel strong')).toHaveText(/^(1:00|0:[0-5]\d)$/);
     }
     expect(await guest.locator('.match-panel strong').innerText()).not.toBe(initial);
+}
+
+function installRematchClockFault(): void {
+    const now = Date.now.bind(Date);
+    let expireNextClick = false;
+    let expired = false;
+    // The runtime captures this clock at construction. Only the armed human click sees stale
+    // presence/director time; native animation and heartbeat timers keep their normal behavior.
+    Date.now = () => now() + (expired ? 65_000 : 0);
+    window.addEventListener('test-expire-next-click', () => {
+        expireNextClick = true;
+    });
+    window.addEventListener('click', () => {
+        if (expireNextClick) {
+            expireNextClick = false;
+            expired = true;
+            window.setTimeout(() => {
+                expired = false;
+            }, 0);
+        }
+    }, { capture: true });
 }
 
 function installAnimationFrameGate(): void {
