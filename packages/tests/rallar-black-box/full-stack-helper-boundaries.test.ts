@@ -27,6 +27,7 @@ import {
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     runWithRallarReceiverPage,
+    startRecipeRun,
     startRecipientRecipeRun,
     type RecipePairRun,
     type RecipeRun
@@ -395,6 +396,116 @@ describe('recipient barrier failure', () => {
             await context.close();
             server.closeAllConnections();
             await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+    });
+});
+
+describe('control poll timeouts', () => {
+    interface AcceptingControlRequest {
+        readonly request: Playwright.APIRequestContext;
+        close(): Promise<void>;
+    }
+
+    /** A request whose every command enqueue the control server accepts. */
+    async function openAcceptingControlRequest(): Promise<AcceptingControlRequest> {
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
+        const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        vi.spyOn(request, 'post').mockImplementation(
+            async (_url, options) => await post(`http://127.0.0.1:${address.port}`, options)
+        );
+        return {
+            request,
+            close: async () => {
+                await request.dispose();
+                await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            }
+        };
+    }
+
+    const baseline = createAlmConformanceRecipes({
+        group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+        carrier: 'ws',
+        typeId: 'poll-timeout',
+        senderConnection: 'sender',
+        receiverConnection: 'receiver',
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
+    }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+
+    interface SilentRun {
+        readonly run: RecipeRun;
+        readCount(): number;
+    }
+
+    // Each read moves the clock by `stepMs` and finds neither a result nor an event.
+    function createSilentRun(request: Playwright.APIRequestContext, stepMs: number): SilentRun {
+        let nowEpochMs = 1_000;
+        let reads = 0;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        const run: RecipeRun = {
+            request,
+            runId: 'poll-timeout',
+            readSnapshot: async () => {
+                reads += 1;
+                nowEpochMs += stepMs;
+                return { ...snapshot, runId: 'poll-timeout' };
+            }
+        };
+        return { run, readCount: () => reads };
+    }
+
+    it('reports a recipe run with no control result by its deadline as a failed outcome, not a rejection', async () => {
+        const control = await openAcceptingControlRequest();
+        try {
+            const { run, readCount } = createSilentRun(control.request, 60_000);
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            await expect(started.readOutcome()).resolves.toEqual({
+                commandId: `${baseline.sender.recipeId}-run`,
+                ok: false,
+                summary: 'no control result within 180000 ms'
+            });
+            expect(readCount()).toBe(3);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('warns and releases the sender when the receiver neither connects nor ends within the barrier timeout', async () => {
+        const control = await openAcceptingControlRequest();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const { run, readCount } = createSilentRun(control.request, 30_000);
+            const connectCommandId = baseline.receiver.commands.find((command) => command.kind === 'rtc.connect')
+                ?.commandId;
+
+            const started = await startRecipientRecipeRun(run, { agentId: 'receiver' }, baseline.receiver);
+
+            expect(started.commandId).toBe(`${baseline.receiver.recipeId}-run`);
+            expect(readCount()).toBe(2);
+            expect(warn).toHaveBeenCalledExactlyOnceWith('Receiver connect barrier timed out; releasing the sender anyway', {
+                runId: 'poll-timeout',
+                connectCommandId,
+                runCommandId: started.commandId,
+                timeoutMs: 60_000
+            });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
         }
     });
 });

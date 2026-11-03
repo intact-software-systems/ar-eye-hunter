@@ -3,8 +3,10 @@ import type { Page } from '@playwright/test';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     closeBrowserControlAgentPage,
+    findControlResult,
     hasPassedCommandEvent,
     openBrowserControlAgentInContext,
+    readControlRunUntil,
     readFullStackConfig,
     runRecipeOnAgent,
     startRecipeRun,
@@ -63,7 +65,6 @@ const FLUSH_COMMIT_SETTLE_MS = 250;
 
 /** The owner's prologue and its gate: a connect, which may wait for ready RTC peers, and the steps before the gate. */
 const SUCCESSOR_GATE_TIMEOUT_MS = 90_000;
-const SUCCESSOR_GATE_POLL_INTERVAL_MS = 250;
 
 /**
  * A second page of the owner's browser context: the same storage and auth session, an agent of its own. The owner is
@@ -166,16 +167,14 @@ async function runSuccessorBesideOwner(
 }
 
 async function waitForSuccessorGate(run: RecipePairRun, gate: string, ownerRun: StartedRecipeRun): Promise<void> {
-    const deadlineEpochMs = Date.now() + SUCCESSOR_GATE_TIMEOUT_MS;
-    while (Date.now() < deadlineEpochMs) {
-        const snapshot = await run.readSnapshot();
-        if (
-            hasPassedCommandEvent(snapshot, gate) ||
-            snapshot.results.some((result) => result.commandId === ownerRun.commandId)
-        ) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, SUCCESSOR_GATE_POLL_INTERVAL_MS));
+    const read = await readControlRunUntil(
+        run,
+        SUCCESSOR_GATE_TIMEOUT_MS,
+        (snapshot) =>
+            hasPassedCommandEvent(snapshot, gate) || findControlResult(snapshot, ownerRun.commandId) !== undefined
+    );
+    if (read.kind === 'accepted') {
+        return;
     }
     throw new Error(`${gate}: the owner's gate did not pass within ${SUCCESSOR_GATE_TIMEOUT_MS} ms.`);
 }

@@ -6,9 +6,9 @@ import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-s
 import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
 import { clientStatePrincipalStorageKey } from '../../../client-state/persistence/client-state-principal-storage-key.ts';
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '../../../client-state/persistence/client-state-runtime-namespaces.ts';
+import { isClientSnapshotSessionLive } from '../../../presence/snapshot-presence.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupTopicSubscriptionAuthority } from '../../group-state-service-contracts.ts';
-import { isLiveClientSession } from '../../policy/group-topic-subscription-policy.ts';
 import { groupStateChildStorageKey, groupStateGroupStorageKey } from '../aggregate/group-aggregate-storage-keys.ts';
 import { toGroupStateReadBatchLiveSelections } from '../group-state-persistence-contracts.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
@@ -107,7 +107,7 @@ function toLiveClientGenerations(
         principalId: session.principalId,
         sessionId: session.sessionId
     })
-        .filter(({ value }) => isLiveClientSession(value, observedAtEpochMs))
+        .filter(({ value }) => isClientSnapshotSessionLive(value, observedAtEpochMs))
         .map(({ value }) => value.generationId);
 }
 

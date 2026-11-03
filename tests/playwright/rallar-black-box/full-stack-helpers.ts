@@ -25,6 +25,8 @@ import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distribute
 import { decodeControlRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { readUntil, type ReadUntilOutcome } from '@shared/resilience/read-until.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import {
     readFullStackControlBaseUrl,
@@ -314,6 +316,7 @@ const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 const RECIPE_RUN_TIMEOUT_MS = 180_000;
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
 const CONTROL_POLL_INTERVAL_MS = 250;
+const CONTROL_POLL_TIMERS = createDefaultTimers();
 
 export function readFullStackConfig(): FullStackConfig {
     const enabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
@@ -333,25 +336,19 @@ export function readFullStackConfig(): FullStackConfig {
         userA: {
             username: envValue('VITE_RALLAR_USERNAME') ?? 'alice',
             password: envValue('VITE_RALLAR_PASSWORD') ?? 'secret',
-            clientId: envValue('VITE_RALLAR_CLIENT_ID') ??
-                envValue('VITE_RALLAR_USERNAME') ??
-                'alice',
+            clientId: envValue('VITE_RALLAR_CLIENT_ID') ?? envValue('VITE_RALLAR_USERNAME') ?? 'alice',
             actor: envValue('VITE_RALLAR_ACTOR') ?? 'alice'
         },
         userB: {
             username: envValue('VITE_RALLAR_B_USERNAME') ?? 'bob',
             password: envValue('VITE_RALLAR_B_PASSWORD') ?? 'secret',
-            clientId: envValue('VITE_RALLAR_B_CLIENT_ID') ??
-                envValue('VITE_RALLAR_B_USERNAME') ??
-                'bob',
+            clientId: envValue('VITE_RALLAR_B_CLIENT_ID') ?? envValue('VITE_RALLAR_B_USERNAME') ?? 'bob',
             actor: envValue('VITE_RALLAR_B_ACTOR') ?? 'bob'
         },
         userC: {
             username: envValue('VITE_RALLAR_C_USERNAME') ?? 'charlie',
             password: envValue('VITE_RALLAR_C_PASSWORD') ?? 'secret',
-            clientId: envValue('VITE_RALLAR_C_CLIENT_ID') ??
-                envValue('VITE_RALLAR_C_USERNAME') ??
-                'charlie',
+            clientId: envValue('VITE_RALLAR_C_CLIENT_ID') ?? envValue('VITE_RALLAR_C_USERNAME') ?? 'charlie',
             actor: envValue('VITE_RALLAR_C_ACTOR') ?? 'charlie'
         }
     };
@@ -657,55 +654,11 @@ export async function runRecipePairOnTwoAgents(
         Object.hasOwn(recipes.sender.metadata ?? {}, 'almReloadCheckpoints') ||
         Object.hasOwn(recipes.receiver.metadata ?? {}, 'almReloadCheckpoints')
     ) {
-        const bound = bindAlmReloadPair({
-            sender: toReloadRecipeRoot(run, run.sender, recipes.sender),
-            receiver: toReloadRecipeRoot(run, run.receiver, recipes.receiver)
-        });
-        const pair = bound.fold(
-            (issues) => {
-                throw new Error(`Cannot enqueue paired reload: ${issues.join(' ')}`);
-            },
-            (value) => value
-        );
-        await enqueueControlCommand({
-            request: run.request,
-            runId: run.runId,
-            agentId: run.sender.agentId,
-            commandId: pair.sender.commandId,
-            command: pair.sender.command
-        });
-        await enqueueControlCommand({
-            request: run.request,
-            runId: run.runId,
-            agentId: run.receiver.agentId,
-            commandId: pair.receiver.commandId,
-            command: pair.receiver.command
-        });
-        const [sender, receiver] = await Promise.allSettled([
-            readRecipeRunOutcome(run, pair.sender.commandId),
-            readRecipeRunOutcome(run, pair.receiver.commandId)
-        ]);
-        if (sender.status === 'rejected') {
-            throw sender.reason;
-        }
-        if (receiver.status === 'rejected') {
-            throw receiver.reason;
-        }
-        return { sender: sender.value, receiver: receiver.value };
+        return await runReloadPairOnTwoAgents(run, recipes);
     }
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const senderRun = await startRecipeRun(run, run.sender, recipes.sender);
-    const [sender, receiver] = await Promise.allSettled([
-        senderRun.readOutcome(),
-        receiverRun.readOutcome()
-    ]);
-    if (sender.status === 'rejected') {
-        throw sender.reason;
-    }
-    if (receiver.status === 'rejected') {
-        throw receiver.reason;
-    }
-    return { sender: sender.value, receiver: receiver.value };
+    return requireRecipePairOutcome(await Promise.allSettled([senderRun.readOutcome(), receiverRun.readOutcome()]));
 }
 
 /** Accepts the root and captures its original result deadline without starting an unowned observer. */
@@ -715,8 +668,8 @@ export async function startRecipeRun(
     recipe: RallarBlackBoxTestRecipe
 ): Promise<StartedRecipeRun> {
     const commandId = await enqueueRecipeRun(run, agent, recipe);
-    const deadlineEpochMs = Date.now() + RECIPE_RUN_TIMEOUT_MS;
-    return { commandId, readOutcome: () => readRecipeRunOutcome(run, commandId, deadlineEpochMs) };
+    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
+    return { commandId, readOutcome: () => readRecipeRunOutcome(run, commandId, deadlineAtMs) };
 }
 
 /** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */
@@ -729,6 +682,20 @@ export async function startRecipientRecipeRun(
     const started = await startRecipeRun(run, agent, recipe);
     await waitForReceiverConnectBarrier(run, { connectCommandId, runCommandId: started.commandId });
     return started;
+}
+
+export async function readControlRunUntil(
+    run: RecipeRun,
+    timeoutMs: number,
+    accept: (snapshot: ControlRunSnapshot) => boolean
+): Promise<ReadUntilOutcome<ControlRunSnapshot>> {
+    return await readUntil({
+        timers: CONTROL_POLL_TIMERS,
+        intervalMs: CONTROL_POLL_INTERVAL_MS,
+        deadlineAtMs: CONTROL_POLL_TIMERS.nowMs() + timeoutMs,
+        read: () => run.readSnapshot(),
+        accept
+    });
 }
 
 export async function selectControlRunInManager(
@@ -936,7 +903,7 @@ function toParticipantInput(
     };
 }
 
-function findControlResult(
+export function findControlResult(
     snapshot: ControlRunSnapshot,
     commandId: string
 ): ControlResultEnvelope | undefined {
@@ -1111,26 +1078,74 @@ async function closeTwoAgentParticipants(participants: readonly TwoAgentRunParti
     }
 }
 
+async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair): Promise<RecipePairOutcome> {
+    const pair = bindAlmReloadPair({
+        sender: toReloadRecipeRoot(run, run.sender, recipes.sender),
+        receiver: toReloadRecipeRoot(run, run.receiver, recipes.receiver)
+    }).fold(
+        (issues) => {
+            throw new Error(`Cannot enqueue paired reload: ${issues.join(' ')}`);
+        },
+        (value) => value
+    );
+    await enqueueControlCommand({
+        request: run.request,
+        runId: run.runId,
+        agentId: run.sender.agentId,
+        commandId: pair.sender.commandId,
+        command: pair.sender.command
+    });
+    await enqueueControlCommand({
+        request: run.request,
+        runId: run.runId,
+        agentId: run.receiver.agentId,
+        commandId: pair.receiver.commandId,
+        command: pair.receiver.command
+    });
+    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
+    return requireRecipePairOutcome(
+        await Promise.allSettled([
+            readRecipeRunOutcome(run, pair.sender.commandId, deadlineAtMs),
+            readRecipeRunOutcome(run, pair.receiver.commandId, deadlineAtMs)
+        ])
+    );
+}
+
+function requireRecipePairOutcome(
+    [sender, receiver]: readonly [PromiseSettledResult<RecipeRunOutcome>, PromiseSettledResult<RecipeRunOutcome>]
+): RecipePairOutcome {
+    if (sender.status === 'rejected') {
+        throw sender.reason;
+    }
+    if (receiver.status === 'rejected') {
+        throw receiver.reason;
+    }
+    return { sender: sender.value, receiver: receiver.value };
+}
+
 async function readRecipeRunOutcome(
     run: RecipeRun,
     commandId: string,
-    deadlineEpochMs = Date.now() + RECIPE_RUN_TIMEOUT_MS
+    deadlineAtMs: number
 ): Promise<RecipeRunOutcome> {
-    while (Date.now() < deadlineEpochMs) {
-        const result = await readControlResult(run, commandId);
-        if (result) {
-            return {
-                commandId,
-                ok: result.ok === true,
-                summary: toControlResultSummary(result)
-            };
-        }
-        await waitMs(CONTROL_POLL_INTERVAL_MS);
+    const read = await readUntil({
+        timers: CONTROL_POLL_TIMERS,
+        intervalMs: CONTROL_POLL_INTERVAL_MS,
+        deadlineAtMs,
+        read: () => readControlResult(run, commandId),
+        accept: (result) => result !== undefined
+    });
+    if (read.kind === 'timed-out') {
+        return {
+            commandId,
+            ok: false,
+            summary: `no control result within ${RECIPE_RUN_TIMEOUT_MS} ms`
+        };
     }
     return {
         commandId,
-        ok: false,
-        summary: `no control result within ${RECIPE_RUN_TIMEOUT_MS} ms`
+        ok: read.value.ok === true,
+        summary: toControlResultSummary(read.value)
     };
 }
 
@@ -1138,16 +1153,15 @@ async function waitForReceiverConnectBarrier(
     run: RecipeRun,
     input: ReceiverConnectBarrierInput
 ): Promise<void> {
-    const deadlineEpochMs = Date.now() + RECEIVER_CONNECT_TIMEOUT_MS;
-    while (Date.now() < deadlineEpochMs) {
-        const snapshot = await run.readSnapshot();
-        if (
+    const read = await readControlRunUntil(
+        run,
+        RECEIVER_CONNECT_TIMEOUT_MS,
+        (snapshot) =>
             hasConnectedEvent(snapshot, input.connectCommandId) ||
             findControlResult(snapshot, input.runCommandId) !== undefined
-        ) {
-            return;
-        }
-        await waitMs(CONTROL_POLL_INTERVAL_MS);
+    );
+    if (read.kind === 'accepted') {
+        return;
     }
     console.warn('Receiver connect barrier timed out; releasing the sender anyway', {
         runId: run.runId,
@@ -1162,10 +1176,6 @@ async function readControlResult(
     commandId: string
 ): Promise<ControlResultEnvelope | undefined> {
     return findControlResult(await run.readSnapshot(), commandId);
-}
-
-async function waitMs(durationMs: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
 async function clickVisibleButton(page: Page, name: string): Promise<void> {

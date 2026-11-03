@@ -15,6 +15,7 @@ import type { GroupMemberStatus, GroupPresenceSession, GroupRef, GroupRole } fro
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import { type ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import { isClientSnapshotSessionLive } from '@shared-server/rallar-system/presence/snapshot-presence.ts';
 
 import type {
     CurrentMutationAuthority
@@ -166,11 +167,11 @@ async function authorizeRoomDocument(
         return denied();
     }
     const nowEpochMs = dependencies.nowEpochMs();
-    const member = snapshot?.members.find((candidate) =>
+    const member = snapshot.members.find((candidate) =>
         candidate.principalId === input.actorPrincipalId &&
         candidate.status === 'active'
     );
-    const activeSession = snapshot?.activeSessions.find((candidate) =>
+    const activeSession = snapshot.activeSessions.find((candidate) =>
         candidate.principalId === input.actorPrincipalId &&
         candidate.sessionId === input.sessionId &&
         candidate.status === 'active'
@@ -180,22 +181,9 @@ async function authorizeRoomDocument(
     if (member === undefined || !sessionIsCurrent || (access === 'write' && member.role === 'spectator')) {
         return denied();
     }
-    const activeMembers = new Set(
-        snapshot.members.filter((candidate) => candidate.status === 'active')
-            .map((candidate) => candidate.principalId)
-    );
     return allowed({
         recipientScope: { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId },
-        admittedAudience: [
-            ...new Set(
-                snapshot.activeSessions
-                    .filter((candidate) =>
-                        candidate.status === 'active' &&
-                        candidate.expiresAtEpochMs > nowEpochMs && activeMembers.has(candidate.principalId)
-                    )
-                    .map((candidate) => candidate.sessionId)
-            )
-        ].sort()
+        admittedAudience: toAdmittedRoomAudience(snapshot, nowEpochMs)
     });
 }
 
@@ -222,8 +210,7 @@ async function authorizeCurrentClientDocument(
     const activeSession = snapshot.activeSessions.find((candidate) =>
         candidate.sessionId === sessionId && candidate.status === 'active'
     );
-    const active = activeSession !== undefined &&
-        activeSession.expiresAtEpochMs > nowEpochMs;
+    const active = activeSession !== undefined && isClientSnapshotSessionLive(activeSession, nowEpochMs);
     return active
         ? allowed({
             recipientScope: {
@@ -233,12 +220,29 @@ async function authorizeCurrentClientDocument(
             admittedAudience: [
                 ...new Set(
                     snapshot.activeSessions
-                        .filter((candidate) => candidate.status === 'active' && candidate.expiresAtEpochMs > nowEpochMs)
+                        .filter((candidate) => isClientSnapshotSessionLive(candidate, nowEpochMs))
                         .map((candidate) => candidate.sessionId)
                 )
             ].sort()
         })
         : denied();
+}
+
+function toAdmittedRoomAudience(snapshot: ApiCrdtGroupAuthorizationSnapshot, nowEpochMs: number): readonly string[] {
+    const activeMembers = new Set(
+        snapshot.members.filter((candidate) => candidate.status === 'active')
+            .map((candidate) => candidate.principalId)
+    );
+    return [
+        ...new Set(
+            snapshot.activeSessions
+                .filter((candidate) =>
+                    candidate.status === 'active' &&
+                    candidate.expiresAtEpochMs > nowEpochMs && activeMembers.has(candidate.principalId)
+                )
+                .map((candidate) => candidate.sessionId)
+        )
+    ].sort();
 }
 
 function responseAudienceMatchesDocument(

@@ -4,43 +4,21 @@ import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-type
 export type RallarSnapshotPresenceClock = () => number;
 
 export function isClientSnapshotSessionLive(
-    session: ClientSession,
-    atEpochMs: number = Date.now()
+    session: Pick<ClientSession, 'status' | 'expiresAtEpochMs'>,
+    atEpochMs: number
 ): boolean {
-    return session.status === 'active' &&
-        session.disconnectedAtEpochMs === null &&
-        session.expiresAtEpochMs > atEpochMs;
+    return session.status === 'active' && session.expiresAtEpochMs > atEpochMs;
 }
 
-export function isGroupSnapshotSessionLive(
-    session: GroupPresenceSession,
-    atEpochMs: number = Date.now()
-): boolean {
+export function isGroupSnapshotSessionLive(session: GroupPresenceSession, atEpochMs: number): boolean {
     return session.disconnectedAtEpochMs === null &&
         session.expiresAtEpochMs > atEpochMs;
 }
 
-export function isClientSnapshotPresenceFresh(
-    snapshot: ClientSnapshot,
-    atEpochMs: number = Date.now()
-): boolean {
+export function isClientSnapshotPresenceFresh(snapshot: ClientSnapshot, atEpochMs: number): boolean {
     return snapshot.activeSessions.every((session) => isClientSnapshotSessionLive(session, atEpochMs));
 }
 
-export function isGroupSnapshotPresenceFresh(
-    snapshot: GroupSnapshot,
-    atEpochMs: number = Date.now()
-): boolean {
+export function isGroupSnapshotPresenceFresh(snapshot: GroupSnapshot, atEpochMs: number): boolean {
     return snapshot.activeSessions.every((session) => isGroupSnapshotSessionLive(session, atEpochMs));
-}
-
-export function isSessionInLiveGroupSnapshot(
-    snapshot: GroupSnapshot,
-    sessionId: string,
-    atEpochMs: number = Date.now()
-): boolean {
-    return snapshot.activeSessions.some((session) =>
-        session.sessionId === sessionId &&
-        isGroupSnapshotSessionLive(session, atEpochMs)
-    );
 }

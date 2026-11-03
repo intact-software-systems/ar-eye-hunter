@@ -271,4 +271,74 @@ describe('ALM run on an agent per role', () => {
             await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }
     });
+
+    it('throws when an agent\'s close has not passed within the close timeout, reading no snapshot after it', async () => {
+        const posted: string[] = [];
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
+        const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
+            const data = options?.data;
+            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
+                throw new Error('Expected the actual control HTTP command body.');
+            }
+            posted.push(data.commandId);
+            return await post(`http://127.0.0.1:${address.port}`, options);
+        });
+        let nowEpochMs = 1_000;
+        let reads = 0;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        // Each read moves the clock 10 s: the receiver's close never passes, the sender's passes at once.
+        const run: AgentRecipeRun = {
+            request,
+            runId: 'close-timeout-run',
+            agents: new Map([
+                ['sender', { agentId: 'sender-agent' }],
+                ['receiver', { agentId: 'receiver-agent' }]
+            ]),
+            readSnapshot: async () => {
+                reads += 1;
+                nowEpochMs += 10_000;
+                return {
+                    runId: 'close-timeout-run',
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 2,
+                    agents: [],
+                    commands: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                    results: posted.map((commandId) => ({
+                        kind: 'result',
+                        protocolVersion: 1,
+                        runId: 'close-timeout-run',
+                        agentId: 'observed-agent',
+                        commandId,
+                        ok: commandId !== 'close-subscription-delivery-receiver-agent'
+                    }))
+                };
+            }
+        };
+        try {
+            await expect(closeAgentConnections(run, 'subscription-delivery')).rejects.toThrow(
+                'subscription-delivery: not every agent closed its room connection within 30000 ms.'
+            );
+            expect(reads).toBe(3);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await request.dispose();
+            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+    });
 });
