@@ -103,6 +103,34 @@ describe('ECDSA P-256 detached signatures', () => {
         }
     });
 
+    it('refuses a signature text whose unused trailing bits are not zero', async () => {
+        const pair = await createKeyPair();
+        const signature = await sign(pair, message);
+        const publicKey = await importPublicKey(pair.publicJwk);
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+        const lastDigit = alphabet.indexOf(signature.at(-1) ?? 'A');
+        const noncanonical = `${signature.slice(0, -1)}${alphabet[lastDigit ^ 1]}`;
+
+        expect((await verifyDetached({ subtle, publicKey, bytes: message, signature })).right).toBe('verified');
+        expect((await verifyDetached({ subtle, publicKey, bytes: message, signature: noncanonical })).left?.kind)
+            .toBe('invalid-signature');
+    });
+
+    it('reports a key WebCrypto cannot verify with as an invalid key', async () => {
+        const pair = await createKeyPair();
+        const signature = await sign(pair, message);
+        const outcome = await verifyDetached({ subtle, publicKey: pair.privateKey, bytes: message, signature });
+
+        expect(outcome.left?.kind).toBe('invalid-key');
+    });
+
+    it('reports a key WebCrypto cannot sign with as a signing failure', async () => {
+        const publicKey = await importPublicKey((await createKeyPair()).publicJwk);
+        const outcome = await signDetached(subtle, publicKey, message);
+
+        expect(outcome.left?.kind).toBe('sign-failed');
+    });
+
     it('reports a missing SubtleCrypto as a failure value', async () => {
         const outcome = await createSigningKeyPair(undefined);
 

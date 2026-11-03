@@ -18,9 +18,12 @@ export function toBase64Url(bytes: Uint8Array): string {
     return text;
 }
 
-/** Strict: the URL-safe alphabet only, no padding, and never a length that cannot encode whole bytes. */
+/**
+ * Strict: the URL-safe alphabet only, no padding, never a length that cannot encode whole bytes, and only the
+ * canonical text of its bytes (RFC 4648 §3.5: the unused trailing bits are zero), so one byte string has one text.
+ */
 export function decodeBase64Url(text: string): Either<readonly RallarValidationIssue[], Uint8Array> {
-    if (!BASE64URL_TEXT.test(text) || text.length % 4 === 1) {
+    if (!BASE64URL_TEXT.test(text) || text.length % 4 === 1 || !hasZeroTrailingBits(text)) {
         return Either.ofLeft([
             { path: '$', code: 'invalid-base64url', message: 'Value must be unpadded base64url text.' }
         ]);
@@ -38,6 +41,11 @@ export function decodeBase64Any(text: string): Either<readonly RallarValidationI
         ]);
     }
     return Either.ofRight(toBytesFromBase64UrlDigits(digits.replaceAll('+', '-').replaceAll('/', '_')));
+}
+
+function hasZeroTrailingBits(digits: string): boolean {
+    const unusedBitMask = [0, 0, 0b1111, 0b11][digits.length % 4] ?? 0;
+    return (BASE64URL_ALPHABET.indexOf(digits.at(-1) ?? 'A') & unusedBitMask) === 0;
 }
 
 function toBytesFromBase64UrlDigits(digits: string): Uint8Array {

@@ -33,10 +33,16 @@ describe('evidence window cursor', () => {
                 `${body}.${signature}=`,
                 `${body}.${signature?.slice(0, 42)}`,
                 `${body}.${signature}A`,
-                `${body?.slice(0, -1)}.${signature}`
+                `${body?.slice(0, -1)}.${signature}`,
+                `${body}.${toNoncanonicalBase64Url(signature ?? '')}`
             ]
         ) {
             expect(decodeEvidenceCursor(badCursor)).toBeUndefined();
         }
     });
 });
+
+function toNoncanonicalBase64Url(text: string): string {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    return `${text.slice(0, -1)}${alphabet[alphabet.indexOf(text.at(-1) ?? 'A') ^ 1]}`;
+}

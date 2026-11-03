@@ -1,34 +1,43 @@
+import { decodeBase64Url, toBase64Url } from '@shared/encoding/base64url.ts';
+
 const TOKEN_VERSION = 'v1';
 const TOKEN_SEGMENT_PATTERN = /^[0-9a-z]+$/;
 
 export const RETENTION_PLAN_TOKEN_MAX_LENGTH = 512;
 
-export type RetentionPlanTokenAdapter = Readonly<{
-    issue(canonicalConsequence: string): Promise<string>;
-    verify(token: string, canonicalConsequence: string): Promise<boolean>;
-}>;
+export const RETENTION_PLAN_TOKEN_DEFAULT_TTL_MS = 5 * 60_000;
 
-export type RetentionPlanTokenAdapterOptions = Readonly<{
-    key: Uint8Array;
-    now?: () => number;
-    ttlMs?: number;
-    subtle?: Pick<SubtleCrypto, 'importKey' | 'sign' | 'verify'>;
-}>;
+export interface RetentionPlanTokenAdapter {
+    readonly issue: (canonicalConsequence: string) => Promise<string>;
+    readonly verify: (token: string, canonicalConsequence: string) => Promise<boolean>;
+}
 
-export function createRetentionPlanTokenAdapter(
-    options: RetentionPlanTokenAdapterOptions
-): RetentionPlanTokenAdapter {
-    const now = options.now ?? (() => Date.now());
-    const ttlMs = options.ttlMs ?? 5 * 60_000;
-    const subtle = options.subtle ?? crypto.subtle;
-    if (options.key.byteLength < 32) {
+export interface RetentionPlanTokenAdapterInput {
+    readonly key: Uint8Array;
+    readonly now: () => number;
+    readonly ttlMs: number;
+    readonly subtle: Pick<SubtleCrypto, 'importKey' | 'sign' | 'verify'>;
+}
+
+export function createDefaultRetentionPlanTokenAdapter(key: Uint8Array): RetentionPlanTokenAdapter {
+    return createRetentionPlanTokenAdapter({
+        key,
+        now: () => Date.now(),
+        ttlMs: RETENTION_PLAN_TOKEN_DEFAULT_TTL_MS,
+        subtle: crypto.subtle
+    });
+}
+
+export function createRetentionPlanTokenAdapter(input: RetentionPlanTokenAdapterInput): RetentionPlanTokenAdapter {
+    const { now, ttlMs, subtle } = input;
+    if (input.key.byteLength < 32) {
         throw new Error('Retention plan token keys must contain at least 32 bytes.');
     }
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
         throw new Error('Retention plan token TTL must be a positive safe integer.');
     }
 
-    const keyBytes = options.key.slice();
+    const keyBytes = input.key.slice();
     const keyPromise = subtle.importKey(
         'raw',
         keyBytes,
@@ -54,7 +63,7 @@ export function createRetentionPlanTokenAdapter(
                 await keyPromise,
                 tokenMessage(expiry, canonicalConsequence, encoder)
             );
-            const token = `${TOKEN_VERSION}.${expiry}.${base64UrlEncode(signature)}`;
+            const token = `${TOKEN_VERSION}.${expiry}.${toBase64Url(new Uint8Array(signature))}`;
             if (token.length > RETENTION_PLAN_TOKEN_MAX_LENGTH) {
                 throw new Error('Retention plan token exceeded its maximum length.');
             }
@@ -66,10 +75,11 @@ export function createRetentionPlanTokenAdapter(
                 return false;
             }
             const [version, expiry, encodedSignature] = token.split('.');
+            const signature = decodeBase64Url(encodedSignature).right;
             if (
                 version !== TOKEN_VERSION ||
                 !TOKEN_SEGMENT_PATTERN.test(expiry) ||
-                !isBase64Url(encodedSignature)
+                signature?.byteLength !== 32
             ) {
                 return false;
             }
@@ -82,19 +92,11 @@ export function createRetentionPlanTokenAdapter(
             ) {
                 return false;
             }
-            const signature = base64UrlDecode(encodedSignature);
-            if (
-                !signature ||
-                signature.byteLength !== 32 ||
-                base64UrlEncode(signature) !== encodedSignature
-            ) {
-                return false;
-            }
             try {
                 const verified = await subtle.verify(
                     'HMAC',
                     await keyPromise,
-                    signature,
+                    new Uint8Array(signature),
                     tokenMessage(expiry, canonicalConsequence, encoder)
                 );
                 return verified && expiresAtEpochMs > now();
@@ -118,28 +120,4 @@ function isBoundedToken(token: string): boolean {
     return token.length > 0 &&
         token.length <= RETENTION_PLAN_TOKEN_MAX_LENGTH &&
         token.split('.').length === 3;
-}
-
-function isBase64Url(value: string): boolean {
-    return value.length > 0 && /^[A-Za-z0-9_-]+$/.test(value);
-}
-
-function base64UrlEncode(value: ArrayBuffer): string {
-    const bytes = new Uint8Array(value);
-    let binary = '';
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
-}
-
-function base64UrlDecode(value: string): ArrayBuffer | undefined {
-    try {
-        const padding = '='.repeat((4 - value.length % 4) % 4);
-        const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/') + padding);
-        return Uint8Array.from(binary, (character) => character.charCodeAt(0)).buffer;
-    }
-    catch {
-        return undefined;
-    }
 }

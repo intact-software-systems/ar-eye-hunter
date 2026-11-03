@@ -106,7 +106,7 @@ export async function verifyDetached(input: VerifyDetachedInput): Promise<Either
     }
     catch (error) {
         return Either.ofLeft({
-            kind: 'invalid-signature',
+            kind: 'invalid-key',
             message: `Verification was refused: ${toError(error).message}`
         });
     }

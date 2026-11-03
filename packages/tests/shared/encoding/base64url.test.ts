@@ -48,6 +48,15 @@ describe('base64url', () => {
     it.each(['Z', 'Zm9vY'])('refuses %j whose length cannot encode whole bytes', (text) => {
         expect(decodeBase64Url(text).left).toEqual(INVALID_BASE64URL);
     });
+
+    it.each([
+        ['Zg', 'Zh'],
+        ['Zm8', 'Zm9'],
+        ['-_-_Zg', '-_-_Zp']
+    ])('accepts canonical %j and refuses %j, whose unused trailing bits are not zero', (canonical, noncanonical) => {
+        expect(decodeBase64Url(canonical).right).toEqual(decodeBase64Any(noncanonical).right);
+        expect(decodeBase64Url(noncanonical).left).toEqual(INVALID_BASE64URL);
+    });
 });
 
 describe('base64 in either alphabet', () => {
