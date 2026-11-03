@@ -8,6 +8,7 @@ import {
 } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
 import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -62,7 +63,10 @@ export class BrowserTopicSubscriptions implements RallarLifecycleParticipant {
     readonly #input: BrowserTopicSubscriptions.Input;
     readonly #held = new Map<string, HeldTopic>();
     /** One key's remote calls run one at a time across its holds, so no subscribe overtakes the release before it. */
-    readonly #remoteCalls = new Map<string, Promise<void>>();
+    readonly #remoteCalls = new ExclusionKeyedAdmission({
+        maxConcurrent: Number.MAX_SAFE_INTEGER,
+        keyedChainsFirst: false
+    });
     #connection: AttachedConnection | undefined;
     /** A replaced tab and a session the server no longer authenticates send nothing until the next attach. */
     #remoteCallsStopped = false;
@@ -160,18 +164,8 @@ export class BrowserTopicSubscriptions implements RallarLifecycleParticipant {
 
     /** A failed call is logged and the key's later calls still run. */
     #queueRemoteCall(key: string, run: () => Promise<void>): Promise<void> {
-        const call = (this.#remoteCalls.get(key) ?? Promise.resolve())
-            .then(run)
+        return this.#remoteCalls.admit(key, run)
             .catch((error: Error) => console.warn(`Topic subscription call for ${key} failed:`, error));
-        this.#remoteCalls.set(key, call);
-        void call.then(() => this.#forgetSettledCall(key, call));
-        return call;
-    }
-
-    #forgetSettledCall(key: string, call: Promise<void>): void {
-        if (this.#remoteCalls.get(key) === call) {
-            this.#remoteCalls.delete(key);
-        }
     }
 
     async #assert(held: HeldTopic, connection: AttachedConnection): Promise<void> {

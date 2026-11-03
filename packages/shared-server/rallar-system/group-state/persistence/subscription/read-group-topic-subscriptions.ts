@@ -8,6 +8,7 @@ import { clientStatePrincipalStorageKey } from '../../../client-state/persistenc
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '../../../client-state/persistence/client-state-runtime-namespaces.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupTopicSubscriptionAuthority } from '../../group-state-service-contracts.ts';
+import { isLiveClientSession } from '../../policy/group-topic-subscription-policy.ts';
 import { groupStateChildStorageKey, groupStateGroupStorageKey } from '../aggregate/group-aggregate-storage-keys.ts';
 import { toGroupStateReadBatchLiveSelections } from '../group-state-persistence-contracts.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
@@ -106,7 +107,7 @@ function toLiveClientGenerations(
         principalId: session.principalId,
         sessionId: session.sessionId
     })
-        .filter(({ value }) => value.status === 'active' && value.expiresAtEpochMs > observedAtEpochMs)
+        .filter(({ value }) => isLiveClientSession(value, observedAtEpochMs))
         .map(({ value }) => value.generationId);
 }
 

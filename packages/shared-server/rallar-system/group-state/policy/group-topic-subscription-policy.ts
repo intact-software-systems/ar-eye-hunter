@@ -49,6 +49,7 @@ export function holdsLiveGeneration(
     );
 }
 
-function isLiveClientSession(session: ClientSession, nowEpochMs: number): boolean {
+/** The one liveness both the subscribe admission and the publication audience read a client-state row by. */
+export function isLiveClientSession(session: ClientSession, nowEpochMs: number): boolean {
     return session.status === 'active' && session.expiresAtEpochMs > nowEpochMs;
 }
