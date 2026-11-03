@@ -4,12 +4,13 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { isSameGroupScope, toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, isSameGroupScope, toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupVersion } from '@shared/api/group-client-views.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 
+import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import type { StateCacheChangeListener } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { RallarStateCacheReadPort } from '../state-cache/rallar-state-store.ts';
 import type { RallarRoomState } from './rallar-room-contracts.ts';
@@ -73,6 +74,7 @@ export class RoomStateStore implements RallarRoomStateStorePort {
         console.error('Error notifying Rallar room state listener', error);
     });
     private readonly input: RoomStateStore.Input;
+    private clearedSelectionSession: string | undefined;
 
     constructor(input: RoomStateStore.Input) {
         this.input = input;
@@ -124,7 +126,7 @@ export class RoomStateStore implements RallarRoomStateStorePort {
 
     resolveCurrentRoomRef(): GroupRef | undefined {
         const session = this.input.readSession();
-        if (!session) {
+        if (!session || this.clearedSelectionSession === toAuthSessionKey(session)) {
             return undefined;
         }
 
@@ -187,10 +189,18 @@ export class RoomStateStore implements RallarRoomStateStorePort {
     }
 
     setCurrentRoom(snapshot: GroupSnapshot): void {
+        this.clearedSelectionSession = undefined;
         this.input.runtime.setCurrentRoom(snapshot);
     }
 
     clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void {
+        const selected = this.resolveCurrentRoomRef() ?? this.input.runtime.currentRoomRef();
+        const session = this.input.readSession();
+        const matches = selected &&
+            (typeof room === 'string' ? room === selected.groupId : isSameGroupRef(room, selected));
+        if (clearCurrent && matches && session) {
+            this.clearedSelectionSession = toAuthSessionKey(session);
+        }
         this.input.runtime.clearCurrentRoomIfMatches(room, clearCurrent);
     }
 

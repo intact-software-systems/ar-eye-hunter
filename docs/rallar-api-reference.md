@@ -318,6 +318,12 @@ for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()
 the accepted layout only.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
+Both `rooms.leave(...)` and a bound room session's `leave(...)` return the authoritative leave snapshot,
+or `undefined` when no room is selected or the self-leave write is denied with `member-banned` or
+`member-removed` (HTTP 403). Those exact denials complete local departure without altering the server's
+revocation or inventing a snapshot. Other failures still reject. A successful destination entry is
+not reported as failed merely because the previous room preserved its ban. Explicit departure also
+prevents stale cached presence from reselecting that room; a new successful entry selects it anew.
 
 `rooms.update(input)` updates owner/admin-controlled room fields, including
 display metadata, `joinMode`, `directoryListing`, and capacity limits.

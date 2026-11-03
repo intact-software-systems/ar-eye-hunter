@@ -7,7 +7,7 @@ import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts
 import type { RallarLeaveRoomOptions } from './rallar-room-contracts.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import { leaveStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';
-import type { RoomSessionFence } from './room-session-fence.ts';
+import { captureRoomSession, type RoomSessionFence } from './room-session-fence.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface LeaveRoomInput {
@@ -32,10 +32,11 @@ export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | 
 async function leaveAuthenticatedRoom(input: LeaveRoomInput): Promise<GroupSnapshot | undefined> {
     const leaveOptions = typeof input.input === 'string' ? { roomId: input.input } : (input.input ?? {});
     const operationOptions = input.resolveOperationOptions(leaveOptions);
-    input.sessionFence?.assertCurrent();
+    const sessionFence = input.sessionFence ?? captureRoomSession(input.requireSession, operationOptions.signal);
+    sessionFence.assertCurrent();
     const context = await input.connect(operationOptions);
-    input.sessionFence?.assertCurrent();
-    const session = input.sessionFence?.session ?? input.requireSession();
+    sessionFence.assertCurrent();
+    const session = sessionFence.session;
     const explicitScope = input.resolveOperationScope(leaveOptions.scope);
     const roomRef = leaveOptions.roomRef ??
         (leaveOptions.roomId
@@ -58,15 +59,21 @@ async function leaveAuthenticatedRoom(input: LeaveRoomInput): Promise<GroupSnaps
         )?.generationId ?? context.middleware.heartbeat.generationId,
         scope,
         authSession: session,
-        assertCurrent: input.sessionFence?.assertCurrent,
+        assertCurrent: sessionFence.assertCurrent,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions)
     });
-    input.sessionFence?.assertCurrent();
+    sessionFence.assertCurrent();
     input.stateStore.clearCurrentRoomIfMatches(
         roomRef ?? roomId,
         leaveOptions.clearCurrent ?? true
     );
-    await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
-    input.sessionFence?.assertCurrent();
+    await input.acceptSnapshots({
+        context,
+        clients: [],
+        groups: snapshot ? [snapshot] : [],
+        scope,
+        assertCurrent: sessionFence.assertCurrent
+    });
+    sessionFence.assertCurrent();
     return snapshot;
 }

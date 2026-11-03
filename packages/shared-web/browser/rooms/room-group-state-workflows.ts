@@ -1,14 +1,13 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
 import {
-    requireStateWorkflowResult,
     toApiMutationWorkflowRequestId,
     tolerateStateWorkflowNotFound
 } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { QuickJoinGroupRequest, QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
-import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RallarRoomJoinPartialFailureError } from './rallar-room-contracts.ts';
@@ -27,8 +26,6 @@ import {
 } from './room-group-state-translation.ts';
 
 export type StateGroupWorkflowValue = GroupSnapshot | undefined;
-
-type GroupWorkflowKey = 'created' | 'member' | 'joined' | 'disconnected' | 'left';
 
 export interface CreateAndJoinStateGroupInput extends Omit<ConnectStateGroupPresenceInput, 'groupId'> {
     readonly displayName: string;
@@ -199,57 +196,70 @@ function requireConnectedPresence(snapshot: StateGroupWorkflowValue): GroupSnaps
     return snapshot;
 }
 
-export async function leaveStateGroup(
-    input: LeaveStateGroupInput
-): Promise<GroupSnapshot> {
-    const scope = input.scope ?? defaultStateScope();
+/** A revoked membership stays revoked; local departure succeeds without a new snapshot. */
+export async function leaveStateGroup(input: LeaveStateGroupInput): Promise<GroupSnapshot | undefined> {
     const disconnectRequestId = toApiMutationWorkflowRequestId();
     const memberRequestId = toApiMutationWorkflowRequestId();
-    const disconnectRequest = toDisconnectRoomPresenceGroupStateRequest({
+    const disconnect = createLeavingPresenceCommand(input, disconnectRequestId);
+    const leave = createLeavingMembershipCommand(input, memberRequestId);
+    await disconnect.run();
+    return await leave.run();
+}
+
+function createLeavingMembershipCommand(
+    input: LeaveStateGroupInput,
+    requestId: string
+): Command<StateGroupWorkflowValue> {
+    const request = toLeaveRoomMemberGroupStateRequest({
+        actorPrincipalId: input.principalId,
+        actorSessionId: input.sessionId
+    });
+    return new Command<StateGroupWorkflowValue>(async (signal) => {
+        input.assertCurrent?.();
+        try {
+            return await roomGroupStateHttpApi.upsertMember({
+                groupId: input.groupId,
+                principalId: input.principalId,
+                request,
+                options: { requestId, signal, authSession: input.authSession },
+                scope: input.scope ?? defaultStateScope()
+            });
+        }
+        catch (error) {
+            if (
+                error instanceof ApiHttpError && error.status === 403 &&
+                (error.policyError?.code === 'member-banned' || error.policyError?.code === 'member-removed')
+            ) {
+                return undefined;
+            }
+            throw error;
+        }
+    }, { ...input.policies?.command, errorOnNull: false });
+}
+
+function createLeavingPresenceCommand(
+    input: LeaveStateGroupInput,
+    requestId: string
+): Command<StateGroupWorkflowValue> {
+    const request = toDisconnectRoomPresenceGroupStateRequest({
         generationId: input.generationId,
         principalId: input.principalId,
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
-    const memberRequest = toLeaveRoomMemberGroupStateRequest({
-        actorPrincipalId: input.principalId,
-        actorSessionId: input.sessionId
-    });
-    const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
-        input.policies ?? {}
-    );
-
-    const results = await flow
-        .sequential(
-            flow.commandStep(
-                'disconnected',
-                (signal) => {
-                    input.assertCurrent?.();
-                    return roomGroupStateHttpApi.disconnectPresence({
-                        groupId: input.groupId,
-                        sessionId: input.sessionId,
-                        request: disconnectRequest,
-                        options: { requestId: disconnectRequestId, signal, authSession: input.authSession },
-                        scope
-                    });
-                },
-                {
-                    errorOnNull: false,
-                    fallback: (error) => tolerateStateWorkflowNotFound(error, undefined)
-                }
-            ),
-            flow.commandStep('left', (signal) => {
-                input.assertCurrent?.();
-                return roomGroupStateHttpApi.upsertMember({
-                    groupId: input.groupId,
-                    principalId: input.principalId,
-                    request: memberRequest,
-                    options: { requestId: memberRequestId, signal, authSession: input.authSession },
-                    scope
-                });
-            })
-        )
-        .run();
-
-    return requireStateWorkflowResult(results, 'left');
+    return new Command<StateGroupWorkflowValue>(async (signal) => {
+        input.assertCurrent?.();
+        try {
+            return await roomGroupStateHttpApi.disconnectPresence({
+                groupId: input.groupId,
+                sessionId: input.sessionId,
+                request,
+                options: { requestId, signal, authSession: input.authSession },
+                scope: input.scope ?? defaultStateScope()
+            });
+        }
+        catch (error) {
+            return tolerateStateWorkflowNotFound(error, undefined);
+        }
+    }, { ...input.policies?.command, errorOnNull: false });
 }
