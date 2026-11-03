@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createRevokedGroupMember } from '../create-revoked-group-member.ts';
 
 import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
@@ -169,7 +170,7 @@ describe('director status observation before connection', () => {
         const snapshot = createAppointmentSnapshot();
         cache.repositories.set(snapshotsToken, [{
             ...snapshot,
-            members: snapshot.members.map((member) => ({ ...member, status: membership }))
+            members: snapshot.members.map((member) => createRevokedGroupMember(member, membership))
         }]);
         const status = createStatusRuntime(cache, session);
         const appointment = status.read(roomRef).appointment;

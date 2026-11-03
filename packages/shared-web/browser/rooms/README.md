@@ -25,6 +25,12 @@ uses `room-group-state-mutation-workflows.ts`; membership policy operations use
 `room-group-state-http-api.ts`, and canonical state-to-room translation is
 `room-group-state-translation.ts`.
 
+`read-room-membership-revocation.ts` classifies only explicit membership-denial HTTP errors.
+The leave workflow uses it to finish local departure without rewriting a ban; the facade's
+single-room refresh uses it to clear matching selection and conditionally evict the observed cache.
+`shared-react/room-moderation-panel.tsx` presents confirmation and access-loss outcomes in both games.
+It observes room state and performs bounded access reads; entry cancellation remains owned below.
+
 `RallarRoomEntry` coordinates browser intent and persistence. It delegates admission
 to the existing join facade; it does not authorize membership or implement another
 join algorithm. The server's AppInbox operations remain the mutation authority.

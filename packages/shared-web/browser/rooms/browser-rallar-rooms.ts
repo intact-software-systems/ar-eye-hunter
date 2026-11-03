@@ -42,7 +42,7 @@ import {
     removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import { readRoomMembershipRevocation } from './room-membership-revocation.ts';
+import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
 import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';

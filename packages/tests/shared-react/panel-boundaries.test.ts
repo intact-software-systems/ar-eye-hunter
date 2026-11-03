@@ -17,7 +17,7 @@ const panels = [
         entry: 'packages/shared-react/room-moderation-panel.tsx',
         symbol: 'RoomModerationPanel',
         requiredInputs: ['packages/shared/api/group-member-presence.ts'],
-        allowedWebInputs: ['packages/shared-web/browser/rooms/room-membership-revocation.ts', 'packages/shared-web/browser/api/http-error.ts'],
+        allowedWebInputs: ['packages/shared-web/browser/rooms/read-room-membership-revocation.ts', 'packages/shared-web/browser/api/http-error.ts'],
         maxBrotliKiB: 7
     },
     { entry: 'packages/shared-react/party-panel.tsx', symbol: 'PartyPanel', requiredInputs: [], allowedWebInputs: [], maxBrotliKiB: 5 }

@@ -10,7 +10,7 @@ import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RallarRoomJoinPartialFailureError } from './rallar-room-contracts.ts';
-import { readRoomMembershipRevocation } from './room-membership-revocation.ts';
+import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
 import {
     toConnectRoomPresenceGroupStateRequest,

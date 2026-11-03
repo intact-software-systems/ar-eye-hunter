@@ -52,7 +52,6 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                 accessCheckIntervalMs={5000}
                 session={game.session}
                 rooms={rallar.rooms}
-                entry={game.roomEntry}
             />
             <RelicRoomHosting game={game} />
             {game.roomId && <RelicCurrentRoomActions game={game} />}

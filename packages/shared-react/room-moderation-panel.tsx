@@ -1,7 +1,6 @@
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { RallarRoomSession, RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { readRoomMembershipRevocation } from '@shared-web/browser/rooms/room-membership-revocation.ts';
+import { readRoomMembershipRevocation } from '@shared-web/browser/rooms/read-room-membership-revocation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import { computeGroupMemberPresence } from '@shared/api/group-member-presence.ts';
@@ -22,7 +21,6 @@ export interface RoomModerationPanelProps {
     readonly rooms: Pick<BrowserRallarRooms, 'state' | 'onChange' | 'removeMember' | 'banMember' | 'unbanMember'> & {
         session(room: GroupRef): Pick<RallarRoomSession, 'refresh'>;
     };
-    readonly entry: Pick<RallarRoomEntry, 'cancel'>;
 }
 
 export function RoomModerationPanel(props: RoomModerationPanelProps) {
@@ -69,11 +67,10 @@ function useRoomModerationState(props: RoomModerationPanelProps): RoomModeration
                     .find((member) => member.principalId === props.session.clientId)?.status
                 : undefined;
             if (previous && (revoked === 'banned' || revoked === 'removed')) {
-                props.entry.cancel();
                 setNotice(`You were ${revoked} from room ${previous.groupId}. Choose another room.`);
             }
             setState(next);
-        }), [props.rooms, props.entry, props.session.clientId]);
+        }), [props.rooms, props.session.clientId]);
     useEffect(() => {
         if (state?.currentRoomRef) {
             setNotice(null);
@@ -92,7 +89,7 @@ function useRoomModerationState(props: RoomModerationPanelProps): RoomModeration
             controller.abort();
             stop();
         };
-    }, [props.rooms, props.entry, props.session.clientId, props.session.sessionId, props.accessCheckIntervalMs]);
+    }, [props.rooms, props.session.clientId, props.session.sessionId, props.accessCheckIntervalMs]);
     return { state, notice };
 }
 
@@ -112,10 +109,8 @@ async function checkCurrentRoomAccess({ props, signal, setNotice }: CheckCurrent
     }
     catch (error) {
         const revoked = readRoomMembershipRevocation(error);
-        console.log('MODERATION READ', revoked, signal.aborted, props.rooms.state().currentRoomRef);
         const current = props.rooms.state().currentRoomRef;
         if (!signal.aborted && revoked && !current) {
-            props.entry.cancel();
             setNotice(`You were ${revoked} from room ${room.groupId}. Choose another room.`);
         }
     }

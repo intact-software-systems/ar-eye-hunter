@@ -2,12 +2,16 @@
 import { RoomModerationPanel } from '@shared-react/room-moderation-panel.tsx';
 import type { RoomModerationPanelProps } from '@shared-react/room-moderation-panel.tsx';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { toRallarRoomState } from '@shared-web/browser/rooms/room-group-state-translation.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { act, createElement, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { createRevokedGroupMember } from '../shared-web/create-revoked-group-member.ts';
 
 it('subscribes safely before room repositories are initialized', async () => {
     const fixture = createModerationFixture();
@@ -131,7 +135,6 @@ it.each(['member-banned', 'member-removed'])('clears access after the current-ro
     try {
         await act(async () => vi.advanceTimersByTimeAsync(1000));
         expect(view.container.textContent).toContain(code === 'member-banned' ? 'You were banned' : 'You were removed');
-        expect(fixture.props.entry.cancel).toHaveBeenCalled();
     }
     finally {
         await view.close();
@@ -146,17 +149,78 @@ it.each(['banned', 'removed'] as const)('explains an authoritative %s roster upd
         await act(async () =>
             fixture.publish({
                 ...fixture.snapshot,
-                members: fixture.snapshot.members.map((member) => member.principalId === 'host' ? { ...member, status } : member),
+                members: fixture.snapshot.members.map((member) => member.principalId === 'host' ? createRevokedGroupMember(member, status) : member),
                 activeSessions: []
             }, false)
         );
         expect(view.container.textContent).toContain(`You were ${status}`);
-        expect(fixture.props.entry.cancel).toHaveBeenCalledOnce();
     }
     finally {
         await view.close();
     }
 });
+
+it.each(['read', 'roster'] as const)('preserves a newer admission when an obsolete %s reports revocation', async (delivery) => {
+    vi.useFakeTimers();
+    const fixture = createModerationFixture();
+    const response = Promise.withResolvers<never>();
+    fixture.props.rooms.session = () => ({ refresh: () => response.promise });
+    const joining = Promise.withResolvers<GroupSnapshot>();
+    const entry = createRoomEntry(fixture.props, (room) => room.groupId === 'next-room' ? joining.promise : Promise.resolve(fixture.snapshot));
+    entry.start();
+    await entry.resume();
+    const view = await renderModeration(fixture.props);
+    try {
+        expect(entry.getState().status).toBe('entered');
+        if (delivery === 'read') {
+            await act(async () => vi.advanceTimersByTimeAsync(1000));
+            await act(async () => fixture.clearSelection());
+            expect(entry.getState().status).toBe('idle');
+        }
+        const next = { ...fixture.snapshot, group: { ...fixture.snapshot.group, groupId: 'next-room' } };
+        entry.enter({ intent: 'join', roomRef: next.group, joinCode: null, participation: 'player' });
+        const admission = entry.resume();
+        await act(async () => {
+            if (delivery === 'read') {
+                response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-banned' })));
+            }
+            else {
+                fixture.publish({
+                    ...fixture.snapshot,
+                    activeSessions: [],
+                    members: fixture.snapshot.members.map((member) => createRevokedGroupMember(member, 'banned'))
+                }, false);
+            }
+        });
+        expect(entry.getState().status).toBe('joining');
+        joining.resolve(next);
+        await admission;
+        expect(entry.getState()).toMatchObject({ status: 'entered', destination: { roomRef: { groupId: 'next-room' } } });
+    }
+    finally {
+        entry.stop();
+        await view.close();
+        vi.useRealTimers();
+    }
+});
+
+function createRoomEntry(props: RoomModerationPanelProps, join: (room: GroupRef) => Promise<GroupSnapshot>): RallarRoomEntry {
+    const storage = new Map<string, string>();
+    return new RallarRoomEntry({
+        auth: { session: () => props.session, onChange: () => () => undefined },
+        rooms: { onChange: props.rooms.onChange, join },
+        storage: {
+            getItem: (key) => storage.get(key) ?? null,
+            setItem: (key, value) => {
+                storage.set(key, value);
+            },
+            removeItem: (key) => {
+                storage.delete(key);
+            }
+        },
+        location: { read: () => 'https://game.example/', replace: () => undefined, onChange: () => () => undefined }
+    }, { scope: { applicationId: 'game', workspaceId: 'default' } });
+}
 
 it('does not treat a failed access read as revocation', async () => {
     vi.useFakeTimers();
@@ -183,21 +247,16 @@ function createModerationFixture() {
         currentRoomRef: snapshot.group,
         currentRoom: snapshot
     });
-    let listener: Parameters<RoomModerationPanelProps['rooms']['onChange']>[0] | undefined;
+    const notifications = new SynchronousNotifications<RallarRoomState>((error) => {
+        throw error;
+    });
     const props: RoomModerationPanelProps = {
         accessCheckIntervalMs: 1000,
         session: { clientId: 'host', sessionId: 'host', username: 'host', accessToken: 'test-token', expiresAtEpochMs: 4_000_000_000_000 },
-        entry: { cancel: vi.fn() },
         rooms: {
             session: () => ({ refresh: vi.fn() }),
             state: () => state,
-            onChange: (next) => {
-                listener = next;
-                next(state);
-                return () => {
-                    listener = undefined;
-                };
-            },
+            onChange: (listener) => notifications.subscribeAndNotify(listener, state).unsubscribe,
             removeMember: async () => snapshot,
             banMember: async () => snapshot,
             unbanMember: async () => snapshot
@@ -208,7 +267,7 @@ function createModerationFixture() {
         snapshot,
         clearSelection() {
             state = toRallarRoomState({ groupSnapshots: [], clientSnapshots: [], sessionId: 'host' });
-            listener?.(state);
+            notifications.publishLatest(state);
         },
         publish(next: GroupSnapshot, selected = true) {
             state = toRallarRoomState({
@@ -218,7 +277,7 @@ function createModerationFixture() {
                 currentRoomRef: selected ? next.group : undefined,
                 currentRoom: selected ? next : undefined
             });
-            listener?.(state);
+            notifications.publishLatest(state);
         }
     };
 }

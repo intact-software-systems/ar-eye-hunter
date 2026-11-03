@@ -1,6 +1,5 @@
 import { RoomModerationPanel } from '@shared-react/room-moderation-panel.tsx';
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
 import { ArenaRoomSharing, isCurrentArenaHost } from './arena-room-sharing.tsx';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -71,7 +70,6 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
                     accessCheckIntervalMs={5000}
                     session={arena.session}
                     rooms={rallar.rooms}
-                    entry={arenaRoomEntry}
                 />
             )}
             <div className="room-actions">
