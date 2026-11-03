@@ -16,7 +16,7 @@ import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -28,6 +28,15 @@ export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;
 export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
 /** A renewal lands this long before the lease or the cache it keeps alive would lapse: one retry and its request. */
 export const SESSION_HEARTBEAT_RENEWAL_MARGIN_MS = 2 * SESSION_HEARTBEAT_RETRY_MS;
+
+export interface InitHeartbeatOptions {
+    readonly authSession?: AuthSession;
+    /** Absent for a heartbeat without a socket; the client session then keeps no socket generation. */
+    readonly ownWsConnectionGeneration?: BrowserOwnWsConnectionGeneration;
+    readonly scope?: StateScope;
+    readonly policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
+    readonly onAuthInvalid?: (error: Error) => void | Promise<void>;
+}
 
 /**
  * The own client-session lease as the store last saw it: when a client-session connect or renewal last stamped it,
@@ -58,43 +67,6 @@ interface HeartbeatRenewalInput {
 }
 
 type HeartbeatRenewalDecision = 'renew' | 'skip';
-
-/**
- * The renewal keeps the session lease and the browser cache alive, so the first one runs before the lease, a joined
- * group's cached snapshot or a snapshot written now would lapse.
- */
-function computeFirstHeartbeatRenewalDelayMs(input: FirstHeartbeatRenewalInput): number {
-    const renewByEpochMs = Math.min(
-        input.leaseExpiresAtEpochMs ?? input.accessTokenExpiresAtEpochMs ?? Number.POSITIVE_INFINITY,
-        input.joinedGroupSnapshotsExpireAtEpochMs ?? Number.POSITIVE_INFINITY,
-        input.nowEpochMs + input.cacheTtlMs
-    );
-    return Math.max(0, renewByEpochMs - input.nowEpochMs - input.marginMs);
-}
-
-/**
- * A lease a client-session connect stamped inside the interval needs no renewal, unless the next interval would come
- * too late. The stamp is on the server's clock: one ahead of the browser's proves nothing about the interval.
- */
-function resolveHeartbeatRenewal(input: HeartbeatRenewalInput): HeartbeatRenewalDecision {
-    if (
-        input.lease === undefined ||
-        input.lease.expiresAtEpochMs - input.nowEpochMs <= input.intervalMs + input.marginMs ||
-        input.lease.stampedAtEpochMs > input.nowEpochMs
-    ) {
-        return 'renew';
-    }
-    return input.lease.stampedAtEpochMs > input.nowEpochMs - input.intervalMs ? 'skip' : 'renew';
-}
-
-export type InitHeartbeatOptions = Readonly<{
-    authSession?: AuthSession;
-    /** Absent for a heartbeat without a socket; the client session then keeps no socket generation. */
-    ownWsConnectionGeneration?: BrowserOwnWsConnectionGeneration;
-    scope?: StateScope;
-    policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
-    onAuthInvalid?: (error: Error) => void | Promise<void>;
-}>;
 
 let activeHeartbeat: RallarSessionHeartbeat | undefined;
 
@@ -212,10 +184,12 @@ class BrowserStateHeartbeatRuntime {
 
         const writtenAtEpochMs = this.#timers.nowMs();
         await writeHeartbeatResult(this.#clientData, joinedGroups, refreshed);
-        this.#groupRecoveryAtEpochMs = Math.min(
-            writtenAtEpochMs + BROWSER_STATE_CACHE_TTL_MS,
-            this.readGroupCacheDeadline()
-        );
+        if (refreshed.groups.length > 0) {
+            this.#groupRecoveryAtEpochMs = Math.min(
+                writtenAtEpochMs + BROWSER_STATE_CACHE_TTL_MS,
+                this.readGroupCacheDeadline()
+            );
+        }
     }
 
     /** Cache expiry loses renewal targets, not membership. Re-read authority without admitting any room. */
@@ -231,12 +205,13 @@ class BrowserStateHeartbeatRuntime {
         validateAuthoritativeGroupSnapshotList(snapshots, this.#scope);
         reconcileCompleteStateSnapshotCollections(observations, [], snapshots);
         groupStateSnapshotsRepository.setGroupStateSnapshots(snapshots);
+        this.#groupRecoveryAtEpochMs = this.readGroupCacheDeadline();
     }
 
     private readGroupCacheDeadline(): number {
         return Math.min(
             this.#timers.nowMs() + BROWSER_STATE_CACHE_TTL_MS,
-            readEarliestExpiry(
+            computeEarliestExpiry(
                 this.readJoinedGroups().map((snapshot) =>
                     groupStateSnapshotsRepository.findGroupStateSnapshotExpiresAtByRef(snapshot.group)
                 )
@@ -270,11 +245,6 @@ class BrowserStateHeartbeatRuntime {
     }
 }
 
-function readEarliestExpiry(expiries: readonly (number | undefined)[]): number | undefined {
-    const known = expiries.filter((expiry): expiry is number => expiry !== undefined);
-    return known.length === 0 ? undefined : Math.min(...known);
-}
-
 export async function initHeartbeat(
     clientData: ClientInfo,
     options: InitHeartbeatOptions = {}
@@ -290,6 +260,39 @@ export function stopHeartbeat(
     handle: RallarSessionHeartbeat | undefined = activeHeartbeat
 ): void {
     handle?.stop();
+}
+
+/**
+ * The renewal keeps the session lease and the browser cache alive, so the first one runs before the lease, a joined
+ * group's cached snapshot or a snapshot written now would lapse.
+ */
+function computeFirstHeartbeatRenewalDelayMs(input: FirstHeartbeatRenewalInput): number {
+    const renewByEpochMs = Math.min(
+        input.leaseExpiresAtEpochMs ?? input.accessTokenExpiresAtEpochMs ?? Number.POSITIVE_INFINITY,
+        input.joinedGroupSnapshotsExpireAtEpochMs ?? Number.POSITIVE_INFINITY,
+        input.nowEpochMs + input.cacheTtlMs
+    );
+    return Math.max(0, renewByEpochMs - input.nowEpochMs - input.marginMs);
+}
+
+/**
+ * A lease a client-session connect stamped inside the interval needs no renewal, unless the next interval would come
+ * too late. The stamp is on the server's clock: one ahead of the browser's proves nothing about the interval.
+ */
+function resolveHeartbeatRenewal(input: HeartbeatRenewalInput): HeartbeatRenewalDecision {
+    if (
+        input.lease === undefined ||
+        input.lease.expiresAtEpochMs - input.nowEpochMs <= input.intervalMs + input.marginMs ||
+        input.lease.stampedAtEpochMs > input.nowEpochMs
+    ) {
+        return 'renew';
+    }
+    return input.lease.stampedAtEpochMs > input.nowEpochMs - input.intervalMs ? 'skip' : 'renew';
+}
+
+function computeEarliestExpiry(expiries: readonly (number | undefined)[]): number | undefined {
+    const known = expiries.filter((expiry): expiry is number => expiry !== undefined);
+    return known.length === 0 ? undefined : Math.min(...known);
 }
 
 async function writeHeartbeatResult(
@@ -332,7 +335,7 @@ function isGroupSnapshotInScope(
     scope: StateScope
 ): boolean {
     return snapshot.group.applicationId === scope.applicationId &&
-        (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
+        snapshot.group.workspaceId === scope.workspaceId;
 }
 
 function isUnauthorizedApiError(error: unknown): error is ApiHttpError {

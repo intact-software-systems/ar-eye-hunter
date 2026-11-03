@@ -1,10 +1,19 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { initHeartbeat, stopHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
@@ -29,7 +38,7 @@ interface RequestObservation {
 /** HTTP is the only substituted boundary; scheduling, cache expiry and renewal adoption stay real. */
 class HeartbeatServer {
     readonly requests: RequestObservation[] = [];
-    groups: GroupSnapshot[] = [joinedRoom()];
+    groups: GroupSnapshot[] = [createJoinedRoomFixture()];
     readGroups: () => Response | Promise<Response> = () => Response.json(this.groups);
 
     install(): void {
@@ -59,7 +68,7 @@ class HeartbeatServer {
     }
 }
 
-describe('heartbeat recovery after delayed callbacks', () => {
+describe('heartbeat group recovery', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.setSystemTime(START);
@@ -107,6 +116,65 @@ describe('heartbeat recovery after delayed callbacks', () => {
         expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0])
             .toMatchObject({ lastHeartbeatAtEpochMs: START + 175_000 });
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
+    });
+
+    it('recovers the last joined room lost to an empty observation while client heartbeats keep succeeding', async () => {
+        const server = new HeartbeatServer();
+        server.install();
+        const joined = server.groups[0];
+        groupSnapshots.setGroupStateSnapshot(joined);
+        await initHeartbeat(client, { authSession: session, scope });
+        await vi.advanceTimersByTimeAsync(50_000);
+        groupSnapshots.setGroupStateSnapshot({
+            ...joined,
+            group: { ...joined.group, snapshotVersion: 2, presenceVersion: 2 },
+            causalRevision: { groupRevision: 2, presenceRevision: 2 },
+            activeSessions: [],
+            onlineMemberCount: 0
+        });
+        server.groups = [{
+            ...joined,
+            group: { ...joined.group, snapshotVersion: 3, presenceVersion: 3 },
+            causalRevision: { groupRevision: 3, presenceRevision: 3 }
+        }];
+
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect(groupSnapshots.findGroupStateSnapshotByRef(joined.group)?.activeSessions[0])
+            .toMatchObject({ sessionId: 'alice', principalId: 'alice', lastHeartbeatAtEpochMs: START + 110_000 });
+        expect(server.requests.filter((request) => request.method === 'GET')).toEqual([
+            { method: 'GET', path: groupsPath, authorization: 'Bearer test-token' }
+        ]);
+        expect(server.requests.filter((request) => request.path.startsWith(`${groupsPath}/`) && !request.path.includes('/heartbeat/requests/'))).toEqual([]);
+    });
+
+    it('rechecks empty authority at the recovery deadline without listing on every client heartbeat', async () => {
+        const server = new HeartbeatServer();
+        const joined = server.groups[0];
+        server.groups = [];
+        server.install();
+        await initHeartbeat(client, { authSession: session, scope });
+        await vi.advanceTimersByTimeAsync(70_000);
+        expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
+        expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
+
+        server.groups = [{
+            ...joined,
+            activeSessions: joined.activeSessions.map((presence) => ({
+                ...presence,
+                lastHeartbeatAtEpochMs: Date.now(),
+                expiresAtEpochMs: Date.now() + 120_000
+            }))
+        }];
+        await vi.advanceTimersByTimeAsync(40_000);
+        expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
+        expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
+        await vi.advanceTimersByTimeAsync(20_000);
+
+        expect(groupSnapshots.findGroupStateSnapshotByRef(joined.group)?.activeSessions[0])
+            .toMatchObject({ sessionId: 'alice', lastHeartbeatAtEpochMs: START + 130_000 });
+        expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(2);
+        expect(server.requests.filter((request) => request.path.startsWith(`${groupsPath}/`) && !request.path.includes('/heartbeat/requests/'))).toEqual([]);
     });
 
     it('recovers when awaited cache observers delay completion past the renewed snapshot TTL', async () => {
@@ -334,7 +402,7 @@ describe('heartbeat recovery after delayed callbacks', () => {
     });
 });
 
-function joinedRoom(): GroupSnapshot {
+function createJoinedRoomFixture(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...scope, groupId: 'private-room', sessionIds: ['alice'] });
     return {
         ...snapshot,

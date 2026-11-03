@@ -213,6 +213,7 @@ export function createRelicSnapshotWithPlayers(
     options: RelicSnapshotFixtureOptions = {}
 ): RelicPublicSnapshot {
     return {
+        tournament: null,
         protocolVersion: 1,
         gameId: 'room-1',
         roomId: 'room-1',

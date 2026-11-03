@@ -2,11 +2,20 @@ import { expect, type Page } from '@playwright/test';
 
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
 
-interface MoveJourneyRooms {
-    readonly host: Page;
-    readonly guest: Page;
+interface MoveRoomReferences {
     readonly source: string;
     readonly destination: string;
+}
+
+interface MoveJourneyRooms extends MoveRoomReferences {
+    readonly host: Page;
+    readonly guest: Page;
+}
+
+interface MoveActivationFaults {
+    readonly lostCommitResponses: () => number;
+    readonly deniedPresenceRequests: () => number;
+    readonly destinationPresence: RegExp;
 }
 
 interface ReturnThroughMembershipInput extends MoveJourneyRooms {
@@ -88,8 +97,14 @@ async function commitMoveWithNetworkRecovery({ host, guest, source, destination 
         await expect(guestMove.getByRole('alert')).toContainText('403', { timeout: 1000 });
     }).toPass({ timeout: 15000 });
     expect(faults.deniedPresenceRequests()).toBeGreaterThan(0);
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
+    // Offline cleanup may end source presence; membership and the committed move still survive.
+    await expect(
+        guest.getByRole('region', { name: `Members of ${source}`, exact: true })
+            .getByRole('listitem').filter({ hasText: /^bob ·/ })
+    ).toHaveCount(1);
+    await expect(guest.getByText(`Entered ${destination}.`, { exact: true })).toHaveCount(0);
     await expect(guestMove).toContainText('1 of 2 arrived');
+    await expect(retryEntry).toBeEnabled();
     await guest.unroute(faults.destinationPresence);
     await retryEntry.click();
     for (const page of [host, guest]) {
@@ -165,7 +180,7 @@ export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 
 
 async function prepareMoveRooms(
     { host, guest, game, participation = 'player' }: PrepareMoveRoomsInput
-): Promise<{ source: string; destination: string; }> {
+): Promise<MoveRoomReferences> {
     await signInRoomPlayer(host, 'alice', game);
     await signInRoomPlayer(guest, 'bob', game);
     const create = host.getByRole('button', {
@@ -193,7 +208,7 @@ async function prepareMoveRooms(
     return { source, destination };
 }
 
-async function interceptMoveActivation(host: Page, guest: Page, destination: string) {
+async function interceptMoveActivation(host: Page, guest: Page, destination: string): Promise<MoveActivationFaults> {
     // The server commits, but the organizer loses every commit response. Recovery must read the decision.
     let lostCommitResponses = 0;
     await host.route('**/group-moves/requests/*', async (route) => {

@@ -24,12 +24,16 @@ roomBrowserTest(
             (route) => route.fulfill({ status: 404, contentType: 'text/plain', body: '404 Not Found' })
         );
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toContainText('404 Not Found');
+        await expect(bobOperations.getByRole('status').filter({ hasText: '404 Not Found' })).toBeVisible();
         await expect(bobOperations.getByRole('button', { name: 'Quick Join', exact: true })).toBeEnabled();
         await expect(bobOperations.locator('.room-row.active')).toHaveCount(0);
         await bob.unroute('**/groups/quick-join/requests/*');
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toHaveText('No available arena. Try again or create one.');
+        await expect(
+            bobOperations.getByRole('status').filter({
+                hasText: /^No available arena\. Try again or create one\.$/
+            })
+        ).toBeVisible();
         await expect(bobOperations.getByRole('button', { name: 'New Arena', exact: true })).toBeEnabled();
         await bob.screenshot({ path: testInfo.outputPath('quick-join-unavailable.png'), fullPage: true });
 
@@ -50,7 +54,7 @@ roomBrowserTest(
             status: 'joined',
             snapshot: { group: { groupId: snapshot.group.groupId } }
         });
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
         // A human can start another arena while still owning the previous one. That cleanup
         // denial must not prevent the host or a Quick Joining guest from entering the new match.
@@ -66,7 +70,7 @@ roomBrowserTest(
             { exact: true }
         )).toBeVisible();
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         await expect(bobOperations.locator('.room-row.active')).toContainText(replacement.group.displayName);
         await bob.screenshot({ path: testInfo.outputPath('quick-join-replacement.png'), fullPage: true });
         // interaction: one WebGL acquisition per mounted canvas avoids repeating driver initialization on room changes.
@@ -99,7 +103,7 @@ roomBrowserTest(
         const snapshot: GroupSnapshot = await (await created).json();
         await expect(aliceOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
         const appoint = aliceOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
         if (await appoint.isEnabled()) {
@@ -122,7 +126,7 @@ roomBrowserTest(
         await bob.getByRole('button', { name: 'Diag', exact: true }).click();
         await bob.getByRole('button', { name: 'Request sync', exact: true }).click();
         await assertRunningMatch(aliceOperations, bobOperations);
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         const aliceResults = alice.getByRole('dialog', { name: 'Match results' });
         const bobResults = bob.getByRole('dialog', { name: 'Match results' });
         await expect(aliceResults).toBeVisible({ timeout: 65_000 });

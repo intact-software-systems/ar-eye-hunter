@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from './room-workflow-test-runtime.ts';
 
 const runtime = getRoomWorkflowMocks();
 const previous = createRoomSnapshot('previous', ['session-1']);
-const destination = createRoomSnapshot('destination', ['session-1']);
+let destination = createRoomSnapshot('destination', ['session-1']);
 installFakeBroadcastChannelPerTest();
 
 beforeEach(async () => {
     resetRoomWorkflowTestRuntime();
+    destination = createRoomSnapshot('destination', ['session-1']);
     configureApiClient({ apiBaseUrl: '' });
     const actual = await vi.importActual<typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts')>(
         '@shared-web/browser/rooms/room-group-state-workflows.ts'
@@ -50,7 +53,7 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         respondToDeparture(code, 403);
         const facade = createRallarFacade();
-        await expect(facade.rooms.join(destination.group)).resolves.toEqual(destination);
+        expect(await facade.rooms.join(destination.group)).toEqual(destination);
         expect(facade.rooms.current()?.group.groupId).toBe('destination');
     });
 });
@@ -107,13 +110,26 @@ it('preserves a newer same-room observation when an old refresh is denied', asyn
 });
 
 function respondToDeparture(code: string, status: number): void {
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.includes('/members/')) {
             return new Response(JSON.stringify({ error: 'forbidden', code }), { status });
         }
         if (url.includes('/disconnect/')) {
             return new Response('missing', { status: 404 });
+        }
+        if (init?.method === 'PUT') {
+            const request = requireRecord(JSON.parse(String(init.body)), 'Presence request');
+            const generationId = request.generationId;
+            requireString(generationId, 'generationId');
+            destination = {
+                ...destination,
+                activeSessions: destination.activeSessions.map((presence) => ({
+                    ...presence,
+                    generationId,
+                    expiresAtEpochMs: Date.now() + 120_000
+                }))
+            };
         }
         return new Response(JSON.stringify(destination), { headers: { 'content-type': 'application/json' } });
     });
