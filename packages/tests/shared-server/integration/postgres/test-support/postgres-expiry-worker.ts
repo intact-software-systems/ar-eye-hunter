@@ -1,6 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
+import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -867,6 +868,7 @@ function isGroupPresenceConnectRequest(
             'principalId',
             'generationId',
             'connectionGenerationId',
+            'publicationKey',
             'connectedAtEpochMs',
             'lastHeartbeatAtEpochMs',
             'expiresAtEpochMs'
@@ -874,6 +876,7 @@ function isGroupPresenceConnectRequest(
         isNonEmptyString(value.principalId) &&
         isNonEmptyString(value.generationId) &&
         isNonEmptyString(value.connectionGenerationId) &&
+        isGroupPresencePublicationKey(value.publicationKey) &&
         isOptionalEpoch(value.connectedAtEpochMs) &&
         isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
         isOptionalEpoch(value.expiresAtEpochMs)
@@ -889,14 +892,20 @@ function isGroupPresenceHeartbeatRequest(
             ...MUTATION_ACTOR_KEYS,
             'principalId',
             'generationId',
+            'publicationKey',
             'lastHeartbeatAtEpochMs',
             'expiresAtEpochMs'
         ]) &&
         isOptionalString(value.principalId) &&
         isNonEmptyString(value.generationId) &&
+        isGroupPresencePublicationKey(value.publicationKey) &&
         isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
         isOptionalEpoch(value.expiresAtEpochMs)
     );
+}
+
+function isGroupPresencePublicationKey(value: JsonWireValue | undefined): boolean {
+    return decodeGroupPresencePublicationKey(value).fold(() => false, () => true);
 }
 
 function isGroupPresenceDisconnectRequest(

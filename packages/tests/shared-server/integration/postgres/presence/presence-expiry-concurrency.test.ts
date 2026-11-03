@@ -534,6 +534,7 @@ describe('Postgres presence expiry concurrency', () => {
                         principalId,
                         generationId: `generation-${index}`,
                         connectionGenerationId: `ws-generation-${index}`,
+                        publicationKey: null,
                         connectedAtEpochMs: atEpochMs + 1_000,
                         lastHeartbeatAtEpochMs: atEpochMs + 1_000,
                         expiresAtEpochMs: atEpochMs + 61_000,
@@ -563,6 +564,7 @@ describe('Postgres presence expiry concurrency', () => {
                     request: {
                         principalId,
                         generationId: `generation-${index}`,
+                        publicationKey: null,
                         lastHeartbeatAtEpochMs: atEpochMs + 2_000,
                         expiresAtEpochMs: atEpochMs + 62_000,
                         actorPrincipalId: principalId,
