@@ -10,9 +10,9 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { assessSubscriptionRevokeHeld } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-held.ts';
+import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import { assessSubscriptionRevokeDisconnected } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import { toSubscriptionSuccessorGateCommandId } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
-import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand,
@@ -27,7 +27,7 @@ import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance
 const FOUR_ROLE_IDS = [
     'subscription-delivery',
     'subscription-token-count',
-    'subscription-revoke-held',
+    'subscription-revoke-disconnected',
     'subscription-reconnect'
 ] as const;
 
@@ -72,38 +72,36 @@ function toResolvedRequestIds(recipe: RallarBlackBoxTestRecipe): readonly string
 }
 
 /** A role's recipe run as the control run records it: every command ok, with the values the cell reads. */
-function toRecipeRunEnvelope(
+/** A role's run as the control snapshot records it: every authored command ok, with the given values. */
+function toRecipeRunParticipant(
+    role: string,
     recipe: RallarBlackBoxTestRecipe,
-    values: Readonly<Record<string, RallarBlackBoxTestJsonValue | undefined>>
-): ControlResultEnvelope {
-    return {
-        kind: 'result',
-        protocolVersion: 1,
-        runId: 'run',
-        agentId: recipe.recipeId,
-        commandId: `${recipe.recipeId}-run`,
+    values: Readonly<Record<string, RallarBlackBoxTestJsonValue>>
+): AlmConformanceIdentityParticipant {
+    const commandId = `${recipe.recipeId}-run`;
+    const agentId = `agent-${role}`;
+    const timing = { startedAtEpochMs: 1, endedAtEpochMs: 2, durationMs: 1 };
+    const results = recipe.commands.map((command) => ({
+        commandId: command.commandId!,
+        kind: command.kind,
         ok: true,
+        status: 'ok' as const,
+        ...timing,
+        ...(command.commandId! in values ? { value: values[command.commandId!] } : {})
+    }));
+    return {
+        role,
+        agentId,
+        commandId,
+        recipe,
         result: {
-            commandId: `${recipe.recipeId}-run`,
-            kind: 'recipe.run',
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'run',
+            agentId,
+            commandId,
             ok: true,
-            status: 'ok',
-            startedAtEpochMs: 1,
-            endedAtEpochMs: 3,
-            durationMs: 2,
-            value: {
-                recipeId: recipe.recipeId,
-                results: Object.entries(values).map(([commandId, value]) => ({
-                    commandId,
-                    kind: 'messages.receipts',
-                    ok: true,
-                    status: 'ok',
-                    startedAtEpochMs: 1,
-                    endedAtEpochMs: 2,
-                    durationMs: 1,
-                    value
-                }))
-            }
+            result: { commandId, kind: 'recipe.run', ok: true, status: 'ok', ...timing, value: { recipeId: recipe.recipeId, results } }
         }
     };
 }
@@ -263,8 +261,8 @@ describe('ALM topic subscription conformance', () => {
         }
     });
 
-    it('sends nothing from the dropped sibling once its socket closed, in the revoke-held and reconnect cells', () => {
-        for (const scenarioId of ['subscription-revoke-held', 'subscription-reconnect']) {
+    it('sends nothing from the dropped sibling once its socket closed, in the revoke-disconnected and reconnect cells', () => {
+        for (const scenarioId of ['subscription-revoke-disconnected', 'subscription-reconnect']) {
             const scenario = toTopicSubscriptionScenarios('ws').find((candidate) => candidate.scenarioId === scenarioId);
             const commands = toFlatCommands(scenario?.sibling?.commands ?? []);
             const close = commands.findIndex((command) => command.kind === 'fault.inject');
@@ -297,44 +295,51 @@ describe('ALM topic subscription conformance', () => {
             .toEqual([]);
     });
 
-    it('fails a revoke-held receipt that confirms the sibling and records whether the first expected set named it', () => {
-        const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-held');
-        if (scenario?.sibling === undefined) {
-            throw new Error('The ws carrier creates the subscription-revoke-held cell.');
-        }
-        const sibling = {
-            recipe: scenario.sibling,
-            result: toRecipeRunEnvelope(scenario.sibling, {
-                'alm-ws-subscription-revoke-held-sibling-connect': { sessionId: 'sibling-session' }
-            })
-        };
-        const toSender = (first: RallarBlackBoxTestJsonValue | undefined, second: RallarBlackBoxTestJsonValue | undefined) => ({
-            recipe: scenario.sender,
-            result: toRecipeRunEnvelope(scenario.sender, {
-                'alm-ws-subscription-revoke-held-sender-publication-1-receipts': first,
-                'alm-ws-subscription-revoke-held-sender-publication-2-receipts': second
-            })
-        });
-        const receipt = (expected: readonly string[], confirmed: readonly string[]) => ({
-            expectedRecipientPeerIds: expected,
-            confirmedRecipientPeerIds: confirmed
-        });
+    it('pins the revoke-disconnected sibling to nothing received and a refused re-assertion, and the receiver to both', () => {
+        const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
+        const sibling = toFlatCommands(scenario?.sibling?.commands ?? []);
+        const receiver = scenario?.receiver.commands ?? [];
+        const publicationWaits = (commands: readonly RallarBlackBoxTestCommand[]) =>
+            commands.flatMap((command) => command.kind === 'wait' && command.commandId?.includes('-publication-') ? [command.absent === true] : []);
 
-        expect(assessSubscriptionRevokeHeld({
-            sender: toSender(receipt(['receiver-session', 'sibling-session'], ['receiver-session']), receipt(['receiver-session'], ['receiver-session'])),
-            sibling
-        })).toEqual({ issues: [], siblingExpectedFirst: true });
-        expect(assessSubscriptionRevokeHeld({
-            sender: toSender(receipt(['receiver-session'], ['receiver-session']), receipt(['receiver-session', 'sibling-session'], ['sibling-session'])),
-            sibling
-        })).toEqual({
-            issues: [
-                'alm-ws-subscription-revoke-held-sender-publication-2-send: the receipt confirms the sibling, whose ' +
-                'election was revoked before it reopened.'
-            ],
-            siblingExpectedFirst: false
+        expect(publicationWaits(sibling)).toEqual([true, true]);
+        expect(publicationWaits(receiver)).toEqual([false, false]);
+        expect(sibling.find(({ commandId }) => commandId?.endsWith('-assert-reasserted-refused'))).toMatchObject({
+            operator: 'equals',
+            expected: 'refused'
         });
-        expect(assessSubscriptionRevokeHeld({ sender: toSender(undefined, undefined), sibling }).siblingExpectedFirst)
-            .toBeUndefined();
+    });
+
+    it('fails a revoke-disconnected receipt that confirms the sibling', () => {
+        const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
+        if (scenario?.sibling === undefined) {
+            throw new Error('The ws carrier creates the subscription-revoke-disconnected cell.');
+        }
+        const siblingConnect = scenario.sibling.commands.find(({ kind }) => kind === 'rtc.connect')!.commandId!;
+        const sibling = toRecipeRunParticipant('sibling', scenario.sibling, { [siblingConnect]: { sessionId: 'sibling-session' } });
+        const toSender = (first: readonly string[], second: readonly string[]) =>
+            toRecipeRunParticipant('sender', scenario.sender, {
+                'alm-ws-subscription-revoke-disconnected-sender-publication-1-receipts': { confirmedRecipientPeerIds: first },
+                'alm-ws-subscription-revoke-disconnected-sender-publication-2-receipts': { confirmedRecipientPeerIds: second }
+            });
+
+        expect(assessSubscriptionRevokeDisconnected({
+            runId: 'run',
+            sender: toSender(['receiver-session'], ['receiver-session']),
+            sibling
+        })).toEqual([]);
+        expect(assessSubscriptionRevokeDisconnected({
+            runId: 'run',
+            sender: toSender(['receiver-session'], ['receiver-session', 'sibling-session']),
+            sibling
+        })).toEqual([
+            'alm-ws-subscription-revoke-disconnected-sender-publication-2-send: the receipt confirms the sibling, whose ' +
+            'election was revoked while it was disconnected.'
+        ]);
+        expect(assessSubscriptionRevokeDisconnected({
+            runId: 'run',
+            sender: { ...toSender([], []), result: undefined },
+            sibling
+        })).toEqual(['sender: missing, mismatched or failed recipe envelope.']);
     });
 });

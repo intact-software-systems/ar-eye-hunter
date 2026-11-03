@@ -89,7 +89,7 @@ describe('ALM run on an agent per role', () => {
             expect(fourRole.map((scenario) => scenario.scenarioKey), carrier).toEqual(
                 carrier === 'rtc'
                     ? []
-                    : ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-held', 'subscription-reconnect']
+                    : ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect']
             );
             expect(fourRole.every((scenario) => scenario.publisherB !== undefined && scenario.sibling !== undefined), carrier)
                 .toBe(true);
@@ -113,12 +113,12 @@ describe('ALM run on an agent per role', () => {
     // The receiver's prologue creates the run's group, so it owns it; an only owner's leave is refused.
     it('starts every other role only after the receiver\'s connect barrier, and the sender after all of them', async () => {
         const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
-        const third = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-b` };
-        const fourth = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-c` };
+        const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
+        const publisherB = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-publisher-b` };
         const runIds = {
             receiver: `${baseline.receiver.recipeId}-run`,
-            third: `${third.recipeId}-run`,
-            fourth: `${fourth.recipeId}-run`,
+            sibling: `${sibling.recipeId}-run`,
+            publisherB: `${publisherB.recipeId}-run`,
             sender: `${baseline.sender.recipeId}-run`
         };
         const posted: string[] = [];
@@ -146,7 +146,7 @@ describe('ALM run on an agent per role', () => {
         });
         const run: AgentRecipeRun = {
             request,
-            runId: 'three-agent-run',
+            runId: 'agent-run',
             agents: new Map([
                 ['sender', { agentId: 'sender-agent' }],
                 ['receiver', { agentId: 'receiver-agent' }],
@@ -156,7 +156,7 @@ describe('ALM run on an agent per role', () => {
             readSnapshot: async () => {
                 await receiverConnected.promise;
                 return {
-                    runId: 'three-agent-run',
+                    runId: 'agent-run',
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 2,
                     agents: [],
@@ -168,7 +168,7 @@ describe('ALM run on an agent per role', () => {
                     results: posted.map((commandId) => ({
                         kind: 'result',
                         protocolVersion: 1,
-                        runId: 'three-agent-run',
+                        runId: 'agent-run',
                         agentId: 'observed-agent',
                         commandId,
                         ok: true
@@ -181,9 +181,9 @@ describe('ALM run on an agent per role', () => {
                 run,
                 new Map([
                     ['sender', baseline.sender],
-                    ['publisher-b', fourth],
+                    ['publisher-b', publisherB],
                     ['receiver', baseline.receiver],
-                    ['sibling', third]
+                    ['sibling', sibling]
                 ])
             );
             await vi.waitFor(() => expect(posted).toContain(runIds.receiver));
@@ -193,12 +193,12 @@ describe('ALM run on an agent per role', () => {
             receiverConnected.resolve();
             const outcome = await running;
 
-            expect(posted).toEqual([runIds.receiver, runIds.fourth, runIds.third, runIds.sender]);
+            expect(posted).toEqual([runIds.receiver, runIds.publisherB, runIds.sibling, runIds.sender]);
             expect(Object.fromEntries(outcome)).toEqual({
                 sender: { commandId: runIds.sender, ok: true, summary: 'ok' },
                 receiver: { commandId: runIds.receiver, ok: true, summary: 'ok' },
-                sibling: { commandId: runIds.third, ok: true, summary: 'ok' },
-                'publisher-b': { commandId: runIds.fourth, ok: true, summary: 'ok' }
+                sibling: { commandId: runIds.sibling, ok: true, summary: 'ok' },
+                'publisher-b': { commandId: runIds.publisherB, ok: true, summary: 'ok' }
             });
         }
         finally {
@@ -207,6 +207,7 @@ describe('ALM run on an agent per role', () => {
             await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }
     });
+
     it('closes every agent\'s room connection before the next cell, and returns once each close passed', async () => {
         const posted: { readonly commandId: string; readonly command: string; }[] = [];
         const server = createServer((_request, response) => {

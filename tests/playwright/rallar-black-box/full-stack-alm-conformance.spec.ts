@@ -44,9 +44,10 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
     assessAlmConformanceIdentity,
-    hasAlmIdentityEvidence
+    hasAlmIdentityEvidence,
+    type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
-import { assessSubscriptionRevokeHeld } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-held.ts';
+import { assessSubscriptionRevokeDisconnected } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import { toSubscriptionSuccessorGateCommandId } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -470,8 +471,8 @@ async function runAgentScenarios(
         if (hasAlmIdentityEvidence(scenario.sender)) {
             await assertScenarioIdentity(run, scenario, evidence);
         }
-        if (scenario.scenarioId === 'subscription-revoke-held') {
-            await recordRevokeHeldReceipts(run, scenario, evidence);
+        if (scenario.scenarioId === 'subscription-revoke-disconnected') {
+            await assertRevokeDisconnectedReceipts(run, scenario, evidence);
         }
         if (family === 'four-role') {
             await closeAgentConnections(run, scenario.scenarioKey);
@@ -498,34 +499,30 @@ function toOwnRoomScenario(
     return scenario;
 }
 
-/**
- * Neither receipt of the revoke-held cell may confirm the sibling. Whether the first one's expected set names it is
- * recorded for the reading, never judged: it depends on when the server stops counting the dropped socket live.
- */
-async function recordRevokeHeldReceipts(
+/** Neither receipt of the revoke-disconnected cell may confirm the sibling. */
+async function assertRevokeDisconnectedReceipts(
     run: AgentRun,
     scenario: AlmConformanceScenario,
     evidence: readonly ScenarioRoleEvidence[]
 ): Promise<void> {
-    const snapshot = await run.readSnapshot();
-    const toRole = (role: AlmConformanceRole) => {
-        const outcome = evidence.find((entry) => entry.role === role)?.outcome;
-        const decoded = parseControlClientMessage(
-            snapshot.results.find((result) => result.commandId === outcome?.commandId)
-        );
-        return {
-            recipe: requireRoleRecipe(scenario, role),
-            result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
-        };
-    };
-    const reading = assessSubscriptionRevokeHeld({ sender: toRole('sender'), sibling: toRole('sibling') });
-    expect.soft(reading.issues, `${scenario.scenarioKey}: no receipt confirms the sibling`).toEqual([]);
-    test.info().annotations.push({
-        type: 'subscription-revoke-held',
-        description:
-            `${scenario.sender.metadata?.carrier}: publication-1 expected the sibling: ${reading.siblingExpectedFirst}`
+    const participants = toIdentityParticipants(await run.readSnapshot(), scenario, evidence);
+    const issues = assessSubscriptionRevokeDisconnected({
+        runId: run.runId,
+        sender: requireRoleParticipant(participants, 'sender'),
+        sibling: requireRoleParticipant(participants, 'sibling')
     });
-    console.info(`${scenario.scenarioKey} siblingExpectedFirst=${reading.siblingExpectedFirst}`);
+    expect.soft(issues, `${scenario.scenarioKey}: no receipt confirms the sibling`).toEqual([]);
+}
+
+function requireRoleParticipant(
+    participants: readonly AlmConformanceIdentityParticipant[],
+    role: AlmConformanceRole
+): AlmConformanceIdentityParticipant {
+    const participant = participants.find((candidate) => candidate.role === role);
+    if (participant === undefined) {
+        throw new Error(`The run recorded no participant for ${role}.`);
+    }
+    return participant;
 }
 
 function requireRoleRecipe(scenario: AlmConformanceScenario, role: AlmConformanceRole): RallarBlackBoxTestRecipe {
@@ -588,24 +585,32 @@ async function assertScenarioIdentity(
     scenario: AlmConformanceScenario,
     evidence: readonly ScenarioRoleEvidence[]
 ): Promise<void> {
-    const snapshot = await run.readSnapshot();
     const issues = assessAlmConformanceIdentity({
         runId: run.runId,
         roles: scenario.roles,
-        participants: evidence.flatMap(({ role, agent, outcome }) => {
-            const recipe = toAlmConformanceRoleRecipe(scenario, role);
-            const recorded = snapshot.results.find((result) => result.commandId === outcome.commandId);
-            const decoded = parseControlClientMessage(recorded);
-            return recipe === undefined ? [] : [{
-                role,
-                agentId: agent.agentId,
-                recipe,
-                commandId: outcome.commandId,
-                result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
-            }];
-        })
+        participants: toIdentityParticipants(await run.readSnapshot(), scenario, evidence)
     });
     expect.soft(issues, 'ALM actual identity evidence for every declared role').toEqual([]);
+}
+
+/** Each declared role's recipe joined to the result envelope its run recorded in the control snapshot. */
+function toIdentityParticipants(
+    snapshot: ControlRunSnapshot,
+    scenario: AlmConformanceScenario,
+    evidence: readonly ScenarioRoleEvidence[]
+): readonly AlmConformanceIdentityParticipant[] {
+    return evidence.flatMap(({ role, agent, outcome }) => {
+        const recipe = toAlmConformanceRoleRecipe(scenario, role);
+        const recorded = snapshot.results.find((result) => result.commandId === outcome.commandId);
+        const decoded = parseControlClientMessage(recorded);
+        return recipe === undefined ? [] : [{
+            role,
+            agentId: agent.agentId,
+            recipe,
+            commandId: outcome.commandId,
+            result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
+        }];
+    });
 }
 
 /** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */

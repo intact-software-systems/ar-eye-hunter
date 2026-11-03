@@ -27,8 +27,8 @@ import {
     toAlmInvalidRuntimeResultError
 } from './decode-alm-runtime-result.ts';
 import {
-    decodeAlmMessagesSubscribeResultValue,
-    decodeAlmMessagesSubscriptionsResultValue
+    decodeAlmMessagesSubscriptionsResultValue,
+    decodeAlmTopicSubscriptionResultValue
 } from './decode-alm-topic-subscription-result.ts';
 import type {
     AlmReceivedMessageIdentity,
@@ -314,7 +314,7 @@ function changeAlmTopicSubscription(
         connection,
         topic: ALM_TOPIC_SUBSCRIPTION_TOPICS[kind],
         invoke: async (runtime) =>
-            decodeAlmMessagesSubscribeResultValue(
+            decodeAlmTopicSubscriptionResultValue(
                 kind === 'messages.subscribe'
                     ? await runtime.subscribeTopic(token)
                     : await runtime.unsubscribeTopic(token),

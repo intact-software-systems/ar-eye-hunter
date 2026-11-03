@@ -239,3 +239,85 @@ it('closes a newly opened successor page when registration fails, keeping its sh
         await browser.close();
     }
 });
+
+it('rejects without starting the successor when the owner\'s gate neither passes nor ends within its timeout', async () => {
+    const baseline = createAlmConformanceRecipes({
+        group,
+        carrier: 'ws',
+        typeId: 'probe',
+        senderConnection: 'sender',
+        receiverConnection: 'receiver',
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
+    }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+    const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
+    const ownerRunId = `${baseline.sender.recipeId}-run`;
+    const posted: string[] = [];
+    let nowEpochMs = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+    const server = createServer((_request, response) => {
+        response.writeHead(202, { 'content-type': 'application/json' });
+        response.end('{}');
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+        throw new Error('Expected the owned HTTP server address.');
+    }
+    const request = await Playwright.request.newContext();
+    const post = request.post.bind(request);
+    vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
+        const data = options?.data;
+        if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
+            throw new Error('Expected the actual control HTTP command body.');
+        }
+        posted.push(data.commandId);
+        return await post(`http://127.0.0.1:${address.port}`, options);
+    });
+    // Each read moves the clock 30 s: the owner's recipe never records its gate or its end.
+    const run: RecipePairRun = {
+        request,
+        runId: 'same-context-gate-timeout',
+        sender: { agentId: 'owner-agent' },
+        receiver: { agentId: 'receiver-agent' },
+        readSnapshot: async () => {
+            nowEpochMs += 30_000;
+            return {
+                runId: 'same-context-gate-timeout',
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 2,
+                agents: [],
+                commands: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+                results: posted.filter((commandId) => commandId !== ownerRunId).map((commandId) => ({
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'same-context-gate-timeout',
+                    agentId: 'observed-agent',
+                    commandId,
+                    ok: true
+                }))
+            };
+        }
+    };
+    // The gate fails before the lane ends the owner's page, so the page is never read.
+    const ownerPage = {} as Playwright.Page;
+    try {
+        await expect(runRecipeTrioOnSameContext(
+            run,
+            { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
+            { sender: baseline.sender, receiver: baseline.receiver, successor }
+        )).rejects.toThrow('owner-gate: the owner\'s gate did not pass within 90000 ms.');
+        expect(posted).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
+    }
+    finally {
+        vi.restoreAllMocks();
+        await request.dispose();
+        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+});

@@ -151,25 +151,33 @@ async function runOwnerThenSuccessor(
     };
 }
 
-/** The successor starts once the owner's gate command passed, or at once when the owner's recipe already ended. */
+/**
+ * The successor starts once the owner's gate command passed, or at once when the owner's recipe already ended; a gate
+ * that does neither within its timeout fails the cell before the successor starts.
+ */
 async function runSuccessorBesideOwner(
     run: RecipePairRun,
     pages: SameContextPages & Readonly<{ successorGate: string; }>,
     recipes: SameContextRecipes
 ): Promise<SameContextPageRuns> {
     const ownerRun = await startRecipeRun(run, pages.owner, recipes.sender);
+    await waitForSuccessorGate(run, pages.successorGate, ownerRun);
+    return { sender: ownerRun.readOutcome(), successor: await startRecipeRun(run, pages.successor, recipes.successor) };
+}
+
+async function waitForSuccessorGate(run: RecipePairRun, gate: string, ownerRun: StartedRecipeRun): Promise<void> {
     const deadlineEpochMs = Date.now() + SUCCESSOR_GATE_TIMEOUT_MS;
     while (Date.now() < deadlineEpochMs) {
         const snapshot = await run.readSnapshot();
         if (
-            hasPassedCommandEvent(snapshot, pages.successorGate) ||
+            hasPassedCommandEvent(snapshot, gate) ||
             snapshot.results.some((result) => result.commandId === ownerRun.commandId)
         ) {
-            break;
+            return;
         }
         await new Promise((resolve) => setTimeout(resolve, SUCCESSOR_GATE_POLL_INTERVAL_MS));
     }
-    return { sender: ownerRun.readOutcome(), successor: await startRecipeRun(run, pages.successor, recipes.successor) };
+    throw new Error(`${gate}: the owner's gate did not pass within ${SUCCESSOR_GATE_TIMEOUT_MS} ms.`);
 }
 
 function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): RecipeRunOutcome {

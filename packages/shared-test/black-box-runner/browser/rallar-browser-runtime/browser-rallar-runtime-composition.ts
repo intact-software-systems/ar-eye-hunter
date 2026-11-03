@@ -275,14 +275,14 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         director,
         diagnostics: { faults, storage, storageFaults, congestion, inboundStoreCounts },
         ...toBlackBoxBrowserMessagingPorts({ session, state }),
-        productSocket: toBlackBoxBrowserProductSocket(session)
+        productSocket: createBlackBoxBrowserProductSocket(session)
     });
 }
 
 /** The close code and reason a dropped product socket carries, which no server close uses. */
 const PRODUCT_SOCKET_DROP = { code: 4000, reason: 'black-box-socket-drop' } as const;
 
-function toBlackBoxBrowserProductSocket(
+function createBlackBoxBrowserProductSocket(
     session: BrowserSessionCoreComposition
 ): BlackBoxBrowserProductSocketDependency {
     const requireQueueBox = () => {

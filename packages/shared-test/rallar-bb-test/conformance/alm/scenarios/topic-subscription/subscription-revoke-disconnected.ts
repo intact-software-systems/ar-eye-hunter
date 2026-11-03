@@ -40,16 +40,16 @@ const SOCKET_CLOSE_MARGIN_MS = 2_000;
 const RECEIPT_SETTLE_MS = 2_000;
 
 /**
- * The sibling's product socket drops; `publication-1` leaves while it is down, and the receiver then revokes the
- * principal's `subscribe` (it keeps `publish`) and says so; `publication-2` follows. The reopened socket's
- * re-assertion is refused. The receiver receives both, the sibling neither, and neither receipt confirms the sibling.
- * Whether `publication-1`'s expected set names the sibling depends on when the server closes the dropped socket's room
- * presence, so the lane records it; the deterministic hold proof is the server's own test. A reopened socket's session
- * holds no room presence, so the sibling sends nothing after it drops.
+ * Revoke while disconnected: the sibling's product socket drops; `publication-1` leaves while it is down, and the
+ * receiver then revokes the principal's `subscribe` (it keeps `publish`) and says so; `publication-2` follows. The
+ * reopened socket's re-assertion is refused. The receiver receives both, the sibling neither, and neither receipt
+ * confirms the sibling. A clean close removes the sibling's live generation at once, so no dispatch is held for it:
+ * the held-dispatch revocation is proven server-side by `apps/api-v1/test/services/ws-room-granted-delivery.test.ts`.
+ * A reopened socket's session holds no room presence, so the sibling sends nothing after it drops.
  */
-export const subscriptionRevokeHeld: AlmConformanceScenarioDefinition = {
-    scenarioId: 'subscription-revoke-held',
-    scenarioKey: 'subscription-revoke-held',
+export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = {
+    scenarioId: 'subscription-revoke-disconnected',
+    scenarioKey: 'subscription-revoke-disconnected',
     tags: FULL_TAGS,
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
@@ -61,7 +61,7 @@ export const subscriptionRevokeHeld: AlmConformanceScenarioDefinition = {
 };
 
 /** The sender reads both receipts after the run's last step; the lane joins them to the sibling's session. */
-const SUBSCRIPTION_REVOKE_HELD_PUBLICATIONS = ['publication-1', 'publication-2'] as const;
+const SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS = ['publication-1', 'publication-2'] as const;
 
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -122,6 +122,6 @@ function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBl
         toCueWait(sender, 'revoked'),
         ...toPublishCommands(sender, 'publication-2'),
         toPauseCommand(sender, 'receipt-settle', RECEIPT_SETTLE_MS),
-        ...SUBSCRIPTION_REVOKE_HELD_PUBLICATIONS.map((publication) => toReceiptsCommand(sender, publication))
+        ...SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS.map((publication) => toReceiptsCommand(sender, publication))
     ];
 }

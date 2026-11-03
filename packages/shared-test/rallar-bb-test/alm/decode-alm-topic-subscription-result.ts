@@ -17,7 +17,7 @@ const ALM_TOPIC_SUBSCRIPTION_STATUSES: Readonly<Record<RallarTopicSubscriptionSt
     lapsed: true
 };
 
-export function decodeAlmMessagesSubscribeResultValue(
+export function decodeAlmTopicSubscriptionResultValue(
     value: unknown,
     path: string
 ): RallarBlackBoxTestMessagesSubscribeResultValue {
@@ -50,7 +50,7 @@ export function decodeAlmMessagesSubscriptionsResultValue(
 function decodeAlmTopicSubscriptionEntry(value: unknown, path: string): AlmTopicSubscriptionEntry {
     const record = decodeAlmRuntimeRecord(value);
     return {
-        ...decodeAlmMessagesSubscribeResultValue(record, path),
+        ...decodeAlmTopicSubscriptionResultValue(record, path),
         topicId: requireAlmStringField(record, path, 'topicId')
     };
 }

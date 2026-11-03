@@ -20,6 +20,7 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
@@ -40,7 +41,7 @@ function toScenarioCommands(commands: readonly RallarBlackBoxTestCommand[]): rea
 function toShape(command: RallarBlackBoxTestCommand): string {
     switch (command.kind) {
         case 'fault.inject':
-            return `fault.inject:${command.carrier}:${String('remaining' in command ? command.remaining : command.action)}`;
+            return toFaultInjectShape(command);
         case 'messages.send':
             return 'replayOnCarrier' in command
                 ? 'replay'

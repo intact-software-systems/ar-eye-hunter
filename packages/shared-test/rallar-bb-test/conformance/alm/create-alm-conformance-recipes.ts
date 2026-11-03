@@ -89,7 +89,7 @@ import { serverOriginated } from './scenarios/server-originated.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { subscriptionDelivery } from './scenarios/topic-subscription/subscription-delivery.ts';
 import { subscriptionReconnect } from './scenarios/topic-subscription/subscription-reconnect.ts';
-import { subscriptionRevokeHeld } from './scenarios/topic-subscription/subscription-revoke-held.ts';
+import { subscriptionRevokeDisconnected } from './scenarios/topic-subscription/subscription-revoke-disconnected.ts';
 import { subscriptionSuccessor } from './scenarios/topic-subscription/subscription-successor.ts';
 import { subscriptionTokenCount } from './scenarios/topic-subscription/subscription-token-count.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
@@ -214,7 +214,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     flushOnHide,
     subscriptionDelivery,
     subscriptionTokenCount,
-    subscriptionRevokeHeld,
+    subscriptionRevokeDisconnected,
     subscriptionReconnect,
     subscriptionSuccessor
 ];

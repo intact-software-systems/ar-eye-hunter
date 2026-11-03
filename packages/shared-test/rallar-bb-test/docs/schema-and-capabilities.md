@@ -514,15 +514,19 @@ the result events of `messages.subscriptions` and of the subscription rows read,
 - `subscription-token-count`: the receiver's two tokens hold one election and one row; releasing
   the first lapses it alone, a publication still arrives, and releasing the last deletes the row,
   so the next publication reaches the subscribed sibling and not the receiver.
-- `subscription-revoke-held`: the sibling's product socket drops, a publication leaves while it is
-  down, and the receiver then revokes the principal's `subscribe`. The reopened socket's
-  re-assertion is refused and a second publication follows. The receiver receives both, the
-  sibling neither, and the lane fails a receipt that confirms the sibling. Whether the first
-  publication's expected set names the sibling depends on when the server stops counting the
-  dropped socket live: the lane records it as the test's `subscription-revoke-held` annotation.
-- `subscription-reconnect`: the sibling's socket drops and reopens under a new generation, its
-  token turns `active` again and the session's row names the new generation; a publication
-  reaches it and the receiver.
+- `subscription-revoke-disconnected`: revoke while disconnected. The sibling's product socket
+  drops, a publication leaves while it is down, and the receiver then revokes the principal's
+  `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
+  The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
+  sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
+  for it; the held-dispatch revocation is proven server-side by
+  `apps/api-v1/test/services/ws-room-granted-delivery.test.ts` ("a revoke between enqueue and
+  dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
+  generation changed is not sent when its socket opens").
+- `subscription-reconnect`: the sibling's socket drops and reopens under a new generation; its
+  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A
+  publication reaches the receiver and not the reopened sibling, whose room presence closed with
+  the old socket.
 
 `subscription-successor` runs in the `same-context` family: the successor page opens while the
 owner page still runs, once the owner read its own generation, and its connect replaces the
