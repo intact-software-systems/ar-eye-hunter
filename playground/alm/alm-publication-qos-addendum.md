@@ -617,8 +617,8 @@ HTTP request is bound to no socket, and answer `{ outcome }`: `subscribed`,
 `renewed` (the same generation again, which extends the lease), `unsubscribed`
 or `not-subscribed`; `GET .../sessions/{sessionId}/subscriptions` lists the
 session's live rows. All three run under the self-session guard. A subscribe
-needs an active member holding effective `subscribe` (`no-subscribe-grant`), a
-live client-state session (`no-live-session`) and a generation that is one of
+needs an active member (`member-not-active`) holding effective `subscribe`
+(`no-subscribe-grant`), a live client-state session (`no-live-session`) and a generation that is one of
 the session's live ones (`stale-generation`); only the generation that holds a
 row and is still live releases it. The write is the row alone, guarded by
 itself: no event, no group revision, no delta, nothing replanned. A revoke of

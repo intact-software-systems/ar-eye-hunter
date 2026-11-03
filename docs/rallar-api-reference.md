@@ -564,8 +564,8 @@ generation again, which extends the lease), `unsubscribed`, or `not-subscribed`
 a replay answers the same outcome, and a reused `requestId` with a changed body
 is `409`. A subscription lasts 120 seconds from its last subscribe, so a holder
 renews it by subscribing again within the lease. A subscribe needs an active
-member holding effective `subscribe` on the topic (`no-subscribe-grant`), a live
-client-state session (`no-live-session`) and a generation that is one of that
+member (`member-not-active`) holding effective `subscribe` on the topic
+(`no-subscribe-grant`), a live client-state session (`no-live-session`) and a generation that is one of that
 session's live ones (`stale-generation`); an unknown group is `400`
 `group-mutation-rejected`. A subscription bumps no group revision and writes no
 event. Revoking `subscribe`, and leaving, removal or a ban, delete the
@@ -1087,7 +1087,8 @@ succeeded within the lease); `wait()` settles when the status first leaves
 without a `roomRef`, throws the `unsupported` issue; a room session's
 `message(...)` binds its `roomRef`. One owner per tab counts
 tokens per room and topic: the first token subscribes and the last one
-unsubscribes, the held subscriptions renew on the 20 s session heartbeat and
+unsubscribes, the held subscriptions renew on the owner's own timer at the 20 s
+session heartbeat cadence and
 re-subscribe under the new connection generation whenever the socket reopens, a
 tab whose socket was replaced sends nothing, and session end releases them.
 REST errors become statuses and never throw.
@@ -2915,7 +2916,8 @@ The server application exposes:
   every live session of the room's active members, as every implicit topic does,
   and `'granted'`, which requires `scope: 'room'` and `serverProducerIds`, admits
   only principals holding effective `publish`, and the server producers it lists,
-  and reaches only the live sessions of principals holding `subscribe`. Defining
+  and reaches only the live sessions of principals holding `subscribe` that
+  subscribed to the topic. Defining
   one `topicId` with two participations, or a granted topic without a room scope,
   throws.
 - `ws.removeTopic(selector)`

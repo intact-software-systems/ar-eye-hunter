@@ -284,7 +284,7 @@ Deno.test('publication grant requests name every permission field and admit no o
         const path = `${GROUP_ID_PATH}/publication-grants/{principalId}/${action}/requests/{requestId}`;
         assert.deepEqual(
             Object.keys(document.paths[path]?.post?.responses ?? {}),
-            ['200', '400', '401', '403', '404', '409'],
+            ['200', '400', '401', '403', '409'],
             path
         );
     }

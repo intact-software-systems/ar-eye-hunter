@@ -1791,8 +1791,6 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
-        '404':
-          $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
 
@@ -1839,8 +1837,6 @@ paths:
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
-          $ref: '#/components/responses/ApiMutationFailure'
-        '404':
           $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
