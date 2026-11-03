@@ -47,6 +47,10 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    UNAVAILABLE_PUBLICATION_CRYPTO
+} from '../../shared/signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
@@ -68,6 +72,7 @@ const OPTIONS: BrowserConnectOptions = {
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
+    publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,
@@ -216,7 +221,7 @@ describe('browser connection construction identity', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const source = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('00000000-0000-0000-0000-000000000052');
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
         expect(constructed.connectionId).toEqual({ status: 'observed', value: '00000000-0000-0000-0000-000000000052' });
         expect(constructed.creation.newConnectionRequestId()).not.toBe('00000000-0000-0000-0000-000000000052');
     });
@@ -227,7 +232,7 @@ describe('browser connection construction identity', () => {
             throw new Error('identity unavailable');
         });
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
         expect(constructed.connectionId).toEqual({ status: 'unavailable', reason: 'identity-source-failed' });
         expect(constructed.clientData).toEqual({ clientId: 'client-1', sessionId: 'session-1', isOnline: true });
         expect(constructed.options).toBe(OPTIONS);
@@ -239,7 +244,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -264,7 +269,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
 
     it('bounds the budget by the limits the session reads', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const { budget } = createBrowserTransportInput(SESSION, OPTIONS).volatileBound;
+        const { budget } = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO).volatileBound;
         const nowMs = Date.now();
 
         const admissions = [1, 2, 3, 4].map((index) =>
@@ -280,7 +285,7 @@ describe('the durable work claim a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -302,7 +307,7 @@ describe('the transport faults a connect hands its RTC overlay', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -318,7 +323,7 @@ describe('the checkpoint stores a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
         onTestFinished(() => {
             input.checkpointStores.wsClient.checkpoint.dispose();
             input.checkpointStores.rtcOverlay.checkpoint.dispose();
@@ -386,7 +391,11 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
     it('gives the middleware the limits the session reads when the connect begins', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const limits = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
-        const input = createBrowserTransportInput(SESSION, { ...OPTIONS, readPublicationStageLimits: () => limits });
+        const input = createBrowserTransportInput(
+            SESSION,
+            { ...OPTIONS, readPublicationStageLimits: () => limits },
+            UNAVAILABLE_PUBLICATION_CRYPTO
+        );
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
             .toBe(limits);
@@ -394,17 +403,28 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
 
     it('keeps the product defaults for a session that reads no limits', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
             .toBe(AL_PUBLICATION_STAGE_LIMITS);
     });
 });
 
+describe('the page publication crypto a connect hands its middleware', () => {
+    it('gives the middleware the page crypto the connect awaited, which room entry registers', async () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const publicationCrypto = await createAvailablePublicationCryptoFixture();
+        const input = createBrowserTransportInput(SESSION, OPTIONS, publicationCrypto);
+
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationCrypto)
+            .toBe(publicationCrypto);
+    });
+});
+
 describe('the outbound diagnostics sink a connect hands its middleware', () => {
     it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, UNAVAILABLE_PUBLICATION_CRYPTO);
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
 

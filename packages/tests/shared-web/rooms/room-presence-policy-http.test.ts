@@ -35,6 +35,7 @@ describe('room presence policy failures', () => {
         });
 
         await expect(createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Room 1',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -67,6 +68,7 @@ describe('room presence policy failures', () => {
         });
 
         await expect(joinStateGroup({
+            publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',
             sessionId: 'session-1',

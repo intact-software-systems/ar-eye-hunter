@@ -6,6 +6,7 @@ import {
     tolerateStateWorkflowNotFound
 } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { QuickJoinGroupRequest, QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
@@ -42,6 +43,7 @@ export interface ConnectStateGroupPresenceInput {
     readonly sessionId: string;
     readonly generationId: string;
     readonly connectionGenerationId: string;
+    readonly publicationKey: GroupPresencePublicationKey | null;
     readonly scope?: StateScope;
     readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly authSession?: AuthSession;
@@ -160,6 +162,7 @@ export function createStateGroupPresenceCommand(
         principalId: input.principalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
+        publicationKey: input.publicationKey,
         expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId

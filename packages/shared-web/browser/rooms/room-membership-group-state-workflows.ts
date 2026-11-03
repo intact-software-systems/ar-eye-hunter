@@ -4,6 +4,7 @@ import {
     requireStateWorkflowResult,
     toApiMutationWorkflowRequestId
 } from '@shared-web/browser/state-read/state-workflow-support.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
@@ -56,6 +57,7 @@ export interface RevokeStateGroupInviteWorkflowInput extends TargetRoomActorWork
 export interface AcceptStateGroupInviteWorkflowInput extends RoomActorWorkflowInput {
     readonly generationId: string;
     readonly connectionGenerationId: string;
+    readonly publicationKey: GroupPresencePublicationKey | null;
 }
 
 export interface RotateStateGroupJoinCodeWorkflowInput extends RoomActorWorkflowInput<GroupJoinCodeResponse> {
@@ -132,6 +134,7 @@ export async function acceptStateGroupInvite(
         principalId: input.actorPrincipalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
+        publicationKey: input.publicationKey,
         expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
         actorPrincipalId: input.actorPrincipalId,
         actorSessionId: input.sessionId

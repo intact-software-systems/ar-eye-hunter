@@ -85,12 +85,14 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
 } from './close-browser-transport-resources.ts';
+import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
 import {
     browserStateCacheLifecycle,
@@ -108,6 +110,8 @@ export interface MiddlewareInitOptions {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     /** Where both carriers' inbound runtimes hand a message they can no longer order. */
     readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
+    /** The page's one key, started by the composition root; each connect awaits it once. */
+    readonly publicationCrypto: Promise<PublicationCrypto>;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -173,6 +177,8 @@ export interface InitialiseBrowserTransportInput {
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
+    /** The page's one key, which room entry and each group heartbeat register. */
+    readonly publicationCrypto: PublicationCrypto;
     readonly options: BrowserConnectOptions;
 }
 
@@ -267,7 +273,7 @@ export async function initialiseMiddleware(
             options.scope ?? defaultStateScope(),
             { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
         );
-        const transportInput = createBrowserTransportInput(session, options);
+        const transportInput = createBrowserTransportInput(session, options, await options.publicationCrypto);
         webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
         rtcTransport = await initialiseBrowserRtcTransport({
             ...transportInput,
@@ -289,7 +295,10 @@ export async function initialiseMiddleware(
             options.scope ?? defaultStateScope(),
             webSocketTransport.webSocketQueueBox
         );
-        const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
+        const heartbeatHandle = await heartbeat.initHeartbeat(
+            transportInput.clientData,
+            toBrowserHeartbeatOptions(transportInput, ownWsConnectionGeneration)
+        );
 
         const { checkpointStores } = transportInput;
         return {
@@ -314,7 +323,8 @@ export async function initialiseMiddleware(
 
 export function createBrowserTransportInput(
     session: AuthSession,
-    options: BrowserConnectOptions
+    options: BrowserConnectOptions,
+    publicationCrypto: PublicationCrypto
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -339,6 +349,7 @@ export function createBrowserTransportInput(
         volatileBound,
         publicationStageLimits: options.readPublicationStageLimits?.() ?? AL_PUBLICATION_STAGE_LIMITS,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
+        publicationCrypto,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -374,20 +385,6 @@ function createBrowserOwnWsConnectionGeneration(
     });
 }
 
-function initialiseBrowserHeartbeat(
-    input: InitialiseBrowserTransportInput,
-    ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
-): ReturnType<typeof heartbeat.initHeartbeat> {
-    return heartbeat.initHeartbeat(input.clientData, {
-        authSession: input.session,
-        scope: input.options.scope,
-        ownWsConnectionGeneration,
-        onAuthInvalid: input.options.onAuthInvalid
-            ? (caught) => input.options.onAuthInvalid?.(toError(caught))
-            : undefined
-    });
-}
-
 export function toCreateWsUrl(
     input: ToCreateWsUrlInput
 ): string {
@@ -407,13 +404,17 @@ export function toCreateWsUrl(
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
 export function toBrowserMiddleware(
     input: InitialiseBrowserTransportInput,
-    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget' | 'publicationStageLimits' | 'outboundDiagnostics'>
+    carriers: Omit<
+        RallarBrowserMiddleware,
+        'volatileBudget' | 'publicationStageLimits' | 'outboundDiagnostics' | 'publicationCrypto'
+    >
 ): RallarBrowserMiddleware {
     return {
         ...carriers,
         volatileBudget: input.volatileBound.budget,
         publicationStageLimits: input.publicationStageLimits,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        publicationCrypto: input.publicationCrypto
     };
 }
 

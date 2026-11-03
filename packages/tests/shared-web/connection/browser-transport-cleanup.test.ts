@@ -29,6 +29,7 @@ import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -160,6 +161,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -214,6 +216,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -266,6 +269,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -319,6 +323,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -380,7 +385,8 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
-            onResyncRequired: () => {}
+            onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO)
         });
         transportRuntime.shutdown();
         resolveMiddleware?.({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -462,6 +468,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -522,6 +529,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -578,6 +586,7 @@ describe('the session limit seams', () => {
             readPublicationStageLimits,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -732,7 +741,8 @@ function toInitOptions(): BrowserTransportInitOptions {
         readPublicationStageLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-        onResyncRequired: () => {}
+        onResyncRequired: () => {},
+        publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO)
     };
 }
 

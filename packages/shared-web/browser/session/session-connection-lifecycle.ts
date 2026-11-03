@@ -25,6 +25,7 @@ import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-vol
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
@@ -59,6 +60,7 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
+        readonly publicationCrypto: Promise<PublicationCrypto>;
         readonly clearCurrentRoom: () => void;
     }
 }
@@ -128,6 +130,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
             readPublicationStageLimits: this.input.readPublicationStageLimits,
             deliverySettlements: this.input.sessionDeliveries.observers,
+            publicationCrypto: this.input.publicationCrypto,
             onResyncRequired: (resync: ALInboundResyncRequired) => this.input.onResyncRequired(resync, storage)
         };
         const generation = this.connectionGeneration;
@@ -257,6 +260,7 @@ function toMiddlewareOptions(
     | 'readVolatileSessionLimits'
     | 'readPublicationStageLimits'
     | 'onResyncRequired'
+    | 'publicationCrypto'
 > {
     return {
         ...toRallarOperationOptions(input.operationOptions),

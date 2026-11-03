@@ -96,6 +96,7 @@ describe('room membership group-state workflows', () => {
         stubSuccessfulFetch(fetchCalls);
 
         await membershipWorkflows.acceptStateGroupInvite({
+            publicationKey: null,
             groupId: 'group-1',
             actorPrincipalId: 'member-1',
             sessionId: 'member-session',

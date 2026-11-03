@@ -271,6 +271,7 @@ describe('browser HTTP feature ownership characterization', () => {
             { clientId: 'owner-1', sessionId: 'session-1', isOnline: true },
             [group],
             {
+                publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
                 clientSnapshot: undefined,

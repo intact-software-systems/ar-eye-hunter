@@ -2,6 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
@@ -78,6 +79,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         sessionId: session.sessionId,
         generationId: crypto.randomUUID(),
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
+        publicationKey: toGroupPresencePublicationKey(context.middleware.publicationCrypto),
         scope,
         authSession: session,
         assertCurrent: sessionFence.assertCurrent,
@@ -170,6 +172,7 @@ async function connectMovedSession({ move, context, fence, options }: GroupMoveA
         sessionId: fence.session.sessionId,
         generationId,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
+        publicationKey: toGroupPresencePublicationKey(context.middleware.publicationCrypto),
         scope: toStateScope(move.destination),
         authSession: fence.session,
         assertCurrent: () => fence.assertCurrent(context),
@@ -377,6 +380,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         sessionId: input.session.sessionId,
         generationId: crypto.randomUUID(),
         connectionGenerationId,
+        publicationKey: toGroupPresencePublicationKey(input.context.middleware.publicationCrypto),
         scope,
         authSession: input.session,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(input.options)

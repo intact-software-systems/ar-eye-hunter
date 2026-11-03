@@ -5,6 +5,7 @@ import {
     type RallarConnectionRuntimePort,
     type RallarStateRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import { createDefaultPublicationCrypto } from '@shared-web/browser/composition/create-default-publication-crypto.ts';
 import {
     browserTransportRuntime,
     type BrowserTransportRuntimePort
@@ -48,6 +49,7 @@ import {
 } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 export interface BrowserRuntimeFoundation {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
@@ -56,6 +58,8 @@ export interface BrowserRuntimeFoundation {
     readonly authRuntime: RallarAuthRuntimePort;
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly transportRuntime: BrowserTransportRuntimePort;
+    /** Started once per page; each connect awaits it. */
+    readonly publicationCrypto: Promise<PublicationCrypto>;
 }
 
 export interface BrowserStateComposition {
@@ -128,7 +132,8 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
         stateRuntime,
         authRuntime,
         lifecycle: createRallarLifecycleCoordinator(),
-        transportRuntime
+        transportRuntime,
+        publicationCrypto: createDefaultPublicationCrypto()
     };
 }
 

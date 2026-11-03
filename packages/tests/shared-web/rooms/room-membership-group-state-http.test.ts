@@ -90,6 +90,7 @@ describe('room membership group-state HTTP workflows', () => {
 
         await expect(
             acceptStateGroupInvite({
+                publicationKey: null,
                 groupId: 'group-1',
                 actorPrincipalId: 'member-1',
                 sessionId: 'member-session',

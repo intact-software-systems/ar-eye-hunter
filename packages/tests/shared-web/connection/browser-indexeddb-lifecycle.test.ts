@@ -18,6 +18,7 @@ import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persiste
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
 describe('browser IndexedDB terminal ownership', () => {
     it('retires each successful connection while a fresh connection keeps persisted rows usable', async () => {
@@ -56,6 +57,7 @@ describe('browser IndexedDB terminal ownership', () => {
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             scope: { applicationId: 'indexeddb-lifecycle', workspaceId: 'successful' }
         };
         await runtime.init(options);
@@ -134,6 +136,7 @@ describe('browser IndexedDB terminal ownership', () => {
                 deliverySettlements: { ws: () => {}, rtc: () => {} },
                 diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
                 onResyncRequired: () => {},
+                publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
                 durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
                 readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
                 scope: { applicationId: 'indexeddb-lifecycle', workspaceId: 'failure' }

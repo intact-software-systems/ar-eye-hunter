@@ -1,5 +1,6 @@
 import { toRoomFormationGroupStateRequest } from '@shared-web/browser/rooms/formation/command-room-formation.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { RFC_7517_PUBLICATION_KEY } from '../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 
 import type { CreateStateGroupBody, JoinStateGroupBody, UpdateStateGroupBody } from '@shared-web/browser/api/state-mutation-http-contracts.ts';
 import type { RallarCreateRoomInput, RallarJoinRoomOptions, RallarUpdateRoomInput } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
@@ -398,11 +399,14 @@ describe('room request translation', () => {
             principalId: 'member-1',
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
+            publicationKey: RFC_7517_PUBLICATION_KEY,
             expiresAtEpochMs: 121_000,
             ...actor
         } as const;
 
-        expect(toConnectRoomPresenceGroupStateRequest(presence)).toEqual({ ...presence, publicationKey: null });
+        expect(toConnectRoomPresenceGroupStateRequest(presence)).toEqual(presence);
+        expect(toConnectRoomPresenceGroupStateRequest({ ...presence, publicationKey: null }))
+            .toEqual({ ...presence, publicationKey: null });
         expect(toDisconnectRoomPresenceGroupStateRequest(presence)).toEqual({
             principalId: presence.principalId,
             generationId: presence.generationId,

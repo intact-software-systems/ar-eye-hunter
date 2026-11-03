@@ -58,6 +58,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         const result = await createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'My Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -92,6 +93,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         const result = await createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Rallar',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -124,6 +126,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Rallar',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -294,6 +297,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Retry Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -342,6 +346,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Private Room',
             principalId: 'private-principal-id',
             sessionId: 'private-session-id',
@@ -378,6 +383,7 @@ describe('room group-state HTTP workflows', () => {
 
         await expect(
             joinStateGroup({
+                publicationKey: null,
                 groupId: 'group-1',
                 principalId: 'principal-1',
                 sessionId: 'session-1',
@@ -420,6 +426,7 @@ describe('room group-state HTTP workflows', () => {
 
             await expect(
                 joinStateGroup({
+                    publicationKey: null,
                     groupId: 'group-1',
                     principalId: 'principal-1',
                     sessionId: 'session-1',
@@ -454,6 +461,7 @@ describe('room group-state HTTP workflows', () => {
 
         await expect(
             joinStateGroup({
+                publicationKey: null,
                 groupId: 'group-1',
                 principalId: 'principal-1',
                 sessionId: 'session-1',
@@ -507,6 +515,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await joinStateGroup({
+            publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',
             sessionId: 'session-1',

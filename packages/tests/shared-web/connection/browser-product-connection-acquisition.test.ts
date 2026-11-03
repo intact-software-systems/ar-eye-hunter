@@ -10,6 +10,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
@@ -181,6 +182,7 @@ async function createOwnedSession(): Promise<RallarSessionController> {
         readPublicationStageLimits: undefined,
         sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, foundation.transportRuntime, mocks.readSession),
         onResyncRequired: () => {},
+        publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
         connectionRuntime: foundation.connectionRuntime,
         transportRuntime: foundation.transportRuntime,
         authRuntime: foundation.authRuntime,

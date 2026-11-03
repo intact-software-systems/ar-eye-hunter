@@ -9,6 +9,7 @@ import {
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -70,6 +71,21 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         expect(requests[1].url).toMatch(/\/groups\/selected\/sessions\/session-1\/requests\//);
         expect(currentWhenLeaving).toEqual([connected]);
         expect(facade.rooms.current()).toEqual(connected);
+    });
+
+    it('registers the page\'s publication key on the presence row it connects', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const publicationKey = toGroupPresencePublicationKey(runtime.context.middleware.publicationCrypto);
+        respond((call) =>
+            isSelection(call)
+                ? json({ status: 'joined', snapshot: createRoomSnapshot('selected', []) })
+                : json(createRoomSnapshot('selected', ['session-1']))
+        );
+
+        await createRallarFacade().rooms.quickJoin({ scope });
+
+        expect(publicationKey).not.toBeNull();
+        expect(requests[1]).toMatchObject({ method: 'PUT', body: { publicationKey } });
     });
 
     it('preserves the current room when unavailable and sends no presence or leave mutation', async () => {

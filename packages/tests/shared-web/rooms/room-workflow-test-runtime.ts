@@ -31,7 +31,10 @@ const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/bro
 
 const roomWorkflowMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const context = createDefaultApiMiddlewareTestDouble();
+    const { createAvailablePublicationCryptoFixture } = await import('../../shared/signature/publication-crypto-fixtures.ts');
+    const context = createDefaultApiMiddlewareTestDouble({
+        middleware: { publicationCrypto: await createAvailablePublicationCryptoFixture() }
+    });
     const operationLog: string[] = [];
 
     return {

@@ -1,3 +1,4 @@
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type {
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
@@ -113,6 +114,7 @@ export async function acceptRoomInvite(
                 sessionId: session.sessionId,
                 generationId,
                 connectionGenerationId: await requireOwnWsConnectionGenerationId(context, signal),
+                publicationKey: toGroupPresencePublicationKey(context.middleware.publicationCrypto),
                 scope,
                 policies,
                 assertCurrent

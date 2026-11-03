@@ -14,6 +14,7 @@ import type { RallarRtcFacade } from '@shared-web/browser/rallar-realtime.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
 const apiConfiguration: ApiConfigResponse = {
     apiBaseUrl: 'https://first.test',
@@ -30,6 +31,7 @@ const options = {
     deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
+    publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
     scope: { applicationId: 'ice-refresh', workspaceId: 'test' }
 };
 let rallar: RallarFacade;

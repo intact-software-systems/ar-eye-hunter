@@ -28,6 +28,7 @@ import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 export interface CreateRallarSessionControllerOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
@@ -40,6 +41,7 @@ export interface CreateRallarSessionControllerOptions {
     readonly authRuntime: RallarAuthRuntimePort;
     readonly stateRuntime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     readonly lifecycle: RallarLifecycleCoordinator;
+    readonly publicationCrypto: Promise<PublicationCrypto>;
     readonly emitState: () => void;
     readonly closeDataScopes: (session: AuthSession) => Promise<void>;
 }
@@ -76,6 +78,7 @@ export function createRallarSessionController(
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
+        publicationCrypto: options.publicationCrypto,
         clearCurrentRoom: options.stateRuntime.clearCurrentRoom
     });
     const authLifecycle = new BrowserSessionAuthLifecycle({

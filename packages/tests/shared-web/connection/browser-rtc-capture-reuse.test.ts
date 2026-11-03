@@ -13,6 +13,7 @@ import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import type { RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
 
@@ -162,6 +163,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         const first = transport.init(options);
@@ -223,6 +225,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         try {
@@ -250,6 +253,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -293,6 +297,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -354,6 +359,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime: new BrowserFacadeRuntimeState(transport),
             transportRuntime: transport,
@@ -402,6 +408,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -442,6 +449,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let replacement: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -493,6 +501,7 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime,
             transportRuntime: transport,

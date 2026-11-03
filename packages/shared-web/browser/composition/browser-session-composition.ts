@@ -86,6 +86,7 @@ export function createBrowserSessionCoreComposition(
         authRuntime: input.foundation.authRuntime,
         stateRuntime: input.foundation.runtime,
         lifecycle: input.foundation.lifecycle,
+        publicationCrypto: input.foundation.publicationCrypto,
         emitState: () => input.state.stateStore.emit(),
         closeDataScopes: async (authSession) => {
             await Promise.all([
