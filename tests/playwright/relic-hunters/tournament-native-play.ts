@@ -4,24 +4,29 @@ import { expect, type Page } from '@playwright/test';
 export async function playRelicTournament(winner: Page, opponent: Page): Promise<void> {
     await expectRound([winner, opponent], 1);
     await winner.locator('.action-picker').getByRole('button', { name: /^Search/ }).click();
-    await submitPlans(winner, opponent);
+    // Equal-priority searches resolve in accepted order; confirm the intended hunter's plan first.
+    await winner.getByRole('button', { name: /^Submit Plan/ }).click();
+    await expect(winner.getByRole('button', { name: 'Bound — awaiting the others...', exact: true })).toBeDisabled();
+    await opponent.getByRole('button', { name: /^Submit Plan/ }).click();
     await expectRound([winner, opponent], 2);
     await expect(winner.locator('.relic-inventory')).toContainText('Visitor Badge');
     await opponent.reload();
     await expectRound([opponent], 2);
     for (const [index, destination] of ['Hallway', 'Trap Room', 'Monster Lair', 'Exit'].entries()) {
-        for (const player of [winner, opponent]) {
+        await Promise.all([winner, opponent].map(async (player) => {
             await player.locator('.action-picker').getByRole('button', { name: /^Move/ }).click();
             await player.locator('.target-choice-grid').getByRole('button', {
                 name: new RegExp(`^${destination}`)
             }).click();
-        }
+        }));
         await submitPlans(winner, opponent);
         await expectRound([winner, opponent], index + 3);
     }
-    for (const player of [winner, opponent]) {
-        await player.locator('.action-picker').getByRole('button', { name: /^Escape/ }).click();
-    }
+    await Promise.all(
+        [winner, opponent].map((player) =>
+            player.locator('.action-picker').getByRole('button', { name: /^Escape/ }).click()
+        )
+    );
     await submitPlans(winner, opponent);
     for (const player of [winner, opponent]) {
         await expect(player.locator('.victory-panel')).toBeVisible({ timeout: 30000 });
@@ -35,13 +40,12 @@ export async function playRelicTournament(winner: Page, opponent: Page): Promise
 }
 
 async function submitPlans(first: Page, second: Page): Promise<void> {
-    await first.getByRole('button', { name: /^Submit Plan/ }).click();
-    await second.getByRole('button', { name: /^Submit Plan/ }).click();
+    await Promise.all([first, second].map((player) => player.getByRole('button', { name: /^Submit Plan/ }).click()));
 }
 
 async function expectRound(players: readonly Page[], round: number): Promise<void> {
-    for (const player of players) {
+    await Promise.all(players.map(async (player) => {
         await expect(player.locator('.turn-plan-status .panel-label')).toHaveText(`Round ${round}`, { timeout: 30000 });
         await expect(player.getByRole('button', { name: /^Submit Plan/ })).toBeEnabled();
-    }
+    }));
 }

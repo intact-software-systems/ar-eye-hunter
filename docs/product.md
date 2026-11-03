@@ -120,7 +120,10 @@ time. Enter match opens the admitted room without removing earlier room membersh
 and accepted results survive reload and account sessions.
 
 The game server decides native scores: AR Eye runs a one-minute arena match; Relic runs ten rounds.
-Only the two bound accounts can play. Spectators remain read-only. A tie requires a new attempt in a
+Relic keeps the 60-second planning timeout and advances each round review after 10 seconds, even
+if the Keeper disconnects. Tournament rooms remain recoverable for 15 minutes after everyone
+disconnects, then follow the seven-day archived-room deletion policy. Ordinary rooms keep their
+10-minute reconnect grace. Only the two bound accounts can play. Spectators remain read-only. A tie requires a new attempt in a
 fresh room; secondary statistics never select a tournament winner. Ordinary rematch, reset and
 settings controls cannot change an active tournament or rewrite its accepted result.
 

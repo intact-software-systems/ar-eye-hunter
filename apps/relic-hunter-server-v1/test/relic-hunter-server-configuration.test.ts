@@ -61,7 +61,7 @@ describe('Relic Hunter server configuration', () => {
             scope: { applicationId: 'rallar-server', workspaceId: 'default' },
             rulesId: 'relic-native-10-rounds-v1',
             noShowGraceMs: 600000,
-            gameStartTopic: 'app:relic:tournament-start'
+            gameLifecycleTopic: 'app:relic:tournament-lifecycle'
         }]);
         expect(configuration.restAuthorization).toEqual({ mode: 'group-policy' });
         expect(configuration.expeditionAi).toEqual({

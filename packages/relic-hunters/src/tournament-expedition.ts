@@ -6,7 +6,7 @@ import { continueRelicRoundReview, resolveExpiredRelicRound } from './rules.ts';
 export const RELIC_TOURNAMENT_REVIEW_MS = 10000;
 
 export interface RelicTournamentClock {
-    readonly phase: 'start' | 'planning' | 'review';
+    readonly phase: 'start' | 'cancelled' | 'planning' | 'review';
     readonly round: number;
     readonly dueAtEpochMs: number;
 }

@@ -80,7 +80,7 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON = '[]';
     env.RALLAR_TOURNAMENT_PROFILES_JSON = env.RALLAR_TOURNAMENT_PROFILES_JSON ?? JSON.stringify([{
         scope: { applicationId: 'black-box-tournaments', workspaceId: 'default' },
-        rulesId: 'black-box-native-v1', noShowGraceMs: 1000, gameStartTopic: 'app:black-box:tournament-start'
+        rulesId: 'black-box-native-v1', noShowGraceMs: 1000, gameLifecycleTopic: 'app:black-box:tournament-start'
     }]);
     env.RALLAR_API_CONFIGURATION_PROFILE = MANAGED_API_CONFIGURATION_PROFILE;
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET ??

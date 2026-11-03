@@ -29,6 +29,7 @@ export async function readMatchmakingAdmission(
         roomRef,
         displayName: 'Matched room',
         maxSpectators: null,
+        reconnectGraceMs: 600000,
         capturedAtEpochMs,
         serviceId,
         nowEpochMs: input.nowEpochMs,

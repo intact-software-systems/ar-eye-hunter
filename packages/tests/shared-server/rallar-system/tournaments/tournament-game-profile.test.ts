@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const owner = {
     scope: { applicationId: 'game', workspaceId: 'default' },
     rulesId: 'native-v1',
-    gameStartTopic: 'app:game:tournament-start'
+    gameLifecycleTopic: 'app:game:tournament-start'
 };
 
 describe('Tournament game profile ownership', () => {
@@ -22,7 +22,7 @@ describe('Tournament game profile ownership', () => {
         expect(bindTournamentGameProfile([other], owner)).toEqual([other, { ...owner, noShowGraceMs: 600000 }]);
     });
     it('rejects a profile that names another ruleset or delivery owner', () => {
-        for (const change of [{ rulesId: 'wrong-v1' }, { gameStartTopic: 'app:other:tournament-start' }]) {
+        for (const change of [{ rulesId: 'wrong-v1' }, { gameLifecycleTopic: 'app:other:tournament-start' }]) {
             expect(() => bindTournamentGameProfile([{ ...owner, noShowGraceMs: 600000, ...change }], owner))
                 .toThrow('Tournament profile differs from its native game owner');
         }

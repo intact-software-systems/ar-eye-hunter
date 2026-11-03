@@ -63,6 +63,7 @@ import {
     startRelicTournament,
     type RelicTournamentClock
 } from '../src/tournament-expedition.ts';
+import { computeRelicTournamentCancellation } from './compute-relic-tournament-cancellation.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import {
@@ -260,8 +261,7 @@ export class RelicGameMutationService {
             return false;
         }
         if (
-            authorizeRelicGameMutation(read) !== null || relicTournamentMutationRefusal(read) !== null ||
-            scheduledRelicStartRefusal(read) !== null
+            authorizeRelicGameMutation(read) !== null || scheduledRelicStartRefusal(read) !== null
         ) {
             return false;
         }
@@ -443,8 +443,8 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
         return refused(command, tournamentDenial);
     }
     const group = read.group;
-    if (group === null || command.actor !== null && read.session === null) {
-        throw new TypeError('Authorized Relic mutation lacks its room or session');
+    if (group === null) {
+        throw new TypeError('Authorized Relic mutation lacks its room');
     }
     const previous = read.save.entry === null
         ? null
@@ -457,6 +457,9 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
         });
     }
     const guard = computeRelicGameGroupGuard(group, read.sessionObservations);
+    if (command.operation === 'tournament-clock' && command.clock.phase === 'cancelled') {
+        return computeRelicTournamentCancellation(read, previous, guard);
+    }
     if (command.operation === 'reset' && previous?.phase === 'finished') {
         return refused(command, {
             code: 'rematch-required',
@@ -789,7 +792,11 @@ function decodeRelicClockCommand(command: Record<string, unknown>): RelicGameMut
     }
     const clock = requireRecord(command.clock, 'Relic tournament clock');
     requireExactKeys(clock, ['phase', 'round', 'dueAtEpochMs'], 'Relic tournament clock');
-    const phase = requireOneOf(clock.phase, ['start', 'planning', 'review'], 'Relic tournament clock phase');
+    const phase = requireOneOf(
+        clock.phase,
+        ['start', 'cancelled', 'planning', 'review'],
+        'Relic tournament clock phase'
+    );
     requireEpoch(clock.round, 'Relic tournament round');
     requireEpoch(clock.dueAtEpochMs, 'Relic tournament due time');
     if (clock.round < 1 || clock.round > 10 || phase === 'start' && clock.round !== 1) {

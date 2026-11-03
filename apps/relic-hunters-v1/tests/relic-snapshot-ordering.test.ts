@@ -3,6 +3,30 @@ import { describe, expect, it } from 'vitest';
 import { classifyRelicSnapshotAcceptance, shouldAcceptRelicSnapshot } from '../src/game/relic-snapshot-ordering.ts';
 
 describe('relic snapshot ordering', () => {
+    it.each(['finished', 'cancelled'] as const)('never reopens a %s tournament from a delayed gameplay snapshot', (status) => {
+        const playing = snapshot({
+            updatedAtEpochMs: 20,
+            tournament: {
+                binding: {
+                    tournamentRef: { applicationId: 'rallar-server', workspaceId: 'default', tournamentId: 'cup' },
+                    slot: 'semifinal-1',
+                    attemptId: 'attempt',
+                    gameId: 'game-1',
+                    roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' },
+                    rulesId: 'relic-native-10-rounds-v1',
+                    principalIds: ['alice', 'bob']
+                },
+                status: 'playing'
+            }
+        });
+        const terminal = { ...playing, tournament: { binding: playing.tournament!.binding, status } };
+        expect(shouldAcceptRelicSnapshot({ current: playing, candidate: terminal })).toBe(true);
+        for (const updatedAtEpochMs of [20, 21]) {
+            expect(classifyRelicSnapshotAcceptance({ current: terminal, candidate: { ...playing, updatedAtEpochMs } }))
+                .toEqual({ accepted: false, reason: 'tournament-status-regression' });
+        }
+    });
+
     it('rejects snapshots for a different expected room', () => {
         const current = snapshot({ roomId: 'room-1' });
         const candidate = snapshot({ roomId: 'room-2' });
@@ -172,6 +196,7 @@ function snapshot(
         submittedPlayerIds: [],
         events: [],
         winnerIds: [],
+        tournament: null,
         ...overrides
     };
 }

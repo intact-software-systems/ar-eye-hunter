@@ -145,14 +145,14 @@ Deno.test('OpenAPI JSON requires an explicit nullable registration display name'
         components: {
             schemas: Record<string, {
                 required?: string[];
-                properties?: Record<string, { nullable?: boolean; }>;
+                properties?: Record<string, { type?: string | readonly string[]; }>;
             }>;
         };
     };
     const registerResponse = json.components.schemas.RegisterResponse;
 
     assert.ok(registerResponse.required?.includes('displayName'));
-    assert.equal(registerResponse.properties?.displayName?.nullable, true);
+    assert.equal(registerResponse.properties?.displayName?.type?.includes('null'), true);
 });
 
 Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async () => {
@@ -391,7 +391,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
         assert.equal(schema.properties.requestId, undefined, schemaName);
     }
     const topologyPatch = json.components.schemas.GroupTopologyConfigPatch as {
-        properties: Record<string, { nullable?: boolean; }>;
+        properties: Record<string, { anyOf?: readonly { type?: string; $ref?: string; }[]; }>;
     };
     for (
         const field of [
@@ -403,7 +403,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
         ]
     ) {
         assert.equal(
-            topologyPatch.properties[field]?.nullable,
+            topologyPatch.properties[field]?.anyOf?.some((alternative) => alternative.type === 'null'),
             true,
             `${field} clear contract`
         );

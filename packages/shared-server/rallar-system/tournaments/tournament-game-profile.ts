@@ -6,22 +6,22 @@ export interface TournamentGameProfile {
     readonly scope: StateScope;
     readonly rulesId: string;
     readonly noShowGraceMs: number;
-    readonly gameStartTopic: string;
+    readonly gameLifecycleTopic: string;
 }
 
 export function decodeTournamentGameProfile(value: unknown): TournamentGameProfile {
     const profile = requireRecord(value, 'Tournament game profile');
-    requireExactKeys(profile, ['scope', 'rulesId', 'noShowGraceMs', 'gameStartTopic'], 'Tournament game profile');
+    requireExactKeys(profile, ['scope', 'rulesId', 'noShowGraceMs', 'gameLifecycleTopic'], 'Tournament game profile');
     requireEpoch(profile.noShowGraceMs, 'Tournament no-show grace');
-    requireString(profile.gameStartTopic, 'Tournament game start topic');
-    if (profile.noShowGraceMs === 0 || !/^app:[a-z0-9-]+:[a-z0-9-]+$/u.test(profile.gameStartTopic)) {
+    requireString(profile.gameLifecycleTopic, 'Tournament game start topic');
+    if (profile.noShowGraceMs === 0 || !/^app:[a-z0-9-]+:[a-z0-9-]+$/u.test(profile.gameLifecycleTopic)) {
         throw new TypeError('Tournament profile policy or topic is invalid');
     }
     return {
         scope: decodeStateScope(profile.scope),
         rulesId: assertValidRallarRouteId(profile.rulesId),
         noShowGraceMs: profile.noShowGraceMs,
-        gameStartTopic: profile.gameStartTopic
+        gameLifecycleTopic: profile.gameLifecycleTopic
     };
 }
 
@@ -51,7 +51,7 @@ export function bindTournamentGameProfile(
     if (existing === undefined) {
         return decodeTournamentGameProfiles([...profiles, defaultProfile]);
     }
-    if (existing.rulesId !== owner.rulesId || existing.gameStartTopic !== owner.gameStartTopic) {
+    if (existing.rulesId !== owner.rulesId || existing.gameLifecycleTopic !== owner.gameLifecycleTopic) {
         throw new TypeError('Tournament profile differs from its native game owner');
     }
     return profiles;

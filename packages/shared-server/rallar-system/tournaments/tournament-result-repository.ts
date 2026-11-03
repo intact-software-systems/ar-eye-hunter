@@ -111,9 +111,12 @@ export class TournamentResultRepository {
 }
 
 /** Intermediate game writes must lose to cancellation or rescheduling, just like final result publication. */
-export function computeTournamentAttemptFence(read: TournamentResultRepository.Read): RuntimeStateConditionalBatch {
-    if (read.attempt?.status !== 'playing' || read.attemptEntry === null) {
-        throw new TypeError('Cannot write a game for an inactive tournament attempt');
+export function computeTournamentAttemptFence(
+    read: TournamentResultRepository.Read,
+    expectedStatus: 'playing' | 'cancelled'
+): RuntimeStateConditionalBatch {
+    if (read.attempt?.status !== expectedStatus || read.attemptEntry === null) {
+        throw new TypeError('Tournament attempt differs from the required lifecycle state');
     }
     return {
         creation: null,

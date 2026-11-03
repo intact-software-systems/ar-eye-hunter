@@ -171,12 +171,7 @@ function computeAttemptChanges(read: TournamentRepository.Read, after: Tournamen
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     const inserts: RuntimeStateInsert[] = [];
     for (const current of read.attempts) {
-        const match = after.matches.find((match) =>
-            match.slot === current.binding.slot && match.attempt?.binding.attemptId === current.binding.attemptId
-        );
-        const desired = match === undefined
-            ? { ...current.attempt!, status: 'cancelled' as const }
-            : toPrivateAttempt(after, match);
+        const desired = computeTournamentAttemptState(current, after);
         if (current.attempt?.status === 'finished' || jsonEquals(current.attempt, desired)) {
             continue;
         }
@@ -203,14 +198,36 @@ function computeAttemptChanges(read: TournamentRepository.Read, after: Tournamen
         inserts.push({
             namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
             key: groupStateGroupStorageKey(match.attempt.binding.roomRef),
-            value: JSON.stringify(toPrivateAttempt(after, match)),
+            value: JSON.stringify(toPrivateTournamentAttempt(after, match)),
             expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         });
     }
     return { effects, inserts };
 }
 
-function toPrivateAttempt(tournament: Tournament, match: TournamentMatch): TournamentResultRepository.Attempt {
+/** One lifecycle decision shared by the private write and its durable notification. */
+export function computeTournamentAttemptState(
+    current: TournamentResultRepository.Read,
+    after: Tournament
+): TournamentResultRepository.Attempt {
+    if (current.attempt === null) {
+        throw new TypeError('Tournament attempt transition lacks its predecessor');
+    }
+    if (current.attempt.status === 'finished') {
+        return current.attempt;
+    }
+    const match = after.matches.find((match) =>
+        match.slot === current.binding.slot && match.attempt?.binding.attemptId === current.binding.attemptId
+    );
+    return match === undefined
+        ? { ...current.attempt, status: 'cancelled' }
+        : toPrivateTournamentAttempt(after, match);
+}
+
+function toPrivateTournamentAttempt(
+    tournament: Tournament,
+    match: TournamentMatch
+): TournamentResultRepository.Attempt {
     if (match.attempt === null) {
         throw new TypeError('Tournament private authority requires a bound attempt');
     }

@@ -70,10 +70,6 @@ test(
         const selected = await roomLink.inputValue();
         await renewRoomAfterDelayedCallbacks(page, selected);
         await expect(roomLink).toHaveValue(selected);
-        const appoint = operations.getByRole('button', { name: 'Appoint this SPA', exact: true });
-        if (await appoint.isEnabled()) {
-            await appoint.click();
-        }
         await expect(operations.getByRole('button', { name: '1m', exact: true })).toBeEnabled();
         await operations.getByRole('button', { name: '1m', exact: true }).click();
         await expect(operations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/);
@@ -177,10 +173,6 @@ roomBrowserTest(
             await signIn(guest, 'bob');
             await expect(guestOperations.getByText(`Entered ${reference}.`, { exact: true })).toBeVisible();
 
-            const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
-            if (await appoint.isEnabled()) {
-                await appoint.click();
-            }
             await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({
                 timeout: 20_000
             });
@@ -328,10 +320,6 @@ roomBrowserTest(
         await hostOperations.getByRole('button', { name: 'List room', exact: true }).click();
         await hostOperations.getByRole('button', { name: 'Unlist room', exact: true }).click();
         await expect(guestOperations.locator('.room-row.active span')).toHaveText(roomName);
-        const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
-        if (await appoint.isEnabled()) {
-            await appoint.click();
-        }
         await expect(hostOperations.getByRole('button', { name: '1m', exact: true })).toBeEnabled({ timeout: 20_000 });
         await hostOperations.getByRole('button', { name: '1m', exact: true }).click();
         await expect(guestOperations.locator('.match-panel strong')).toHaveText(/^[01]:\d{2}$/, { timeout: 20_000 });
@@ -506,10 +494,6 @@ roomBrowserTest(
         const link = hostOperations.getByLabel('Room link', { exact: true });
         await expect(link).toHaveValue(/#rallar-room\?/);
         const roomName = await hostOperations.locator('.room-row.active span').innerText();
-        const appoint = hostOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
-        if (await appoint.isEnabled()) {
-            await appoint.click();
-        }
         const startMatch = hostOperations.getByRole('button', { name: '5m', exact: true });
         await expect(startMatch).toBeEnabled();
         await startMatch.click();

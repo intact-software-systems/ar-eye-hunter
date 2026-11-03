@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { localStartInput } from './local-start-input.ts';
 import {
     openArenaOperations,
     prepareRoomPlayers,
@@ -114,17 +115,4 @@ async function followSessionLink(page: Page, link: string, game: 'arena' | 'reli
         await openArenaOperations(page);
     }
     await expect(page.getByRole('article', { name: 'Session details', exact: true })).toBeVisible();
-}
-
-async function localStartInput(page: Page, delayMs: number) {
-    return await page.evaluate((delay) => {
-        const date = new Date(Math.ceil((Date.now() + delay) / 1000) * 1000);
-        return {
-            epochMs: date.getTime(),
-            input: new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19).replace(
-                /:00$/,
-                ''
-            )
-        };
-    }, delayMs);
 }

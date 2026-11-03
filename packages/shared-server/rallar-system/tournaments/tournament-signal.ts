@@ -12,7 +12,7 @@ export const TOURNAMENT_RECONCILE_TOPIC = 'app:rallar-tournaments:reconcile';
 export const TOURNAMENT_SIGNAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface TournamentSignal {
-    readonly kind: 'start' | 'no-show' | 'result';
+    readonly kind: 'start' | 'cancel' | 'no-show' | 'result';
     readonly binding: TournamentMatchBinding;
     readonly dueAtEpochMs: number;
 }
@@ -47,7 +47,7 @@ export function decodeTournamentSignal(value: unknown): TournamentSignal {
     requireExactKeys(signal, ['kind', 'binding', 'dueAtEpochMs'], 'Tournament signal');
     requireEpoch(signal.dueAtEpochMs, 'Tournament signal time');
     return {
-        kind: requireOneOf(signal.kind, ['start', 'no-show', 'result'], 'Tournament signal kind'),
+        kind: requireOneOf(signal.kind, ['start', 'cancel', 'no-show', 'result'], 'Tournament signal kind'),
         binding: decodeTournamentMatchBinding(signal.binding),
         dueAtEpochMs: signal.dueAtEpochMs
     };

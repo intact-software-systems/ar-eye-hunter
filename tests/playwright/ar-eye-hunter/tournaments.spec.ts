@@ -1,4 +1,5 @@
-import { expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { localStartInput } from '../local-start-input.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     cancelPlayingTournament,
@@ -49,3 +50,21 @@ tournamentBrowserTest(
         await cancelPlayingTournament(players, 'arena');
     }
 );
+
+/** The native input normalizes zero seconds; the shared journey must supply that canonical value. */
+test('tournament scheduling accepts whole-minute and second-precision browser-local input', async ({ browser }) => {
+    const context = await browser.newContext({ timezoneId: 'Europe/Oslo' });
+    try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date('2030-01-02T10:59:55Z'));
+        await page.setContent('<label>Match start<input type="datetime-local" step="1"></label>');
+        for (const [delay, expected] of [[5000, '2030-01-02T12:00'], [6000, '2030-01-02T12:00:01']] as const) {
+            const start = await localStartInput(page, delay);
+            await page.getByLabel('Match start').fill(start.input);
+            await expect(page.getByLabel('Match start')).toHaveValue(expected);
+        }
+    }
+    finally {
+        await context.close();
+    }
+});

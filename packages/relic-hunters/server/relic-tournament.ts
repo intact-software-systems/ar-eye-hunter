@@ -14,7 +14,7 @@ const tournamentScope = toRelicRoomGroupRef('scope');
 export const RELIC_TOURNAMENT_GAME_PROFILE = {
     scope: { applicationId: tournamentScope.applicationId, workspaceId: tournamentScope.workspaceId },
     rulesId: RELIC_TOURNAMENT_RULES_ID,
-    gameStartTopic: 'app:relic:tournament-start'
+    gameLifecycleTopic: 'app:relic:tournament-lifecycle'
 };
 
 /** A tournament hunter is an account; casual expeditions retain their session-owned participation. */
@@ -41,8 +41,8 @@ export function relicTournamentMutationRefusal(
             httpStatus: 409
         };
     }
-    const commandRefusal = relicTournamentCommandRefusal(command);
-    if (commandRefusal !== null) {
+    const commandRefusal = relicTournamentCommandRefusal(read);
+    if (commandRefusal !== null || command.operation === 'tournament-clock' && command.clock.phase === 'cancelled') {
         return commandRefusal;
     }
     if (tournament.attempt?.status === 'finished' && command.operation === 'ensure') {
@@ -83,8 +83,16 @@ export function relicTournamentMutationRefusal(
 
 /** Tournament configuration and withdrawal belong to the bracket, never to an in-room command. */
 function relicTournamentCommandRefusal(
-    command: RelicGameMutationService.Command
+    read: RelicGameMutationService.Read
 ): RelicGameMutationService.RefusalReason | null {
+    const { command } = read.ingress;
+    if (command.operation === 'tournament-clock' && command.clock.phase === 'cancelled') {
+        return read.tournament?.attempt?.status === 'cancelled' ? null : {
+            code: 'tournament-not-cancelled',
+            message: 'This attempt has not been cancelled.',
+            httpStatus: 409
+        };
+    }
     if (
         command.operation === 'reset' || command.move && [
                 'start-expedition',
@@ -126,7 +134,7 @@ export function computeRelicTournamentWrite(
         throw new TypeError('Relic tournament contains an unbound hunter');
     }
     if (next.phase !== 'finished') {
-        return { storage: computeTournamentAttemptFence(tournament), outbox: [] };
+        return { storage: computeTournamentAttemptFence(tournament, 'playing'), outbox: [] };
     }
     const scores = tournament.binding.principalIds.map((principalId) => {
         const player = next.players.find((candidate) => candidate.playerId === principalId);

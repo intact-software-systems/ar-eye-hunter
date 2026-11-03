@@ -21,7 +21,7 @@ Deno.test({
                     scope: { applicationId: 'game', workspaceId: 'default' },
                     rulesId: 'native-v1',
                     noShowGraceMs: 600000,
-                    gameStartTopic: 'app:game:tournament-start'
+                    gameLifecycleTopic: 'app:game:tournament-start'
                 }]
             }
         });

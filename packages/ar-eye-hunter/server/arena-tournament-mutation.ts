@@ -325,7 +325,7 @@ function computeArenaTournamentMutation(read: ArenaTournamentMutation.Read): Are
             schemaVersion: 1,
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         }),
-        attemptWrite: resultWrite === null ? computeTournamentAttemptFence(tournament) : null,
+        attemptWrite: resultWrite === null ? computeTournamentAttemptFence(tournament, 'playing') : null,
         resultWrite
     };
 }

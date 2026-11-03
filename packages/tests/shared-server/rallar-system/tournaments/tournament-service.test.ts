@@ -4,7 +4,7 @@ import { TournamentRepository } from '@shared-server/rallar-system/tournaments/t
 import { computeTournamentResultPublication, writeTournamentGame } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import { createTournamentResult } from '@shared-server/rallar-system/tournaments/tournament-result.ts';
 import { TournamentService } from '@shared-server/rallar-system/tournaments/tournament-service.ts';
-import { installTournamentGameStart, installTournamentReconciliation } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
+import { installTournamentGameLifecycle, installTournamentReconciliation } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { TournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -46,6 +46,8 @@ describe('tournament AppInbox mutations', () => {
             expect(started.status).toBe('applied');
             const members = await game.repository.listMembers(attempt.binding.roomRef);
             expect(members.map((member) => member.principalId).sort()).toEqual(['alice', 'bob']);
+            expect((await game.repository.findGroup(attempt.binding.roomRef))?.metadata.rallarRetention)
+                .toMatchObject({ mode: 'temporary', reconnectGraceMs: 900000 });
             const current = await game.tournaments.read(REF);
             expect(current.record!.tournament.matches[0].status).toBe('playing');
             expect(current.attempts[0].attempt?.status).toBe('playing');
@@ -138,7 +140,7 @@ describe('tournament AppInbox mutations', () => {
         try {
             const starts: string[] = [];
             installTournamentReconciliation({ outbox: game.runtime.outbox, operation: game.operation, nowEpochMs: () => game.nowEpochMs });
-            installTournamentGameStart({
+            installTournamentGameLifecycle({
                 outbox: game.runtime.outbox,
                 topic: 'app:test:game-start',
                 nowEpochMs: () => game.nowEpochMs,
@@ -175,6 +177,30 @@ describe('tournament AppInbox mutations', () => {
                 readonly { count: number; }[]
             >`select count(*)::integer as count from resource_inbox where ri_topic_id = 'app:test:game-start'`;
             expect(rows[0].count).toBe(1);
+        }
+        finally {
+            await game.storage.close();
+        }
+    });
+
+    it.each(['cancel', 'reschedule'] as const)('commits one cancellation signal on %s and preserves it on replay', async (transition) => {
+        const game = await fixture();
+        try {
+            const attempt = await checkedInBracket(game);
+            await execute(game, input(game.owner, { type: 'start', slot: 'semifinal-1', attemptId: attempt.binding.attemptId }));
+            const request: TournamentRequest = transition === 'cancel'
+                ? { type: 'cancel' }
+                : { type: 'schedule', slot: 'semifinal-1', scheduledAtEpochMs: game.nowEpochMs };
+            const command = input(game.owner, request, 'cancel-cup');
+            expect((await execute(game, command)).status).toBe('applied');
+            expect((await game.operation.submit({ command, traceId: 'repeat-cancel' })).right?.status).toBe('applied');
+            const rows = await game.storage.sql<readonly { resource: string; }[]>`
+                select ri_resource as resource from resource_inbox where ri_topic_id = 'app:test:game-start'
+            `;
+            const signals = rows.map((row) => JSON.parse(JSON.parse(row.resource).payload.resource));
+            expect(signals.filter((signal) => signal.kind === 'cancel')).toEqual([
+                { kind: 'cancel', binding: attempt.binding, dueAtEpochMs: game.nowEpochMs }
+            ]);
         }
         finally {
             await game.storage.close();
@@ -219,7 +245,7 @@ async function fixture() {
             scope: { applicationId: REF.applicationId, workspaceId: REF.workspaceId },
             rulesId: 'native',
             noShowGraceMs: 600000,
-            gameStartTopic: 'app:test:game-start'
+            gameLifecycleTopic: 'app:test:game-start'
         }]
     });
     const runtime = createSqlServerAppInbox({ database: game.storage.sql, nowEpochMs: () => game.nowEpochMs });

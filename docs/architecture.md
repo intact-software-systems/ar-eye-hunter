@@ -201,7 +201,9 @@ repository reads the scoped bracket, entrant interests, exact private attempts a
 results; computation and validation prepare conditional writes before the transaction. Start reuses
 cohort room admission so both memberships, the private attempt, game-start outbox and durable
 result commit together. Deadline and result signals trigger fresh reconciliation through AppInbox.
-Conflicts return to QueueBox; neither the service nor its repository retries inside a delivery.
+Cancellation and replacement of a playing attempt commit a game-owned lifecycle signal with the
+private attempt revocation. Relic publishes a terminal snapshot under that exact cancelled-attempt
+fence without changing its save or accepted scores. Conflicts return to QueueBox; neither the service nor its repository retries inside a delivery.
 
 `TournamentResultRepository` binds every result to the tournament, slot, attempt, scoped room,
 game instance, rules and two account identities. A game owner commits its final save, attempt CAS
@@ -218,7 +220,7 @@ round deadlines. Both game owners compare observed group, session and presence a
 writing. Room-owned saves share retention fencing; immutable result evidence is stored separately.
 
 AppOutbox claims only explicitly registered topics. Generic API processes cannot consume native
-game clocks or start signals. Each deployment must run its game owner and configure the same complete
+game clocks or lifecycle signals. Each deployment must run its game owner and configure the same complete
 room-owned AppData catalog on every process sharing the database; registrations happen before
 workers start. Restart resumes durable work without a separate polling scheduler or migration.
 

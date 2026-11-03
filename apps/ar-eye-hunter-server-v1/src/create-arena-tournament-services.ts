@@ -12,7 +12,7 @@ import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-s
 import type { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { TournamentResultRepository } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
-import { installTournamentGameStart } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
+import { installTournamentGameLifecycle } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -22,7 +22,7 @@ export const ARENA_TOURNAMENT_GAME_PROFILE = {
         workspaceId: AR_EYE_TOURNAMENT_DATA_BINDING.workspaceId
     },
     rulesId: AR_EYE_TOURNAMENT_RULES_ID,
-    gameStartTopic: 'app:ar-eye:tournament-start'
+    gameLifecycleTopic: 'app:ar-eye:tournament-lifecycle'
 };
 
 export interface CreateArenaTournamentServicesInput {
@@ -52,9 +52,9 @@ export function createArenaTournamentServices(input: CreateArenaTournamentServic
     }, { nowEpochMs, serverId: input.serviceId });
     const operation = registerArenaTournamentInbox({ appInbox: input.appInbox, mutations, nowEpochMs });
     installArenaTournamentClock({ outbox: input.outbox, operation, nowEpochMs });
-    installTournamentGameStart({
+    installTournamentGameLifecycle({
         outbox: input.outbox,
-        topic: ARENA_TOURNAMENT_GAME_PROFILE.gameStartTopic,
+        topic: ARENA_TOURNAMENT_GAME_PROFILE.gameLifecycleTopic,
         nowEpochMs,
         enqueue: async (binding, requestId, traceId) => {
             if (

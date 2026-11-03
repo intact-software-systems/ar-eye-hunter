@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import type { TournamentMatch } from '../../packages/shared/api/tournaments/tournament-types.ts';
+import { localStartInput } from './local-start-input.ts';
 import { openArenaOperations } from './room-player-journey.ts';
 
 /** Real accounts register, check in and enter through the same controls as human players. */
@@ -41,7 +42,8 @@ export async function startTournamentMatch(
     slot: TournamentMatch['slot']
 ): Promise<void> {
     const semifinal = panel(host).getByRole('article', { name: slot, exact: true });
-    await semifinal.getByLabel('Match start', { exact: true }).fill(localTime(Date.now() + 5000));
+    const startInput = await localStartInput(host, 30000);
+    await semifinal.getByLabel('Match start', { exact: true }).fill(startInput.input);
     await semifinal.getByRole('button', { name: 'Schedule match', exact: true }).click();
     for (const player of competitors) {
         await panel(player).getByRole('article', { name: slot, exact: true }).getByRole('button', {
@@ -50,7 +52,7 @@ export async function startTournamentMatch(
         }).click();
     }
     const start = semifinal.getByRole('button', { name: 'Start tournament match', exact: true });
-    await expect(start).toBeEnabled();
+    await expect(start).toBeEnabled({ timeout: 45000 });
     await start.click();
     for (const player of competitors) {
         await panel(player).getByRole('article', { name: slot, exact: true }).getByRole('button', {
@@ -83,11 +85,6 @@ async function registerHunter(page: Page, game: 'arena' | 'relic', index: number
 
 function panel(page: Page) {
     return page.getByRole('region', { name: 'Tournaments', exact: true });
-}
-
-function localTime(epoch: number): string {
-    const date = new Date(epoch);
-    return new Date(epoch - date.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 }
 
 export async function cancelPlayingTournament(

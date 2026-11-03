@@ -166,6 +166,45 @@ describe('Relic tournament authority', () => {
         }
     });
 
+    it('publishes cancelled participation without changing scores, the save, or a result', async () => {
+        const game = await tournamentFixture();
+        try {
+            const saved = await game.data.read(game.ref);
+            await game.runtime.upsert(
+                TOURNAMENT_ATTEMPTS_NAMESPACE,
+                groupStateGroupStorageKey(game.ref),
+                JSON.stringify({ binding: game.binding, status: 'cancelled', startedAtEpochMs: game.nowEpochMs }),
+                NEVER_EXPIRE_AT_TIMESTAMP
+            );
+            const command: RelicGameMutationService.ClockCommand = {
+                operation: 'tournament-clock',
+                gameId: game.ref.groupId,
+                requestId: 'cancel-notice',
+                actor: null,
+                authorization: 'tournament',
+                move: null,
+                clock: { phase: 'cancelled', round: 1, dueAtEpochMs: game.nowEpochMs }
+            };
+            const read = await game.service.read(game.service.capture(command, null, 'relic-test'));
+            const attempt = { ...read, attemptCount: 1, traceId: 'cancel-notice' };
+            const computed = game.service.compute(attempt);
+            expect(computed.result.status).toBe('applied');
+            expect(game.service.validate(attempt, computed)).toEqual([]);
+            await game.storage.sql.begin((transaction) => game.service.write(transaction, computed));
+            const rows = await game.storage.sql<readonly { resource: string; }[]>`
+                select ri_resource as resource from resource_inbox where ri_topic_id = 'room.relic.snapshot'
+            `;
+            const messages = rows.map((row) => JSON.parse(row.resource));
+            expect(messages.map((message) => JSON.parse(message.payload.resource).snapshot.tournament.status))
+                .toContain('cancelled');
+            expect(await game.data.read(game.ref)).toEqual(saved);
+            expect((await game.tournaments.read(game.binding)).result).toBeNull();
+        }
+        finally {
+            await game.storage.close();
+        }
+    });
+
     it('fences a native game write against cancellation of its exact tournament attempt', async () => {
         const game = await tournamentFixture();
         try {

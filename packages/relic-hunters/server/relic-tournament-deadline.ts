@@ -69,7 +69,8 @@ export function installRelicTournamentClock(input: InstallRelicTournamentClockIn
                 resourceId: command.requestId
             });
             if (
-                command.operation !== 'tournament-clock' || command.clock.phase === 'start' ||
+                command.operation !== 'tournament-clock' ||
+                (command.clock.phase === 'start' || command.clock.phase === 'cancelled') ||
                 message.route.topicId !== DEADLINE_TOPIC || message.payload.typeId !== DEADLINE_TOPIC ||
                 message.route.contextId !== expected.contextId || message.route.resourceId !== expected.resourceId ||
                 command.clock.dueAtEpochMs <= message.id.ts

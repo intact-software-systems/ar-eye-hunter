@@ -4,6 +4,7 @@ import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts'
 import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app-inbox.ts';
 import type { AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeTournamentAttemptState } from './tournament-repository.ts';
 import type { TournamentService } from './tournament-service.ts';
 import {
     computeTournamentSignal,
@@ -11,7 +12,7 @@ import {
     TOURNAMENT_RECONCILE_TOPIC
 } from './tournament-signal.ts';
 
-/** Scheduling and starting create durable deliveries in the same transaction as the bracket transition. */
+/** Bracket transitions commit game lifecycle and reconciliation deliveries atomically. */
 export function computeTournamentLifecycleSignals(
     read: TournamentService.Read,
     after: Tournament
@@ -20,7 +21,7 @@ export function computeTournamentLifecycleSignals(
     if (!profile) {
         throw new TypeError('Tournament signals require a captured profile');
     }
-    const signals: AppOutboxInsert[] = [];
+    const signals = computeTournamentCancellationSignals(read, after, profile.gameLifecycleTopic);
     for (const match of after.matches) {
         const attempt = match.attempt;
         if (attempt === null) {
@@ -50,13 +51,37 @@ export function computeTournamentLifecycleSignals(
             signals.push(
                 computeTournamentSignal({
                     ...common,
-                    topic: profile.gameStartTopic,
+                    topic: profile.gameLifecycleTopic,
                     signal: { kind: 'start', binding: attempt.binding, dueAtEpochMs: attempt.startedAtEpochMs! }
                 })
             );
         }
     }
     return signals;
+}
+
+/** Replaced attempts also need cancellation delivery to their original game room. */
+function computeTournamentCancellationSignals(
+    read: TournamentService.Read,
+    after: Tournament,
+    topic: string
+): AppOutboxInsert[] {
+    return read.bracket.attempts.flatMap((current) => {
+        if (
+            current.attempt?.status !== 'playing' ||
+            computeTournamentAttemptState(current, after).status !== 'cancelled'
+        ) {
+            return [];
+        }
+        return [computeTournamentSignal({
+            topic,
+            createdAtEpochMs: read.nowEpochMs,
+            retentionMs: read.signalRetentionMs,
+            serviceId: read.serviceId,
+            traceId: read.traceId,
+            signal: { kind: 'cancel', binding: current.binding, dueAtEpochMs: read.nowEpochMs }
+        })];
+    });
 }
 
 export interface InstallTournamentReconciliationInput {
@@ -71,8 +96,8 @@ export function installTournamentReconciliation(
     outbox.onOutboxMessageDo(TOURNAMENT_RECONCILE_TOPIC, {
         onMessage: async (message) => {
             const signal = readTournamentSignal(message, TOURNAMENT_RECONCILE_TOPIC, nowEpochMs());
-            if (signal.kind === 'start') {
-                throw new TypeError('Game starts are not tournament reconciliation');
+            if (signal.kind === 'start' || signal.kind === 'cancel') {
+                throw new TypeError('Game lifecycle changes are not tournament reconciliation');
             }
             const admitted = await operation.enqueue({
                 command: {
@@ -91,7 +116,7 @@ export function installTournamentReconciliation(
     }, [TOURNAMENT_RECONCILE_TOPIC]);
 }
 
-export interface InstallTournamentGameStartInput {
+export interface InstallTournamentGameLifecycleInput {
     readonly outbox: OutboxQueueReader;
     readonly topic: string;
     readonly nowEpochMs: () => number;
@@ -100,20 +125,27 @@ export interface InstallTournamentGameStartInput {
         binding: TournamentMatchBinding,
         requestId: string,
         traceId: string,
-        startedAtEpochMs: number
+        dueAtEpochMs: number,
+        kind: 'start' | 'cancel'
     ) => Promise<void>;
 }
 
-export function installTournamentGameStart(
-    { outbox, topic, nowEpochMs, enqueue }: InstallTournamentGameStartInput
+export function installTournamentGameLifecycle(
+    { outbox, topic, nowEpochMs, enqueue }: InstallTournamentGameLifecycleInput
 ): void {
     outbox.onOutboxMessageDo(topic, {
         onMessage: async (message) => {
             const signal = readTournamentSignal(message, topic, nowEpochMs());
-            if (signal.kind !== 'start') {
-                throw new TypeError('Tournament game owner requires a start signal');
+            if (signal.kind !== 'start' && signal.kind !== 'cancel') {
+                throw new TypeError('Tournament game owner requires a lifecycle signal');
             }
-            await enqueue(signal.binding, computeSha256CanonicalJson(signal), message.id.traceId, signal.dueAtEpochMs);
+            await enqueue(
+                signal.binding,
+                computeSha256CanonicalJson(signal),
+                message.id.traceId,
+                signal.dueAtEpochMs,
+                signal.kind
+            );
         }
     }, [topic]);
 }

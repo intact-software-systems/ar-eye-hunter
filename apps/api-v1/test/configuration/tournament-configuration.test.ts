@@ -9,7 +9,7 @@ const profile = {
     scope: { applicationId: 'game', workspaceId: 'default' },
     rulesId: 'native-v1',
     noShowGraceMs: 600000,
-    gameStartTopic: 'app:game:tournament-start'
+    gameLifecycleTopic: 'app:game:tournament-start'
 };
 
 Deno.test('tournament profiles are explicitly configured and retain their per-game no-show grace', () => {
@@ -25,7 +25,7 @@ Deno.test('tournament configuration rejects ambiguous ownership and malformed pr
         const tournaments of [
             { profiles: [profile, profile] },
             { profiles: [{ ...profile, noShowGraceMs: 0 }] },
-            { profiles: [{ ...profile, gameStartTopic: 'public-room' }] },
+            { profiles: [{ ...profile, gameLifecycleTopic: 'public-room' }] },
             { profiles: [{ ...profile, extra: true }] },
             { rateLimit: { requests: 0 } }
         ]

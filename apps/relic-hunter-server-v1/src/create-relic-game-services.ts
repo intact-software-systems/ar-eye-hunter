@@ -13,7 +13,7 @@ import type { AuthSessionPersistence } from '@shared-server/rallar-system/auth/p
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { TournamentResultRepository } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
-import { installTournamentGameStart } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
+import { installTournamentGameLifecycle } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -55,11 +55,11 @@ export function createRelicGameServices(input: CreateRelicGameServicesInput): Re
         timing: input.timing
     });
     installRelicTournamentClock({ outbox: input.outbox, inbox: relicGameInboxService, nowEpochMs: input.nowEpochMs });
-    installTournamentGameStart({
+    installTournamentGameLifecycle({
         outbox: input.outbox,
-        topic: RELIC_TOURNAMENT_GAME_PROFILE.gameStartTopic,
+        topic: RELIC_TOURNAMENT_GAME_PROFILE.gameLifecycleTopic,
         nowEpochMs: input.nowEpochMs,
-        enqueue: async (binding, requestId, traceId, startedAtEpochMs) => {
+        enqueue: async (binding, requestId, traceId, dueAtEpochMs, kind) => {
             if (
                 binding.rulesId !== RELIC_TOURNAMENT_GAME_PROFILE.rulesId ||
                 binding.roomRef.applicationId !== RELIC_TOURNAMENT_GAME_PROFILE.scope.applicationId ||
@@ -74,7 +74,7 @@ export function createRelicGameServices(input: CreateRelicGameServicesInput): Re
                 actor: null,
                 authorization: 'tournament',
                 move: null,
-                clock: { phase: 'start', round: 1, dueAtEpochMs: startedAtEpochMs }
+                clock: { phase: kind === 'start' ? 'start' : 'cancelled', round: 1, dueAtEpochMs }
             }, traceId);
         }
     });

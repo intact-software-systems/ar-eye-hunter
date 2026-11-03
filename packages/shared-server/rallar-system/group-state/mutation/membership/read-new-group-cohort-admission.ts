@@ -22,6 +22,7 @@ export interface NewGroupCohortAdmissionReadInput {
     readonly displayName: string;
     readonly participants: readonly NewGroupCohortMember[];
     readonly maxSpectators: number | null;
+    readonly reconnectGraceMs: number;
     readonly capturedAtEpochMs: number;
     readonly serviceId: string;
     readonly nowEpochMs: number;
@@ -76,7 +77,7 @@ function toCohortCreateCommand(
                 directoryListing: 'unlisted',
                 maxMembers: proposal.participants.length,
                 ...(proposal.maxSpectators === null ? {} : { maxSpectators: proposal.maxSpectators }),
-                retention: { mode: 'temporary' },
+                retention: { mode: 'temporary', reconnectGraceMs: proposal.reconnectGraceMs },
                 createdByPrincipalId: leader.principalId,
                 actorPrincipalId: leader.principalId,
                 actorSessionId: leader.sessionId

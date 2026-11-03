@@ -192,6 +192,7 @@ export class TournamentService {
             displayName: bracket.record.tournament.title,
             participants,
             maxSpectators: 16,
+            reconnectGraceMs: 900000,
             capturedAtEpochMs: command.materialized.capturedAtEpochMs,
             serviceId: this.config.serviceId,
             nowEpochMs,
