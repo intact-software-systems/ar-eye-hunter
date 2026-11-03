@@ -183,7 +183,7 @@ function createVolatileSendRuntime(
 }
 
 function planSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
-    return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }], admittedConnectionGenerationIds: undefined };
+    return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] };
 }
 
 function readDeadlineMs(message: ALMessage): number {

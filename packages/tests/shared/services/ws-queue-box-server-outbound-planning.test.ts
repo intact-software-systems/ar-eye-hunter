@@ -308,8 +308,7 @@ describe('WS server outbound planning', () => {
                 completedHopPeerIds: [],
                 missingRanges: [],
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
-                admittedAudience: ['b'],
-                admittedConnectionGenerationIds: undefined
+                admittedAudience: ['b']
             });
 
         expect(repairRequestedBy('late-joiner')).toBeUndefined();
@@ -342,8 +341,7 @@ describe('WS server outbound planning', () => {
             completedHopPeerIds: [],
             missingRanges: [],
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
-            admittedAudience: ['b', 'c'],
-            admittedConnectionGenerationIds: undefined
+            admittedAudience: ['b', 'c']
         });
 
         expect(repair?.ackTracking).toMatchObject({

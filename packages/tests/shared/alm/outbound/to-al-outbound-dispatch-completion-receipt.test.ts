@@ -50,8 +50,7 @@ function toRead(
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [],
-            ackTracking,
-            admittedConnectionGenerationIds: undefined
+            ackTracking
         },
         pendingAck,
         acks,

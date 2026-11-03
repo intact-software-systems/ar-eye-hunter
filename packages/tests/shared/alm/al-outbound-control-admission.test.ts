@@ -512,8 +512,7 @@ describe('outbound control admission identity', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -541,8 +540,7 @@ describe('outbound control admission identity', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -613,8 +611,7 @@ describe('outbound control admission identity', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -1005,7 +1002,7 @@ async function seedReceiptlessRoomObligation(
         message: msg,
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
-        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
     });
     await admissionStore.commitBundle(admission);
 }
@@ -1026,7 +1023,7 @@ async function seedReceiptlessUnicastObligation(
         message: msg,
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
-        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
     });
     await admissionStore.commitBundle(admission);
 }
@@ -1065,8 +1062,7 @@ async function seedObligation(
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
-            retryTracking: input.retryTracking,
-            admittedConnectionGenerationIds: undefined
+            retryTracking: input.retryTracking
         })
     });
     await admissionStore.commitBundle({

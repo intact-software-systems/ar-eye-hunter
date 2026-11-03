@@ -100,7 +100,7 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -126,8 +126,7 @@ describe('outbound dispatch value ownership', () => {
                 dropReasonCode: undefined,
                 lane: 'durable',
                 preparedMessages: [] as readonly OutboundTestPayload[],
-                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' },
-                admittedConnectionGenerationIds: undefined
+                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -195,8 +194,7 @@ describe('outbound dispatch value ownership', () => {
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [{ resourceId: message.route.resourceId }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ resourceId: message.route.resourceId }]
             }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
@@ -223,8 +221,7 @@ describe('outbound dispatch value ownership', () => {
                 msg: message,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ resourceId: 'exhausted-repair' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ resourceId: 'exhausted-repair' }]
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'

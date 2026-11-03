@@ -76,8 +76,7 @@ async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionF
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: []
         }),
         planRepairMessage: undefined,
         hopPeerIds: undefined,

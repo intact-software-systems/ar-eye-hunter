@@ -83,8 +83,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
             msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: Date.now() + 1_000 } },
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ peer: 'captured' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ peer: 'captured' }]
         }),
         sendPreparedMessage: async () => {
             throw new Error('No initial dispatch');
@@ -123,8 +122,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [{ peer: 'changed' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ peer: 'changed' }]
         }),
         sendPreparedMessage: async (prepared, _phase, lifecycle) => {
             sent.push(prepared.peer);

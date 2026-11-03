@@ -57,8 +57,7 @@ describe('outbound message expiry', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ message: JSON.stringify(msg) }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -117,8 +116,7 @@ describe('outbound message expiry', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })),
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -165,8 +163,7 @@ describe('outbound message expiry', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })),
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -251,8 +248,7 @@ describe('outbound message expiry', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             planRepairMessage: undefined,
             hopPeerIds: undefined,
@@ -359,8 +355,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [{ message: JSON.stringify(msg) }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ message: JSON.stringify(msg) }]
         };
         const read = await store.readOutgoingMessage({ msg: msg, planner: () => plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         const candidate = computeALOutboundDispatch({
@@ -401,8 +396,7 @@ describe('outbound message expiry', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ message: JSON.stringify(msg) }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -438,8 +432,7 @@ describe('outbound message expiry', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'durable',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
@@ -471,8 +464,7 @@ describe('outbound message expiry', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ message: JSON.stringify(msg) }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'

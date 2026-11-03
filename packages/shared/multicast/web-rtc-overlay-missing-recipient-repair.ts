@@ -115,8 +115,7 @@ export function toRtcRetriedCopyRetransmission(
             dropReasonCode: 'no-route',
             lane: 'volatile',
             msg: copy.msg,
-            preparedMessages: [],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: []
         }
         : {
             ...forwarding,

@@ -372,8 +372,7 @@ function createDefaultOutboundRuntime(
                         msgId: msg.id.msgId,
                         trigger: request.trigger
                     }
-                ],
-                admittedConnectionGenerationIds: undefined
+                ]
             }),
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
@@ -393,8 +392,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: `presence:${msg.route.contextId}` },
-            admittedConnectionGenerationIds: undefined
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: `presence:${msg.route.contextId}` }
         };
     }
     return {
@@ -403,8 +401,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
         lane: 'volatile',
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' },
-        repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
-        admittedConnectionGenerationIds: undefined
+        repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
     };
 }
 

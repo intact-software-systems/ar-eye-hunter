@@ -381,8 +381,7 @@ async function writeCompetingAdmission(
             lane: 'durable',
             preparedMessages: [],
             admittedAudience: [],
-            recipientScope: SCOPE,
-            admittedConnectionGenerationIds: undefined
+            recipientScope: SCOPE
         })
     });
     const computed = computeALOutboundDispatch({

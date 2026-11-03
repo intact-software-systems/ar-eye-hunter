@@ -673,8 +673,7 @@ export class WebRtcOverlayMulticastManager {
                 dropReasonCode: availability.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
                 lane: 'volatile',
                 msg,
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             };
         }
         return context
@@ -771,8 +770,7 @@ export class WebRtcOverlayMulticastManager {
             ackTracking: toRtcAckTrackingPlan(handling.effective, []),
             retryTracking: this.toRetryTrackingPlan(handling.effective),
             repairTracking: this.toRepairTrackingPlan(handling.effective),
-            supersedenceTracking: this.toSupersedenceTrackingPlan(handling.effective, msg),
-            admittedConnectionGenerationIds: undefined
+            supersedenceTracking: this.toSupersedenceTrackingPlan(handling.effective, msg)
         };
     }
 
@@ -797,8 +795,7 @@ export class WebRtcOverlayMulticastManager {
             dropReasonCode: 'no-route',
             lane: 'volatile',
             preparedMessages: [],
-            dropReason: `Skipping RTC outbound message ${msg.id.msgId} ${reason}`,
-            admittedConnectionGenerationIds: undefined
+            dropReason: `Skipping RTC outbound message ${msg.id.msgId} ${reason}`
         };
     }
 
@@ -812,8 +809,7 @@ export class WebRtcOverlayMulticastManager {
                 dropReasonCode: 'no-route',
                 lane: 'volatile',
                 msg,
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             };
         }
         return {
@@ -823,8 +819,7 @@ export class WebRtcOverlayMulticastManager {
             preparedMessages: [toALOutboundTransportMessage(msg)],
             ackTracking: toRtcAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
             repairTracking: this.toRepairTrackingPlan(effective),
-            supersedenceTracking: this.toSupersedenceTrackingPlan(effective, msg),
-            admittedConnectionGenerationIds: undefined
+            supersedenceTracking: this.toSupersedenceTrackingPlan(effective, msg)
         };
     }
 
@@ -839,8 +834,7 @@ export class WebRtcOverlayMulticastManager {
                 congestionDrop: toALOutboundCongestionDrop(plan.handlingPlan),
                 lane: 'volatile',
                 msg,
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             };
         }
 
@@ -851,8 +845,7 @@ export class WebRtcOverlayMulticastManager {
                 dropReasonCode: plan.handlingPlan.repair.enabled ? 'planner-drop' : 'no-route',
                 lane: 'volatile',
                 msg,
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             };
         }
 
@@ -863,8 +856,7 @@ export class WebRtcOverlayMulticastManager {
                 dropReasonCode: 'no-route',
                 lane: 'volatile',
                 msg,
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             };
         }
 
@@ -887,8 +879,7 @@ export class WebRtcOverlayMulticastManager {
             supersedenceTracking: this.toSupersedenceTrackingPlan(
                 plan.handlingPlan.effective,
                 plan.transportMessages[0]
-            ),
-            admittedConnectionGenerationIds: undefined
+            )
         };
     }
 
@@ -1100,8 +1091,7 @@ export class WebRtcOverlayMulticastManager {
                 dropReasonCode: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
                 lane: 'volatile',
                 msg,
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             };
         }
         const normalized = this.readOutgoingQosPolicy(msg, toAcceptedOverlayContext(this.readOutboundObservation(msg)));
@@ -1120,8 +1110,7 @@ export class WebRtcOverlayMulticastManager {
                 [peerId],
                 toRtcRetryExpectedPeerIdsUpdate(normalized.effective.ack.algo)
             ),
-            repairTracking: repair,
-            admittedConnectionGenerationIds: undefined
+            repairTracking: repair
         };
     }
 }

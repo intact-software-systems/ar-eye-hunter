@@ -84,7 +84,6 @@ function toWsQueueBoxServerHandedOffControlPlan(
         msg: message,
         dropReasonCode: undefined,
         lane: 'durable',
-        preparedMessages: [],
-        admittedConnectionGenerationIds: undefined
+        preparedMessages: []
     };
 }

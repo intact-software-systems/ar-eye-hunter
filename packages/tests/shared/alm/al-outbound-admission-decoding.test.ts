@@ -178,7 +178,7 @@ describe('outbound admission persisted-record validation', () => {
         await expect(
             store.readOutgoingMessage({
                 msg: msg,
-                planner: () => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [], admittedConnectionGenerationIds: undefined }),
+                planner: () => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
                 observedCanonicalEntry: undefined,
                 intent: 'enqueue'
             })
@@ -300,8 +300,7 @@ describe('outbound admission persisted-record validation', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async (_message, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage.id.msgId);
@@ -363,8 +362,7 @@ describe('outbound admission persisted-record validation', () => {
                 msg: msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: []
             }),
             sendPreparedMessage: async () => {
                 throw new Error('Corrupt replay must never send');
@@ -574,8 +572,7 @@ async function runOutboundWorkBatch(
             msg: msg,
             dropReasonCode: undefined,
             lane: 'volatile',
-            preparedMessages: [],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: []
         }),
         sendPreparedMessage: async (_message, _phase, lifecycle) => {
             sent.push(lifecycle.canonicalMessage.id.msgId);

@@ -10,9 +10,11 @@ export function isClientSnapshotSessionLive(
     return session.status === 'active' && session.expiresAtEpochMs > atEpochMs;
 }
 
-export function isGroupSnapshotSessionLive(session: GroupPresenceSession, atEpochMs: number): boolean {
-    return session.disconnectedAtEpochMs === null &&
-        session.expiresAtEpochMs > atEpochMs;
+export function isGroupSnapshotSessionLive(
+    session: Pick<GroupPresenceSession, 'status' | 'expiresAtEpochMs'>,
+    atEpochMs: number
+): boolean {
+    return session.status === 'active' && session.expiresAtEpochMs > atEpochMs;
 }
 
 export function isClientSnapshotPresenceFresh(snapshot: ClientSnapshot, atEpochMs: number): boolean {

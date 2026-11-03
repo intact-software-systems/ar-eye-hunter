@@ -15,7 +15,10 @@ import type { GroupMemberStatus, GroupPresenceSession, GroupRef, GroupRole } fro
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import { type ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
-import { isClientSnapshotSessionLive } from '@shared-server/rallar-system/presence/snapshot-presence.ts';
+import {
+    isClientSnapshotSessionLive,
+    isGroupSnapshotSessionLive
+} from '@shared-server/rallar-system/presence/snapshot-presence.ts';
 
 import type {
     CurrentMutationAuthority
@@ -176,8 +179,7 @@ async function authorizeRoomDocument(
         candidate.sessionId === input.sessionId &&
         candidate.status === 'active'
     );
-    const sessionIsCurrent = activeSession !== undefined &&
-        activeSession.expiresAtEpochMs > nowEpochMs;
+    const sessionIsCurrent = activeSession !== undefined && isGroupSnapshotSessionLive(activeSession, nowEpochMs);
     if (member === undefined || !sessionIsCurrent || (access === 'write' && member.role === 'spectator')) {
         return denied();
     }
@@ -237,8 +239,7 @@ function toAdmittedRoomAudience(snapshot: ApiCrdtGroupAuthorizationSnapshot, now
         ...new Set(
             snapshot.activeSessions
                 .filter((candidate) =>
-                    candidate.status === 'active' &&
-                    candidate.expiresAtEpochMs > nowEpochMs && activeMembers.has(candidate.principalId)
+                    isGroupSnapshotSessionLive(candidate, nowEpochMs) && activeMembers.has(candidate.principalId)
                 )
                 .map((candidate) => candidate.sessionId)
         )

@@ -75,8 +75,7 @@ describe('outbound admission observation order', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'send' }]
             })
         });
         onTestFinished(async () => {
@@ -90,7 +89,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const winningSnapshot = await store.readSentMessage(message.id.msgId);
         resume.resolve();
@@ -107,8 +106,7 @@ describe('outbound admission observation order', () => {
                 msg,
                 dropReasonCode: undefined,
                 lane: 'volatile',
-                preparedMessages: [{ kind: 'changed' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ kind: 'changed' }]
             }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -150,7 +148,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -167,7 +165,7 @@ describe('outbound admission observation order', () => {
         });
         const pending = store.readRepairMessage(
             message.id.msgId,
-            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }], admittedConnectionGenerationIds: undefined })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         );
         onTestFinished(async () => {
             resume.resolve();
@@ -219,7 +217,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedConnectionGenerationIds: undefined })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -242,7 +240,7 @@ describe('outbound admission observation order', () => {
         });
         const pending = store.readRepairMessage(
             message.id.msgId,
-            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }], admittedConnectionGenerationIds: undefined })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         );
         onTestFinished(async () => {
             resume.resolve();

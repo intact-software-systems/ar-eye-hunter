@@ -261,8 +261,7 @@ function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput): Checkpo
                 dropReasonCode: undefined,
                 lane: 'checkpoint',
                 ackTracking: input.ackTracking,
-                preparedMessages: [{ peer: 'receiver' }],
-                admittedConnectionGenerationIds: undefined
+                preparedMessages: [{ peer: 'receiver' }]
             }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
                 attempted.push(lifecycle.canonicalMessage.route.resourceId);

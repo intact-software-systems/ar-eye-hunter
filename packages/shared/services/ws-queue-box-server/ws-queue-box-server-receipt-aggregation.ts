@@ -554,8 +554,7 @@ function toWsQueueBoxServerReceiptDispatchPlan(
         msg: message,
         dropReasonCode: undefined,
         lane: 'durable',
-        preparedMessages: [],
-        admittedConnectionGenerationIds: undefined
+        preparedMessages: []
     };
 }
 

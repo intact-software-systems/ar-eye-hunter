@@ -68,8 +68,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
             msg: receipt,
             dropReasonCode: undefined,
             lane: 'durable' as const,
-            preparedMessages: [{ text: 'receipt-frame' }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ text: 'receipt-frame' }]
         });
         const runtime = new ALOutboundMessageRuntime({
             ...resources,

@@ -48,8 +48,7 @@ function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000): Han
             dropReasonCode: undefined,
             lane: persist ? 'durable' : 'volatile',
             preparedMessages: [{ message: msg.id.msgId }],
-            ackTracking: { ...trackOutboundTestAcks(['peer-1']), timeoutMs: receiptTimeoutMs },
-            admittedConnectionGenerationIds: undefined
+            ackTracking: { ...trackOutboundTestAcks(['peer-1']), timeoutMs: receiptTimeoutMs }
         }),
         sendPreparedMessage: async (prepared) => {
             sent.push(JSON.stringify(prepared));

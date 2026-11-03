@@ -24,8 +24,7 @@ it('held reservations stay denied until the active owner and its owed follow-up 
             msg,
             dropReasonCode: undefined,
             lane: 'durable',
-            preparedMessages: [{ message: msg.id.msgId }],
-            admittedConnectionGenerationIds: undefined
+            preparedMessages: [{ message: msg.id.msgId }]
         }),
         sendPreparedMessage: async (prepared) => {
             sent.push(prepared.message ?? 'missing');
