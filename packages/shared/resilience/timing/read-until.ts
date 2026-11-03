@@ -1,4 +1,4 @@
-import type { Timers } from './timers.ts';
+import type { Timers } from '../timers.ts';
 
 export interface ReadUntilInput<T> {
     readonly timers: Timers;

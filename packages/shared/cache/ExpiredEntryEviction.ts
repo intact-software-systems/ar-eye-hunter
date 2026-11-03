@@ -1,5 +1,5 @@
-import { startRepeating } from '../resilience/start-repeating.ts';
 import { createDefaultBackgroundTimers } from '../resilience/timers.ts';
+import { startRepeating } from '../resilience/timing/start-repeating.ts';
 
 export type ExpiredEntryEvictionOptions = Readonly<{
     deleteExpiredIntervalMs?: number;

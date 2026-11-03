@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
-import { createManualTimers } from './manual-timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { createManualTimers } from '../manual-timers.ts';
 
 describe('repeating run', () => {
     it('runs once per interval after the first interval and stops idempotently', async () => {

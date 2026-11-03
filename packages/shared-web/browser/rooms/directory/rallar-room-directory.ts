@@ -3,9 +3,9 @@ import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { BrowserActivity } from '../../browser-activity.ts';
 

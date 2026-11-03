@@ -4,10 +4,10 @@ import { toCanonicalGroupRef, type GroupRef } from '@shared/api/group-types.ts';
 import type { GroupMove, GroupMoveAction, GroupMoveParty, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
-import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { listMoves, mutateMove } from './room-move-api.ts';
 import {

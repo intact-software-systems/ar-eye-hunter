@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { ThrottledFlush, ThrottledFlushStoppedError } from '@shared/resilience/throttled-flush.ts';
+import { ThrottledFlush, ThrottledFlushStoppedError } from '@shared/resilience/timing/throttled-flush.ts';
 
-import { createManualTimers } from './manual-timers.ts';
+import { createManualTimers } from '../manual-timers.ts';
 
 interface WriteLog {
     readonly startedAtMs: number[];

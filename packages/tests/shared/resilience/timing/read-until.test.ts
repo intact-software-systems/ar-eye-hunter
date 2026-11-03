@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { readUntil } from '@shared/resilience/read-until.ts';
+import { readUntil } from '@shared/resilience/timing/read-until.ts';
 
-import { createManualTimers, type ManualTimers } from './manual-timers.ts';
+import { createManualTimers, type ManualTimers } from '../manual-timers.ts';
 
 /** Lets a resumed read loop run up to its next wait. */
 async function settle(): Promise<void> {

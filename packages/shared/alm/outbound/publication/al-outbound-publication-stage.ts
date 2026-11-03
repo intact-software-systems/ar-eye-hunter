@@ -10,7 +10,7 @@ import {
     toALPublicationStreamKey
 } from '../../../al-contracts/publication/to-al-publication-stream-key.ts';
 import { retainNewest } from '../../../cache/retain-newest.ts';
-import { computeNextCadenceAtMs } from '../../../resilience/cadence.ts';
+import { computeNextCadenceAtMs } from '../../../resilience/timing/cadence.ts';
 import { toError } from '../../../resilience/to-error.ts';
 import type { InboxOutboxEngine } from '../../../services/inbox-outbox-engine.ts';
 import type {

@@ -25,8 +25,8 @@ import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distribute
 import { decodeControlRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { readUntil, type ReadUntilOutcome } from '@shared/resilience/read-until.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { readUntil, type ReadUntilOutcome } from '@shared/resilience/timing/read-until.ts';
 
 import {
     readFullStackControlBaseUrl,

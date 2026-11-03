@@ -1,5 +1,5 @@
-import type { Timers } from './timers.ts';
-import { toError } from './to-error.ts';
+import type { Timers } from '../timers.ts';
+import { toError } from '../to-error.ts';
 
 interface PendingWrite {
     /** Settles with the write that covers the marks made since the previous write started. */

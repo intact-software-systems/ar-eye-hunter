@@ -1,7 +1,7 @@
 import { readGroupRetentionState } from '@shared/api/group-retention.ts';
 import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';

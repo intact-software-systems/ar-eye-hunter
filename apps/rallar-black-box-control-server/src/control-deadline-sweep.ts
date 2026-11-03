@@ -1,5 +1,5 @@
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 import type { ControlAgentSockets } from './control-agent-sockets.ts';
 import type { ControlSnapshotPersistence } from './control-snapshot-persistence.ts';
