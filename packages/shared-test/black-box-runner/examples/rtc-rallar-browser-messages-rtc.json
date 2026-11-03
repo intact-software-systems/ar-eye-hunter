@@ -110,9 +110,11 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "to": "bob",
-            "text": "hello bob"
+            "payload": {
+              "from": "alice",
+              "to": "bob",
+              "text": "hello bob"
+            }
           }
         }
       }
@@ -139,9 +141,11 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "bob",
-            "to": "alice",
-            "text": "hello alice"
+            "payload": {
+              "from": "bob",
+              "to": "alice",
+              "text": "hello alice"
+            }
           }
         }
       }

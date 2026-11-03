@@ -186,12 +186,14 @@
           "typeId": "black-box.live.traffic.message",
           "topicId": "black-box.live.traffic",
           "data": {
-            "sequence": "{traffic.sequence}",
-            "operation": "{traffic.operation}",
-            "randomInt": "{traffic.randomInt}",
-            "from": "alice",
-            "to": "bob",
-            "text": "live traffic {traffic.sequence} from alice"
+            "payload": {
+              "sequence": "{traffic.sequence}",
+              "operation": "{traffic.operation}",
+              "randomInt": "{traffic.randomInt}",
+              "from": "alice",
+              "to": "bob",
+              "text": "live traffic {traffic.sequence} from alice"
+            }
           }
         }
       }
@@ -222,12 +224,14 @@
           "typeId": "black-box.live.traffic.message",
           "topicId": "black-box.live.traffic",
           "data": {
-            "sequence": "{traffic.sequence}",
-            "operation": "{traffic.operation}",
-            "randomInt": "{traffic.randomInt}",
-            "from": "bob",
-            "to": "alice",
-            "text": "live traffic {traffic.sequence} from bob"
+            "payload": {
+              "sequence": "{traffic.sequence}",
+              "operation": "{traffic.operation}",
+              "randomInt": "{traffic.randomInt}",
+              "from": "bob",
+              "to": "alice",
+              "text": "live traffic {traffic.sequence} from bob"
+            }
           }
         }
       }

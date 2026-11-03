@@ -168,7 +168,7 @@
       "connection": "bobRtc",
       "request": {
         "outputs": {
-          "bobMulticastPayload": "matchedMessage.data.data"
+          "bobMulticastPayload": "matchedMessage.data.data.payload"
         }
       },
       "expect": {
@@ -180,8 +180,10 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "text": "hello room multicast"
+            "payload": {
+              "from": "alice",
+              "text": "hello room multicast"
+            }
           }
         }
       }
@@ -192,7 +194,7 @@
       "connection": "charlieRtc",
       "request": {
         "outputs": {
-          "charlieMulticastPayload": "matchedMessage.data.data"
+          "charlieMulticastPayload": "matchedMessage.data.data.payload"
         }
       },
       "expect": {
@@ -204,8 +206,10 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "text": "hello room multicast"
+            "payload": {
+              "from": "alice",
+              "text": "hello room multicast"
+            }
           }
         }
       }

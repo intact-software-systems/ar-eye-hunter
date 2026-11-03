@@ -170,9 +170,11 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "workspaceId": "{workspaceA}",
-            "text": "hello workspace a"
+            "payload": {
+              "from": "alice",
+              "workspaceId": "{workspaceA}",
+              "text": "hello workspace a"
+            }
           }
         }
       }

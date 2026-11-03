@@ -751,7 +751,7 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
             }
         },
         now: Date.now,
-        typedChannels: new BlackBoxRallarTypedChannels({ messages: facade.messages, resources, diagnostics }),
+        typedChannels: new BlackBoxRallarTypedChannels({ messages: facade.messages, connection: facade, resources, diagnostics }),
         resources,
         diagnostics,
         requireConfig: () => ({

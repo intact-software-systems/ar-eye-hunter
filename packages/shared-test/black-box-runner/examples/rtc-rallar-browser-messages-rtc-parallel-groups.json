@@ -169,10 +169,12 @@
                   "typeId": "{messageTypeId}",
                   "topicId": "{topicId}",
                   "data": {
-                    "from": "alice",
-                    "to": "bob",
-                    "flow": "live-parallel",
-                    "text": "parallel hello from alice"
+                    "payload": {
+                      "from": "alice",
+                      "to": "bob",
+                      "flow": "live-parallel",
+                      "text": "parallel hello from alice"
+                    }
                   }
                 }
               }
@@ -214,10 +216,12 @@
                   "typeId": "{messageTypeId}",
                   "topicId": "{topicId}",
                   "data": {
-                    "from": "bob",
-                    "to": "alice",
-                    "flow": "live-parallel",
-                    "text": "parallel hello from bob"
+                    "payload": {
+                      "from": "bob",
+                      "to": "alice",
+                      "flow": "live-parallel",
+                      "text": "parallel hello from bob"
+                    }
                   }
                 }
               }

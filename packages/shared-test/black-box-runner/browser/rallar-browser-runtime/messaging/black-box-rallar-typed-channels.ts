@@ -18,7 +18,10 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type { BlackBoxRallarConnectionConfig, BlackBoxRallarEvent } from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf, blackBoxRallarScopeDiagnosticsOf } from '../black-box-rallar-operation-policy.ts';
-import type { BlackBoxBrowserMessagesDependency } from '../browser-rallar-runtime-composition.ts';
+import type {
+    BlackBoxBrowserMessagesDependency,
+    BlackBoxBrowserRallarRuntimeDependency
+} from '../browser-rallar-runtime-composition.ts';
 import {
     resolveBlackBoxRallarTopicId,
     resolveBlackBoxRallarTypeId
@@ -52,6 +55,7 @@ const RECEIVED_MESSAGES_RETAINED_PER_TYPE = 16;
 export namespace BlackBoxRallarTypedChannels {
     export interface Input {
         readonly messages: BlackBoxBrowserMessagesDependency;
+        readonly connection: Pick<BlackBoxBrowserRallarRuntimeDependency, 'session'>;
         readonly resources: BlackBoxRallarMessagingResourceController;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
     }
@@ -225,6 +229,8 @@ export class BlackBoxRallarTypedChannels {
             transport,
             roomId: message.roomId ?? config.roomId,
             ...blackBoxRallarScopeDiagnosticsOf(config),
+            peerId: this.#input.connection.session()?.sessionId,
+            remotePeerId: message.senderId,
             senderId: message.senderId,
             typeId: message.typeId,
             topicId: message.topicId,

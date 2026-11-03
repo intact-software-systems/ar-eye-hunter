@@ -180,10 +180,12 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "to": "bob",
-            "flow": "live-soak",
-            "text": "live soak ping from alice"
+            "payload": {
+              "from": "alice",
+              "to": "bob",
+              "flow": "live-soak",
+              "text": "live soak ping from alice"
+            }
           }
         }
       }
@@ -220,10 +222,12 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "bob",
-            "to": "alice",
-            "flow": "live-soak",
-            "text": "live soak ping from bob"
+            "payload": {
+              "from": "bob",
+              "to": "alice",
+              "flow": "live-soak",
+              "text": "live soak ping from bob"
+            }
           }
         }
       }

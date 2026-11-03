@@ -31,7 +31,6 @@ export namespace BlackBoxRallarConnectionState {
         readonly config: BlackBoxRallarConnectionConfig;
         readonly session: Session;
         readonly unsubscribeRealtime?: () => void;
-        readonly unsubscribeMessagesRtc?: () => void;
         readonly unsubscribeWsLifecycle?: () => void;
         readonly unsubscribeRtcLifecycle?: () => void;
         readonly unsubscribeFormationDiagnostics?: () => void;

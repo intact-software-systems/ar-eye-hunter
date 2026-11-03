@@ -132,7 +132,9 @@
           "topic": "rallar.browser.messages.rtc.message",
           "typeId": "{nackTypeId}",
           "data": {
-            "reason": "not-yet-in-sync"
+            "payload": {
+              "reason": "not-yet-in-sync"
+            }
           }
         }
       }

@@ -149,7 +149,7 @@
         },
         "outputs": {
           "providerModeSendStatus": "sendResult.status",
-          "providerModePayload": "matchedMessage.data.data"
+          "providerModePayload": "matchedMessage.data.data.payload"
         }
       },
       "expect": {
@@ -160,8 +160,10 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "text": "provider mode parity"
+            "payload": {
+              "from": "alice",
+              "text": "provider mode parity"
+            }
           }
         }
       }

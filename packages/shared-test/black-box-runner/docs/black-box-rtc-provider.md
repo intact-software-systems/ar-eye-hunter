@@ -117,7 +117,7 @@ For app-level Rallar RTC messages, use `transport: "messages.rtc"` and configure
       "typeId": "chat.message",
       "topicId": "chat",
       "data": {
-        "text": "hello bob"
+        "payload": { "text": "hello bob" }
       }
     }
   }
@@ -182,3 +182,8 @@ are normalized into `rtcMessages`, `rtcDiagnostics`, and `rtcCloseEvents`.
 Remote RTC messages use the same event-shaped payload style as
 `rallar-browser`: `matchedMessage.data.kind`, `matchedMessage.data.topic`, and
 `matchedMessage.data.data` are available for assertions and output extraction.
+For `messages.rtc`, that data is the canonical typed envelope: application content lives at
+`matchedMessage.data.data.payload`, beside `msgId`, `typeId`, transport and trace identity.
+Each SDK arrival produces one recorded message and one increment of `stats.counters.messages`.
+The event retains local `peerId`, remote `remotePeerId` and `senderId` for topology evidence.
+Raw `realtime` JSON continues to use `matchedMessage.data.data` directly.

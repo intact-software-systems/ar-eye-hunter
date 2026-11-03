@@ -327,7 +327,7 @@
         },
         "outputs": {
           "rtcSendStatus": "sendResult.status",
-          "rtcParityPayload": "matchedMessage.data.data"
+          "rtcParityPayload": "matchedMessage.data.data.payload"
         }
       },
       "expect": {
@@ -338,7 +338,9 @@
           "topic": "rallar.browser.messages.rtc.message",
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
-          "data": "{parityPayload}"
+          "data": {
+            "payload": "{parityPayload}"
+          }
         }
       }
     },
