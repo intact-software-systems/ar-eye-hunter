@@ -1,15 +1,13 @@
-import { rallar } from '@shared-web/browser/rallar.ts';
-import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
 import { useCallback } from 'react';
-import { createArenaRematch, type ArenaRematchCommand } from '../../arena-rematch.ts';
 
-import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import { rallar, type RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 
 import {
     GAME_PROTOCOL,
@@ -22,6 +20,7 @@ import {
     type PickupIntent
 } from '../../arena-contracts.ts';
 import { ARENA_EVENT_HEADLINE_MS } from '../../arena-events.ts';
+import { createArenaRematch, type ArenaRematchCommand } from '../../arena-rematch.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
@@ -142,7 +141,7 @@ async function startArenaMatchFromIntent(
     await match.sendIntent({ protocol: GAME_PROTOCOL, kind: 'match-start-intent', intent });
 }
 
-type ArenaRematchDraft =
+export type ArenaRematchDraft =
     | Readonly<{ kind: 'ready'; ready: boolean; }>
     | Readonly<{ kind: 'start'; }>
     | Readonly<{ kind: 'settings'; durationMs: ArenaMatchDurationMs; }>;
@@ -151,21 +150,27 @@ async function sendArenaRematchCommand(input: ArenaWorldActionsInput, draft: Are
     const session = input.sessionRef.current;
     const match = input.arenaMatchRef.current;
     const completed = input.arenaSnapshotRef.current?.match;
-    if (
-        !session || !match?.status().directorIsFresh || !input.isNetworkEnabled() || isCurrentArenaSpectator() ||
-        completed?.status !== 'complete'
-    ) {
-        return;
+    if (!session || !input.isNetworkEnabled()) {
+        throw new Error('Reconnect to the arena, then try Play again.');
+    }
+    if (!match?.status().directorIsFresh) {
+        throw new Error('The director is unavailable. Wait for the director to reconnect, then try Play again.');
+    }
+    if (isCurrentArenaSpectator()) {
+        throw new Error('Join as a player before confirming the next match.');
+    }
+    if (completed?.status !== 'complete') {
+        throw new Error('The match has changed. Check the current match before confirming again.');
     }
     const rematch = completed.rematch ?? createArenaRematch(completed).right;
     if (!rematch) {
-        return;
+        throw new Error('The completed match cannot prepare another game. Return to the arena and try again.');
     }
     const participant = readRallarGameParticipants(rallar.rooms.state().currentRoom, input.nowMs()).find((entry) =>
         entry.sessionId === session.sessionId
     );
     if (!participant) {
-        return;
+        throw new Error('Your room presence is not current. Refresh the arena, then try Play again.');
     }
     const identity = {
         sessionId: session.sessionId,

@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
-import { isCurrentRelicRoom, RelicRoomSharing } from './relic-room-sharing.tsx';
+import {
+    useEffect,
+    useRef,
+    useState,
+    type RefObject
+} from 'react';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -8,6 +12,7 @@ import type { GroupJoinMode, GroupRef, GroupSnapshot } from '@shared/api/group-t
 import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
+import { isCurrentRelicRoom, RelicRoomSharing } from './relic-room-sharing.tsx';
 
 interface RelicRoomHostingProps {
     readonly game: Pick<RelicHuntersRuntime.Connection, 'session' | 'rooms' | 'roomId' | 'createRoom'> & {
@@ -44,8 +49,8 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
         : null;
     useEffect(() => {
         setCode((current) =>
-            current && current.sessionId === game.session?.sessionId && snapshot &&
-                isSameGroupRef(current.response.snapshot.group, snapshot.group)
+            current && current.sessionId === game.session?.sessionId &&
+                (!snapshot || isSameGroupRef(current.response.snapshot.group, snapshot.group))
                 ? current
                 : undefined
         );
@@ -63,29 +68,7 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
     const currentCode = code?.sessionId === game.session?.sessionId ? code?.response : undefined;
     return (
         <section className="stack" aria-label="Expedition hosting">
-            <div className="button-grid">
-                <button
-                    type="button"
-                    disabled={unavailable}
-                    onClick={() => void createRelicRoom(operation, 'open', 'unlisted')}
-                >
-                    New unlisted room
-                </button>
-                <button
-                    type="button"
-                    disabled={unavailable}
-                    onClick={() => void createRelicRoom(operation, 'code')}
-                >
-                    New code room
-                </button>
-                <button
-                    type="button"
-                    disabled={unavailable}
-                    onClick={() => void createRelicRoom(operation, 'invite-only')}
-                >
-                    New invite-only room
-                </button>
-            </div>
+            <RelicRoomCreationControls operation={operation} disabled={unavailable} />
             {error && <p role="alert">{error}</p>}
             {hosting && (
                 <RelicRoomSharing
@@ -97,6 +80,39 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
                 />
             )}
         </section>
+    );
+}
+
+interface RelicRoomCreationControlsProps {
+    readonly operation: RelicHostingOperation;
+    readonly disabled: boolean;
+}
+
+function RelicRoomCreationControls({ operation, disabled }: RelicRoomCreationControlsProps) {
+    return (
+        <div className="button-grid">
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void createRelicRoom(operation, 'open', 'unlisted')}
+            >
+                New unlisted room
+            </button>
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void createRelicRoom(operation, 'code')}
+            >
+                New code room
+            </button>
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void createRelicRoom(operation, 'invite-only')}
+            >
+                New invite-only room
+            </button>
+        </div>
     );
 }
 
@@ -119,11 +135,12 @@ async function createRelicRoom(
         const snapshot = await operation.game.createRoom(joinMode, directoryListing);
         room = snapshot?.group ?? room;
         if (
-            operation.pendingOperation.current === pending && snapshot && isCurrentRelicRoom(session, snapshot.group) &&
+            operation.pendingOperation.current === pending && snapshot &&
+            rallar.session()?.sessionId === session.sessionId &&
             joinMode === 'code'
         ) {
             const response = await rallar.rooms.rotateJoinCode(snapshot.group);
-            if (operation.pendingOperation.current === pending && isCurrentRelicRoom(session, snapshot.group)) {
+            if (operation.pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId) {
                 operation.setCode({ sessionId: session.sessionId, response });
             }
         }
@@ -156,7 +173,7 @@ async function rotateRelicRoomCode(operation: RelicHostingOperation): Promise<vo
     operation.setCode(undefined);
     try {
         const response = await rallar.rooms.rotateJoinCode(room);
-        if (operation.pendingOperation.current === pending && isCurrentRelicRoom(session, room)) {
+        if (operation.pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId) {
             operation.setCode({ sessionId: session.sessionId, response });
         }
     }

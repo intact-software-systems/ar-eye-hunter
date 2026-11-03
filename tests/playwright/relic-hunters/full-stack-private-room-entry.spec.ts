@@ -84,6 +84,32 @@ test(
     }
 );
 
+test('preserves a created code link across a missing room-cache observation and refresh', async ({ page }) => {
+    test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
+    await page.goto('/');
+    await registerPrivateHunter(page, 'code-cache');
+    await page.getByRole('button', { name: 'New code room', exact: true }).click();
+    const roomLink = page.getByLabel('Room link', { exact: true });
+    await expect(roomLink).toHaveValue(/joinCode=/);
+    const createdLink = await roomLink.inputValue();
+    const groupsPath = '/api/state/apps/rallar-server/workspaces/default/groups';
+    const collection = (url: URL) => url.pathname === groupsPath;
+    await page.route(collection, async (route) => {
+        if (route.request().method() === 'GET') {
+            await route.fulfill({ json: [] });
+        }
+        else {
+            await route.continue();
+        }
+    });
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(roomLink).toHaveCount(0);
+    await page.unroute(collection);
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(roomLink).toHaveValue(createdLink);
+    await expect(page.getByRole('button', { name: 'Copy room link', exact: true })).toBeEnabled();
+});
+
 test(
     'finishes sharing a code room when cached presence expires during previous-room cleanup',
     async ({ page }, testInfo) => {
