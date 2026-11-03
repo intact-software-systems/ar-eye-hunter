@@ -8,7 +8,7 @@ import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 import { ArenaRoomHosting } from '../../../apps/ar-eye-hunter-v1/src/arena-ui/arena-room-hosting.tsx';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
-const facade = vi.hoisted(() => ({ session: vi.fn(), rooms: { state: vi.fn(), rotateJoinCode: vi.fn() } }));
+const facade = vi.hoisted(() => ({ session: vi.fn(), rooms: { state: vi.fn(), onChange: () => () => undefined, rotateJoinCode: vi.fn() } }));
 vi.mock('@shared-web/browser/rallar.ts', () => ({ rallar: facade }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 

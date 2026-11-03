@@ -13,6 +13,14 @@ describe('game participation authority', () => {
         expect(readRallarGameParticipants({ ...snapshot, group: { ...snapshot.group, expiresAtEpochMs: 1 } }, 1)).toEqual([]);
     });
 
+    it.each(['banned', 'removed'] as const)('excludes %s players from readiness despite retained sessions', (status) => {
+        const revoked = {
+            ...snapshot,
+            members: snapshot.members.map((member) => member.principalId === 'bob' ? { ...member, status } : member)
+        };
+        expect(readRallarGameParticipants(revoked, 1).map((entry) => entry.sessionId)).toEqual(['alice']);
+    });
+
     it('preserves consent identity through heartbeat and transport reconnect but changes it on membership replacement', () => {
         const initial = readRallarGameParticipants(snapshot, 1);
         const reconnected = {

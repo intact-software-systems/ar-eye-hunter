@@ -38,6 +38,14 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         expect(facade.rooms.list()[0]?.snapshot).toEqual(previous);
     });
 
+    it('clears the selected room when an authoritative refresh denies access', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'forbidden', code }), { status: 403 }));
+        const facade = createRallarFacade();
+        await expect(facade.rooms.session(previous.group).refresh()).rejects.toMatchObject({ status: 403 });
+        expect(facade.rooms.state().currentRoomRef).toBeUndefined();
+    });
+
     it('keeps a newly admitted destination when the source membership refuses departure', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         respondToDeparture(code, 403);
@@ -77,6 +85,25 @@ it('does not clear a replacement session when an old leave response arrives', as
     runtime.readSession.mockReturnValue({ ...runtime.session, sessionId: 'replacement-session' });
     response.resolve(new Response(JSON.stringify({ error: 'forbidden', code: 'member-banned' }), { status: 403 }));
     await rejected;
+});
+
+it('preserves a newer same-room observation when an old refresh is denied', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const started = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<Response>();
+    vi.stubGlobal('fetch', async () => {
+        started.resolve();
+        return await response.promise;
+    });
+    const facade = createRallarFacade();
+    const refreshing = facade.rooms.session(previous.group).refresh();
+    const rejected = expect(refreshing).rejects.toMatchObject({ status: 403 });
+    await started.promise;
+    const newer = { ...previous, causalRevision: { ...previous.causalRevision, groupRevision: 2 }, group: { ...previous.group, snapshotVersion: 2 } };
+    seedRoomSnapshots([newer]);
+    response.resolve(new Response(JSON.stringify({ error: 'forbidden', code: 'member-banned' }), { status: 403 }));
+    await rejected;
+    expect(facade.rooms.current()).toEqual(newer);
 });
 
 function respondToDeparture(code: string, status: number): void {

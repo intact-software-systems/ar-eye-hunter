@@ -1,8 +1,10 @@
+import { RoomModerationPanel } from '@shared-react/room-moderation-panel.tsx';
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import { arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
 import { ArenaRoomSharing, isCurrentArenaHost } from './arena-room-sharing.tsx';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type {
     GroupJoinMode,
@@ -41,11 +43,7 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
     const [error, setError] = useState<string | undefined>();
     const [code, setCode] = useState<ArenaRoomCode | undefined>();
     const snapshot = arena.rooms.find((room) => room.roomId === arena.roomId)?.snapshot;
-    const roomKey = snapshot
-        ? JSON.stringify(
-            [snapshot.group.applicationId, snapshot.group.workspaceId, snapshot.group.groupId]
-        )
-        : null;
+    const roomKey = snapshot ? toScopedRoomKey(snapshot.group) : null;
     useEffect(() => {
         setCode((current) =>
             current && current.sessionId === arena.session?.sessionId && snapshot &&
@@ -68,6 +66,14 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
         );
     return (
         <section className="stack" aria-label="Arena hosting">
+            {arena.session && (
+                <RoomModerationPanel
+                    accessCheckIntervalMs={5000}
+                    session={arena.session}
+                    rooms={rallar.rooms}
+                    entry={arenaRoomEntry}
+                />
+            )}
             <div className="room-actions">
                 <button type="button" disabled={busy} onClick={() => void create('open', 'unlisted')}>
                     New unlisted arena

@@ -325,6 +325,11 @@ revocation or inventing a snapshot. Other failures still reject. A successful de
 not reported as failed merely because the previous room preserved its ban. Explicit departure also
 prevents stale cached presence from reselecting that room; a new successful entry selects it anew.
 
+A bound room session's `refresh()` also clears the matching active selection when the server explicitly
+reports `member-banned` or `member-removed`, then rejects with that policy error. It evicts only the
+snapshot observed when that read began; a newer observation or replacement authentication session
+is preserved. Network failures and unrelated access errors do not imply revocation.
+
 `rooms.update(input)` updates owner/admin-controlled room fields, including
 display metadata, `joinMode`, `directoryListing`, and capacity limits.
 

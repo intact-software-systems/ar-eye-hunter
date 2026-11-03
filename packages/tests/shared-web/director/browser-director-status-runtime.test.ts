@@ -164,6 +164,22 @@ describe('director status observation before connection', () => {
         expect(status.read().lastHeartbeatAtEpochMs).toBe(3_456);
     });
 
+    it.each(['banned', 'removed'] as const)('invalidates a %s director despite a retained appointment and heartbeat', (membership) => {
+        const cache = new DirectorStatusCache();
+        const snapshot = createAppointmentSnapshot();
+        cache.repositories.set(snapshotsToken, [{
+            ...snapshot,
+            members: snapshot.members.map((member) => ({ ...member, status: membership }))
+        }]);
+        const status = createStatusRuntime(cache, session);
+        const appointment = status.read(roomRef).appointment;
+        if (!appointment) {
+            throw new Error('Fixture appointment missing');
+        }
+        status.recordHeartbeat(roomRef, appointment, 1_234);
+        expect(status.read(roomRef)).toMatchObject({ state: 'inactive', active: false, isFresh: false });
+    });
+
     it('preserves current and explicit room appointment freshness, heartbeat and inactive evidence', () => {
         const cache = new DirectorStatusCache();
         const snapshot = createAppointmentSnapshot();

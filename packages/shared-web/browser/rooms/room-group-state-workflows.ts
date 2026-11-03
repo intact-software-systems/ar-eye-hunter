@@ -1,4 +1,3 @@
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
 import {
@@ -11,6 +10,7 @@ import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RallarRoomJoinPartialFailureError } from './rallar-room-contracts.ts';
+import { readRoomMembershipRevocation } from './room-membership-revocation.ts';
 
 import {
     toConnectRoomPresenceGroupStateRequest,
@@ -226,10 +226,7 @@ function createLeavingMembershipCommand(
             });
         }
         catch (error) {
-            if (
-                error instanceof ApiHttpError && error.status === 403 &&
-                (error.policyError?.code === 'member-banned' || error.policyError?.code === 'member-removed')
-            ) {
+            if (readRoomMembershipRevocation(error) !== undefined) {
                 return undefined;
             }
             throw error;

@@ -39,6 +39,16 @@ admins can list them again without changing membership. Listing does not bypass 
 or lifecycle admission rules. Private rooms stay outside the open directory regardless of listing. A link identifies its application,
 workspace, and room; an invite-only link still requires an account invitation.
 
+Owners and admins can confirm Remove, Ban or Unban from Room moderation in both games. Owners
+cannot be removed; admins cannot moderate other admins, and nobody can target themselves there.
+Remove requires a new invitation to return. Unban permits a fresh admission attempt and never
+joins the player automatically. Explicit revocation stops the affected player's room participation,
+explains the loss of access and leaves other rooms available. Leaving locally never erases a ban.
+The games observe authoritative roster updates and check current-room access every five seconds
+after the preceding check completes; browser suspension and network failures can delay detection.
+A missing snapshot or failed connection alone is not reported as a ban. Relic's existing Keeper
+takeover and round timeout preserve ongoing play; accepted plans and saved expedition progress remain.
+
 Both games refresh public room discovery automatically while signed in, visible, and online.
 They refresh on returning to the foreground and then wait 30 seconds after each completed refresh.
 Manual Refresh remains available; a failed refresh labels the last complete list as stale. Discovery
