@@ -122,6 +122,21 @@ describe('a granted typed channel', () => {
         }
     );
 
+    it('a sendRtc with ack: none is admitted on RTC carrying its origin\'s proof', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+
+        const handle = await channel.sendRtc({ text: 'sendRtc' }, { ack: 'none' });
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(admissions).toMatchObject([{
+            carrier: 'rtc',
+            verdict: 'admitted',
+            message: { route: { topicId: GRANTED_TOPIC_ID }, proof: { alg: 'ES256', keyId: crypto.keyPair.keyId } }
+        }]);
+    });
+
     it('an ack: receiver room send under rtc settles rejected with refused/unsupported and reaches no carrier', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
         wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));

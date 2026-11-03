@@ -1,14 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import { newALMulticastMessage, type ALAckMode, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import {
+    signALPublicationProof,
     toALPublicationProofSigningInput,
     verifyALPublicationProof
 } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { reconstructALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/compute-rtc-granted-publication-refusal.ts';
@@ -69,7 +68,8 @@ describe('the RTC origin of a granted publication', () => {
         }
     });
 
-    it.each(['admission', 'dequeue', 'replan', 'hand-over'] as const)(
+    // Admission and dequeue are pinned through the leg and its sent copies above; these two stages have no public probe.
+    it.each(['replan', 'hand-over'] as const)(
         'keeps a byte-identical signing input in its plan at %s, in the message and in every copy',
         async (stage) => {
             const crypto = await createAvailablePublicationCryptoFixture();
@@ -90,10 +90,15 @@ describe('the RTC origin of a granted publication', () => {
         }
     );
 
-    it.each<[string, (crypto: AvailablePublicationCrypto) => PublicationCrypto, (crypto: AvailablePublicationCrypto) => GroupSnapshot]>([
-        ['a keyless page', () => UNAVAILABLE_PUBLICATION_CRYPTO, (crypto) => toKeyedSnapshot(crypto)],
-        ['a page its snapshot names by an older keyId', (crypto) => crypto, () => createOriginSnapshot(['a', 'b', 'c'], 3)]
-    ])('refuses %s before admission as unsupported, sending and storing nothing', async (_name, toCrypto, toSnapshot) => {
+    it.each<[
+        string,
+        RtcPublicationSigningFailure['kind'],
+        (crypto: AvailablePublicationCrypto) => PublicationCrypto,
+        (crypto: AvailablePublicationCrypto) => GroupSnapshot
+    ]>([
+        ['a keyless page', 'signing-unavailable', () => UNAVAILABLE_PUBLICATION_CRYPTO, (crypto) => toKeyedSnapshot(crypto)],
+        ['a page its snapshot names by an older keyId', 'key-not-registered', (crypto) => crypto, () => createOriginSnapshot(['a', 'b', 'c'], 3)]
+    ])('refuses %s before admission as unsupported (%s), sending and storing nothing', async (_name, kind, toCrypto, toSnapshot) => {
         const crypto = await createAvailablePublicationCryptoFixture();
         const fixture = createGrantedFixture(toCrypto(crypto), toSnapshot(crypto));
         const message = createGrantedMulticast('none');
@@ -101,7 +106,7 @@ describe('the RTC origin of a granted publication', () => {
         const refused = await enqueueLegAndDrain(fixture, message, 'hand-over');
 
         expect(refused).toMatchObject({
-            verdict: { kind: 'refused', reason: 'unsupported', detail: expect.any(String) },
+            verdict: { kind: 'refused', reason: 'unsupported', detail: expect.stringMatching(new RegExp(`^${kind}: `)) },
             message,
             entries: []
         });
@@ -120,6 +125,52 @@ describe('the RTC origin of a granted publication', () => {
             kind: 'refused',
             reason: 'unsupported',
             detail: RTC_GRANTED_PUBLICATION_REFUSALS.receipt
+        });
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    it.each<[string, Partial<Extract<ALTargets, { mode: 'broadcast'; }>>]>([
+        ['its exclusions', { exceptPeerIds: ['c'] }],
+        ['its fixed list, which the origin would freeze as a multicast', { recipientPeerIds: ['b'] }]
+    ])('refuses a granted room broadcast naming %s as not a multicast before it is frozen or signed', async (_name, audience) => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        const message: ALMessage = {
+            ...createGrantedMulticast('none'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, ...audience }
+        };
+
+        const refused = await enqueueLegAndDrain(fixture, message, 'hand-over');
+
+        expect(refused).toMatchObject({
+            verdict: { kind: 'refused', reason: 'unsupported', detail: RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast },
+            message,
+            entries: []
+        });
+        expect(refused.message.proof).toBeUndefined();
+        expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    it('refuses through enqueueIfAbsent a granted room broadcast carrying a proof, judged by the targets its sender gave', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        const message = (await signALPublicationProof({
+            subtle: crypto.subtle,
+            keyPair: crypto.keyPair,
+            message: {
+                ...createGrantedMulticast('none'),
+                targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, recipientPeerIds: ['b'] }
+            }
+        })).right!;
+
+        const refused = await fixture.manager.enqueueIfAbsent(message);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(refused.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast
         });
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
     });
@@ -212,19 +263,6 @@ describe('signRtcPublication', () => {
         const signed = await signRtcPublication(toSigningInput(crypto, toKeyedSnapshot(older), toFrozen(createGrantedMulticast('none'))));
 
         expect(signed.left?.kind).toBe('key-not-registered');
-    });
-});
-
-describe('toALOutboundMessage', () => {
-    it('returns a proof-carrying message unchanged: the origin normalized it before signing', () => {
-        const message = createGrantedMulticast('none');
-        const proven: ALMessage = {
-            ...message,
-            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
-        };
-
-        expect(toALOutboundMessage(proven, normalizeALQosPolicy(message).effective)).toBe(proven);
-        expect(toALOutboundMessage(message, normalizeALQosPolicy(message).effective)).not.toBe(message);
     });
 });
 

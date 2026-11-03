@@ -52,7 +52,6 @@ import {
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
-import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
     EnqueuedType,
     OverlayId,
@@ -115,8 +114,9 @@ import {
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
-import { signRtcPublication } from './sign-rtc-publication.ts';
+import { signRtcPublication, type RtcPublicationSigningFailure } from './sign-rtc-publication.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
+import { toRtcOutboundMessage } from './to-rtc-outbound-message.ts';
 import {
     computeRtcBroadcastScopeRefusal,
     computeRtcFrozenAudienceRefusal,
@@ -135,6 +135,9 @@ import {
 
 /** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
 type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
+
+/** Why a granted leg is not carried: a shape RTC cannot carry, or its origin could not sign it. */
+type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
 
 /** An origin message as its admission carries it: frozen to its room audience and normalized. */
 interface RtcOriginAdmittedMessage {
@@ -322,23 +325,26 @@ export class WebRtcOverlayMulticastManager {
         }
         const signed = await this.signGrantedPublication(msg);
         return await signed.fold(
-            async (detail) =>
+            async (refusal) =>
                 WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
                     kind: 'refused',
                     reason: 'unsupported',
-                    detail
+                    detail: toRtcGrantedLegRefusalDetail(refusal)
                 }),
             async (carried) => await this.enqueueCarriedLegIfAbsent(carried, carrierGap)
         );
     }
 
-    /** A granted leg is refused for its shape before any signing work, else signed as its admission carries it. */
-    private async signGrantedPublication(msg: ALMessage): Promise<Either<string, ALMessage>> {
-        const admitted = this.toRtcOriginAdmittedMessage(msg).message;
-        const refusal = resolveRtcGrantedPublicationShapeRefusal(admitted);
-        if (refusal !== undefined) {
-            return Either.ofLeft(refusal);
+    /**
+     * A granted leg is refused for the shape its sender gave before any freezing or signing work, else signed as
+     * its admission carries it.
+     */
+    private async signGrantedPublication(msg: ALMessage): Promise<Either<RtcGrantedLegRefusal, ALMessage>> {
+        const shapeRefusal = resolveRtcGrantedPublicationShapeRefusal(msg);
+        if (shapeRefusal !== undefined) {
+            return Either.ofLeft({ kind: 'unsupported-shape', message: shapeRefusal });
         }
+        const admitted = this.toRtcOriginAdmittedMessage(msg).message;
         const groupRef = readALTargetGroupRef(admitted);
         const signed = await signRtcPublication({
             crypto: this.#publicationCrypto,
@@ -346,7 +352,7 @@ export class WebRtcOverlayMulticastManager {
             selfSessionId: this.connectionService.input.sessionId,
             message: admitted
         });
-        return signed.mapLeft((failure) => `${failure.kind}: ${failure.message}`);
+        return signed.mapLeft<RtcGrantedLegRefusal>((failure) => failure);
     }
 
     /**
@@ -515,7 +521,7 @@ export class WebRtcOverlayMulticastManager {
             qos: this.readForwardingQosInput(msg, context, fromPeerId)
         });
         const planned = this.planOutboundDispatch(
-            toALOutboundMessage(msg, dispatchPlan.handlingPlan.effective),
+            toRtcOutboundMessage(msg, dispatchPlan.handlingPlan.effective),
             dispatchPlan
         );
         return {
@@ -705,7 +711,7 @@ export class WebRtcOverlayMulticastManager {
         const frozen = toRtcCarrierGapFrozenMessage(original, availability, selfPeerId) ??
             toRtcOriginFrozenMessage(original, context, selfPeerId);
         const policy = this.readOutgoingQosPolicy(frozen, context);
-        return { availability, policy, message: toALOutboundMessage(frozen, policy.effective) };
+        return { availability, policy, message: toRtcOutboundMessage(frozen, policy.effective) };
     }
 
     private computeOriginRefusal(
@@ -1209,6 +1215,11 @@ export class WebRtcOverlayMulticastManager {
             repairTracking: repair
         };
     }
+}
+
+/** A shape refusal reads as its own text; a signing failure names its kind first. */
+function toRtcGrantedLegRefusalDetail(refusal: RtcGrantedLegRefusal): string {
+    return refusal.kind === 'unsupported-shape' ? refusal.message : `${refusal.kind}: ${refusal.message}`;
 }
 
 function toRtcControlHandoffError(result: ALOutboundEnqueueResult): Error | undefined {

@@ -15,6 +15,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     isBrowserWsOnlySend,
+    isRallarRoomNarrowedAudience,
     resolveBrowserChannelAccess,
     resolveBrowserStorageUnavailablePolicy,
     toBrowserMessageSendDefaults,
@@ -573,13 +574,10 @@ function throwIfMessageIssues(issues: readonly RallarValidationIssue[]): void {
  * multicast; a leg that cannot freeze it hands it to WS as it is.
  */
 function toRoomFallbackMessage(message: ALMessage, audience: Omit<RallarRoomAudienceInput, 'scope'>): ALMessage {
-    const { exceptPeerIds, principalId, recipientPeerIds } = audience;
-    if (
-        message.targets?.mode !== 'multicast' ||
-        (exceptPeerIds === undefined && principalId === undefined && recipientPeerIds === undefined)
-    ) {
+    if (message.targets?.mode !== 'multicast' || !isRallarRoomNarrowedAudience(audience)) {
         return message;
     }
+    const { exceptPeerIds, principalId, recipientPeerIds } = audience;
     const { groupRef, minSnapshotVersion, rosterVersion } = message.targets;
     const room = { groupRef, minSnapshotVersion, rosterVersion, exceptPeerIds: exceptPeerIds && [...exceptPeerIds] };
     return {

@@ -1,6 +1,7 @@
 import type { RallarTypedMessageSendStrategy } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     isBrowserWsOnlySend,
+    isRallarRoomNarrowedAudience,
     type BrowserTypedChannelPolicy,
     type BrowserWsOnlySendInput
 } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
@@ -48,3 +49,14 @@ function toChannel(access: BrowserTypedChannelPolicy['access']): BrowserTypedCha
         publication: undefined
     };
 }
+
+describe('isRallarRoomNarrowedAudience', () => {
+    it.each([
+        { audience: {}, expected: false },
+        { audience: { exceptPeerIds: [] }, expected: true },
+        { audience: { principalId: 'p' }, expected: true },
+        { audience: { recipientPeerIds: ['b'] }, expected: true }
+    ])('answers $expected for $audience: a narrowed room send is a broadcast on either carrier', ({ audience, expected }) => {
+        expect(isRallarRoomNarrowedAudience(audience)).toBe(expected);
+    });
+});

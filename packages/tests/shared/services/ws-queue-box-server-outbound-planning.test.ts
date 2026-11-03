@@ -245,6 +245,41 @@ describe('WS server outbound planning', () => {
         expect(planAt('immediate').mintsSequence).toBe(true);
     });
 
+    it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'proof-expiry' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000 }
+        );
+        // Well formed and unverified: no WS planner reads a proof.
+        const proof = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) } as const;
+        const planOf = (planned: ALMessage) =>
+            planning.planOutboundMessage({
+                message: planned,
+                phase: 'immediate',
+                clusterPublisherRegistered: false,
+                admittedAudience: ['b'],
+                admittedConnectionGenerationIds: undefined
+            });
+
+        const plan = planOf({ ...message, proof });
+
+        expect(plan.msg.qos?.expiry).toBeDefined();
+        expect(plan.msg).toEqual({ ...planOf(message).msg, proof });
+    });
+
     it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {
         const server = new JsonWebSocketServer();
         const planning = new WsQueueBoxServerOutboundPlanning({

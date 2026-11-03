@@ -74,10 +74,16 @@ function isBrowserRtcGrantedPublication(input: BrowserWsOnlySendInput): boolean 
         isBrowserRoomMulticastSend(input.send);
 }
 
-/** A send no carrier turns into a broadcast: no peer, no world or principal scope, no exclusions and no list. */
+/** A send no carrier turns into a broadcast: no peer, no world or principal scope and no narrowed audience. */
 function isBrowserRoomMulticastSend(send: BrowserWsOnlySendInput['send']): boolean {
     return send.peerId === undefined && send.scope !== 'world' && send.scope !== 'principal' &&
-        send.exceptPeerIds === undefined && send.principalId === undefined && send.recipientPeerIds === undefined;
+        !isRallarRoomNarrowedAudience(send);
+}
+
+/** A room send that names its exclusions, its principal or its fixed list, which both carriers send as a broadcast. */
+export function isRallarRoomNarrowedAudience(audience: Omit<RallarRoomAudienceInput, 'scope'>): boolean {
+    return audience.exceptPeerIds !== undefined || audience.principalId !== undefined ||
+        audience.recipientPeerIds !== undefined;
 }
 
 /** A lane send names no channel, so every active member of its room may publish it. */

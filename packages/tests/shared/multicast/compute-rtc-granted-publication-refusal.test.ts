@@ -40,13 +40,13 @@ describe('computeRtcGrantedPublicationRefusal', () => {
         });
     });
 
-    it('names the refused message with the targets its sender gave', () => {
+    it('judges and names the refused message by the targets its sender gave, not the multicast they froze to', () => {
         const original = createRoomBroadcast();
         const frozen: ALMessage = { ...original, targets: toOriginFrozenTargets(['b', 'c'], 3) };
 
-        expect(computeRtcGrantedPublicationRefusal(frozen, original).left?.msg).toEqual({
-            ...frozen,
-            targets: original.targets
+        expect(computeRtcGrantedPublicationRefusal(frozen, original).left).toMatchObject({
+            msg: { ...frozen, targets: original.targets },
+            dropReason: RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast
         });
     });
 });
