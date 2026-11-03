@@ -383,11 +383,11 @@ describe('the persisted publication proof section', () => {
 });
 
 /** A frame whose proof binds its expiry, as every signing origin's admitted message does. */
-function toProvenPersistedALMessage(proof: unknown):
+function toProvenPersistedALMessage<TProof>(proof: TProof):
     & MutablePersistedALMessageFixture
     & Readonly<{
         constraints: { expiresAtMs: number; };
-        proof: unknown;
+        proof: TProof;
     }> {
     return { ...currentPersistedALMessage(), constraints: { expiresAtMs: 1_800_000_000_000 }, proof };
 }

@@ -31,6 +31,10 @@ import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-sn
 import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -185,7 +189,7 @@ describe('the inbound stores a connect hands its two carriers', () => {
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
         });
-        const carriers: { ws?: unknown[]; rtc?: unknown[]; } = {};
+        const carriers: Partial<Record<'ws' | 'rtc', readonly [ALInboundRuntimeStores, ALVolatileInboundRuntimeStores]>> = {};
         const stop = new Error('the stores were handed over');
         vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
             serverPeerId: 'server',
