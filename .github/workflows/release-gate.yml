@@ -319,6 +319,7 @@ jobs:
         if: ${{ matrix.lane == 'ar-eye-tournaments' }}
         env:
           RALLAR_ARENA_FULL_STACK: '1'
+          RALLAR_BROWSER_TIMING: '1'
         run: |
           npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
             tests/playwright/ar-eye-hunter/tournaments.spec.ts --project=desktop-delivery --trace=retain-on-failure
@@ -327,10 +328,22 @@ jobs:
         if: ${{ matrix.lane == 'relic-tournaments' }}
         env:
           RELIC_HUNTERS_FULL_STACK: '1'
+          RALLAR_BROWSER_TIMING: '1'
           RELIC_HUNTERS_BUILT_PREVIEW: '1'
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-tournaments.spec.ts --trace=retain-on-failure
+
+      - name: Upload tournament browser timing
+        if: ${{ always() && (matrix.lane == 'ar-eye-tournaments' || matrix.lane == 'relic-tournaments') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: tournament-browser-timing-${{ matrix.lane }}
+          path: |
+            apps/ar-eye-hunter-v1/test-results/**/browser-timing-*.jsonl
+            apps/relic-hunters-v1/test-results/**/browser-timing-*.jsonl
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload room journey observations
         if: always()

@@ -1,32 +1,20 @@
 import type { Page } from '@playwright/test';
-import { roomBrowserTest } from './room-browser-fixture.ts';
+import { roomBrowserTest, useIsolatedRoomPage } from './room-browser-fixture.ts';
 
 interface TournamentBrowserFixtures {
+    readonly third: Page;
+    readonly fourth: Page;
     readonly players: readonly [Page, Page, Page, Page];
 }
 
 export const tournamentBrowserTest = roomBrowserTest.extend<TournamentBrowserFixtures>({
-    players: async ({ page, guest, browser }, use) => {
-        // Each live 3D player gets its own graphics process, like the guest fixture.
-        const third = await browser.browserType().launch();
-        try {
-            const fourth = await browser.browserType().launch();
-            try {
-                const thirdContext = await third.newContext({ hasTouch: true });
-                const fourthContext = await fourth.newContext({ hasTouch: true });
-                try {
-                    await use([page, guest, await thirdContext.newPage(), await fourthContext.newPage()]);
-                }
-                finally {
-                    await Promise.all([thirdContext.close(), fourthContext.close()]);
-                }
-            }
-            finally {
-                await fourth.close();
-            }
-        }
-        finally {
-            await third.close();
-        }
+    third: async ({ browser }, use, testInfo) => {
+        await useIsolatedRoomPage(browser, use, testInfo, 'third', { hasTouch: true });
+    },
+    fourth: async ({ browser }, use, testInfo) => {
+        await useIsolatedRoomPage(browser, use, testInfo, 'fourth', { hasTouch: true });
+    },
+    players: async ({ page, guest, third, fourth }, use) => {
+        await use([page, guest, third, fourth]);
     }
 });
