@@ -253,6 +253,7 @@ export async function evaluateFullStackConfiguredServiceEvidence(
 export function createFullStackApiProfileEnvironment(): Readonly<Record<string, string>> {
     const grantedTopics = [{ topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, fanout: 'outbox', serverProducerIds: [] }];
     return {
+        DENO_NO_PACKAGE_JSON: '1',
         RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
         RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
         RALLAR_LOGIN_USER_RATE_LIMIT: '100',
