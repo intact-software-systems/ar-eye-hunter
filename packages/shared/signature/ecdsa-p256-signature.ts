@@ -19,8 +19,16 @@ export interface SigningKeyPair {
     readonly keyId: string;
 }
 
-export interface SignatureFailure {
-    readonly kind: 'subtle-unavailable' | 'key-generation-failed' | 'invalid-key' | 'sign-failed' | 'invalid-signature';
+export type SignatureFailureKind =
+    | 'subtle-unavailable'
+    | 'key-generation-failed'
+    | 'invalid-key'
+    | 'sign-failed'
+    | 'invalid-signature';
+
+/** Each operation names the kinds it can return, so a caller's failure map is total over them. */
+export interface SignatureFailure<Kind extends SignatureFailureKind = SignatureFailureKind> {
+    readonly kind: Kind;
     readonly message: string;
 }
 
@@ -31,16 +39,19 @@ export interface VerifyDetachedInput {
     readonly signature: string;
 }
 
+/** IEEE P1363 `r‖s`, the encoding WebCrypto signs and verifies. */
+export const ECDSA_P256_SIGNATURE_BYTES = 64;
+/** The RFC 7638 SHA-256 thumbprint that names a key. */
+export const ECDSA_P256_KEY_ID_BYTES = 32;
+
 const ECDSA_P256_KEY_ALGORITHM: EcKeyGenParams = { name: 'ECDSA', namedCurve: 'P-256' };
 const ECDSA_P256_SIGNATURE_ALGORITHM: EcdsaParams = { name: 'ECDSA', hash: 'SHA-256' };
-/** IEEE P1363 `r‖s`, the encoding WebCrypto signs and verifies. */
-const ECDSA_P256_SIGNATURE_BYTES = 64;
 const ECDSA_P256_COORDINATE_BYTES = 32;
 const ECDSA_P256_PUBLIC_JWK_KEYS: readonly string[] = ['kty', 'crv', 'x', 'y'];
 
 export async function createSigningKeyPair(
     subtle: SubtleCrypto | undefined
-): Promise<Either<SignatureFailure, SigningKeyPair>> {
+): Promise<Either<SignatureFailure<'subtle-unavailable' | 'key-generation-failed'>, SigningKeyPair>> {
     if (subtle === undefined) {
         return Either.ofLeft({ kind: 'subtle-unavailable', message: 'WebCrypto SubtleCrypto is not available.' });
     }
@@ -75,7 +86,7 @@ export async function signDetached(
     subtle: SubtleCrypto,
     privateKey: CryptoKey,
     bytes: Uint8Array
-): Promise<Either<SignatureFailure, string>> {
+): Promise<Either<SignatureFailure<'sign-failed'>, string>> {
     try {
         const signature = await subtle.sign(ECDSA_P256_SIGNATURE_ALGORITHM, privateKey, new Uint8Array(bytes));
         return Either.ofRight(toBase64Url(new Uint8Array(signature)));
@@ -85,7 +96,9 @@ export async function signDetached(
     }
 }
 
-export async function verifyDetached(input: VerifyDetachedInput): Promise<Either<SignatureFailure, 'verified'>> {
+export async function verifyDetached(
+    input: VerifyDetachedInput
+): Promise<Either<SignatureFailure<'invalid-key' | 'invalid-signature'>, 'verified'>> {
     const signature = decodeBase64Url(input.signature).right;
     if (signature?.length !== ECDSA_P256_SIGNATURE_BYTES) {
         return Either.ofLeft({
@@ -115,7 +128,7 @@ export async function verifyDetached(input: VerifyDetachedInput): Promise<Either
 export async function importEcdsaP256PublicKey(
     subtle: SubtleCrypto,
     jwk: EcdsaP256PublicJwk
-): Promise<Either<SignatureFailure, CryptoKey>> {
+): Promise<Either<SignatureFailure<'invalid-key'>, CryptoKey>> {
     try {
         const publicJwk: JsonWebKey = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
         return Either.ofRight(await subtle.importKey('jwk', publicJwk, ECDSA_P256_KEY_ALGORITHM, false, ['verify']));
