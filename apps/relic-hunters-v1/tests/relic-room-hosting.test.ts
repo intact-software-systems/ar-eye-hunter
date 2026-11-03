@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ComponentProps } from 'react';
+import {
+    act,
+    createElement,
+    type ComponentProps
+} from 'react';
 import { createRoot } from 'react-dom/client';
-import { expect, it, vi } from 'vitest';
+import {
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
@@ -57,6 +65,41 @@ it.each(['success', 'failure'] as const)('ignores a superseded rotation %s after
             }
         });
         expect(container.querySelector('input')?.value).toContain('latest-code');
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it.each(['before', 'during'] as const)('keeps the created room code delivered %s a room-cache gap', async (delivery) => {
+    const { session, snapshot, game } = createHostFixture();
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    const rotation = Promise.withResolvers<GroupJoinCodeResponse>();
+    facade.rooms.rotateJoinCode.mockReturnValueOnce(rotation.promise);
+    const response = { joinCode: 'created-code', expiresAtEpochMs: 4_000_000_000_000, snapshot };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(RelicRoomHosting, { game })));
+        const create = [...container.querySelectorAll('button')].find((button) => button.textContent === 'New code room');
+        expect(create?.disabled).toBe(false);
+        await act(async () => create?.click());
+        if (delivery === 'before') {
+            await act(async () => rotation.resolve(response));
+            expect(container.querySelector('input')?.value).toContain('created-code');
+        }
+        facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+        await act(async () => root.render(createElement(RelicRoomHosting, { game: { ...game, rooms: [] } })));
+        if (delivery === 'during') {
+            await act(async () => rotation.resolve(response));
+        }
+        facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+        await act(async () => root.render(createElement(RelicRoomHosting, { game })));
+        expect(container.querySelector('input')?.value).toContain('created-code');
         expect(container.querySelector('[role="alert"]')).toBeNull();
     }
     finally {

@@ -90,6 +90,7 @@ roomBrowserTest(
         roomBrowserTest.setTimeout(180_000);
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         await alice.addInitScript(installAnimationFrameGate);
+        await bob.clock.install();
         const [aliceOperations, bobOperations] = await Promise.all([signIn(alice, 'alice'), signIn(bob, 'bob')]);
         const created = alice.waitForResponse((response) =>
             response.request().method() === 'POST' && /\/groups\/requests\//.test(response.url())
@@ -137,6 +138,13 @@ roomBrowserTest(
             await expect(startAgain).toBeDisabled();
             await aliceResults.getByRole('button', { name: 'Play again', exact: true }).click();
             await expect(startAgain).toBeDisabled();
+            await bob.clock.pauseAt(await bob.evaluate(() => Date.now() + 1_000));
+            await bob.clock.setSystemTime(new Date(Date.now() + 65_000));
+            await bobResults.getByRole('button', { name: 'Play again', exact: true }).click();
+            await expect(bobResults.getByRole('alert')).toContainText(/director|presence/i);
+            await expect(startAgain).toBeDisabled();
+            await bob.clock.setSystemTime(new Date());
+            await bob.clock.resume();
             await bobResults.getByRole('button', { name: 'Play again', exact: true }).click();
             await expect(startAgain).toBeEnabled();
             await bob.reload();

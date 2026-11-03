@@ -13,7 +13,14 @@ import {
 
 import { act } from 'react';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -354,7 +361,7 @@ describe('arena director delivery and appointment', () => {
         });
     });
 
-    it('starts the peer-ready sync while the director has not yet confirmed the join sync (D60)', async () => {
+    it('starts the peer-ready sync while the director has not yet confirmed the join sync', async () => {
         const joinSync = Promise.withResolvers<RallarGameSendResult>();
         mockMatch.requestSync.mockReturnValueOnce(joinSync.promise);
         mockMatch.waitForReadyLanes.mockResolvedValueOnce({ ...emptyPeerReadiness(), readyPeerIds: ['peer-b'] });
@@ -544,6 +551,24 @@ describe('arena match lifecycle delivery', () => {
         };
         await act(async () => config?.onSnapshot?.(directorEnvelope(corrupted as ArenaSnapshot, now)));
         expect(arena.current?.arenaSnapshot?.match?.rematch).toBeUndefined();
+    });
+
+    it.each(['director-expired', 'presence-expired'] as const)('refuses a rematch click when %s changes after rendering', async (boundary) => {
+        const now = Date.now();
+        await renderDirector(arena, createMatchFixture(now - 62_000).ended);
+        if (boundary === 'director-expired') {
+            mockMatch.status.mockReturnValue({ ...mockMatch.status(), directorIsFresh: false });
+        }
+        else {
+            const state = mockRallar.rooms.state();
+            mockRallar.rooms.state.mockReturnValue({
+                ...state,
+                currentRoom: { ...state.currentRoom, activeSessions: [] }
+            });
+        }
+        await act(async () => {
+            await expect(arena.current?.setRematchReady(true)).rejects.toThrow(/director|presence/i);
+        });
     });
 
     it('reports a nonthrowing rematch delivery failure instead of presenting it as sent', async () => {
