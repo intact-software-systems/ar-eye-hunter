@@ -6,12 +6,12 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import {
-    GAME_COMBAT_LANE_ID,
     GAME_PROTOCOL,
     type PlayerHitIntent,
     type ShotAccepted,
     type ShotIntent
-} from '../../arena-contracts.ts';
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { GAME_COMBAT_LANE_ID } from '../../arena-contracts.ts';
 import { colorForId } from '../../color.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';

@@ -16,22 +16,25 @@ import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { useArenaTournament } from '../tournament/use-arena-tournament.ts';
 
 import type {
     ArenaEvent,
     ArenaMatchDurationMs,
-    ArenaMatchLifecycleMessage,
     ArenaSnapshot,
     PickupAccepted,
     PickupIntent,
     PlayerHitAccepted,
     PlayerHitIntent,
+    ShotAccepted,
+    ShotIntent
+} from '@ar-eye-hunter/arena-contracts.ts';
+import type {
+    ArenaMatchLifecycleMessage,
     PlayerPose,
     RemotePlayer,
     RemoteShot,
-    RtcLaneStatus,
-    ShotAccepted,
-    ShotIntent
+    RtcLaneStatus
 } from '../arena-contracts.ts';
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squad-link.ts';
 
@@ -129,6 +132,7 @@ export interface ArenaDiagnosticsRefreshOptions {
 }
 
 export interface ArenaConnection {
+    readonly tournament: ReturnType<typeof useArenaTournament>;
     readonly session?: AuthSession;
     readonly connectionState: ArenaConnectionState;
     readonly error?: string;

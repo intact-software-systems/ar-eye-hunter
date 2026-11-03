@@ -5,11 +5,8 @@ import { createDefaultRallarServer } from './composition/create-default-rallar-s
 import { readApiV1Configuration } from './configuration/read-api-v1-configuration.ts';
 import { reportApiV1Configuration } from './configuration/report-api-v1-configuration.ts';
 import { createDefaultApiV1DatabaseLifecycle } from './db/api-v1-database-lifecycle.ts';
-import { startApiProcess } from './runtime/api-process-startup.ts';
-import {
-    stopApiOnRtcTopologyDeliveryHealthFailure
-} from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
 import { myServerId } from './runtime/runtime-identity.ts';
+import { serveApiApplication } from './runtime/serve-api-application.ts';
 import { installApiHttpMiddleware } from './services/install-api-http-middleware.ts';
 import { createApiTimingSink } from './services/timing-service.ts';
 
@@ -37,12 +34,6 @@ const rallar = await createDefaultRallarServer({
     configuration,
     databaseLifecycle
 });
-addEventListener('unload', () => {
-    void rallar.runtime.backgroundTasks.stop().catch((error) => {
-        console.error('Failed to stop middleware background tasks:', error);
-    });
-});
-
 const app: Hono = new Hono();
 installApiHttpMiddleware(app, {
     http: configuration.http,
@@ -50,78 +41,5 @@ installApiHttpMiddleware(app, {
     timing
 });
 
-rallar.installSystemTopics();
-rallar.installWebSocketLifecycle();
-rallar.mountWebSocket(app);
-rallar.mountRest(app);
-
-const port = configuration.http.port;
-const apiProcess = await startApiProcess({
-    runtimeReadiness: rallar.runtime.readiness,
-    listen: () => Deno.serve({ port }, app.fetch),
-    startApplication: () => rallar.start({ queueWorkers: configuration.topology.replay.queueWorkers }),
-    stopAfterStartupFailure: async (boundHttpServer) => {
-        const failures: Error[] = [];
-        try {
-            await rallar.runtime.qboxEngine.stop();
-        }
-        catch (error) {
-            failures.push(
-                error instanceof Error
-                    ? error
-                    : new Error('Queue worker cleanup threw a non-Error value.', { cause: error })
-            );
-        }
-        if (boundHttpServer !== undefined) {
-            try {
-                await boundHttpServer.shutdown();
-            }
-            catch (error) {
-                failures.push(
-                    error instanceof Error
-                        ? error
-                        : new Error('HTTP server cleanup threw a non-Error value.', { cause: error })
-                );
-            }
-        }
-        try {
-            await rallar.runtime.backgroundTasks.stop();
-        }
-        catch (error) {
-            failures.push(
-                error instanceof Error
-                    ? error
-                    : new Error('Background task cleanup threw a non-Error value.', { cause: error })
-            );
-        }
-        if (failures.length > 0) {
-            throw new AggregateError(failures, 'API-v1 startup cleanup failed');
-        }
-    }
-});
-const httpServer = apiProcess.httpServer;
-if (rallar.runtime.healthFailure) {
-    void stopApiOnRtcTopologyDeliveryHealthFailure({
-        healthFailure: rallar.runtime.healthFailure,
-        onHealthFailure: (error) => {
-            console.error('RTC topology delivery health failed; stopping API process:', error);
-        },
-        stopQueueWorkers: () => rallar.runtime.qboxEngine.stop(),
-        closeWebSockets: () => {
-            const socketServer = rallar.runtime.wsQBoxServerService.socket;
-            for (const connectionId of socketServer.connections.keys()) {
-                socketServer.closeConnection(
-                    connectionId,
-                    1012,
-                    'rtc-topology-delivery-lease-lost'
-                );
-            }
-        },
-        stopBackgroundTasks: () => rallar.runtime.backgroundTasks.stop(),
-        shutdownHttp: async () => await httpServer.shutdown(),
-        onShutdownStepFailure: (step, error) => {
-            console.error(`RTC topology delivery shutdown step ${step} failed:`, error);
-        }
-    });
-}
-console.log(`Server started on port ${port}. http://localhost:${port}/api/docs`);
+await serveApiApplication({ app, rallar, configuration });
+console.log(`Server started on port ${configuration.http.port}. http://localhost:${configuration.http.port}/api/docs`);

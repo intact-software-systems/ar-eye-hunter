@@ -253,5 +253,5 @@ export function installGroupMoveDeadline(input: InstallGroupMoveDeadlineInput): 
             }
             await input.enqueue(command, message.id.traceId);
         }
-    });
+    }, ['group-move.deadline']);
 }

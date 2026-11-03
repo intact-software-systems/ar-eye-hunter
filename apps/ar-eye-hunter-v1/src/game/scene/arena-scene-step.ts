@@ -6,26 +6,25 @@ import {
 
 import type {
     ArenaSnapshot,
-    EyeTargetState,
     PlayerHitAccepted,
     PlayerInputState,
     ShotIntent,
     Vec3Tuple,
     WeaponKind
-} from '../arena-contracts.ts';
-import { type ArenaSimulationState } from '../arena-contracts.ts';
-import { stepLocalPlayer } from '../arena-player-state.ts';
-import { resolveShot, type ShotResolution } from '../arena-targets.ts';
-import { getWeaponStats } from '../arena-weapons.ts';
-import {
-    shouldFireHeldWeapon
-} from '../mobile-input.ts';
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { clamp, forwardFromAngles, round3 } from '@ar-eye-hunter/arena-math.ts';
+import { stepLocalPlayer } from '@ar-eye-hunter/arena-player-state.ts';
+import { resolveShot, stepArenaTargets, type ShotResolution } from '@ar-eye-hunter/arena-targets.ts';
+import { getWeaponStats } from '@ar-eye-hunter/arena-weapons.ts';
 import {
     applyPlayerHitAccepted,
     findPickupNearPlayer,
     toArenaSnapshot,
     upsertPlayerPose
-} from '../simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import {
+    shouldFireHeldWeapon
+} from '../mobile-input.ts';
 import { syncRemoteAvatars, syncRemoteShots } from './arena-peer-view.ts';
 import type {
     BabylonArenaProps,
@@ -39,14 +38,7 @@ import {
     updateTransientEffects
 } from './arena-scene-effects.ts';
 import { syncAdaptiveAudio, triggerHaptic } from './arena-scene-feedback.ts';
-import {
-    addTuple,
-    clamp,
-    forwardFromAngles,
-    round3,
-    scaleTuple,
-    vector3
-} from './arena-scene-geometry.ts';
+import { vector3 } from './arena-scene-geometry.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
 import { findPredictedPlayerHit } from './arena-shot-aim.ts';
@@ -69,6 +61,10 @@ export function runFrame(input: ArenaSceneStepInput): void {
     const dtMs = runtime.hitStopUntilEpochMs > now ? Math.min(rawDtMs, 8) : rawDtMs;
     runtime.lastFrameEpochMs = now;
     reconcileSceneObservations(input);
+    if (input.tournament) {
+        renderTournamentFrame(input, now);
+        return;
+    }
     if (input.spectating) {
         syncScenePresentation(input, now);
         runtime.camera.position = new Vector3(
@@ -97,6 +93,30 @@ export function runFrame(input: ArenaSceneStepInput): void {
         input.onArenaSnapshot(snapshot);
     }
 }
+/** Tournament state is rendered directly; the browser never resolves a hit or publishes a score. */
+function renderTournamentFrame(input: ArenaSceneStepInput, now: number): void {
+    const { runtime, tournament } = input;
+    const state = tournament?.snapshot.state;
+    if (!state) {
+        return;
+    }
+    runtime.arenaState = state.arena;
+    const player = state.players.find((candidate) => candidate.principalId === input.localSessionId);
+    if (player && !input.spectating) {
+        const yaw = runtime.localPlayer.yaw;
+        const pitch = runtime.localPlayer.pitch;
+        runtime.localPlayer = { ...player.simulation, yaw, pitch };
+        tournament.sendControls({ controls: freezeInput(runtime.input), yaw, pitch });
+        input.onLocalCombatChange(player.simulation.combat);
+        input.onLocalPlayerChange(player.simulation);
+    }
+    syncScenePresentation(input, now);
+    if (input.spectating) {
+        runtime.camera.position = new Vector3(0, state.arena.layout.halfSize * 1.6, -state.arena.layout.halfSize);
+        runtime.camera.setTarget(Vector3.Zero());
+    }
+}
+
 function reconcileSceneObservations(input: ArenaSceneStepInput): void {
     const { runtime, arenaSnapshot, authority, remoteEvents } = input;
     if (runtime.simulation.reconcile({ snapshot: arenaSnapshot, authority }) && arenaSnapshot) {
@@ -137,7 +157,7 @@ function advancePlayerPrediction(input: ArenaSceneStepInput, dtMs: number, now: 
     }, now);
     runtime.simulation.advance(now);
     syncLocalPlayerFromArenaState(runtime, localPlayerId);
-    runtime.arenaState = animateTargets(runtime.arenaState, dtMs, now);
+    runtime.arenaState = stepArenaTargets(runtime.arenaState, dtMs, now);
 }
 function syncScenePresentation(input: ArenaSceneStepInput, now: number): void {
     const { runtime } = input;
@@ -198,6 +218,17 @@ interface ArenaShotPresentation {
     readonly touchAssisted: boolean;
 }
 export function fireLocalShot(input: ArenaLocalShotInput): void {
+    if (input.tournament && !input.spectating) {
+        const direction = input.directionOverride;
+        input.tournament.sendControls({
+            controls: { ...freezeInput(input.runtime.input), fire: true },
+            yaw: direction ? Math.atan2(direction[0], direction[2]) : input.runtime.localPlayer.yaw,
+            pitch: direction
+                ? -Math.atan2(direction[1], Math.hypot(direction[0], direction[2]))
+                : input.runtime.localPlayer.pitch
+        });
+        return;
+    }
     if (input.spectating) {
         return;
     }
@@ -529,38 +560,6 @@ function syncLocalPlayerFromArenaState(runtime: ArenaSceneRuntime, localSessionI
         vitals: player.vitals,
         loadout: player.loadout
     };
-}
-
-function animateTargets(
-    state: ArenaSimulationState,
-    dtMs: number,
-    nowEpochMs: number
-): ArenaSimulationState {
-    const dt = Math.min(0.05, Math.max(0, dtMs / 1000));
-    const bounds = Math.max(8, state.layout.halfSize - 2.5);
-    const targets = state.targets.map((target): EyeTargetState => {
-        const next = addTuple(target.position, scaleTuple(target.velocity, dt));
-        const bounceX = Math.abs(next[0]) > bounds;
-        const bounceY = next[1] < 1.3 || next[1] > 6.2;
-        const bounceZ = Math.abs(next[2]) > bounds;
-        return {
-            ...target,
-            position: [
-                clamp(next[0], -bounds, bounds),
-                clamp(next[1], 1.3, 6.2),
-                clamp(next[2], -bounds, bounds)
-            ],
-            velocity: [
-                bounceX ? -target.velocity[0] : target.velocity[0],
-                bounceY ? -target.velocity[1] : target.velocity[1],
-                bounceZ ? -target.velocity[2] : target.velocity[2]
-            ],
-            rarity: target.bountyUntilEpochMs && target.bountyUntilEpochMs < nowEpochMs
-                ? 'volatile'
-                : target.rarity
-        };
-    });
-    return { ...state, targets };
 }
 
 function freezeInput(input: MutableInputState): PlayerInputState {

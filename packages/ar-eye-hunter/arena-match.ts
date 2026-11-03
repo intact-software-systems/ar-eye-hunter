@@ -95,9 +95,7 @@ export function finishArenaMatchIfDue(
         position: winner
             ? state.players.find((player) => player.sessionId === winner.sessionId)?.position
             : [0, 1.2, 0],
-        headline: winner
-            ? `${winner.username} wins the audit sprint`
-            : 'Arena match ended with nobody pleasing the metrics'
+        headline: 'Arena match complete — final scores are ready'
     });
     return {
         ...state,
@@ -120,7 +118,7 @@ function createArenaMatchBaseline(
         {
             sessionId: player.sessionId,
             username: player.username,
-            score: round2(player.score ?? 0),
+            score: round2(player.score),
             kills: player.vitals.kills,
             deaths: player.vitals.deaths,
             joinedOrder: index
@@ -146,7 +144,7 @@ function rankArenaMatchPlayers(
         return {
             sessionId: player.sessionId,
             username: player.username,
-            scoreDelta: round2((player.score ?? 0) - baseline.score),
+            scoreDelta: round2(player.score - baseline.score),
             killsDelta: player.vitals.kills - baseline.kills,
             deathsDelta: player.vitals.deaths - baseline.deaths,
             joinedOrder: baseline.joinedOrder

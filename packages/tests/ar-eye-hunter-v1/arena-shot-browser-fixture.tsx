@@ -9,10 +9,10 @@ import {
 } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
+import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import { BabylonArena } from '../../../apps/ar-eye-hunter-v1/src/game/babylon-arena.tsx';
 import type { BabylonArenaProps } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-contracts.ts';
-import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 interface FixtureSceneInput {
     readonly snapshot: ArenaSnapshot;
@@ -156,6 +156,7 @@ function startFixtureMatch(previous: ArenaSnapshot): ArenaSnapshot {
         revision: previous.revision + 1,
         match: {
             matchId: 'accepted-match',
+            enrollment: 'open',
             status: 'active',
             durationMs: 60_000,
             directorSessionId: 'host',

@@ -2,9 +2,14 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
+import { APP_OUTBOX_ACTIVATION_STATUS_CLOCK_TOPIC } from '../../group-state/activation-status-clock-outbox-entry.ts';
+import { APP_OUTBOX_FORMATION_TIMER_TOPIC } from '../../group-state/formation-timer-outbox-entry.ts';
+import { APP_OUTBOX_GROUP_CONNECT_TRIGGER_TOPIC } from '../../group-state/group-connect-trigger-outbox-entry.ts';
 import type { GroupSystemCommandPort } from '../../group-state/inbox/group-system-command-submission.ts';
+import { APP_OUTBOX_TOPOLOGY_PROMOTION_TOPIC } from '../../group-state/topology-promotion-outbox-entry.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
@@ -52,40 +57,18 @@ export interface InstallTopologyAppOutboxOptions {
 export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOptions): void {
     options.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.GROUP_CONNECT_TRIGGER,
-        createGroupConnectTriggerWorkHandler(options.formationAutomation)
+        createGroupConnectTriggerWorkHandler(options.formationAutomation),
+        [APP_OUTBOX_GROUP_CONNECT_TRIGGER_TOPIC]
     );
-    if (options.formationCriterion) {
-        options.outboxQueueReader.onOutboxMessageDo(
-            AppOutboxType.FORMATION_TIMER,
-            createFormationTimerWorkHandler({
-                findGroupSnapshotByRef: async (ref, readOptions) =>
-                    await options.findGroupSnapshotByRef(ref, readOptions),
-                readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null,
-                topologyPlanning: options.topologyPlanning,
-                formationCriterion: options.formationCriterion,
-                formationAutomation: options.formationAutomation,
-                nowEpochMs: options.nowEpochMs
-            })
-        );
-    }
-    if (options.activationStatus) {
-        options.outboxQueueReader.onOutboxMessageDo(
-            AppOutboxType.ACTIVATION_STATUS_CLOCK,
-            createActivationStatusClockWorkHandler({
-                activationStatus: options.activationStatus,
-                topologyPlanning: options.topologyPlanning,
-                findGroupSnapshotByRef: async (ref) => await options.findGroupSnapshotByRef(ref) ?? null,
-                readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null
-            })
-        );
-    }
+    installTopologyTimers(options);
     if (options.topologyPublication) {
         options.outboxQueueReader.onOutboxMessageDo(
             AppOutboxType.TOPOLOGY_PROMOTION,
             createTopologyPromotionWorkHandler({
                 topologyPublication: options.topologyPublication,
                 nowEpochMs: options.nowEpochMs
-            })
+            }),
+            [APP_OUTBOX_TOPOLOGY_PROMOTION_TOPIC]
         );
     }
     options.outboxQueueReader.onOutboxMessageDo(
@@ -107,6 +90,37 @@ export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOption
             timing: options.timing,
             wakeQueue: options.wake,
             wakeReplay: options.wakeReplay
-        })
+        }),
+        [RTC_TOPOLOGY_OUTBOX_TOPIC]
     );
+}
+
+function installTopologyTimers(options: InstallTopologyAppOutboxOptions): void {
+    if (options.formationCriterion) {
+        options.outboxQueueReader.onOutboxMessageDo(
+            AppOutboxType.FORMATION_TIMER,
+            createFormationTimerWorkHandler({
+                findGroupSnapshotByRef: async (ref, readOptions) =>
+                    await options.findGroupSnapshotByRef(ref, readOptions),
+                readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null,
+                topologyPlanning: options.topologyPlanning,
+                formationCriterion: options.formationCriterion,
+                formationAutomation: options.formationAutomation,
+                nowEpochMs: options.nowEpochMs
+            }),
+            [APP_OUTBOX_FORMATION_TIMER_TOPIC]
+        );
+    }
+    if (options.activationStatus) {
+        options.outboxQueueReader.onOutboxMessageDo(
+            AppOutboxType.ACTIVATION_STATUS_CLOCK,
+            createActivationStatusClockWorkHandler({
+                activationStatus: options.activationStatus,
+                topologyPlanning: options.topologyPlanning,
+                findGroupSnapshotByRef: async (ref) => await options.findGroupSnapshotByRef(ref) ?? null,
+                readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null
+            }),
+            [APP_OUTBOX_ACTIVATION_STATUS_CLOCK_TOPIC]
+        );
+    }
 }

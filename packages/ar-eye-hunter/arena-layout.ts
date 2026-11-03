@@ -5,6 +5,7 @@ import type {
     ArenaPickupAnchor,
     Vec3Tuple
 } from './arena-contracts.ts';
+import { clamp } from './arena-math.ts';
 
 export const DEFAULT_ARENA_HALF_SIZE = 60;
 export const DEFAULT_ARENA_SIZE = DEFAULT_ARENA_HALF_SIZE * 2;
@@ -181,11 +182,6 @@ export function validateArenaLayoutSpec(value: unknown): ArenaLayoutValidation {
     };
 
     return { ok: true, layout };
-}
-
-export function assertArenaLayoutSpec(value: unknown): ArenaLayoutSpec {
-    const validation = validateArenaLayoutSpec(value);
-    return validation.layout;
 }
 
 export function pickSpawnPoint(
@@ -445,10 +441,6 @@ function fallback(reason: string): ArenaLayoutValidation {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
 }
 
 function hashString(value: string): number {

@@ -81,7 +81,7 @@ export function createInitialVitalsState(): PlayerArenaState['vitals'] {
     };
 }
 
-export function createInitialPlayerState(nowEpochMs = Date.now()): LocalPlayerState {
+export function createInitialPlayerState(nowEpochMs: number): LocalPlayerState {
     return {
         position: FALLBACK_ARENA_LAYOUT.spawnPoints[0],
         velocity: [0, 0, 0],

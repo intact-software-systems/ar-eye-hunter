@@ -13,16 +13,16 @@ import {
     GAME_PROTOCOL,
     type ArenaEvent,
     type ArenaMatchDurationMs,
-    type ArenaMatchLifecycleMessage,
     type ArenaPickupState,
     type ArenaSnapshot,
     type MatchStartIntent,
     type PickupIntent
-} from '../../arena-contracts.ts';
-import { ARENA_EVENT_HEADLINE_MS } from '../../arena-events.ts';
-import { createArenaRematch, type ArenaRematchCommand } from '../../arena-rematch.ts';
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { ARENA_EVENT_HEADLINE_MS } from '@ar-eye-hunter/arena-events.ts';
+import { createArenaRematch, type ArenaRematchCommand } from '@ar-eye-hunter/arena-rematch.ts';
+import { PICKUP_CLAIM_TTL_MS } from '@ar-eye-hunter/simulation.ts';
+import { type ArenaMatchLifecycleMessage } from '../../arena-contracts.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import { PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';

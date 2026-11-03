@@ -10,6 +10,7 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { RELIC_EXPEDITION_CAPACITY } from '@relic-hunters/src/model.ts';
+import { relicPlayerId } from '@relic-hunters/src/relic-tournament-participation.ts';
 import type {
     RallarAuthChangeListener,
     RallarAuthState,
@@ -127,6 +128,7 @@ export namespace RelicHuntersRuntime {
         readonly participation: 'player' | 'spectator' | undefined;
         readonly onlinePlayerCount: number;
         readonly session: AuthSession | undefined;
+        readonly playerId: string | undefined;
         readonly connectionState: RelicHuntersRuntimePhase;
         readonly diagnostics: RelicRuntimeDiagnostics;
         readonly error: string | undefined;
@@ -210,6 +212,7 @@ export class RelicHuntersRuntime {
             roomEntry: deps.roomEntry,
             recentRooms: deps.recentRooms,
             session,
+            playerId: session?.sessionId,
             connectionState: session ? 'connecting' : 'signed-out',
             diagnostics: createInitialRelicRuntimeDiagnostics(session),
             error: undefined,
@@ -307,12 +310,16 @@ export class RelicHuntersRuntime {
                 }
             },
             setRoundLimit: (timeLimitMs) => this.sendCommand({ kind: 'set-round-limit', timeLimitMs }),
-            resetExpedition: () => this.resetExpedition()
+            resetExpedition: () => this.sendCommand({ kind: 'reset-expedition' })
         };
     }
 
     private publish(patch: Partial<RelicHuntersRuntime.Connection>): void {
-        this.connection = { ...this.connection, ...patch };
+        const next = { ...this.connection, ...patch };
+        this.connection = {
+            ...next,
+            playerId: next.session ? relicPlayerId(next.snapshot?.tournament?.binding ?? null, next.session) : undefined
+        };
         this.notifications.publishLatest(undefined);
     }
 
@@ -642,7 +649,7 @@ export class RelicHuntersRuntime {
         }
         listeners.add(this.deps.onHunterEventMessage(attempt.roomId, {
             principalId: attempt.session.clientId,
-            playerId: attempt.session.sessionId,
+            playerId: this.connection.playerId ?? attempt.session.sessionId,
             onEvent: (event) => this.acceptHunterEvent(attempt, event)
         }));
     }
@@ -690,8 +697,15 @@ export class RelicHuntersRuntime {
         if (!attempt || attempt.roomId !== roomId) {
             return false;
         }
+        if (source === 'rallar-rtc' && (snapshot.tournament !== null || this.connection.snapshot?.tournament != null)) {
+            return false;
+        }
+        const previousPlayerId = this.connection.playerId;
         const acceptance = classifyRelicSnapshotAcceptance({
-            current: this.connection.snapshot,
+            current:
+                source !== 'rallar-rtc' && snapshot.tournament !== null && this.connection.snapshot?.tournament == null
+                    ? undefined
+                    : this.connection.snapshot,
             candidate: snapshot,
             expectedRoomId: roomId,
             allowSemanticRegression: source === 'rest-reset'
@@ -721,10 +735,13 @@ export class RelicHuntersRuntime {
         if (!this.current(attempt, true) || this.connection.snapshot !== snapshot) {
             return false;
         }
-        if (source !== 'rallar-rtc') {
+        if (source !== 'rallar-rtc' && snapshot.tournament === null) {
             this.publishSnapshotRepair();
         }
         this.roundRepair.observe(snapshot);
+        if (previousPlayerId !== this.connection.playerId) {
+            this.installRoomListeners();
+        }
         if (this.current(attempt, true)) {
             this.entryChanged(this.deps.roomEntry.getState());
         }
@@ -792,7 +809,7 @@ export class RelicHuntersRuntime {
         const snapshot = this.connection.snapshot;
         if (
             this.connection.participation !== 'player' || !attempt?.roomId || !snapshot ||
-            snapshot.roomId !== attempt.roomId
+            snapshot.roomId !== attempt.roomId || snapshot.tournament !== null
         ) {
             return;
         }
@@ -1060,7 +1077,7 @@ export class RelicHuntersRuntime {
         this.acceptSnapshot(snapshot, 'rest-command', attempt.roomId);
         if (
             this.connection.snapshot?.createdAtEpochMs !== snapshot.createdAtEpochMs ||
-            hasUnfinishedRelicParticipation(this.connection.snapshot, attempt.session.sessionId)
+            hasUnfinishedRelicParticipation(this.connection.snapshot, this.connection.playerId)
         ) {
             throw new Error('Expedition changed while leaving. Stay in the room and try again.');
         }
@@ -1156,7 +1173,11 @@ export class RelicHuntersRuntime {
                 return;
             }
             if (outcome.transport === 'rest' && outcome.snapshot) {
-                this.acceptSnapshot(outcome.snapshot, 'rest-command', attempt.roomId);
+                this.acceptSnapshot(
+                    outcome.snapshot,
+                    outcome.operation === 'reset' ? 'rest-reset' : 'rest-command',
+                    attempt.roomId
+                );
             }
             if (!this.current(attempt, true)) {
                 return;
@@ -1190,50 +1211,6 @@ export class RelicHuntersRuntime {
             return;
         }
         this.phase('degraded', { lastError: error.message }, { error: error.message });
-    }
-
-    private async resetExpedition(): Promise<void> {
-        const attempt = this.attempt();
-        if (
-            !attempt?.roomId || this.connection.participation !== 'player' ||
-            this.connection.diagnostics.commandInFlight !== undefined ||
-            this.admission.hasPending(attempt.roomId, attempt.session.sessionId)
-        ) {
-            return;
-        }
-        this.diagnose({ commandInFlight: 'reset-expedition', lastError: undefined });
-        if (!this.current(attempt, true)) {
-            return;
-        }
-        try {
-            const snapshot = await this.deps.resetGame(attempt.roomId);
-            if (!this.current(attempt, true)) {
-                return;
-            }
-            if (snapshot) {
-                this.acceptSnapshot(snapshot, 'rest-reset', attempt.roomId);
-            }
-            if (!this.current(attempt, true)) {
-                return;
-            }
-            this.phase(this.connection.snapshot ? 'ready' : 'degraded', {
-                snapshotReady: !!this.connection.snapshot,
-                lastHydratedAtEpochMs: this.deps.timers.nowMs(),
-                lastError: snapshot ? undefined : 'No relic snapshot returned for reset.'
-            });
-        }
-        catch (error) {
-            if (!this.current(attempt, true)) {
-                return;
-            }
-            const message = toError(error).message;
-            this.phase('degraded', { lastError: message }, { error: message });
-        }
-        finally {
-            if (this.current(attempt, true)) {
-                this.diagnose({ commandInFlight: undefined });
-            }
-        }
     }
 
     private finishHydration(refreshesConnection: boolean): void {

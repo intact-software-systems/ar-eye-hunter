@@ -23,7 +23,7 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
         return <RelicAuthForm game={game} />;
     }
     const unfinished = game.participation === 'player' &&
-        hasUnfinishedRelicParticipation(game.snapshot, game.session.sessionId);
+        hasUnfinishedRelicParticipation(game.snapshot, game.playerId);
     return (
         <div id="hud-rooms" className="panel stack">
             <div className="profile-row">
@@ -150,7 +150,7 @@ function RelicCredentialFields({ credentials, setCredentials }: RelicCredentialF
 
 function RelicRoomsList({ game }: RelicSessionProps) {
     const watchBlocked = game.participation === 'player' &&
-        hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
+        hasUnfinishedRelicParticipation(game.snapshot, game.playerId);
     const rows = readRelicRoomRows(game);
     return (
         <div className="room-list" aria-busy={game.directory.status === 'loading'}>
@@ -194,9 +194,9 @@ function RelicCurrentRoomActions({ game }: RelicSessionProps) {
     const mutationPending = game.diagnostics.commandInFlight !== undefined;
     const currentRoom = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
     const unfinished = game.participation === 'player' &&
-        hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
+        hasUnfinishedRelicParticipation(game.snapshot, game.playerId);
     const preparing = game.participation === 'player' &&
-        hasRelicRematchParticipation(game.snapshot, game.session?.sessionId);
+        hasRelicRematchParticipation(game.snapshot, game.playerId);
     const keeperRole = game.snapshot?.adminPlayerId
         ? readActiveGroupSessionRole(currentRoom, game.snapshot.adminPlayerId, Date.now())
         : undefined;
@@ -208,8 +208,11 @@ function RelicCurrentRoomActions({ game }: RelicSessionProps) {
 
     return (
         <div className="button-grid">
+            {game.snapshot?.tournament && (game.snapshot.tournament.status === 'cancelled'
+                ? <p role="alert">This tournament match was cancelled. Return to the bracket or leave this room.</p>
+                : <p>Tournament match. Withdraw from the bracket to concede; reconnecting keeps your hunter.</p>)}
             {game.participation === 'spectator' && <RelicSpectatorPromotion game={game} full={full} />}
-            {(unfinished || preparing) && (
+            {game.snapshot?.tournament == null && (unfinished || preparing) && (
                 <>
                     <button
                         type="button"
@@ -218,7 +221,7 @@ function RelicCurrentRoomActions({ game }: RelicSessionProps) {
                     >
                         Leave expedition
                     </button>
-                    {game.snapshot?.adminPlayerId !== game.session?.sessionId && (
+                    {game.snapshot?.adminPlayerId !== game.playerId && (
                         <button
                             type="button"
                             disabled={keeperPresent}

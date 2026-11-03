@@ -48,7 +48,7 @@ export const PICKUP_CLAIM_TTL_MS = 4_000;
 export const PICKUP_MIN_INTERVAL_MS = 4_200;
 export const PICKUP_MAX_INTERVAL_MS = 8_600;
 
-export function createInitialWaveState(nowEpochMs = Date.now()): WaveState {
+export function createInitialWaveState(nowEpochMs: number): WaveState {
     return {
         number: 1,
         phase: 'warmup',
@@ -62,7 +62,7 @@ export function createInitialWaveState(nowEpochMs = Date.now()): WaveState {
 
 export function createInitialArenaState(
     seed = 0x5eed_2026,
-    nowEpochMs = Date.now()
+    nowEpochMs: number
 ): ArenaSimulationState {
     return {
         revision: 1,
@@ -111,7 +111,7 @@ export function stepArenaDirectorState(
     nowEpochMs: number
 ): ArenaSimulationState {
     let next = advanceWaveState(
-        respawnDuePlayers(expirePickups(state, nowEpochMs), nowEpochMs),
+        respawnArenaPlayers(expirePickups(state, nowEpochMs), nowEpochMs),
         nowEpochMs
     );
     next = resolveDueEyeAttacks(next, nowEpochMs);
@@ -240,7 +240,7 @@ export function upsertPlayerPose(
         seq: number;
         sentAtEpochMs: number;
     }>,
-    nowEpochMs = Date.now()
+    nowEpochMs: number
 ): ArenaSimulationState {
     const existing = state.players.find((player) => player.sessionId === pose.sessionId);
     if (existing && existing.seq > pose.seq) {
@@ -526,7 +526,7 @@ function expirePickups(
     return pickups.length === state.pickups.length ? state : { ...state, pickups };
 }
 
-function respawnDuePlayers(
+export function respawnArenaPlayers(
     state: ArenaSimulationState,
     nowEpochMs: number
 ): ArenaSimulationState {

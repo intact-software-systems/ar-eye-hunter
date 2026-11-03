@@ -20,7 +20,8 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import {
     isCanonicalRtcTopologyWorkEntry,
     readRtcTopologyWorkEntry,
-    readRtcTopologyWorkMessage
+    readRtcTopologyWorkMessage,
+    RTC_TOPOLOGY_OUTBOX_TOPIC
 } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -86,7 +87,7 @@ describe('durable topology work for large rooms', () => {
                     deliveredRevisions.push(work.data.sourceGroupStateCausalRevision);
                 }
             }
-        });
+        }, [RTC_TOPOLOGY_OUTBOX_TOPIC]);
         await queue.enqueueIfAbsent(entry);
         const duration = Temporal.Duration.from({ seconds: 10 });
         await reader.dequeueOutbox(

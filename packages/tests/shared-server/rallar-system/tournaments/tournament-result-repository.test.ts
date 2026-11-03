@@ -1,3 +1,4 @@
+import { writeTournamentGame } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import {
     computeTournamentResultPublication,
     TOURNAMENT_ATTEMPTS_NAMESPACE,
@@ -63,16 +64,20 @@ describe('tournament immutable result persistence', () => {
             const key = tournamentResultKey(binding);
             await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
             const read = await repository.read(binding);
-            const computed = computeTournamentResultPublication(read, result);
+            const computed = computeTournamentResultPublication(read, result, Date.now());
             expect(computed.kind).toBe('publish');
             if (computed.kind !== 'publish') {
                 throw new Error('Expected first publication');
             }
-            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, computed.storage));
+            await storage.sql.begin((transaction) => writeTournamentGame(transaction, computed.write));
             const finished = await repository.read(binding);
             expect(finished.attempt?.status).toBe('finished');
             expect(finished.result).toEqual(result);
-            expect(computeTournamentResultPublication(finished, result)).toEqual({ kind: 'replay', result });
+            const signals = await storage.sql<
+                readonly { count: number; }[]
+            >`select count(*)::integer as count from resource_inbox where ri_topic_id = 'app:rallar-tournaments:reconcile'`;
+            expect(signals[0].count).toBe(1);
+            expect(computeTournamentResultPublication(finished, result, Date.now())).toEqual({ kind: 'replay', result });
             const replacement = createTournamentResult({
                 binding,
                 authority: result.authority,
@@ -80,7 +85,7 @@ describe('tournament immutable result persistence', () => {
                 finishedAtEpochMs: 61000,
                 scores: [0, 100]
             });
-            expect(() => computeTournamentResultPublication(finished, replacement)).toThrow(/immutable/);
+            expect(() => computeTournamentResultPublication(finished, replacement, Date.now())).toThrow(/immutable/);
             expect((await repository.read(binding)).result).toEqual(result);
         }
         finally {
@@ -95,7 +100,7 @@ describe('tournament immutable result persistence', () => {
             const repository = new TournamentResultRepository(runtime);
             const key = tournamentResultKey(binding);
             await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
-            const computed = computeTournamentResultPublication(await repository.read(binding), result);
+            const computed = computeTournamentResultPublication(await repository.read(binding), result, Date.now());
             if (computed.kind !== 'publish') {
                 throw new Error('Expected publication');
             }
@@ -103,11 +108,18 @@ describe('tournament immutable result persistence', () => {
             await expect(storage.sql.begin(async (transaction) => {
                 await transaction`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
                     values ('test:game', 'game-1', 'finished', now() + interval '1 day', now(), 0)`;
-                await writeRuntimeStateConditionalBatch(transaction, computed.storage);
+                await writeTournamentGame(transaction, computed.write);
             })).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect(await runtime.findEntry('test:game', 'game-1')).toBeUndefined();
+            const signals = await storage.sql<
+                readonly { count: number; }[]
+            >`select count(*)::integer as count from resource_inbox where ri_topic_id = 'app:rallar-tournaments:reconcile'`;
+            expect(signals[0].count).toBe(0);
             expect(await runtime.findEntry(TOURNAMENT_RESULTS_NAMESPACE, key)).toBeUndefined();
-            expect(computeTournamentResultPublication(await repository.read(binding), result)).toEqual({ kind: 'refused', reason: 'inactive-attempt' });
+            expect(computeTournamentResultPublication(await repository.read(binding), result, Date.now())).toEqual({
+                kind: 'refused',
+                reason: 'inactive-attempt'
+            });
         }
         finally {
             await storage.close();
@@ -122,13 +134,13 @@ describe('tournament immutable result persistence', () => {
             const key = tournamentResultKey(binding);
             await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
             const read = await repository.read(binding);
-            const first = computeTournamentResultPublication(read, result);
-            const second = computeTournamentResultPublication(read, result);
+            const first = computeTournamentResultPublication(read, result, Date.now());
+            const second = computeTournamentResultPublication(read, result, Date.now());
             if (first.kind !== 'publish' || second.kind !== 'publish') {
                 throw new Error('Expected publications');
             }
-            await storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, first.storage));
-            await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, second.storage)))
+            await storage.sql.begin((transaction) => writeTournamentGame(transaction, first.write));
+            await expect(storage.sql.begin((transaction) => writeTournamentGame(transaction, second.write)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await repository.read(binding)).result).toEqual(result);
         }
@@ -162,12 +174,12 @@ describe('tournament immutable result persistence', () => {
             const key = tournamentResultKey(binding);
             await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
             const read = await repository.read(binding);
-            const computed = computeTournamentResultPublication(read, result);
+            const computed = computeTournamentResultPublication(read, result, Date.now());
             if (computed.kind !== 'publish') {
                 throw new Error('Expected publication');
             }
             await runtime.upsert(TOURNAMENT_RESULTS_NAMESPACE, key, 'intervening result', expiry);
-            await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, computed.storage)))
+            await expect(storage.sql.begin((transaction) => writeTournamentGame(transaction, computed.write)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await runtime.findEntry(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey))?.revision).toBe(read.attemptEntry?.revision);
             expect((await runtime.findEntry(TOURNAMENT_RESULTS_NAMESPACE, key))?.value).toBe('intervening result');
@@ -183,14 +195,20 @@ describe('tournament immutable result persistence', () => {
         try {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new TournamentResultRepository(runtime);
-            expect(computeTournamentResultPublication(await repository.read(binding), result)).toEqual({ kind: 'refused', reason: 'inactive-attempt' });
+            expect(computeTournamentResultPublication(await repository.read(binding), result, Date.now())).toEqual({
+                kind: 'refused',
+                reason: 'inactive-attempt'
+            });
             await runtime.upsert(
                 TOURNAMENT_ATTEMPTS_NAMESPACE,
                 attemptKey,
                 JSON.stringify({ ...active, status: 'scheduled', startedAtEpochMs: null }),
                 NEVER_EXPIRE_AT_TIMESTAMP
             );
-            expect(computeTournamentResultPublication(await repository.read(binding), result)).toEqual({ kind: 'refused', reason: 'inactive-attempt' });
+            expect(computeTournamentResultPublication(await repository.read(binding), result, Date.now())).toEqual({
+                kind: 'refused',
+                reason: 'inactive-attempt'
+            });
             await runtime.upsert(
                 TOURNAMENT_ATTEMPTS_NAMESPACE,
                 attemptKey,
@@ -198,7 +216,7 @@ describe('tournament immutable result persistence', () => {
                 NEVER_EXPIRE_AT_TIMESTAMP
             );
             const changedStart = await repository.read(binding);
-            expect(() => computeTournamentResultPublication(changedStart, result)).toThrow(/start/);
+            expect(() => computeTournamentResultPublication(changedStart, result, Date.now())).toThrow(/start/);
         }
         finally {
             await storage.close();

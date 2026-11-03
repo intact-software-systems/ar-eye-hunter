@@ -380,7 +380,7 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.snapshot).toBeUndefined();
     });
 
-    it.each(['session-1', 'keeper-other-tab'])('rejects a cold Watch link while %s participates for the same principal', async (keeperSessionId) => {
+    it.each(['session-1', 'keeper-other-tab', 'relic-1'])('rejects a cold Watch link while %s participates for the same principal', async (keeperSessionId) => {
         const room = relicRoomFixture('relic-room-1');
         const presence = room.snapshot.activeSessions[0];
         if (!presence) {
@@ -390,7 +390,7 @@ describe('useRelicHunters auth lifecycle', () => {
             ...room.snapshot,
             activeSessions: [...room.snapshot.activeSessions, {
                 ...presence,
-                sessionId: keeperSessionId
+                sessionId: keeperSessionId === session.clientId ? 'keeper-other-tab' : keeperSessionId
             }]
         };
         mockRallar.rooms.refresh.mockResolvedValue({ ...room.state, rooms: room.state.rooms.map((entry) => ({ ...entry, snapshot })) });
@@ -400,7 +400,21 @@ describe('useRelicHunters auth lifecycle', () => {
             username: 'Keeper',
             kind: 'join-expedition'
         }, { presentPlayerIds: [keeperSessionId], senderId: keeperSessionId, now: 2 })).state;
-        vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game));
+        const tournament = keeperSessionId === session.clientId
+            ? {
+                binding: {
+                    tournamentRef: { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId, tournamentId: 'cup' },
+                    slot: 'semifinal-1' as const,
+                    attemptId: 'attempt',
+                    roomRef: snapshot.group,
+                    gameId: game.gameId,
+                    rulesId: 'relic-native-10-rounds-v1',
+                    principalIds: [session.clientId, 'opponent'] as const
+                },
+                status: 'playing' as const
+            }
+            : null;
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(toPublicRelicSnapshot(game, tournament));
         const link = toRoomEntryUrl(window.location.href, { intent: 'join', roomRef: snapshot.group, participation: 'spectator', joinCode: null });
         if (!link.right) {
             throw new Error('Expected a valid watch link');

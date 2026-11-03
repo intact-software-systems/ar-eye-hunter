@@ -1,4 +1,4 @@
-import { decodePostgresTimestamp } from '../../postgres/postgres-timestamp.ts';
+import { decodePostgresTimestamp } from '../../postgres/decode-postgres-timestamp.ts';
 import { decodeJsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import { AppDataCorruptionError } from '../app-data-corruption-error.ts';
 import type { AppDataEntry } from '../app-data-repository.ts';

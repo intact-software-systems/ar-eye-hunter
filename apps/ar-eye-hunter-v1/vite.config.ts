@@ -8,6 +8,7 @@ export default defineConfig({
     envPrefix: ['VITE_', 'API_'],
     resolve: {
         alias: {
+            '@ar-eye-hunter': path.resolve(__dirname, '../../packages/ar-eye-hunter'),
             '@shared-react': path.resolve(__dirname, '../../packages/shared-react'),
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
             '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),

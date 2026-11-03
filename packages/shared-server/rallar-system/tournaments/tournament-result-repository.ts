@@ -4,14 +4,25 @@ import { decodeTournamentMatchBinding } from '@shared/api/tournaments/decode-tou
 import type { TournamentMatchBinding, TournamentMatchResult } from '@shared/api/tournaments/tournament-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
-import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
+import {
+    writeRuntimeStateConditionalBatch,
+    type RuntimeStateConditionalBatch
+} from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import { assertRuntimeStateReadBatchResult } from '../../runtime-state/read-batch/assert-runtime-state-read-batch-result.ts';
 import type { RuntimeStateReadBatchSelector } from '../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
+import { writeAppOutboxInserts, type AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { groupStateGroupStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { decodeJsonWireText, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeTournamentResult, tournamentResultKey } from './tournament-result.ts';
+import {
+    computeTournamentSignal,
+    TOURNAMENT_RECONCILE_TOPIC,
+    TOURNAMENT_SIGNAL_RETENTION_MS
+} from './tournament-signal.ts';
 
 export const TOURNAMENT_ATTEMPTS_NAMESPACE = 'tournaments:attempts';
 export const TOURNAMENT_RESULTS_NAMESPACE = 'tournaments:results';
@@ -31,8 +42,13 @@ export namespace TournamentResultRepository {
         readonly result: TournamentMatchResult | null;
     }
 
+    export interface Write {
+        readonly storage: RuntimeStateConditionalBatch;
+        readonly outbox: readonly AppOutboxInsert[];
+    }
+
     export type Publication =
-        | { readonly kind: 'publish'; readonly storage: RuntimeStateConditionalBatch; }
+        | { readonly kind: 'publish'; readonly write: Write; }
         | { readonly kind: 'replay'; readonly result: TournamentMatchResult; }
         | { readonly kind: 'refused'; readonly reason: 'inactive-attempt'; };
 }
@@ -94,10 +110,33 @@ export class TournamentResultRepository {
     }
 }
 
+/** Intermediate game writes must lose to cancellation or rescheduling, just like final result publication. */
+export function computeTournamentAttemptFence(read: TournamentResultRepository.Read): RuntimeStateConditionalBatch {
+    if (read.attempt?.status !== 'playing' || read.attemptEntry === null) {
+        throw new TypeError('Cannot write a game for an inactive tournament attempt');
+    }
+    return {
+        creation: null,
+        batch: computeRuntimeStateGuardedBatchWrite({
+            guard: {
+                operation: 'update',
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: groupStateGroupStorageKey(read.binding.roomRef),
+                value: read.attemptEntry.value,
+                expectedRevision: read.attemptEntry.revision,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            },
+            effects: []
+        }),
+        inserts: []
+    };
+}
+
 /** Write this batch in the SAME AppInbox transaction as the game's final state and exact command outcome. */
 export function computeTournamentResultPublication(
     read: TournamentResultRepository.Read,
-    proposed: TournamentMatchResult
+    proposed: TournamentMatchResult,
+    nowEpochMs: number
 ): TournamentResultRepository.Publication {
     const result = decodeTournamentResult(proposed, read.binding);
     if (read.result !== null) {
@@ -112,30 +151,35 @@ export function computeTournamentResultPublication(
     if (result.startedAtEpochMs !== read.attempt.startedAtEpochMs) {
         throw new TypeError('Tournament result start differs from the authorized attempt');
     }
-    const key = tournamentResultKey(read.binding);
+    requireEpoch(nowEpochMs, 'Tournament publication time');
+    if (nowEpochMs < result.finishedAtEpochMs) {
+        throw new TypeError('Tournament result cannot finish in the future');
+    }
     return {
         kind: 'publish',
-        storage: {
-            creation: null,
-            batch: computeRuntimeStateGuardedBatchWrite({
-                guard: {
-                    operation: 'update',
-                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
-                    key: groupStateGroupStorageKey(read.binding.roomRef),
-                    expectedRevision: read.attemptEntry.revision,
-                    value: JSON.stringify({ ...read.attempt, status: 'finished' }),
-                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-                },
-                effects: []
-            }),
-            inserts: [{
-                namespace: TOURNAMENT_RESULTS_NAMESPACE,
-                key,
-                value: JSON.stringify(result),
-                expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
-            }]
+        write: {
+            outbox: [
+                computeTournamentSignal({
+                    signal: { kind: 'result', binding: result.summary, dueAtEpochMs: nowEpochMs },
+                    topic: TOURNAMENT_RECONCILE_TOPIC,
+                    createdAtEpochMs: nowEpochMs,
+                    retentionMs: TOURNAMENT_SIGNAL_RETENTION_MS,
+                    serviceId: result.authority.id,
+                    traceId: computeSha256CanonicalJson(result.resultId)
+                })
+            ],
+            storage: computeTournamentFinalStorage(read.attemptEntry, read.attempt, result)
         }
     };
+}
+
+/** A final game write commits both immutable evidence and the wake-up for bracket advancement. */
+export async function writeTournamentGame(
+    transaction: PSqlSql,
+    write: TournamentResultRepository.Write
+): Promise<void> {
+    await writeRuntimeStateConditionalBatch(transaction, write.storage);
+    await writeAppOutboxInserts(transaction, write.outbox);
 }
 
 export function decodeTournamentAttempt(
@@ -171,4 +215,31 @@ function readStoredValue(entry: RuntimeStateEntry, key: string): JsonWireValue {
         throw new TypeError('Tournament storage identity or lifetime differs');
     }
     return decodeJsonWireText(entry.value, 'Tournament stored value');
+}
+
+function computeTournamentFinalStorage(
+    entry: RuntimeStateEntry,
+    attempt: TournamentResultRepository.Attempt,
+    result: TournamentMatchResult
+): RuntimeStateConditionalBatch {
+    return {
+        creation: null,
+        batch: computeRuntimeStateGuardedBatchWrite({
+            guard: {
+                operation: 'update',
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: groupStateGroupStorageKey(result.roomRef),
+                expectedRevision: entry.revision,
+                value: JSON.stringify({ ...attempt, status: 'finished' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            },
+            effects: []
+        }),
+        inserts: [{
+            namespace: TOURNAMENT_RESULTS_NAMESPACE,
+            key: tournamentResultKey(result.summary),
+            value: JSON.stringify(result),
+            expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+        }]
+    };
 }

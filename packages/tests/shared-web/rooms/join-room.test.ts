@@ -354,6 +354,58 @@ describe('room entry through the browser facade and HTTP workflow', () => {
         expect(requests.map((request) => request.method)).toEqual(['POST', 'PUT', 'POST', 'PUT']);
     });
 
+    it('switches presence while preserving the previous owner membership when requested', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const connected = createRoomSnapshot('selected', ['session-1']);
+        const departed = {
+            ...previous,
+            activeSessions: [],
+            causalRevision: { ...previous.causalRevision, presenceRevision: previous.causalRevision.presenceRevision + 1 }
+        };
+        seedRoomSnapshots([previous]);
+        respond((request) => request.url.includes('/previous/') ? json(departed) : json(connected));
+        const facade = createRallarFacade();
+        await expect(facade.rooms.join('selected', { scope, preserveCurrentMembership: true })).resolves.toEqual(connected);
+        expect(requests.filter((request) => request.url.includes('/previous/'))).toEqual([expect.objectContaining({
+            url: expect.stringMatching(/\/previous\/sessions\/session-1\/disconnect\/requests\//),
+            method: 'POST'
+        })]);
+        const retained = facade.rooms.session(previous.group).snapshot();
+        expect(retained?.members).toEqual(previous.members);
+        expect(retained?.activeSessions).toEqual([]);
+        expect(facade.rooms.current()).toEqual(connected);
+    });
+
+    it('can retry a failed presence-only departure without forgetting the source room', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        const connected = createRoomSnapshot('selected', ['session-1']);
+        const departed = {
+            ...previous,
+            activeSessions: [],
+            causalRevision: {
+                ...previous.causalRevision,
+                presenceRevision: previous.causalRevision.presenceRevision + 1
+            }
+        };
+        seedRoomSnapshots([previous]);
+        let failDeparture = true;
+        respond((request) =>
+            request.url.includes('/previous/')
+                ? failDeparture ? new Response('unavailable', { status: 503 }) : json(departed)
+                : json(connected)
+        );
+        const facade = createRallarFacade();
+        await expect(facade.rooms.join('selected', { scope, preserveCurrentMembership: true, maxAttempts: 1 }))
+            .rejects.toMatchObject({ name: 'RallarRoomJoinPartialFailureError', joinedRoom: connected });
+        expect(facade.rooms.current()).toEqual(previous);
+        failDeparture = false;
+        await expect(facade.rooms.join('selected', { scope, preserveCurrentMembership: true })).resolves.toEqual(connected);
+        expect(facade.rooms.session(previous.group).snapshot()?.activeSessions).toEqual([]);
+        expect(facade.rooms.current()).toEqual(connected);
+    });
+
     it('reports failed previous-room cleanup while keeping the joined room current', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const previous = createRoomSnapshot('previous', ['session-1']);

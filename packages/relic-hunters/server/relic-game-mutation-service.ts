@@ -19,7 +19,11 @@ import {
     validateComputedProjection,
     type ComputedDataValidationIssue
 } from '@shared-server/rallar-system/computed-data-validation.ts';
-import { materializeGroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-repository.ts';
+import {
+    computeObservedGroupAuthority,
+    writeObservedGroupAuthority,
+    type ObservedGroupAuthority
+} from '@shared-server/rallar-system/group-state/persistence/aggregate/observed-group-authority.ts';
 import type { GroupStateAuthoritativeSnapshot } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { SESSIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
@@ -28,7 +32,8 @@ import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { writeTournamentGame } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
+import type { TournamentResultRepository } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import type { RuntimeStateEntryRead } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
     requireEpoch,
@@ -38,7 +43,7 @@ import {
     requireString
 } from '@shared/api/exact-object-decoding.ts';
 import { groupSessionStartRefusal } from '@shared/api/group-sessions/group-session-schedule.ts';
-import type { GroupPresenceSession } from '@shared/api/group-types.ts';
+import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import type { RallarGameParticipant } from '@shared/rallar-game/rematch.ts';
@@ -53,6 +58,11 @@ import {
     type RelicRuleRefusal
 } from '../mod.ts';
 import { evaluateRelicRematchStart } from '../src/relic-rematch.ts';
+import {
+    advanceRelicTournamentClock,
+    startRelicTournament,
+    type RelicTournamentClock
+} from '../src/tournament-expedition.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import {
@@ -61,6 +71,13 @@ import {
     toRelicCommand,
     type RelicGameMove
 } from './relic-game-move.ts';
+import { computeRelicTournamentDeadline } from './relic-tournament-deadline.ts';
+import { toRelicTournamentParticipation } from './relic-tournament.ts';
+import {
+    computeRelicTournamentWrite,
+    relicMutationPlayerId,
+    relicTournamentMutationRefusal
+} from './relic-tournament.ts';
 
 import {
     computeRelicGamePublications,
@@ -88,9 +105,21 @@ export namespace RelicGameMutationService {
         readonly move: RelicCommand | null;
     }
 
-    export interface Command extends Omit<CommandInput, 'move' | 'traceId'> {
+    export interface PlayerCommand extends Omit<CommandInput, 'move' | 'traceId'> {
         readonly move: RelicGameMove | null;
     }
+
+    export interface ClockCommand {
+        readonly operation: 'tournament-clock';
+        readonly gameId: string;
+        readonly requestId: string;
+        readonly actor: null;
+        readonly authorization: 'tournament';
+        readonly move: null;
+        readonly clock: RelicTournamentClock;
+    }
+
+    export type Command = PlayerCommand | ClockCommand;
 
     export interface Ingress {
         readonly command: Command;
@@ -111,6 +140,7 @@ export namespace RelicGameMutationService {
         readonly session: PersistedAuthSession | null;
         readonly group: GroupStateAuthoritativeSnapshot | null;
         readonly save: RoomOwnedAppData.Read;
+        readonly tournament: TournamentResultRepository.Read | null;
         readonly sessionObservations: readonly SessionObservation[];
     }
 
@@ -132,28 +162,20 @@ export namespace RelicGameMutationService {
         | Readonly<{ status: 'applied'; gameId: string; }>
         | Refusal;
 
-    export interface GroupGuard {
-        readonly namespace: string;
-        readonly key: string;
-        readonly value: string;
-        readonly expectedRevision: number;
-        readonly expireAtIso: string;
-        /** Serialized before transaction entry; each bounded point observation is matched exactly. */
-        readonly sessionObservationsJson: string;
-    }
-
     export interface Computed {
         readonly result: Result;
-        readonly guard: GroupGuard | null;
+        readonly guard: ObservedGroupAuthority | null;
         readonly save: RoomOwnedAppData.Write | null;
+        readonly tournamentWrite: TournamentResultRepository.Write | null;
         readonly outboxWrites: readonly AppOutboxInsert[];
         readonly provenance: readonly RelicGamePublicationProvenance[];
     }
 
     export interface Dependencies {
         readonly groups: Pick<GroupStateRepository, 'readSnapshotWithAuthorityGuard' | 'readPresenceEntry'>;
-        readonly sessions: Pick<AuthSessionPersistence, 'findBySessionId' | 'readSessionBySessionIdEntry'>;
+        readonly sessions: Pick<AuthSessionPersistence, 'readSessionBySessionIdEntry'>;
         readonly data: Pick<RoomOwnedAppData, 'read'>;
+        readonly tournaments: Pick<TournamentResultRepository, 'readRoom'>;
     }
 
     export interface Config {
@@ -190,10 +212,10 @@ export class RelicGameMutationService {
             initial: value.initial === null ? null : encodeRelicGameStateAppData(value.initial)
         });
         const ref = toRelicRoomGroupRef(ingress.command.gameId);
-        const [group, session, saves] = await Promise.all([
+        const [group, saves, tournament] = await Promise.all([
             this.dependencies.groups.readSnapshotWithAuthorityGuard(ref),
-            this.dependencies.sessions.findBySessionId(ingress.command.actor.sessionId),
-            this.dependencies.data.read(ref)
+            this.dependencies.data.read(ref),
+            this.dependencies.tournaments.readRoom(ref)
         ]);
         const save = saves.find(({ key }) =>
             key.namespace === RELIC_ROOM_DATA_BINDING.namespace &&
@@ -205,7 +227,14 @@ export class RelicGameMutationService {
         const previous = save.entry === null
             ? null
             : decodeStoredRelicSave(save.entry.value, save.entry.schemaVersion, ingress.command.gameId);
-        const observedSessionIds = relicMutationPresenceSessionIds(ingress.command, previous);
+        const observedSessionIds = ingress.command.actor === null ? [] : [
+            ...new Set([
+                ingress.command.actor.sessionId,
+                ...(tournament === null
+                    ? relicMutationPresenceSessionIds(ingress.command, previous)
+                    : group?.snapshot.activeSessions.map((session) => session.sessionId) ?? [])
+            ])
+        ].sort();
         const sessionObservations = await Promise.all(observedSessionIds.map(async (sessionId) => {
             const [presence, authentication] = await Promise.all([
                 this.dependencies.groups.readPresenceEntry({ ...ref, sessionId }),
@@ -216,15 +245,24 @@ export class RelicGameMutationService {
         return {
             ingress,
             group: group ?? null,
-            session: session ?? null,
+            session:
+                sessionObservations.find((observation) => observation.sessionId === ingress.command.actor?.sessionId)
+                    ?.authentication.value?.value ?? null,
             save,
+            tournament,
             sessionObservations,
             attemptAtEpochMs: Math.max(this.config.now(), ingress.capturedAtEpochMs)
         };
     }
 
     needsInitialState(read: RelicGameMutationService.Read): boolean {
-        if (authorizeRelicGameMutation(read) !== null || scheduledRelicStartRefusal(read) !== null) {
+        if (read.tournament !== null || read.ingress.command.operation === 'tournament-clock') {
+            return false;
+        }
+        if (
+            authorizeRelicGameMutation(read) !== null || relicTournamentMutationRefusal(read) !== null ||
+            scheduledRelicStartRefusal(read) !== null
+        ) {
             return false;
         }
         const { command } = read.ingress;
@@ -234,7 +272,7 @@ export class RelicGameMutationService {
         if (command.move?.kind === 'start-rematch') {
             const participants = presentRelicParticipants(read);
             return previous !== null && evaluateRelicRematchStart(previous, command.move, {
-                        senderId: command.actor.sessionId,
+                        senderId: command.actor!.sessionId,
                         now: read.attemptAtEpochMs,
                         rematchParticipants: participants
                     }).right !== undefined;
@@ -256,11 +294,14 @@ export class RelicGameMutationService {
         const entry = read.save.entry;
         return entry === null
             ? null
-            : toPublicRelicSnapshot(decodeStoredRelicSave(entry.value, entry.schemaVersion, command.gameId));
+            : toPublicRelicSnapshot(
+                decodeStoredRelicSave(entry.value, entry.schemaVersion, command.gameId),
+                toRelicTournamentParticipation(read.tournament)
+            );
     }
 
     async canRequestPlanning(sessionId: string, gameId: string, serverPeerId: string): Promise<boolean> {
-        const session = await this.dependencies.sessions.findBySessionId(sessionId);
+        const session = (await this.dependencies.sessions.readSessionBySessionIdEntry(sessionId)).value?.value;
         if (!session) {
             return false;
         }
@@ -288,7 +329,9 @@ export class RelicGameMutationService {
             return false;
         }
         const state = decodeStoredRelicSave(read.save.entry.value, read.save.entry.schemaVersion, gameId);
-        return state.players.some((player) => player.playerId === sessionId && player.withdrawnAtEpochMs === undefined);
+        return state.players.some((player) =>
+            player.playerId === relicMutationPlayerId(read) && player.withdrawnAtEpochMs === undefined
+        );
     }
 
     compute(attempt: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
@@ -304,31 +347,14 @@ export class RelicGameMutationService {
 
     async write(transaction: PSqlSql, computed: RelicGameMutationService.Computed): Promise<void> {
         if (computed.guard !== null) {
-            const guard = computed.guard;
-            const rows = await transaction<{ revision: number; }[]>`
-                update runtime_state_store
-                set store_value = ${guard.value}, expire_at_ts = ${guard.expireAtIso}::timestamptz,
-                    updated_ts = now(), revision = revision + 1
-                where store_namespace = ${guard.namespace} and store_key = ${guard.key}
-                  and revision = ${guard.expectedRevision}
-                  and not exists (
-                      select 1
-                      from jsonb_to_recordset(${guard.sessionObservationsJson}::text::jsonb)
-                          as observed(namespace text, key text, revision bigint, value text, expires text)
-                      left join runtime_state_store as presence
-                        on presence.store_namespace = observed.namespace and presence.store_key = observed.key
-                      where presence.revision is distinct from observed.revision
-                         or presence.store_value is distinct from observed.value
-                         or presence.expire_at_ts is distinct from observed.expires::timestamptz
-                  )
-                returning revision
-            `;
-            if (rows.length !== 1) {
-                throw new RuntimeStateWriteConflictError();
-            }
+            await writeObservedGroupAuthority(transaction, computed.guard);
         }
+
         if (computed.save !== null) {
             await writeRoomOwnedAppData(transaction, computed.save);
+        }
+        if (computed.tournamentWrite !== null) {
+            await writeTournamentGame(transaction, computed.tournamentWrite);
         }
         await writeRelicGameProvenance(transaction, computed.provenance);
         await writeAppOutboxInserts(transaction, computed.outboxWrites);
@@ -351,7 +377,16 @@ function authorizeRelicGameMutation(
 ): RelicGameMutationService.Refusal | null {
     const { command } = read.ingress;
     const session = read.session;
-    if (
+    if (command.operation === 'tournament-clock') {
+        if (read.tournament === null) {
+            return refusal(command, {
+                code: 'tournament-required',
+                message: 'A private tournament attempt is required.',
+                httpStatus: 409
+            });
+        }
+    }
+    else if (
         session === null || session.sessionId !== command.actor.sessionId ||
         session.clientId !== command.actor.clientId ||
         session.issuedAtEpochMs !== command.actor.issuedAtEpochMs || session.expiresAtEpochMs <= read.attemptAtEpochMs
@@ -362,11 +397,10 @@ function authorizeRelicGameMutation(
             httpStatus: 401
         });
     }
-    const group = read.group;
+    const group = observedRelicGroupSnapshot(read);
     if (
-        group === null || group.snapshot.group.status !== 'active' ||
-        (group.snapshot.group.expiresAtEpochMs !== null &&
-            group.snapshot.group.expiresAtEpochMs <= read.attemptAtEpochMs)
+        group === null || group.group.status !== 'active' ||
+        (group.group.expiresAtEpochMs !== null && group.group.expiresAtEpochMs <= read.attemptAtEpochMs)
     ) {
         return refusal(command, {
             code: 'room-unavailable',
@@ -374,7 +408,13 @@ function authorizeRelicGameMutation(
             httpStatus: 404
         });
     }
-    const member = group.snapshot.members.find((entry) => entry.principalId === session.clientId);
+    if (command.operation === 'tournament-clock') {
+        return null;
+    }
+    if (session === null) {
+        throw new TypeError('Authenticated Relic command lacks a session');
+    }
+    const member = group.members.find((entry) => entry.principalId === session.clientId);
     if (member?.status !== 'active') {
         return refusal(command, {
             code: 'active-membership-required',
@@ -396,15 +436,26 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     const { command } = read.ingress;
     const denial = authorizeRelicGameMutation(read);
     if (denial !== null) {
-        return { result: denial, guard: null, save: null, outboxWrites: [], provenance: [] };
+        return refused(command, denial);
+    }
+    const tournamentDenial = relicTournamentMutationRefusal(read);
+    if (tournamentDenial !== null) {
+        return refused(command, tournamentDenial);
     }
     const group = read.group;
-    if (group === null || read.session === null) {
+    if (group === null || command.actor !== null && read.session === null) {
         throw new TypeError('Authorized Relic mutation lacks its room or session');
     }
     const previous = read.save.entry === null
         ? null
         : decodeStoredRelicSave(read.save.entry.value, read.save.entry.schemaVersion, command.gameId);
+    if (read.tournament !== null && previous === null && command.operation !== 'tournament-clock') {
+        return refused(command, {
+            code: 'tournament-start-pending',
+            message: 'The native tournament start is pending. Retry shortly.',
+            httpStatus: 409
+        });
+    }
     const guard = computeRelicGameGroupGuard(group, read.sessionObservations);
     if (command.operation === 'reset' && previous?.phase === 'finished') {
         return refused(command, {
@@ -418,6 +469,7 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
             result: { status: 'initialized', gameId: command.gameId },
             guard,
             save: null,
+            tournamentWrite: null,
             outboxWrites: [],
             provenance: []
         };
@@ -432,7 +484,7 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     }
     const missingProposal = evaluateRelicGameProposal(command, previous, read.ingress.initial);
     if (missingProposal !== null) {
-        return { result: missingProposal, guard: null, save: null, outboxWrites: [], provenance: [] };
+        return refused(command, missingProposal);
     }
     return computeRelicGameTransitionResult(read, previous, guard);
 }
@@ -440,7 +492,7 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
 function computeRelicGameTransitionResult(
     read: RelicGameMutationService.Attempt,
     previous: RelicGameState | null,
-    guard: RelicGameMutationService.GroupGuard
+    guard: ObservedGroupAuthority
 ): RelicGameMutationService.Computed {
     const { command } = read.ingress;
     const transition = computeRelicGameTransition(read, previous);
@@ -455,12 +507,30 @@ function computeRelicGameTransitionResult(
     if (next === undefined) {
         throw new TypeError('Relic transition lacks its result');
     }
+    if (next === previous) {
+        return {
+            result: { status: 'applied', gameId: command.gameId },
+            guard: null,
+            save: null,
+            tournamentWrite: null,
+            outboxWrites: [],
+            provenance: []
+        };
+    }
+    const publications = computeRelicGamePublications({
+        read,
+        previous: previous ?? read.ingress.initial,
+        next,
+        refusal: null
+    });
     return {
         result: command.operation === 'ensure'
             ? { status: 'initialized', gameId: command.gameId }
             : { status: 'applied', gameId: command.gameId },
         guard,
-        ...computeRelicGamePublications({ read, previous: previous ?? read.ingress.initial, next, refusal: null }),
+        ...publications,
+        outboxWrites: [...publications.outboxWrites, ...computeRelicTournamentDeadline(read, previous, next)],
+        tournamentWrite: computeRelicTournamentWrite(read, next),
         save: computeRoomOwnedAppDataSave({
             read: read.save,
             value: encodeRelicGameStateAppData(next),
@@ -473,38 +543,25 @@ function computeRelicGameTransitionResult(
 function computeRelicGameGroupGuard(
     group: GroupStateAuthoritativeSnapshot,
     sessionObservations: readonly RelicGameMutationService.SessionObservation[]
-): RelicGameMutationService.GroupGuard {
-    const authority = materializeGroupStateAuthorityGuard(group.authorityGuard);
-    return {
-        namespace: authority.namespace,
-        key: authority.key,
-        value: authority.value,
-        expectedRevision: authority.expectedRevision,
-        expireAtIso: new Date(authority.expireAtTimestamp).toISOString(),
-        sessionObservationsJson: JSON.stringify(
-            sessionObservations.flatMap((observation) => [
-                {
-                    namespace: SESSIONS_NAMESPACE,
-                    key: groupStatePresenceSessionStorageKey({
-                        ...group.authorityGuard.groupRef,
-                        sessionId: observation.sessionId
-                    }),
-                    entry: observation.presence.value?.entry ?? observation.presence.expiredEntry
-                },
-                {
-                    namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
-                    key: authSessionKey(observation.sessionId),
-                    entry: observation.authentication.value?.entry ?? observation.authentication.expiredEntry
-                }
-            ]).map(({ namespace, key, entry }) => ({
-                namespace,
-                key,
-                revision: entry?.revision ?? null,
-                value: entry?.value ?? null,
-                expires: entry === undefined ? null : new Date(entry.expireAtTimestamp).toISOString()
-            }))
-        )
-    };
+): ObservedGroupAuthority {
+    return computeObservedGroupAuthority({
+        group,
+        observations: sessionObservations.flatMap((observation) => [
+            {
+                namespace: SESSIONS_NAMESPACE,
+                key: groupStatePresenceSessionStorageKey({
+                    ...group.authorityGuard.groupRef,
+                    sessionId: observation.sessionId
+                }),
+                entry: observation.presence.value?.entry ?? observation.presence.expiredEntry ?? null
+            },
+            {
+                namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                key: authSessionKey(observation.sessionId),
+                entry: observation.authentication.value?.entry ?? observation.authentication.expiredEntry ?? null
+            }
+        ])
+    });
 }
 
 function computeRelicGameTransition(
@@ -513,6 +570,20 @@ function computeRelicGameTransition(
 ): Either<RelicRuleRefusal, RelicGameState> {
     const { command, initial } = read.ingress;
     const mutationAtEpochMs = Math.max(read.attemptAtEpochMs, (previous?.updatedAtEpochMs ?? -1) + 1);
+    if (command.operation === 'tournament-clock') {
+        if (previous !== null) {
+            return Either.ofRight(advanceRelicTournamentClock(previous, command.clock, mutationAtEpochMs));
+        }
+        if (command.clock.phase !== 'start' || read.tournament === null) {
+            return Either.ofLeft({
+                code: 'tournament-not-started',
+                message: 'The committed tournament start has not initialized this expedition.'
+            });
+        }
+        return Either.ofRight(
+            startRelicTournament(command.gameId, read.tournament.binding.principalIds, mutationAtEpochMs)
+        );
+    }
     if (command.operation !== 'command') {
         if (initial === null) {
             throw new TypeError('Relic initialization lacks its captured proposal');
@@ -537,9 +608,9 @@ function computeRelicGameTransition(
             ...toRelicCommand(command.move),
             username: read.session.username
         }, {
-            senderId: read.session.sessionId,
+            senderId: relicMutationPlayerId(read),
             now: mutationAtEpochMs,
-            presentPlayerIds: participants.map((participant) => participant.sessionId),
+            presentPlayerIds: presentRelicPlayerIds(read, participants),
             rematchParticipants: participants,
             ...(command.move.kind === 'start-rematch' && initial !== null ? { nextExpedition: initial } : {})
         }).mapRight((result) => result.state);
@@ -549,11 +620,33 @@ function computeRelicGameTransition(
     }
 }
 
-/** Point observations override the earlier summary; the first write fences every observed row. */
+/** Native competitors keep account identity across sessions; casual hunters remain session-owned. */
+function presentRelicPlayerIds(
+    read: RelicGameMutationService.Read,
+    participants: readonly RallarGameParticipant[]
+): readonly string[] {
+    if (read.tournament === null) {
+        return participants.map((participant) => participant.sessionId);
+    }
+    const sessions = new Set(participants.map((participant) => participant.sessionId));
+    return [
+        ...new Set(read.sessionObservations.flatMap((observation) => {
+            const session = observation.authentication.value?.value;
+            return sessions.has(observation.sessionId) && session ? [session.clientId] : [];
+        }))
+    ];
+}
+
 function presentRelicParticipants(read: RelicGameMutationService.Read): readonly RallarGameParticipant[] {
+    const group = observedRelicGroupSnapshot(read);
+    return group === null ? [] : readRallarGameParticipants(group, read.attemptAtEpochMs);
+}
+
+/** Point observations override the earlier summary; the first write fences every observed row. */
+function observedRelicGroupSnapshot(read: RelicGameMutationService.Read): GroupSnapshot | null {
     const group = read.group?.snapshot;
     if (!group) {
-        return [];
+        return null;
     }
     const observedIds = new Set(read.sessionObservations.map((observation) => observation.sessionId));
     const activeSessions = [
@@ -569,14 +662,14 @@ function presentRelicParticipants(read: RelicGameMutationService.Read): readonly
                 : [];
         })
     ];
-    return readRallarGameParticipants({ ...group, activeSessions }, read.attemptAtEpochMs);
+    return { ...group, activeSessions };
 }
 
 function relicMutationPresenceSessionIds(
     command: RelicGameMutationService.Command,
     previous: RelicGameState | null
 ): readonly string[] {
-    if (previous === null || command.move === null) {
+    if (previous === null || command.move === null || command.actor === null) {
         return [];
     }
     if (command.move.kind === 'take-keeper' && previous.phase !== 'finished') {
@@ -593,7 +686,14 @@ function refused(
     command: RelicGameMutationService.Command,
     reason: RelicGameMutationService.RefusalReason
 ): RelicGameMutationService.Computed {
-    return { result: refusal(command, reason), guard: null, save: null, outboxWrites: [], provenance: [] };
+    return {
+        result: refusal(command, reason),
+        guard: null,
+        save: null,
+        tournamentWrite: null,
+        outboxWrites: [],
+        provenance: []
+    };
 }
 
 function refusal(
@@ -605,8 +705,11 @@ function refusal(
 
 export function captureRelicGameCommand(
     value: RelicGameMutationService.CommandInput
-): RelicGameMutationService.Command {
-    return decodeRelicGameCommand({
+): RelicGameMutationService.PlayerCommand {
+    if (!['ensure', 'reset', 'command'].includes(value.operation)) {
+        throw new TypeError('Public Relic commands cannot admit a server clock');
+    }
+    const command = decodeRelicGameCommand({
         operation: value.operation,
         gameId: value.gameId,
         requestId: value.requestId,
@@ -614,10 +717,17 @@ export function captureRelicGameCommand(
         authorization: value.authorization,
         move: value.move === null ? null : captureRelicGameMove(value.move)
     });
+    if (command.operation === 'tournament-clock') {
+        throw new TypeError('Public Relic commands cannot admit a server clock');
+    }
+    return command;
 }
 
 export function decodeRelicGameCommand(value: unknown): RelicGameMutationService.Command {
     const command = requireRecord(value, 'Relic mutation command');
+    if (command.operation === 'tournament-clock') {
+        return decodeRelicClockCommand(command);
+    }
     requireExactKeys(
         command,
         ['operation', 'gameId', 'requestId', 'actor', 'authorization', 'move'],
@@ -652,6 +762,9 @@ export function decodeRelicGameIngress(value: unknown): RelicGameMutationService
     const command = decodeRelicGameCommand(ingress.command);
     requireEpoch(ingress.capturedAtEpochMs, 'Relic capture time');
     requireString(ingress.serverPeerId, 'Relic logical server peer');
+    if (command.operation === 'tournament-clock' && ingress.initial !== null) {
+        throw new TypeError('Server clocks cannot carry an initial-state proposal');
+    }
     const initial = ingress.initial === null
         ? null
         : decodeStoredRelicSave(decodeJsonWireValue(ingress.initial), 1, command.gameId);
@@ -660,6 +773,36 @@ export function decodeRelicGameIngress(value: unknown): RelicGameMutationService
         initial,
         capturedAtEpochMs: Number(ingress.capturedAtEpochMs),
         serverPeerId: ingress.serverPeerId
+    };
+}
+
+function decodeRelicClockCommand(command: Record<string, unknown>): RelicGameMutationService.ClockCommand {
+    requireExactKeys(
+        command,
+        ['operation', 'gameId', 'requestId', 'actor', 'authorization', 'move', 'clock'],
+        'Relic clock command'
+    );
+    requireString(command.gameId, 'Relic game ID');
+    requireString(command.requestId, 'Relic request ID');
+    if (command.actor !== null || command.authorization !== 'tournament' || command.move !== null) {
+        throw new TypeError('Relic clock cannot impersonate a hunter or carry a move');
+    }
+    const clock = requireRecord(command.clock, 'Relic tournament clock');
+    requireExactKeys(clock, ['phase', 'round', 'dueAtEpochMs'], 'Relic tournament clock');
+    const phase = requireOneOf(clock.phase, ['start', 'planning', 'review'], 'Relic tournament clock phase');
+    requireEpoch(clock.round, 'Relic tournament round');
+    requireEpoch(clock.dueAtEpochMs, 'Relic tournament due time');
+    if (clock.round < 1 || clock.round > 10 || phase === 'start' && clock.round !== 1) {
+        throw new TypeError('Relic clock round is invalid');
+    }
+    return {
+        operation: 'tournament-clock',
+        gameId: command.gameId,
+        requestId: command.requestId,
+        actor: null,
+        authorization: 'tournament',
+        move: null,
+        clock: { phase, round: clock.round, dueAtEpochMs: clock.dueAtEpochMs }
     };
 }
 
@@ -676,7 +819,7 @@ function decodeStoredRelicSave(value: unknown, schemaVersion: number, gameId: st
 interface RelicRoomPolicyInput {
     readonly command: RelicGameMutationService.Command;
     readonly session: PersistedAuthSession;
-    readonly group: GroupStateAuthoritativeSnapshot;
+    readonly group: GroupSnapshot;
     readonly readOnly: boolean;
     readonly now: number;
 }
@@ -685,7 +828,7 @@ function authorizeRelicRoomPolicy(
 ): RelicGameMutationService.Refusal | null {
     if (readOnly || command.authorization === 'group-policy') {
         const input = {
-            snapshot: group.snapshot,
+            snapshot: group,
             actor: { principalId: session.clientId, sessionId: session.sessionId },
             nowEpochMs: now
         };
@@ -717,7 +860,10 @@ function evaluateRelicGameProposal(
             httpStatus: 409
         });
     }
-    if ((command.operation === 'reset' || previous === null) && initial === null) {
+    if (
+        command.operation !== 'tournament-clock' && (command.operation === 'reset' || previous === null) &&
+        initial === null
+    ) {
         return refusal(command, {
             code: 'initial-state-missing',
             message: 'No captured expedition proposal is available.',

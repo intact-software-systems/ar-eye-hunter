@@ -62,8 +62,21 @@ export function round2(value: number): number {
 
 export function roundVec3(value: Vec3Tuple): Vec3Tuple {
     return [
-        Math.round(value[0] * 1000) / 1000,
-        Math.round(value[1] * 1000) / 1000,
-        Math.round(value[2] * 1000) / 1000
+        round3(value[0]),
+        round3(value[1]),
+        round3(value[2])
     ];
+}
+
+export function forwardFromAngles(yaw: number, pitch: number): Vec3Tuple {
+    const cosPitch = Math.cos(pitch);
+    return [
+        Math.sin(yaw) * cosPitch,
+        -Math.sin(pitch),
+        Math.cos(yaw) * cosPitch
+    ];
+}
+
+export function round3(value: number): number {
+    return Math.round(value * 1000) / 1000;
 }

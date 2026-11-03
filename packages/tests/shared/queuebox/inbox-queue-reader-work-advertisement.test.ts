@@ -158,7 +158,9 @@ describe('InboxQueueReader work advertisement', () => {
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
         const delivered: string[] = [];
-        reader.onOutboxMessageDo('test.fair-service', { onMessage: async (message) => void delivered.push(message.route.resourceId) });
+        reader.onOutboxMessageDo('test.fair-service', { onMessage: async (message) => void delivered.push(message.route.resourceId) }, [
+            'app-inbox.fair-service'
+        ]);
         await reader.enqueueIfAbsent(createQueueMessage('outbound'));
         const resilience = createQueueResilience();
 

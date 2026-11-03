@@ -21,6 +21,39 @@ import {
 } from 'vitest';
 
 describe('OutboxQueueReader', () => {
+    it('does not advertise work until a route topic is registered', async () => {
+        const queue = new InMemoryQueueBox();
+        const reader = new OutboxQueueReader(queue);
+        await reader.enqueueIfAbsent(createAppMessage('game.clock', 'game'));
+        expect((await reader.readWorkAdvertisement(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).NEW).toBe(false);
+        expect(await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).toBe(0);
+    });
+
+    it('keeps another application’s outbox work unclaimed even when payload types match', async () => {
+        const queue = new InMemoryQueueBox();
+        const first = new OutboxQueueReader(queue);
+        const second = new OutboxQueueReader(queue);
+        const received: string[] = [];
+        first.onOutboxMessageDo('game.clock', {
+            onMessage: async () => {
+                received.push('first');
+            }
+        }, ['app-first.work']);
+        second.onOutboxMessageDo('game.clock', {
+            onMessage: async () => {
+                received.push('second');
+            }
+        }, ['app-second.work']);
+        const message = createAppMessage('game.clock', 'second');
+        await second.enqueueIfAbsent(message);
+        expect((await first.readWorkAdvertisement(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).NEW).toBe(false);
+        expect(await first.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).toBe(0);
+        expect((await queue.getItem(message.route))?.status).toBe(EntityStatus.NEW);
+        await second.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience());
+        expect(received).toEqual(['second']);
+        expect((await queue.getItem(message.route))?.status).toBe(EntityStatus.COMPLETED);
+    });
+
     it('dispatches app outbox messages using the APP_OUTBOX queue type', async () => {
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
@@ -30,7 +63,7 @@ describe('OutboxQueueReader', () => {
         };
         const message = createAppMessage('RTC_TOPOLOGY_RECOMPUTE', 'outbox');
 
-        reader.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage });
+        reader.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage }, ['app-outbox.work']);
         const enqueued = await reader.enqueueIfAbsent(message);
         await reader.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -56,7 +89,7 @@ describe('OutboxQueueReader', () => {
         };
 
         inbox.onInboxMessageDo('group-state.create.v1', { onMessage: onInbox });
-        outbox.onOutboxMessageDo('group-state.create.v1', { onMessage: onOutbox });
+        outbox.onOutboxMessageDo('group-state.create.v1', { onMessage: onOutbox }, ['app-inbox.work']);
         const message = createAppMessage('group-state.create.v1', 'inbox');
         await inbox.enqueueIfAbsent(message);
         await outbox.dequeueOutbox(
@@ -90,7 +123,7 @@ describe('OutboxQueueReader', () => {
         };
 
         inbox.onInboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage: onInbox });
-        outbox.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage: onOutbox });
+        outbox.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage: onOutbox }, ['app-outbox.work']);
         const message = createAppMessage('RTC_TOPOLOGY_RECOMPUTE', 'outbox');
         await outbox.enqueueIfAbsent(message);
         await inbox.dequeueInbox(
@@ -123,7 +156,7 @@ describe('OutboxQueueReader', () => {
             onHandlerFinished: (attempt) => observed.push(`handler-finished:${attempt.entry.key.resourceId}`),
             onPassFinished: () => observed.push('pass-finished')
         });
-        outbox.onOutboxMessageDo('observed.work', { onMessage: async () => {} });
+        outbox.onOutboxMessageDo('observed.work', { onMessage: async () => {} }, ['app-outbox.work']);
         const message = createAppMessage('observed.work', 'outbox');
         await outbox.enqueueIfAbsent(message);
 
@@ -146,13 +179,13 @@ describe('OutboxQueueReader', () => {
         vi.useFakeTimers({ now: Date.parse('2026-01-01T00:00:00Z') });
         const queue = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
         const outbox = new OutboxQueueReader(queue);
-        outbox.onOutboxMessageDo('claim.succeeds', { onMessage: async () => {} });
+        outbox.onOutboxMessageDo('claim.succeeds', { onMessage: async () => {} }, ['app-outbox.work']);
         outbox.onOutboxMessageDo('claim.fails', {
             onMessage: async () => await Promise.reject(new Error('handler failed'))
-        });
+        }, ['app-outbox.work']);
         outbox.onOutboxMessageDo('claim.not-ready', {
             onMessage: async () => await Promise.reject(new NotReadyException(60_000))
-        });
+        }, ['app-outbox.work']);
         for (const type of ['claim.succeeds', 'claim.fails', 'claim.not-ready']) {
             await outbox.enqueueIfAbsent(createAppMessage(type, 'outbox'));
         }

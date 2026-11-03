@@ -58,6 +58,7 @@ const MANAGED_API_PASSTHROUGH_NAMES = [
     'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
     'RALLAR_GRANTED_WS_TOPICS_JSON',
+    'RALLAR_TOURNAMENT_PROFILES_JSON',
     'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR',
     'TZ'
 ] as const;
@@ -77,6 +78,10 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_BB_EXECUTION_TOKEN = createApiV1BlackBoxExecutionToken();
     env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT;
     env.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON = '[]';
+    env.RALLAR_TOURNAMENT_PROFILES_JSON = env.RALLAR_TOURNAMENT_PROFILES_JSON ?? JSON.stringify([{
+        scope: { applicationId: 'black-box-tournaments', workspaceId: 'default' },
+        rulesId: 'black-box-native-v1', noShowGraceMs: 1000, gameStartTopic: 'app:black-box:tournament-start'
+    }]);
     env.RALLAR_API_CONFIGURATION_PROFILE = MANAGED_API_CONFIGURATION_PROFILE;
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET ??
         'local-api-v1-black-box-operator-secret';

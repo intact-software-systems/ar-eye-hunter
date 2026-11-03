@@ -1,3 +1,5 @@
+import type { PlayerArenaState } from '@ar-eye-hunter/arena-contracts.ts';
+import { clamp } from '@ar-eye-hunter/arena-math.ts';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
@@ -5,22 +7,20 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import type { Scene } from '@babylonjs/core/scene.js';
-import type {
-    PlayerArenaState,
-    PlayerPose,
-    RemotePlayer,
-    RemoteShot
-} from '../arena-contracts.ts';
+import type { PlayerPose, RemotePlayer, RemoteShot } from '../arena-contracts.ts';
 import { avatarAccentForPalette } from '../avatarProfile.ts';
 import type { RemoteAvatar } from './arena-scene-contracts.ts';
 import { createImpact, createTracer } from './arena-scene-effects.ts';
-import { clamp, vector3 } from './arena-scene-geometry.ts';
+import { vector3 } from './arena-scene-geometry.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
 import { createMatrixMaterial } from './arena-world-view.ts';
 
+interface PeerAvatarScene
+    extends Pick<ArenaSceneRuntime, 'scene' | 'avatars' | 'motionBuffer' | 'motionSampleKeys' | 'clock'> {}
+
 export function syncRemoteAvatars(
-    runtime: ArenaSceneRuntime,
+    runtime: PeerAvatarScene,
     remotePlayers: ReadonlyMap<string, RemotePlayer>
 ): void {
     syncRemoteMotionSamples(runtime, remotePlayers);
@@ -76,13 +76,13 @@ export function syncRemoteAvatars(
     removeDepartedPeerAvatars(runtime, remotePlayers);
 }
 
-function removeDepartedPeerAvatars(runtime: ArenaSceneRuntime, remotePlayers: ReadonlyMap<string, RemotePlayer>): void {
+function removeDepartedPeerAvatars(runtime: PeerAvatarScene, remotePlayers: ReadonlyMap<string, RemotePlayer>): void {
     for (const [sessionId, avatar] of runtime.avatars) {
         if (remotePlayers.has(sessionId)) {
             continue;
         }
-        avatar.root.dispose();
-        avatar.labelTexture.dispose();
+        // These meshes own their materials and label textures; release the entire avatar.
+        avatar.root.dispose(false, true);
         runtime.motionBuffer.remove(sessionId);
         runtime.motionSampleKeys.delete(sessionId);
         runtime.avatars.delete(sessionId);
@@ -90,7 +90,7 @@ function removeDepartedPeerAvatars(runtime: ArenaSceneRuntime, remotePlayers: Re
 }
 
 function syncRemoteMotionSamples(
-    runtime: ArenaSceneRuntime,
+    runtime: PeerAvatarScene,
     remotePlayers: ReadonlyMap<string, RemotePlayer>
 ): void {
     for (const [sessionId, remote] of remotePlayers) {
@@ -141,7 +141,7 @@ export function syncRemoteShots(runtime: ArenaSceneRuntime, remoteShots: readonl
     }
 }
 
-function getOrCreateAvatar(runtime: ArenaSceneRuntime, sessionId: string, pose: PlayerPose): RemoteAvatar {
+function getOrCreateAvatar(runtime: PeerAvatarScene, sessionId: string, pose: PlayerPose): RemoteAvatar {
     const { scene, avatars } = runtime;
     const existing = avatars.get(sessionId);
     if (existing) {

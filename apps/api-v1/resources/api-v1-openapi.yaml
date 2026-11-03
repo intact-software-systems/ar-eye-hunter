@@ -23,6 +23,7 @@ servers:
   - url: http://localhost:8090
 
 tags:
+  - name: Tournaments
   - name: Matchmaking
   - name: Parties
   - name: Config
@@ -4305,6 +4306,64 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/{tournamentId}:
+    get:
+      tags: [Tournaments]
+      summary: Read a four-player tournament bracket
+      description: Authenticated account-bound view. Opening a bracket does not register or enter a room.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/TournamentId'
+      responses:
+        '200':
+          description: Bracket view, with a null tournament when the reference does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/{tournamentId}/requests/{requestId}:
+    post:
+      tags: [Tournaments]
+      summary: Submit an idempotent tournament intent
+      description: The server owns rules, room identities, admission and trusted results. Reuse the exact request ID and body after an uncertain response. Domain refusals are returned as a completed result; an altered body under the same identity conflicts.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/TournamentId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TournamentRequest'
+      responses:
+        '200':
+          description: Durable applied or refused outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentMutationResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
 components:
   securitySchemes:
     bearerAuth:
@@ -4324,6 +4383,13 @@ components:
       description: Short-lived one-time ticket returned from `/api/auth/ws-ticket`.
 
   parameters:
+    TournamentId:
+      name: tournamentId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
     XRequestId:
       name: x-request-id
       in: header
@@ -10446,3 +10512,144 @@ components:
           const: true
         result:
           $ref: '#/components/schemas/RallarCrdtEraseResult'
+
+    TournamentRef:
+      type: object
+      additionalProperties: false
+      required: [applicationId, workspaceId, tournamentId]
+      properties:
+        applicationId: { type: string }
+        workspaceId: { type: string }
+        tournamentId: { type: string }
+    TournamentRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, title]
+          properties:
+            type: { const: create }
+            title: { type: string, minLength: 1, maxLength: 120 }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { enum: [register, withdraw, launch, cancel] }
+        - type: object
+          additionalProperties: false
+          required: [type, slot, attemptId]
+          properties:
+            type: { enum: [check-in, start] }
+            slot: { enum: [semifinal-1, semifinal-2, final] }
+            attemptId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [type, slot, scheduledAtEpochMs]
+          properties:
+            type: { const: schedule }
+            slot: { enum: [semifinal-1, semifinal-2, final] }
+            scheduledAtEpochMs: { type: integer, minimum: 0 }
+    TournamentMutationResult:
+      type: object
+      additionalProperties: false
+      required: [ref, requestId, status, code]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        requestId: { type: string }
+        status: { enum: [applied, refused] }
+        code: { type: [string, 'null'] }
+    TournamentSnapshot:
+      type: object
+      additionalProperties: false
+      required: [ref, principalId, observedAtEpochMs, tournament]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        principalId: { type: string }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        tournament:
+          oneOf:
+            - { $ref: '#/components/schemas/Tournament' }
+            - { type: 'null' }
+    Tournament:
+      type: object
+      additionalProperties: false
+      required: [ref, title, organizerPrincipalId, rulesId, createdAtEpochMs, noShowGraceMs, status, entrants, matches, championPrincipalId]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        organizerPrincipalId: { type: string }
+        rulesId: { type: string }
+        createdAtEpochMs: { type: integer, minimum: 0 }
+        noShowGraceMs: { type: integer, minimum: 1 }
+        status: { enum: [registration, active, complete, cancelled] }
+        entrants:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [principalId, registeredAtEpochMs, withdrawnAtEpochMs]
+            properties:
+              principalId: { type: string }
+              registeredAtEpochMs: { type: integer, minimum: 0 }
+              withdrawnAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+        matches:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/TournamentMatch' }
+        championPrincipalId: { type: [string, 'null'] }
+    TournamentMatch:
+      type: object
+      additionalProperties: false
+      required: [slot, principalIds, status, attempt, resolution]
+      properties:
+        slot: { enum: [semifinal-1, semifinal-2, final] }
+        principalIds:
+          oneOf:
+            - { type: array, minItems: 2, maxItems: 2, uniqueItems: true, items: { type: string } }
+            - { type: 'null' }
+        status: { enum: [waiting, ready, scheduled, playing, tied, unresolved, complete, cancelled] }
+        attempt:
+          oneOf:
+            - { $ref: '#/components/schemas/TournamentAttempt' }
+            - { type: 'null' }
+        resolution:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [reason, winnerPrincipalId, resolvedAtEpochMs, resultId]
+              properties:
+                reason: { enum: [score, withdrawal, no-show] }
+                winnerPrincipalId: { type: string }
+                resolvedAtEpochMs: { type: integer, minimum: 0 }
+                resultId: { type: [string, 'null'] }
+            - { type: 'null' }
+    TournamentAttempt:
+      type: object
+      additionalProperties: false
+      required: [binding, scheduledAtEpochMs, startedAtEpochMs, checkedInPrincipalIds]
+      properties:
+        binding: { $ref: '#/components/schemas/TournamentMatchBinding' }
+        scheduledAtEpochMs: { type: integer, minimum: 0 }
+        startedAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+        checkedInPrincipalIds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string }
+    TournamentMatchBinding:
+      type: object
+      additionalProperties: false
+      required: [tournamentRef, slot, attemptId, roomRef, gameId, rulesId, principalIds]
+      properties:
+        tournamentRef: { $ref: '#/components/schemas/TournamentRef' }
+        slot: { enum: [semifinal-1, semifinal-2, final] }
+        attemptId: { type: string }
+        roomRef: { $ref: '#/components/schemas/GroupRef' }
+        gameId: { type: string }
+        rulesId: { type: string }
+        principalIds:
+          type: array
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string }

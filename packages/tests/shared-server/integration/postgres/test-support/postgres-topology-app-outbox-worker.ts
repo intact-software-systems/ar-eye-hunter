@@ -25,6 +25,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import type {
     TopologyAppOutboxWorkerInput,
     TopologyAppOutboxWorkerOutput
@@ -160,7 +161,8 @@ function registerTopologyAppOutboxHandler(
                 () => input.atEpochMs
             ),
             serviceId: `postgres-topology-outbox-${registration.workerPid}`
-        })
+        }),
+        [RTC_TOPOLOGY_OUTBOX_TOPIC]
     );
     transactionGate.arm();
 }

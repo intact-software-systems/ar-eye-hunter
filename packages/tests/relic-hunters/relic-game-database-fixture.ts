@@ -1,3 +1,4 @@
+import { TournamentResultRepository } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import { expect } from 'vitest';
 
 import { createRelicGame, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
@@ -51,7 +52,8 @@ export async function createGameFixture(gameId = 'expedition-1', scheduledStartO
     const service = new RelicGameMutationService({
         groups: fixture.repository,
         sessions: new AuthSessionPersistence(fixture.runtime),
-        data
+        data,
+        tournaments: new TournamentResultRepository(fixture.runtime)
     }, { now: () => fixture.nowEpochMs });
     const command = {
         operation: 'ensure',

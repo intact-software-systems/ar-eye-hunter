@@ -20,7 +20,7 @@ export function RelicRematchControls({ game }: RelicRematchControlsProps) {
         return () => clearInterval(timer);
     }, []);
     const snapshot = game.snapshot;
-    if (!snapshot || snapshot.phase !== 'finished' || !game.session) {
+    if (!snapshot || snapshot.phase !== 'finished' || !game.session || snapshot.tournament !== null) {
         return null;
     }
     const rematch = snapshot.rematch ?? createRelicRematch(snapshot).right;

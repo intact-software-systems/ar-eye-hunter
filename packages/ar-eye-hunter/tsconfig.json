@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "target": "ES2024",
+    "module": "ESNext",
+    "lib": [
+      "ES2024"
+    ],
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "types": [],
+    "paths": {
+      "@shared/*": [
+        "../shared/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "../../types/**/*.d.ts"
+  ],
+  "exclude": [
+    "server/**"
+  ]
+}

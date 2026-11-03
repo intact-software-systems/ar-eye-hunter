@@ -163,6 +163,8 @@ export interface RallarJoinRoomOptions extends RallarScopedOperationOptions {
     readonly participation?: 'player' | 'spectator';
     readonly roomRef?: GroupRef;
     readonly leaveCurrent?: boolean;
+    /** Disconnect this session from the previous room while retaining its account membership. */
+    readonly preserveCurrentMembership?: boolean;
     readonly inviteToken?: string;
     readonly joinCode?: string;
 }

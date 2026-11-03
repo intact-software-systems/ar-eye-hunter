@@ -26,6 +26,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { seedTopologyGroup, topologyGroupSnapshot } from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 import {
     createRuntimeStatePostgresSql,
@@ -275,7 +276,8 @@ function createTopologyOutboxQueueReader(harness: TopologyRetentionHarness): Out
             topologyPlanning: topologyOwners.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository, undefined, Date.now),
             serviceId: 'topology-retention-outbox'
-        })
+        }),
+        [RTC_TOPOLOGY_OUTBOX_TOPIC]
     );
     return outboxQueueReader;
 }

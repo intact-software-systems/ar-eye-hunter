@@ -6,7 +6,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarAiJsonProvider } from '@shared/rallar-ai/mod.ts';
 
-import type { ArenaSnapshot } from '../../arena-contracts.ts';
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
 import {
     createAvatarProfileMockProvider,
     createAvatarProfileRequest,
@@ -63,9 +63,6 @@ function startArenaAvatarProfileGeneration(
     let cancelled = false;
     const generation = input.networkGenerationRef.current;
     const ai = createAvatarProfileAi(providerSelection.provider);
-    if (typeof ai.generateJson !== 'function') {
-        return undefined;
-    }
     void ai
         .generateJson<AvatarProfile>({
             ...createAvatarProfileRequest({

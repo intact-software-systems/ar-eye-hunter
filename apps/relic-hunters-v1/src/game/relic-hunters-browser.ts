@@ -4,6 +4,7 @@ import {
     RELIC_TYPES,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import { relicPlayerId } from '@relic-hunters/src/relic-tournament-participation.ts';
 import { rallar, type RallarJoinRoomOptions, type RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
@@ -36,6 +37,7 @@ const SNAPSHOT_CHANNEL = { topicId: RELIC_TOPICS.snapshot, typeId: RELIC_TYPES.s
 /** The browser facade owns admission and transport; the runtime owns the expedition page lifecycle. */
 export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
     const expeditionParticipation = new RelicExpeditionParticipation({
+        createRequestId: () => crypto.randomUUID(),
         data: rallar.data,
         withParticipationLock: withRelicParticipationLock,
         sendRestCommand: sendRelicCommand,
@@ -43,6 +45,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
     });
     const authority = createRelicAuthorityClientBridge(rallar);
     return {
+        createRequestId: () => crypto.randomUUID(),
         withParticipationLock: withRelicParticipationLock,
         data: rallar.data,
         ...createRelicRoomCapabilities(expeditionParticipation),
@@ -157,12 +160,8 @@ async function joinRelicRoom(roomRef: GroupRef, options: RallarJoinRoomOptions):
             ) {
                 throw new Error('Room entry changed while checking expedition participation.');
             }
-            if (
-                snapshot && snapshot.phase !== 'finished' &&
-                snapshot.players.some((player) =>
-                    playerIds.has(player.playerId) && player.withdrawnAtEpochMs === undefined
-                )
-            ) {
+            playerIds.add(relicPlayerId(snapshot?.tournament?.binding ?? null, session));
+            if ([...playerIds].some((playerId) => hasUnfinishedRelicParticipation(snapshot, playerId))) {
                 throw new Error('Leave the expedition room before watching another expedition.');
             }
         }
@@ -194,7 +193,10 @@ async function changeRelicRoom<T>(
         if (rallar.session()?.sessionId !== session.sessionId || rallar.rooms.state().currentRoomId !== roomId) {
             throw new Error('Room entry changed while checking expedition participation.');
         }
-        if (roomId !== destinationRoomId && hasUnfinishedRelicParticipation(snapshot, session.sessionId)) {
+        if (
+            roomId !== destinationRoomId &&
+            hasUnfinishedRelicParticipation(snapshot, relicPlayerId(snapshot?.tournament?.binding ?? null, session))
+        ) {
             throw new Error('Use Leave expedition before entering or watching another expedition.');
         }
         return await change();

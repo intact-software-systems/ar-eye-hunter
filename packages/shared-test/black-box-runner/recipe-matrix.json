@@ -3533,6 +3533,33 @@
         ]
       },
       "description": "Scoped two-player matchmaking: authenticated search, replay/conflict, whole-cohort decline, explicit retry, all-party confirmation, private recovery and atomic room membership."
+    },
+    {
+      "id": "api-v1-tournaments",
+      "recipe": "tests/api-v1/api-v1-tournaments.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-tournaments"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-tournaments",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Four-player tournament API: scoped registration, exact replay/conflict, forged authority/result refusal, durable no-show advancement through a complete bracket, and cancellation. Native game scoring is verified in game-owner and clickable SPA tests."
     }
   ]
 }

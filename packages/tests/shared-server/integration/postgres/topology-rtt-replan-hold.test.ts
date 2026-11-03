@@ -27,6 +27,7 @@ import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql
@@ -123,7 +124,8 @@ function createHoldHarness(sql: PSqlSql, startEpochMs: number): HoldHarness {
             topologyPlanning: topologyManagement.planning,
             executionRepository,
             serviceId: 'topology-rtt-hold-test'
-        })
+        }),
+        [RTC_TOPOLOGY_OUTBOX_TOPIC]
     );
     return {
         outboxQueueReader,

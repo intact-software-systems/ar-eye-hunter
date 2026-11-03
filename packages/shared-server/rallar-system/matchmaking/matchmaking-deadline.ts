@@ -142,5 +142,5 @@ export function installMatchmakingDeadline(input: InstallMatchmakingDeadlineInpu
             }
             await input.enqueue(deadline, message.id.traceId);
         }
-    });
+    }, ['matchmaking.deadline']);
 }

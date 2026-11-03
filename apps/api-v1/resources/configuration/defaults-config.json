@@ -178,6 +178,10 @@
       "requests": 60
     }
   },
+  "tournaments": {
+    "profiles": [],
+    "rateLimit": { "windowMs": 60000, "requests": 60 }
+  },
   "matchmaking": {
     "defaultPolicy": {
       "players": 2,

@@ -31,6 +31,38 @@ export interface ShotResolution {
     readonly accepted: ShotAccepted;
 }
 
+export function stepArenaTargets(
+    state: ArenaSimulationState,
+    dtMs: number,
+    nowEpochMs: number
+): ArenaSimulationState {
+    const dt = Math.min(0.05, Math.max(0, dtMs / 1000));
+    const bounds = Math.max(8, state.layout.halfSize - 2.5);
+    const targets = state.targets.map((target): EyeTargetState => {
+        const next = add3(target.position, scale3(target.velocity, dt));
+        const bounceX = Math.abs(next[0]) > bounds;
+        const bounceY = next[1] < 1.3 || next[1] > 6.2;
+        const bounceZ = Math.abs(next[2]) > bounds;
+        return {
+            ...target,
+            position: [
+                clamp(next[0], -bounds, bounds),
+                clamp(next[1], 1.3, 6.2),
+                clamp(next[2], -bounds, bounds)
+            ],
+            velocity: [
+                bounceX ? -target.velocity[0] : target.velocity[0],
+                bounceY ? -target.velocity[1] : target.velocity[1],
+                bounceZ ? -target.velocity[2] : target.velocity[2]
+            ],
+            rarity: target.bountyUntilEpochMs && target.bountyUntilEpochMs < nowEpochMs
+                ? 'volatile'
+                : target.rarity
+        };
+    });
+    return { ...state, targets };
+}
+
 export const TARGET_COUNT = 13;
 
 const EYE_ATTACK_DEFAULT_WINDUP_MS = 1_050;

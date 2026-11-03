@@ -1,14 +1,14 @@
+import { hasValidArenaRematch } from '@ar-eye-hunter/arena-rematch.ts';
 import type { Dispatch, SetStateAction } from 'react';
 import { useCallback } from 'react';
-import { hasValidArenaRematch } from '../../arena-rematch.ts';
 
 import {
     GAME_PROTOCOL,
     type ArenaEvent,
     type ArenaMatchState,
-    type ArenaSnapshot,
-    type GameRealtimeMessage
-} from '../../arena-contracts.ts';
+    type ArenaSnapshot
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { type GameRealtimeMessage } from '../../arena-contracts.ts';
 import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
 import { acceptArenaDirectorPeerMessage, type ArenaDirectorPeerMessageInput } from './arena-director-peer-message.ts';

@@ -18,7 +18,7 @@ export function toRelicActionRecordedEvent(
         protocolVersion: previous.protocolVersion,
         gameId: previous.gameId,
         principalId: sender.clientId,
-        playerId: sender.sessionId,
+        playerId: sender.playerId,
         kind: 'action-recorded',
         round: previous.round,
         action: command.action
@@ -35,7 +35,7 @@ export function toRelicCommandRefusedEvent(
         protocolVersion: command.protocolVersion,
         gameId: command.gameId,
         principalId: sender.clientId,
-        playerId: sender.sessionId,
+        playerId: sender.playerId,
         kind: 'command-refused',
         completedGameId: 'completedGameId' in command ? command.completedGameId : null,
         command: command.kind,

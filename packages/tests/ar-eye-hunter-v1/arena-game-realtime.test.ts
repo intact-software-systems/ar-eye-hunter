@@ -36,22 +36,16 @@ import {
 import { acceptArenaMatchIntent } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/match/handlers/accept-arena-match-intent.ts';
 import type { ArenaPeerShotMessage } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
 
-import type {
-    ArenaEvent,
-    ArenaPickupState,
-    ArenaSnapshot,
-    GameRealtimeMessage,
-    PickupIntent,
-    PlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
-import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+import type { ArenaEvent, ArenaPickupState, ArenaSnapshot, PickupIntent } from '@ar-eye-hunter/arena-contracts.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
 import {
     createInitialArenaState,
     spawnWeaponPickup,
     toArenaSnapshot,
     upsertPlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import type { GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 
 interface PickupSnapshotFixture {
     readonly snapshot: ArenaSnapshot;

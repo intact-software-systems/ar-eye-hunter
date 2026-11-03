@@ -19,8 +19,8 @@ import {
 
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
 
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
 import { useArenaPresentation } from '../../../apps/ar-eye-hunter-v1/src/arena-ui/arena-presentation.tsx';
-import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 
 const arena = new ArenaRuntimeTestHarness();

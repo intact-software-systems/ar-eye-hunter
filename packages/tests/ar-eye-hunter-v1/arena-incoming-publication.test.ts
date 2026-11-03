@@ -3,26 +3,10 @@ import { act, createElement, type RefObject, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-    ArenaEvent,
-    ArenaMatchLifecycleMessage,
-    ArenaSnapshot,
-    GameRealtimeMessage,
-    PickupAccepted,
-    PlayerHitAccepted,
-    PlayerPose,
-    RemotePlayer
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
-import { type ArenaSimulationState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
-import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
-import { useArenaDirectorMessageHandler } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-director-message-handler.ts';
-import {
-    useArenaPeerMessageHandlers,
-    type ArenaPeerMessageHandlers
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
-import { useArenaStateAcceptance, type ArenaStateAcceptance } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts';
-import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+import type { ArenaEvent, ArenaSnapshot, PickupAccepted, PlayerHitAccepted } from '@ar-eye-hunter/arena-contracts.ts';
+import { type ArenaSimulationState } from '@ar-eye-hunter/arena-contracts.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
 import {
     createInitialArenaState,
     resolveEyeAttackCue,
@@ -31,7 +15,15 @@ import {
     spawnWeaponPickup,
     toArenaSnapshot,
     upsertPlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import type { ArenaMatchLifecycleMessage, GameRealtimeMessage, PlayerPose, RemotePlayer } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { useArenaDirectorMessageHandler } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-director-message-handler.ts';
+import {
+    useArenaPeerMessageHandlers,
+    type ArenaPeerMessageHandlers
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
+import { useArenaStateAcceptance, type ArenaStateAcceptance } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/state/use-arena-state-acceptance.ts';
+import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { scheduledSessionHttpApi } from '@shared-web/browser/rooms/sessions/scheduled-session-http-api.ts';

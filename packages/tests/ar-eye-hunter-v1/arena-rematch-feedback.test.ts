@@ -15,8 +15,8 @@ import {
     session
 } from './arena-runtime-test-harness.ts';
 
+import type { ArenaMatchState } from '@ar-eye-hunter/arena-contracts.ts';
 import { MatchWinnerOverlay } from '../../../apps/ar-eye-hunter-v1/src/arena-ui/match-winner-overlay.tsx';
-import type { ArenaMatchState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import type { ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-connection-contracts.ts';
 
 const runtime = new ArenaRuntimeTestHarness();
@@ -62,7 +62,7 @@ beforeEach(async () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
-    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena })));
+    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena, onReturnToBracket: () => {} })));
 });
 
 afterEach(async () => {
@@ -111,7 +111,7 @@ it('finishes only when the current membership confirmation is visible, and cance
             }
         }
     };
-    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: confirmed, arena })));
+    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: confirmed, arena, onReturnToBracket: () => {} })));
     expect(button('Cancel ready').disabled).toBe(false);
     await act(async () => {
         await vi.advanceTimersByTimeAsync(10_000);
@@ -123,14 +123,14 @@ it('ignores a late delivery failure after the player explicitly retries', async 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const first = Promise.withResolvers<void>();
     arena = { ...arena, setRematchReady: () => first.promise };
-    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena })));
+    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena, onReturnToBracket: () => {} })));
     await act(async () => button('Play again').click());
     await act(async () => {
         await vi.advanceTimersByTimeAsync(10_000);
     });
     expect(button('Play again').disabled).toBe(false);
     arena = { ...arena, setRematchReady: async () => undefined };
-    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena })));
+    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena, onReturnToBracket: () => {} })));
     await act(async () => button('Play again').click());
     await act(async () => first.reject(new Error('An obsolete send failed')));
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -140,7 +140,7 @@ it('ignores a late delivery failure after the player explicitly retries', async 
 it('shows the director refusal inside the results controls and lets the player retry', async () => {
     await act(async () => button('Play again').click());
     arena = { ...arena, error: 'The next match settings changed. Confirm again.' };
-    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena })));
+    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena, onReturnToBracket: () => {} })));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('settings changed');
     expect(button('Play again').disabled).toBe(false);
 });
@@ -148,8 +148,34 @@ it('shows the director refusal inside the results controls and lets the player r
 it('reports lost participation instead of silently resetting an in-flight confirmation', async () => {
     await act(async () => button('Play again').click());
     arena = { ...arena, roomId: undefined, rooms: [] };
-    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena })));
+    await act(async () => root.render(createElement(MatchWinnerOverlay, { match: completed, arena, onReturnToBracket: () => {} })));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('participation changed');
+});
+
+it('reports a tied native score without naming a tournament winner or offering casual rematch', async () => {
+    const tied: ArenaMatchState = {
+        ...completed,
+        results: [
+            { sessionId: 'alice', username: 'Alice', scoreDelta: 100, killsDelta: 2, deathsDelta: 0, rank: 1 },
+            { sessionId: 'bob', username: 'Bob', scoreDelta: 100, killsDelta: 0, deathsDelta: 1, rank: 2 }
+        ]
+    };
+    arena = { ...arena, tournament: { ...arena.tournament, mode: 'tournament' } };
+    let returned = false;
+    await act(async () =>
+        root.render(createElement(MatchWinnerOverlay, {
+            match: tied,
+            arena,
+            onReturnToBracket: () => {
+                returned = true;
+            }
+        }))
+    );
+    expect(container.querySelector('h2')?.textContent).toBe('Tied score — replay required');
+    expect(container.textContent).not.toContain('survives the metrics');
+    expect([...container.querySelectorAll('button')].some((control) => control.textContent === 'Play again')).toBe(false);
+    await act(async () => button('Return to tournament bracket').click());
+    expect(returned).toBe(true);
 });
 
 function button(label: string): HTMLButtonElement {

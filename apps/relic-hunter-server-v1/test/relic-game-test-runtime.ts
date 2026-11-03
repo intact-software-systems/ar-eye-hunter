@@ -1,4 +1,5 @@
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import assert from 'node:assert/strict';
 
 import { toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
@@ -57,6 +58,7 @@ export async function createRelicTestStack(database: PSqlSql): Promise<RelicTest
         serviceId: mutation.serviceId,
         roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
         appInbox,
+        outbox: runtime.outboxQueueReader,
         wakeQueue: () => {},
         wsRuntimeName: 'default-qbox-server',
         nowEpochMs: () => now,
@@ -136,14 +138,14 @@ export async function seedRelicTestRoom(mutation: ApiV1MutationRuntime, now: num
     return owner;
 }
 
-export function createRelicTestQueueRuntime(mutation: ApiV1MutationRuntime): CreateApiV1AppInboxInput['runtime'] {
+export function createRelicTestQueueRuntime(mutation: ApiV1MutationRuntime) {
     const qboxEngine = new InboxOutboxEngine();
     const inboxQueueReader = new InboxQueueReader(mutation.queueBox, {
         ...mutation.appInboxDequeueOptions,
         flightEntryListener: (settlement) =>
             qboxEngine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
     });
-    return { inboxQueueReader, qboxEngine };
+    return { inboxQueueReader, qboxEngine, outboxQueueReader: new OutboxQueueReader(mutation.queueBox) };
 }
 
 export function createRelicTestApplication(

@@ -2,12 +2,14 @@ import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
 import { PartyPanel } from '@shared-react/party-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
+import { TournamentPanel } from '@shared-react/tournament-panel.tsx';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
-import { useState, type FormEvent } from 'react';
+import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
+import { useCallback, useState, type FormEvent } from 'react';
 import { GAME_ROOM_NAME } from '../game/arena-contracts.ts';
 import { ARENA_ROOM_SCOPE, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
 import { ArenaRoomMove } from './arena-room-move.tsx';
@@ -42,6 +44,41 @@ interface ArenaAuthFormProps {
 
 export function ArenaOperations(props: ArenaOperationsProps) {
     const { arena } = props;
+    const [fields, setFields] = useState<ArenaAuthFields>({
+        mode: 'login',
+        username: '',
+        displayName: '',
+        password: ''
+    });
+    return (
+        <section className="hud hud--side" aria-label="Arena operations">
+            <ArenaRoomEntry arena={arena} />
+            {arena.session && <ArenaSocialControls arena={arena} />}
+            {arena.connectionState === 'signed-out' || !arena.session
+                ? (
+                    <ArenaAuthForm
+                        fields={fields}
+                        setFields={setFields}
+                        submit={(event) => submitArenaAuth(event, fields, arena)}
+                    />
+                )
+                : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
+            {arena.error && <div className="panel error-panel">{arena.error}</div>}
+            <ArenaControlHints spectating={arena.spectating} />
+        </section>
+    );
+}
+
+function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
+    const createTournament = useCallback(
+        (tournamentId: string) =>
+            RallarTournament.createBrowser(rallar, arenaRoomEntry, {
+                scope: ARENA_ROOM_SCOPE,
+                tournamentId,
+                refreshIntervalMs: 1000
+            }),
+        []
+    );
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, arenaRoomEntry, {
             scope: ARENA_ROOM_SCOPE,
@@ -57,15 +94,9 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     const [friends] = useState(() =>
         RallarFriends.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 30_000 })
     );
-    const [fields, setFields] = useState<ArenaAuthFields>({
-        mode: 'login',
-        username: '',
-        displayName: '',
-        password: ''
-    });
     return (
-        <section className="hud hud--side" aria-label="Arena operations">
-            <ArenaRoomEntry arena={arena} />
+        <>
+            {arena.session && <TournamentPanel scope={ARENA_ROOM_SCOPE} createOwner={createTournament} />}
             {arena.session && <PartyPanel owner={party} friends={friends} />}
             {arena.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find a game" />}
             {arena.session && (
@@ -86,18 +117,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
                 />
             )}
             {arena.session && <ArenaRoomMove arena={arena} party={party} />}
-            {arena.connectionState === 'signed-out' || !arena.session
-                ? (
-                    <ArenaAuthForm
-                        fields={fields}
-                        setFields={setFields}
-                        submit={(event) => submitArenaAuth(event, fields, arena)}
-                    />
-                )
-                : <ArenaSessionPanel key={arena.session.sessionId} {...props} />}
-            {arena.error && <div className="panel error-panel">{arena.error}</div>}
-            <ArenaControlHints spectating={arena.spectating} />
-        </section>
+        </>
     );
 }
 
@@ -219,7 +239,8 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                 <button
                     type="button"
                     className="primary"
-                    disabled={arena.spectating || !arena.roomId || arena.directorStatus.isDirector ||
+                    disabled={arena.tournament.mode !== 'casual' || arena.spectating || !arena.roomId ||
+                        arena.directorStatus.isDirector ||
                         arena.directorAttempt.status === 'pending'}
                     onClick={arena.appointSelfAsDirector}
                 >
@@ -277,14 +298,15 @@ function ArenaMatchControls({ arena, matchRemainingMs }: Pick<ArenaOperationsPro
         <div className="match-panel">
             <div>
                 <span>Match</span>
-                <strong>{toMatchLabel(match, matchRemainingMs)}</strong>
+                <strong>{toMatchLabel(match, matchRemainingMs, arena.tournament.mode === 'tournament')}</strong>
             </div>
             <div className="match-buttons">
                 {([60_000, 180_000, 300_000] as const).map((duration) => (
                     <button
                         type="button"
                         key={duration}
-                        disabled={arena.spectating || !arena.directorStatus.isDirector ||
+                        disabled={arena.tournament.mode !== 'casual' || arena.spectating ||
+                            !arena.directorStatus.isDirector ||
                             !arena.directorStatus.isFresh ||
                             match !== undefined}
                         onClick={() => void arena.startArenaMatch(duration)}

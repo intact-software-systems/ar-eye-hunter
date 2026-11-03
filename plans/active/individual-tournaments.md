@@ -74,7 +74,7 @@
 - `packages/shared/tournaments/compute-tournament.ts`: explicit registration, bracket, check-in, scheduling, withdrawal and cancellation decisions. `settle-tournament.ts` owns automatic trusted-result and deadline advancement; `assert-tournament-integrity.ts` owns cross-field invariants shared by decoded reads and prepared writes.
 - `packages/shared-server/rallar-system/tournaments/tournament-service.ts`: AppInbox registration and visible read/compute/validate/write; its repository owns canonical scoped records, corruption checks and CAS.
 - `apps/api-v1/src/tournaments/register-tournament-routes.ts`: authenticated reads and request-keyed mutation ingress; app composition/config/OpenAPI bind the existing owners.
-- `packages/shared-web/browser/tournaments/rallar-tournaments.ts`: account-fenced API resource, share-link preview and explicit room entry, composing AuthenticatedResource.
+- `packages/shared-web/browser/tournaments/rallar-tournament.ts`: account-fenced API resource, share-link preview and explicit room entry, composing AuthenticatedResource.
 - `packages/shared-react/tournament-panel.tsx`: shared visible registration/bracket/match controls; app bindings stay narrow.
 - `tests/playwright/tournament-journey.ts`: shared four-account human-clickable workflow used by both game specs; independent game actions remain game-owned.
 

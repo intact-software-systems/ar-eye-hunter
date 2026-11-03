@@ -34,23 +34,19 @@ import {
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { type ArenaSnapshot, type MatchEndedAccepted } from '@ar-eye-hunter/arena-contracts.ts';
 import {
-    GAME_DIRECTOR_TOPIC_ID,
-    type ArenaSnapshot,
-    type MatchEndedAccepted,
-    type PlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+    createInitialArenaState,
+    toArenaSnapshot
+} from '@ar-eye-hunter/simulation.ts';
+import { GAME_DIRECTOR_TOPIC_ID, type PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import {
     createArenaRallarGameMatch,
     type ArenaRallarGameMatchHandle
 } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import {
-    createInitialArenaState,
-    toArenaSnapshot
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
-import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,

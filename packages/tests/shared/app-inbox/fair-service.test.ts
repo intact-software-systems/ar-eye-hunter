@@ -21,7 +21,7 @@ describe('AppInbox fair service', () => {
             }
         };
         inbox.onInboxMessageDo('test.fair-service', callback);
-        outbox.onOutboxMessageDo('test.fair-service', callback);
+        outbox.onOutboxMessageDo('test.fair-service', callback, ['app-inbox.fair-service']);
         await inbox.enqueueIfAbsent(createQueueMessage('inbox-a'));
         await inbox.enqueueIfAbsent(createQueueMessage('inbox-b'));
         await outbox.enqueueIfAbsent(createQueueMessage('outbox-a'));

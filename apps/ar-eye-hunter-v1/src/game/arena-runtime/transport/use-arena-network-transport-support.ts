@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
-import type { ArenaSnapshot } from '../../arena-contracts.ts';
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';
 

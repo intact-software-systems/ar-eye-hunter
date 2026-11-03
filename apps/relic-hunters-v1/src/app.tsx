@@ -38,7 +38,7 @@ export default function App() {
             bottom={
                 <RelicTimeline
                     snapshot={game.snapshot}
-                    localPlayerId={game.participation === 'player' ? game.session?.sessionId : undefined}
+                    localPlayerId={game.participation === 'player' ? game.playerId : undefined}
                     revealedEvents={playback.events}
                     lastEvent={playback.lastEvent}
                     lang={preferences.lang}
@@ -74,7 +74,7 @@ function RelicGameScene({ game, turn, playback }: RelicGameSceneProps) {
     return (
         <RelicSceneNext
             snapshot={game.snapshot}
-            localPlayerId={game.participation === 'player' ? game.session?.sessionId : undefined}
+            localPlayerId={game.participation === 'player' ? game.playerId : undefined}
             selectedRoomId={turn.selection.roomId}
             primedAction={turn.selection.primedAction}
             focusRoomId={playback.focusRoomId}

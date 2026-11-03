@@ -13,6 +13,7 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     pauseNextAuthorisedWsConnectRead,
     pauseNextLifecycleRead
@@ -157,10 +158,10 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
         });
         outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry)
-        });
+        }, [GROUP_PRESENCE_SUMMARY_TOPIC]);
         outboxReader.onOutboxMessageDo(AppOutboxType.RTC_TOPOLOGY_RECOMPUTE, {
             onMessage: () => Promise.resolve()
-        });
+        }, [RTC_TOPOLOGY_OUTBOX_TOPIC]);
 
         await createRoom(harness, groupId, sql);
         await processNextOutbox(outboxReader);

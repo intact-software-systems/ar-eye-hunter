@@ -36,6 +36,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
@@ -289,10 +290,11 @@ Deno.test(
             });
             outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
                 onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry)
-            });
+            }, [GROUP_PRESENCE_SUMMARY_TOPIC]);
             outboxReader.onOutboxMessageDo(
                 AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-                { onMessage: () => Promise.resolve() }
+                { onMessage: () => Promise.resolve() },
+                [RTC_TOPOLOGY_OUTBOX_TOPIC]
             );
 
             const pending = appGroup.processAuthenticatedGroupEntryUntilCompletion({

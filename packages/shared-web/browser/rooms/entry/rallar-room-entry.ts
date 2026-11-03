@@ -25,7 +25,14 @@ import {
 
 const ENTRY_FRAGMENT = '#rallar-room?';
 const SESSION_FRAGMENT = '#rallar-session?';
-const ENTRY_FIELDS = new Set(['applicationId', 'workspaceId', 'groupId', 'joinCode', 'participation']);
+const ENTRY_FIELDS = new Set([
+    'applicationId',
+    'workspaceId',
+    'groupId',
+    'joinCode',
+    'participation',
+    'preserveCurrentMembership'
+]);
 
 export namespace RallarRoomEntry {
     export interface Destination {
@@ -33,6 +40,12 @@ export namespace RallarRoomEntry {
         readonly roomRef: GroupRef;
         readonly joinCode: string | null;
         readonly participation: 'player' | 'spectator' | 'preserve';
+        readonly preserveCurrentMembership: boolean;
+    }
+
+    /** User input defaults to ordinary room switching; the saved intent always records the decision. */
+    export interface DestinationInput extends Omit<Destination, 'preserveCurrentMembership'> {
+        readonly preserveCurrentMembership?: boolean;
     }
 
     export interface Failure {
@@ -164,9 +177,12 @@ export class RallarRoomEntry {
         return this.captureDestination();
     }
 
-    public enter(destination: RallarRoomEntry.Destination): RallarRoomEntry.State {
+    public enter(destination: RallarRoomEntry.DestinationInput): RallarRoomEntry.State {
         this.invalidateAttempt();
-        const decoded = decodeScopedDestination(destination, this.config.scope);
+        const decoded = decodeScopedDestination({
+            ...destination,
+            preserveCurrentMembership: destination.preserveCurrentMembership ?? false
+        }, this.config.scope);
         if (decoded.left) {
             const failed: RallarRoomEntry.State = {
                 status: 'failed',
@@ -194,7 +210,7 @@ export class RallarRoomEntry {
             });
         }
         return decodeScopedDestination(
-            { intent: 'join', roomRef, joinCode: null, participation: 'preserve' },
+            { intent: 'join', roomRef, joinCode: null, participation: 'preserve', preserveCurrentMembership: false },
             this.config.scope
         )
             .mapRight((destination) => {
@@ -324,7 +340,8 @@ export class RallarRoomEntry {
                 participation: attempt.destination.participation === 'preserve'
                     ? undefined
                     : attempt.destination.participation,
-                signal: attempt.controller.signal
+                signal: attempt.controller.signal,
+                preserveCurrentMembership: attempt.destination.preserveCurrentMembership
             });
             if (this.isCurrent(attempt)) {
                 this.publish(this.saveDestination({
@@ -333,7 +350,8 @@ export class RallarRoomEntry {
                         intent: 'join',
                         roomRef: attempt.destination.roomRef,
                         joinCode: null,
-                        participation: 'preserve'
+                        participation: 'preserve',
+                        preserveCurrentMembership: attempt.destination.preserveCurrentMembership
                     },
                     principalId: attempt.session.clientId,
                     failure: null
@@ -346,7 +364,13 @@ export class RallarRoomEntry {
                 const failed: RallarRoomEntry.State = {
                     status: 'failed',
                     destination: failure.admittedRoom
-                        ? { intent: 'join', roomRef: failure.admittedRoom, joinCode: null, participation: 'preserve' }
+                        ? {
+                            intent: 'join',
+                            roomRef: failure.admittedRoom,
+                            joinCode: null,
+                            participation: 'preserve',
+                            preserveCurrentMembership: attempt.destination.preserveCurrentMembership
+                        }
                         : attempt.destination,
                     principalId: failure.admittedRoom ? attempt.session.clientId : this.state.principalId,
                     failure
@@ -400,7 +424,13 @@ export class RallarRoomEntry {
             return;
         }
         const destination = decodeScopedDestination(
-            { intent: 'join', roomRef: state.currentRoomRef, joinCode: null, participation: 'preserve' },
+            {
+                intent: 'join',
+                roomRef: state.currentRoomRef,
+                joinCode: null,
+                participation: 'preserve',
+                preserveCurrentMembership: false
+            },
             this.config.scope
         ).right;
         if (!destination) {
@@ -496,6 +526,13 @@ export function readRoomEntryDestination(
             if ([...fields.keys()].some((key) => !ENTRY_FIELDS.has(key) || fields.getAll(key).length !== 1)) {
                 return Either.ofLeft(invalidDestination());
             }
+            const preserveCurrentMembership = fields.get('preserveCurrentMembership');
+            if (
+                preserveCurrentMembership !== null && preserveCurrentMembership !== 'true' &&
+                preserveCurrentMembership !== 'false'
+            ) {
+                return Either.ofLeft(invalidDestination());
+            }
             return decodeScopedDestination({
                 intent: prefix === SESSION_FRAGMENT ? 'preview-session' : 'join',
                 roomRef: {
@@ -504,7 +541,8 @@ export function readRoomEntryDestination(
                     groupId: fields.get('groupId')
                 },
                 joinCode: fields.get('joinCode'),
-                participation: fields.get('participation') ?? 'preserve'
+                participation: fields.get('participation') ?? 'preserve',
+                preserveCurrentMembership: preserveCurrentMembership === 'true'
             }, scope);
         }
     );
@@ -512,9 +550,12 @@ export function readRoomEntryDestination(
 
 export function toRoomEntryUrl(
     url: string,
-    destination: RallarRoomEntry.Destination
+    destination: RallarRoomEntry.DestinationInput
 ): Either<RallarRoomEntry.Failure, string> {
-    return decodeRoomEntryDestination(destination).flatMap<RallarRoomEntry.Failure, string>(
+    return decodeRoomEntryDestination({
+        ...destination,
+        preserveCurrentMembership: destination.preserveCurrentMembership ?? false
+    }).flatMap<RallarRoomEntry.Failure, string>(
         Either.ofLeft,
         (validated) =>
             readEntryUrl(url).mapRight((base) => {
@@ -524,6 +565,9 @@ export function toRoomEntryUrl(
                     groupId: validated.roomRef.groupId,
                     participation: validated.participation
                 });
+                if (validated.preserveCurrentMembership) {
+                    fields.set('preserveCurrentMembership', 'true');
+                }
                 if (validated.joinCode !== null) {
                     fields.set('joinCode', validated.joinCode);
                 }
@@ -591,7 +635,8 @@ function toEntryFailure(error: Error, destination: RallarRoomEntry.Destination):
             intent: 'join',
             roomRef: error.joinedRoom.group,
             joinCode: null,
-            participation: 'preserve'
+            participation: 'preserve',
+            preserveCurrentMembership: destination.preserveCurrentMembership
         })
             .right;
         if (admitted && isSameGroupRef(admitted.roomRef, destination.roomRef)) {

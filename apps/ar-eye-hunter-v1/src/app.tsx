@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ArenaOperations } from './arena-ui/arena-operations.tsx';
 import { ArenaHud, ArenaPeers, ArenaScene, useArenaPresentation } from './arena-ui/arena-presentation.tsx';
 import { DiagnosticsDrawer } from './arena-ui/diagnostics-drawer.tsx';
-import { MatchWinnerOverlay } from './arena-ui/match-winner-overlay.tsx';
+import { ArenaMatchOutcome } from './arena-ui/match-winner-overlay.tsx';
 import { PresenceToastStack } from './arena-ui/squad-link-chip.tsx';
 import { toArenaDiagnosticsAttributes } from './arena-ui/to-arena-labels.ts';
 import { useRallarArena } from './game/arena-runtime/use-rallar-arena.ts';
@@ -51,12 +51,14 @@ export default function App() {
                     onClose={() => setDiagnosticsOpen(false)}
                 />
             )}
-            {winnerMatch && (
-                <MatchWinnerOverlay
-                    match={winnerMatch}
-                    arena={arena}
-                />
-            )}
+            <ArenaMatchOutcome
+                match={winnerMatch}
+                arena={arena}
+                onReturnToBracket={() => {
+                    setMobileDrawerOpen(true);
+                    requestAnimationFrame(() => document.querySelector('[aria-label="Tournaments"]')?.scrollIntoView());
+                }}
+            />
         </main>
     );
 }

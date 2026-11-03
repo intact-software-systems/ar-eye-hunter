@@ -4,12 +4,8 @@ import {
     it
 } from 'vitest';
 
-import type {
-    ArenaMatchLifecycleMessage,
-    ArenaMatchPlayerBaseline,
-    ArenaMatchState,
-    GameRealtimeMessage
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import type { ArenaMatchPlayerBaseline, ArenaMatchState } from '@ar-eye-hunter/arena-contracts.ts';
+import type { ArenaMatchLifecycleMessage, GameRealtimeMessage } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';

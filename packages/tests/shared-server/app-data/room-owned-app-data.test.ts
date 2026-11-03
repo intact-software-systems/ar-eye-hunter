@@ -8,6 +8,7 @@ import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-ap
 import {
     computeRoomOwnedAppDataDelete,
     computeRoomOwnedAppDataSave,
+    requireRoomOwnedAppDataBinding,
     RoomOwnedAppData,
     writeRoomOwnedAppData
 } from '@shared-server/app-data/room-owned-app-data.ts';
@@ -25,6 +26,12 @@ const binding: RoomOwnedAppData.Binding = {
 const ref = { applicationId: 'expedition', workspaceId: 'default', groupId: 'room-1' };
 
 describe('room-owned AppData conditional persistence', () => {
+    it('requires the exact application-owned store in the database-wide retention catalog', () => {
+        expect(() => requireRoomOwnedAppDataBinding([binding], binding)).not.toThrow();
+        for (const catalog of [[], [{ ...binding, workspaceId: 'other' }], [{ ...binding, storeName: 'other' }]]) {
+            expect(() => requireRoomOwnedAppDataBinding(catalog, binding)).toThrow(/exact room-owned binding/);
+        }
+    });
     it('conflicts with a stale purge, then deletes the newly observed save without touching another scope', async () => {
         const storage = await createResourceInboxTestStorage('room_owned_data');
         try {

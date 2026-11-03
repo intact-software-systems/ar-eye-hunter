@@ -290,6 +290,7 @@ function createArenaRoomSnapshot(): GroupSnapshot {
 }
 
 const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'connectionState' | 'error' | 'roomId'> = {
+    tournament: { owner: null, mode: 'casual', snapshot: null, error: null },
     openRooms: [],
     openRoomsStatus: 'idle',
     openRoomsError: undefined,

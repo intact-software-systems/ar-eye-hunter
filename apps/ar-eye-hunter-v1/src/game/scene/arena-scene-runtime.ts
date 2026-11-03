@@ -8,6 +8,13 @@ import type { RefObject } from 'react';
 
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
 
+import { type ArenaSimulationState } from '@ar-eye-hunter/arena-contracts.ts';
+import { createInitialPlayerState, EMPTY_INPUT, type LocalPlayerState } from '@ar-eye-hunter/arena-player-state.ts';
+import {
+    createInitialArenaState,
+    hydrateArenaSnapshot,
+    toArenaSnapshot
+} from '@ar-eye-hunter/simulation.ts';
 import {
     calculateArenaMusicLayerState,
     ProceduralArenaAudio,
@@ -15,19 +22,12 @@ import {
     type ArenaMusicLayerState
 } from '../arena-audio.ts';
 import type { PlayerPose } from '../arena-contracts.ts';
-import { type ArenaSimulationState } from '../arena-contracts.ts';
-import { createInitialPlayerState, EMPTY_INPUT, type LocalPlayerState } from '../arena-player-state.ts';
 import {
     calculateVirtualStick,
     createInitialTouchControlState,
     type InputDeviceKind,
     type MobileControlSettings
 } from '../mobile-input.ts';
-import {
-    createInitialArenaState,
-    hydrateArenaSnapshot,
-    toArenaSnapshot
-} from '../simulation.ts';
 import type {
     ArenaSceneClock,
     BabylonArenaProps,

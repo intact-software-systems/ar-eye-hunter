@@ -57,6 +57,10 @@ interface DeliveredCommand {
 
 /** In-process external ports expose membership, delivered commands and snapshots, without replacing runtime decisions. */
 export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
+    private nextRequestId = 0;
+    public createRequestId(): string {
+        return `relic-request-${++this.nextRequestId}`;
+    }
     private readonly participationLock = new BoundedConcurrencyAdmission({ maxConcurrent: 1 });
     public withParticipationLock<T>(_roomId: string, _sessionId: string, run: () => Promise<T>): Promise<T> {
         return this.participationLock.admit(run);

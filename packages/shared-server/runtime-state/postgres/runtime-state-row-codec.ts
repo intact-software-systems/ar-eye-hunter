@@ -1,4 +1,4 @@
-import { decodePostgresTimestamp } from '../../postgres/postgres-timestamp.ts';
+import { decodePostgresTimestamp } from '../../postgres/decode-postgres-timestamp.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
 
 export interface RuntimeStateDatabaseRow {

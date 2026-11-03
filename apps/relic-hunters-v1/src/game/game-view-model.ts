@@ -403,6 +403,9 @@ function computeActivePlayerCount(snapshot: RelicPublicSnapshot): number {
 function computeActionBlocker(
     { snapshot, player, draft, moveTargets, stealTargets, currentRoom }: RelicActionValidationInput
 ): string | undefined {
+    if (snapshot.tournament?.status === 'cancelled') {
+        return 'This tournament match was cancelled.';
+    }
     if (snapshot.phase !== 'planning') {
         return 'Start the expedition before locking plans.';
     }

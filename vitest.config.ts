@@ -25,6 +25,8 @@ export default defineConfig({
     root: __dirname,
     resolve: {
         alias: {
+            '@ar-eye-hunter/relic-hunters': path.resolve(__dirname, 'packages/relic-hunters'),
+            '@ar-eye-hunter': path.resolve(__dirname, 'packages/ar-eye-hunter'),
             '@shared-react': path.resolve(__dirname, 'packages/shared-react'),
             '@shared-web': path.resolve(__dirname, 'packages/shared-web'),
             '@shared-server': path.resolve(__dirname, 'packages/shared-server'),

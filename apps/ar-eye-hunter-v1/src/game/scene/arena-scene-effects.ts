@@ -1,15 +1,12 @@
+import type { ArenaEvent, EyeAttackCue, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
+import { clamp } from '@ar-eye-hunter/arena-math.ts';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
-import type {
-    ArenaEvent,
-    EyeAttackCue,
-    Vec3Tuple
-} from '../arena-contracts.ts';
 import type { TransientEffect } from './arena-scene-contracts.ts';
-import { clamp, vector3 } from './arena-scene-geometry.ts';
+import { vector3 } from './arena-scene-geometry.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
 import {

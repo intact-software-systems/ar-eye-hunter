@@ -1,22 +1,16 @@
+import { add3, distance3, dot3, scale3, sub3 } from '@ar-eye-hunter/arena-math.ts';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
-import type { RemotePlayer, Vec3Tuple } from '../arena-contracts.ts';
-import { blocksShot } from '../arena-layout.ts';
+import type { Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
+import { blocksShot } from '@ar-eye-hunter/arena-layout.ts';
+import type { RemotePlayer } from '../arena-contracts.ts';
 import {
     chooseTouchAimCandidate,
     type Point2,
     type TouchAimCandidate
 } from '../mobile-input.ts';
 import { createTouchAimPulse } from './arena-scene-effects.ts';
-import {
-    addTuple,
-    distanceTuple,
-    dotTuple,
-    normalizeTuple,
-    scaleTuple,
-    subTuple,
-    vector3
-} from './arena-scene-geometry.ts';
+import { normalizeTuple, vector3 } from './arena-scene-geometry.ts';
 import type { ArenaSceneRuntime } from './arena-scene-runtime.ts';
 
 interface FindPredictedPlayerHitInput {
@@ -45,13 +39,13 @@ export function findPredictedPlayerHit(
         ) {
             continue;
         }
-        const toTarget = subTuple(remote.pose.position, origin);
-        const along = dotTuple(toTarget, ray);
+        const toTarget = sub3(remote.pose.position, origin);
+        const along = dot3(toTarget, ray);
         if (along < 0 || along > range) {
             continue;
         }
-        const impact = addTuple(origin, scaleTuple(ray, along));
-        const miss = distanceTuple(impact, remote.pose.position);
+        const impact = add3(origin, scale3(ray, along));
+        const miss = distance3(impact, remote.pose.position);
         if (miss > 0.95) {
             continue;
         }
@@ -105,7 +99,7 @@ export function resolveTouchShotDirection(
     if (candidate) {
         createTouchAimPulse(runtime, candidate.world);
         return {
-            direction: normalizeTuple(subTuple(candidate.world, origin)),
+            direction: normalizeTuple(sub3(candidate.world, origin)),
             assisted: true
         };
     }
@@ -139,7 +133,7 @@ function buildTouchAimCandidates(
             kind: 'eye',
             screen,
             world,
-            distance: distanceTuple(origin, world),
+            distance: distance3(origin, world),
             blocked: blocksShot(runtime.arenaState.layout, origin, world)
         });
     }
@@ -158,7 +152,7 @@ function buildTouchAimCandidates(
             kind: 'player',
             screen,
             world,
-            distance: distanceTuple(origin, world),
+            distance: distance3(origin, world),
             blocked: blocksShot(runtime.arenaState.layout, origin, world)
         });
     }
