@@ -68,29 +68,7 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
     const currentCode = code?.sessionId === game.session?.sessionId ? code?.response : undefined;
     return (
         <section className="stack" aria-label="Expedition hosting">
-            <div className="button-grid">
-                <button
-                    type="button"
-                    disabled={unavailable}
-                    onClick={() => void createRelicRoom(operation, 'open', 'unlisted')}
-                >
-                    New unlisted room
-                </button>
-                <button
-                    type="button"
-                    disabled={unavailable}
-                    onClick={() => void createRelicRoom(operation, 'code')}
-                >
-                    New code room
-                </button>
-                <button
-                    type="button"
-                    disabled={unavailable}
-                    onClick={() => void createRelicRoom(operation, 'invite-only')}
-                >
-                    New invite-only room
-                </button>
-            </div>
+            <RelicRoomCreationControls operation={operation} disabled={unavailable} />
             {error && <p role="alert">{error}</p>}
             {hosting && (
                 <RelicRoomSharing
@@ -102,6 +80,39 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
                 />
             )}
         </section>
+    );
+}
+
+interface RelicRoomCreationControlsProps {
+    readonly operation: RelicHostingOperation;
+    readonly disabled: boolean;
+}
+
+function RelicRoomCreationControls({ operation, disabled }: RelicRoomCreationControlsProps) {
+    return (
+        <div className="button-grid">
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void createRelicRoom(operation, 'open', 'unlisted')}
+            >
+                New unlisted room
+            </button>
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void createRelicRoom(operation, 'code')}
+            >
+                New code room
+            </button>
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void createRelicRoom(operation, 'invite-only')}
+            >
+                New invite-only room
+            </button>
+        </div>
     );
 }
 
