@@ -5,7 +5,6 @@ import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-r
 import type { BlackBoxRallarMessagingResourceController } from '../messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import {
     resolveBlackBoxRallarLaneId,
-    resolveBlackBoxRallarMessageSelector,
     resolveBlackBoxRallarTransport
 } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
@@ -60,39 +59,10 @@ export class BlackBoxRallarConnectionSubscriptions {
         });
     }
 
-    subscribeMessagesRtc(subscription: BlackBoxRallarConnectionSubscriptions.Subscription): (() => void) | undefined {
-        const { config, session } = subscription;
-        const transport = resolveBlackBoxRallarTransport(config);
-        // Explicit selectors use the canonical typed envelope owner for both carriers.
-        if (transport !== 'messages.rtc' || config.rallar.messageSelector) {
-            return undefined;
-        }
-        return this.#input.rallar.messages.rtc.onMessage(resolveBlackBoxRallarMessageSelector(config), (message) => {
-            this.#input.diagnostics.emit({
-                kind: 'message',
-                topic: 'rallar.browser.messages.rtc.message',
-                connection: config.connection,
-                actor: config.actor,
-                transport,
-                roomId: message.roomId ?? config.roomId,
-                ...blackBoxRallarScopeDiagnosticsOf(config),
-                peerId: session.sessionId,
-                remotePeerId: message.senderId,
-                senderId: message.senderId,
-                typeId: message.typeId,
-                topicId: message.topicId,
-                contextId: message.contextId,
-                resourceId: message.resourceId,
-                data: message.payload
-            });
-        });
-    }
-
     /** The console-warning restore runs but is not counted as a stopped subscription. */
     stop(stop: BlackBoxRallarConnectionSubscriptions.Stop): number {
         const { state, config } = stop;
         const counted = [
-            state?.unsubscribeMessagesRtc,
             state?.unsubscribeRealtime,
             state?.unsubscribeRtcLifecycle,
             state?.unsubscribeFormationDiagnostics,

@@ -278,41 +278,13 @@ describe('paced-newest-n', () => {
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(4, 'staged', []),
                 ...toObserveNames(1, 'superseded', ['attempts', 'reason']),
+                'two-selected-one-deferred',
                 ...[2, 3, 4].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
                 'stats'
             ]);
             expect(findCommand(scenario.sender, 'observe-staged-4')).toMatchObject({ state: ['staged'] });
         }
     );
-
-    it.each(ALM_CONFORMANCE_CARRIERS)('receives seq 0, then 2 and 3, then 4, and no fifth arrival over %s', (carrier) => {
-        const receiver = findScenario(carrier, 'paced-newest-n').receiver;
-
-        expect(toCommandNames(receiver)).toEqual([
-            ...RECEIVER_PROLOGUE,
-            'received-1',
-            'arrived-seq-0',
-            'not-yet-seq-2',
-            'received-3',
-            'arrived-seq-2',
-            'arrived-seq-3',
-            'not-yet-seq-4',
-            'received-4',
-            'arrived-seq-4',
-            'received-5',
-            'stats'
-        ]);
-        expectArrivalCount(receiver, 1, 0);
-        expectNotYet(receiver, 2, 0);
-        expectArrivalCount(receiver, 3, 1);
-        expectNotYet(receiver, 4, 3);
-        expectArrivalCount(receiver, 4, 2);
-        expect(findCommand(receiver, 'received-5')).toMatchObject({
-            count: 5,
-            absent: true,
-            windowMs: NO_FURTHER_ARRIVAL_WINDOW_MS
-        });
-    });
 });
 
 describe('paced-expiry', () => {

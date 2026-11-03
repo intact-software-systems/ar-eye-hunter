@@ -144,6 +144,38 @@
       "connection": "charlieWorkspaceB"
     },
     {
+      "name": "waitForAliceWorkspaceARoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceWorkspaceA",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobWorkspaceARoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobWorkspaceA",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "aliceWorkspaceASendsToBobWorkspaceA",
       "type": "rtc.send",
       "connection": "aliceWorkspaceA",
@@ -170,9 +202,11 @@
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
           "data": {
-            "from": "alice",
-            "workspaceId": "{workspaceA}",
-            "text": "hello workspace a"
+            "payload": {
+              "from": "alice",
+              "workspaceId": "{workspaceA}",
+              "text": "hello workspace a"
+            }
           }
         }
       }

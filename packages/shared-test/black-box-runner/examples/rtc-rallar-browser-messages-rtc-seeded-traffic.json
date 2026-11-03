@@ -61,7 +61,9 @@
       "delayMs": 25,
       "setupSteps": [
         "connectAlice",
-        "connectBob"
+        "connectBob",
+        "waitForAliceRtcRoomOpen",
+        "waitForBobRtcRoomOpen"
       ],
       "cleanupSteps": [
         "closeAlice",
@@ -161,6 +163,38 @@
       "connection": "bobRtc"
     },
     {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "aliceTrafficToBob",
       "type": "rtc.send",
       "connection": "aliceRtc",
@@ -186,12 +220,14 @@
           "typeId": "black-box.live.traffic.message",
           "topicId": "black-box.live.traffic",
           "data": {
-            "sequence": "{traffic.sequence}",
-            "operation": "{traffic.operation}",
-            "randomInt": "{traffic.randomInt}",
-            "from": "alice",
-            "to": "bob",
-            "text": "live traffic {traffic.sequence} from alice"
+            "payload": {
+              "sequence": "{traffic.sequence}",
+              "operation": "{traffic.operation}",
+              "randomInt": "{traffic.randomInt}",
+              "from": "alice",
+              "to": "bob",
+              "text": "live traffic {traffic.sequence} from alice"
+            }
           }
         }
       }
@@ -222,12 +258,14 @@
           "typeId": "black-box.live.traffic.message",
           "topicId": "black-box.live.traffic",
           "data": {
-            "sequence": "{traffic.sequence}",
-            "operation": "{traffic.operation}",
-            "randomInt": "{traffic.randomInt}",
-            "from": "bob",
-            "to": "alice",
-            "text": "live traffic {traffic.sequence} from bob"
+            "payload": {
+              "sequence": "{traffic.sequence}",
+              "operation": "{traffic.operation}",
+              "randomInt": "{traffic.randomInt}",
+              "from": "bob",
+              "to": "alice",
+              "text": "live traffic {traffic.sequence} from bob"
+            }
           }
         }
       }

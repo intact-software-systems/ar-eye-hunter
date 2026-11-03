@@ -3058,6 +3058,22 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-paced-newest-n-sender-two-selected-one-deferred",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "publication-opportunity",
+                "data.laneKey": "room.alm-conformance/alm.conformance.ws.paced-newest-n",
+                "data.selected": 2,
+                "data.deferred": 1,
+                "data.expired": 0
+              }
+            },
+            "timeoutMs": 18000
+          },
+          {
             "kind": "messages.observe",
             "commandId": "alm-ws-paced-newest-n-sender-observe-transport-accepted-2",
             "connection": "almConformanceSender",
@@ -5780,6 +5796,22 @@
             "operator": "contains",
             "expected": "displaced it before its opportunity",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-paced-newest-n-sender-two-selected-one-deferred",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "publication-opportunity",
+                "data.laneKey": "room.alm-conformance/alm.conformance.rtc.paced-newest-n",
+                "data.selected": 2,
+                "data.deferred": 1,
+                "data.expired": 0
+              }
+            },
+            "timeoutMs": 18000
           },
           {
             "kind": "messages.observe",
@@ -9447,6 +9479,22 @@
             "operator": "contains",
             "expected": "displaced it before its opportunity",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-two-selected-one-deferred",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "publication-opportunity",
+                "data.laneKey": "room.alm-conformance/alm.conformance.rtc-with-ws-fallback.paced-newest-n",
+                "data.selected": 2,
+                "data.deferred": 1,
+                "data.expired": 0
+              }
+            },
+            "timeoutMs": 18000
           },
           {
             "kind": "messages.observe",
@@ -13892,115 +13940,6 @@
             "typeId": "alm.conformance.ws.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 29000,
-            "timeoutMs": 30000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-0",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 0
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-not-yet-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-ws-paced-newest-n-receiver-arrived-seq-0.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-ws-paced-newest-n-receiver-received-3",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.ws.paced-newest-n",
-            "count": 3,
-            "absent": false,
-            "windowMs": 31000,
-            "timeoutMs": 32000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-3",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 3
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-ws-paced-newest-n-receiver-not-yet-seq-4",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 4
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.ws.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-ws-paced-newest-n-receiver-arrived-seq-3.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-ws-paced-newest-n-receiver-received-4",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.ws.paced-newest-n",
-            "count": 4,
-            "absent": false,
             "windowMs": 33000,
             "timeoutMs": 34000
           },
@@ -14020,6 +13959,24 @@
               }
             },
             "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-paced-newest-n-receiver-arrived-seq-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "specimen": "paced",
+                "seq": 1
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.ws.paced-newest-n"
+              }
+            },
+            "timeoutMs": 4000,
+            "absent": true
           },
           {
             "kind": "messages.received",
@@ -15112,115 +15069,6 @@
             "typeId": "alm.conformance.rtc.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-0",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 0
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-not-yet-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-paced-newest-n-receiver-arrived-seq-0.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-paced-newest-n-receiver-received-3",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc.paced-newest-n",
-            "count": 3,
-            "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-3",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 3
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-paced-newest-n-receiver-not-yet-seq-4",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 4
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-paced-newest-n-receiver-arrived-seq-3.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-paced-newest-n-receiver-received-4",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc.paced-newest-n",
-            "count": 4,
-            "absent": false,
             "windowMs": 63000,
             "timeoutMs": 64000
           },
@@ -15240,6 +15088,24 @@
               }
             },
             "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-paced-newest-n-receiver-arrived-seq-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "specimen": "paced",
+                "seq": 1
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.rtc.paced-newest-n"
+              }
+            },
+            "timeoutMs": 4000,
+            "absent": true
           },
           {
             "kind": "messages.received",
@@ -16687,115 +16553,6 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-0",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 0
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-not-yet-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-0.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-received-3",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
-            "count": 3,
-            "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-2",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 2
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-3",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 3
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "timeoutMs": 27000
-          },
-          {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-not-yet-seq-4",
-            "match": {
-              "kind": "message",
-              "connection": "almConformanceReceiver",
-              "payloadPath": "data.payload",
-              "equals": {
-                "specimen": "paced",
-                "seq": 4
-              },
-              "payloadFields": {
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
-              }
-            },
-            "absent": true,
-            "timeoutMs": 1000,
-            "timeoutFrom": "{resultCache.alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-3.value.event.atEpochMs}"
-          },
-          {
-            "kind": "messages.received",
-            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-received-4",
-            "connection": "almConformanceReceiver",
-            "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
-            "count": 4,
-            "absent": false,
             "windowMs": 63000,
             "timeoutMs": 64000
           },
@@ -16815,6 +16572,24 @@
               }
             },
             "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-receiver-arrived-seq-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "specimen": "paced",
+                "seq": 1
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n"
+              }
+            },
+            "timeoutMs": 4000,
+            "absent": true
           },
           {
             "kind": "messages.received",

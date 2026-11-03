@@ -43,7 +43,7 @@
       "secret": true
     },
     "messageTypeId": "black-box.parity.message",
-    "topicId": "black-box.parity",
+    "topicId": "room.black-box.parity",
     "parityPayload": "same-payload-over-ws-and-rtc"
   },
   "connections": {
@@ -112,12 +112,20 @@
   },
   "steps": [
     {
+      "name": "createParityRunId",
+      "type": "set",
+      "output": "parityRunId",
+      "transform": {
+        "uuid": true
+      }
+    },
+    {
       "name": "loginAliceForWebSocket",
       "type": "http",
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/login/requests/bb-login-alice-for-web-socket-001-0001",
+        "path": "/api/auth/login/requests/bb-login-alice-for-web-socket-001-0001-{parityRunId}",
         "body": {
           "username": "{aliceUsername}",
           "password": "{alicePassword}"
@@ -144,7 +152,8 @@
       "name": "deriveAliceAuthHeader",
       "type": "set",
       "output": "aliceAuthHeader",
-      "value": "Bearer {aliceAccessToken}"
+      "value": "Bearer {aliceAccessToken}",
+      "secret": true
     },
     {
       "name": "createGroup",
@@ -152,7 +161,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-request-parity-create-scope",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-request-parity-create-scope-{parityRunId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -178,7 +187,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/parity-join-scope-scope",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/parity-join-scope-scope-{parityRunId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -197,13 +206,15 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/parity-presence-scope",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/parity-presence-scope-{parityRunId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "principalId": "{aliceClientId}"
+          "principalId": "{aliceClientId}",
+          "generationId": "parity-generation-{aliceSessionId}",
+          "connectionGenerationId": "parity-connection-generation-{aliceSessionId}"
         }
       },
       "expect": {
@@ -216,7 +227,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/ws-ticket/requests/bb-create-web-socket-ticket-005-0001",
+        "path": "/api/auth/ws-ticket/requests/bb-create-web-socket-ticket-005-0001-{parityRunId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -236,7 +247,8 @@
       "name": "deriveWebSocketUrl",
       "type": "set",
       "output": "wsUrl",
-      "value": "{rallarWsBaseUrl}/api/ws/{aliceSessionId}?ticket={wsTicket}"
+      "value": "{rallarWsBaseUrl}/api/ws/{aliceSessionId}?ticket={wsTicket}&applicationId={applicationId}&workspaceId={workspaceId}",
+      "secret": true
     },
     {
       "name": "openWebSocket",
@@ -245,6 +257,21 @@
       "request": {
         "url": "{wsUrl}",
         "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "connectBobRtc",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "encodeWebSocketPayload",
+      "type": "set",
+      "output": "wsPayloadJson",
+      "transform": {
+        "jsonStringify": {
+          "path": "variables.parityPayload"
+        }
       }
     },
     {
@@ -267,36 +294,78 @@
             "contextId": "{applicationId}:{workspaceId}:{groupId}"
           },
           "targets": {
-            "mode": "unicast",
-            "toPeerId": "{aliceSessionId}"
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            },
+            "exceptPeerIds": [
+              "{aliceSessionId}"
+            ]
           },
           "delivery": {
-            "reliability": "best-effort",
-            "ack": "none"
+            "reliability": "at-least-once",
+            "ack": "receiver"
           },
           "payload": {
             "typeId": "{messageTypeId}",
-            "contentType": "text/plain",
-            "resource": "{parityPayload}"
+            "contentType": "application/json",
+            "resource": "{wsPayloadJson}"
           }
+        }
+      }
+    },
+    {
+      "name": "bobReceivesWebSocketPayload",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "request": {
+        "output": "wsParityPayload",
+        "outputPath": "matchedMessage.data.data.payload"
+      },
+      "expect": {
+        "withinMs": 10000,
+        "message": {
+          "kind": "message",
+          "topic": "rallar.browser.ws.message",
+          "typeId": "{messageTypeId}",
+          "topicId": "{topicId}",
+          "data": {
+            "payload": "{parityPayload}",
+            "msgId": "bb-parity-ws-{aliceSessionId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeWebSocket",
+      "type": "ws.close",
+      "connection": "rallarWs",
+      "request": {
+        "code": 1000,
+        "reason": "black-box recipe done"
+      }
+    },
+    {
+      "name": "disconnectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/disconnect/requests/parity-disconnect-scope-{parityRunId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
         },
-        "outputs": {
-          "wsSendStatus": "sendResult.status",
-          "wsParityPayload": "matchedMessage.data.payload.resource"
+        "body": {
+          "principalId": "{aliceClientId}",
+          "generationId": "parity-generation-{aliceSessionId}"
         }
       },
       "expect": {
-        "connection": "rallarWs",
-        "withinMs": 10000,
-        "message": {
-          "route": {
-            "topicId": "{topicId}"
-          },
-          "payload": {
-            "typeId": "{messageTypeId}",
-            "resource": "{parityPayload}"
-          }
-        }
+        "status": 200
       }
     },
     {
@@ -305,9 +374,36 @@
       "connection": "aliceRtc"
     },
     {
-      "name": "connectBobRtc",
-      "type": "rtc.connect",
-      "connection": "bobRtc"
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
     },
     {
       "name": "sendPayloadOverRtc",
@@ -326,8 +422,7 @@
           "payload": "{parityPayload}"
         },
         "outputs": {
-          "rtcSendStatus": "sendResult.status",
-          "rtcParityPayload": "matchedMessage.data.data"
+          "rtcParityPayload": "matchedMessage.data.data.payload"
         }
       },
       "expect": {
@@ -338,7 +433,9 @@
           "topic": "rallar.browser.messages.rtc.message",
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
-          "data": "{parityPayload}"
+          "data": {
+            "payload": "{parityPayload}"
+          }
         }
       }
     },
@@ -346,15 +443,11 @@
       "name": "assertWsRtcPayloadParity",
       "type": "assert",
       "actual": {
-        "wsSendStatus": "{wsSendStatus}",
-        "rtcSendStatus": "{rtcSendStatus}",
         "wsPayload": "{wsParityPayload}",
         "rtcPayload": "{rtcParityPayload}"
       },
       "expect": {
         "body": {
-          "wsSendStatus": "sent",
-          "rtcSendStatus": "sent",
           "wsPayload": "{parityPayload}",
           "rtcPayload": "{parityPayload}"
         }
@@ -371,40 +464,12 @@
       "connection": "bobRtc"
     },
     {
-      "name": "closeWebSocket",
-      "type": "ws.close",
-      "connection": "rallarWs",
-      "request": {
-        "code": 1000,
-        "reason": "black-box recipe done"
-      }
-    },
-    {
-      "name": "disconnectAlicePresence",
-      "type": "http",
-      "connection": "api",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/disconnect/requests/parity-disconnect-scope",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "principalId": "{aliceClientId}"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
       "name": "logoutAlice",
       "type": "http",
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/auth/logout/requests/bb-logout-alice-007-0001",
+        "path": "/api/auth/logout/requests/bb-logout-alice-007-0001-{parityRunId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

@@ -575,10 +575,17 @@
             "toPeerId": "{aliceSessionId}"
           },
           "payload": {
-            "typeId": "al.control.receipt.v1"
+            "typeId": "al.control.receipt.v1",
+            "resource": {
+              "msgId": "live-only-cluster-broadcast-{runId}",
+              "phase": "complete"
+            }
           }
         },
-        "consume": true
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ]
       }
     },
     {

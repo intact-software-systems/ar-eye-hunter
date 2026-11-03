@@ -3,6 +3,11 @@ import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-pu
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import {
+    toCommandId,
+    toScenarioTopicId,
+    toScenarioTypeId
+} from '../../alm-conformance-step-identities.ts';
+import {
     NEVER_ATTEMPTED,
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
@@ -14,8 +19,7 @@ import {
 import {
     toArrivalCountCommand,
     toNoFurtherArrivalCommand,
-    toSeqArrivalWait,
-    toSeqNotYetWait
+    toSeqArrivalWait
 } from './publication-receiver-commands.ts';
 
 const PACED_NEWEST_N_PUBLICATION: ALPublicationPolicy = {
@@ -26,11 +30,8 @@ const PACED_NEWEST_N_PUBLICATION: ALPublicationPolicy = {
 const LAST_SEND = 4;
 
 /**
- * D469 with three values retained and two drained per opportunity: send 0 is admitted at once; send 4 displaces send
- * 1, the oldest staged; the second opportunity admits sends 2 and 3, the third opportunity send 4, which is still
- * staged while the sender observes it. The cell proves the stage's selection, not carrier history: sends 2 and 3 share
- * their stream's latest-wins key, so on a backpressured carrier send 3's admission could conflate send 2 (D467), and
- * the cell assumes an unloaded one.
+ * The sender proves three retained values, oldest displacement without an attempt, and a two-value drain with one
+ * deferred. Receiver history may omit intermediate values through legal carrier conflation; the latest must arrive.
  */
 export const pacedNewestN: AlmConformanceScenarioDefinition = {
     scenarioId: 'paced-newest-n',
@@ -54,20 +55,30 @@ export const pacedNewestN: AlmConformanceScenarioDefinition = {
             state: 'superseded',
             facts: [NEVER_ATTEMPTED, STAGE_DISPLACED]
         }),
+        {
+            kind: 'wait',
+            commandId: toCommandId(sender, 'two-selected-one-deferred'),
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                payloadFields: {
+                    'data.kind': 'publication-opportunity',
+                    'data.laneKey': `${toScenarioTopicId(sender)}/${toScenarioTypeId(sender)}`,
+                    'data.selected': 2,
+                    'data.deferred': 1,
+                    'data.expired': 0
+                }
+            },
+            timeoutMs: sender.input.deadlineMs
+        },
         ...[2, 3, LAST_SEND].flatMap((index) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
         )
     ],
     toRecipientCommands: (receiver) => [
-        toArrivalCountCommand(receiver, 1, 0),
-        toSeqArrivalWait(receiver, 0),
-        toSeqNotYetWait(receiver, 2, 0),
-        toArrivalCountCommand(receiver, 3, 1),
-        toSeqArrivalWait(receiver, 2),
-        toSeqArrivalWait(receiver, 3),
-        toSeqNotYetWait(receiver, LAST_SEND, 3),
-        toArrivalCountCommand(receiver, 4, 2),
+        toArrivalCountCommand(receiver, 1, 2),
         toSeqArrivalWait(receiver, LAST_SEND),
+        { ...toSeqArrivalWait(receiver, 1), absent: true, timeoutMs: 2 * PUBLICATION_CADENCE_MS },
         toNoFurtherArrivalCommand(receiver, 5)
     ]
 };

@@ -421,7 +421,12 @@ function createMessagingControllers(
         generation: lifecycle.generation,
         isCurrent: lifecycle.isCurrent
     });
-    const typedChannels = new BlackBoxRallarTypedChannels({ messages: rallar.messages, resources, diagnostics });
+    const typedChannels = new BlackBoxRallarTypedChannels({
+        messages: rallar.messages,
+        connection: rallar,
+        resources,
+        diagnostics
+    });
     const health = foundation.health;
     return {
         messagingResources: resources,

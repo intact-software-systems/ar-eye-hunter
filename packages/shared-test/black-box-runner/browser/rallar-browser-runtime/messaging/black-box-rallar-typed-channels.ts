@@ -18,7 +18,10 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type { BlackBoxRallarConnectionConfig, BlackBoxRallarEvent } from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf, blackBoxRallarScopeDiagnosticsOf } from '../black-box-rallar-operation-policy.ts';
-import type { BlackBoxBrowserMessagesDependency } from '../browser-rallar-runtime-composition.ts';
+import type {
+    BlackBoxBrowserMessagesDependency,
+    BlackBoxBrowserRallarRuntimeDependency
+} from '../browser-rallar-runtime-composition.ts';
 import {
     resolveBlackBoxRallarTopicId,
     resolveBlackBoxRallarTypeId
@@ -44,6 +47,7 @@ interface TypedChannelMessageEvent {
     readonly topic: string;
     readonly transport: BlackBoxRallarEvent['transport'];
     readonly message: RallarMessage<RallarMessagePayload>;
+    readonly peerId: string | undefined;
 }
 
 /** `messages.reply` names a request by its arrival among the last this many of its type the page received. */
@@ -52,6 +56,7 @@ const RECEIVED_MESSAGES_RETAINED_PER_TYPE = 16;
 export namespace BlackBoxRallarTypedChannels {
     export interface Input {
         readonly messages: BlackBoxBrowserMessagesDependency;
+        readonly connection: Pick<BlackBoxBrowserRallarRuntimeDependency, 'session'>;
         readonly resources: BlackBoxRallarMessagingResourceController;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
     }
@@ -124,15 +129,17 @@ export class BlackBoxRallarTypedChannels {
         }
         const key = JSON.stringify({ kind: 'typed', typeId: route.typeId, topicId: route.topicId });
         this.#input.resources.ensureWsSubscription(key, () => {
+            const peerId = this.#input.connection.session()?.sessionId;
             const unsubscribeWs = channel.onWs((_payload, message) => {
-                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
+                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message, peerId });
             });
             const unsubscribeRtc = channel.onRtc((_payload, message) => {
                 this.#recordMessage({
                     config,
                     topic: 'rallar.browser.messages.rtc.message',
                     transport: 'messages.rtc',
-                    message
+                    message,
+                    peerId
                 });
             });
             return () => {
@@ -181,8 +188,9 @@ export class BlackBoxRallarTypedChannels {
         const rtcTypeIds = resolveRtcSelectorTypeIds(config, selector);
         const key = JSON.stringify({ kind: 'selector', selector, rtcTypeIds });
         this.#input.resources.ensureWsSubscription(key, () => {
+            const peerId = this.#input.connection.session()?.sessionId;
             const unsubscribeWs = this.#input.messages.ws.onMessage<RallarMessagePayload>(selector, (message) => {
-                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
+                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message, peerId });
             });
             const unsubscribeRtc = rtcTypeIds.map((typeId) =>
                 this.#input.messages.rtc.onMessage<RallarMessagePayload>(
@@ -192,7 +200,8 @@ export class BlackBoxRallarTypedChannels {
                             config,
                             topic: 'rallar.browser.messages.rtc.message',
                             transport: 'messages.rtc',
-                            message
+                            message,
+                            peerId
                         });
                     }
                 )
@@ -225,6 +234,8 @@ export class BlackBoxRallarTypedChannels {
             transport,
             roomId: message.roomId ?? config.roomId,
             ...blackBoxRallarScopeDiagnosticsOf(config),
+            peerId: event.peerId,
+            remotePeerId: message.senderId,
             senderId: message.senderId,
             typeId: message.typeId,
             topicId: message.topicId,

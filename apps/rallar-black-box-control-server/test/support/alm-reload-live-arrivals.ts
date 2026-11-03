@@ -12,7 +12,7 @@ export interface AlmReloadLiveArrival {
  * type in delivery order until it holds its count, and an absence read takes all of them. Out-of-order and extra
  * arrivals still fail the cells' reads here, but two values carried at one opportunity do not fail a `not-yet` window:
  * the real stage's selection, the sender's `publication-opportunity` counts and the hosted run carry that. A wait for a
- * seq's arrival resolves only after a count read took it, which the paced receiver recipes always issue first.
+ * seq's arrival advances through unread values of its type until the real recorder holds that sequence.
  */
 export class AlmReloadLiveArrivals {
     private readonly unread = new Map<string, AlmReloadLiveArrival[]>();
@@ -32,6 +32,14 @@ export class AlmReloadLiveArrivals {
         this.unread.set(key, unread.slice(taken.length));
         this.readCounts.set(key, readCount + taken.length);
         taken.forEach((arrival) => arrival.record());
+    }
+
+    /** A positive arrival wait reads in delivery order, stopping at the first match already visible to the recorder. */
+    readUntil(role: string, typeId: string, matched: () => boolean): void {
+        const key = toArrivalKey(role, typeId);
+        while (!matched() && (this.unread.get(key)?.length ?? 0) > 0) {
+            this.read(role, typeId, (this.readCounts.get(key) ?? 0) + 1);
+        }
     }
 
     isUnread(role: string, msgId: string): boolean {

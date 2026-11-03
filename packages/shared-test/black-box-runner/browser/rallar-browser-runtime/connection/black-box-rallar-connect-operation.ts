@@ -309,7 +309,6 @@ export class BlackBoxRallarConnectOperation {
             selector: transport === 'messages.rtc' ? resolveBlackBoxRallarMessageSelector(config) : undefined
         });
         const unsubscribeRealtime = this.#input.subscriptions.subscribeRealtime({ config, session });
-        const unsubscribeMessagesRtc = this.#input.subscriptions.subscribeMessagesRtc({ config, session });
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             ...phaseData,
             ...this.#input.health.getStatusDiagnostics(config)
@@ -318,7 +317,6 @@ export class BlackBoxRallarConnectOperation {
             config,
             session,
             unsubscribeRealtime,
-            unsubscribeMessagesRtc,
             unsubscribeConsoleDiagnostics: attempt.unsubscribeConsoleDiagnostics,
             ...attempt.lifecycleSubscriptions
         };
