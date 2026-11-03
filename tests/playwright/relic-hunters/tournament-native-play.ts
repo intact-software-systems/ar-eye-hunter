@@ -10,7 +10,7 @@ export async function playRelicTournament(winner: Page, opponent: Page): Promise
     await opponent.getByRole('button', { name: /^Submit Plan/ }).click();
     await expectRound([winner, opponent], 2);
     await expect(winner.locator('.relic-inventory')).toContainText('Visitor Badge');
-    await opponent.reload();
+    await opponent.reload({ waitUntil: 'commit' });
     await expectRound([opponent], 2);
     for (const [index, destination] of ['Hallway', 'Trap Room', 'Monster Lair', 'Exit'].entries()) {
         await Promise.all([winner, opponent].map(async (player) => {

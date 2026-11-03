@@ -12,12 +12,14 @@ export const tournamentBrowserTest = roomBrowserTest.extend<TournamentBrowserFix
         try {
             const fourth = await browser.browserType().launch();
             try {
-                await use([
-                    page,
-                    guest,
-                    await third.newPage({ hasTouch: true }),
-                    await fourth.newPage({ hasTouch: true })
-                ]);
+                const thirdContext = await third.newContext({ hasTouch: true });
+                const fourthContext = await fourth.newContext({ hasTouch: true });
+                try {
+                    await use([page, guest, await thirdContext.newPage(), await fourthContext.newPage()]);
+                }
+                finally {
+                    await Promise.all([thirdContext.close(), fourthContext.close()]);
+                }
             }
             finally {
                 await fourth.close();

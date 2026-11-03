@@ -55,12 +55,17 @@ export async function startTournamentMatch(
     await expect(start).toBeEnabled({ timeout: 45000 });
     await start.click();
     for (const player of competitors) {
+        const entry = player.getByRole('region', { name: 'Shared room entry', exact: true });
+        const entered = entry.getByText(/^Entered /);
+        const previousEntry = await entered.count() === 0 ? null : await entered.innerText();
         await panel(player).getByRole('article', { name: slot, exact: true }).getByRole('button', {
             name: 'Enter tournament match',
             exact: true
         }).click();
-        const entry = player.getByRole('region', { name: 'Shared room entry', exact: true });
-        await expect(entry.getByText(/^Entered /)).toBeVisible();
+        await expect(entered).toBeVisible();
+        if (previousEntry !== null) {
+            await expect(entered).not.toHaveText(previousEntry);
+        }
         await expect(entry.getByRole('alert')).toHaveCount(0);
     }
 }

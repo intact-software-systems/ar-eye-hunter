@@ -2,36 +2,38 @@ import { expect, type Page } from '@playwright/test';
 import { blocksShot } from '../../../packages/ar-eye-hunter/arena-layout.ts';
 import { decodeArenaTournamentSnapshot } from '../../../packages/ar-eye-hunter/arena-tournament-snapshot.ts';
 import type { TournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
+import { toGroupId } from '../room-player-journey.ts';
 
 /** Observe the public state, then aim and shoot exclusively with real canvas input. */
 export async function playArenaTournament(winner: Page, opponent: Page): Promise<void> {
     await winner.bringToFront();
     const canvas = winner.getByLabel('AR Eye Hunter gameplay canvas', { exact: true });
-    await expect(canvas).toHaveAttribute('data-arena-match-id', /.+/);
+    const roomId = toGroupId(await winner.getByLabel('Room link', { exact: true }).inputValue());
+    const initial = await observeArena(winner, roomId);
+    await expect(canvas).toHaveAttribute('data-arena-match-id', initial.gameId);
     await opponent.bringToFront();
     await expect(opponent.getByLabel('AR Eye Hunter gameplay canvas', { exact: true })).toHaveAttribute(
         'data-arena-match-id',
-        await canvas.getAttribute('data-arena-match-id') ?? ''
+        initial.gameId
     );
     const closeOperations = winner.getByRole('button', { name: 'Close Ops', exact: true });
     if (await closeOperations.isVisible()) {
         await closeOperations.click();
     }
-    const initial = await observeArena(winner);
     await winner.bringToFront();
 
     await winner.keyboard.down('w');
     let moved = initial;
     try {
         await expect.poll(async () => {
-            moved = await observeArena(winner);
+            moved = await observeArena(winner, roomId);
             return distance(initial.players[0].simulation.position, moved.players[0].simulation.position);
         }).toBeGreaterThan(0.1);
     }
     finally {
         await winner.keyboard.up('w');
     }
-    await scoreWithTouch(winner);
+    await scoreWithTouch(winner, roomId);
     await winner.keyboard.press('Escape');
     await opponent.reload();
     for (const page of [winner, opponent]) {
@@ -47,13 +49,13 @@ export async function playArenaTournament(winner: Page, opponent: Page): Promise
     }
 }
 
-async function scoreWithTouch(page: Page): Promise<void> {
+async function scoreWithTouch(page: Page, roomId: string): Promise<void> {
     const viewport = page.viewportSize();
     if (!viewport) {
         throw new Error('The gameplay journey needs a viewport for touch aiming.');
     }
     await expect.poll(async () => {
-        const state = await observeArena(page);
+        const state = await observeArena(page, roomId);
         const player = state.players[0];
         if (player.simulation.combat.score > 0) {
             return player.simulation.combat.score;
@@ -82,14 +84,15 @@ async function scoreWithTouch(page: Page): Promise<void> {
     }, { timeout: 15000, intervals: [500] }).toBeGreaterThan(0);
 }
 
-async function observeArena(page: Page): Promise<TournamentArena> {
+async function observeArena(page: Page, roomId: string): Promise<TournamentArena> {
+    const path = `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`;
     const response = await page.waitForResponse((candidate) =>
-        candidate.request().method() === 'GET' && /\/api\/ar-eye\/rooms\/[^/]+\/tournament$/.test(candidate.url()) &&
+        candidate.request().method() === 'GET' && new URL(candidate.url()).pathname === path &&
         candidate.status() === 200
     );
     const snapshot = decodeArenaTournamentSnapshot(await response.json());
     if (!snapshot.state) {
-        return observeArena(page);
+        return observeArena(page, roomId);
     }
     return snapshot.state;
 }

@@ -5353,6 +5353,81 @@ moved or changed test.
         "requiredConstraint": "One barrier timeout emits exactly one warning with the exact run, connect command, run command and timeout payload, and the barrier then returns the started run instead of throwing.",
         "failureRationale": "The started run is returned identically whether the barrier warned once, once per poll or not at all, so only the warning count distinguishes the single timeout reaction from a per-read warning or a silent release."
       }
+    },
+    {
+      "id": "tournament-ambiguous-intent-fence",
+      "domain": "Tournament browser ambiguous write recovery",
+      "owner": "Rallar browser maintainers",
+      "summary": "Exactly one command reaches the API before explicit retry; retry preserves its original request identity and intent.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#retries an ambiguous command with its exact original identity and intent",
+      "coverageRelation": "The test loses the first response, attempts cancellation, observes the API write count, then retries the captured original command.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarTournament.Api.change",
+        "observableEffect": "Sending another intent can mutate the bracket while the earlier command outcome is unknown.",
+        "requiredConstraint": "Exactly one command reaches the API before explicit retry; retry preserves its original request identity and intent.",
+        "failureRationale": "A cleared local retry flag cannot establish whether a competing remote write escaped."
+      }
+    },
+    {
+      "id": "tournament-playing-admission-fence",
+      "domain": "Tournament browser match admission",
+      "owner": "Rallar browser maintainers",
+      "summary": "A scheduled but unstarted match must cause no room admission; a freshly read playing match permits the account-bound player entry.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#enters only a freshly verified playing match with the authenticated participation role",
+      "coverageRelation": "The test attempts entry before playing, then checks in both accounts, starts the match and verifies the permitted admission payload.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarTournament.Dependencies.entry.enter",
+        "observableEffect": "Room admission changes membership and active presence.",
+        "requiredConstraint": "A scheduled but unstarted match must cause no room admission; a freshly read playing match permits the account-bound player entry.",
+        "failureRationale": "Unchanged local bracket state can coexist with an unauthorized admission request."
+      }
+    },
+    {
+      "id": "tournament-http-lost-response-replay",
+      "domain": "Tournament authenticated HTTP retry",
+      "owner": "Rallar browser maintainers",
+      "summary": "One lost response produces exactly two requests to the same scoped request URL, with unchanged authenticated intent.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts#replays the exact authenticated scoped intent after a lost response and rejects a substituted result",
+      "coverageRelation": "The test drops the first response, captures both wire requests and validates their identity, authentication and body, then rejects a substituted result.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "tournamentHttpApi outbound fetch",
+        "observableEffect": "HTTP writes carry the request identity that deduplicates bracket mutations.",
+        "requiredConstraint": "One lost response produces exactly two requests to the same scoped request URL, with unchanged authenticated intent.",
+        "failureRationale": "A returned applied receipt alone cannot prove that retry did not use a fresh mutation identity or wrong scoped URL."
+      }
+    },
+    {
+      "id": "tournament-panel-explicit-consent",
+      "domain": "Tournament panel preview and registration consent",
+      "owner": "Rallar browser maintainers",
+      "summary": "Opening a shared bracket invokes neither port; the explicit registration click sends register and still does not enter a room.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click",
+      "coverageRelation": "The rendered panel previews the linked bracket, captures absence at both mutation ports, then clicks the visible register button and verifies the exact intent and continued room isolation.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarTournament.Api.change and room entry.enter",
+        "observableEffect": "These ports initiate bracket mutation and room membership or presence transitions.",
+        "requiredConstraint": "Opening a shared bracket invokes neither port; the explicit registration click sends register and still does not enter a room.",
+        "failureRationale": "The bracket title can render correctly even when preview silently registers or changes the current room."
+      }
+    },
+    {
+      "id": "relic-tournament-server-snapshot-isolation",
+      "domain": "Relic tournament authoritative snapshot transport",
+      "owner": "Relic Hunters maintainers",
+      "summary": "No peer snapshot publication occurs while a tournament is active, including the periodic publication interval.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#restores the same tournament hunter after signing in with a new session",
+      "coverageRelation": "The runtime receives a server tournament snapshot, advances the timer beyond publication cadence, observes no RTC publication and then verifies account-bound reconnect and cancellation departure.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RelicHuntersRuntime.Dependencies.publishRtcSnapshot",
+        "observableEffect": "Publishing the snapshot over RTC would present browser-owned state as peer authority during a server-owned tournament.",
+        "requiredConstraint": "No peer snapshot publication occurs while a tournament is active, including the periodic publication interval.",
+        "failureRationale": "Correct local player identity and rendering do not exclude unauthorized snapshot publication to other peers."
+      }
     }
   ],
   "entries": [
@@ -11306,6 +11381,94 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The exactly-once matcher on the warning spy is the only observation that the barrier's timeout reaction ran once with its exact payload; the returned started run is the same for a silent or repeated warning.",
       "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout"
+    },
+    {
+      "id": "test-structure-coupling-0e22dcd0074f6038",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-ambiguous-intent-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The API count before retry proves cancellation did not escape while the first command remained ambiguous.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#retries an ambiguous command with its exact original identity and intent"
+    },
+    {
+      "id": "test-structure-coupling-3850ceb4e937a243",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-playing-admission-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The admission port remains untouched until the freshly observed match is playing.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#enters only a freshly verified playing match with the authenticated participation role"
+    },
+    {
+      "id": "test-structure-coupling-aa28faae46ed7566",
+      "path": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-http-lost-response-replay",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Both captured request URLs must retain the original request identity across the lost-response retry.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts#replays the exact authenticated scoped intent after a lost response and rejects a substituted result"
+    },
+    {
+      "id": "test-structure-coupling-d2a0b2266f17ab12",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Preview must not initiate any bracket mutation.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-5f7d169472d8c3c7",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Preview must not initiate room admission or replace current presence.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-a9a6abfa2208bb45",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The visible registration click must send the register intent to the mutation port.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-34854184cfe02abd",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Registering must not also enter a match room.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-985c57c86c43d43d",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-tournament-server-snapshot-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "Advancing the runtime publication timer must not publish a server-owned tournament snapshot over RTC.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#restores the same tournament hunter after signing in with a new session"
     }
   ]
 }

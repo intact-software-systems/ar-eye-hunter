@@ -250,22 +250,27 @@ export async function evaluateFullStackConfiguredServiceEvidence(
         : 'ready';
 }
 
-/**
- * Space-separated assignments the shell command prefixes. The granted topic's JSON holds no space, and its single
- * quotes keep the shell from expanding its braces or removing its double quotes.
- */
-export function createFullStackApiProfileEnvBlock(): string {
+export function createFullStackApiProfileEnvironment(): Readonly<Record<string, string>> {
     const grantedTopics = [{ topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, fanout: 'outbox', serverProducerIds: [] }];
-    return [
-        'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
-        'RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON=[]',
-        'RALLAR_LOGIN_USER_RATE_LIMIT=100',
-        `RALLAR_REGISTRATION_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
-        `RALLAR_LOGIN_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
-        'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1',
-        'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1',
-        `RALLAR_GRANTED_WS_TOPICS_JSON='${JSON.stringify(grantedTopics)}'`
-    ].join(' ');
+    return {
+        RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
+        RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
+        RALLAR_LOGIN_USER_RATE_LIMIT: '100',
+        RALLAR_REGISTRATION_IP_RATE_LIMIT: String(CO_LOCATED_AUTH_IP_RATE_LIMIT),
+        RALLAR_LOGIN_IP_RATE_LIMIT: String(CO_LOCATED_AUTH_IP_RATE_LIMIT),
+        RALLAR_AUTH_CREDENTIAL_SECRET: 'local-rallar-full-stack-auth-credential-secret-v1',
+        RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'local-rallar-full-stack-operator-secret-v1',
+        RALLAR_GRANTED_WS_TOPICS_JSON: JSON.stringify(grantedTopics)
+    };
+}
+
+function toFullStackApiProfileEnvBlock(): string {
+    return Object.entries(createFullStackApiProfileEnvironment())
+        .map(([name, value]) => `${name}=${toShellValue(value)}`).join(' ');
+}
+
+function toShellValue(value: string): string {
+    return /^[a-zA-Z0-9_./:-]+$/.test(value) ? value : '\'' + value.replaceAll('\'', '\'\\\'\'') + '\'';
 }
 
 export function portFromBaseUrl(apiBaseUrl: string): number {
@@ -280,8 +285,8 @@ export function portFromBaseUrl(apiBaseUrl: string): number {
 function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     const normalizedApiBaseUrl = normalizeBaseUrl(apiBaseUrl);
     return [
-        `RALLAR_API_BASE_URL=${normalizedApiBaseUrl}`,
-        `RALLAR_WS_BASE_URL=${toWsBaseUrl(normalizedApiBaseUrl)}`
+        `RALLAR_API_BASE_URL=${toShellValue(normalizedApiBaseUrl)}`,
+        `RALLAR_WS_BASE_URL=${toShellValue(toWsBaseUrl(normalizedApiBaseUrl))}`
     ].join(' ');
 }
 
@@ -301,14 +306,16 @@ function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
 }
 
 function createMemoryApiCommand({ apiBaseUrl, spaBaseUrl, apiInvocation, iceRequests }: MemoryApiCommandInput): string {
-    return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
+    return `cd ../.. && CORS_ORIGINS=${toShellValue(createFullStackSpaCorsOrigins(spaBaseUrl))} PORT=${
+        portFromBaseUrl(apiBaseUrl)
+    } ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackApiProfileEnvBlock()} RALLAR_ICE_RATE_LIMIT_REQUESTS=${iceRequests} ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${toFullStackApiProfileEnvBlock()} RALLAR_ICE_RATE_LIMIT_REQUESTS=${iceRequests} ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
 function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInvocation: string): string {
-    return `cd ../.. && ${REQUIRE_LAUNCHING_DATABASE_URL} && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
-        createFullStackSpaCorsOrigins(spaBaseUrl)
+    return `cd ../.. && ${REQUIRE_LAUNCHING_DATABASE_URL} && ${toFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
+        toShellValue(createFullStackSpaCorsOrigins(spaBaseUrl))
     } PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
     } ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
@@ -325,7 +332,7 @@ function toFullStackApiInvocation(
     if (mode !== 'memory' || !path.isAbsolute(directory)) {
         throw new Error('Setup timing capture requires the local memory API and an absolute recorder directory.');
     }
-    const quotedDirectory = '\'' + directory.replaceAll('\'', '\'\\\'\'') + '\'';
+    const quotedDirectory = toShellValue(directory);
     return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=${appInboxPhaseTiming} node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- deno`;
 }
 
