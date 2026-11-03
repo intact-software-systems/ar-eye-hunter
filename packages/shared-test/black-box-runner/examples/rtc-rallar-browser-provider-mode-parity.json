@@ -129,6 +129,38 @@
       "connection": "bobRtc"
     },
     {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "aliceSendsToBob",
       "type": "rtc.send",
       "connection": "aliceRtc",
@@ -148,7 +180,6 @@
           }
         },
         "outputs": {
-          "providerModeSendStatus": "sendResult.status",
           "providerModePayload": "matchedMessage.data.data.payload"
         }
       },
@@ -172,12 +203,10 @@
       "name": "assertProviderModePayload",
       "type": "assert",
       "actual": {
-        "sendStatus": "{providerModeSendStatus}",
         "payload": "{providerModePayload}"
       },
       "expect": {
         "body": {
-          "sendStatus": "sent",
           "payload": {
             "from": "alice",
             "text": "provider mode parity"

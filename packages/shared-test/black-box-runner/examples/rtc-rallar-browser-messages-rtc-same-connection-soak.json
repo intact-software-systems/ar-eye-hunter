@@ -61,7 +61,9 @@
       "maxArtifactEvents": 400,
       "setupSteps": [
         "connectAlice",
-        "connectBob"
+        "connectBob",
+        "waitForAliceRtcRoomOpen",
+        "waitForBobRtcRoomOpen"
       ],
       "loopSteps": [
         "aliceSendsToBob",
@@ -147,6 +149,38 @@
       "name": "connectBob",
       "type": "rtc.connect",
       "connection": "bobRtc"
+    },
+    {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
     },
     {
       "name": "aliceSendsToBob",

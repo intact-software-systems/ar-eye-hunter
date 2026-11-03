@@ -13,6 +13,8 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
+import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -312,7 +314,7 @@ export class AlmReloadPorts {
     private executePort(
         role: PortRole,
         command: RallarBlackBoxTestCommand
-    ): RallarBlackBoxTestCommandOutcome | Promise<RallarBlackBoxTestCommandOutcome> | undefined {
+    ): RallarBlackBoxTestCommandOutcome | Promise<RallarBlackBoxTestCommandOutcome | undefined> | undefined {
         this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const participant = this.participants.find((participant) => participant.role === role);
@@ -358,13 +360,32 @@ export class AlmReloadPorts {
                 return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
                 return this.releaseBarrier(role, command.barrierId);
-            case 'assert':
             case 'wait':
+                return this.prepareWait(role, command);
+            case 'assert':
             case 'loop':
                 return undefined; // These acceptance and composite commands execute in the real runtime.
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
+    }
+
+    /** Advance only the fixture-owned publication clock and unread arrivals; the real runtime judges the wait. */
+    private async prepareWait(role: PortRole, command: PortCommand<'wait'>): Promise<undefined> {
+        if (command.absent === true) {
+            return undefined;
+        }
+        const runtime = role === 'sender' ? this.sender : role === 'receiver' ? this.receiver : this.recipientB;
+        const matched = (): boolean => resolveLatestWaitEvent(runtime.state().events, command.match) !== undefined;
+        if (command.match.topic === 'rallar.browser.alm.outbound_diagnostics') {
+            const deadline = computeWaitDeadlineEpochMs(command, this.now);
+            await this.publicationLane.advanceTo(deadline, matched);
+        }
+        const typeId = command.match.payloadFields?.['data.typeId'];
+        if (command.match.kind === 'message' && typeof typeId === 'string') {
+            this.liveArrivals.readUntil(role, typeId, matched);
+        }
+        return undefined;
     }
 
     private readFormationReadiness(role: PortRole): RallarBlackBoxTestCommandOutcome {

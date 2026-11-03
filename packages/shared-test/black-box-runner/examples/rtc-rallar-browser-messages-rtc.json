@@ -33,6 +33,14 @@
     "topicId": {
       "env": "RALLAR_TOPIC_ID",
       "default": "black-box.chat"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "black-box-app"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default"
     }
   },
   "connections": {
@@ -52,8 +60,13 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "contextId": "{roomId}",
+        "contextId": "{applicationId}:{workspaceId}:{roomId}",
         "timeoutMs": 15000
+      },
+      "roomRef": {
+        "applicationId": "{applicationId}",
+        "workspaceId": "{workspaceId}",
+        "groupId": "{roomId}"
       }
     },
     "bobRtc": {
@@ -72,8 +85,13 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "contextId": "{roomId}",
+        "contextId": "{applicationId}:{workspaceId}:{roomId}",
         "timeoutMs": 15000
+      },
+      "roomRef": {
+        "applicationId": "{applicationId}",
+        "workspaceId": "{workspaceId}",
+        "groupId": "{roomId}"
       }
     }
   },
@@ -87,6 +105,38 @@
       "name": "connectBob",
       "type": "rtc.connect",
       "connection": "bobRtc"
+    },
+    {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
     },
     {
       "name": "aliceSendsToBob",

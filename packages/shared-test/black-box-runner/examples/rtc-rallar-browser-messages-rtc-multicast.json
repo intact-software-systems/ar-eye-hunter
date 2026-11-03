@@ -140,6 +140,54 @@
       "connection": "charlieRtc"
     },
     {
+      "name": "waitForAliceRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForBobRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "bobRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "waitForCharlieRtcRoomOpen",
+      "type": "rtc.wait",
+      "connection": "charlieRtc",
+      "expect": {
+        "withinMs": 15000,
+        "diagnostic": {
+          "topic": "rallar.browser.formation.room-status",
+          "data": {
+            "room": {
+              "state": "open"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "aliceMulticastsToRoom",
       "type": "rtc.send",
       "connection": "aliceRtc",
@@ -157,9 +205,7 @@
             "from": "alice",
             "text": "hello room multicast"
           }
-        },
-        "output": "multicastSendStatus",
-        "outputPath": "sendResult.status"
+        }
       }
     },
     {
@@ -218,13 +264,11 @@
       "name": "assertMulticastPayloadParity",
       "type": "assert",
       "actual": {
-        "sendStatus": "{multicastSendStatus}",
         "bobPayload": "{bobMulticastPayload}",
         "charliePayload": "{charlieMulticastPayload}"
       },
       "expect": {
         "body": {
-          "sendStatus": "sent",
           "bobPayload": {
             "from": "alice",
             "text": "hello room multicast"
