@@ -907,6 +907,7 @@ function session(sessionId: string, principalId: string, options: Partial<GroupP
         principalId,
         generationId: options.generationId ?? `${sessionId}-generation`,
         connectionGenerationId: options.connectionGenerationId ?? `${sessionId}-generation`,
+        publicationKey: null,
         generationVersion: options.generationVersion ?? 1,
         connectedAtEpochMs: options.connectedAtEpochMs ?? 1,
         lastHeartbeatAtEpochMs: options.lastHeartbeatAtEpochMs ?? NOW,

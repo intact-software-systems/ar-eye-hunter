@@ -237,6 +237,7 @@ function connectPresenceCommand(): GroupMutationCommand {
             principalId: 'alice',
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
+            publicationKey: null,
             connectedAtEpochMs: 2_000,
             lastHeartbeatAtEpochMs: 2_000,
             expiresAtEpochMs: 62_000

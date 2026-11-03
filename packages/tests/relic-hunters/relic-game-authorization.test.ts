@@ -168,6 +168,7 @@ describe('Relic current authority', () => {
                         requestId: 'owner-connect',
                         principalId: fixture.owner.clientId,
                         generationId: 'owner-generation',
+                        publicationKey: null,
                         connectionGenerationId: 'owner-connection',
                         connectedAtEpochMs: fixture.nowEpochMs,
                         lastHeartbeatAtEpochMs: fixture.nowEpochMs,

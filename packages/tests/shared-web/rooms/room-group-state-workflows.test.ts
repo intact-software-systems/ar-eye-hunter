@@ -71,12 +71,14 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/generated-room/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
+                rawBody:
+                    '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":null,"expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: null,
                     expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
@@ -140,12 +142,14 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/app-1/workspaces/workspace-1/groups/rallar/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
+                rawBody:
+                    '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":null,"expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: null,
                     expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
@@ -213,12 +217,14 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
+                rawBody:
+                    '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":null,"expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: null,
                     expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'

@@ -118,6 +118,7 @@ export class ApiV1RtcTopologyProofApi {
                 body: {
                     generationId: `${input.proofId}-generation-${input.actor.label}`,
                     connectionGenerationId: `${input.proofId}-connection-${input.actor.label}`,
+                    publicationKey: null,
                     principalId: input.actor.clientId
                 }
             }

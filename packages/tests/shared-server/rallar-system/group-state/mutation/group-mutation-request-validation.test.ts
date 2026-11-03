@@ -246,9 +246,9 @@ describe('group mutation request validation', () => {
         expect(emptyGeneration()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
         expect(emptyGeneration().map((issue) => issue.message)).toContain('Group heartbeatPresence generationId must be a non-empty string');
 
-        const minimalHeartbeat = Object.freeze({ generationId: 'generation-1' });
+        const minimalHeartbeat = Object.freeze({ generationId: 'generation-1', publicationKey: null });
         expect(validateGroupPresenceMutationRequest('heartbeatPresence', minimalHeartbeat)).toEqual([]);
-        expect(minimalHeartbeat).toEqual({ generationId: 'generation-1' });
+        expect(minimalHeartbeat).toEqual({ generationId: 'generation-1', publicationKey: null });
         expect(Object.hasOwn(minimalHeartbeat, 'lastHeartbeatAtEpochMs')).toBe(false);
         expect(Object.hasOwn(minimalHeartbeat, 'expiresAtEpochMs')).toBe(false);
     });
@@ -259,7 +259,8 @@ describe('group mutation request validation', () => {
             actorPrincipalId: 'owner-1',
             actorSessionId: 'owner-session',
             principalId: 'owner-1',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            publicationKey: null
         };
         expect(validateGroupPresenceMutationRequest('connectPresence', connect).map((issue) => issue.message)).toEqual([
             'Group connectPresence connectionGenerationId must be a non-empty string'
@@ -273,6 +274,7 @@ describe('group mutation request validation', () => {
         expect(
             validateGroupPresenceMutationRequest('heartbeatPresence', {
                 generationId: 'generation-1',
+                publicationKey: null,
                 connectionGenerationId: 'ws-1'
             }).map((issue) => issue.message)
         ).toEqual(['Group heartbeatPresence request has unexpected key: connectionGenerationId']);

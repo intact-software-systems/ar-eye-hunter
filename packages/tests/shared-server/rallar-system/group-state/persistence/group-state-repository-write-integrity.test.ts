@@ -119,6 +119,7 @@ describe('convergent group and presence state', () => {
                 reason: null,
                 principalId: null,
                 generationId: 'generation-1',
+                publicationKey: null,
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 10_000
             }
@@ -181,6 +182,7 @@ describe('convergent group and presence state', () => {
             await service.connectPresenceSession(SCOPE, groupId, sessionId, {
                 principalId: 'alice',
                 generationId,
+                publicationKey: null,
                 connectionGenerationId: `ws-${generationId}`,
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,
@@ -211,6 +213,7 @@ describe('convergent group and presence state', () => {
             const mutation = operation === 'heartbeat'
                 ? service.heartbeatPresenceSession(SCOPE, groupId, sessionId, {
                     generationId,
+                    publicationKey: null,
                     lastHeartbeatAtEpochMs: 2_000,
                     expiresAtEpochMs: 4_102_444_801_000,
                     actorPrincipalId: 'alice',

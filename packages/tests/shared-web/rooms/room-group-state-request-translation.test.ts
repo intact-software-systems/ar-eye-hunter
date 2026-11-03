@@ -402,7 +402,7 @@ describe('room request translation', () => {
             ...actor
         } as const;
 
-        expect(toConnectRoomPresenceGroupStateRequest(presence)).toEqual(presence);
+        expect(toConnectRoomPresenceGroupStateRequest(presence)).toEqual({ ...presence, publicationKey: null });
         expect(toDisconnectRoomPresenceGroupStateRequest(presence)).toEqual({
             principalId: presence.principalId,
             generationId: presence.generationId,

@@ -168,6 +168,7 @@ function groupHeartbeatStep(input: GroupHeartbeatStepInput) {
                 sessionId: input.clientData.sessionId,
                 request: {
                     generationId,
+                    publicationKey: null,
                     principalId: input.clientData.clientId,
                     actorPrincipalId: input.clientData.clientId,
                     actorSessionId: input.clientData.sessionId,

@@ -48,6 +48,7 @@ describe('GroupStateService guarded presence batch', () => {
             {
                 principalId: 'alice',
                 generationId: 'generation-a',
+                publicationKey: null,
                 connectionGenerationId: 'ws-generation-a',
                 expiresAtEpochMs: startedAtEpochMs + 20_000,
                 requestId: 'presence-update-connect'
@@ -75,6 +76,7 @@ describe('GroupStateService guarded presence batch', () => {
             generationId: 'generation-a',
             generationVersion: nowEpochMs,
             connectionGenerationId: 'ws-generation-a',
+            publicationKey: null,
             connectedAtEpochMs: nowEpochMs,
             lastHeartbeatAtEpochMs: nowEpochMs,
             expiresAtEpochMs: startedAtEpochMs + 20_000,
@@ -123,6 +125,7 @@ describe('GroupStateService guarded presence batch', () => {
             'session-a',
             {
                 generationId: 'generation-a',
+                publicationKey: null,
                 actorPrincipalId: 'alice',
                 lastHeartbeatAtEpochMs: nowEpochMs,
                 expiresAtEpochMs: startedAtEpochMs + 30_000,
@@ -195,6 +198,7 @@ describe('GroupStateService guarded presence batch', () => {
         await groupRuntime.service.connectPresenceSession(SCOPE, ref.groupId, 'expiry-session', {
             principalId: 'alice',
             generationId: 'expiry-generation',
+            publicationKey: null,
             connectionGenerationId: 'expiry-ws-generation',
             connectedAtEpochMs: nowEpochMs,
             lastHeartbeatAtEpochMs: nowEpochMs,
@@ -278,6 +282,7 @@ describe('GroupStateService guarded presence batch', () => {
             await expect(service.connectPresenceSessionReceipt(SCOPE, ref.groupId, 'session-conflict', {
                 principalId: 'alice',
                 generationId: 'generation-conflict',
+                publicationKey: null,
                 connectionGenerationId: 'ws-generation-conflict',
                 expiresAtEpochMs: nowEpochMs + 30_000,
                 requestId: 'presence-conflict-connect'

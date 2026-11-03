@@ -606,6 +606,7 @@ export function toRoomRosterSession(
         principalId: lease.principalId ?? 'client-1',
         generationId: `${sessionId}-generation`,
         connectionGenerationId: `${sessionId}-ws-generation`,
+        publicationKey: null,
         generationVersion: 1,
         connectedAtEpochMs: nowMs - 5_000,
         lastHeartbeatAtEpochMs: nowMs - 1_000,

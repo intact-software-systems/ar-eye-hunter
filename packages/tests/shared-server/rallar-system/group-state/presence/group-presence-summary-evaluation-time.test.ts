@@ -451,6 +451,7 @@ function createExpiryCrossingPresence(): ExpiryCrossingPresence {
         ...REF,
         principalId: 'alice',
         ...admitted,
+        publicationKey: null,
         lastHeartbeatAtEpochMs: 1_000,
         expiresAtEpochMs: 10_000,
         status: 'active',

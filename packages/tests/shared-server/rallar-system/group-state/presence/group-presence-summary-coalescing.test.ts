@@ -573,6 +573,7 @@ async function seedConnectedGroup(input: SeedConnectedGroupInput): Promise<Seede
         await service.connectPresenceSession(SCOPE, groupId, widen(`${input.groupId}-${connect}-session`), {
             principalId,
             generationId: widen(`${input.groupId}-${connect}-generation`),
+            publicationKey: null,
             connectionGenerationId: widen(`${input.groupId}-${connect}-ws-generation`),
             actorPrincipalId: principalId,
             expiresAtEpochMs: now + 60_000,

@@ -61,6 +61,7 @@ export function presenceConnectEnqueue(
                 principalId,
                 generationId: `${principalId}-generation`,
                 connectionGenerationId: `${principalId}-ws-generation`,
+                publicationKey: null,
                 connectedAtEpochMs: nowEpochMs,
                 lastHeartbeatAtEpochMs: nowEpochMs,
                 expiresAtEpochMs: nowEpochMs + 60_000,

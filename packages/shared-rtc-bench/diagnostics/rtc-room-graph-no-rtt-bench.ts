@@ -150,6 +150,7 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
             principalId: sessionId,
             generationId: `generation-${sessionId}`,
             connectionGenerationId: `ws-generation-${sessionId}`,
+            publicationKey: null,
             generationVersion: 1,
             status: 'active',
             connectedAtEpochMs: 1,

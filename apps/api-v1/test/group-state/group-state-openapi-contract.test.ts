@@ -13,6 +13,7 @@ interface OpenApiSchema {
     readonly maximum?: number;
     readonly additionalProperties?: boolean;
     readonly oneOf?: readonly OpenApiSchema[];
+    readonly allOf?: readonly OpenApiSchema[];
     readonly nullable?: boolean;
     readonly required?: readonly string[];
     readonly properties?: Readonly<Record<string, OpenApiSchema>>;
@@ -312,6 +313,31 @@ Deno.test('topic subscription requests name the topic and the asserting generati
         Object.keys(document.paths[`${GROUP_ID_PATH}/sessions/{sessionId}/subscriptions`]?.get?.responses ?? {}),
         ['200', '401', '403']
     );
+});
+
+Deno.test('presence connect and heartbeat require the nullable publication key the session carries', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    const schemas = document.components.schemas;
+    const publicationKeyReference = '#/components/schemas/GroupPresencePublicationKey';
+    for (const name of ['ConnectGroupPresenceSessionRequest', 'HeartbeatGroupPresenceSessionRequest', 'GroupPresenceSession']) {
+        assert.ok(schemas[name].required?.includes('publicationKey'), name);
+        assert.deepEqual(
+            schemas[name].properties?.publicationKey,
+            { allOf: [{ $ref: publicationKeyReference }], nullable: true },
+            name
+        );
+    }
+    assert.equal(schemas.DisconnectGroupPresenceSessionRequest.properties?.publicationKey, undefined);
+    const publicationKey = schemas.GroupPresencePublicationKey;
+    assert.equal(publicationKey.additionalProperties, false);
+    assert.deepEqual(publicationKey.required, ['keyId', 'publicJwk']);
+    assert.equal(publicationKey.properties?.publicJwk.$ref, '#/components/schemas/EcdsaP256PublicJwk');
+    const publicJwk = schemas.EcdsaP256PublicJwk;
+    assert.equal(publicJwk.additionalProperties, false);
+    assert.deepEqual(publicJwk.required, ['kty', 'crv', 'x', 'y']);
+    assert.deepEqual(publicJwk.properties?.kty.enum, ['EC']);
+    assert.deepEqual(publicJwk.properties?.crv.enum, ['P-256']);
 });
 
 Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable RTT', async () => {

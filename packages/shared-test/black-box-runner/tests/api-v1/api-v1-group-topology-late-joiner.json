@@ -403,6 +403,7 @@
         },
         "body": {
           "generationId": "generation-latejoin-founder-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-latejoin-founder-{runId}",
           "principalId": "{founderClientId}"
         }
@@ -429,6 +430,7 @@
         },
         "body": {
           "generationId": "generation-latejoin-member-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-latejoin-member-{runId}",
           "principalId": "{memberClientId}"
         }

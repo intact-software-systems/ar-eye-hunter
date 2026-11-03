@@ -185,6 +185,7 @@ describe('Group presence lifecycle retry', () => {
             service.heartbeatPresenceSession(SCOPE, groupRef.groupId, 'session-1', {
                 principalId: 'alice',
                 generationId: 'generation-session-1',
+                publicationKey: null,
                 actorPrincipalId: 'alice',
                 actorSessionId: 'session-1',
                 lastHeartbeatAtEpochMs: now + 1,
@@ -222,6 +223,7 @@ describe('Group presence lifecycle retry', () => {
         const written = await service.heartbeatPresenceSession(SCOPE, groupRef.groupId, 'session-1', {
             principalId: 'alice',
             generationId: 'generation-session-1',
+            publicationKey: null,
             lastHeartbeatAtEpochMs: 2_000,
             expiresAtEpochMs: Date.now() + 120_000,
             requestId: 'heartbeat-causal-revision',
@@ -255,6 +257,7 @@ describe('Group presence lifecycle retry', () => {
             service.heartbeatPresenceSession(SCOPE, 'room-heartbeat-expiry-invariant', 'session-1', {
                 principalId: 'alice',
                 generationId: 'generation-session-1',
+                publicationKey: null,
                 actorPrincipalId: 'alice',
                 actorSessionId: 'session-1',
                 lastHeartbeatAtEpochMs: lateHeartbeatAtEpochMs,
@@ -300,6 +303,7 @@ describe('Group presence lifecycle retry', () => {
             service.connectPresenceSession(SCOPE, 'room-session-principal-invariant', 'session-1', {
                 principalId: 'bob',
                 generationId: 'bob-generation',
+                publicationKey: null,
                 connectionGenerationId: 'bob-ws-generation',
                 connectedAtEpochMs: 3_000,
                 lastHeartbeatAtEpochMs: 3_000,

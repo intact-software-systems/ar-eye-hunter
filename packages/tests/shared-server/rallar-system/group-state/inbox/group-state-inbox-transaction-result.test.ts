@@ -249,6 +249,7 @@ describe('group-state AppInbox transaction result boundary', () => {
                     principalId: 'owner',
                     generationId: 'inactive-generation',
                     connectionGenerationId: 'inactive-ws-generation',
+                    publicationKey: null,
                     connectedAtEpochMs: 1_000,
                     lastHeartbeatAtEpochMs: 1_000,
                     expiresAtEpochMs: 61_000
@@ -268,6 +269,7 @@ describe('group-state AppInbox transaction result boundary', () => {
                     principalId: 'owner',
                     generationId: 'inactive-generation',
                     connectionGenerationId: 'inactive-ws-generation',
+                    publicationKey: null,
                     connectedAtEpochMs: 1_000,
                     lastHeartbeatAtEpochMs: 1_000,
                     expiresAtEpochMs: 61_000,

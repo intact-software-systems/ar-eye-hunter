@@ -1,4 +1,5 @@
 {
+  "description": "API-v1 group presence lifecycle with the publication key on the presence row. The connect names RFC 7517 Appendix A.1's public P-256 key under its RFC 7638 thumbprint cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s; a heartbeat with the same key is a lease renewal, a heartbeat with the generated test key rZ7cyMEmbfKmfbgktAq0VhUU27CfL9ABhsUWyr3t91o replaces it, a heartbeat with null clears it, a connect whose JWK carries the private member d is refused, and the disconnect takes the session and its key out of activeSessions.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -208,6 +209,15 @@
         "body": {
           "generationId": "generation-{runId}",
           "connectionGenerationId": "connection-generation-{runId}",
+          "publicationKey": {
+            "keyId": "cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s",
+            "publicJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
+              "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"
+            }
+          },
           "principalId": "{aliceClientId}"
         }
       },
@@ -233,6 +243,15 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": {
+            "keyId": "cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s",
+            "publicJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
+              "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"
+            }
+          },
           "principalId": "{aliceClientId}"
         }
       },
@@ -365,7 +384,16 @@
             {
               "sessionId": "{aliceSessionId}",
               "principalId": "{aliceClientId}",
-              "generationId": "generation-{runId}"
+              "generationId": "generation-{runId}",
+              "publicationKey": {
+                "keyId": "cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s",
+                "publicJwk": {
+                  "kty": "EC",
+                  "crv": "P-256",
+                  "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
+                  "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"
+                }
+              }
             }
           ]
         }
@@ -404,6 +432,171 @@
       }
     },
     {
+      "name": "heartbeatAliceWithRotatedPublicationKey",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/heartbeat/requests/heartbeat-rotated-key-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "publicationKey": {
+            "keyId": "rZ7cyMEmbfKmfbgktAq0VhUU27CfL9ABhsUWyr3t91o",
+            "publicJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "Nm2QxCrM4kTiPOiaH6lR82miJ0_zi6f1BlvTCNMRV9M",
+              "y": "sB_-ygUxxhY4YLuYwL610i1uj3gwJNb1TqhRZ-VuTN8"
+            }
+          },
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "pollRotatedPublicationKey",
+      "type": "http.poll-until",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 12,
+          "maxDurationMs": 10000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "publicationKey": {
+                "keyId": "rZ7cyMEmbfKmfbgktAq0VhUU27CfL9ABhsUWyr3t91o",
+                "publicJwk": {
+                  "kty": "EC",
+                  "crv": "P-256",
+                  "x": "Nm2QxCrM4kTiPOiaH6lR82miJ0_zi6f1BlvTCNMRV9M",
+                  "y": "sB_-ygUxxhY4YLuYwL610i1uj3gwJNb1TqhRZ-VuTN8"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "heartbeatAliceWithoutPublicationKey",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/heartbeat/requests/heartbeat-null-key-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "publicationKey": null,
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "pollClearedPublicationKey",
+      "type": "http.poll-until",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 12,
+          "maxDurationMs": 10000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "publicationKey": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "refuseConnectWithPrivateKeyMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-private-key-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
+          "publicationKey": {
+            "keyId": "cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s",
+            "publicJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
+              "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM",
+              "d": "870MB6gfuTJ4HtUnUvYMyJpr5eUZNP4Bk43bVdj3eAE"
+            }
+          },
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400
+        }
+      }
+    },
+    {
       "name": "disconnectAliceGroupPresence",
       "type": "http",
       "connection": "api",
@@ -426,6 +619,32 @@
             "groupId": "{groupId}"
           }
         }
+      }
+    },
+    {
+      "name": "pollDisconnectedSessionGone",
+      "type": "http.poll-until",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 12,
+          "maxDurationMs": 10000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": []
+        },
+        "comparison": "compatible-complete"
       }
     },
     {

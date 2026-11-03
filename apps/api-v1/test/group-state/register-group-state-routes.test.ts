@@ -135,6 +135,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
         body: {
             generationId: 'generation',
             connectionGenerationId: 'ws-generation',
+            publicationKey: null,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 1
@@ -144,7 +145,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
     {
         method: 'POST',
         path: mutationPath(`${API_BASE}/room-1/sessions/alice-session/heartbeat`),
-        body: { generationId: 'generation', lastHeartbeatAtEpochMs: 1, expiresAtEpochMs: 1 },
+        body: { generationId: 'generation', publicationKey: null, lastHeartbeatAtEpochMs: 1, expiresAtEpochMs: 1 },
         status: 200
     },
     {

@@ -1,4 +1,5 @@
 import {
+    validateAuthoritativeActiveGroupSession,
     validateAuthoritativeGroupEvent,
     validateGroupActivationStatusPayload,
     type WireObject,
@@ -119,22 +120,6 @@ const GROUP_MEMBER_KEYS = [
     'banned',
     'invitedByPrincipalId',
     'invitationExpiresAtEpochMs'
-];
-const GROUP_SESSION_KEYS = [
-    'applicationId',
-    'workspaceId',
-    'groupId',
-    'sessionId',
-    'principalId',
-    'generationId',
-    'generationVersion',
-    'connectionGenerationId',
-    'status',
-    'connectedAtEpochMs',
-    'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs',
-    'disconnectedAtEpochMs',
-    'disconnectReason'
 ];
 const AUDIT_KEYS = ['atEpochMs', 'actor', 'reason', 'traceId', 'requestId'];
 
@@ -407,7 +392,7 @@ function validateDeltaSessionIdentitySets(
     const sessions = decodeArray(envelope.sessions, 'GroupStateDeltaEnvelope.sessions');
     const sessionIds = new Set<string>();
     for (const item of sessions) {
-        const sessionId = validateDeltaSession(item, ref);
+        const { sessionId } = validateAuthoritativeActiveGroupSession(item, ref, 'GroupStateDeltaEnvelope.session');
         if (sessionIds.has(sessionId)) {
             fail('GroupStateDeltaEnvelope has duplicate sessions');
         }
@@ -427,38 +412,6 @@ function validateDeltaSessionIdentitySets(
     }
     uniqueStringArray(envelope.audienceSessionIds, 'GroupStateDeltaEnvelope.audienceSessionIds');
     return activeSessionIds;
-}
-
-function validateDeltaSession(
-    value: WireValue,
-    ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
-): string {
-    const label = 'GroupStateDeltaEnvelope.session';
-    const session = decodeRecord(value, label);
-    exact(session, GROUP_SESSION_KEYS, label);
-    sameGroupRef(session, ref, label);
-    nonEmptyString(session.sessionId, `${label}.sessionId`);
-    nonEmptyString(session.principalId, `${label}.principalId`);
-    nonEmptyString(session.generationId, `${label}.generationId`);
-    nonEmptyString(session.connectionGenerationId, `${label}.connectionGenerationId`);
-    positiveInteger(session.generationVersion, `${label}.generationVersion`);
-    positiveInteger(session.connectedAtEpochMs, `${label}.connectedAtEpochMs`);
-    positiveInteger(session.lastHeartbeatAtEpochMs, `${label}.lastHeartbeatAtEpochMs`);
-    positiveInteger(session.expiresAtEpochMs, `${label}.expiresAtEpochMs`);
-    if (
-        session.lastHeartbeatAtEpochMs < session.connectedAtEpochMs ||
-        session.expiresAtEpochMs < session.lastHeartbeatAtEpochMs
-    ) {
-        fail(`${label} timestamps are causally inconsistent`);
-    }
-    if (
-        session.status !== 'active' ||
-        session.disconnectedAtEpochMs !== null ||
-        session.disconnectReason !== null
-    ) {
-        fail(`${label} lifecycle is invalid`);
-    }
-    return session.sessionId;
 }
 
 function validateAudit(value: WireValue, label: string): void {

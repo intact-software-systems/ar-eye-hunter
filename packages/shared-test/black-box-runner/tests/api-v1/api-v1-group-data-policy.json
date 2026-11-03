@@ -234,6 +234,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -255,6 +256,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -719,6 +721,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -740,6 +743,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -962,6 +966,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -983,6 +988,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -1319,6 +1325,7 @@
         },
         "body": {
           "generationId": "generation-paused-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-paused-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -1392,6 +1399,7 @@
         },
         "body": {
           "generationId": "generation-paused-rejoin-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-paused-rejoin-{runId}",
           "principalId": "{bobClientId}"
         }

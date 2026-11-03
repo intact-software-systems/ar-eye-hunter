@@ -61,6 +61,7 @@ export function createActiveGroupPresenceSessionFixture(
         sessionId: input.sessionId,
         generationId: `generation-${input.sessionId}`,
         connectionGenerationId: `ws-generation-${input.sessionId}`,
+        publicationKey: null,
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

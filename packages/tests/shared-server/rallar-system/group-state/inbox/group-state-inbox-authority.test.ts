@@ -449,6 +449,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                         principalId: 'victim',
                         generationId: 'victim-generation',
                         connectionGenerationId: 'victim-ws-generation',
+                        publicationKey: null,
                         connectedAtEpochMs: harness.nowEpochMs,
                         lastHeartbeatAtEpochMs: harness.nowEpochMs,
                         expiresAtEpochMs: harness.nowEpochMs + 60_000,
@@ -478,6 +479,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                         request: {
                             principalId: 'victim',
                             generationId: 'victim-generation',
+                            publicationKey: null,
                             lastHeartbeatAtEpochMs: harness.nowEpochMs + 1_000,
                             expiresAtEpochMs: harness.nowEpochMs + 61_000,
                             actorPrincipalId: 'victim',

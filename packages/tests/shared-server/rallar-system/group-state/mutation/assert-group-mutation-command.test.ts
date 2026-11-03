@@ -4,6 +4,7 @@ import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-s
 import { type GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { ConnectGroupPresenceSessionRequest, GroupJoinCodeResponse, HeartbeatGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
 
+import { RFC_7517_PRIVATE_D, RFC_7517_PUBLICATION_KEY } from '../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { createMutationCommand } from '../group-state-concurrency-test-fixtures.ts';
 
 describe('group mutation command validation', () => {
@@ -167,6 +168,7 @@ describe('group mutation command validation', () => {
                         principalId: 'alice',
                         generationId: 'presence-generation',
                         connectionGenerationId: 'presence-ws-generation',
+                        publicationKey: null,
                         connectedAtEpochMs: null,
                         lastHeartbeatAtEpochMs: null,
                         expiresAtEpochMs: null
@@ -174,5 +176,34 @@ describe('group mutation command validation', () => {
                 })
             )
         ).not.toThrow();
+    });
+
+    it('refuses a presence command whose publication key is absent or carries a private member', () => {
+        const command = createMutationCommand({
+            operation: 'heartbeatPresence',
+            sessionId: 'presence-session',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                principalId: 'alice',
+                generationId: 'presence-generation',
+                publicationKey: RFC_7517_PUBLICATION_KEY,
+                lastHeartbeatAtEpochMs: null,
+                expiresAtEpochMs: null
+            }
+        });
+        const { publicationKey: _publicationKey, ...withoutKey } = command.input;
+        const privateJwk = { ...RFC_7517_PUBLICATION_KEY.publicJwk, d: RFC_7517_PRIVATE_D };
+
+        expect(() => assertGroupMutationCommand(command)).not.toThrow();
+        expect(() => assertGroupMutationCommand({ ...command, input: withoutKey }))
+            .toThrow('Group presence publicationKey is invalid: $: publicationKey is required.');
+        expect(() =>
+            assertGroupMutationCommand({
+                ...command,
+                input: { ...command.input, publicationKey: { ...RFC_7517_PUBLICATION_KEY, publicJwk: privateJwk } }
+            })
+        ).toThrow(/^Group presence publicationKey is invalid: \$\.publicJwk\.d/);
     });
 });

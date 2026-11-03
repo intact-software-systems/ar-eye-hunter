@@ -263,6 +263,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -284,6 +285,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -544,6 +546,7 @@
             },
             "body": {
               "generationId": "generation-{loop.iteration}-{runId}",
+              "publicationKey": null,
               "connectionGenerationId": "connection-generation-{loop.iteration}-{runId}",
               "principalId": "{aliceClientId}"
             }

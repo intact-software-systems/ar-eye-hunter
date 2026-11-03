@@ -449,6 +449,7 @@
         },
         "body": {
           "generationId": "dirapt-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "dirapt-connection-generation-{runId}",
           "principalId": "{ownerClientId}"
         }
@@ -475,6 +476,7 @@
         },
         "body": {
           "generationId": "dirapt-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "dirapt-connection-generation-{runId}",
           "principalId": "{memberaClientId}"
         }
@@ -628,6 +630,7 @@
         },
         "body": {
           "generationId": "dirapt-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "dirapt-connection-generation-{runId}",
           "principalId": "{memberbClientId}"
         }

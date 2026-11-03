@@ -1,3 +1,6 @@
+import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
+import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
+
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { GroupMutationRejectedError, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
@@ -84,12 +87,18 @@ export function validateGroupPresenceMutationRequest(
     const generationFields = operation === 'connectPresence'
         ? ['generationId', 'connectionGenerationId']
         : ['generationId'];
+    const keyFields = operation === 'disconnectPresence' ? [] : ['publicationKey'];
     const issues = [
-        ...validateGroupInputKeys(request, [...identityFields, ...generationFields, ...timestampFields], label),
+        ...validateGroupInputKeys(
+            request,
+            [...identityFields, ...generationFields, ...keyFields, ...timestampFields],
+            label
+        ),
         ...validateGroupInputFields(request, [
             ...generationFields.map((key) => ({ key, kind: 'string' as const, required: true })),
             ...identityFields.map((key) => ({ key, kind: 'string' as const }))
-        ], `Group ${operation}`)
+        ], `Group ${operation}`),
+        ...(operation === 'disconnectPresence' ? [] : validatePresencePublicationKey(operation, request))
     ];
     const timestampIssues = validateGroupInputFields(
         request,
@@ -98,6 +107,16 @@ export function validateGroupPresenceMutationRequest(
     )
         .map((issue) => new GroupMutationRejectedError(issue.message));
     return [...issues, ...timestampIssues, ...validatePresenceTimestampOrder(operation, request)];
+}
+
+function validatePresencePublicationKey(
+    operation: 'connectPresence' | 'heartbeatPresence',
+    request: object
+): readonly TypeError[] {
+    return decodeGroupPresencePublicationKey(Reflect.get(request, 'publicationKey')).fold(
+        (issues) => [new TypeError(`Group ${operation} publicationKey is invalid: ${formatRallarValidation(issues)}`)],
+        () => []
+    );
 }
 
 function validatePresenceTimestampOrder(
@@ -242,6 +261,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'principalId',
         'generationId',
         'connectionGenerationId',
+        'publicationKey',
         'connectedAtEpochMs',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'
@@ -250,6 +270,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         ...MUTATION_REQUEST_KEYS,
         'principalId',
         'generationId',
+        'publicationKey',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'
     ],

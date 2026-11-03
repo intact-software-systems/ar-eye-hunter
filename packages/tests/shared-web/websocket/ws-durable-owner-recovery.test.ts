@@ -209,6 +209,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     const joined = await authority.service.connectPresenceSession(scope, roomRef.groupId, sessionId, {
         principalId,
         generationId: 'fresh-document',
+        publicationKey: null,
         connectionGenerationId: 'ws-fresh-document',
         connectedAtEpochMs: Date.now(),
         lastHeartbeatAtEpochMs: Date.now(),

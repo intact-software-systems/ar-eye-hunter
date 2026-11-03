@@ -69,6 +69,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                         requestId: 'outer-retry-authority-change',
                         principalId: 'owner',
                         generationId: 'owner-generation',
+                        publicationKey: null,
                         lastHeartbeatAtEpochMs: nowEpochMs,
                         expiresAtEpochMs: nowEpochMs + 60_000
                     }
@@ -92,6 +93,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                                 reason: null,
                                 principalId: 'owner',
                                 generationId: 'owner-generation',
+                                publicationKey: null,
                                 lastHeartbeatAtEpochMs: nowEpochMs,
                                 expiresAtEpochMs: nowEpochMs + 60_000
                             }
@@ -231,6 +233,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                             requestId: 'outer-retry-authority-change',
                             principalId: 'owner',
                             generationId: 'owner-generation',
+                            publicationKey: null,
                             lastHeartbeatAtEpochMs: nowEpochMs,
                             expiresAtEpochMs: nowEpochMs + 60_000
                         }
@@ -577,6 +580,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 request: {
                     generationId: 'default-equivalence-generation',
                     connectionGenerationId: 'default-equivalence-ws-generation',
+                    publicationKey: null,
                     principalId: 'owner',
                     actorPrincipalId: 'owner',
                     actorSessionId: 'owner-session',

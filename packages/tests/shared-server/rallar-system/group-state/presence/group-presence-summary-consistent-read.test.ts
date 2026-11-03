@@ -171,6 +171,7 @@ async function seedGroupWithMember(
     await service.connectPresenceSession(SCOPE, GROUP_ID, `${GROUP_ID}-${principalId}-session`, {
         principalId,
         generationId: `${GROUP_ID}-${principalId}-generation`,
+        publicationKey: null,
         connectionGenerationId: `${GROUP_ID}-${principalId}-ws-generation`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,

@@ -33,6 +33,7 @@ describe('group presence concurrency', () => {
             createService(runtime, 2_000).connectPresenceSession(SCOPE, 'two-session-room', 'session-a', {
                 principalId: 'alice',
                 generationId: 'generation-a',
+                publicationKey: null,
                 connectionGenerationId: 'ws-generation-a',
                 expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
                 requestId: 'connect-session-a'
@@ -40,6 +41,7 @@ describe('group presence concurrency', () => {
             createService(runtime, 2_001).connectPresenceSession(SCOPE, 'two-session-room', 'session-b', {
                 principalId: 'alice',
                 generationId: 'generation-b',
+                publicationKey: null,
                 connectionGenerationId: 'ws-generation-b',
                 expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
                 requestId: 'connect-session-b'
@@ -122,6 +124,7 @@ describe('group presence concurrency', () => {
             {
                 principalId: 'alice',
                 generationId: 'presence-lane-generation',
+                publicationKey: null,
                 connectionGenerationId: 'presence-lane-ws-generation',
                 expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                 requestId: 'presence-lane-connect'
@@ -134,6 +137,7 @@ describe('group presence concurrency', () => {
             'presence-lane-session',
             {
                 generationId: 'presence-lane-generation',
+                publicationKey: null,
                 lastHeartbeatAtEpochMs: nowEpochMs,
                 expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
                 requestId: 'presence-lane-heartbeat'
@@ -190,6 +194,7 @@ describe('group presence concurrency', () => {
             for (const request of reverse ? connects.toReversed() : connects) {
                 await service.connectPresenceSession(SCOPE, `ordered-${reverse}`, 'session-a', {
                     principalId: 'alice',
+                    publicationKey: null,
                     ...request
                 });
             }
@@ -200,6 +205,7 @@ describe('group presence concurrency', () => {
             for (const request of reverse ? heartbeats.toReversed() : heartbeats) {
                 await service.heartbeatPresenceSession(SCOPE, `ordered-${reverse}`, 'session-a', {
                     generationId: 'generation-z',
+                    publicationKey: null,
                     actorPrincipalId: 'alice',
                     lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_000,
                     ...request
@@ -240,6 +246,7 @@ describe('group presence concurrency', () => {
                 {
                     principalId: 'alice',
                     generationId: 'generation-a',
+                    publicationKey: null,
                     connectionGenerationId: 'ws-generation-a',
                     requestId: 'session-cap-a'
                 }
@@ -251,6 +258,7 @@ describe('group presence concurrency', () => {
                 {
                     principalId: 'alice',
                     generationId: 'generation-b',
+                    publicationKey: null,
                     connectionGenerationId: 'ws-generation-b',
                     requestId: 'session-cap-b'
                 }
@@ -302,6 +310,7 @@ describe('group presence concurrency', () => {
                     {
                         principalId: 'bob',
                         generationId: 'bob-generation-old',
+                        publicationKey: null,
                         connectionGenerationId: 'bob-ws-generation-old',
                         actorPrincipalId: 'bob',
                         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
@@ -403,6 +412,7 @@ describe('group presence concurrency', () => {
                 {
                     principalId: 'bob',
                     generationId: 'bob-generation-fresh',
+                    publicationKey: null,
                     connectionGenerationId: 'bob-ws-generation-fresh',
                     actorPrincipalId: 'bob',
                     expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
@@ -427,6 +437,7 @@ async function seedPresenceAdmission(runtime: GroupBarrierRepository, groupId: s
     await service.connectPresenceSession(SCOPE, groupId, 'admission-seed', {
         principalId: 'alice',
         generationId: 'admission-seed',
+        publicationKey: null,
         connectionGenerationId: 'admission-seed-ws',
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: 'admission-seed-connect'

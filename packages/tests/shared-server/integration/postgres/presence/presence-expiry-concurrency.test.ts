@@ -811,6 +811,7 @@ describe('Postgres presence expiry concurrency', () => {
                     await setup.connectPresenceSession(scope, groupRef.groupId, `session-${index}`, {
                         principalId,
                         generationId: `generation-${index}`,
+                        publicationKey: null,
                         connectionGenerationId: `ws-generation-${index}`,
                         connectedAtEpochMs: atEpochMs,
                         lastHeartbeatAtEpochMs: atEpochMs,
@@ -866,6 +867,7 @@ describe('Postgres presence expiry concurrency', () => {
                             request: {
                                 principalId: `member-${index}`,
                                 generationId: `generation-${index}`,
+                                publicationKey: null,
                                 actorPrincipalId: `member-${index}`,
                                 actorSessionId: `session-${index}`,
                                 lastHeartbeatAtEpochMs: atEpochMs + 1_000,

@@ -143,6 +143,7 @@ describe('GroupStateService guarded batch convergence', () => {
                 }).connectPresenceSession(SCOPE, groupId, 'session-a', {
                     principalId: 'alice',
                     generationId: 'generation-a',
+                    publicationKey: null,
                     connectionGenerationId: 'ws-generation-a',
                     expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                     requestId: 'independent-presence-a'
@@ -157,6 +158,7 @@ describe('GroupStateService guarded batch convergence', () => {
                 }).connectPresenceSession(SCOPE, groupId, 'session-b', {
                     principalId: 'alice',
                     generationId: 'generation-b',
+                    publicationKey: null,
                     connectionGenerationId: 'ws-generation-b',
                     expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                     requestId: 'independent-presence-b'

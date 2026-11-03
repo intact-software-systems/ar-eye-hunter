@@ -428,6 +428,7 @@ function createGroupSnapshot(
             principalId: sessionId,
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
+            publicationKey: null,
             generationVersion: 1,
             status: 'active',
             connectedAtEpochMs: 1,

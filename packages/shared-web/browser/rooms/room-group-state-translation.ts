@@ -397,6 +397,7 @@ export function toConnectRoomPresenceGroupStateRequest(
         principalId: input.principalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
+        publicationKey: null,
         expiresAtEpochMs: input.expiresAtEpochMs,
         ...toActorRequest(input)
     };

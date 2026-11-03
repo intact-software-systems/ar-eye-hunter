@@ -321,6 +321,7 @@ function toConnectEnqueue(groupRef: GroupRef, authority: IssuedAuthSession): Aut
             request: {
                 principalId: authority.clientId,
                 generationId: `${authority.clientId}-generation`,
+                publicationKey: null,
                 connectionGenerationId: `${authority.clientId}-ws-generation`,
                 connectedAtEpochMs: nowEpochMs,
                 lastHeartbeatAtEpochMs: nowEpochMs,

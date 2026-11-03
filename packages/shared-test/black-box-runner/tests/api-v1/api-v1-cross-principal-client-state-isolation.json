@@ -416,6 +416,7 @@
         },
         "body": {
           "generationId": "generation-cpi-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-cpi-{runId}",
           "principalId": "{aliceClientId}"
         }
