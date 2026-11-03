@@ -32,6 +32,7 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { GroupDirectoryPage, GroupDirectoryRequest } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
@@ -107,6 +108,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly realtime: RallarRealtimeFacade;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
     readonly readSession: () => AuthSession | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(options: T) => T & RallarOperationOptions;
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;

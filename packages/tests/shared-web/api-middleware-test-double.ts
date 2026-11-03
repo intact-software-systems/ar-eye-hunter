@@ -15,20 +15,16 @@ import {
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
 
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../shared/signature/publication-crypto-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
 
-/** The volatile ledger, the diagnostics sink and the page crypto are replaced whole: none has a meaningful partial. */
+/** The volatile ledger and the diagnostics sink are replaced whole: neither has a meaningful partial. */
 export type MiddlewareTestOverrides =
     & {
-        readonly [
-            K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'outboundDiagnostics' | 'publicationCrypto'>
-        ]?: Partial<RallarBrowserMiddleware[K]>;
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'outboundDiagnostics'>]?: Partial<RallarBrowserMiddleware[K]>;
     }
     & {
         readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
         readonly outboundDiagnostics?: RallarBrowserMiddleware['outboundDiagnostics'];
-        readonly publicationCrypto?: RallarBrowserMiddleware['publicationCrypto'];
     };
 
 export interface ApiMiddlewareTestOverrides {
@@ -75,8 +71,7 @@ export function createDefaultApiMiddlewareTestDouble(
             storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
             volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
             publicationStageLimits: { ...AL_PUBLICATION_STAGE_LIMITS, ...middlewareOverrides.publicationStageLimits },
-            outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
-            publicationCrypto: middlewareOverrides.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO
+            outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
         }
     };
 }

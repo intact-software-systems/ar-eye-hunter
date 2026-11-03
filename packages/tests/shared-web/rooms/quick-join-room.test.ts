@@ -75,7 +75,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
 
     it('registers the page\'s publication key on the presence row it connects', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const publicationKey = toGroupPresencePublicationKey(runtime.context.middleware.publicationCrypto);
+        const publicationKey = toGroupPresencePublicationKey(runtime.publicationCrypto);
         respond((call) =>
             isSelection(call)
                 ? json({ status: 'joined', snapshot: createRoomSnapshot('selected', []) })
@@ -248,6 +248,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
             stateStore,
             connect,
             requireSession,
+            readPublicationKey: async () => null,
             resolveOperationOptions: (options) => options,
             resolveOperationScope: (requested) => requested ?? scope,
             resolveDefaultRoomRef: () => current?.group,

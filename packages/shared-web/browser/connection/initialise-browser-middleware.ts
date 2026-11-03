@@ -177,7 +177,7 @@ export interface InitialiseBrowserTransportInput {
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
-    /** The page's one key, which room entry and each group heartbeat register. */
+    /** The page's one key, which each group heartbeat registers. */
     readonly publicationCrypto: PublicationCrypto;
     readonly options: BrowserConnectOptions;
 }
@@ -295,10 +295,7 @@ export async function initialiseMiddleware(
             options.scope ?? defaultStateScope(),
             webSocketTransport.webSocketQueueBox
         );
-        const heartbeatHandle = await heartbeat.initHeartbeat(
-            transportInput.clientData,
-            toBrowserHeartbeatOptions(transportInput, ownWsConnectionGeneration)
-        );
+        const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
 
         const { checkpointStores } = transportInput;
         return {
@@ -385,6 +382,13 @@ function createBrowserOwnWsConnectionGeneration(
     });
 }
 
+function initialiseBrowserHeartbeat(
+    input: InitialiseBrowserTransportInput,
+    ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
+): ReturnType<typeof heartbeat.initHeartbeat> {
+    return heartbeat.initHeartbeat(input.clientData, toBrowserHeartbeatOptions(input, ownWsConnectionGeneration));
+}
+
 export function toCreateWsUrl(
     input: ToCreateWsUrlInput
 ): string {
@@ -404,17 +408,13 @@ export function toCreateWsUrl(
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
 export function toBrowserMiddleware(
     input: InitialiseBrowserTransportInput,
-    carriers: Omit<
-        RallarBrowserMiddleware,
-        'volatileBudget' | 'publicationStageLimits' | 'outboundDiagnostics' | 'publicationCrypto'
-    >
+    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget' | 'publicationStageLimits' | 'outboundDiagnostics'>
 ): RallarBrowserMiddleware {
     return {
         ...carriers,
         volatileBudget: input.volatileBound.budget,
         publicationStageLimits: input.publicationStageLimits,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        publicationCrypto: input.publicationCrypto
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
     };
 }
 

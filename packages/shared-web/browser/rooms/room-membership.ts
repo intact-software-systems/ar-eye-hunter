@@ -1,4 +1,4 @@
-import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type {
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
@@ -102,6 +102,7 @@ export async function createRoomInvite(
 export async function acceptRoomInvite(
     input: RoomMembershipInput & {
         readonly options?: RallarRoomGovernanceOptions;
+        readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
     }
 ): Promise<GroupSnapshot> {
     return await runRoomTargetMutation({
@@ -114,7 +115,7 @@ export async function acceptRoomInvite(
                 sessionId: session.sessionId,
                 generationId,
                 connectionGenerationId: await requireOwnWsConnectionGenerationId(context, signal),
-                publicationKey: toGroupPresencePublicationKey(context.middleware.publicationCrypto),
+                publicationKey: await input.readPublicationKey(),
                 scope,
                 policies,
                 assertCurrent

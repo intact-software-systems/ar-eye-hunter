@@ -2,7 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
-import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
@@ -41,6 +41,7 @@ import { assertValidRoomTarget, toJoinRoomTarget } from './room-target.ts';
 export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly room: string | GroupRef | RallarJoinRoomInput;
     readonly options?: RallarJoinRoomOptions;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
     readonly createRoomSession: (roomRef: GroupRef) => RallarRoomSession;
 }
 
@@ -79,7 +80,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         sessionId: session.sessionId,
         generationId: crypto.randomUUID(),
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
-        publicationKey: toGroupPresencePublicationKey(context.middleware.publicationCrypto),
+        publicationKey: await input.readPublicationKey(),
         scope,
         authSession: session,
         assertCurrent: sessionFence.assertCurrent,
@@ -118,6 +119,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
 export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
     readonly move: GroupMove;
     readonly options: RallarOperationOptions;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
 
 /** Membership was admitted atomically by the move; activation changes this session's presence only. */
@@ -164,7 +166,9 @@ interface GroupMoveActivation {
     readonly options: RallarOperationOptions;
 }
 
-async function connectMovedSession({ move, context, fence, options }: GroupMoveActivation): Promise<GroupSnapshot> {
+async function connectMovedSession(
+    { input, move, context, fence, options }: GroupMoveActivation
+): Promise<GroupSnapshot> {
     const generationId = crypto.randomUUID();
     const connected = await createStateGroupPresenceCommand({
         groupId: move.destination.groupId,
@@ -172,7 +176,7 @@ async function connectMovedSession({ move, context, fence, options }: GroupMoveA
         sessionId: fence.session.sessionId,
         generationId,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
-        publicationKey: toGroupPresencePublicationKey(context.middleware.publicationCrypto),
+        publicationKey: await input.readPublicationKey(),
         scope: toStateScope(move.destination),
         authSession: fence.session,
         assertCurrent: () => fence.assertCurrent(context),
@@ -299,6 +303,7 @@ class MovePresencePendingError extends Error {}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
 
 interface ConnectQuickJoinedRoomInput {
@@ -380,7 +385,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         sessionId: input.session.sessionId,
         generationId: crypto.randomUUID(),
         connectionGenerationId,
-        publicationKey: toGroupPresencePublicationKey(input.context.middleware.publicationCrypto),
+        publicationKey: await input.dependencies.readPublicationKey(),
         scope,
         authSession: input.session,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(input.options)

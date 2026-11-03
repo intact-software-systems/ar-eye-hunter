@@ -27,7 +27,6 @@ import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
-import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type {
@@ -68,8 +67,6 @@ export interface RallarBrowserMiddleware {
      * hand-overs there (D186).
      */
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
-    /** The page's one key, which room entry registers on the presence row. */
-    readonly publicationCrypto: PublicationCrypto;
 }
 
 /** Authenticated browser connection returned by setup and connect operations. */

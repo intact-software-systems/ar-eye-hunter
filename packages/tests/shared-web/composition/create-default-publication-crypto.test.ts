@@ -4,6 +4,8 @@ import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/
 import { createDefaultPublicationCrypto } from '@shared-web/browser/composition/create-default-publication-crypto.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
+import type { AvailablePublicationCrypto } from '../../shared/signature/publication-crypto-fixtures.ts';
+
 describe('the page publication key at the composition root', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -28,7 +30,7 @@ describe('the page publication key at the composition root', () => {
         const publicationCrypto = await createDefaultPublicationCrypto();
 
         expect(publicationCrypto.kind).toBe('available');
-        const available = publicationCrypto as Extract<PublicationCrypto, { kind: 'available'; }>;
+        const available = publicationCrypto as AvailablePublicationCrypto;
         expect(available.subtle).toBe(globalThis.crypto.subtle);
         expect(available.keyPair.keyId).toMatch(/^[A-Za-z0-9_-]{43}$/);
         expect(available.keyPair.publicJwk).toMatchObject({ kty: 'EC', crv: 'P-256' });

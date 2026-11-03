@@ -1,6 +1,7 @@
 import {
     describe,
     expect,
+    expectTypeOf,
     it,
     onTestFinished,
     vi
@@ -20,6 +21,7 @@ import {
     type BrowserConnectOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -410,14 +412,17 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
     });
 });
 
-describe('the page publication crypto a connect hands its middleware', () => {
-    it('gives the middleware the page crypto the connect awaited, which room entry registers', async () => {
+describe('the page publication crypto stays off the public middleware', () => {
+    it('keeps the awaited page crypto on the transport input and out of the middleware the advanced facade returns', async () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const publicationCrypto = await createAvailablePublicationCryptoFixture();
         const input = createBrowserTransportInput(SESSION, OPTIONS, publicationCrypto);
 
-        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationCrypto)
-            .toBe(publicationCrypto);
+        expect(input.publicationCrypto).toBe(publicationCrypto);
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware))
+            .not.toHaveProperty('publicationCrypto');
+        expectTypeOf<ReturnType<RallarFacade['advanced']['middleware']>['middleware']>()
+            .not.toHaveProperty('publicationCrypto');
     });
 });
 
