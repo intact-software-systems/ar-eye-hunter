@@ -126,11 +126,11 @@ export async function closeAgentConnections(run: AgentRecipeRun, cellKey: string
             command: { kind: 'close' }
         });
     }
-    const read = await readControlRunUntil(
-        run,
-        CLOSE_TIMEOUT_MS,
-        (snapshot) => closes.every(({ commandId }) => findControlResult(snapshot, commandId)?.ok === true)
-    );
+    const read = await readControlRunUntil(run, {
+        timeoutMs: CLOSE_TIMEOUT_MS,
+        select: (snapshot) => closes.every(({ commandId }) => findControlResult(snapshot, commandId)?.ok === true),
+        accept: (closed) => closed
+    });
     if (read.kind === 'accepted') {
         return;
     }

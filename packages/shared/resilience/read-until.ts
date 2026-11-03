@@ -16,12 +16,12 @@ export interface ReadUntilNarrowingInput<T, A extends T> extends ReadUntilInput<
 
 export type ReadUntilOutcome<T> =
     | Readonly<{ kind: 'accepted'; value: T; }>
-    | Readonly<{ kind: 'timed-out'; deadlineAtMs: number; }>;
+    | Readonly<{ kind: 'timed-out'; }>;
 
 /**
  * Reads until a read is accepted or the deadline passes, one read at a time and the interval after each read it did
  * not accept. A read that started before the deadline is still accepted after it. A read's failure rejects the call
- * and ends the reads: the caller owns it, as it owns its reaction to the timed-out value.
+ * and ends the reads: the caller owns it, as it owns its reaction to timing out.
  */
 export function readUntil<T, A extends T>(input: ReadUntilNarrowingInput<T, A>): Promise<ReadUntilOutcome<A>>;
 export function readUntil<T>(input: ReadUntilInput<T>): Promise<ReadUntilOutcome<T>>;
@@ -38,5 +38,5 @@ export async function readUntil<T>(input: ReadUntilInput<T>): Promise<ReadUntilO
             input.timers.schedule(resolve, input.intervalMs);
         });
     }
-    return { kind: 'timed-out', deadlineAtMs: input.deadlineAtMs };
+    return { kind: 'timed-out' };
 }

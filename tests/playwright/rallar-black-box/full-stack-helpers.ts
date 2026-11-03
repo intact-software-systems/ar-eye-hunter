@@ -254,6 +254,16 @@ interface TwoAgentParticipants {
     readonly receiver: TwoAgentRunParticipant;
 }
 
+export interface ReadControlRunUntilInput<T> {
+    readonly timeoutMs: number;
+    readonly select: (snapshot: ControlRunSnapshot) => T;
+    readonly accept: (value: T) => boolean;
+}
+
+export interface ReadControlRunUntilNarrowingInput<T, A extends T> extends ReadControlRunUntilInput<T> {
+    readonly accept: (value: T) => value is A;
+}
+
 interface ReceiverConnectBarrierInput {
     readonly connectCommandId: string;
     readonly runCommandId: string;
@@ -684,17 +694,24 @@ export async function startRecipientRecipeRun(
     return started;
 }
 
-export async function readControlRunUntil(
+export function readControlRunUntil<T, A extends T>(
     run: RecipeRun,
-    timeoutMs: number,
-    accept: (snapshot: ControlRunSnapshot) => boolean
-): Promise<ReadUntilOutcome<ControlRunSnapshot>> {
+    input: ReadControlRunUntilNarrowingInput<T, A>
+): Promise<ReadUntilOutcome<A>>;
+export function readControlRunUntil<T>(
+    run: RecipeRun,
+    input: ReadControlRunUntilInput<T>
+): Promise<ReadUntilOutcome<T>>;
+export async function readControlRunUntil<T>(
+    run: RecipeRun,
+    input: ReadControlRunUntilInput<T>
+): Promise<ReadUntilOutcome<T>> {
     return await readUntil({
         timers: CONTROL_POLL_TIMERS,
         intervalMs: CONTROL_POLL_INTERVAL_MS,
-        deadlineAtMs: CONTROL_POLL_TIMERS.nowMs() + timeoutMs,
-        read: () => run.readSnapshot(),
-        accept
+        deadlineAtMs: CONTROL_POLL_TIMERS.nowMs() + input.timeoutMs,
+        read: async () => input.select(await run.readSnapshot()),
+        accept: input.accept
     });
 }
 
@@ -1128,11 +1145,9 @@ async function readRecipeRunOutcome(
     commandId: string,
     deadlineAtMs: number
 ): Promise<RecipeRunOutcome> {
-    const read = await readUntil({
-        timers: CONTROL_POLL_TIMERS,
-        intervalMs: CONTROL_POLL_INTERVAL_MS,
-        deadlineAtMs,
-        read: () => readControlResult(run, commandId),
+    const read = await readControlRunUntil(run, {
+        timeoutMs: deadlineAtMs - CONTROL_POLL_TIMERS.nowMs(),
+        select: (snapshot) => findControlResult(snapshot, commandId),
         accept: (result) => result !== undefined
     });
     if (read.kind === 'timed-out') {
@@ -1153,13 +1168,13 @@ async function waitForReceiverConnectBarrier(
     run: RecipeRun,
     input: ReceiverConnectBarrierInput
 ): Promise<void> {
-    const read = await readControlRunUntil(
-        run,
-        RECEIVER_CONNECT_TIMEOUT_MS,
-        (snapshot) =>
+    const read = await readControlRunUntil(run, {
+        timeoutMs: RECEIVER_CONNECT_TIMEOUT_MS,
+        select: (snapshot) =>
             hasConnectedEvent(snapshot, input.connectCommandId) ||
-            findControlResult(snapshot, input.runCommandId) !== undefined
-    );
+            findControlResult(snapshot, input.runCommandId) !== undefined,
+        accept: (released) => released
+    });
     if (read.kind === 'accepted') {
         return;
     }
@@ -1169,13 +1184,6 @@ async function waitForReceiverConnectBarrier(
         runCommandId: input.runCommandId,
         timeoutMs: RECEIVER_CONNECT_TIMEOUT_MS
     });
-}
-
-async function readControlResult(
-    run: RecipeRun,
-    commandId: string
-): Promise<ControlResultEnvelope | undefined> {
-    return findControlResult(await run.readSnapshot(), commandId);
 }
 
 async function clickVisibleButton(page: Page, name: string): Promise<void> {

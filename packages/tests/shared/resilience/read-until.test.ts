@@ -85,9 +85,37 @@ describe('read until', () => {
             await advance(timers, 250);
         }
 
-        await expect(pending).resolves.toEqual({ kind: 'timed-out', deadlineAtMs: 1_000 });
+        await expect(pending).resolves.toEqual({ kind: 'timed-out' });
         expect(readsAtMs).toEqual([0, 250, 500, 750]);
         expect(timers.pendingCount()).toBe(0);
+    });
+
+    it('accepts a read that started before the deadline and resolves after it', async () => {
+        const timers = createManualTimers(0);
+        const readsAtMs: number[] = [];
+        const lateRead = Promise.withResolvers<boolean>();
+
+        const pending = readUntil({
+            timers,
+            intervalMs: 250,
+            deadlineAtMs: 1_000,
+            read: async () => {
+                readsAtMs.push(timers.nowMs());
+                return readsAtMs.length < 4 ? false : await lateRead.promise;
+            },
+            accept: (value) => value
+        });
+        await settle();
+        for (let step = 0; step < 3; step += 1) {
+            await advance(timers, 250);
+        }
+        expect(readsAtMs).toEqual([0, 250, 500, 750]);
+        await advance(timers, 500);
+        lateRead.resolve(true);
+
+        await expect(pending).resolves.toEqual({ kind: 'accepted', value: true });
+        expect(timers.nowMs()).toBe(1_250);
+        expect(readsAtMs).toEqual([0, 250, 500, 750]);
     });
 
     it('answers the timed-out value without a read when the deadline has already passed', async () => {
@@ -105,7 +133,7 @@ describe('read until', () => {
             accept: (value) => value
         });
 
-        expect(outcome).toEqual({ kind: 'timed-out', deadlineAtMs: 2_000 });
+        expect(outcome).toEqual({ kind: 'timed-out' });
         expect(reads).toBe(0);
     });
 

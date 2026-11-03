@@ -167,12 +167,12 @@ async function runSuccessorBesideOwner(
 }
 
 async function waitForSuccessorGate(run: RecipePairRun, gate: string, ownerRun: StartedRecipeRun): Promise<void> {
-    const read = await readControlRunUntil(
-        run,
-        SUCCESSOR_GATE_TIMEOUT_MS,
-        (snapshot) =>
-            hasPassedCommandEvent(snapshot, gate) || findControlResult(snapshot, ownerRun.commandId) !== undefined
-    );
+    const read = await readControlRunUntil(run, {
+        timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS,
+        select: (snapshot) =>
+            hasPassedCommandEvent(snapshot, gate) || findControlResult(snapshot, ownerRun.commandId) !== undefined,
+        accept: (passed) => passed
+    });
     if (read.kind === 'accepted') {
         return;
     }
