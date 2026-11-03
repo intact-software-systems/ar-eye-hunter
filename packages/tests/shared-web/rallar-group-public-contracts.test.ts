@@ -1,108 +1,349 @@
-import { load as loadYaml } from 'js-yaml';
+import Ajv from 'ajv';
+import { load } from 'js-yaml';
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-
-import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
-import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
-import { GROUP_PUBLICATION_GRANT_LIMITS } from '@shared/api/group-publication/group-publication-grants.ts';
 import {
-    decodeGroupTopicSubscription,
-    type GroupTopicSubscription,
-    type GroupTopicSubscriptionOutcome
-} from '@shared/api/group-publication/group-topic-subscriptions.ts';
-import { RALLAR_ROUTE_ID_MAX_LENGTH, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-const repoRoot = process.cwd();
+import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 
-const apiReference = readRepoFile('docs/rallar-api-reference.md');
-const quickstart = readRepoFile('docs/rallar-quickstart-and-recipes.md');
-const environmentVariables = readRepoFile('docs/environment-variables.md');
-const openApi = readRepoFile('apps/api-v1/resources/api-v1-openapi.yaml');
-const loadedOpenApi = loadYaml(openApi);
-if (!isOpenApiRecord(loadedOpenApi)) {
-    throw new TypeError('OpenAPI document must be an object');
-}
-const openApiDocument = requireOpenApiDocument(loadedOpenApi);
-const SUBSCRIPTION_OUTCOMES = [
-    'subscribed',
-    'renewed',
-    'unsubscribed',
-    'not-subscribed'
-] as const satisfies readonly GroupTopicSubscriptionOutcome[];
-const SUBSCRIPTION_OUTCOMES_ARE_EXHAUSTIVE: [Exclude<GroupTopicSubscriptionOutcome, (typeof SUBSCRIPTION_OUTCOMES)[number]>] extends [never] ? true : false =
-    true;
+import {
+    createActiveClientInstanceFixture,
+    createActiveClientSessionFixture,
+    createAuditStampFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture
+} from './authoritative-group-fixtures.ts';
+import { createFormationView } from './rooms/formation/room-formation-test-fixtures.ts';
+
+const document = requireRecord(load(readFileSync('apps/api-v1/resources/api-v1-openapi.yaml', 'utf8')), 'OpenAPI');
+const components = requireRecord(document.components, 'components');
+const validator = new Ajv({ allErrors: true, unknownFormats: ['int64'] });
+const groupRef = { applicationId: 'app', workspaceId: 'default', groupId: 'room' };
+const clientRef = { applicationId: 'app', workspaceId: 'default', principalId: 'alice' };
+const audit = createAuditStampFixture(1000, 'alice');
+const groupSnapshot = createGroupSnapshotFixture({ ...groupRef, sessionIds: ['alice'] });
+const clientSnapshot = createClientSnapshotFixture(clientRef);
+const effectiveConfig = { topologyKind: 'auto', degreeLimit: 4, treeMinSize: 2, meshMinSize: 6, meshParamK: 2 };
+const storedConfig = {
+    groupRef,
+    config: effectiveConfig,
+    version: 1,
+    createdAtEpochMs: 1000,
+    updatedAtEpochMs: 2000,
+    updatedByPrincipalId: 'alice',
+    requestId: null
+};
+const acceptedCausalRevision = {
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 1,
+    causalRevision: { groupRevision: 1, presenceRevision: 1 }
+};
 
 describe('Rallar group public contracts', () => {
-    it('documents browser-safe room workflows and switch recovery', () => {
-        expectAll(apiReference, [
-            '`rooms.update(input)`',
-            '`rooms.archive(room, options?)`',
-            '`rooms.delete(room, options?)`',
-            '`rooms.invite(room, principalId, options?)`',
-            '`rooms.acceptInvite(room, options?)`',
-            '`rooms.removeMember(room, principalId, options?)`',
-            '`rooms.banMember(room, principalId, options?)`',
-            '`rooms.unbanMember(room, principalId, options?)`',
-            '`rooms.setMemberRole({ room, principalId, role, options? })`',
-            '`rooms.transferOwnership(room, principalId, options?)`',
-            '`joinMode`',
-            '`inviteToken`',
-            '`joinCode`',
-            '`RallarRoomSwitchPartialFailureError`'
-        ]);
-
-        expectAll(quickstart, [
-            'Invite-Only Room',
-            'Code-Protected Room',
-            'Room Switch Recovery',
-            'RallarRoomSwitchPartialFailureError'
-        ]);
-    });
-
-    /**
-     * Nothing coupled these two before, and the absence cost something real:
-     * an edge adding `formation-attempts-exhausted` to the enum was reverted
-     * twice by a blanket checkout after a formatting run, and both times the
-     * loss was silent -- no gate, no test, no type error, and once it shipped
-     * as a false claim in a delivery record.
-     */
-    it('publishes exactly the policy reason codes the const declares', () => {
-        const published = schema('GroupPolicyReasonCode').enum ?? [];
-
-        expect([...published].sort()).toEqual([...GROUP_POLICY_REASON_CODES].sort());
-    });
-
-    it('constrains granted topic keys and request topic ids to the WS user topic rule', () => {
-        const topicId = schema('RallarWsUserTopicId');
-        const pattern = new RegExp(topicId.pattern ?? '', 'u');
-        const candidates = [
-            'app.scores',
-            'room.feed',
-            'room.a:b_c-d.e',
-            'room.',
-            'rallar.state',
-            'group-state.event',
-            'feed',
-            'room.a b',
-            ' room.feed',
-            'room.\u00fc'
-        ];
-
-        expect(schema('GroupPublicationTopicGrants').propertyNames?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
-        expect(schema('GroupPublicationTopicGrants').maxProperties).toBe(GROUP_PUBLICATION_GRANT_LIMITS.maxTopicsPerPrincipal);
-        expect(topicId.maxLength).toBe(RALLAR_ROUTE_ID_MAX_LENGTH);
-        expect(candidates.map((candidate) => [candidate, pattern.test(candidate)])).toEqual(
-            candidates.map((candidate) => [candidate, validateRallarWsUserTopicId(candidate).ok])
-        );
-        for (const request of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
-            expect(schema(request).properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
-            expectSchemaRequired(request, ['topicId', 'publish', 'subscribe']);
+    it('accepts explicit nullable audit and event fields but rejects missing or mistyped fields', () => {
+        const clientEvent = {
+            ...clientRef,
+            eventId: 'client-event',
+            eventType: 'principal-created',
+            snapshotVersion: 1,
+            clientInstanceId: null,
+            sessionId: null,
+            occurredAtEpochMs: 1000,
+            actor: audit.actor,
+            reason: null,
+            traceId: null,
+            requestId: null,
+            payload: {}
+        };
+        const groupEvent = {
+            ...groupRef,
+            eventId: 'group-event',
+            eventType: 'group-created',
+            snapshotVersion: 1,
+            causalRevision: { groupRevision: 1, presenceRevision: 0 },
+            occurredAtEpochMs: 1000,
+            actor: audit.actor,
+            reason: null,
+            traceId: null,
+            requestId: null,
+            payload: {}
+        };
+        for (const [schemaName, value] of [['AuditStamp', audit], ['ClientEvent', clientEvent], ['GroupEvent', groupEvent]] as const) {
+            expectComplete(schemaName, value);
+            const validate = createSchemaValidator(schemaName);
+            for (const field of ['reason', 'traceId', 'requestId']) {
+                expect(validate({ ...value, [field]: 'correlation' })).toBe(true);
+                expect(validate({ ...value, [field]: 42 })).toBe(false);
+            }
+        }
+        const validateClient = createSchemaValidator('ClientEvent');
+        for (const field of ['clientInstanceId', 'sessionId']) {
+            expect(validateClient({ ...clientEvent, [field]: 'client-session' })).toBe(true);
+            expect(validateClient({ ...clientEvent, [field]: 42 })).toBe(false);
         }
     });
 
-    it('publishes the topic subscription row, outcomes and requests the shared contract declares', () => {
-        const subscription: GroupTopicSubscription = {
+    it.each([
+        { kind: 'principal', principalId: 'alice' },
+        { kind: 'session', sessionId: 'session', principalId: 'alice' },
+        { kind: 'service', serviceId: 'api' }
+    ])('requires the identity for a $kind mutation actor', (actor) => {
+        expectComplete('MutationActor', actor);
+        const validate = createSchemaValidator('MutationActor');
+        expect(validate({ ...actor, kind: 'unknown' })).toBe(false);
+        expect(validate(null)).toBe(false);
+    });
+
+    it('requires complete snapshots and permits an explicit unknown last-seen time', () => {
+        expectComplete('GroupSnapshot', groupSnapshot);
+        expectComplete('ClientSnapshot', { ...clientSnapshot, lastSeenAtEpochMs: null });
+        const validate = createSchemaValidator('ClientSnapshot');
+        expect(validate(clientSnapshot)).toBe(true);
+        expect(validate({ ...clientSnapshot, lastSeenAtEpochMs: 'yesterday' })).toBe(false);
+    });
+
+    it.each(
+        [
+            ['ClientPrincipal', clientSnapshot.principal, 'disabled'],
+            ['Group', groupSnapshot.group, 'archived']
+        ] as const
+    )('correlates %s status with its lifecycle audit stamps', (schemaName, active, inactiveStatus) => {
+        expectComplete(schemaName, active);
+        const validate = createSchemaValidator(schemaName);
+        expect(validate({ ...active, [inactiveStatus]: audit })).toBe(false);
+        expect(validate({ ...active, deleted: audit })).toBe(false);
+        expect(validate({ ...active, status: inactiveStatus })).toBe(false);
+        const inactive = { ...active, status: inactiveStatus, [inactiveStatus]: audit };
+        expect(validate(inactive), JSON.stringify(validate.errors)).toBe(true);
+        expect(validate({ ...inactive, deleted: audit })).toBe(false);
+        expect(validate({ ...inactive, [inactiveStatus]: {} })).toBe(false);
+        expect(validate({ ...inactive, status: 'deleted' })).toBe(false);
+        for (const previous of [null, audit]) {
+            const deleted = { ...active, status: 'deleted', [inactiveStatus]: previous, deleted: audit };
+            expect(validate(deleted), JSON.stringify(validate.errors)).toBe(true);
+            expect(validate({ ...deleted, deleted: {} })).toBe(false);
+            expect(validate({ ...deleted, [inactiveStatus]: {} })).toBe(false);
+        }
+        expect(validate({ ...active, status: 'unknown' })).toBe(false);
+    });
+
+    it('requires a revocation stamp for revoked and retired client instances', () => {
+        const active = createActiveClientInstanceFixture({ ...clientRef, clientInstanceId: 'browser' });
+        expectComplete('ClientInstance', active);
+        const validate = createSchemaValidator('ClientInstance');
+        expect(validate({ ...active, revoked: audit })).toBe(false);
+        for (const status of ['revoked', 'retired']) {
+            expect(validate({ ...active, status, revoked: audit })).toBe(true);
+            expect(validate({ ...active, status })).toBe(false);
+            expect(validate({ ...active, status, revoked: {} })).toBe(false);
+        }
+    });
+
+    it.each(
+        [
+            ['ClientSession', createActiveClientSessionFixture({ ...clientRef, clientInstanceId: 'browser', sessionId: 'session' }), [
+                'disconnected',
+                'expired'
+            ]],
+            ['GroupPresenceSession', groupSnapshot.activeSessions[0], ['disconnected']]
+        ] as const
+    )('requires complete disconnect details for terminated %s records', (schemaName, active, statuses) => {
+        expectComplete(schemaName, active);
+        const validate = createSchemaValidator(schemaName);
+        expect(validate({ ...active, disconnectedAtEpochMs: 2000 })).toBe(false);
+        expect(validate({ ...active, disconnectReason: 'closed' })).toBe(false);
+        for (const status of statuses) {
+            const disconnected = { ...active, status, disconnectedAtEpochMs: 2000, disconnectReason: 'closed' };
+            expect(validate(disconnected), JSON.stringify(validate.errors)).toBe(true);
+            for (const field of ['disconnectedAtEpochMs', 'disconnectReason']) {
+                expect(validate({ ...disconnected, [field]: null })).toBe(false);
+                expect(validate({ ...disconnected, [field]: {} })).toBe(false);
+            }
+        }
+    });
+
+    it('correlates invitations, active membership and terminal membership with their audit stamps', () => {
+        const active = groupSnapshot.members[0];
+        expectComplete('GroupMember', active);
+        const validate = createSchemaValidator('GroupMember');
+        const invited = { ...active, status: 'invited', joined: null };
+        expect(validate(invited), JSON.stringify(validate.errors)).toBe(true);
+        expect(validate({ ...invited, joined: audit })).toBe(false);
+        expect(validate({ ...active, joined: {} })).toBe(false);
+        for (const field of ['left', 'removed', 'banned']) {
+            expect(validate({ ...invited, [field]: audit })).toBe(false);
+            expect(validate({ ...active, [field]: audit })).toBe(false);
+        }
+        for (const status of ['left', 'removed', 'banned']) {
+            for (const joined of [null, audit]) {
+                const terminal = { ...active, status, joined, [status]: audit };
+                expect(validate(terminal), JSON.stringify(validate.errors)).toBe(true);
+                expect(validate({ ...terminal, [status]: null })).toBe(false);
+                expect(validate({ ...terminal, [status]: {} })).toBe(false);
+                expect(validate({ ...terminal, joined: {} })).toBe(false);
+                for (const other of ['left', 'removed', 'banned'].filter((field) => field !== status)) {
+                    expect(validate({ ...terminal, [other]: audit })).toBe(false);
+                }
+            }
+        }
+    });
+
+    it.each(['dormant', 'forming', 'planned', 'connecting', 'active', 'reconfiguring', 'reconnecting'])(
+        'accepts the %s formation phase in group and formation responses',
+        (lifecycleState) => {
+            for (const [schemaName, value] of [['Group', groupSnapshot.group], ['GroupFormationView', createFormationView(groupRef)]] as const) {
+                const validate = createSchemaValidator(schemaName);
+                expect(validate({ ...value, lifecycleState }), JSON.stringify(validate.errors)).toBe(true);
+                expect(validate({ ...value, lifecycleState: 'unknown' })).toBe(false);
+            }
+        }
+    );
+
+    it('allows sparse topology requests while requiring complete effective and stored output', () => {
+        const validateRequest = createSchemaValidator('PutGroupTopologyConfigRequest');
+        expect(validateRequest({ config: {} })).toBe(true);
+        expect(validateRequest({ config: { degreeLimit: null } })).toBe(true);
+        expect(validateRequest({ config: { degreeLimit: 4 } })).toBe(true);
+        expect(validateRequest({})).toBe(false);
+        expect(validateRequest({ config: { degreeLimit: 0 } })).toBe(false);
+        expectComplete('EffectiveGroupTopologyConfig', effectiveConfig);
+        expectComplete('StoredGroupTopologyConfig', storedConfig);
+        const validateStored = createSchemaValidator('StoredGroupTopologyConfig');
+        for (const field of Object.keys(effectiveConfig)) {
+            const incomplete = Object.fromEntries(Object.entries(effectiveConfig).filter(([key]) => key !== field));
+            expect(validateStored({ ...storedConfig, config: incomplete })).toBe(false);
+            expect(validateStored({ ...storedConfig, config: { ...effectiveConfig, [field]: null } })).toBe(false);
+        }
+    });
+
+    it('accepts absent topology layers as explicit null and validates populated overrides', () => {
+        const view = { serverDefaults: effectiveConfig, durable: null, temporary: null, requestOptions: null, effective: effectiveConfig };
+        expectComplete('GroupTopologyConfigView', view);
+        const validate = createSchemaValidator('GroupTopologyConfigView');
+        const override = { ...storedConfig, expiresAtEpochMs: 3000 };
+        expect(validate({ ...view, durable: storedConfig, temporary: override, requestOptions: { degreeLimit: 3 } })).toBe(true);
+        expect(validate({ ...view, temporary: storedConfig })).toBe(false);
+        expect(validate({ ...view, temporary: { ...override, expiresAtEpochMs: null } })).toBe(false);
+        expect(validate({ ...view, temporary: { ...override, config: {} } })).toBe(false);
+        for (const field of ['durable', 'temporary', 'requestOptions']) {
+            expect(validate({ ...view, [field]: 'invalid' })).toBe(false);
+        }
+    });
+
+    it('requires complete topology receipts and rejects event ids or partial accepted configuration', () => {
+        const receipt = {
+            commandId: 'command',
+            requestId: null,
+            commandHash: `sha256:${'0'.repeat(64)}`,
+            operation: 'putConfig',
+            outcome: 'applied',
+            attemptCount: 1,
+            groupRef,
+            target: 'config',
+            acceptedVersion: 1,
+            acceptedStorageRevision: null,
+            acceptedCreatedAtEpochMs: null,
+            acceptedUpdatedAtEpochMs: null,
+            acceptedExpiresAtEpochMs: null,
+            acceptedConfig: null,
+            acceptedCausalRevision: null,
+            eventId: null,
+            outboxIds: []
+        };
+        expectComplete('GroupTopologyConfigMutationReceipt', receipt);
+        expectComplete('GroupTopologyConfigAcceptedCausalRevision', acceptedCausalRevision);
+        const validate = createSchemaValidator('GroupTopologyConfigMutationReceipt');
+        expect(validate({ ...receipt, acceptedConfig: effectiveConfig, acceptedCausalRevision })).toBe(true);
+        expect(validate({ ...receipt, eventId: 'event' })).toBe(false);
+        expect(validate({ ...receipt, acceptedConfig: {} })).toBe(false);
+        expect(validate({ ...receipt, acceptedCausalRevision: {} })).toBe(false);
+        expect(validate({ ...receipt, acceptedCausalRevision: { ...acceptedCausalRevision, causalRevision: {} } })).toBe(false);
+        const queued = { status: 'queued', groupRef, requestId: 'request', outboxId: 'outbox' };
+        expectComplete('QueuedGroupTopologyReconfigureResponse', queued);
+        expect(createSchemaValidator('QueuedGroupTopologyReconfigureResponse')({ ...queued, status: 'applied' })).toBe(false);
+    });
+
+    it('requires the complete scoped overlay and its causal revision', () => {
+        const overlay = {
+            sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
+            state: 'active',
+            overlayId: 'overlay',
+            groupRef,
+            name: 'room',
+            topology: 'tree',
+            activeSessionIds: ['session'],
+            nextHopsBySessionId: { session: [] },
+            degreeLimit: 4,
+            version: 1,
+            createdByClientId: 'server',
+            createdAtEpochMs: 1000,
+            updatedAtEpochMs: 1000
+        };
+        expectComplete('RallarOverlayTopologySnapshot', overlay);
+        const validate = createSchemaValidator('RallarOverlayTopologySnapshot');
+        expect(validate({ ...overlay, sourceGroupStateCausalRevision: { groupRevision: 1 } })).toBe(false);
+        expect(validate({ ...overlay, nextHopsBySessionId: { session: [42] } })).toBe(false);
+    });
+
+    it.each(['group-invite-required', 'group-full', 'formation-attempts-exhausted'])(
+        'publishes the actionable %s policy reason',
+        (reason) => {
+            const validate = createSchemaValidator('GroupPolicyReasonCode');
+            expect(validate(reason)).toBe(true);
+            expect(validate('unknown-policy-reason')).toBe(false);
+        }
+    );
+
+    it.each(
+        [
+            ['app.scores', true],
+            ['room.feed', true],
+            ['room.a:b_c-d.e', true],
+            ['room.', true],
+            ['rallar.state', false],
+            ['group-state.event', false],
+            ['feed', false],
+            ['room.a b', false],
+            [' room.feed', false],
+            ['room.\u00fc', false],
+            [`room.${'a'.repeat(123)}`, true],
+            [`room.${'a'.repeat(124)}`, false]
+        ] as const
+    )('applies the public topic rule to %s grants and requests', (topicId, accepted) => {
+        expect(createSchemaValidator('GroupPublicationTopicGrants')({ [topicId]: { publish: true, subscribe: false } })).toBe(accepted);
+        for (const schemaName of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
+            expect(createSchemaValidator(schemaName)({ topicId, publish: true, subscribe: false })).toBe(accepted);
+        }
+        for (const schemaName of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {
+            expect(createSchemaValidator(schemaName)({ topicId, connectionGenerationId: 'generation' })).toBe(accepted);
+        }
+    });
+
+    it('bounds topic grants and requires explicit permissions in publication mutations', () => {
+        const topics = Object.fromEntries(Array.from({ length: 64 }, (_, index) => [`room.topic-${index}`, { publish: true, subscribe: false }]));
+        const validate = createSchemaValidator('GroupPublicationTopicGrants');
+        expect(validate(topics)).toBe(true);
+        expect(validate({ ...topics, 'room.overflow': { publish: true, subscribe: false } })).toBe(false);
+        expectComplete('GroupPublicationTopicPermissions', { publish: true, subscribe: false });
+        expect(validate({ 'room.feed': { publish: 'yes', subscribe: false } })).toBe(false);
+        expectComplete('GroupPublicationGrant', { ...groupRef, principalId: 'alice', topics, updated: audit });
+        for (const schemaName of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
+            expectComplete(schemaName, { topicId: 'room.feed', publish: true, subscribe: false });
+        }
+        const create = createSchemaValidator('CreateGroupRequest');
+        const request = { groupId: 'room', displayName: 'Room', kind: 'room' };
+        expect(create(request)).toBe(true);
+        expect(create({ ...request, publicationGrants: topics })).toBe(true);
+        expect(create({ ...request, publicationGrants: { 'rallar.state': { publish: true, subscribe: false } } })).toBe(false);
+    });
+
+    it('requires session and connection generation identity on topic subscriptions', () => {
+        const subscription = {
             sessionId: 'bob-session',
             principalId: 'bob',
             topicId: 'room.feed',
@@ -110,593 +351,35 @@ describe('Rallar group public contracts', () => {
             leaseExpiresAtEpochMs: 120_000,
             admittedAtGroupRevision: 3
         };
-
-        expect(decodeGroupTopicSubscription(subscription).right).toEqual(subscription);
-        expectSchemaRequired('GroupTopicSubscription', Object.keys(subscription));
-        expect(schema('GroupTopicSubscription').properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
-        expect(SUBSCRIPTION_OUTCOMES_ARE_EXHAUSTIVE).toBe(true);
-        expect([...(schema('GroupTopicSubscriptionResult').properties?.outcome?.enum ?? [])].sort())
-            .toEqual([...SUBSCRIPTION_OUTCOMES].sort());
-        expectSchemaRequired('GroupTopicSubscriptionResult', ['outcome']);
-        expectSchemaRequired('GroupTopicSubscriptionList', ['subscriptions']);
-        for (const request of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {
-            expect(schema(request).properties?.topicId?.$ref).toBe('#/components/schemas/RallarWsUserTopicId');
-            expectSchemaRequired(request, ['topicId', 'connectionGenerationId']);
+        expectComplete('GroupTopicSubscription', subscription);
+        const validate = createSchemaValidator('GroupTopicSubscription');
+        expect(validate({ ...subscription, connectionGenerationId: '' })).toBe(false);
+        expect(validate({ ...subscription, topicId: 'rallar.state' })).toBe(false);
+        expect(validate({ ...subscription, leaseExpiresAtEpochMs: 0 })).toBe(false);
+        expect(validate({ ...subscription, admittedAtGroupRevision: 0 })).toBe(false);
+        expectComplete('GroupTopicSubscriptionList', { subscriptions: [subscription] });
+        expect(createSchemaValidator('GroupTopicSubscriptionList')({ subscriptions: [{}] })).toBe(false);
+        for (const schemaName of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {
+            expectComplete(schemaName, { topicId: 'room.feed', connectionGenerationId: 'generation' });
         }
-    });
-
-    it('documents stable policy reasons and the strict read rollout switch', () => {
-        expectAll(apiReference, [
-            '`GROUP_POLICY_REASON_CODES`',
-            '`group-invite-required`',
-            '`group-code-required`',
-            '`group-code-invalid`',
-            '`group-invite-expired`',
-            '`group-archived`',
-            '`group-deleted`',
-            '`group-not-active`',
-            '`group-full`',
-            '`member-session-limit-reached`',
-            '`member-not-active`',
-            '`member-removed`',
-            '`member-banned`',
-            '`forbidden-role`',
-            '`last-owner`',
-            '`RALLAR_STATE_STRICT_READ_AUTH`'
-        ]);
-
-        expect(environmentVariables).toContain('`RALLAR_STATE_STRICT_READ_AUTH`');
-    });
-
-    it('keeps the OpenAPI spec in step with server-side group workflows', () => {
-        expectAll(openApi, [
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/' +
-            'requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
-            'accept/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/' +
-            'rotate/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
-            '{principalId}/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
-            '{principalId}/revoke/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-            '{principalId}/remove/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-            '{principalId}/ban/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-            '{principalId}/unban/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-            '{principalId}/role/requests/{requestId}:',
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/' +
-            'transfer/requests/{requestId}:',
-            'JoinGroupRequest',
-            'AcceptGroupInviteRequest',
-            'RotateGroupJoinCodeRequest',
-            'GroupJoinCodeResponse',
-            'CreateGroupInviteRequest',
-            'RevokeGroupInviteRequest',
-            'RemoveGroupMemberRequest',
-            'BanGroupMemberRequest',
-            'UnbanGroupMemberRequest',
-            'SetGroupMemberRoleRequest',
-            'TransferGroupOwnershipRequest',
-            'GroupPolicyReasonCode',
-            'code:',
-            'GroupStateCausalRevision:',
-            'activeMemberCount',
-            'ownerPrincipalId',
-            'generationId',
-            'generationVersion',
-            'causalRevision'
-        ]);
-    });
-
-    it('requires the hardened authoritative event, snapshot, and topology fields', () => {
-        expectSchemaRequired('AuditStamp', [
-            'atEpochMs',
-            'actor',
-            'reason',
-            'traceId',
-            'requestId'
-        ]);
-        expectSchemaRequired('ClientEvent', [
-            'applicationId',
-            'workspaceId',
-            'principalId',
-            'eventId',
-            'eventType',
-            'snapshotVersion',
-            'clientInstanceId',
-            'sessionId',
-            'occurredAtEpochMs',
-            'actor',
-            'reason',
-            'traceId',
-            'requestId',
-            'payload'
-        ]);
-        expectSchemaRequired('GroupEvent', [
-            'applicationId',
-            'workspaceId',
-            'groupId',
-            'eventId',
-            'eventType',
-            'snapshotVersion',
-            'causalRevision',
-            'occurredAtEpochMs',
-            'actor',
-            'reason',
-            'traceId',
-            'requestId',
-            'payload'
-        ]);
-        expectSchemaRequired('ClientSnapshot', [
-            'stateRevision',
-            'principal',
-            'instances',
-            'activeSessions',
-            'isOnline',
-            'activeSessionCount',
-            'lastSeenAtEpochMs'
-        ]);
-        expectSchemaRequired('GroupSnapshot', [
-            'causalRevision',
-            'group',
-            'members',
-            'activeSessions',
-            'memberCount',
-            'onlineMemberCount',
-            'publicationGrants'
-        ]);
-        expectSchemaRequired('GroupPublicationGrant', [
-            'applicationId',
-            'workspaceId',
-            'groupId',
-            'principalId',
-            'topics',
-            'updated'
-        ]);
-        expectSchemaRequired('GroupPublicationTopicPermissions', ['publish', 'subscribe']);
-        expect(schema('CreateGroupRequest').required).not.toContain('publicationGrants');
-        expect(schema('CreateGroupRequest').properties?.publicationGrants?.$ref).toBe(
-            '#/components/schemas/GroupPublicationTopicGrants'
-        );
-        expectSchemaRequired('GroupMember', [
-            'applicationId',
-            'workspaceId',
-            'groupId',
-            'principalId',
-            'role',
-            'status',
-            'joined',
-            'updated',
-            'left',
-            'removed',
-            'banned',
-            'invitedByPrincipalId',
-            'invitationExpiresAtEpochMs'
-        ]);
-        expectSchemaRequired('RallarOverlayTopologySnapshot', [
-            'sourceGroupStateCausalRevision',
-            'state',
-            'overlayId',
-            'groupRef',
-            'name',
-            'topology',
-            'activeSessionIds',
-            'nextHopsBySessionId',
-            'degreeLimit',
-            'version',
-            'createdByClientId',
-            'createdAtEpochMs',
-            'updatedAtEpochMs'
-        ]);
-        expectSchemaRequired('GroupTopologyConfigView', [
-            'serverDefaults',
-            'durable',
-            'temporary',
-            'requestOptions',
-            'effective'
-        ]);
-        expectSchemaRequired('GroupTopologyConfigAcceptedCausalRevision', [
-            'snapshotVersion',
-            'metadataVersion',
-            'rosterVersion',
-            'presenceVersion',
-            'causalRevision'
-        ]);
-        expectSchemaRequired('GroupTopologyConfigMutationReceipt', [
-            'commandId',
-            'requestId',
-            'commandHash',
-            'operation',
-            'outcome',
-            'attemptCount',
-            'groupRef',
-            'target',
-            'acceptedVersion',
-            'acceptedStorageRevision',
-            'acceptedCreatedAtEpochMs',
-            'acceptedUpdatedAtEpochMs',
-            'acceptedExpiresAtEpochMs',
-            'acceptedConfig',
-            'acceptedCausalRevision',
-            'eventId',
-            'outboxIds'
-        ]);
-        expectSchemaRequired('QueuedGroupTopologyReconfigureResponse', [
-            'status',
-            'groupRef',
-            'requestId',
-            'outboxId'
-        ]);
-        // Each lifecycle state is publicly reachable through the mounted
-        // lifecycle commands, so the OpenAPI contract publishes the complete
-        // seven-stage enum rather than a dark superset.
-        for (const schemaName of ['Group', 'GroupFormationView']) {
-            expect(
-                schema(schemaName).properties?.lifecycleState?.enum,
-                schemaName
-            ).toEqual([
-                'dormant',
-                'forming',
-                'planned',
-                'connecting',
-                'active',
-                'reconfiguring',
-                'reconnecting'
-            ]);
+        const validateResult = createSchemaValidator('GroupTopicSubscriptionResult');
+        for (const outcome of ['subscribed', 'renewed', 'unsubscribed', 'not-subscribed']) {
+            expect(validateResult({ outcome })).toBe(true);
         }
-        expect(
-            schema('GroupTopologyConfigAcceptedCausalRevision')
-                .properties?.causalRevision?.$ref
-        ).toBe('#/components/schemas/GroupStateCausalRevision');
-        expect(
-            schema('QueuedGroupTopologyReconfigureResponse').properties?.status
-                ?.enum
-        ).toEqual(['queued']);
-        expect(
-            schema('GroupTopologyConfigMutationReceipt').properties?.eventId
-                ?.type
-        ).toBe('null');
-
-        for (
-            const [schemaName, propertyNames] of Object.entries({
-                AuditStamp: ['reason', 'traceId', 'requestId'],
-                ClientEvent: [
-                    'clientInstanceId',
-                    'sessionId',
-                    'reason',
-                    'traceId',
-                    'requestId'
-                ],
-                GroupEvent: ['reason', 'traceId', 'requestId'],
-                ClientSnapshot: ['lastSeenAtEpochMs'],
-                GroupTopologyConfigView: ['durable', 'temporary', 'requestOptions']
-            })
-        ) {
-            for (const propertyName of propertyNames) {
-                expect(
-                    schema(schemaName).properties?.[propertyName]?.nullable,
-                    `${schemaName}.${propertyName} must be required nullable`
-                ).toBe(true);
-            }
-        }
-
-        expect(schema('MutationActor').discriminator?.propertyName).toBe('kind');
-        expect(schema('MutationActor').oneOf).toHaveLength(3);
-        expect(schema('GroupMember').properties?.joined?.nullable).toBe(true);
-        const memberVariants = schema('GroupMember').oneOf ?? [];
-        const invited = memberVariants.find((variant) => variant.properties?.status?.enum?.includes('invited'));
-        const active = memberVariants.find((variant) => variant.properties?.status?.enum?.includes('active'));
-        expect(invited?.properties?.joined?.enum).toEqual([null]);
-        expect(invited?.properties?.joined?.nullable).toBe(true);
-        expect(active?.properties?.joined?.$ref)
-            .toBe('#/components/schemas/AuditStamp');
-        for (const status of ['left', 'removed', 'banned']) {
-            const terminal = memberVariants.find((variant) => variant.properties?.status?.enum?.includes(status));
-            expect(terminal?.properties?.joined?.nullable).toBe(true);
-        }
-        for (
-            const schemaName of [
-                'ClientPrincipal',
-                'ClientInstance',
-                'ClientSession',
-                'Group',
-                'GroupMember',
-                'GroupPresenceSession'
-            ]
-        ) {
-            expect(schema(schemaName).discriminator?.propertyName).toBe('status');
-            expect(schema(schemaName).oneOf?.length).toBeGreaterThan(1);
-        }
-    });
-
-    it('uses exact topology config schema references for sparse inputs and effective output', () => {
-        expect(schema('PutGroupTopologyConfigRequest').properties?.config?.$ref)
-            .toBe('#/components/schemas/GroupTopologyConfigPatch');
-        expect(schema('StoredGroupTopologyConfig').properties?.config?.$ref)
-            .toBe('#/components/schemas/EffectiveGroupTopologyConfig');
-        expect(schema('GroupTopologyConfigView').properties?.temporary?.$ref)
-            .toBe('#/components/schemas/StoredGroupTopologyOverride');
-        expect(schema('GroupTopologyConfigMutationReceipt').properties?.acceptedConfig?.$ref)
-            .toBe('#/components/schemas/EffectiveGroupTopologyConfig');
-    });
-
-    it('enforces authoritative lifecycle correlations in every status branch', () => {
-        expectNullProperties('ClientPrincipal', 'active', ['disabled', 'deleted']);
-        expectAuditProperties('ClientPrincipal', 'disabled', ['disabled']);
-        expectNullProperties('ClientPrincipal', 'disabled', ['deleted']);
-        expectAuditProperties('ClientPrincipal', 'deleted', ['deleted']);
-        expectNullableAuditProperties('ClientPrincipal', 'deleted', ['disabled']);
-
-        expectNullProperties('ClientInstance', 'active', ['revoked']);
-        expectAuditProperties('ClientInstance', 'revoked', ['revoked']);
-        expectAuditProperties('ClientInstance', 'retired', ['revoked']);
-
-        expectNullProperties('ClientSession', 'active', [
-            'disconnectedAtEpochMs',
-            'disconnectReason'
-        ]);
-        expectTypedProperties('ClientSession', 'disconnected', {
-            disconnectedAtEpochMs: 'integer',
-            disconnectReason: 'string'
-        });
-        expectTypedProperties('ClientSession', 'expired', {
-            disconnectedAtEpochMs: 'integer',
-            disconnectReason: 'string'
-        });
-
-        expectNullProperties('Group', 'active', ['archived', 'deleted']);
-        expectAuditProperties('Group', 'archived', ['archived']);
-        expectNullProperties('Group', 'archived', ['deleted']);
-        expectAuditProperties('Group', 'deleted', ['deleted']);
-        expectNullableAuditProperties('Group', 'deleted', ['archived']);
-
-        expectNullProperties('GroupMember', 'invited', [
-            'joined',
-            'left',
-            'removed',
-            'banned'
-        ]);
-        expectAuditProperties('GroupMember', 'active', ['joined']);
-        expectNullProperties('GroupMember', 'active', ['left', 'removed', 'banned']);
-        for (
-            const [status, auditProperty] of [
-                ['left', 'left'],
-                ['removed', 'removed'],
-                ['banned', 'banned']
-            ] as const
-        ) {
-            expectAuditProperties('GroupMember', status, [auditProperty]);
-            expectNullableAuditProperties('GroupMember', status, ['joined']);
-            expectNullProperties(
-                'GroupMember',
-                status,
-                ['left', 'removed', 'banned'].filter((key) => key !== auditProperty)
-            );
-        }
-
-        expectNullProperties('GroupPresenceSession', 'active', [
-            'disconnectedAtEpochMs',
-            'disconnectReason'
-        ]);
-        expectTypedProperties('GroupPresenceSession', 'disconnected', {
-            disconnectedAtEpochMs: 'integer',
-            disconnectReason: 'string'
-        });
+        expect(validateResult({})).toBe(false);
+        expect(validateResult({ outcome: 'unknown' })).toBe(false);
     });
 });
 
-interface OpenApiSchema {
-    readonly $ref?: string;
-    readonly type?: string;
-    readonly required?: readonly string[];
-    readonly properties?: Readonly<Record<string, OpenApiSchema>>;
-    readonly nullable?: boolean;
-    readonly enum?: readonly ApiJsonValue[];
-    readonly allOf?: readonly OpenApiSchema[];
-    readonly oneOf?: readonly OpenApiSchema[];
-    readonly discriminator?: OpenApiDiscriminator;
-    readonly pattern?: string;
-    readonly maxLength?: number;
-    readonly maxProperties?: number;
-    readonly propertyNames?: OpenApiSchema;
+function createSchemaValidator(schemaName: string): Ajv.ValidateFunction {
+    return validator.compile({ $ref: `#/components/schemas/${schemaName}`, components });
 }
 
-interface OpenApiDiscriminator {
-    readonly propertyName?: string;
-}
-
-interface OpenApiDocument {
-    readonly components: OpenApiComponents;
-}
-
-interface OpenApiComponents {
-    readonly schemas: Readonly<Record<string, OpenApiSchema>>;
-}
-
-function schema(name: string): OpenApiSchema {
-    const value = openApiDocument.components.schemas[name];
-    if (!value) {
-        throw new Error(`Missing OpenAPI schema ${name}`);
-    }
-    return value;
-}
-
-function requireOpenApiDocument(document: ApiJsonObject): OpenApiDocument {
-    const components = requireOpenApiRecord(
-        document.components,
-        'OpenAPI components'
-    );
-    const schemaValues = requireOpenApiRecord(
-        components.schemas,
-        'OpenAPI component schemas'
-    );
-    const schemas: Record<string, OpenApiSchema> = {};
-    for (const [name, schemaValue] of Object.entries(schemaValues)) {
-        schemas[name] = requireOpenApiSchema(schemaValue, name);
-    }
-    return { components: { schemas } };
-}
-
-function requireOpenApiSchema(value: ApiJsonValue, label: string): OpenApiSchema {
-    const source = requireOpenApiRecord(value, `OpenAPI schema ${label}`);
-    const properties: Record<string, OpenApiSchema> = {};
-    if (source.properties !== undefined) {
-        const propertyValues = requireOpenApiRecord(
-            source.properties,
-            `OpenAPI schema ${label} properties`
-        );
-        for (const [name, propertyValue] of Object.entries(propertyValues)) {
-            properties[name] = requireOpenApiSchema(propertyValue, `${label}.${name}`);
-        }
-    }
-    const discriminator = source.discriminator === undefined
-        ? undefined
-        : requireOpenApiRecord(
-            source.discriminator,
-            `OpenAPI schema ${label} discriminator`
-        );
-    const propertyName = discriminator?.propertyName;
-    if (propertyName !== undefined && typeof propertyName !== 'string') {
-        throw new TypeError(`OpenAPI schema ${label} discriminator is invalid`);
-    }
-    return {
-        ...toOpenApiSchemaKeywords(source),
-        ...(source.required === undefined
-            ? {}
-            : { required: requireOpenApiStringArray(source.required, `${label}.required`) }),
-        ...(source.properties === undefined ? {} : { properties }),
-        ...(source.propertyNames === undefined
-            ? {}
-            : { propertyNames: requireOpenApiSchema(source.propertyNames, `${label}.propertyNames`) }),
-        ...(source.allOf === undefined
-            ? {}
-            : {
-                allOf: requireOpenApiArray(source.allOf, `${label}.allOf`)
-                    .map((item, index) => requireOpenApiSchema(item, `${label}.allOf[${index}]`))
-            }),
-        ...(source.oneOf === undefined
-            ? {}
-            : {
-                oneOf: requireOpenApiArray(source.oneOf, `${label}.oneOf`)
-                    .map((item, index) => requireOpenApiSchema(item, `${label}.oneOf[${index}]`))
-            }),
-        ...(propertyName === undefined
-            ? {}
-            : { discriminator: { propertyName } })
-    };
-}
-
-function toOpenApiSchemaKeywords(source: ApiJsonObject): OpenApiSchema {
-    return {
-        ...(typeof source.type === 'string' ? { type: source.type } : {}),
-        ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
-        ...(typeof source.nullable === 'boolean' ? { nullable: source.nullable } : {}),
-        ...(Array.isArray(source.enum) ? { enum: [...source.enum] } : {}),
-        ...(typeof source.pattern === 'string' ? { pattern: source.pattern } : {}),
-        ...(typeof source.maxLength === 'number' ? { maxLength: source.maxLength } : {}),
-        ...(typeof source.maxProperties === 'number' ? { maxProperties: source.maxProperties } : {})
-    };
-}
-
-function requireOpenApiRecord(value: ApiJsonValue, label: string): ApiJsonObject {
-    if (!isOpenApiRecord(value)) {
-        throw new TypeError(`${label} must be an object`);
-    }
-    return value;
-}
-
-// js-yaml loads the document as plain JSON-compatible values.
-function isOpenApiRecord(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requireOpenApiArray(value: ApiJsonValue, label: string): readonly ApiJsonValue[] {
-    if (!Array.isArray(value)) {
-        throw new TypeError(`${label} must be an array`);
-    }
-    return value;
-}
-
-function requireOpenApiStringArray(value: ApiJsonValue, label: string): readonly string[] {
-    const items = requireOpenApiArray(value, label);
-    if (!items.every((item) => typeof item === 'string')) {
-        throw new TypeError(`${label} must contain only strings`);
-    }
-    return items;
-}
-
-function expectSchemaRequired(name: string, expected: readonly string[]): void {
-    expect([...(schema(name).required ?? [])].sort()).toEqual([...expected].sort());
-}
-
-function statusVariant(schemaName: string, status: string): OpenApiSchema {
-    const variant = schema(schemaName).oneOf?.find((candidate) => candidate.properties?.status?.enum?.includes(status));
-    if (!variant) {
-        throw new Error(`Missing ${schemaName} ${status} lifecycle variant`);
-    }
-    return variant;
-}
-
-function expectNullProperties(
-    schemaName: string,
-    status: string,
-    propertyNames: readonly string[]
-): void {
-    const variant = statusVariant(schemaName, status);
-    for (const propertyName of propertyNames) {
-        expect(variant.properties?.[propertyName]?.enum).toEqual([null]);
-        expect(variant.properties?.[propertyName]?.nullable).toBe(true);
-    }
-}
-
-function expectAuditProperties(
-    schemaName: string,
-    status: string,
-    propertyNames: readonly string[]
-): void {
-    const variant = statusVariant(schemaName, status);
-    for (const propertyName of propertyNames) {
-        expect(variant.properties?.[propertyName]?.$ref)
-            .toBe('#/components/schemas/AuditStamp');
-        expect(variant.properties?.[propertyName]?.nullable).not.toBe(true);
-    }
-}
-
-function expectNullableAuditProperties(
-    schemaName: string,
-    status: string,
-    propertyNames: readonly string[]
-): void {
-    const variant = statusVariant(schemaName, status);
-    for (const propertyName of propertyNames) {
-        expect(variant.properties?.[propertyName]?.allOf?.[0]?.$ref)
-            .toBe('#/components/schemas/AuditStamp');
-        expect(variant.properties?.[propertyName]?.nullable).toBe(true);
-    }
-}
-
-function expectTypedProperties(
-    schemaName: string,
-    status: string,
-    properties: Readonly<Record<string, string>>
-): void {
-    const variant = statusVariant(schemaName, status);
-    for (const [propertyName, type] of Object.entries(properties)) {
-        expect(variant.properties?.[propertyName]?.type).toBe(type);
-        expect(variant.properties?.[propertyName]?.nullable).not.toBe(true);
-    }
-}
-
-function readRepoFile(filePath: string): string {
-    return readFileSync(path.join(repoRoot, filePath), 'utf8');
-}
-
-function expectAll(haystack: string, needles: readonly string[]): void {
-    for (const needle of needles) {
-        expect(haystack, needle).toContain(needle);
+function expectComplete(schemaName: string, value: object): void {
+    const validate = createSchemaValidator(schemaName);
+    expect(validate(value), `${schemaName}: ${JSON.stringify(validate.errors)}`).toBe(true);
+    for (const field of Object.keys(value)) {
+        const incomplete = Object.fromEntries(Object.entries(value).filter(([key]) => key !== field));
+        expect(validate(incomplete), `${schemaName}.${field} must not be omitted`).toBe(false);
     }
 }

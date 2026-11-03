@@ -1,4 +1,5 @@
 import { add3, distance3, dot3, scale3, sub3 } from '@ar-eye-hunter/arena-math.ts';
+import { CreatePickingRay } from '@babylonjs/core/Culling/ray.core.js';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
 import type { Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
@@ -22,13 +23,21 @@ interface FindPredictedPlayerHitInput {
     readonly range: number;
 }
 
+interface PredictedPlayerHit {
+    readonly targetSessionId: string;
+    readonly targetSeq: number;
+    readonly impact: Vec3Tuple;
+}
+
+interface PredictedPlayerHitCandidate extends PredictedPlayerHit {
+    readonly distance: number;
+}
+
 export function findPredictedPlayerHit(
     { remotePlayers, localSessionId, origin, direction, range, nowEpochMs }: FindPredictedPlayerHitInput
-): Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; }> | undefined {
+): PredictedPlayerHit | undefined {
     const ray = normalizeTuple(direction);
-    let best:
-        | Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; distance: number; }>
-        | undefined;
+    let best: PredictedPlayerHitCandidate | undefined;
     for (const [sessionId, remote] of remotePlayers) {
         if (sessionId === localSessionId) {
             continue;
@@ -76,24 +85,21 @@ interface TouchShotDirection {
 export function resolveTouchShotDirection(
     { runtime, event, remotePlayers, localSessionId }: ResolveTouchShotDirectionInput
 ): TouchShotDirection {
-    const rect = runtime.engine.getRenderingCanvas()?.getBoundingClientRect();
-    const renderWidth = runtime.engine.getRenderWidth();
-    const renderHeight = runtime.engine.getRenderHeight();
-    const x = rect
-        ? (event.clientX - rect.left) * (renderWidth / Math.max(1, rect.width))
-        : event.offsetX;
-    const y = rect
-        ? (event.clientY - rect.top) * (renderHeight / Math.max(1, rect.height))
-        : event.offsetY;
-    const point = { x, y };
+    const canvas = runtime.engine.getRenderingCanvas();
+    if (!canvas) {
+        throw new Error('Touch aiming requires the arena canvas.');
+    }
+    const rect = canvas.getBoundingClientRect();
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     const origin = runtime.localPlayer.position;
     const candidate = chooseTouchAimCandidate({
         point,
-        candidates: buildTouchAimCandidates({
+        candidates: computeTouchAimCandidates({
             runtime: runtime,
             remotePlayers: remotePlayers,
             localSessionId: localSessionId,
-            origin: origin
+            origin: origin,
+            viewport: rect
         })
     });
     if (candidate) {
@@ -104,27 +110,32 @@ export function resolveTouchShotDirection(
         };
     }
 
-    const ray = runtime.scene.createPickingRay(x, y, Matrix.Identity(), runtime.camera);
+    // Babylon applies hardware scaling to picking coordinates. Keep assistance in CSS pixels.
+    const scaling = runtime.engine.getHardwareScalingLevel();
+    const x = point.x * runtime.engine.getRenderWidth() * scaling / Math.max(1, rect.width);
+    const y = point.y * runtime.engine.getRenderHeight() * scaling / Math.max(1, rect.height);
+    const ray = CreatePickingRay(runtime.scene, x, y, Matrix.Identity(), runtime.camera);
     return {
         direction: normalizeTuple([ray.direction.x, ray.direction.y, ray.direction.z]),
         assisted: false
     };
 }
 
-interface BuildTouchAimCandidatesInput {
+interface ComputeTouchAimCandidatesInput {
+    readonly viewport: Pick<DOMRect, 'width' | 'height'>;
     readonly runtime: ArenaSceneRuntime;
     readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
     readonly localSessionId: string;
     readonly origin: Vec3Tuple;
 }
 
-function buildTouchAimCandidates(
-    { runtime, remotePlayers, localSessionId, origin }: BuildTouchAimCandidatesInput
+function computeTouchAimCandidates(
+    { runtime, remotePlayers, localSessionId, origin, viewport }: ComputeTouchAimCandidatesInput
 ): readonly TouchAimCandidate[] {
     const candidates: TouchAimCandidate[] = [];
     for (const target of runtime.arenaState.targets) {
         const world = target.position;
-        const screen = projectWorldToScreen(runtime, world);
+        const screen = projectWorldToScreen(runtime, world, viewport);
         if (!screen) {
             continue;
         }
@@ -143,7 +154,7 @@ function buildTouchAimCandidates(
             continue;
         }
         const world = remote.pose.position;
-        const screen = projectWorldToScreen(runtime, world);
+        const screen = projectWorldToScreen(runtime, world, viewport);
         if (!screen) {
             continue;
         }
@@ -159,15 +170,16 @@ function buildTouchAimCandidates(
     return candidates;
 }
 
-function projectWorldToScreen(runtime: ArenaSceneRuntime, world: Vec3Tuple): Point2 | undefined {
+function projectWorldToScreen(
+    runtime: ArenaSceneRuntime,
+    world: Vec3Tuple,
+    viewport: Pick<DOMRect, 'width' | 'height'>
+): Point2 | undefined {
     const projected = Vector3.Project(
         vector3(world),
         Matrix.Identity(),
         runtime.scene.getTransformMatrix(),
-        runtime.camera.viewport.toGlobal(
-            runtime.engine.getRenderWidth(),
-            runtime.engine.getRenderHeight()
-        )
+        runtime.camera.viewport.toGlobal(viewport.width, viewport.height)
     );
     if (projected.z < 0 || projected.z > 1) {
         return undefined;

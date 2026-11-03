@@ -353,3 +353,44 @@ roomBrowserTest('director canvas shots keep current room state and reuse shaders
         loops: 0
     });
 });
+
+roomBrowserTest.describe('touch aiming at different render resolutions', () => {
+    roomBrowserTest.use({ hasTouch: true });
+    for (const scale of [1, 2]) {
+        for (const offsetX of [32, 72, 160]) {
+            roomBrowserTest(
+                `canvas touch aim preserves CSS radius and ray at scale ${scale}, offset ${offsetX}`,
+                async ({ page }) => {
+                    roomBrowserTest.skip(
+                        process.env.RALLAR_ARENA_FULL_STACK === '1',
+                        'Component integration uses the Vite source server.'
+                    );
+                    await page.clock.setFixedTime(new Date('2030-01-02T12:00:00Z'));
+                    await page.addInitScript(installAnimationFrameGate);
+                    const fixturePath = new URL(
+                        '../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html',
+                        import.meta.url
+                    ).pathname;
+                    await page.goto(`/@fs${fixturePath}`);
+                    const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+                    await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+                    await page.getByRole('button', { name: `Render scale ${scale}`, exact: true }).click();
+                    await page.evaluate(() => window.dispatchEvent(new Event('test-pause-animation-frames')));
+                    const bounds = await canvas.boundingBox();
+                    if (!bounds) {
+                        throw new Error('The visible gameplay canvas must have a bounding box.');
+                    }
+                    await page.touchscreen.tap(bounds.x + bounds.width / 2 + offsetX, bounds.y + bounds.height / 2);
+                    await expect(page.getByTestId('shot-direction')).not.toHaveText('[]');
+                    const [x, y, z]: number[] = JSON.parse(await page.getByTestId('shot-direction').innerText());
+                    // The centered target assists only within 48 CSS pixels, independent of the render buffer.
+                    const horizontal = offsetX < 48 ? 0 : offsetX / (bounds.height / 2) * Math.tan(0.94 / 2);
+                    const length = Math.hypot(horizontal, 1);
+                    expect(x).toBeCloseTo(horizontal / length, 2);
+                    expect(y).toBeCloseTo(0, 2);
+                    expect(z).toBeCloseTo(1 / length, 2);
+                }
+            );
+        }
+    }
+});

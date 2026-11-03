@@ -15,7 +15,9 @@ tournamentBrowserTest(
             process.env.RELIC_HUNTERS_FULL_STACK !== '1',
             'Requires the native game server and SPA.'
         );
-        tournamentBrowserTest.setTimeout(600000);
+        // Four-account setup, three native matches and champion recovery share this budget.
+        // Individual actions and recovery assertions keep their own shorter deadlines.
+        tournamentBrowserTest.setTimeout(900000);
         await registerTournament(players, 'relic');
         const champion = await page.getByRole('region', { name: 'Tournaments', exact: true })
             .locator('ol li').first().innerText();

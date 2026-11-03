@@ -30,12 +30,16 @@ function ShotRegressionScene() {
     const [snapshot, setSnapshot] = useState(() => createFixtureSnapshot('shot-arena'));
     const [published, setPublished] = useState<ArenaSnapshot>();
     const [hit, setHit] = useState(false);
+    const [shotDirection, setShotDirection] = useState<readonly number[]>([]);
     const [sessionId, setSessionId] = useState<string | undefined>('host');
     const [mounted, setMounted] = useState(true);
     const props = createFixtureSceneProps({
         snapshot,
         sessionId,
-        onShot: (_shot, accepted) => setHit(accepted.hit),
+        onShot: (shot, accepted) => {
+            setHit(accepted.hit);
+            setShotDirection(shot.direction);
+        },
         onSnapshot: (next) => {
             setPublished(next);
             setSnapshot(next);
@@ -68,6 +72,7 @@ function ShotRegressionScene() {
             <output data-testid="published-match">{published?.match?.matchId ?? 'none'}</output>
             <output data-testid="published-room">{published?.roomId ?? 'none'}</output>
             <output data-testid="shot-hit">{String(hit)}</output>
+            <output data-testid="shot-direction">{JSON.stringify(shotDirection)}</output>
             {mounted && <BabylonArena {...props} />}
         </>
     );
@@ -78,6 +83,11 @@ function RendererInspection() {
     const [inspection, setInspection] = useState('');
     return (
         <>
+            {[1, 2].map((scale) => (
+                <button key={scale} onClick={() => EngineStore.Instances[0].setHardwareScalingLevel(scale)}>
+                    Render scale {scale}
+                </button>
+            ))}
             <button
                 onClick={() => {
                     const engine = EngineStore.Instances[0];
