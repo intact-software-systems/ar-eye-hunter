@@ -8,20 +8,19 @@ import {
     type RuntimeStateGuardedBatchDatabaseRow
 } from './decode-runtime-state-guarded-batch-rows.ts';
 
-export async function writeRuntimeStateGuardedBatch(
-    sql: PSqlSql,
-    computed: RuntimeStateGuardedBatchWrite
-): Promise<RuntimeStateGuardedBatchResult> {
-    const batch = computed;
-    const rows = await sql<RuntimeStateGuardedBatchDatabaseRow[]>`
+// A stable template identity preserves the driver's statement cache; the two holes bind only prepared descriptors.
+const GUARDED_BATCH_SQL_TEXT = [
+    `
         with guard_input as (
             select descriptor ->> 'operation' as operation,
                    descriptor ->> 'namespace' as store_namespace,
                    descriptor ->> 'key' as store_key,
                    descriptor ->> 'value' as store_value,
                    (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
-                   (descriptor ->> 'expectedRevision')::bigint as expected_revision
-            from (select ${computed.guardSqlDescriptor}::jsonb as descriptor) guard_json
+                   (descriptor ->> 'expectedRevision')::bigint as expected_revision,
+                   descriptor ->> 'expectedValue' as expected_value
+            from (select `,
+    `::jsonb as descriptor) guard_json
         ),
         effect_input as (
             select descriptor ->> 'effectId' as effect_id,
@@ -30,8 +29,10 @@ export async function writeRuntimeStateGuardedBatch(
                    descriptor ->> 'key' as store_key,
                    descriptor ->> 'value' as store_value,
                    (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
-                   (descriptor ->> 'expectedRevision')::bigint as expected_revision
-            from jsonb_array_elements(${computed.effectSqlDescriptors}::jsonb) descriptor
+                   (descriptor ->> 'expectedRevision')::bigint as expected_revision,
+                   descriptor ->> 'expectedValue' as expected_value
+            from jsonb_array_elements(`,
+    `::jsonb) descriptor
         ),
         guard_insert as (
             insert into runtime_state_store (store_namespace,
@@ -66,11 +67,12 @@ export async function writeRuntimeStateGuardedBatch(
                 updated_ts = now(),
                 revision = target.revision + 1
             from guard_input descriptor
-            where descriptor.operation = 'update'
+            where descriptor.operation in ('update', 'update-exact')
               and target.store_namespace = descriptor.store_namespace
               and target.store_key = descriptor.store_key
               and target.revision = descriptor.expected_revision
-            returning 'update'::text as operation,
+              and (descriptor.operation = 'update' or target.store_value = descriptor.expected_value)
+            returning descriptor.operation,
                       target.store_namespace,
                       target.store_key,
                       target.revision
@@ -129,10 +131,11 @@ export async function writeRuntimeStateGuardedBatch(
                 revision = target.revision + 1
             from effect_input descriptor
             cross join authority
-            where descriptor.operation = 'update'
+            where descriptor.operation in ('update', 'update-exact')
               and target.store_namespace = descriptor.store_namespace
               and target.store_key = descriptor.store_key
               and target.revision = descriptor.expected_revision
+              and (descriptor.operation = 'update' or target.store_value = descriptor.expected_value)
             returning target.store_namespace,
                       target.store_key,
                       target.revision
@@ -193,7 +196,7 @@ export async function writeRuntimeStateGuardedBatch(
             join effect_input descriptor
               on descriptor.store_namespace = mutation.store_namespace
              and descriptor.store_key = mutation.store_key
-             and descriptor.operation = 'update'
+             and descriptor.operation in ('update', 'update-exact')
         ),
         effect_delete_result as (
             select descriptor.effect_id,
@@ -258,7 +261,21 @@ export async function writeRuntimeStateGuardedBatch(
                store_key,
                revision
         from effect_put_result
-    `;
+    `
+];
+const GUARDED_BATCH_SQL: TemplateStringsArray = Object.freeze(Object.assign(GUARDED_BATCH_SQL_TEXT, {
+    raw: Object.freeze([...GUARDED_BATCH_SQL_TEXT])
+}));
 
-    return decodeComputedRuntimeStateGuardedBatchRows(batch, rows);
+export async function writeRuntimeStateGuardedBatch(
+    sql: PSqlSql,
+    computed: RuntimeStateGuardedBatchWrite
+): Promise<RuntimeStateGuardedBatchResult> {
+    const rows = await sql<RuntimeStateGuardedBatchDatabaseRow[]>(
+        GUARDED_BATCH_SQL,
+        computed.guardSqlDescriptor,
+        computed.effectSqlDescriptors
+    );
+
+    return decodeComputedRuntimeStateGuardedBatchRows(computed, rows);
 }

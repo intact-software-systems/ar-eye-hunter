@@ -16,6 +16,7 @@ export default {
             'packages/tests/shared-server/integration/postgres/*.test.ts',
             'packages/tests/shared-server/integration/postgres/test-support/*.test.ts',
             adminPrunePageTest,
+            'packages/tests/shared-server/runtime-state/runtime-state-exact-predecessor.test.ts',
             'packages/tests/shared-server/rallar-system/matchmaking/*.test.ts',
             'packages/tests/shared-server/queuebox/resource-inbox-topic-selection.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts',

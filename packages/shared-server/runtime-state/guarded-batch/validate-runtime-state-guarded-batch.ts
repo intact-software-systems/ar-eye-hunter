@@ -7,6 +7,7 @@ import {
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchDelete,
     type RuntimeStateGuardedBatchEffect,
+    type RuntimeStateGuardedBatchExactUpdate,
     type RuntimeStateGuardedBatchGuard,
     type RuntimeStateGuardedBatchIdentity,
     type RuntimeStateGuardedBatchInsert,
@@ -107,26 +108,9 @@ function validateMutation(
                 value: requireString(mutation.value, `${label} value`),
                 expireAtTimestamp: requireExpiry(mutation.expireAtTimestamp, label)
             } satisfies RuntimeStateGuardedBatchInsert;
-        case 'update': {
-            requireExactKeys(
-                mutation,
-                [...commonKeys, 'expectedRevision', 'value', 'expireAtTimestamp'],
-                `runtime state guarded batch ${label}`
-            );
-            const expectedRevision = requireNumber(
-                mutation.expectedRevision,
-                `${label} expected revision`
-            );
-            validateExpectedRevision(expectedRevision, label, 'update');
-            return {
-                operation: mutation.operation,
-                namespace,
-                key,
-                expectedRevision,
-                value: requireString(mutation.value, `${label} value`),
-                expireAtTimestamp: requireExpiry(mutation.expireAtTimestamp, label)
-            } satisfies RuntimeStateGuardedBatchUpdate;
-        }
+        case 'update':
+        case 'update-exact':
+            return validateUpdate(mutation, label, additionalKeys);
         case 'delete': {
             requireExactKeys(
                 mutation,
@@ -148,6 +132,48 @@ function validateMutation(
         default:
             throw invalidBatch(`${label} operation is invalid: ${String(mutation.operation)}`);
     }
+}
+
+function validateUpdate(
+    mutation: JsonWireObject,
+    label: string,
+    additionalKeys: readonly string[]
+): RuntimeStateGuardedBatchUpdate | RuntimeStateGuardedBatchExactUpdate {
+    const namespace = requireNonEmptyString(mutation.namespace, `${label} namespace`);
+    const key = requireNonEmptyString(mutation.key, `${label} key`);
+    requireExactKeys(
+        mutation,
+        [
+            ...additionalKeys,
+            'operation',
+            'namespace',
+            'key',
+            'expectedRevision',
+            'value',
+            'expireAtTimestamp',
+            ...(mutation.operation === 'update-exact' ? ['expectedValue'] : [])
+        ],
+        `runtime state guarded batch ${label}`
+    );
+    const expectedRevision = requireNumber(
+        mutation.expectedRevision,
+        `${label} expected revision`
+    );
+    validateExpectedRevision(expectedRevision, label, 'update');
+    const stored = {
+        namespace,
+        key,
+        expectedRevision,
+        value: requireString(mutation.value, `${label} value`),
+        expireAtTimestamp: requireExpiry(mutation.expireAtTimestamp, label)
+    };
+    return mutation.operation === 'update-exact'
+        ? {
+            ...stored,
+            operation: 'update-exact',
+            expectedValue: requireString(mutation.expectedValue, `${label} expected value`)
+        } satisfies RuntimeStateGuardedBatchExactUpdate
+        : { ...stored, operation: 'update' } satisfies RuntimeStateGuardedBatchUpdate;
 }
 
 function validateExpectedRevision(

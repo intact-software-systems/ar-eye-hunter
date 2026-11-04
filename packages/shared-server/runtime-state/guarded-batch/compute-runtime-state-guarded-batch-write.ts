@@ -26,6 +26,7 @@ function computeSqlDescriptor(
         ...('expectedRevision' in input
             ? { expectedRevision: input.expectedRevision }
             : {}),
+        ...('expectedValue' in input ? { expectedValue: input.expectedValue } : {}),
         ...('value' in input ? { value: input.value } : {}),
         ...('expireAtTimestamp' in input
             ? { expireAtTimestamp: new Date(input.expireAtTimestamp).toISOString() }

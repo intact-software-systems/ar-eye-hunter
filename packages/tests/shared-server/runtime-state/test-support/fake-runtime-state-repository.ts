@@ -1,14 +1,8 @@
 import type {
-    RuntimeStateGuardedBatch,
-    RuntimeStateGuardedBatchEffect,
-    RuntimeStateGuardedBatchEffectResult,
-    RuntimeStateGuardedBatchGuard,
-    RuntimeStateGuardedBatchGuardResult,
+    RuntimeStateGuardedBatchExactUpdate,
     RuntimeStateGuardedBatchResult,
     RuntimeStateGuardedBatchWrite
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
@@ -25,6 +19,7 @@ import { assertRuntimeStateExpectedRevision, assertRuntimeStateUpsertExpectedRev
 import type { TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
+import { applyFakeRuntimeStateGuardedBatch } from './apply-fake-runtime-state-guarded-batch.ts';
 
 export class FakeRuntimeStateRepository
     implements RuntimeStateGuardedBatchTransactionalRepositoryLike, TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner {
@@ -194,14 +189,23 @@ export class FakeRuntimeStateRepository
         return { status: 'applied', revision };
     }
 
-    async upsertIfRevision(
-        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
+    async upsertIfRevision(input: RuntimeStateRevisionWriteInput): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.applyRevisionUpdate(input);
+    }
+
+    async upsertIfExactPredecessor(input: RuntimeStateGuardedBatchExactUpdate): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.applyRevisionUpdate(input);
+    }
+
+    private async applyRevisionUpdate(
+        input: RuntimeStateRevisionWriteInput | RuntimeStateGuardedBatchExactUpdate
     ): Promise<RuntimeStateConditionalWriteResult> {
+        const { namespace, key, value, expireAtTimestamp, expectedRevision } = input;
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         await this.beforeConditionalWrite?.('upsertIfRevision', namespace, key);
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
-        if (!current || current.revision !== expectedRevision) {
+        if (!current || current.revision !== expectedRevision || ('expectedValue' in input && current.value !== input.expectedValue)) {
             return { status: 'conflict' };
         }
 
@@ -239,29 +243,7 @@ export class FakeRuntimeStateRepository
         if (this.activeTransactionCount === 0) {
             throw new Error('Guarded runtime state batch requires an active transaction');
         }
-        const batch = validateRuntimeStateGuardedBatch({
-            guard: input.guard,
-            effects: input.effects
-        });
-        const guard = await applyGuardedBatchGuard(this, batch.guard);
-        if (guard.status === 'conflict') {
-            return validateRuntimeStateGuardedBatchResult(batch, {
-                guard,
-                effects: batch.effects.map((effect) => ({
-                    status: 'skipped',
-                    effectId: effect.effectId,
-                    operation: effect.operation,
-                    namespace: effect.namespace,
-                    key: effect.key,
-                    reason: 'guard-conflict'
-                }))
-            });
-        }
-        const effects: RuntimeStateGuardedBatchEffectResult[] = [];
-        for (const effect of batch.effects) {
-            effects.push(await applyGuardedBatchEffect(this, effect));
-        }
-        return validateRuntimeStateGuardedBatchResult(batch, { guard, effects });
+        return await applyFakeRuntimeStateGuardedBatch(this, input);
     }
 
     deleteByKey(namespace: string, key: string): Promise<void> {
@@ -299,112 +281,6 @@ export class FakeRuntimeStateRepository
     private toStoreKey(compositeKey: string): string {
         return compositeKey.slice(this.toNamespace(compositeKey).length + 2);
     }
-}
-
-async function applyGuardedBatchGuard(
-    repository: FakeRuntimeStateRepository,
-    guard: RuntimeStateGuardedBatchGuard
-): Promise<RuntimeStateGuardedBatchGuardResult> {
-    const result = guard.operation === 'insert'
-        ? await repository.insertIfAbsent(
-            { namespace: guard.namespace, key: guard.key, value: guard.value, expireAtTimestamp: guard.expireAtTimestamp }
-        )
-        : guard.operation === 'update'
-        ? await repository.upsertIfRevision(
-            {
-                namespace: guard.namespace,
-                key: guard.key,
-                value: guard.value,
-                expireAtTimestamp: guard.expireAtTimestamp,
-                expectedRevision: guard.expectedRevision
-            }
-        )
-        : await repository.deleteIfRevision(guard.namespace, guard.key, guard.expectedRevision);
-    if (result.status === 'conflict') {
-        return {
-            status: 'conflict',
-            operation: guard.operation,
-            namespace: guard.namespace,
-            key: guard.key,
-            reason: 'condition-not-met'
-        };
-    }
-    if (guard.operation === 'delete') {
-        return {
-            status: 'applied',
-            operation: guard.operation,
-            namespace: guard.namespace,
-            key: guard.key,
-            matchedRevision: guard.expectedRevision
-        };
-    }
-    if (!('revision' in result) || typeof result.revision !== 'number') {
-        throw new Error('Guarded runtime state guard result is missing its revision');
-    }
-    return {
-        status: 'applied',
-        operation: guard.operation,
-        namespace: guard.namespace,
-        key: guard.key,
-        resultingRevision: result.revision
-    };
-}
-
-async function applyGuardedBatchEffect(
-    repository: FakeRuntimeStateRepository,
-    effect: RuntimeStateGuardedBatchEffect
-): Promise<RuntimeStateGuardedBatchEffectResult> {
-    if (effect.operation === 'put') {
-        await repository.upsert(effect);
-        const stored = await repository.findEntry(effect.namespace, effect.key);
-        if (!stored) {
-            throw new Error(`Guarded runtime state put result is missing: ${effect.effectId}`);
-        }
-        return {
-            status: 'applied',
-            effectId: effect.effectId,
-            operation: effect.operation,
-            namespace: effect.namespace,
-            key: effect.key,
-            resultingRevision: stored.revision
-        };
-    }
-    const result = effect.operation === 'insert'
-        ? await repository.insertIfAbsent(effect)
-        : effect.operation === 'update'
-        ? await repository.upsertIfRevision(effect)
-        : await repository.deleteIfRevision(effect.namespace, effect.key, effect.expectedRevision);
-    if (result.status === 'conflict') {
-        return {
-            status: 'conflict',
-            effectId: effect.effectId,
-            operation: effect.operation,
-            namespace: effect.namespace,
-            key: effect.key,
-            reason: 'condition-not-met'
-        };
-    }
-    if (effect.operation === 'delete') {
-        return {
-            status: 'applied',
-            effectId: effect.effectId,
-            operation: effect.operation,
-            namespace: effect.namespace,
-            key: effect.key,
-            matchedRevision: effect.expectedRevision
-        };
-    }
-    if (!('revision' in result) || typeof result.revision !== 'number') {
-        throw new Error(`Guarded runtime state effect result is missing its revision: ${effect.effectId}`);
-    }
-    return {
-        status: 'applied',
-        effectId: effect.effectId,
-        operation: effect.operation,
-        namespace: effect.namespace,
-        key: effect.key,
-        resultingRevision: result.revision
-    };
 }
 
 interface Deferred {

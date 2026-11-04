@@ -27,8 +27,8 @@ export function computeGuardedViewPublication(
     storage: RuntimeStateGuardedBatch,
     outbox: readonly AppOutboxInsert[]
 ): GuardedViewPublication {
-    if (storage.guard.operation === 'delete') {
-        throw new TypeError('View publication cannot delete its observation guard');
+    if (storage.guard.operation !== 'insert' && storage.guard.operation !== 'update') {
+        throw new TypeError('View publication requires an insert or revision-update observation guard');
     }
     return {
         storage: storage.effects.length === 0
