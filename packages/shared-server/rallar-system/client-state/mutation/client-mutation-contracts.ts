@@ -13,6 +13,7 @@ import type {
     ClientTransport
 } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
@@ -25,6 +26,7 @@ import type { PartyMemberViewRead } from '../../parties/party-member-view-public
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
+import type { ViewWatchSessionCleanupRead } from '../../view-watch/view-watch-session-cleanup.ts';
 import type { GuardedViewPublication } from '../../websocket/outbox/guarded-view-publication.ts';
 import type {
     WsSessionGenerationLifecycleRead,
@@ -234,6 +236,7 @@ export type ClientMutationRead = Readonly<{
     receiptEvent: ClientEvent | null;
     partyMemberView: PartyMemberViewRead | null;
     friendsPresence: FriendsPresenceRead | null;
+    viewWatchCleanup: ViewWatchSessionCleanupRead | null;
     audienceObservedAtEpochMs: number;
     audienceGroupSnapshots: readonly GroupSnapshot[];
     audienceCoMemberSessions: readonly PrincipalAudienceSessions[];
@@ -306,6 +309,7 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     receipt: ClientMutationReceipt;
     idempotency: ClientMutationIdempotencyRecord | null;
     viewPublication: GuardedViewPublication | null;
+    viewWatchCleanup: RuntimeStateGuardedBatchWrite | null;
     stateSync: readonly ComputedClientStateSync[];
     outbox: readonly ClientMutationOutboxWrite[];
     principalAudienceSessionIds: readonly string[];

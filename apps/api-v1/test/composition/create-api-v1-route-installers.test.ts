@@ -162,6 +162,7 @@ function createAuthentication(): CreateApiV1RouteInstallersInput['authentication
 function createRuntime(): ApiV1RouteInstallerRuntime {
     return {
         wsQBoxServerService: { socket: new JsonWebSocketServer() },
+        viewWatches: { mutate: { submit: rejectUnusedOperation } },
         ...createAuthRuntime(),
         appClientInboxService: {
             writeAuthorisedWsClientConnect: rejectUnusedOperation,

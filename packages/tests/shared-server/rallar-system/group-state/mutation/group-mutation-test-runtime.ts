@@ -147,6 +147,7 @@ export function createGroupAuthorityRead(
         targetPublicationGrant: null,
         sessionReservations: null,
         sessionIntent: null,
+        sessionViewAudience: null,
         targetTopicSubscription: null,
         targetClientSessions: null,
         targetPrincipalSubscriptions: null,

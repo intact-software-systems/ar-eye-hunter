@@ -33,6 +33,7 @@ import { assertGroupMutationOperationReads } from './assert-group-mutation-opera
 import { assertGroupMutationIdempotencyRecord } from './assert-group-mutation-result.ts';
 
 const GROUP_MUTATION_READ_KEYS = [
+    'sessionViewAudience',
     'sessionIntent',
     'sessionReservations',
     'idempotency',
@@ -74,6 +75,17 @@ export function assertGroupMutationRead(
     const ref = command.aggregateRef;
     assertReadShape(read);
     assertStoredGroupRead(read, ref);
+    if (read.sessionViewAudience !== null) {
+        assertGroupRefIdentity(read.sessionViewAudience.ref, ref, 'Session view audience');
+        if (
+            read.sessionViewAudience.principalIds.some((principalId) =>
+                typeof principalId !== 'string' || principalId.length === 0
+            ) ||
+            new Set(read.sessionViewAudience.principalIds).size !== read.sessionViewAudience.principalIds.length
+        ) {
+            throw new TypeError('Session view audience has invalid account identities');
+        }
+    }
     assertSessionReservationRead(read, command);
     if (read.sessionIntent !== null) {
         if (

@@ -56,6 +56,7 @@ describe('transactional deletion of room-owned rows', () => {
         const ownedLatch = await seedLatch(fixture, RETENTION_REF);
         const foreignLatch = await seedLatch(fixture, foreignRef);
         const retention = new GroupRetentionService({
+            runtime: fixture.runtime,
             repository: fixture.repository,
             groupOwnedAppData: new RoomOwnedAppData(appData, [{
                 applicationId: RETENTION_REF.applicationId,
@@ -63,7 +64,7 @@ describe('transactional deletion of room-owned rows', () => {
                 namespace: own.namespace,
                 storeName: own.storeName
             }])
-        }, { serviceId: 'test', now: () => fixture!.nowEpochMs });
+        }, { finishedRetentionMs: 60000, serviceId: 'test', now: () => fixture!.nowEpochMs });
         const ingress = retention.capture({ groupRef: RETENTION_REF, requestId: 'delete-owned', observedAtEpochMs: fixture.nowEpochMs });
         const read = await retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retirement-owned-data' });
         const computed = retention.compute(read);
@@ -116,7 +117,8 @@ describe('transactional deletion of room-owned rows', () => {
             namespace: key.namespace,
             storeName: key.storeName
         }]);
-        const retention = new GroupRetentionService({ repository: fixture.repository, groupOwnedAppData: owned }, {
+        const retention = new GroupRetentionService({ runtime: fixture.runtime, repository: fixture.repository, groupOwnedAppData: owned }, {
+            finishedRetentionMs: 60000,
             serviceId: 'test',
             now: () => fixture!.nowEpochMs
         });

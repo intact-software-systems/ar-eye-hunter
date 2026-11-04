@@ -68,6 +68,7 @@ const TERMINAL_POLICY_BY_CODE = new Map<string, TerminalAppInboxErrorPolicy>([
     ['client-state-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
     ['admin-prune-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
     ['crdt-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
+    ['view-watch-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
     ['group-mutation-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
     ['group-already-exists', { status: 409, queueFailure: 'command-rejected' }],
     ['group-retired', { status: 410, queueFailure: 'command-rejected' }],

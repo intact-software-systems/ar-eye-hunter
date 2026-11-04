@@ -1,5 +1,11 @@
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import {
+    readGroupSessionViewAudience,
+    type GroupSessionViewAudience
+} from '../schedule/read-group-session-view-audience.ts';
 
 import {
     requireEpoch,
@@ -50,6 +56,8 @@ export namespace GroupRetentionService {
         readonly idempotency: GroupMutationIdempotencyRecord | null;
         readonly retirementEntries: readonly GroupRetirementEntry[];
         readonly ownedAppData: readonly RoomOwnedAppData.Read[];
+        readonly sessionViewAudience: GroupSessionViewAudience | null;
+        readonly publicationRetentionMs: number;
     }
 
     export interface ComputedWrite
@@ -70,6 +78,7 @@ export namespace GroupRetentionService {
     }
 
     export interface Dependencies {
+        readonly runtime: RuntimeStateRepositoryLike;
         readonly groupOwnedAppData: Pick<RoomOwnedAppData, 'read'>;
         readonly repository: Pick<
             GroupStateRepository,
@@ -78,6 +87,7 @@ export namespace GroupRetentionService {
     }
 
     export interface Config {
+        readonly finishedRetentionMs: number;
         readonly serviceId: string;
         readonly now: () => number;
     }
@@ -118,13 +128,16 @@ export class GroupRetentionService {
         // Observe the surviving authority fence before inventories that can miss a concurrent insertion.
         // Missing-summary repairs and owned-save insertions advance it, forcing a fresh deletion attempt.
         const authority = await this.dependencies.repository.readPresenceSummaryEntries(ingress.command.groupRef);
-        const [idempotency, retirementEntries, ownedAppData] = await Promise.all([
+        const [idempotency, retirementEntries, ownedAppData, sessionViewAudience] = await Promise.all([
             this.dependencies.repository.findIdempotentGroupMutationReceipt(
                 ingress.command.groupRef,
                 ingress.commandId
             ),
             this.dependencies.repository.readRetirementEntries(ingress.command.groupRef),
-            this.dependencies.groupOwnedAppData.read(ingress.command.groupRef)
+            this.dependencies.groupOwnedAppData.read(ingress.command.groupRef),
+            authority.group === undefined || readGroupSessionSchedule(authority.group.value.metadata) === null
+                ? null
+                : readGroupSessionViewAudience(this.dependencies.runtime, ingress.command.groupRef, attemptAtEpochMs)
         ]);
         if (idempotency !== undefined && idempotency.commandHash !== ingress.commandHash) {
             throw new AppInboxIdempotencyConflictError(ingress.commandId, idempotency.commandHash, ingress.commandHash);
@@ -137,7 +150,9 @@ export class GroupRetentionService {
             authority,
             idempotency: idempotency ?? null,
             retirementEntries,
-            ownedAppData
+            ownedAppData,
+            sessionViewAudience,
+            publicationRetentionMs: this.config.finishedRetentionMs
         };
     }
 

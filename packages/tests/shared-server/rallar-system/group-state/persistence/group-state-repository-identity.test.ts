@@ -6,7 +6,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('keeps absent and explicit sentinel workspaces isolated at the repository boundary', async () => {

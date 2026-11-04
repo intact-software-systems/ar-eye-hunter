@@ -1,5 +1,6 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
+import { ViewWatchRepository } from '../view-watch/view-watch-repository.ts';
 
 import { FriendsRepository } from '../friends/friends-repository.ts';
 import { GroupStateRepositoryReads } from '../group-state/persistence/group-state-repository-reads.ts';
@@ -35,6 +36,7 @@ export function createClientStateService(
         groupRepository,
         parties: new PartyRepository(runtimeRepository, nowMs),
         friends: new FriendsRepository(runtimeRepository),
+        viewWatches: new ViewWatchRepository(runtimeRepository),
         command,
         audienceObservedAtEpochMs: nowMs(),
         timing: { sink: dependencies.timing, serviceId: dependencies.serviceId },

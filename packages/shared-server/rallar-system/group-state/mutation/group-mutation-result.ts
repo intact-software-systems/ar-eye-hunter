@@ -15,6 +15,8 @@ import type {
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeGroupSessionMembershipEffects } from '../schedule/compute-group-session-membership-effects.ts';
+import { computeGroupSessionViewPublication } from '../schedule/compute-group-session-view-publication.ts';
+import { computeGroupSessionDeadlines } from '../schedule/group-session-deadline.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
@@ -146,25 +148,26 @@ export function computeGroupMutationWriteResult(
             members: input.members,
             publicationGrantEffects: input.publicationGrantEffects
         });
+    const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
+    const sessionReservationWrite = input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite;
+    const scheduled = computeScheduledMutationWrites(input, group, sessionReservationWrite);
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
-    const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
-    const plannedLayoutFence = input.plannedLayoutFence ?? null;
-    const layoutTombstones = input.layoutTombstones ?? null;
+    const outboxWrites = [...outboxEntries.map(computeAppOutboxInsert), ...scheduled.outboxWrites];
     const receipt = toGroupMutationReceipt(command, facts, {
         outcome: 'applied',
         causalRevision,
         snapshotVersion: group.snapshotVersion,
         acceptedStorageRevision: input.guard.operation === 'insert' ? 0 : input.guard.expectedRevision + 1,
         eventId: event?.eventId ?? null,
-        outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
+        outboxIds: outboxWrites.map((write) => write.entry.key.resourceId),
         subscriptionOutcome: input.subscriptionOutcome,
         rejection: null
     });
-    const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const computed: GroupMutationDomainWrite = {
         outcome: 'write',
+        viewProvenance: scheduled.viewProvenance,
         sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
-        sessionReservationWrite: input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite,
+        sessionReservationWrite,
         guard: input.guard,
         members: input.members,
         initialPresenceSummary: input.initialPresenceSummary,
@@ -172,11 +175,11 @@ export function computeGroupMutationWriteResult(
         event,
         receipt,
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
-        outboxWrites: outboxEntries.map(computeAppOutboxInsert),
+        outboxWrites,
         lifecyclePolicy: input.lifecyclePolicy,
-        acceptedLayoutPromotion,
-        plannedLayoutFence,
-        layoutTombstones,
+        acceptedLayoutPromotion: input.acceptedLayoutPromotion ?? null,
+        plannedLayoutFence: input.plannedLayoutFence ?? null,
+        layoutTombstones: input.layoutTombstones ?? null,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null,
         publicationGrantEffects: input.publicationGrantEffects,
         subscriptionEffects: input.subscriptionEffects
@@ -386,4 +389,31 @@ function computeMutationFollowupEntries(
             )
         ];
     return [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
+}
+
+interface GroupMutationScheduledWrites extends Pick<GroupMutationDomainWrite, 'outboxWrites' | 'viewProvenance'> {}
+
+function computeScheduledMutationWrites(
+    input: GroupMutationWriteInput,
+    group: Group,
+    reservations: GroupSessionReservationWrite | null
+): GroupMutationScheduledWrites {
+    if (input.guard.kind !== 'group') {
+        return { outboxWrites: [], viewProvenance: [] };
+    }
+    const { command, read, facts, members } = input;
+    const publication = computeGroupSessionViewPublication({ command, read, facts, group, members, reservations });
+    const deadlines = computeGroupSessionDeadlines({
+        changedMembers: members,
+        previousMembers: [read.actorMember, read.targetMember, read.authorityMember, read.directorMember].filter((
+            member
+        ) => member !== null),
+        before: read.group?.value ?? null,
+        after: group,
+        createdAtEpochMs: facts.nowEpochMs,
+        retentionMs: facts.expireAtEpochMs - facts.nowEpochMs,
+        serviceId: facts.serviceId,
+        traceId: facts.traceId
+    });
+    return { outboxWrites: [...publication.outbox, ...deadlines], viewProvenance: publication.provenance };
 }

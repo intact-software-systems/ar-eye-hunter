@@ -23,6 +23,9 @@ import {
 import {
     startGroupRetentionReconciliation
 } from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
+import { GroupSessionDeadlineService } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline-service.ts';
+import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline.ts';
+import { GroupSessionViewWatch } from '@shared-server/rallar-system/group-state/schedule/group-session-view-watch.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
@@ -45,6 +48,8 @@ import {
     RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
+import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { readPrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import type { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
@@ -204,7 +209,6 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     });
     const mutation = createApiV1MutationRuntime(toMutationRuntimeInput(input, appInboxCompletionNotices));
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation);
-    input.backgroundTasks.register(rtcTopology.stop);
     startMutationInfrastructure({ runtime: input, mutation, startupGeneration });
     const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
     const runtime = createSharedMiddleware({
@@ -228,11 +232,12 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     });
     const appInbox = createApiV1AppInbox({ mutation, runtime, timing: input.timing });
     input.backgroundTasks.register(() => appInbox.stop());
-    rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
     startGroupMaintenance({ runtime, mutation, input });
+    const viewWatches = installSessionViews({ appInbox, runtime, mutation, input });
     return requireApiV1Runtime({
         runtime,
         appInbox,
+        viewWatches,
         authSessionRepository: mutation.authSessionRepository,
         passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...createApiStateSnapshotReadSelectors({
@@ -351,6 +356,7 @@ function createRuntimeTopology(
         delivery: input.topologyDelivery,
         readHydrationIdentity: readAuthorisedWsConnectionIdentity
     });
+    input.backgroundTasks.register(rtcTopology.stop);
     const topology = createApiV1TopologyServices({
         pendingReplanReader: mutation.resourceInboxRepository.entries,
         runtimeStateRepository: mutation.runtimeStateRepository,
@@ -408,7 +414,7 @@ function createSharedMiddleware(
         notification: input.databaseNotification,
         publisherId: input.queuePubSubPublisherId
     });
-    return createRallarMiddleware({
+    const runtime = createRallarMiddleware({
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
         appInboxDequeueOptions: mutation.appInboxDequeueOptions,
@@ -446,6 +452,8 @@ function createSharedMiddleware(
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });
+    rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
+    return runtime;
 }
 
 /** The final WS boundary rechecks producer provenance and the current recipient authority. */
@@ -636,4 +644,39 @@ function startRuntimeStateExpiry(input: StartRuntimeStateExpiryInput): void {
 
 function logRtcRttReceiptCleanupFailure(error: Error): void {
     console.error('RTC RTT receipt family cleanup failed:', error);
+}
+
+interface InstallSessionViewsInput {
+    readonly appInbox: ApiV1Runtime['appInbox'];
+    readonly runtime: RallarMiddlewareRuntime;
+    readonly mutation: ApiV1MutationRuntime;
+    readonly input: CreateApiV1RuntimeInput;
+}
+
+function installSessionViews({ appInbox, runtime, mutation, input }: InstallSessionViewsInput): ViewWatchService {
+    const service = new GroupSessionDeadlineService({
+        appInbox,
+        groups: mutation.groupsRepository,
+        runtime: mutation.runtimeStateRepository,
+        nowEpochMs: input.nowEpochMs,
+        serviceId: input.serviceId,
+        retentionMs: input.appInboxFinishedRetentionMs
+    });
+    installGroupSessionDeadline({
+        outboxQueueReader: runtime.outboxQueueReader,
+        nowEpochMs: input.nowEpochMs,
+        enqueue: async (command, traceId) => {
+            const admitted = await service.wake.enqueue({ command, traceId });
+            if (admitted.left !== undefined) {
+                throw new Error(admitted.left.message);
+            }
+        }
+    });
+    return new ViewWatchService({
+        appInbox,
+        repository: new ViewWatchRepository(mutation.runtimeStateRepository),
+        clients: mutation.clientsRepository,
+        authorizer: new GroupSessionViewWatch(mutation.groupsRepository),
+        nowEpochMs: input.nowEpochMs
+    });
 }

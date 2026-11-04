@@ -19,6 +19,7 @@ import {
     computePrincipalStateSyncAudience,
     toPrincipalAudienceSessions
 } from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
+import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
@@ -159,6 +160,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('audience-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -199,6 +201,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('stale-instance-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -235,6 +238,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('retained-disconnected-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -268,6 +272,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('moved-co-member'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -317,6 +322,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('concurrent-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -378,6 +384,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('audience-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -404,6 +411,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: heartbeatCommandFor('superseded-generation'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -425,6 +433,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -447,6 +456,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -468,6 +478,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -496,6 +507,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('audience-carrying-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -529,6 +541,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('forged-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -551,6 +564,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -575,6 +589,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -594,6 +609,7 @@ describe('client mutation principal audience read', () => {
                     audienceGroupSnapshots: [],
                     partyMemberView: null,
                     friendsPresence: null,
+                    viewWatchCleanup: null,
                     audienceCoMemberSessions: []
                 },
                 computed
@@ -639,6 +655,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('corrupt-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
@@ -680,6 +697,7 @@ describe('client mutation principal audience read', () => {
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             friends: new FriendsRepository(runtime),
+            viewWatches: new ViewWatchRepository(runtime),
             command: principalCommand('corrupt-co-group-client'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({

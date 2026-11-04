@@ -131,6 +131,7 @@ export function emptyClientMutationRead(sessionId = 'session-1'): ClientMutation
         audienceGroupSnapshots: [],
         partyMemberView: null,
         friendsPresence: null,
+        viewWatchCleanup: null,
         audienceCoMemberSessions: []
     };
 }

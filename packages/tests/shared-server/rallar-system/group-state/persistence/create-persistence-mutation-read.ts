@@ -1,4 +1,5 @@
 import { type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupMember } from '@shared/api/group-types.ts';
 import type { AuditStamp } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -23,19 +24,7 @@ export function createPersistenceMutationRead(): GroupMutationRead {
         created: audit,
         updated: audit
     });
-    const actorMember = {
-        ...groupRef('pure-room'),
-        principalId: 'alice',
-        role: 'owner' as const,
-        status: 'active' as const,
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-        left: null,
-        removed: null,
-        banned: null,
-        joined: audit,
-        updated: audit
-    };
+    const actorMember = persistenceActorMember(audit);
     return {
         idempotency: null,
         group: storedEntry(groupStorageKey(), group),
@@ -60,6 +49,7 @@ export function createPersistenceMutationRead(): GroupMutationRead {
         targetPublicationGrant: null,
         sessionReservations: null,
         sessionIntent: null,
+        sessionViewAudience: null,
         targetTopicSubscription: null,
         targetClientSessions: null,
         targetPrincipalSubscriptions: null,
@@ -83,5 +73,21 @@ function persistenceAuditStamp(
         reason: null,
         traceId: null,
         requestId
+    };
+}
+
+function persistenceActorMember(audit: AuditStamp): GroupMember {
+    return {
+        ...groupRef('pure-room'),
+        principalId: 'alice',
+        role: 'owner' as const,
+        status: 'active' as const,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
+        joined: audit,
+        updated: audit
     };
 }

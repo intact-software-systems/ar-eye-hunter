@@ -165,7 +165,8 @@ describe('AR Eye tournament mutation authority', () => {
                 deleted: null,
                 archived: { ...group.value.updated, atEpochMs: game.nowEpochMs - 604800000 }
             }, group.entry.revision);
-            const retirement = new GroupRetentionService({ repository: game.repository, groupOwnedAppData: game.data }, {
+            const retirement = new GroupRetentionService({ runtime: game.runtime, repository: game.repository, groupOwnedAppData: game.data }, {
+                finishedRetentionMs: 60000,
                 serviceId: 'arena-retirement',
                 now: () => game.nowEpochMs
             });

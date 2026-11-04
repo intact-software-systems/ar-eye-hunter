@@ -228,9 +228,14 @@ function assertAppliedReceipt({
     }
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} applied snapshotVersion`);
     requirePositiveSafeInteger(causalRevision.groupRevision, `${label} applied groupRevision`);
-    // One presence-summary id, plus the formation timers a lifecycle transition
-    // arms; the entries themselves are verified canonically at compute time.
-    if (outboxIds.slice(1).some((outboxId) => !outboxId.startsWith('ft-') && !outboxId.startsWith('ct-'))) {
+    // Presence summary, formation/connect timers and queue-shortened hash identities for private view hints.
+    // Complete entries and provenance are validated by canonical mutation recomputation.
+    if (
+        outboxIds.slice(1).some((outboxId) =>
+            !outboxId.startsWith('ft-') && !outboxId.startsWith('ct-') &&
+            !(outboxId.length === 36 && /^[0-9a-f]{22,34}-[0-9a-z]{1,13}$/.test(outboxId))
+        )
+    ) {
         throw new TypeError(`${label} outboxIds differs from applied outcome`);
     }
 }

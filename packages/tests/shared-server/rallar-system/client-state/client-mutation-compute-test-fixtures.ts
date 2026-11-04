@@ -297,6 +297,7 @@ export function emptyRead(command: ClientMutationCommand): ClientMutationRead {
         audienceGroupSnapshots: [],
         partyMemberView: null,
         friendsPresence: null,
+        viewWatchCleanup: null,
         audienceCoMemberSessions: []
     };
 }

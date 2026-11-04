@@ -38,6 +38,9 @@ export async function writeClientMutationRecords(
     }
     if (computed.outcome === 'write') {
         await writeGuardedViewPublication(transaction, computed.viewPublication);
+        if (computed.viewWatchCleanup !== null) {
+            await writeClientRuntimeBatch(transaction, computed.viewWatchCleanup, []);
+        }
         await writeAppOutboxInserts(transaction, computed.outbox.map(({ write }) => write));
     }
     return computed.receipt;

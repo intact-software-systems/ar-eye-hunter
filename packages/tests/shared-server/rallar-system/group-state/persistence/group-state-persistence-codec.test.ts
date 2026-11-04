@@ -9,7 +9,7 @@ import type { GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary
 import { describe, expect, it } from 'vitest';
 
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('group-state persistence codec', () => {
     // A stored value is parsed afresh from its text on every read, so the decoder hands out the

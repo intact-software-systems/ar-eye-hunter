@@ -38,18 +38,17 @@ export async function createRetentionDatabaseFixture(): Promise<RetentionDatabas
     const events = new PSqlGroupStateEventRepository(storage.sql);
     const repository = new GroupStateRepository(runtime, events);
     const clock = { nowEpochMs: Date.now() };
-    const config = { serviceId: 'retention-test', now: () => clock.nowEpochMs };
+    const config = { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'retention-test', now: () => clock.nowEpochMs };
     const mutations = createGroupStateService({
         runtimeRepository: runtime,
         groupStateEventStore: events,
-        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null,
         ...config
     });
     const owner = createTestAuthSession('owner');
     await new AuthSessionRepository(runtime).putSession(owner);
-    const retention = new GroupRetentionService({ repository, groupOwnedAppData: { read: async () => [] } }, config);
+    const retention = new GroupRetentionService({ runtime, repository, groupOwnedAppData: { read: async () => [] } }, config);
     return Object.assign(clock, { storage, runtime, repository, mutations, retention, owner });
 }
 

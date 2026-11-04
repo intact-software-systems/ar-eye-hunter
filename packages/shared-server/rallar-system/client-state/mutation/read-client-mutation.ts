@@ -1,5 +1,7 @@
 import type { ClientInstanceRef, ClientSessionRef } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ViewWatchRepository } from '../../view-watch/view-watch-repository.ts';
+import { readViewWatchSessionCleanup } from '../../view-watch/view-watch-session-cleanup.ts';
 
 import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
@@ -55,6 +57,7 @@ export interface ReadClientMutationInput {
     readonly groupRepository: GroupStateRepositoryReads;
     readonly parties: PartyRepository;
     readonly friends: FriendsRepository;
+    readonly viewWatches: ViewWatchRepository;
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
@@ -149,7 +152,18 @@ async function readClientMutationAudience(
     const friendsPresence = needsFriends
         ? await readFriendsPresence(input.friends, command.aggregateRef.principalId)
         : null;
-    return { ...state, receiptEvent, audienceObservedAtEpochMs, partyMemberView, friendsPresence, ...audience };
+    const viewWatchCleanup = state.idempotency === null
+        ? await readViewWatchSessionCleanup(input.viewWatches, command)
+        : null;
+    return {
+        ...state,
+        receiptEvent,
+        audienceObservedAtEpochMs,
+        partyMemberView,
+        friendsPresence,
+        viewWatchCleanup,
+        ...audience
+    };
 }
 
 async function readClientMutationState(

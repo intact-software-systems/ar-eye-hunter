@@ -139,6 +139,7 @@ function expectCorruptReadAndComputedRejection(): void {
                 audienceGroupSnapshots: [],
                 partyMemberView: null,
                 friendsPresence: null,
+                viewWatchCleanup: null,
                 audienceCoMemberSessions: []
             }
         })

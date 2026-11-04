@@ -19,7 +19,7 @@ import {
     seedGrantRoom,
     writeGrantRow
 } from '../mutation/group-publication-grant-test-runtime.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('fails closed when persisted active membership exceeds maxMembers', async () => {

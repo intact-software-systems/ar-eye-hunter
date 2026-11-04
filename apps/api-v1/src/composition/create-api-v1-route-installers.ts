@@ -1,5 +1,6 @@
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../group-state/register-view-watch-routes.ts';
 import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
@@ -54,6 +55,7 @@ export interface ApiV1RouteAuthRequest {
 }
 
 export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRuntime {
+    readonly viewWatches: { readonly mutate: ViewWatchRouteDependencies['mutation']; };
     readonly wsQBoxServerService: Pick<ApiV1Runtime['wsQBoxServerService'], 'socket'>;
     readonly appAuthInboxService: configRoutes.ConfigRouteDependencies['appAuthInbox'];
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
@@ -170,6 +172,10 @@ export function constructApiV1RouteInstallers<
     const construction = createApiV1RouteConstruction(input, operations);
     function installApiV1RestRoutes(app: Hono): void {
         registerApiV1StateRoutes(app, construction);
+        registerViewWatchRoutes(app, {
+            mutation: input.runtime.viewWatches.mutate,
+            requireSession: construction.requireSession
+        });
         registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
         registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
         registerTournamentRoutes(app, { ...input.tournaments, requireSession: construction.requireSession });

@@ -316,6 +316,7 @@ describe('client mutation persisted-state validation', () => {
             audienceGroupSnapshots: [],
             partyMemberView: null,
             friendsPresence: null,
+            viewWatchCleanup: null,
             audienceCoMemberSessions: []
         };
         expect(() => assertUntrustedClientMutationComputeInput({ command, read: invalidRead })).toThrow(ClientMutationRejectedError);
@@ -333,6 +334,7 @@ describe('client mutation persisted-state validation', () => {
             audienceGroupSnapshots: [],
             partyMemberView: null,
             friendsPresence: null,
+            viewWatchCleanup: null,
             audienceCoMemberSessions: []
         };
         const computed = computeClientMutation({ command, read });

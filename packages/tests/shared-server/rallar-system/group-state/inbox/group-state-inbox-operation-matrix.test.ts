@@ -152,6 +152,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
+                    outboxEntries: 5,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -177,6 +178,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_SESSION_CHANGE,
                     operation: 'changeGroupSession',
+                    outboxEntries: 3,
                     authority: harness.sessions.bob,
                     data: {
                         scope: SCOPE,

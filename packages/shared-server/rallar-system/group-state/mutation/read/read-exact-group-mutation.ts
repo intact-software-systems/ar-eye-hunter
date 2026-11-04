@@ -113,6 +113,7 @@ function assembleExactGroupMutationRead(
         ...toGroupMutationSubscriptionRead(command, read),
         lifecyclePolicy: read.lifecyclePolicy,
         sessionReservations: read.sessionReservations,
+        sessionViewAudience: null,
         sessionIntent: read.sessionIntent,
         activeMemberPrincipalIds: readsGroupActiveMemberPrincipalIds(command.operation)
             ? activeMembers?.filter((member) => member.role !== 'spectator').map((member) => member.principalId)

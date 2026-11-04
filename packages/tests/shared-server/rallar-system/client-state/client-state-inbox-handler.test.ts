@@ -762,6 +762,7 @@ function clientMutationRead(
         audienceGroupSnapshots: [],
         partyMemberView: null,
         friendsPresence: null,
+        viewWatchCleanup: null,
         audienceCoMemberSessions: []
     };
     if (!sessionPresent || !requiresCurrentSession(command)) {

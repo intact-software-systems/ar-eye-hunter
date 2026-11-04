@@ -18,7 +18,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { auditStamp, createMutationCommand, createMutationFacts, createMutationRead, memberFor } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('rejects contradictory persisted terminal member audits', () => {

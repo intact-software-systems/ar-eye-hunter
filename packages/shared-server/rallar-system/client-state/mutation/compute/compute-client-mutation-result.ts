@@ -16,6 +16,7 @@ import {
     computePrincipalStateSyncAudience,
     toPrincipalAudienceSessions
 } from '../../../state-sync/state-sync-principal-audience.ts';
+import { computeViewWatchSessionCleanup } from '../../../view-watch/view-watch-session-cleanup.ts';
 import { combineGuardedViewPublications } from '../../../websocket/outbox/guarded-view-publication.ts';
 import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
 import type { ClientMutationReceipt } from '../../persistence/client-state-persistence-contracts.ts';
@@ -96,6 +97,7 @@ export function computeClientMutationResult(
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
         viewPublication,
+        viewWatchCleanup: computeViewWatchSessionCleanup(read.viewWatchCleanup),
         stateSync,
         outbox,
         principalAudienceSessionIds

@@ -3,6 +3,7 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GROUP_SESSION_RESERVATIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/schedule/group-session-reservation-storage.ts';
+import { readGroupSessionViewAudience } from '@shared-server/rallar-system/group-state/schedule/read-group-session-view-audience.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
@@ -177,7 +178,13 @@ describe('group move admission', () => {
         );
         const reserved = await repository.findSessionReservationsEntry(ref);
         const participants = await Promise.all([readJoin(repository, 'bob'), readJoin(repository, 'carol')]);
-        const result = computeGroupMoveAdmission({ participants });
+        const audience = await readGroupSessionViewAudience(runtime, ref, 1_000);
+        const result = computeGroupMoveAdmission({
+            participants: participants.map((participant) => ({
+                ...participant,
+                read: { ...participant.read, sessionViewAudience: audience }
+            }))
+        });
         expect(result.status).toBe('admitted');
         if (result.status !== 'admitted' || reserved === undefined) {
             throw new Error('Expected reserved cohort admission');

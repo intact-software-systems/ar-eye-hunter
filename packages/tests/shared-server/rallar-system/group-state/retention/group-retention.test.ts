@@ -264,8 +264,13 @@ describe('temporary room retention decisions', () => {
 async function createFixture(temporary = true): Promise<RetentionFixture> {
     const harness = await createAuthorityHarness(['owner']);
     const clock = { nowEpochMs: harness.nowEpochMs };
-    const service = new GroupRetentionService({ repository: harness.repository, groupOwnedAppData: { read: async () => [] } }, {
+    const service = new GroupRetentionService({
+        runtime: harness.runtimeRepository,
+        repository: harness.repository,
+        groupOwnedAppData: { read: async () => [] }
+    }, {
         now: () => clock.nowEpochMs,
+        finishedRetentionMs: 60000,
         serviceId: 'retention-service'
     });
     const result = await processAuthenticated({
