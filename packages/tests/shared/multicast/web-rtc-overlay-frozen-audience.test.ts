@@ -312,19 +312,7 @@ function toRoomSessionIds(count: number): readonly string[] {
 
 describe('computeFrozenAudience', () => {
     it('names the authorized sessions except the origin, at the snapshot version the authority was read at', () => {
-        const room = createSnapshotWithRefusedSessions();
-        const admission = computeRtcRoomSnapshotAdmission({
-            message: createOriginReceiverMulticast('pure'),
-            snapshot: room,
-            overlay: createOriginOverlay(['b', 'c']),
-            selfPeerId: 'a',
-            fromPeerId: undefined,
-            recipientPeerId: undefined,
-            nowMs: Date.now()
-        });
-        if (admission.kind !== 'authorized') {
-            throw new Error('The origin must be authorized in its own room');
-        }
+        const admission = toOriginAdmission(createSnapshotWithRefusedSessions(), createOriginReceiverMulticast('pure'));
 
         expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined, leader: undefined, subscribeHolders: null }))
             .toEqual({ recipientPeerIds: ['b', 'c'], snapshotVersion: admission.snapshotVersion });
@@ -335,18 +323,7 @@ describe('computeFrozenAudience', () => {
         { label: 'a principal', narrowing: { kind: 'principal', principalId: 'principal-1' }, recipientPeerIds: ['b', 'd'] },
         { label: 'a list', narrowing: { kind: 'list', recipientPeerIds: ['a', 'c', 'z'] }, recipientPeerIds: ['c'] }
     ])('narrows the authorized sessions except the origin to $label', ({ narrowing, recipientPeerIds }) => {
-        const admission = computeRtcRoomSnapshotAdmission({
-            message: createOriginReceiverMulticast('narrowed'),
-            snapshot: createOriginPrincipalSnapshot(),
-            overlay: createOriginOverlay(['b', 'c']),
-            selfPeerId: 'a',
-            fromPeerId: undefined,
-            recipientPeerId: undefined,
-            nowMs: Date.now()
-        });
-        if (admission.kind !== 'authorized') {
-            throw new Error('The origin must be authorized in its own room');
-        }
+        const admission = toOriginAdmission(createOriginPrincipalSnapshot(), createOriginReceiverMulticast('narrowed'));
 
         expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing, leader: undefined, subscribeHolders: null }))
             .toEqual({ recipientPeerIds, snapshotVersion: 4 });
