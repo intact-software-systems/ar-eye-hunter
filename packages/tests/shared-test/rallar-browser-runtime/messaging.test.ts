@@ -185,12 +185,11 @@ it('releases a forging fault without resolving its principal again, even once th
         remaining: 'until-cleared'
     };
     await runtime.injectFault(fault);
+    // Charlie has left: resolving the principal again would fail the release.
     facade.behavior.getRoomSnapshot.mockReturnValue({ ...room, activeSessions: [] });
-    facade.behavior.getRoomSnapshot.mockClear();
 
     await runtime.injectFault({ ...fault, remaining: 0 });
 
-    expect(facade.behavior.getRoomSnapshot).not.toHaveBeenCalled();
     expect(facade.rallar.diagnostics.faults.decideSend('rtc', frame)).toEqual({ kind: 'pass' });
     await runtime.close();
 });

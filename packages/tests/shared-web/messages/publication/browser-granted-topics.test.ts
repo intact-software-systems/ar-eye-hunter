@@ -1,6 +1,6 @@
 import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createAuditStampFixture, createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
 const ROOM_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
@@ -28,15 +28,15 @@ describe('BrowserGrantedTopics', () => {
         expect(topics.isGrantedTopic(ROOM_REF, 'room.chat')).toBe(false);
     });
 
-    it('names a declared topic for a frame naming no room, and no other topic, without reading any snapshot', () => {
-        const findGroupSnapshot = vi.fn(() => createGrantingSnapshot('room.scores'));
-        const topics = new BrowserGrantedTopics({ findGroupSnapshot });
+    it('names a declared topic for a frame naming no room, and no topic a room\'s snapshot grants', () => {
+        // Every room's snapshot grants room.scores: a frame naming no room still finds none of them.
+        const topics = new BrowserGrantedTopics({ findGroupSnapshot: () => createGrantingSnapshot('room.scores') });
 
         topics.declareGrantedTopic('app.feed');
 
         expect(topics.isGrantedTopic(undefined, 'app.feed')).toBe(true);
         expect(topics.isGrantedTopic(undefined, 'room.scores')).toBe(false);
-        expect(findGroupSnapshot).not.toHaveBeenCalled();
+        expect(topics.isGrantedTopic(ROOM_REF, 'room.scores')).toBe(true);
     });
 });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
@@ -27,13 +27,13 @@ const MEMBERS: ALMessage = { ...GRANTED, route: { ...GRANTED.route, topicId: 'ro
 
 describe('RtcGrantedPublicationCarrier', () => {
     it('refuses a granted leg for the shape its sender gave before it asks for the admitted message', async () => {
-        const toAdmittedMessage = vi.fn((msg: ALMessage) => msg);
         const unicast = newALUnicastMessage('a', GRANTED.route, 'b', GRANTED.payload.typeId, {});
 
-        const signed = await createKeylessCarrier().signLeg(unicast, toAdmittedMessage);
+        const signed = await createKeylessCarrier().signLeg(unicast, () => {
+            throw new Error('A shape refusal admits nothing.');
+        });
 
         expect(signed.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast);
-        expect(toAdmittedMessage).not.toHaveBeenCalled();
     });
 
     it('names a signing failure by its kind first', async () => {
