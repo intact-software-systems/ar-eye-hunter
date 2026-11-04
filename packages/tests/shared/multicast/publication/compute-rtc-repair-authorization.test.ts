@@ -19,9 +19,9 @@ describe('computeRtcRepairAuthorization', () => {
 
     it.each<[string, GroupSnapshot | null]>([
         ['no readable snapshot', null],
-        ['an expired room', toExpiredRoom(createRoom({ a: PUBLISH_ONLY }))]
-    ])('refuses no-authority with %s', (_name, snapshot) => {
-        expect(computeRtcRepairAuthorization(toInput(snapshot)).left).toEqual({ kind: 'no-authority' });
+        ['an expired room', toExpiredRoom(createRoom({ a: SUBSCRIBE_ONLY }))]
+    ])('leaves %s to the room-authority planning: only a readable revoke is terminal', (_name, snapshot) => {
+        expect(computeRtcRepairAuthorization(toInput(snapshot)).right).toBe('room-authority-decides');
     });
 
     it.each<[string, GroupSnapshot]>([

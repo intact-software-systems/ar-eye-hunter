@@ -11,21 +11,28 @@ export interface RtcRepairAuthorizationInput {
     readonly nowEpochMs: number;
 }
 
-/** Why an origin may not re-send its own stored signed publication: no live room authority, or no `publish` any more. */
+/** A readable, live room whose snapshot no longer grants the origin's principal `publish`: the one terminal refusal. */
 export interface RtcRepairRefusal {
-    readonly kind: 'no-authority' | 'no-publish-grant';
+    readonly kind: 'no-publish-grant';
 }
 
 /**
+ * `authorized`: the origin still holds `publish`. `room-authority-decides`: no readable live snapshot attests the grant
+ * either way, so the room-authority planning decides, as it does for any stored send (`not-yet-in-sync`, `NotReady`).
+ */
+export type RtcRepairAuthorization = 'authorized' | 'room-authority-decides';
+
+/**
  * An origin re-sends a stored signed publication only while its current snapshot still grants its principal `publish`
- * (S3-R8): the proof attests the grant at signing, never after a revoke.
+ * (S3-R8): the proof attests the grant at signing, never after a revoke. Only a revoke its snapshot shows is terminal;
+ * a missing or lapsed snapshot may yet be renewed.
  */
 export function computeRtcRepairAuthorization(
     input: RtcRepairAuthorizationInput
-): Either<RtcRepairRefusal, 'authorized'> {
+): Either<RtcRepairRefusal, RtcRepairAuthorization> {
     const { snapshot } = input;
     if (snapshot === null || resolveRoomObservationDenial(snapshot.group, snapshot, input.nowEpochMs) !== undefined) {
-        return Either.ofLeft({ kind: 'no-authority' });
+        return Either.ofRight('room-authority-decides');
     }
     return resolveGroupPublicationPermissions(snapshot, input.selfPrincipalId, input.topicId).publish
         ? Either.ofRight('authorized')

@@ -1,10 +1,11 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALMessageHandlingPlan, ALQosEffectivePolicy } from '../../al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALMessageHandlingPlan, ALQosEffectivePolicy } from '../../al-contracts/al-policy.ts';
 import { assertALPublicationProofSigningInputKept } from '../../al-contracts/publication-proof/al-publication-proof.ts';
 import type {
     ALOutboundDispatchPlan,
-    ALOutboundMessageRuntime
+    ALOutboundMessageRuntime,
+    ALOutboundRepairRequest
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
@@ -49,6 +50,17 @@ export namespace RtcGrantedPublicationCarrier {
         /** The clock an origin reads its own session's lease by when it signs. */
         readonly clock: ALOutboundMessageRuntime.Clock;
     }
+
+    /** The message an origin carries, the one its sender gave, and whether the plan re-sends a stored copy. */
+    export interface OriginRefusalInput {
+        readonly carried: ALMessage;
+        readonly original: ALMessage;
+        /** A re-plan or dequeue of a stored own message, which re-reads the origin's `publish` (S3-R8). */
+        readonly storedSend: boolean;
+    }
+
+    /** Whether a repair may serve `peerId` under the receipt the repair tracks. */
+    export type RepairTargetAdmission = (peerId: string, receiptMode: ALAckAlgo) => boolean;
 
     /** One incoming frame as its room judged it: the plan before the room's refusal, and the plan after it. */
     export interface IncomingPlanInput {
@@ -121,11 +133,29 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * The origin re-sends its own stored granted publication only while its snapshot still grants it `publish` (S3-R8):
-     * the proof attests the grant at signing, never after a revoke. Any other message passes. Left: the drop the re-send
-     * is planned as, which ends its handle as the dispatch's own refusal does.
+     * A repair of a granted publication: the origin serves its own only while it holds `publish`, and a repair serves
+     * only targets the responder still admits; `plan` reads the same admission for the recipients it retries. A refused
+     * requester gets no copy, never a widened one. Any other repair is planned as it is.
      */
-    authorizeOwnRepair(msg: ALMessage): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
+    planRepair(
+        msg: ALMessage,
+        request: ALOutboundRepairRequest,
+        plan: (isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission) => ALOutboundRepairPlan
+    ): ALOutboundRepairPlan {
+        const isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission = (peerId, receiptMode) =>
+            this.isRepairTargetAdmitted({ msg, targetPeerId: peerId, receiptMode });
+        return this.authorizeOwnRepair(msg).fold(
+            (refusal) => refusal,
+            () => toRequesterAdmittedPlan(plan(isTargetAdmitted), request.requestedByPeerId, isTargetAdmitted)
+        );
+    }
+
+    /**
+     * The origin re-sends its own stored granted publication only while its snapshot still grants it `publish` (S3-R8).
+     * Any other message, and a snapshot that attests nothing, passes to the room-authority planning. Left: the drop the
+     * re-send is planned as, which ends its handle as the dispatch's own refusal does.
+     */
+    private authorizeOwnRepair(msg: ALMessage): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
         const { selfSessionId, selfPrincipalId, clock } = this.#dependencies;
         if (msg.id.senderId !== selfSessionId || !this.isGrantedPublication(msg)) {
             return Either.ofRight(msg);
@@ -141,16 +171,17 @@ export class RtcGrantedPublicationCarrier {
         );
     }
 
-    /** A granted publication is repaired only toward a recipient its origin froze that may still subscribe. */
-    isRepairTargetAdmitted(msg: ALMessage, targetPeerId: string): boolean {
+    private isRepairTargetAdmitted(input: RtcRepairTargetInput): boolean {
+        const { msg } = input;
         if (!this.isGrantedPublication(msg)) {
             return true;
         }
         return computeRtcRepairTargetAdmission({
             snapshot: this.readRoomSnapshot(msg),
             frozenRecipientPeerIds: resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds ?? [],
-            targetPeerId,
+            targetPeerId: input.targetPeerId,
             topicId: msg.route.topicId,
+            receiptMode: input.receiptMode,
             nowEpochMs: this.#dependencies.clock.nowMs()
         }).fold(() => false, () => true);
     }
@@ -214,20 +245,48 @@ export class RtcGrantedPublicationCarrier {
         return (groupRef && readRtcGroupSnapshotByRef(this.#dependencies.groupCache, groupRef)) ?? null;
     }
 
-    /** The origin carries a granted publication only in the shape it signed; any other message passes. */
+    /**
+     * The origin carries a granted publication only in the shape it signed, and re-sends a stored one only while it
+     * holds `publish`; any other message passes.
+     */
     computeOriginRefusal(
-        carried: ALMessage,
-        original: ALMessage
+        input: RtcGrantedPublicationCarrier.OriginRefusalInput
     ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
-        return this.isGrantedPublication(carried)
-            ? computeRtcGrantedPublicationRefusal(carried, original)
-            : Either.ofRight(carried);
+        const { carried } = input;
+        if (!this.isGrantedPublication(carried)) {
+            return Either.ofRight(carried);
+        }
+        return computeRtcGrantedPublicationRefusal(carried, input.original).flatMap(
+            (refusal) => Either.ofLeft(refusal),
+            (signed) => input.storedSend ? this.authorizeOwnRepair(signed) : Either.ofRight(signed)
+        );
     }
 }
 
 /** A shape refusal reads as its own text; a signing failure names its kind first. */
 function toRtcGrantedLegRefusalDetail(refusal: RtcGrantedLegRefusal): string {
     return refusal.kind === 'unsupported-shape' ? refusal.message : `${refusal.kind}: ${refusal.message}`;
+}
+
+/** A repair plan, or none when nothing is owed. */
+type ALOutboundRepairPlan = ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined;
+
+interface RtcRepairTargetInput {
+    readonly msg: ALMessage;
+    readonly targetPeerId: string;
+    readonly receiptMode: ALAckAlgo;
+}
+
+/** A requester-targeted repair serves its requester only while the responder admits it under the receipt it tracks. */
+function toRequesterAdmittedPlan(
+    planned: ALOutboundRepairPlan,
+    requesterPeerId: string | undefined,
+    isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission
+): ALOutboundRepairPlan {
+    return planned === undefined || requesterPeerId === undefined ||
+            isTargetAdmitted(requesterPeerId, planned.ackTracking?.mode ?? 'none')
+        ? planned
+        : undefined;
 }
 
 function toRtcRepairRefusalPlan(

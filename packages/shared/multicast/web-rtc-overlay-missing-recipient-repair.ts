@@ -21,6 +21,7 @@ import {
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { OverlayTree } from '../alm/outbound/transition-al-outbound-pending-ack.ts';
+import type { RtcGrantedPublicationCarrier } from './publication/rtc-granted-publication-carrier.ts';
 import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export interface OverlayRepairPlan {
@@ -43,7 +44,7 @@ export interface PlanRtcFailedPeerRepairInput {
     readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
     /** Whether a missing recipient may still get a copy: a recipient refused here is skipped, never replaced. */
-    readonly isRepairTargetAdmitted: (peerId: string) => boolean;
+    readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
 }
 
 export interface ToRtcTargetedRepairCopyInput {
@@ -59,7 +60,7 @@ interface RtcMissingRecipientRepairInput {
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
     readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
-    readonly isRepairTargetAdmitted: (peerId: string) => boolean;
+    readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
 }
 
 /**
@@ -157,7 +158,9 @@ function toMissingRecipientRepairPlan(
     if (outgoing.dropReason) {
         return outgoing;
     }
-    const failed = new Set(request.failedPeerIds.filter(input.isRepairTargetAdmitted));
+    const failed = new Set(
+        request.failedPeerIds.filter((peerId) => input.isRepairTargetAdmitted(peerId, input.ackTracking.mode))
+    );
     const repair = computeMissingRecipientRepair({
         frozen: frozen.recipientPeerIds,
         confirmed: frozen.recipientPeerIds.filter((peerId) => !failed.has(peerId)),

@@ -10,6 +10,7 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-m
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import {
@@ -18,7 +19,12 @@ import {
     type AvailablePublicationCrypto
 } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
-import { createRtcOriginOverlayFixture, ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
+import {
+    createOriginOverlay,
+    createRtcOriginOverlayFixture,
+    ORIGIN_ROOM,
+    type RtcOriginOverlayFixture
+} from './rtc-origin-overlay-fixture.ts';
 import {
     createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
@@ -59,6 +65,9 @@ const GRANTS_WITH_SUBSCRIBED_RELAY = { ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUB
 const GRANTED_TYPE_ID = 'room.granted-feed.v1';
 
 const MEMBERS_TYPE_ID = 'room.chat.v1';
+
+/** The accepted layout of the leaf origin: `a` with `r` and `c` as its leaves. */
+const LEAF_LAYOUT = { a: ['r', 'c'], r: ['a'], c: ['a'] };
 
 /** The receipt window of an `at-least-once` send, after which its origin retries what is unconfirmed. */
 const ACK_TIMEOUT_MS = 2_000;
@@ -270,6 +279,51 @@ describe('a granted RTC publication at its relays and receivers', () => {
         }
     );
 
+    it('leaves a stored signed frame whose origin holds no room snapshot to the room-authority planning, never refusing it', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const origin = createLeafOrigin(chain);
+        const volatile = await admitAt(origin, 'feed-volatile', 'none');
+        const durable = await admitAt(origin, 'feed-durable', 'receiver', 'durable');
+
+        origin.groups.delete('room');
+        // The stage planner is the manager's own; element access reaches it without widening its type.
+        const replan = origin.manager['planOutgoingMessage'](volatile.message, 'replan');
+
+        // A carrier gap is answered as for any stored send: a volatile one has no route, a held one waits.
+        expect(replan.dropReasonCode).toBe('no-route');
+        expect(() => origin.manager['planOutgoingMessage'](durable.message, 'dequeue')).toThrow(NotReadyException);
+    });
+
+    it('keeps the receipt of a signed frame whose origin lost its room snapshot, stating no refusal at its retry', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const origin = createLeafOrigin(chain);
+        const admitted = await admitAt(origin, 'feed-1', 'receiver');
+
+        origin.groups.delete('room');
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([]);
+        expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: admitted.message.id.msgId }))
+            .toBeDefined();
+    });
+
+    it('ends a held signed frame rejected no-publish-grant at its dequeue after its origin\'s publish was revoked, sending nothing', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const origin = createLeafOrigin(chain);
+        origin.overlays.delete('room');
+        const held = await admitAt(origin, 'feed-1', 'receiver', 'durable');
+
+        origin.groups.accept('room', toRevokedSnapshot(chain));
+        origin.overlays.accept('room', createOriginOverlay(['r', 'c'], LEAF_LAYOUT));
+        await vi.advanceTimersByTimeAsync(500);
+
+        expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
+        expect([origin.channels.r!.sent, origin.channels.c!.sent]).toEqual([[], []]);
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'admission').map(({ verdict }) => verdict)).toEqual([
+            expect.objectContaining({ kind: 'refused', reason: 'no-publish-grant' })
+        ]);
+    });
+
     it.each<[string, (chain: RelayChain) => GroupSnapshot, 'committed' | 'not-handled', number]>([
         ['while both still hold their grants', (chain) => chain.snapshot, 'committed', 1],
         ['after the origin\'s publish was revoked', toRevokedSnapshot, 'not-handled', 0],
@@ -419,13 +473,19 @@ function createLeafOrigin(chain: RelayChain): RtcOriginOverlayFixture {
     return createRtcOriginOverlayFixture({
         snapshot: chain.snapshot,
         nextHopPeerIds: ['r', 'c'],
-        nextHopsBySessionId: { a: ['r', 'c'], r: ['a'], c: ['a'] },
+        nextHopsBySessionId: LEAF_LAYOUT,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: chain.keys.a
     });
 }
 
-async function admitAt(origin: RtcOriginOverlayFixture, resourceId: string, ack: 'none' | 'receiver'): Promise<ALOutboundEnqueueResult> {
+/** The origin's admission of one granted room multicast; a `durable` one waits out a carrier gap in the outbox. */
+async function admitAt(
+    origin: RtcOriginOverlayFixture,
+    resourceId: string,
+    ack: 'none' | 'receiver',
+    durability: 'volatile' | 'durable' = 'volatile'
+): Promise<ALOutboundEnqueueResult> {
     const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
             'a',
@@ -433,7 +493,13 @@ async function admitAt(origin: RtcOriginOverlayFixture, resourceId: string, ack:
             ORIGIN_ROOM,
             GRANTED_TYPE_ID,
             { text: `feed ${resourceId}` },
-            { ack, reliability: ack === 'none' ? 'best-effort' : 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
+            {
+                ack,
+                reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
+                ttlMs: 30_000,
+                traceId: `trace-${resourceId}`,
+                ...(durability === 'durable' ? { qos: { durability: { algo: 'local-outbox' } } } : {})
+            }
         ),
         'hold'
     );

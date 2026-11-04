@@ -24,10 +24,18 @@ describe('computeRtcRepairTargetAdmission', () => {
         expect(computeRtcRepairTargetAdmission(toInput(createRoom({ c: SUBSCRIBE_ONLY }), 'c')).right).toBe('admitted');
     });
 
-    it('refuses a target outside the frozen audience, a subscriber included: a repair never widens the audience', () => {
+    it('refuses a target outside the frozen audience of a receiver receipt, a subscriber included: a repair never widens it', () => {
         expect(computeRtcRepairTargetAdmission(toInput(createRoom({ d: PUBLISH_AND_SUBSCRIBE }), 'd')).left)
             .toEqual({ kind: 'outside-frozen-audience' });
     });
+
+    it.each(['subtree', 'hop'] as const)(
+        'admits a pure relay outside the frozen audience under a %s receipt: it asks a copy for its subtree, never for itself',
+        (receiptMode) => {
+            expect(computeRtcRepairTargetAdmission({ ...toInput(createRoom({ c: SUBSCRIBE_ONLY }), 'd'), receiptMode }).right)
+                .toBe('admitted');
+        }
+    );
 
     it.each<[string, GroupSnapshot]>([
         ['subscribe revoked after the freeze', createRoom({ c: PUBLISH_ONLY })],
@@ -55,6 +63,7 @@ function toInput(snapshot: GroupSnapshot | null, targetPeerId: string): RtcRepai
         frozenRecipientPeerIds: FROZEN_RECIPIENT_PEER_IDS,
         targetPeerId,
         topicId: PUBLICATION_TOPIC_ID,
+        receiptMode: 'receiver',
         nowEpochMs: NOW_MS
     };
 }
