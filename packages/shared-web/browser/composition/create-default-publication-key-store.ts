@@ -1,3 +1,4 @@
+import { isBase64UrlOfByteLength } from '@shared/encoding/base64url.ts';
 import {
     readIndexedDbRequest,
     readIndexedDbTransaction,
@@ -6,7 +7,11 @@ import {
 import { IndexedDbConnection, openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { decodeEcdsaP256PublicJwk, type SigningKeyPair } from '@shared/signature/ecdsa-p256-signature.ts';
+import {
+    decodeEcdsaP256PublicJwk,
+    ECDSA_P256_KEY_ID_BYTES,
+    type SigningKeyPair
+} from '@shared/signature/ecdsa-p256-signature.ts';
 import type { PublicationKeyStore, PublicationKeyStoreFailure } from '@shared/signature/publication-key-store.ts';
 
 const PUBLICATION_KEY_DB_NAME = 'rallar-publication-keys';
@@ -60,47 +65,63 @@ async function readStoredPublicationKeyPair(
     sessionId: string
 ): Promise<Either<PublicationKeyStoreFailure, SigningKeyPair | null>> {
     const transaction = db.transaction(PUBLICATION_KEY_STORE_NAME, 'readonly');
-    return decodeStoredPublicationKeyPair(
+    const decoded = decodeStoredPublicationKeyPair(
         await readIndexedDbTransaction(
             transaction,
             async () => await readIndexedDbRequest(transaction.objectStore(PUBLICATION_KEY_STORE_NAME).get(sessionId))
         ),
         sessionId
     );
+    if (decoded.left === 'undecodable') {
+        console.warn(`The stored publication key pair of ${sessionId} does not decode; it is read as absent.`);
+    }
+    return Either.ofRight(decoded.right ?? null);
 }
 
-/** One read-write transaction, so of two pages writing at once only the first stores its pair. */
+/**
+ * One read-write transaction, so of two pages writing at once only the first stores its pair; a stored record that
+ * does not decode counts as none, so the first valid pair replaces it.
+ */
 async function writeFirstPublicationKeyPair(db: IDBDatabase, stored: StoredPublicationKeyPair): Promise<void> {
     const transaction = db.transaction(PUBLICATION_KEY_STORE_NAME, 'readwrite');
     const completed = waitForIndexedDbTransaction(transaction);
     const store = transaction.objectStore(PUBLICATION_KEY_STORE_NAME);
     const existing = store.get(stored.sessionId);
     existing.onsuccess = () => {
-        if (existing.result === undefined) {
+        if (decodeStoredPublicationKeyPair(existing.result, stored.sessionId).right === undefined) {
             store.put(stored);
         }
     };
     await completed;
 }
 
+/** The session's pair, or why there is none: no record, or a record that is not a P-256 signing pair of this session. */
 function decodeStoredPublicationKeyPair(
     value: unknown,
     sessionId: string
-): Either<PublicationKeyStoreFailure, SigningKeyPair | null> {
+): Either<'absent' | 'undecodable', SigningKeyPair> {
     if (value === undefined) {
-        return Either.ofRight(null);
+        return Either.ofLeft('absent');
     }
     const stored = value as Partial<StoredPublicationKeyPair> | null;
     const keyPair = stored?.keyPair as Partial<SigningKeyPair> | undefined;
     const publicJwk = decodeEcdsaP256PublicJwk(keyPair?.publicJwk).right;
     if (
         stored?.sessionId !== sessionId ||
-        !(keyPair?.privateKey instanceof CryptoKey) ||
-        keyPair.privateKey.type !== 'private' ||
+        !isEcdsaP256SigningKey(keyPair?.privateKey) ||
         typeof keyPair.keyId !== 'string' ||
+        !isBase64UrlOfByteLength(keyPair.keyId, ECDSA_P256_KEY_ID_BYTES) ||
         publicJwk === undefined
     ) {
-        return Either.ofLeft({ kind: 'storage-failed', detail: `The stored key pair of ${sessionId} is malformed.` });
+        return Either.ofLeft('undecodable');
     }
     return Either.ofRight({ privateKey: keyPair.privateKey, publicJwk, keyId: keyPair.keyId });
+}
+
+function isEcdsaP256SigningKey(key: unknown): key is CryptoKey {
+    return key instanceof CryptoKey &&
+        key.type === 'private' &&
+        key.algorithm.name === 'ECDSA' &&
+        (key.algorithm as EcKeyAlgorithm).namedCurve === 'P-256' &&
+        key.usages.includes('sign');
 }

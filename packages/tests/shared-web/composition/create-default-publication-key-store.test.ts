@@ -3,6 +3,8 @@ import '../../setup-browser-indexeddb.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createDefaultPublicationKeyStore } from '@shared-web/browser/composition/create-default-publication-key-store.ts';
+import { waitForIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
+import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import {
     createSigningKeyPair,
     importEcdsaP256PublicKey,
@@ -10,6 +12,7 @@ import {
     verifyDetached,
     type SigningKeyPair
 } from '@shared/signature/ecdsa-p256-signature.ts';
+import { readOrCreatePublicationCrypto } from '@shared/signature/read-or-create-publication-crypto.ts';
 
 const subtle = globalThis.crypto.subtle;
 
@@ -62,6 +65,63 @@ describe('the browser\'s session publication key pairs in IndexedDB', () => {
         expect((await store.write('no-indexeddb', await createKeyPair())).left?.kind).toBe('storage-unavailable');
     });
 });
+
+describe('a stored session pair that does not decode', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it.each<[string, (sessionId: string) => Promise<object>]>([
+        ['a record without a key pair', async (sessionId) => ({ sessionId, junk: true })],
+        ['an ECDSA P-384 private key', async (sessionId) => ({
+            sessionId,
+            keyPair: await createForeignKeyPair({ name: 'ECDSA', namedCurve: 'P-384' }, ['sign'])
+        })],
+        ['an ECDH P-256 private key that cannot sign', async (sessionId) => ({
+            sessionId,
+            keyPair: await createForeignKeyPair({ name: 'ECDH', namedCurve: 'P-256' }, ['deriveBits'])
+        })]
+    ])('is read as absent and replaced by the first valid pair: %s', async (label, toRecord) => {
+        const sessionId = `undecodable-${label}`;
+        await putStoredRecord(await toRecord(sessionId));
+        const warnings = captureWarnings();
+
+        const first = await readOrCreatePublicationCrypto({ subtle, store: createDefaultPublicationKeyStore(), sessionId });
+        const second = await readOrCreatePublicationCrypto({ subtle, store: createDefaultPublicationKeyStore(), sessionId });
+
+        expect(first.kind === 'available' && first.keyPair.keyId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(second.kind === 'available' && second.keyPair.keyId).toBe(first.kind === 'available' && first.keyPair.keyId);
+        expect((await createDefaultPublicationKeyStore().read(sessionId)).right?.keyId).toBe(
+            first.kind === 'available' ? first.keyPair.keyId : undefined
+        );
+        expect(warnings).toStrictEqual([[`The stored publication key pair of ${sessionId} does not decode; it is read as absent.`]]);
+    });
+});
+
+/** A record as an older or corrupted page left it, written past the store's own write. */
+async function putStoredRecord(record: object): Promise<void> {
+    const db = await openIndexedDbWithStores('rallar-publication-keys', [{ name: 'session-key-pairs', keyPath: 'sessionId' }]);
+    const transaction = db.transaction('session-key-pairs', 'readwrite');
+    const completed = waitForIndexedDbTransaction(transaction);
+    transaction.objectStore('session-key-pairs').put(record);
+    await completed;
+    db.close();
+}
+
+/** A pair shaped like a session pair whose private key is not the P-256 signing key the store keeps. */
+async function createForeignKeyPair(algorithm: EcKeyGenParams, usages: KeyUsage[]): Promise<object> {
+    const valid = await createKeyPair();
+    const foreign = await subtle.generateKey(algorithm, false, usages);
+    return { ...valid, privateKey: foreign.privateKey };
+}
+
+function captureWarnings(): string[][] {
+    const warnings: string[][] = [];
+    vi.spyOn(console, 'warn').mockImplementation((...messages: string[]) => {
+        warnings.push(messages);
+    });
+    return warnings;
+}
 
 async function createKeyPair(): Promise<SigningKeyPair> {
     return (await createSigningKeyPair(subtle)).fold(

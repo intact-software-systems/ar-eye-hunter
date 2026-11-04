@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { Either } from '@shared/resilience/Either.ts';
+import type { SigningKeyPair } from '@shared/signature/ecdsa-p256-signature.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+import type { PublicationKeyStoreFailure } from '@shared/signature/publication-key-store.ts';
 import { readOrCreatePublicationCrypto } from '@shared/signature/read-or-create-publication-crypto.ts';
 
 import { InMemoryPublicationKeyStore } from './publication-key-store-fixtures.ts';
@@ -65,6 +68,20 @@ describe('the session publication key, read or created', () => {
             ]]);
         }
     );
+
+    it.each([
+        ['fails', Either.ofLeft<PublicationKeyStoreFailure, SigningKeyPair | null>(STORAGE_FAILED), 'storage-failed: quota exceeded'],
+        ['finds no pair', Either.ofRight<PublicationKeyStoreFailure, SigningKeyPair | null>(null), 'storage-failed: no pair was read back after it was stored']
+    ])('keeps a page-local pair and warns once when the read after a stored write %s', async (_label, readBack, warning) => {
+        const store = new InMemoryPublicationKeyStore();
+        vi.spyOn(store, 'read').mockResolvedValueOnce(Either.ofRight(null)).mockResolvedValueOnce(readBack);
+        const warnings = captureWarnings();
+
+        const crypto = await readOrCreatePublicationCrypto({ subtle, store, sessionId: 'session-1' });
+
+        expect(readKeyId(crypto)).toBe(store.pairs.get('session-1')?.keyId);
+        expect(warnings).toStrictEqual([[`Publication key ${warning}; this page signs with a key of its own.`]]);
+    });
 
     it('leaves a page without SubtleCrypto keyless, warns once, and stores nothing', async () => {
         const store = new InMemoryPublicationKeyStore();

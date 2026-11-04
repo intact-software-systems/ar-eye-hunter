@@ -44,7 +44,12 @@ async function writeSessionKeyPair(
     if (written.left !== undefined) {
         return keepPageKeyPair(written.left, keyPair);
     }
-    return (await input.store.read(input.sessionId)).right ?? keyPair;
+    const kept = await input.store.read(input.sessionId);
+    return kept.right ??
+        keepPageKeyPair(
+            kept.left ?? { kind: 'storage-failed', detail: 'no pair was read back after it was stored' },
+            keyPair
+        );
 }
 
 function keepPageKeyPair(failure: PublicationKeyStoreFailure, keyPair: SigningKeyPair): SigningKeyPair {
