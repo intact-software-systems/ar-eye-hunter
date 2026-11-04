@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { distance3 } from '../../../packages/ar-eye-hunter/arena-math.ts';
 import { blocksShot } from '../../../packages/ar-eye-hunter/arena-layout.ts';
 import { decodeArenaTournamentSnapshot } from '../../../packages/ar-eye-hunter/arena-tournament-snapshot.ts';
 import type { TournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
@@ -29,7 +30,7 @@ export async function playArenaTournament(winner: Page, opponent: Page): Promise
     try {
         await expect.poll(async () => {
             moved = await observeArena(winner, roomId);
-            return distance(initial.players[0].simulation.position, moved.players[0].simulation.position);
+            return distance3(initial.players[0].simulation.position, moved.players[0].simulation.position);
         }).toBeGreaterThan(0.1);
     }
     finally {
@@ -109,12 +110,16 @@ interface NativeTouchInput {
     readonly isActive: () => boolean;
 }
 
-async function tapVisibleTarget(input: NativeTouchInput): Promise<void> {
+export async function tapVisibleTarget(input: NativeTouchInput): Promise<void> {
     const { page, state, viewport } = input;
     // The fresh camera faces +Z. Project public targets into its 0.94-radian vertical field of view.
     const origin = state.players[0].simulation.position;
     const focalLength = viewport.height / (2 * Math.tan(0.94 / 2));
-    for (const target of state.arena.targets) {
+    // Prefer a nearby clear target; storage order can repeatedly choose the same distant moving eye.
+    const targets = state.arena.targets.toSorted((left, right) =>
+        distance3(origin, left.position) - distance3(origin, right.position)
+    );
+    for (const target of targets) {
         if (!input.isActive()) {
             return;
         }
@@ -149,8 +154,4 @@ async function observeArena(page: Page, roomId: string): Promise<TournamentArena
         return observeArena(page, roomId);
     }
     return snapshot.state;
-}
-
-function distance(left: readonly number[], right: readonly number[]): number {
-    return Math.hypot(...left.map((value, index) => value - right[index]));
 }
