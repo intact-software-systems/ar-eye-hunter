@@ -119,6 +119,18 @@ export interface AlmConformanceConnect {
     readonly minReadyPeers: number;
 }
 
+/** A step of `role`'s recipe, named as a step names its commands, after which the lane starts a recipe it holds back. */
+export interface AlmConformanceRecipeGate {
+    readonly role: AlmConformanceRole;
+    readonly commandName: string;
+}
+
+/** A further recipe of the sender, which the lane starts on the sender's agent, on its open connection, at the gate. */
+export interface AlmConformanceContinuationDefinition {
+    readonly gate: AlmConformanceRecipeGate;
+    readonly toCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+}
+
 export interface AlmConformanceStepInput {
     readonly input: CreateAlmConformanceRecipesInput;
     readonly scenarioId: AlmConformanceScenarioId;
@@ -196,6 +208,10 @@ export interface AlmConformanceScenarioDefinition {
     readonly toReceiptRoles?: (carrier: AlmConformanceCarrier) => AlmConformanceReceiptRoles;
     /** Absent when the sender keeps its page. Otherwise the sync points both roles carry around its one reload. */
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
+    /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
+    readonly successorGate?: AlmConformanceRecipeGate;
+    /** Absent when the sender runs one recipe; otherwise the sender's later steps, which wait for another role. */
+    readonly continuation?: AlmConformanceContinuationDefinition;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

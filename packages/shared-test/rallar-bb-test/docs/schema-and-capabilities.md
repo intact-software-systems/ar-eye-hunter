@@ -533,8 +533,11 @@ the result events of `messages.subscriptions` and of the subscription rows read,
 - `subscription-reconnect`: the sibling's socket drops and reopens under a new generation; its
   token re-asserts `active` and the session's row names the new generation (S2ii-R5). A probe
   publishes until the receiver alone is expected, since an RTC sender freezes the sibling in with
-  its active election until its snapshot drops the presence that closed with the old socket; the
-  publication then reaches the receiver and not the reopened sibling.
+  its active election until its snapshot drops the presence that closed with the old socket. The
+  reopened sibling can send nothing, so the publication is the sender's continuation, a recipe the
+  lane starts on the sender's agent once the sibling's token reads `active` after its row names the
+  new generation, the same gate that starts the `subscription-successor` page; the publication then
+  reaches the receiver and not the reopened sibling.
 
 `subscription-successor` runs in the `same-context` family over `ws` and `rtc-with-ws-fallback`, not `rtc`, where
 its successor page would wait for RTC readiness while the owner page still holds the session's one RTC peer. The

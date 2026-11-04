@@ -1,7 +1,4 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe
-} from '../../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import {
     FULL_TAGS,
@@ -55,18 +52,10 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     laneFamily: 'same-context',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    successorGate: { role: 'sender', commandName: OWNER_GATE },
     toSenderCommands: (page) => page.role === 'sender' ? toOwnerPageCommands(page) : toSuccessorPageCommands(page),
     toRecipientCommands: toPublisherCommands
 };
-
-/** The owner page's command after which the lane opens the successor page. */
-export function toSubscriptionSuccessorGateCommandId(owner: RallarBlackBoxTestRecipe): string {
-    const gate = owner.commands.find((command) => command.commandId?.endsWith(`-sender-${OWNER_GATE}`));
-    if (gate?.commandId === undefined) {
-        throw new Error(`${owner.recipeId} names no ${OWNER_GATE} command for the successor to follow.`);
-    }
-    return gate.commandId;
-}
 
 /** The receiver owns the room: it grants itself `publish` and the sender's principal `subscribe`. */
 function toPublisherCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {

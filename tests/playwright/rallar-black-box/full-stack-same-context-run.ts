@@ -3,10 +3,7 @@ import type { Page } from '@playwright/test';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     closeBrowserControlAgentPage,
-    findControlResult,
-    hasPassedCommandEvent,
     openBrowserControlAgentInContext,
-    readControlRunUntil,
     readFullStackConfig,
     runRecipeOnAgent,
     startRecipeRun,
@@ -23,6 +20,7 @@ import {
     type TwoAgentRun,
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
+import { waitForRecipeGate } from './full-stack-recipe-gate.ts';
 
 /**
  * How the owner's page ends: closed, or through a lifecycle flush and a renderer crash, which runs no `pagehide`
@@ -162,21 +160,12 @@ async function runSuccessorBesideOwner(
     recipes: SameContextRecipes
 ): Promise<SameContextPageRuns> {
     const ownerRun = await startRecipeRun(run, pages.owner, recipes.sender);
-    await waitForSuccessorGate(run, pages.successorGate, ownerRun);
-    return { sender: ownerRun.readOutcome(), successor: await startRecipeRun(run, pages.successor, recipes.successor) };
-}
-
-async function waitForSuccessorGate(run: RecipePairRun, gate: string, ownerRun: StartedRecipeRun): Promise<void> {
-    const read = await readControlRunUntil(run, {
-        timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS,
-        select: (snapshot) =>
-            hasPassedCommandEvent(snapshot, gate) || findControlResult(snapshot, ownerRun.commandId) !== undefined,
-        accept: (passed) => passed
+    await waitForRecipeGate(run, {
+        commandId: pages.successorGate,
+        gatingRun: ownerRun,
+        timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
     });
-    if (read.kind === 'accepted') {
-        return;
-    }
-    throw new Error(`${gate}: the owner's gate did not pass within ${SUCCESSOR_GATE_TIMEOUT_MS} ms.`);
+    return { sender: ownerRun.readOutcome(), successor: await startRecipeRun(run, pages.successor, recipes.successor) };
 }
 
 function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): RecipeRunOutcome {

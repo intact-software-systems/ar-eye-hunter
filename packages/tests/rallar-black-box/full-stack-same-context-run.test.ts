@@ -312,7 +312,7 @@ it('rejects without starting the successor when the owner\'s gate neither passes
             run,
             { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
             { sender: baseline.sender, receiver: baseline.receiver, successor }
-        )).rejects.toThrow('owner-gate: the owner\'s gate did not pass within 90000 ms.');
+        )).rejects.toThrow('owner-gate: the gate did not pass within 90000 ms.');
         expect(posted).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
     }
     finally {

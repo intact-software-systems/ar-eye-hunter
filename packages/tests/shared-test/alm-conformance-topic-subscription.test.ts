@@ -13,7 +13,6 @@ import {
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
 import { assessSubscriptionRevokeDisconnected } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
-import { toSubscriptionSuccessorGateCommandId } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand,
@@ -218,11 +217,11 @@ describe('ALM topic subscription conformance', () => {
         if (successor === undefined) {
             throw new Error('The ws carrier creates the subscription-successor cell.');
         }
-        const gate = toSubscriptionSuccessorGateCommandId(successor.sender);
+        const gate = successor.successorGate;
         const ownerCommands = successor.sender.commands.map(({ kind, commandId }) => ({ kind, commandId }));
 
-        expect(gate).toBe('alm-ws-subscription-successor-sender-tokens-owner-generation');
-        expect(ownerCommands.findIndex(({ commandId }) => commandId === gate))
+        expect(gate).toEqual({ role: 'sender', commandId: 'alm-ws-subscription-successor-sender-tokens-owner-generation' });
+        expect(ownerCommands.findIndex(({ commandId }) => commandId === gate?.commandId))
             .toBe(ownerCommands.findIndex(({ kind }) => kind === 'loop') + 1);
     });
 
@@ -296,32 +295,43 @@ describe('ALM topic subscription conformance', () => {
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'expects the reconnected sibling to keep an active token and miss the publication its closed presence excludes over %s',
+        'publishes to the reconnected sibling only after its re-asserted token reads active, and expects it to miss the publication over %s',
         (carrier) => {
             const reconnect = toTopicSubscriptionScenarios(carrier).find(({ scenarioId }) => scenarioId === 'subscription-reconnect');
+            const prefix = `alm-${carrier}-subscription-reconnect`;
             const sibling = reconnect?.sibling?.commands ?? [];
             const sender = reconnect?.sender.commands ?? [];
-            const loopFacts = (name: string) => {
-                const loop = sender.find(({ commandId }) => commandId === `alm-${carrier}-subscription-reconnect-sender-${name}`);
+            const continuation = reconnect?.continuation?.recipe.commands ?? [];
+            const loopFacts = (commands: readonly RallarBlackBoxTestCommand[], name: string) => {
+                const loop = commands.find(({ commandId }) => commandId === `${prefix}-sender-${name}`);
                 return loop?.kind === 'loop' ? loop.commands.filter(({ kind }) => kind === 'assert') : [];
             };
-            const index = (name: string) => sender.findIndex(({ commandId }) => commandId === `alm-${carrier}-subscription-reconnect-sender-${name}`);
+            const index = (name: string) => sender.findIndex(({ commandId }) => commandId === `${prefix}-sender-${name}`);
+            const gate = `${prefix}-sibling-assert-tokens-after-rows-active`;
 
-            expect(sibling.find(({ commandId }) => commandId?.endsWith('-assert-tokens-after-rows-active'))).toMatchObject({
-                operator: 'equals',
-                expected: 'active'
-            });
-            expect(sibling.find(({ commandId }) => commandId?.endsWith('-absent-publication'))).toMatchObject({
-                absent: true
-            });
+            expect(sibling.find(({ commandId }) => commandId === gate)).toMatchObject({ operator: 'equals', expected: 'active' });
+            expect(sibling.find(({ commandId }) => commandId?.endsWith('-absent-publication'))).toMatchObject({ absent: true });
             // An RTC sender freezes the sibling in until its snapshot drops the closed presence, so a probe goes first.
-            for (const name of ['probe-receiver-alone', 'publication']) {
-                expect(loopFacts(name), name).toMatchObject([{ expected: 1 }, { expected: 1 }, { expected: 0 }]);
-            }
+            expect(loopFacts(sender, 'probe-receiver-alone')).toMatchObject([{ expected: 1 }, { expected: 1 }, { expected: 0 }]);
             expect(index('probe-two-subscribers')).toBeLessThan(index('probe-receiver-alone'));
-            expect(index('probe-receiver-alone')).toBeLessThan(index('publication'));
+            // The publication leaves only once the sibling's row names its new generation and its token reads active.
+            expect(index('publication')).toBe(-1);
+            expect(reconnect?.continuation?.gate).toEqual({ role: 'sibling', commandId: gate });
+            expect(reconnect?.continuation?.recipe.recipeId).toBe(`${prefix}-sender-continuation`);
+            expect(loopFacts(continuation, 'publication')).toMatchObject([{ expected: 1 }, { expected: 1 }, { expected: 0 }]);
+            // The continuation runs on the sender's open connection, so its ids stay apart from the first recipe's.
+            const firstIds = new Set(toFlatCommands(sender).map(({ commandId }) => commandId));
+            expect(toFlatCommands(continuation).filter(({ commandId }) => firstIds.has(commandId))).toEqual([]);
+            expect(continuation.map(({ kind }) => kind)).not.toContain('rtc.connect');
         }
     );
+
+    it('holds back no continuation in any other topic subscription cell', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const continued = toTopicSubscriptionScenarios(carrier).filter(({ continuation }) => continuation !== undefined);
+            expect(continued.map(({ scenarioId }) => scenarioId), carrier).toEqual(['subscription-reconnect']);
+        }
+    });
 
     it('keeps the successor\'s election, which the replaced owner page\'s later row reads name', () => {
         const successor = toTopicSubscriptionScenarios('ws').find(({ laneFamily }) => laneFamily === 'same-context');
