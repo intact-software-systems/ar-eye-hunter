@@ -334,8 +334,10 @@ function toAlmConformanceScenario(
     return {
         ...scenario,
         successorGate: definition.successorGate && toGate(definition.successorGate),
-        continuation: definition.continuation &&
-            toContinuation(input, definition, definition.continuation, toGate(definition.continuation.gate))
+        continuation: definition.continuation && {
+            gate: toGate(definition.continuation.gate),
+            recipe: toContinuationRecipe(input, definition, definition.continuation)
+        }
     };
 }
 
@@ -380,12 +382,11 @@ function toScenarioGate(gateInput: ToScenarioGateInput): AlmConformanceScenarioG
  * The sender's later steps run on the connection its first recipe opened, so the recipe carries no prologue; its own
  * stats read ends the recipe.
  */
-function toContinuation(
+function toContinuationRecipe(
     input: CreateAlmConformanceRecipesInput,
     definition: AlmConformanceScenarioDefinition,
-    continuation: AlmConformanceContinuationDefinition,
-    gate: AlmConformanceScenarioGate
-): AlmConformanceContinuation {
+    continuation: AlmConformanceContinuationDefinition
+): RallarBlackBoxTestRecipe {
     const step = toStepInput(input, definition, 'sender');
     const recipe: RallarBlackBoxTestRecipe = {
         schemaVersion: 1,
@@ -400,10 +401,7 @@ function toContinuation(
         },
         commands: [...continuation.toCommands(step), toStatsCommand(step, 'continuation-stats')]
     };
-    return {
-        gate,
-        recipe: resolveAlmConformancePrincipals(recipe, input.principalIdsByRole)
-    };
+    return resolveAlmConformancePrincipals(recipe, input.principalIdsByRole);
 }
 
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
