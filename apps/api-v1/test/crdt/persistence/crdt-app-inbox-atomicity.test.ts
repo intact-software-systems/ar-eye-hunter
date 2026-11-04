@@ -139,7 +139,8 @@ Deno.test('committed CRDT append reply carries scoped producer authority for deq
 
         const reader = new WsOutboxProvenanceReader({
             repository: new PSqlRuntimeStateRepository(sql),
-            nowMs: () => 1_001
+            nowMs: () => 1_001,
+            readPrincipalSessionIds: () => Promise.resolve([])
         });
         assert.deepEqual(
             await reader.readProducerProvenance(
@@ -285,7 +286,8 @@ function createFanoutDequeueFixture(sql: PGliteSql): FanoutDequeueFixture {
     });
     const reader = new WsOutboxProvenanceReader({
         repository: new PSqlRuntimeStateRepository(sql),
-        nowMs: Date.now
+        nowMs: Date.now,
+        readPrincipalSessionIds: () => Promise.resolve([])
     });
     const stores = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeWsQueueBoxServerPreparedMessage

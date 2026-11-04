@@ -27,6 +27,7 @@ const view: PartyView = {
 const cleanups: (() => void)[] = [];
 afterEach(() => {
     cleanups.splice(0).forEach((cleanup) => cleanup());
+    vi.useRealTimers();
 });
 
 function browser() {
@@ -42,11 +43,12 @@ function browser() {
     };
     const owner = new RallarParty({
         api,
+        onChanged: () => () => {},
         auth: { session: () => session, onChange: () => () => {} },
         activity: { isActive: () => true, onChange: () => () => {} },
         timers: createDefaultTimers(),
         createId: () => crypto.randomUUID()
-    }, { scope, refreshIntervalMs: 30000 });
+    }, { scope });
     cleanups.push(() => owner.stop());
     return { owner, api };
 }
@@ -167,4 +169,28 @@ describe('party browser consent', () => {
         expect(test.owner.getState()).toMatchObject({ retryPending: false, error: expect.stringContaining('party changed') });
         expect(test.api.change).toHaveBeenCalledTimes(1);
     });
+});
+
+it('reads once at the server invitation deadline and never repeats idle reads', async () => {
+    vi.useFakeTimers();
+    const test = browser();
+    test.api.read.mockResolvedValueOnce({
+        ...view,
+        party: null,
+        invitations: [{
+            ref,
+            invitationId: 'expiring',
+            principalId: 'alice',
+            senderPrincipalId: 'bob',
+            createdAtEpochMs: 1,
+            expiresAtEpochMs: 2000
+        }]
+    });
+    await test.owner.start();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(test.owner.getState().view?.invitations).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(test.owner.getState().view?.invitations).toEqual([]);
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(test.api.read).toHaveBeenCalledTimes(2);
 });

@@ -197,3 +197,30 @@ function createMessage(
         expiresAtMs: 1_800_000_000_000
     };
 }
+
+for (const kind of ['durable', 'live'] as const) {
+    Deno.test(`PostgreSQL ${kind} transport forwards every LISTEN readiness generation`, async () => {
+        const subscribed: Array<() => void> = [];
+        const notification = {
+            notify: () => Promise.resolve(),
+            listen: (_channel: string, _onMessage: (payload: string) => void | Promise<void>, onSubscribed?: () => void) => {
+                if (onSubscribed !== undefined) {
+                    subscribed.push(onSubscribed);
+                }
+                return Promise.resolve();
+            }
+        };
+        let refreshes = 0;
+        const transport = kind === 'live'
+            ? createPostgresLiveWsNoticeTransport(notification, () => 100)
+            : createPostgresQueuePubSubBridge(notification);
+        await transport.subscribe('views', () => undefined, () => {
+            refreshes += 1;
+        });
+        assert.equal(subscribed.length, 1);
+        subscribed[0]();
+        assert.equal(refreshes, 1);
+        subscribed[0]();
+        assert.equal(refreshes, 2);
+    });
+}

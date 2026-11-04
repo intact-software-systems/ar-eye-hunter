@@ -93,15 +93,11 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
             refreshIntervalMs: 5_000
         })
     );
-    const [party] = useState(() =>
-        RallarParty.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 1000 })
-    );
+    const [party] = useState(() => RallarParty.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE }));
     const [matchmaking] = useState(() =>
-        RallarMatchmaking.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 1000 })
+        RallarMatchmaking.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE })
     );
-    const [friends] = useState(() =>
-        RallarFriends.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 30_000 })
-    );
+    const [friends] = useState(() => RallarFriends.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE }));
     return (
         <>
             <RelicRoomEntry game={game} />

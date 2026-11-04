@@ -173,11 +173,7 @@ function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): reado
     const { message, referenceKey, scope, principalTargetId } = input;
     const addressesItsConnection = input.peerId === input.connectionId;
     if (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) {
-        const notice = decodeViewInvalidationMessage(message);
-        return notice.scope !== null && principalTargetId === notice.principalId && addressesItsConnection &&
-                scope.applicationId === notice.scope.applicationId && scope.workspaceId === notice.scope.workspaceId
-            ? []
-            : ['Scoped prepared view differs from its exact principal and scope'];
+        return validatePreparedViewTarget(input);
     }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         const targetScope = readWsQueueBoxServerScopedTargetScope(message);
@@ -209,6 +205,20 @@ function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): reado
     return targets?.mode !== 'unicast' || input.peerId !== targets.toPeerId
         ? ['Persisted scoped recipient differs from unicast target']
         : [];
+}
+
+function validatePreparedViewTarget(input: ScopedRecipientTargetInput): readonly string[] {
+    try {
+        const notice = decodeViewInvalidationMessage(input.message);
+        return notice.scope !== null && input.principalTargetId === notice.principalId &&
+                input.peerId === input.connectionId && input.scope.applicationId === notice.scope.applicationId &&
+                input.scope.workspaceId === notice.scope.workspaceId
+            ? []
+            : ['Scoped prepared view differs from its exact principal and scope'];
+    }
+    catch {
+        return ['Scoped prepared view is malformed'];
+    }
 }
 
 function decodeInvalidatedSessionPrepared(value: unknown, message: ALMessage): WsQueueBoxServerPreparedMessage {

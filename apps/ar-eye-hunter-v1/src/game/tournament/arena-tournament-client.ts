@@ -22,6 +22,7 @@ import { Command } from '@shared/cache/Command.ts';
 import { wrapRallarMotionAngle } from '@shared/rallar-motion/math.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { ARENA_ROOM_SCOPE } from '../arena-runtime/arena-room-entry.ts';
 
 export namespace ArenaTournamentClient {
@@ -68,7 +69,11 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
         const ref = { ...ARENA_ROOM_SCOPE, groupId: roomId };
         const path = `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`;
         let casualRoom = false;
-        super(dependencies, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 200 }, {
+        super(dependencies, {
+            scope: ARENA_ROOM_SCOPE,
+            subscribeRefresh: (run) =>
+                startRepeating({ timers: dependencies.timers, intervalMs: 200, firstRun: 'after-interval', run })
+        }, {
             async read({ session, signal }) {
                 if (casualRoom) {
                     return { tournament: null };

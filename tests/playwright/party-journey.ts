@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
+import { assertIdleSocialReads } from './view-push-observation.ts';
 
 export async function partyPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
     host.setDefaultTimeout(15000);
@@ -48,6 +49,7 @@ async function formParty(host: Page, guest: Page, game: 'arena' | 'relic'): Prom
     await acceptWithLostResponse(guest);
     await expect(hostParty).toContainText('2 of 2 seats');
     await expect(guestParty).toContainText('2 of 2 seats');
+    await assertIdleSocialReads(guest);
     await guest.reload();
     if (game === 'arena') {
         await openArenaOperations(guest);

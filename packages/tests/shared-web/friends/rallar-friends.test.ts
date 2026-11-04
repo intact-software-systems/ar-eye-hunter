@@ -16,6 +16,7 @@ interface BrowserFixture {
     readonly enter: Mock<RallarFriends.Dependencies['entry']['enter']>;
     changeAuth(next: AuthSession | undefined): void;
     activity(next: boolean): void;
+    changed(): void;
 }
 
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'alice-session', accessToken: 'test', expiresAtEpochMs: 9_999_999_999_999 };
@@ -29,6 +30,7 @@ const invitation = {
     expiresAtEpochMs: 9999999999999
 };
 const view: FriendsView = {
+    observedAtEpochMs: 1000,
     principalId: 'alice',
     shareOnline: false,
     contacts: [{ principalId: 'bob', username: 'bob', displayName: 'Bob', status: 'friend', presence: 'hidden' }],
@@ -49,6 +51,9 @@ function browser(): BrowserFixture {
     const activityChanges = new SynchronousNotifications<void>((error) => {
         throw error;
     });
+    const changes = new SynchronousNotifications<void>((error) => {
+        throw error;
+    });
     const api = {
         read: vi.fn<RallarFriends.Api['read']>(async ({ session: caller }) => ({ ...view, principalId: caller.clientId })),
         change: vi.fn<RallarFriends.Api['change']>(async ({ session: caller, requestId }) => ({ principalId: caller.clientId, requestId, status: 'applied' }))
@@ -59,14 +64,16 @@ function browser(): BrowserFixture {
         activity: { isActive: () => active, onChange: (listener) => activityChanges.subscribe(listener).unsubscribe },
         api,
         entry: { enter },
+        onChanged: (listener) => changes.subscribe(listener).unsubscribe,
         timers: createDefaultTimers(),
         createId: () => crypto.randomUUID()
-    }, { scope, refreshIntervalMs: 30000 });
+    }, { scope });
     cleanups.push(() => owner.stop());
     return {
         owner,
         api,
         enter,
+        changed: () => changes.publishLatest(),
         changeAuth(next: AuthSession | undefined) {
             session = next;
             authChanges.publishLatest({ authenticated: next !== undefined, reason: next ? 'login' : 'logout', session: next });
@@ -172,18 +179,42 @@ describe('friends browser lifecycle', () => {
         expect(test.enter).toHaveBeenCalledWith({ intent: 'join', roomRef: invitation.roomRef, joinCode: null, participation: 'player' });
     });
 
-    it('polls only while foreground and online and clears private views after a failed read', async () => {
+    it('stays idle without polling, reacts to push only when active, and clears private views after a failed read', async () => {
         vi.useFakeTimers();
         const test = browser();
         await test.owner.start();
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(test.api.read).toHaveBeenCalledTimes(1);
         test.activity(false);
+        test.changed();
         await vi.advanceTimersByTimeAsync(60000);
         expect(test.api.read).toHaveBeenCalledTimes(1);
         test.activity(true);
         await test.owner.refresh();
         expect(test.api.read).toHaveBeenCalledTimes(2);
+        test.api.read.mockResolvedValueOnce({ ...view, contacts: [] });
+        test.changed();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(test.owner.getState().view?.contacts).toEqual([]);
         test.api.read.mockRejectedValueOnce(new Error('Unavailable'));
         await test.owner.refresh();
         expect(test.owner.getState()).toMatchObject({ view: null, error: 'Unavailable' });
+    });
+    it('rechecks an invitation once at its server deadline despite browser clock skew', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(9_000_000);
+        const test = browser();
+        test.api.read.mockResolvedValueOnce({
+            ...view,
+            observedAtEpochMs: 1000,
+            invitations: [{ ...invitation, expiresAtEpochMs: 2000 }]
+        }).mockResolvedValue({ ...view, observedAtEpochMs: 2000, invitations: [] });
+        await test.owner.start();
+        await vi.advanceTimersByTimeAsync(999);
+        expect(test.owner.getState().view?.invitations).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(test.owner.getState().view?.invitations).toEqual([]);
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(test.api.read).toHaveBeenCalledTimes(2);
     });
 });

@@ -4,6 +4,8 @@ import type { AdminRoomTopologyWorkResponse } from '@shared/api/admin-rooms/admi
 import type { AdminPruneEnqueueResult } from '@shared/api/admin-rooms/decode-admin-prune-result.ts';
 import type { TopologyReconfigureInboxResult } from '@shared/api/admin-rooms/decode-topology-inbox-result.ts';
 import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support/admin-support-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
 import {
     pruneAdminExpiredRecords,
@@ -36,7 +38,9 @@ export namespace AdminRoomOperations {
         readonly topology: TopologyOutcome | null;
         readonly maintenance: MaintenanceOutcome | null;
     }
-    export interface Config extends AuthenticatedResource.Config {
+    export interface Config {
+        readonly scope: StateScope;
+        readonly refreshIntervalMs: number;
         readonly apiBaseUrl: string;
         readonly afterGroupId: string | null;
         readonly selectedGroupId: string | null;
@@ -54,7 +58,16 @@ export class AdminRoomOperations extends AuthenticatedResource<AdminRoomOperatio
     private maintenance: AdminRoomOperations.Accepted<AdminRoomOperations.MaintenanceOutcome> | null = null;
 
     constructor(dependencies: AuthenticatedResource.Dependencies, config: AdminRoomOperations.Config) {
-        super(dependencies, config, { read: (input) => this.read(input), change: (input) => this.change(input) });
+        super(dependencies, {
+            scope: config.scope,
+            subscribeRefresh: (run) =>
+                startRepeating({
+                    timers: dependencies.timers,
+                    intervalMs: config.refreshIntervalMs,
+                    firstRun: 'after-interval',
+                    run
+                })
+        }, { read: (input) => this.read(input), change: (input) => this.change(input) });
         this.roomConfig = config;
     }
 

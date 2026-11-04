@@ -46,7 +46,7 @@ describe('Relic committed notifications', () => {
             namespace: 'relic-publication-test',
             decodePrepared: decodeWsQueueBoxServerPreparedMessage
         });
-        const provenance = new WsOutboxProvenanceReader({ repository: fixture.runtime, nowMs: Date.now });
+        const provenance = new WsOutboxProvenanceReader({ repository: fixture.runtime, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
         const transport = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             name: 'default-qbox-server',

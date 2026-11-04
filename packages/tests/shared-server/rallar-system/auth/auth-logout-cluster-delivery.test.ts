@@ -253,7 +253,7 @@ async function issueSession(auth: AuthInboxTestRuntime, repository: FakeRuntimeS
 
 async function createCluster(repository: FakeRuntimeStateRepository, sessionId: string, cluster: boolean): Promise<LogoutDeliveryFixture> {
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const engine = new InboxOutboxEngine();
     const remoteEngine = new InboxOutboxEngine();
     const remoteSocket = new JsonWebSocketServer();

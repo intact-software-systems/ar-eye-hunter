@@ -6,9 +6,11 @@ import type {
 } from '@shared/api/matchmaking/matchmaking-request.ts';
 import { decodeMatchmakingSnapshot, type MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import type { PartyRosterView } from '@shared/api/parties/party-view.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
+import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { matchmakingHttpApi } from './matchmaking-http-api.ts';
@@ -25,12 +27,16 @@ const REFUSAL_MESSAGES: Readonly<Record<MatchmakingRefusal, string>> = {
 };
 
 export namespace RallarMatchmaking {
+    export interface Config {
+        readonly scope: StateScope;
+    }
     export interface Api {
         read(input: AuthenticatedResource.ReadInput): Promise<MatchmakingSnapshot>;
         change(input: AuthenticatedResource.ChangeInput<MatchmakingRequest>): Promise<MatchmakingMutationResult>;
     }
     export interface Dependencies extends AuthenticatedResource.Dependencies {
         readonly api: Api;
+        onChanged(listener: () => Promise<void>): () => void;
         readonly entry: Pick<RallarRoomEntry, 'enter'>;
     }
 }
@@ -41,15 +47,17 @@ export class RallarMatchmaking extends AuthenticatedResource<MatchmakingSnapshot
     private readonly createId: () => string;
 
     static createBrowser(
-        browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
+        browser: SubscribeViewInvalidations.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         entry: RallarRoomEntry,
-        config: AuthenticatedResource.Config
+        config: RallarMatchmaking.Config
     ): RallarMatchmaking {
         return new RallarMatchmaking({
             auth: {
                 session: () => browser.session(),
                 onChange: (listener, options) => browser.auth.onChange(listener, options)
             },
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'matchmaking', changed }),
             api: matchmakingHttpApi,
             entry,
             activity: new BrowserActivity(),
@@ -58,8 +66,8 @@ export class RallarMatchmaking extends AuthenticatedResource<MatchmakingSnapshot
         }, config);
     }
 
-    constructor(dependencies: RallarMatchmaking.Dependencies, config: AuthenticatedResource.Config) {
-        super(dependencies, config, {
+    constructor(dependencies: RallarMatchmaking.Dependencies, config: RallarMatchmaking.Config) {
+        super(dependencies, { scope: config.scope, subscribeRefresh: dependencies.onChanged }, {
             async read(attempt) {
                 const snapshot = decodeMatchmakingSnapshot(await dependencies.api.read(attempt));
                 assertMatchmakingAccountScope(snapshot, attempt);

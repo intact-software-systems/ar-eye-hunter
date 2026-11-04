@@ -75,15 +75,11 @@ function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
             refreshIntervalMs: 5_000
         })
     );
-    const [party] = useState(() =>
-        RallarParty.createBrowser(rallar, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
-    );
+    const [party] = useState(() => RallarParty.createBrowser(rallar, { scope: ARENA_ROOM_SCOPE }));
     const [matchmaking] = useState(() =>
-        RallarMatchmaking.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 1000 })
+        RallarMatchmaking.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE })
     );
-    const [friends] = useState(() =>
-        RallarFriends.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 30_000 })
-    );
+    const [friends] = useState(() => RallarFriends.createBrowser(rallar, arenaRoomEntry, { scope: ARENA_ROOM_SCOPE }));
     return (
         <>
             {arena.session && arena.tournament.enabled && (

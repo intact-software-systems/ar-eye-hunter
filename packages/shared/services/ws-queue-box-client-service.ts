@@ -57,7 +57,8 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALDurableWorkOwnership } from '../alm/work/al-durable-work-ownership.ts';
-import { EnqueuedType } from '../api/api-config.ts';
+import { AppTopics, EnqueuedType } from '../api/api-config.ts';
+import { decodeViewInvalidationMessage } from '../api/view-invalidation.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -129,6 +130,8 @@ export namespace WsQueueBoxClientService {
 
     export interface Input {
         readonly creationNow?: QueueBoxUtilities.CreationClock;
+        /** Current authenticated account only while it still owns this service's session; absent for anonymous transports. */
+        readonly readAuthenticatedPrincipalId?: () => string | undefined;
         /** Standalone transports may have no domain prerequisite; browser composition supplies room readiness. */
         readonly readSubmissionIneligibility?: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
@@ -162,6 +165,7 @@ export namespace WsQueueBoxClientService {
 
     export interface Dependencies {
         readonly creationNow: QueueBoxUtilities.CreationClock;
+        readonly readAuthenticatedPrincipalId: () => string | undefined;
         readonly readSubmissionIneligibility: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
@@ -333,12 +337,30 @@ export class WsQueueBoxClientService {
             msg,
             {
                 selfPeerId: this.sessionId,
+                authenticatedRecipientId: source.kind === 'trusted-server'
+                    ? this.readAccountViewRecipient(msg)
+                    : undefined,
                 fromPeerId,
                 connectedPeerIds: [this.sessionId],
                 ...observations
             },
             normalizationInput
         );
+    }
+
+    private readAccountViewRecipient(message: ALMessage): string | undefined {
+        if (message.route.topicId !== AppTopics.viewInvalidated || message.targets?.mode !== 'unicast') {
+            return undefined;
+        }
+        try {
+            const notice = decodeViewInvalidationMessage(message);
+            return notice.scope === null && notice.principalId === this.dependencies.readAuthenticatedPrincipalId()
+                ? notice.principalId
+                : undefined;
+        }
+        catch {
+            return undefined;
+        }
     }
 
     onAllOutboxMessagesDo(
@@ -578,7 +600,7 @@ export class WsQueueBoxClientService {
         plan: ALMessageHandlingPlan
     ): Promise<void | 'retry'> {
         const message = decodePersistedALMessage(entry.resource);
-        this.requireInboxDeliveryTime(entry);
+        this.requireInboxDeliveryTime(entry, message);
         const exact = this.onInboxMessageCallbacks.get(message.payload.typeId);
         const selected = exact ??
             (plan.ownership.exclusive ? this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN) : undefined);
@@ -595,7 +617,7 @@ export class WsQueueBoxClientService {
             ? undefined
             : this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN);
         if (wildcard !== undefined) {
-            this.requireInboxDeliveryTime(entry);
+            this.requireInboxDeliveryTime(entry, message);
             const wildcardResult = await wildcard.onMessage(message, entry);
             if (wildcardResult === 'retry') {
                 return 'retry';
@@ -606,7 +628,7 @@ export class WsQueueBoxClientService {
             if (this.closed) {
                 return 'retry';
             }
-            this.requireInboxDeliveryTime(entry);
+            this.requireInboxDeliveryTime(entry, message);
             const callbackResult = await callback.onMessage(message, entry);
             if (callbackResult === 'retry') {
                 return 'retry';
@@ -670,7 +692,13 @@ export class WsQueueBoxClientService {
         });
     }
 
-    private requireInboxDeliveryTime(entry: ResourceEntry): void {
+    private requireInboxDeliveryTime(entry: ResourceEntry, message: ALMessage): void {
+        if (
+            message.route.topicId === AppTopics.viewInvalidated && message.targets?.mode === 'unicast' &&
+            this.readAccountViewRecipient(message) === undefined
+        ) {
+            throw new NonRetryableException('Account view recipient no longer owns this session');
+        }
         if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.outboundRuntime.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before consumer delivery');
         }
@@ -764,6 +792,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
     const creationNow = input.creationNow ?? Temporal.Now.instant;
     return new WsQueueBoxClientService({
         creationNow,
+        readAuthenticatedPrincipalId: input.readAuthenticatedPrincipalId ?? (() => undefined),
         readSubmissionIneligibility: input.readSubmissionIneligibility ?? (() => undefined),
         submissionReadinessFaultPort: input.submissionReadinessFaultPort ??
             createPassThroughWebSocketSubmissionReadinessFaultPort(),

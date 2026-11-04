@@ -3,13 +3,24 @@ import { AppTopics } from './api-config.ts';
 import { requireExactKeys, requireOneOf, requireRecord, requireString } from './exact-object-decoding.ts';
 import { decodeStateScope, type StateScope } from './state-types.ts';
 
-export interface ViewInvalidation {
-    readonly version: 1;
-    readonly resource: 'party' | 'matchmaking';
-    readonly scope: StateScope;
-    readonly principalId: string;
-    readonly changeId: string;
+export namespace ViewInvalidation {
+    export interface ScopedAccount {
+        readonly version: 1;
+        readonly resource: 'party' | 'matchmaking' | 'friends';
+        readonly scope: StateScope;
+        readonly principalId: string;
+        readonly changeId: string;
+    }
+    export interface Account {
+        readonly version: 1;
+        readonly resource: 'friends';
+        readonly scope: null;
+        readonly principalId: string;
+        readonly changeId: string;
+    }
 }
+
+export type ViewInvalidation = ViewInvalidation.ScopedAccount | ViewInvalidation.Account;
 
 /** A hint to read authority again, never a replacement snapshot or permission to access a resource. */
 export function decodeViewInvalidation(value: unknown): ViewInvalidation {
@@ -20,9 +31,21 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     }
     requireString(record.principalId, 'View principal');
     requireString(record.changeId, 'View change identity');
+    if (record.scope === null) {
+        if (record.resource !== 'friends') {
+            throw new TypeError('Only friends list invalidations can be account-wide');
+        }
+        return {
+            version: 1,
+            resource: 'friends',
+            scope: null,
+            principalId: record.principalId,
+            changeId: record.changeId
+        };
+    }
     return {
         version: 1,
-        resource: requireOneOf(record.resource, ['party', 'matchmaking'], 'View resource'),
+        resource: requireOneOf(record.resource, ['party', 'matchmaking', 'friends'], 'View resource'),
         scope: decodeStateScope(record.scope),
         principalId: record.principalId,
         changeId: record.changeId
@@ -47,11 +70,18 @@ export function decodeViewInvalidationMessage(message: ALMessage): ViewInvalidat
     if (message.route.topicId !== AppTopics.viewInvalidated || message.payload.typeId !== AppTopics.viewInvalidated) {
         throw new TypeError('View invalidation topic and type differ');
     }
+    const notice = decodeViewInvalidation(JSON.parse(message.payload.resource));
     const targets = requireRecord(message.targets, 'View targets');
+    if (notice.scope === null) {
+        requireExactKeys(targets, ['mode', 'toPeerId'], 'Account view targets');
+        if (targets.mode !== 'unicast' || targets.toPeerId !== notice.principalId) {
+            throw new TypeError('Account view differs from its exact account target');
+        }
+        return notice;
+    }
     requireExactKeys(targets, ['mode', 'scope', 'principalRef'], 'View targets');
     const principalRef = requireRecord(targets.principalRef, 'View target principal');
     requireExactKeys(principalRef, ['applicationId', 'workspaceId', 'principalId'], 'View target principal');
-    const notice = decodeViewInvalidation(JSON.parse(message.payload.resource));
     if (
         targets.mode !== 'broadcast' || targets.scope !== 'principal' ||
         principalRef.applicationId !== notice.scope.applicationId ||

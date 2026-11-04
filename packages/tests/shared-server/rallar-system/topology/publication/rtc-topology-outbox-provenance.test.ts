@@ -83,7 +83,7 @@ describe('RTC topology producer provenance', () => {
                     : proof.value;
                 await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, proof.key, value, publication.expiresAtEpochMs);
             }
-            const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+            const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
             const engine = new InboxOutboxEngine();
             const socket = new JsonWebSocketServer();
             const native = new TestWebSocket('ws://foreign');

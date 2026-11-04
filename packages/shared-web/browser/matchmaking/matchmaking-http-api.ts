@@ -4,17 +4,17 @@ import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-requ
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { readApiBaseUrl } from '../api-client-config.ts';
+import { readApiView } from '../api/read-api-view.ts';
 import { sendApiHttpRequest } from '../api/send-api-http-request.ts';
 import type { RallarMatchmaking } from './rallar-matchmaking.ts';
 
 export const matchmakingHttpApi: RallarMatchmaking.Api = {
     async read({ scope, session, signal }) {
-        const response = await sendApiHttpRequest({
+        const response = await readApiView({
             baseUrl: readApiBaseUrl(),
             path: matchmakingPath(scope),
-            method: 'GET',
-            body: undefined,
-            options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) }
+            session,
+            signal
         });
         return decodeMatchmakingSnapshot(response);
     },

@@ -189,7 +189,7 @@ describe('group presence delta producer provenance', () => {
 
 function createGroupDeltaReceiver(producer: GroupDeltaProducerFixture): GroupDeltaReceiverFixture {
     const authentication: { scope: StateScope; now: number; } = { scope: producer.ref, now: producer.now };
-    const reader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: () => authentication.now });
+    const reader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: () => authentication.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://foreign-api');
     native.open();

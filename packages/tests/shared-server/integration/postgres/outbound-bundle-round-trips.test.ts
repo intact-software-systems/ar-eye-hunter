@@ -190,7 +190,7 @@ function createWsDequeueLane(sql: PSqlSql, runId: string): WsDequeueLane {
         retention: undefined,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });
-    const proofs = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    const proofs = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();

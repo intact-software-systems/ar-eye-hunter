@@ -19,6 +19,7 @@ interface ResourceBrowser {
         readonly change: Mock<AuthenticatedResource.Api<View, Request>['change']>;
     };
     login(next: AuthSession | undefined): void;
+    invalidate(): void;
 }
 const alice: AuthSession = {
     clientId: 'alice',
@@ -37,6 +38,9 @@ function browser(): ResourceBrowser {
     const auth = new SynchronousNotifications<RallarAuthState>((error) => {
         throw error;
     });
+    const changes = new SynchronousNotifications<void>((error) => {
+        throw error;
+    });
     const api = {
         read: vi.fn<AuthenticatedResource.Api<View, Request>['read']>(async ({ session }) => ({ name: session.clientId })),
         change: vi.fn<AuthenticatedResource.Api<View, Request>['change']>(async () => null)
@@ -48,13 +52,14 @@ function browser(): ResourceBrowser {
             timers: createDefaultTimers(),
             createId: () => crypto.randomUUID()
         },
-        { scope: { applicationId: 'game', workspaceId: 'default' }, refreshIntervalMs: 30000 },
+        { scope: { applicationId: 'game', workspaceId: 'default' }, subscribeRefresh: (listener) => changes.subscribe(listener).unsubscribe },
         api
     );
     cleanups.push(() => owner.stop());
     return {
         owner,
         api,
+        invalidate: () => changes.publishLatest(undefined),
         login(next: AuthSession | undefined) {
             session = next;
             auth.publishLatest({ authenticated: next !== undefined, reason: next ? 'login' : 'logout', session: next });
@@ -210,4 +215,27 @@ it('starts replacement-account reads without waiting for old account refreshes',
     expect(test.owner.getState().view).toEqual({ name: 'bob' });
     // Queued work must never issue another request using the replaced credentials.
     expect(test.api.read.mock.calls.filter(([request]) => request.session.clientId === 'alice')).toHaveLength(2);
+});
+
+it('subscribes before reading, covers a push during that read, and detaches on stop', async () => {
+    const test = browser();
+    const started = Promise.withResolvers<void>();
+    const older = Promise.withResolvers<View>();
+    test.api.read.mockImplementationOnce(() => {
+        started.resolve();
+        return older.promise;
+    });
+    const start = test.owner.start();
+    await started.promise;
+    test.api.read.mockResolvedValue({ name: 'pushed' });
+    test.invalidate();
+    test.invalidate();
+    older.resolve({ name: 'before-push' });
+    await start;
+    await vi.waitFor(() => expect(test.owner.getState().view).toEqual({ name: 'pushed' }));
+    expect(test.api.read).toHaveBeenCalledTimes(2);
+    test.owner.stop();
+    test.invalidate();
+    await Promise.resolve();
+    expect(test.api.read).toHaveBeenCalledTimes(2);
 });

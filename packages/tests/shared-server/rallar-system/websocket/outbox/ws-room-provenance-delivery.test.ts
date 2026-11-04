@@ -305,7 +305,7 @@ class RoomFixture {
     readonly native = new Map<string, TestWebSocket>();
     readonly authentication = { scope: SCOPE, expiresAtEpochMs: Date.now() + 60_000 };
     readonly stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
-    readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now });
+    readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     readonly outcomes: WsOutboxDeliveryOutcome[] = [];
     readonly retiredCompletions: Promise<PromiseSettledResult<void>[]>[] = [];
     engine = new InboxOutboxEngine();

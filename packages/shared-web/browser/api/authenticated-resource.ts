@@ -3,7 +3,6 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
@@ -45,7 +44,7 @@ export namespace AuthenticatedResource {
     }
     export interface Config {
         readonly scope: StateScope;
-        readonly refreshIntervalMs: number;
+        subscribeRefresh(listener: () => Promise<void>): () => void;
     }
 }
 
@@ -71,9 +70,6 @@ export class AuthenticatedResource<View, Request> {
         config: AuthenticatedResource.Config,
         api: AuthenticatedResource.Api<View, Request>
     ) {
-        if (!Number.isSafeInteger(config.refreshIntervalMs) || config.refreshIntervalMs <= 0) {
-            throw new TypeError('Resource refresh interval must be a positive integer');
-        }
         this.dependencies = dependencies;
         this.config = config;
         this.api = api;
@@ -99,12 +95,11 @@ export class AuthenticatedResource<View, Request> {
                     void this.refresh();
                 }
             }));
-            this.subscriptions.add(startRepeating({
-                timers: this.dependencies.timers,
-                intervalMs: this.config.refreshIntervalMs,
-                firstRun: 'after-interval',
-                run: () => this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve()
-            }));
+            this.subscriptions.add(
+                this.config.subscribeRefresh(() =>
+                    this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve()
+                )
+            );
         }
         return this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve();
     }

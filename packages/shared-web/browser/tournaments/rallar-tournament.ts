@@ -1,3 +1,4 @@
+import type { StateScope } from '@shared/api/state-types.ts';
 import { decodeTournamentRef } from '@shared/api/tournaments/decode-tournament-match-binding.ts';
 import {
     decodeTournamentMutationResult,
@@ -8,6 +9,7 @@ import { decodeTournamentSnapshot, type TournamentSnapshot } from '@shared/api/t
 import type { TournamentMatch, TournamentRef } from '@shared/api/tournaments/tournament-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
 import { BrowserActivity } from '../browser-activity.ts';
@@ -29,7 +31,9 @@ export namespace RallarTournament {
         readonly api: Api;
         readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
     }
-    export interface Config extends AuthenticatedResource.Config {
+    export interface Config {
+        readonly scope: StateScope;
+        readonly refreshIntervalMs: number;
         readonly tournamentId: string;
     }
 }
@@ -59,7 +63,16 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
 
     constructor(dependencies: RallarTournament.Dependencies, config: RallarTournament.Config) {
         const ref = decodeTournamentRef({ ...config.scope, tournamentId: config.tournamentId });
-        super(dependencies, config, {
+        super(dependencies, {
+            scope: config.scope,
+            subscribeRefresh: (run) =>
+                startRepeating({
+                    timers: dependencies.timers,
+                    intervalMs: config.refreshIntervalMs,
+                    firstRun: 'after-interval',
+                    run
+                })
+        }, {
             async read(attempt) {
                 const snapshot = decodeTournamentSnapshot(await dependencies.api.read({ ...attempt, ref }));
                 if (!jsonEquals(snapshot.ref, ref) || snapshot.principalId !== attempt.session.clientId) {

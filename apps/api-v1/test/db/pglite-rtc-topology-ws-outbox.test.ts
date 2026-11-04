@@ -170,7 +170,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
       where ri_type_id = 'WS_OUTBOX'
     `;
         assert.equal(Number(wsRows[0]?.count), outboxWrites.length);
-        const reader = new WsOutboxProvenanceReader({ repository: runtime, nowMs: Date.now });
+        const reader = new WsOutboxProvenanceReader({ repository: runtime, nowMs: Date.now, readPrincipalSessionIds: () => Promise.resolve([]) });
         const page = await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(outboxWrites[0].entry.key);
         assert.ok(page);
         assert.deepEqual(await reader.readProducerProvenance(decodePersistedALMessage(page.resource), page), {

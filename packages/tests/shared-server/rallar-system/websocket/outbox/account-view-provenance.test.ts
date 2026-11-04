@@ -98,8 +98,6 @@ describe('account view invalidation authority', () => {
         };
         await expect(reader.readProducerProvenance(forged, { ...entry, resource: JSON.stringify(forged) }))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        const missingReader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
-        await expect(missingReader.readProducerProvenance(message, entry)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('preserves a session-read failure for retry instead of classifying an unavailable database as corrupt provenance', async () => {

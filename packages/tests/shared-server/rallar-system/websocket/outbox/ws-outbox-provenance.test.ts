@@ -108,7 +108,8 @@ describe('row-bound WS producer provenance', () => {
                     return repository.readRuntimeStateBatch(selectors);
                 }
             },
-            nowMs: Date.now
+            nowMs: Date.now,
+            readPrincipalSessionIds: async () => []
         });
 
         const settled = await Promise.allSettled(
@@ -162,7 +163,7 @@ describe('row-bound WS producer provenance', () => {
             JSON.stringify(proof),
             proof.expiresAtMs
         );
-        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
 
         expect(await reader.readProducerProvenance(message, entry)).toEqual({
             admittedAudience: undefined,
@@ -208,7 +209,7 @@ describe('row-bound WS producer provenance', () => {
             JSON.stringify(proof),
             proof.expiresAtMs
         );
-        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
 
         expect(await reader.readProducerProvenance(message, entry)).toEqual({
             admittedAudience: ['alice-session'],
@@ -359,7 +360,7 @@ async function createFixture(admittedAudience: readonly string[]): Promise<WsOut
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
     await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => Date.now() });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => Date.now(), readPrincipalSessionIds: async () => [] });
     return { message, entry, proof, repository, reader, key };
 }
 
@@ -389,6 +390,6 @@ async function createPrincipalRoomFixture(mismatch: 'applicationId' | 'workspace
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
     await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     return { message, entry, proof, repository, reader, key };
 }

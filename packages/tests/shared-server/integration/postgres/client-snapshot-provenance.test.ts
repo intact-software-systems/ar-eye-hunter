@@ -123,7 +123,11 @@ describe('Postgres client snapshot provenance transaction', () => {
                 expect(rows).toHaveLength(1);
                 expect(proofs).toHaveLength(1);
                 const entry = toDomain(rows[0]!);
-                const reader = new WsOutboxProvenanceReader({ repository: new PSqlRuntimeStateRepository(observer), nowMs: Date.now });
+                const reader = new WsOutboxProvenanceReader({
+                    repository: new PSqlRuntimeStateRepository(observer),
+                    nowMs: Date.now,
+                    readPrincipalSessionIds: async () => []
+                });
                 expect(await reader.readProducerProvenance(decodePersistedALMessage(entry.resource), entry)).toEqual({
                     admittedAudience: [sessionId],
                     recipientScope: scope

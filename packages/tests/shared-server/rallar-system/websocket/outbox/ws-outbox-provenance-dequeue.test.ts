@@ -249,7 +249,7 @@ async function createFixture(): Promise<ProvenanceDequeueFixture> {
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
     await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();

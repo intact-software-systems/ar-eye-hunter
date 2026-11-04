@@ -1,9 +1,14 @@
-import { computeViewInvalidationPublication } from '@shared-server/rallar-system/websocket/outbox/compute-view-invalidation-publication.ts';
+import {
+    computeViewInvalidationPublication,
+    type ViewInvalidationPublication
+} from '@shared-server/rallar-system/websocket/outbox/compute-view-invalidation-publication.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
 import { WsQueueBoxServerOutboundPlanning } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -20,6 +25,21 @@ import { toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-t
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsServerInboundConnectionScopeProof } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+
+interface AccountPublicationFixture {
+    readonly publication: ViewInvalidationPublication;
+    readonly entry: Readonly<ResourceEntry>;
+    readonly message: ALMessage;
+    readonly reader: WsOutboxProvenanceReader;
+}
+
+interface AccountNodeFixture {
+    readonly socket: JsonWebSocketServer;
+    readonly engine: InboxOutboxEngine;
+    readonly service: WsQueueBoxServerService;
+    readonly proofs: Map<string, WsServerInboundConnectionScopeProof>;
+    readonly natives: Map<string, TestWebSocket>;
+}
 
 const ACCOUNT = { version: 1 as const, principalId: 'alice' };
 
@@ -219,7 +239,7 @@ it('rechecks authenticated account expiry immediately before native submission',
     expect(native.sent).toHaveLength(0);
 });
 
-async function createPublication() {
+async function createPublication(): Promise<AccountPublicationFixture> {
     const publication = computeViewInvalidationPublication({
         resource: 'friends',
         scope: null,
@@ -252,7 +272,7 @@ async function createPublication() {
 function createNode(
     reader: WsOutboxProvenanceReader,
     stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage })
-) {
+): AccountNodeFixture {
     const socket = new JsonWebSocketServer();
     const engine = new InboxOutboxEngine();
     const proofs = new Map<string, WsServerInboundConnectionScopeProof>();
@@ -274,7 +294,7 @@ function createNode(
     return { socket, engine, service, proofs, natives };
 }
 
-function connect(node: ReturnType<typeof createNode>, id: string): TestWebSocket {
+function connect(node: AccountNodeFixture, id: string): TestWebSocket {
     const native = new TestWebSocket(`ws://${id}`);
     native.open();
     node.natives.set(id, native);

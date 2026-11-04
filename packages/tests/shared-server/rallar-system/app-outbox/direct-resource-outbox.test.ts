@@ -439,7 +439,7 @@ describe('direct resource outbox writes', () => {
         const producer = await createGroupDeltaProducer();
         await producer.worker.processReservedEntry(producer.message, producer.entry);
         const entry = await readCommittedGroupDelta(producer);
-        const proofReader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: Date.now });
+        const proofReader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
         const outbox = new InMemoryQueueBox();
         const socket = createSocket();
         const resolveBroadcastRecipients = vi.fn(() => [
@@ -484,7 +484,7 @@ describe('direct resource outbox writes', () => {
         const producer = await createGroupDeltaProducer();
         await producer.worker.processReservedEntry(producer.message, producer.entry);
         const entry = await readCommittedGroupDelta(producer);
-        const proofReader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: Date.now });
+        const proofReader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
         const outbox = new InMemoryQueueBox();
         const socket = createSocket();
         socket.connections.clear();

@@ -16,6 +16,7 @@ interface BrowserFixture {
     state(state: MatchmakingSnapshot['state']): void;
     login(next: AuthSession | undefined): void;
     active(next: boolean): void;
+    invalidate(): void;
 }
 
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'alice-session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
@@ -48,6 +49,9 @@ function browser(): BrowserFixture {
     const activity = new SynchronousNotifications<void>((error) => {
         throw error;
     });
+    const changes = new SynchronousNotifications<void>((error) => {
+        throw error;
+    });
     const api = {
         read: vi.fn<RallarMatchmaking.Api['read']>(async ({ session }) => ({
             scope,
@@ -69,15 +73,17 @@ function browser(): BrowserFixture {
         auth: { session: () => session, onChange: (listener) => auth.subscribe(listener).unsubscribe },
         activity: { isActive: () => active, onChange: (listener) => activity.subscribe(listener).unsubscribe },
         api,
+        onChanged: (listener) => changes.subscribe(listener).unsubscribe,
         entry: { enter },
         timers: createDefaultTimers(),
         createId: () => crypto.randomUUID()
-    }, { scope, refreshIntervalMs: 1000 });
+    }, { scope });
     cleanups.push(() => owner.stop());
     return {
         owner,
         api,
         enter,
+        invalidate: () => changes.publishLatest(undefined),
         state(state: MatchmakingSnapshot['state']) {
             api.read.mockImplementation(async ({ session }) => ({ scope, principalId: session.clientId, observedAtEpochMs: 1000, state }));
         },
@@ -158,7 +164,8 @@ describe('matchmaking browser recovery and consent', () => {
         await test.owner.cancel();
         expect(test.api.change).toHaveBeenCalledWith(expect.objectContaining({ request: { action: 'cancel', searchId: 'alice-search' } }));
         test.state({ status: 'ended', searchId: 'alice-search', reason: 'confirmation-timeout' });
-        await vi.advanceTimersByTimeAsync(3000);
+        test.invalidate();
+        await vi.advanceTimersByTimeAsync(0);
         expect(test.owner.getState().view?.state).toMatchObject({ status: 'ended', reason: 'confirmation-timeout' });
         expect(test.api.change).toHaveBeenCalledTimes(1);
         await test.owner.find();
@@ -207,12 +214,13 @@ describe('matchmaking browser recovery and consent', () => {
         expect(test.owner.getState().error).toBe('Offline');
     });
 
-    it('pauses background polling, refreshes on return and stops without cancelling the durable search', async () => {
+    it('ignores background invalidations, refreshes on return and stops without cancelling the durable search', async () => {
         vi.useFakeTimers();
         const test = browser();
         test.state({ status: 'searching', searchId: 'alice-search', expiresAtEpochMs: 120000 });
         await test.owner.start();
         test.active(false);
+        test.invalidate();
         await vi.advanceTimersByTimeAsync(3000);
         expect(test.api.read).toHaveBeenCalledTimes(1);
         test.active(true);
@@ -223,4 +231,17 @@ describe('matchmaking browser recovery and consent', () => {
         expect(test.api.read).toHaveBeenCalledTimes(2);
         expect(test.api.change).not.toHaveBeenCalled();
     });
+});
+
+it('does not read while idle and refreshes after a server invalidation', async () => {
+    vi.useFakeTimers();
+    const test = browser();
+    await test.owner.start();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(test.api.read).toHaveBeenCalledTimes(1);
+    test.state(confirming);
+    test.invalidate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(test.owner.getState().view?.state).toEqual(confirming);
+    expect(test.api.read).toHaveBeenCalledTimes(2);
 });
