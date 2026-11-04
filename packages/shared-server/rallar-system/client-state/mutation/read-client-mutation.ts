@@ -1,3 +1,4 @@
+import type { ClientInstanceRef, ClientSessionRef } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
@@ -13,6 +14,8 @@ import {
 import { decodeWebSocketTicketByDigestEntry } from '../../auth/persistence/auth-ticket-persistence.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { AuthWsTicketConsumptionClaim } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
+import { isFriendOnline, readFriendsPresence } from '../../friends/friends-presence-publication.ts';
+import type { FriendsRepository } from '../../friends/friends-repository.ts';
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupStateCurrentSnapshotCache } from '../../group-state/snapshot/group-state-current-snapshot-cache.ts';
@@ -38,19 +41,8 @@ import type {
 import { resolveClientMutationAudienceReadScope } from './resolve-client-mutation-audience-read-scope.ts';
 
 interface ClientMutationTargetRefs {
-    readonly instanceRef: {
-        readonly applicationId: string;
-        readonly workspaceId: string;
-        readonly principalId: string;
-        readonly clientInstanceId: string;
-    } | null;
-    readonly sessionRef: {
-        readonly applicationId: string;
-        readonly workspaceId: string;
-        readonly principalId: string;
-        readonly clientInstanceId: string;
-        readonly sessionId: string;
-    } | null;
+    readonly instanceRef: ClientInstanceRef | null;
+    readonly sessionRef: ClientSessionRef | null;
 }
 
 interface ClientMutationAudienceRead {
@@ -62,6 +54,7 @@ export interface ReadClientMutationInput {
     readonly repository: ClientStateRepository;
     readonly groupRepository: GroupStateRepositoryReads;
     readonly parties: PartyRepository;
+    readonly friends: FriendsRepository;
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
@@ -151,7 +144,12 @@ async function readClientMutationAudience(
     const partyMemberView = needsPartyMemberRead(command, state, audienceObservedAtEpochMs)
         ? await readPartyMemberView(input.parties, command.aggregateRef)
         : null;
-    return { ...state, receiptEvent, audienceObservedAtEpochMs, partyMemberView, ...audience };
+    const needsFriends = state.idempotency === null && command.operation !== 'upsertInstance' &&
+        (command.operation !== 'heartbeatSession' || !isFriendOnline(state.snapshot, audienceObservedAtEpochMs));
+    const friendsPresence = needsFriends
+        ? await readFriendsPresence(input.friends, command.aggregateRef.principalId)
+        : null;
+    return { ...state, receiptEvent, audienceObservedAtEpochMs, partyMemberView, friendsPresence, ...audience };
 }
 
 async function readClientMutationState(

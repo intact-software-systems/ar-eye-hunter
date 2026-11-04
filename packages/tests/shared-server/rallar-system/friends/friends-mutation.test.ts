@@ -1,15 +1,30 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import { computeFriendsMutation } from '@shared-server/rallar-system/friends/compute-friends-mutation.ts';
-import type { FriendsMutationRead } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
+import { computeFriendsMutation, validateFriendsMutation } from '@shared-server/rallar-system/friends/compute-friends-mutation.ts';
+import type { FriendsMutationRead, FriendsProfileRead } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
+import {
+    FRIENDS_PROFILE_NAMESPACE,
+    friendsProfileKey,
+    type FriendsProfile
+} from '@shared-server/rallar-system/friends/friends-profile.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { FriendsRequest } from '@shared/api/friends/friends-request.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 
 function read(request: FriendsRequest): FriendsMutationRead {
     const snapshot = createGroupSnapshot(1, []);
     return {
+        serviceId: 'friends-test',
+        traceId: 'trace',
+        finishedRetentionMs: 60000,
+        peers: [],
         input: {
             principalId: 'alice',
             sessionId: 'alice-session',
@@ -52,6 +67,19 @@ function read(request: FriendsRequest): FriendsMutationRead {
     };
 }
 
+function observedProfile(profile: FriendsProfile): FriendsProfileRead {
+    return {
+        profile,
+        entry: {
+            key: friendsProfileKey(profile.principalId),
+            value: JSON.stringify(profile),
+            revision: 1,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            updatedTimestamp: '2026-11-04'
+        }
+    };
+}
+
 describe('private friends mutations', () => {
     it('computes both sides before persistence without changing the supplied profiles', () => {
         const before = read({ action: 'request', username: 'bob' });
@@ -63,7 +91,11 @@ describe('private friends mutations', () => {
         ]);
         expect(before.actor.profile.contacts).toEqual([]);
         expect(computed.storage?.guardSqlDescriptor.expireAtTimestamp).toBe('1970-01-01T00:00:10.000Z');
-        expect(computed.storage?.effectSqlDescriptors.map((effect) => JSON.parse(effect.value!).principalId)).toEqual(['alice', 'bob']);
+        expect(
+            computed.storage?.effectSqlDescriptors.filter((effect) => effect.namespace === FRIENDS_PROFILE_NAMESPACE).map((effect) =>
+                JSON.parse(effect.value!).principalId
+            )
+        ).toEqual(['alice', 'bob']);
         expect(computed.storage?.effectSqlDescriptors.every((effect) => typeof effect.expireAtTimestamp === 'string')).toBe(true);
     });
 
@@ -232,5 +264,42 @@ describe('private friends mutations', () => {
         const dismissed = computeFriendsMutation({ ...read({ action: 'dismiss', invitationId: 'missing' }), target: null });
         expect(dismissed.result.status).toBe('applied');
         expect(dismissed.profiles).toHaveLength(1);
+    });
+    it('computes private account notices atomically with both changed profiles and rejects missing publication', () => {
+        const computed = computeFriendsMutation(read({ action: 'request', username: 'bob' }));
+        const notices = computed.outbox.map((row) => decodeViewInvalidationMessage(decodePersistedALMessageRow(row.entry)));
+        expect(notices.map((notice) => notice.principalId)).toEqual(['alice', 'bob']);
+        expect(notices.every((notice) => notice.resource === 'friends' && notice.scope === null)).toBe(true);
+        expect(computed.storage?.effects.filter((effect) => effect.namespace === 'ws-outbox-provenance')).toHaveLength(2);
+        expect(validateFriendsMutation({ ...computed, outbox: [] })).not.toEqual([]);
+        const refused = computeFriendsMutation({ ...read({ action: 'request', username: 'bob' }), session: null });
+        expect(refused.outbox).toEqual([]);
+    });
+
+    it('invalidates online-sharing only for the actor and mutually consenting peers, leaving unchanged preferences quiet', () => {
+        const before = read({ action: 'visibility', shareOnline: true });
+        const changed: FriendsMutationRead = {
+            ...before,
+            actor: {
+                ...before.actor,
+                profile: {
+                    ...before.actor.profile,
+                    contacts: [
+                        { principalId: 'bob', status: 'friend' },
+                        { principalId: 'carol', status: 'friend' }
+                    ]
+                }
+            },
+            peers: [
+                observedProfile({ principalId: 'bob', shareOnline: false, contacts: [{ principalId: 'alice', status: 'friend' }], invitations: [] }),
+                observedProfile({ principalId: 'carol', shareOnline: false, contacts: [{ principalId: 'alice', status: 'blocked' }], invitations: [] })
+            ]
+        };
+        expect(computeFriendsMutation(changed).outbox.map((row) => decodeViewInvalidationMessage(decodePersistedALMessageRow(row.entry)).principalId)).toEqual([
+            'alice',
+            'bob'
+        ]);
+        const unchanged = { ...changed, actor: { ...changed.actor, profile: { ...changed.actor.profile, shareOnline: true } } };
+        expect(computeFriendsMutation(unchanged).outbox).toEqual([]);
     });
 });

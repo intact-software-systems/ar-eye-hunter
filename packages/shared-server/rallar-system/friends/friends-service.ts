@@ -10,11 +10,19 @@ import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { computeFriendsMutation, validateFriendsMutation } from './compute-friends-mutation.ts';
 import type { FriendsAccountDirectory } from './friends-account-directory.ts';
 import { decodeFriendsCommand, decodeFriendsResult } from './friends-command.ts';
-import type { FriendsCommand, FriendsConfig, FriendsMutationRead } from './friends-mutation-contracts.ts';
+import type {
+    FriendsCommand,
+    FriendsConfig,
+    FriendsMutationRead
+} from './friends-mutation-contracts.ts';
 import type { FriendsRepository } from './friends-repository.ts';
 import { writeFriendsMutation } from './write-friends-mutation.ts';
 
 export namespace FriendsService {
+    export interface Config extends FriendsConfig {
+        readonly serviceId: string;
+        readonly finishedRetentionMs: number;
+    }
     export interface Dependencies {
         readonly timing: RallarTimingSink | undefined;
         readonly appInbox: RallarServerAppInbox;
@@ -29,9 +37,9 @@ export namespace FriendsService {
 export class FriendsService {
     readonly mutate: RallarServerAppInbox.Operation<FriendsCommand, FriendsMutationResult>;
     private readonly dependencies: FriendsService.Dependencies;
-    private readonly config: FriendsConfig;
+    private readonly config: FriendsService.Config;
 
-    constructor(dependencies: FriendsService.Dependencies, config: FriendsConfig) {
+    constructor(dependencies: FriendsService.Dependencies, config: FriendsService.Config) {
         this.dependencies = dependencies;
         this.config = config;
         this.mutate = dependencies.appInbox.register({
@@ -63,7 +71,11 @@ export class FriendsService {
             traceId: context.message.id.traceId,
             details: { attempt: context.entry.dequeueAudit.attempts }
         };
-        const read = await timeRallarAsync(timing, { ...event, operation: 'read' }, () => this.read(command));
+        const read = await timeRallarAsync(
+            timing,
+            { ...event, operation: 'read' },
+            () => this.read(command, context.message.id.traceId)
+        );
         const computed = await timeRallarAsync(
             timing,
             { ...event, operation: 'compute' },
@@ -91,7 +103,7 @@ export class FriendsService {
         );
     }
 
-    private async read(input: FriendsCommand): Promise<FriendsMutationRead> {
+    private async read(input: FriendsCommand, traceId: string): Promise<FriendsMutationRead> {
         const { accounts, profiles, authSessions, groups } = this.dependencies;
         const request = input.request;
         const account = request.action === 'request'
@@ -105,9 +117,20 @@ export class FriendsService {
             authSessions.findSessionBySessionIdEntry(input.sessionId),
             request.action === 'invite' ? groups.readSnapshotWithAuthorityGuard(request.roomRef) : undefined
         ]);
+        const peers = request.action === 'visibility' && request.shareOnline !== pair[0]!.profile.shareOnline
+            ? await profiles.readProfiles(
+                pair[0]!.profile.contacts.filter((contact) => contact.status === 'friend').map((contact) =>
+                    contact.principalId
+                )
+            )
+            : [];
         const nowEpochMs = this.dependencies.nowEpochMs();
         return {
             input,
+            serviceId: this.config.serviceId,
+            traceId,
+            finishedRetentionMs: this.config.finishedRetentionMs,
+            peers,
             actor: pair[0]!,
             target: pair[1] ?? null,
             session: session ?? null,

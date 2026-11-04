@@ -3,8 +3,8 @@ import type { FriendContact } from '@shared/api/friends/friendship.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
-import { isClientSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import type { FriendsAccountDirectory } from './friends-account-directory.ts';
+import { isFriendOnline } from './friends-presence-publication.ts';
 import type { FriendsRepository } from './friends-repository.ts';
 import { toFriendsView, type FriendsPeerRead } from './to-friends-view.ts';
 
@@ -52,7 +52,7 @@ export class FriendsReader {
             account: account ??
                 { principalId: contact.principalId, username: contact.principalId, displayName: contact.principalId },
             profile,
-            online: snapshot?.activeSessions.some((session) => isClientSnapshotSessionLive(session, now)) === true
+            online: isFriendOnline(snapshot, now)
         };
     }
 }

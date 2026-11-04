@@ -1,15 +1,25 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { readFriendsPresence } from '@shared-server/rallar-system/friends/friends-presence-publication.ts';
+import { FriendsReader } from '@shared-server/rallar-system/friends/friends-reader.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { writeRuntimeStateGuardedBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-guarded-batch.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { FriendsAccountDirectory } from '@shared-server/rallar-system/friends/friends-account-directory.ts';
 import type { FriendsCommand } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
@@ -20,10 +30,27 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
+import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 
-async function createFriendsRuntime(revokeDuringRead = false) {
+interface FriendsRuntimeFixture {
+    readonly storage: ResourceInboxTestStorage;
+    readonly reader: InboxQueueReader;
+    readonly service: FriendsService;
+    readonly profiles: FriendsRepository;
+    readonly auth: AuthSessionRepository;
+    readonly session: IssuedAuthSession;
+    readonly command: FriendsCommand;
+    readonly timing: RallarTimingEvent[];
+    readonly accounts: FriendsAccountDirectory;
+}
+
+interface FriendsQueueFixture {
+    readonly inbox: RallarServerAppInbox;
+    readonly reader: InboxQueueReader;
+}
+
+async function createFriendsRuntime(revokeDuringRead = false): Promise<FriendsRuntimeFixture> {
     const storage = await createResourceInboxTestStorage('friends_app_inbox');
     const runtime = new PSqlRuntimeStateRepository(storage.sql);
     const { inbox, reader } = createFriendsQueue(storage.sql);
@@ -60,7 +87,7 @@ async function createFriendsRuntime(revokeDuringRead = false) {
         accounts,
         groups: { readSnapshotWithAuthorityGuard: async () => undefined },
         nowEpochMs: () => now
-    }, { maxContacts: 20, maxInvitations: 20, invitationLifetimeMs: 60000 });
+    }, { serviceId: 'friends-test', finishedRetentionMs: 60000, maxContacts: 20, maxInvitations: 20, invitationLifetimeMs: 60000 });
     inbox.start();
     const command: FriendsCommand = {
         principalId: 'alice',
@@ -71,10 +98,10 @@ async function createFriendsRuntime(revokeDuringRead = false) {
         capturedAtEpochMs: null,
         request: { action: 'request', username: 'bob' }
     };
-    return { storage, reader, service, profiles, auth, session, command, timing };
+    return { storage, reader, service, profiles, auth, session, command, timing, accounts };
 }
 
-function createFriendsQueue(database: PSqlSql) {
+function createFriendsQueue(database: PSqlSql): FriendsQueueFixture {
     const entries = createPSqlResourceInboxRepository(database, () => new Date());
     const reader = new InboxQueueReader(new PSqlQueueBox(entries, Temporal.Now.instant), { newLaneConcurrency: 1 });
     const inbox = new RallarServerAppInbox({
@@ -91,7 +118,47 @@ function createFriendsQueue(database: PSqlSql) {
     return { inbox, reader };
 }
 
+async function readFriendsNotices(database: PSqlSql) {
+    const rows = await database<readonly { ri_resource: string; }[]>`
+        select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated' order by ri_resource_id`;
+    return rows.map((row) => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource))));
+}
+
 describe('authenticated friends commands through AppInbox', () => {
+    it('changes visibility before adding contacts and reads the empty private view without an empty SQL batch', async () => {
+        const fixture = await createFriendsRuntime();
+        try {
+            const command: FriendsCommand = { ...fixture.command, request: { action: 'visibility', shareOnline: true } };
+            const admission = await fixture.service.mutate.enqueue({ command, traceId: 'empty-visibility' });
+            await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect((await admission.right!.wait()).right).toMatchObject({ status: 'applied' });
+            expect((await readFriendsPresence(fixture.profiles, 'alice')).peers).toEqual([]);
+            const reader = new FriendsReader({
+                profiles: fixture.profiles,
+                accounts: fixture.accounts,
+                clients: {
+                    readSnapshot: async () => {
+                        throw new Error('An empty view must not read client presence');
+                    }
+                },
+                nowEpochMs: Date.now
+            });
+            expect(await reader.read('alice', { applicationId: 'game', workspaceId: 'default' })).toMatchObject({
+                principalId: 'alice',
+                shareOnline: true,
+                contacts: [],
+                invitations: []
+            });
+            expect((await readFriendsNotices(fixture.storage.sql)).map(({ principalId, scope }) => ({ principalId, scope }))).toEqual([{
+                principalId: 'alice',
+                scope: null
+            }]);
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
     it('replays the durable result without repeating the contact mutation and rejects changed command reuse', async () => {
         const fixture = await createFriendsRuntime();
         try {
@@ -101,12 +168,16 @@ describe('authenticated friends commands through AppInbox', () => {
             expect((await admission.right!.wait()).right).toEqual({ principalId: 'alice', requestId: 'friend-bob', status: 'applied' });
             expect(fixture.timing.map((event) => event.operation)).toEqual(['read', 'compute', 'validate', 'write', 'commit']);
             expect(fixture.timing.every((event) => event.traceId === 'request' && event.status === 'ok')).toBe(true);
+            const notices = await readFriendsNotices(fixture.storage.sql);
+            expect(notices.map((notice) => notice.principalId).sort()).toEqual(['alice', 'bob']);
+            expect(notices.every((notice) => notice.scope === null && notice.resource === 'friends')).toBe(true);
             const after = await fixture.profiles.readProfile('alice');
             expect(after.profile.contacts).toEqual([{ principalId: 'bob', status: 'outgoing' }]);
             expect((await fixture.profiles.readProfile('bob')).profile.contacts).toEqual([{ principalId: 'alice', status: 'incoming' }]);
             expect((await fixture.service.mutate.submit({ command: fixture.command, traceId: 'replay' })).right)
                 .toEqual({ principalId: 'alice', requestId: 'friend-bob', status: 'applied' });
             expect(await fixture.profiles.readProfile('alice')).toEqual(after);
+            expect(await readFriendsNotices(fixture.storage.sql)).toEqual(notices);
             const conflict = await fixture.service.mutate.enqueue({
                 command: { ...fixture.command, request: { action: 'visibility', shareOnline: true } },
                 traceId: 'conflict'
@@ -188,6 +259,7 @@ describe('authenticated friends commands through AppInbox', () => {
             });
             expect((await fixture.profiles.readProfile('alice')).entry).toBeNull();
             expect((await fixture.profiles.readProfile('bob')).entry).toBeNull();
+            expect(await readFriendsNotices(fixture.storage.sql)).toEqual([]);
         }
         finally {
             await fixture.storage.close();
@@ -200,8 +272,27 @@ describe('authenticated friends commands through AppInbox', () => {
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await fixture.profiles.readProfile('alice')).entry).toBeNull();
             expect((await fixture.profiles.readProfile('bob')).entry).toBeNull();
+            expect(await readFriendsNotices(fixture.storage.sql)).toEqual([]);
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await admitted.right!.wait()).right).toMatchObject({ status: 'refused', code: 'unauthorized' });
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+    it('rolls back both friendship profiles and provenance if the final outbox insertion fails', async () => {
+        const fixture = await createFriendsRuntime();
+        try {
+            await fixture.storage.sql`create function reject_friend_notice() returns trigger language plpgsql as
+                'begin if NEW.ri_topic_id = ''view.invalidated'' then return null; end if; return NEW; end'`;
+            await fixture.storage.sql`create trigger reject_friend_notice before insert on resource_inbox
+                for each row execute function reject_friend_notice()`;
+            await fixture.service.mutate.enqueue({ command: fixture.command, traceId: 'outbox-failure' });
+            await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect((await fixture.profiles.readProfile('alice')).entry).toBeNull();
+            expect((await fixture.profiles.readProfile('bob')).entry).toBeNull();
+            expect(await readFriendsNotices(fixture.storage.sql)).toEqual([]);
+            expect(await new PSqlRuntimeStateRepository(fixture.storage.sql).findAllEntries('ws-outbox-provenance')).toEqual([]);
         }
         finally {
             await fixture.storage.close();

@@ -8,8 +8,11 @@ import { readClientMutation } from '@shared-server/rallar-system/client-state/mu
 import { assertClientMutationRead } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-read.ts';
 import { assertClientMutationInvariants } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import type { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
+import { FriendsRepository } from '@shared-server/rallar-system/friends/friends-repository.ts';
 import { groupStateScopeStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
 import {
@@ -24,9 +27,22 @@ import {
     createTestClientStateRepository,
     createTestGroupStateRepository
 } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
-import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
-import { describe, expect, it } from 'vitest';
+import type {
+    ClientInstance,
+    ClientPrincipal,
+    ClientScope,
+    ClientSession
+} from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember
+} from '@shared/api/group-types.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -135,13 +151,14 @@ describe('client mutation principal audience read', () => {
             leftPrincipalIds: []
         });
         for (const principalId of ['alice', 'bob', 'carol', 'dave', 'erin', 'mallory']) {
-            await seedClient(clients, principalId);
+            await seedClient({ repository: clients, principalId });
         }
 
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('audience-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -181,6 +198,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('stale-instance-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -216,6 +234,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('retained-disconnected-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -248,6 +267,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('moved-co-member'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -269,7 +289,7 @@ describe('client mutation principal audience read', () => {
             leftPrincipalIds: []
         });
         for (const principalId of ['alice', 'bob', 'mallory']) {
-            await seedClient(clients, principalId);
+            await seedClient({ repository: clients, principalId });
         }
         runtime.afterActorMemberRead = async () => {
             const previous = await groups.findGroup({ ...TEST_SCOPE, groupId: 'joined-room' });
@@ -296,6 +316,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('concurrent-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -326,14 +347,14 @@ describe('client mutation principal audience read', () => {
             leftPrincipalIds: ['carol']
         });
         for (const principalId of ['alice', 'bob', 'carol']) {
-            await seedClient(clients, principalId);
+            await seedClient({ repository: clients, principalId });
         }
-        await seedClient(
-            clients,
-            'bob',
-            { ...TEST_SCOPE, workspaceId: 'workspace-2' },
-            'bob-other-scope-session'
-        );
+        await seedClient({
+            repository: clients,
+            principalId: 'bob',
+            scope: { ...TEST_SCOPE, workspaceId: 'workspace-2' },
+            sessionId: 'bob-other-scope-session'
+        });
         await clients.insertSession(
             session({
                 principalId: 'bob',
@@ -356,6 +377,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('audience-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -381,6 +403,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: heartbeatCommandFor('superseded-generation'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -401,6 +424,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -422,6 +446,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -442,6 +467,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -469,6 +495,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('audience-carrying-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -501,6 +528,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('forged-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -522,6 +550,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -545,6 +574,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -563,6 +593,7 @@ describe('client mutation principal audience read', () => {
                     session: { ...session, value: { ...session.value, generationId: 'superseded-generation' } },
                     audienceGroupSnapshots: [],
                     partyMemberView: null,
+                    friendsPresence: null,
                     audienceCoMemberSessions: []
                 },
                 computed
@@ -581,7 +612,7 @@ describe('client mutation principal audience read', () => {
             activePrincipalIds: ['bob'],
             leftPrincipalIds: []
         });
-        await seedClient(clients, 'alice');
+        await seedClient({ repository: clients, principalId: 'alice' });
         const actorKey = groupStateMemberStorageKey({
             ...TEST_SCOPE,
             groupId: 'corrupt-room',
@@ -605,6 +636,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('corrupt-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
@@ -624,8 +656,8 @@ describe('client mutation principal audience read', () => {
             activePrincipalIds: ['bob'],
             leftPrincipalIds: []
         });
-        await seedClient(clients, 'alice');
-        await seedClient(clients, 'bob');
+        await seedClient({ repository: clients, principalId: 'alice' });
+        await seedClient({ repository: clients, principalId: 'bob' });
         const bobRef = { ...TEST_SCOPE, principalId: 'bob' };
         const bob = await clients.findPrincipal(bobRef);
         if (!bob) {
@@ -643,6 +675,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
+            friends: new FriendsRepository(runtime),
             command: principalCommand('corrupt-co-group-client'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
@@ -653,8 +686,8 @@ describe('client mutation principal audience read', () => {
 });
 
 interface HeartbeatAudienceRepositories {
-    readonly groups: ReturnType<typeof createTestGroupStateRepository>;
-    readonly clients: ReturnType<typeof createTestClientStateRepository>;
+    readonly groups: GroupStateRepository;
+    readonly clients: ClientStateRepository;
 }
 
 async function seedHeartbeatAudience(
@@ -671,7 +704,7 @@ async function seedHeartbeatAudience(
         leftPrincipalIds: []
     });
     for (const principalId of ['alice', ...coMemberPrincipalIds]) {
-        await seedClient(clients, principalId);
+        await seedClient({ repository: clients, principalId });
     }
     return { groups, clients };
 }
@@ -774,7 +807,7 @@ function isCoMemberClientSelector(selector: RuntimeStateReadBatchSelector): bool
 }
 
 interface SeedGroupInput {
-    readonly repository: ReturnType<typeof createTestGroupStateRepository>;
+    readonly repository: GroupStateRepository;
     readonly groupId: string;
     readonly ownerPrincipalId: string;
     readonly activePrincipalIds: readonly string[];
@@ -829,12 +862,14 @@ function member({ groupId, principalId, role, status }: MemberInput): GroupMembe
         : { ...common, status: 'left', left: audit() };
 }
 
-async function seedClient(
-    repository: ReturnType<typeof createTestClientStateRepository>,
-    principalId: string,
-    scope: typeof TEST_SCOPE = TEST_SCOPE,
-    sessionId = `${principalId}-session`
-): Promise<void> {
+interface SeedClientInput {
+    readonly repository: ClientStateRepository;
+    readonly principalId: string;
+    readonly scope?: ClientScope;
+    readonly sessionId?: string;
+}
+
+async function seedClient({ repository, principalId, scope = TEST_SCOPE, sessionId = `${principalId}-session` }: SeedClientInput): Promise<void> {
     const principal: ClientPrincipal = {
         ...scope,
         principalId,

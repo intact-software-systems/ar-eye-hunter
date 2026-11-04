@@ -34,7 +34,7 @@ export async function createRuntime(storage: ResourceInboxTestStorage, players: 
     return fixture;
 }
 
-class PartyServiceFixture {
+export class PartyServiceFixture {
     readonly clock = { now: Date.now() };
     readonly timing: RallarTimingEvent[] = [];
     readonly runtime: PSqlRuntimeStateRepository;

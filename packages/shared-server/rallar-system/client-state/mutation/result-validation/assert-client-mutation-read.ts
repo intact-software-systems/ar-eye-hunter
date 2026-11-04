@@ -1,4 +1,5 @@
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import { assertFriendsPresenceRead } from '../../../friends/friends-presence-publication.ts';
 import { assertPartyMemberViewRead } from '../../../parties/party-member-view-publication.ts';
 
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
@@ -39,6 +40,7 @@ export function assertClientMutationRead(
             'snapshot',
             'receiptEvent',
             'partyMemberView',
+            'friendsPresence',
             'audienceObservedAtEpochMs',
             'audienceGroupSnapshots',
             'audienceCoMemberSessions'
@@ -46,6 +48,7 @@ export function assertClientMutationRead(
         'Client mutation read'
     );
     assertPartyMemberViewRead(command.aggregateRef, read.partyMemberView);
+    assertFriendsPresenceRead(command.aggregateRef.principalId, read.friendsPresence);
     assertNullableEntryValue(read.principal, 'Client principal read', validateClientPrincipal);
     assertNullableEntryValue(read.instance, 'Client instance read', validateClientInstance);
     assertNullableEntryValue(read.session, 'Client session read', validateClientSession);

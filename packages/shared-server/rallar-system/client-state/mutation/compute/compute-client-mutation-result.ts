@@ -6,6 +6,7 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computeFriendsPresencePublication } from '../../../friends/friends-presence-publication.ts';
 import { computePartyMemberViewPublication } from '../../../parties/party-member-view-publication.ts';
 import {
     computeClientStateSyncEntries,
@@ -15,6 +16,7 @@ import {
     computePrincipalStateSyncAudience,
     toPrincipalAudienceSessions
 } from '../../../state-sync/state-sync-principal-audience.ts';
+import { combineGuardedViewPublications } from '../../../websocket/outbox/guarded-view-publication.ts';
 import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
 import type { ClientMutationReceipt } from '../../persistence/client-state-persistence-contracts.ts';
 import { compareClientStateSessionStorageKeys } from '../../persistence/client-state-session-storage-key.ts';
@@ -65,7 +67,10 @@ export function computeClientMutationResult(
     });
     const stateSyncEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
     const outbox = stateSyncEntries.map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }));
-    const partyViewPublication = computePartyMemberViewPublication(command, read, snapshot);
+    const viewPublication = combineGuardedViewPublications([
+        computePartyMemberViewPublication(command, read, snapshot),
+        computeFriendsPresencePublication(command, read, snapshot)
+    ]);
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,
@@ -74,7 +79,7 @@ export function computeClientMutationResult(
         stateRevision,
         outboxIds: [
             ...outbox.map(({ write }) => write.entry.key.resourceId),
-            ...partyViewPublication?.outbox.map((write) => write.entry.key.resourceId) ?? []
+            ...viewPublication?.outbox.map((write) => write.entry.key.resourceId) ?? []
         ]
     });
     const computed: ClientMutationDomainAppliedWrite = {
@@ -90,7 +95,7 @@ export function computeClientMutationResult(
         idempotency: command.requestId === null
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
-        partyViewPublication,
+        viewPublication,
         stateSync,
         outbox,
         principalAudienceSessionIds

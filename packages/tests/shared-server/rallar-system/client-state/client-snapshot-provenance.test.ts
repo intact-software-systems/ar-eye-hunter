@@ -36,7 +36,11 @@ import type { GroupMember } from '@shared/api/group-types.ts';
 import { computeStateSnapshotPages, decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -532,23 +536,7 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         }
     });
     const durable = createAutoAuthorizingClientStateService(repository, database, { nowMs: options.nowMs });
-    const clientState: ClientStateService = options.collideOnRequestId
-        ? {
-            ...durable,
-            read: async (command) => {
-                const read = await durable.read(command);
-                if (command.requestId === options.collideOnRequestId) {
-                    const mutation = computeClientMutation({ command, read });
-                    const [proof] = computeClientSnapshotProvenance(mutation);
-                    if (!proof) {
-                        throw new Error('Expected an exact principal proof collision candidate');
-                    }
-                    await repository.upsert(proof.namespace, proof.key, 'occupied-proof', Number.MAX_SAFE_INTEGER);
-                }
-                return read;
-            }
-        }
-        : durable;
+    const clientState = withSnapshotProofCollision(durable, repository, options.collideOnRequestId);
     const service = new AppClientInboxService({
         inboxQueueReader: reader,
         resourceInboxRepository: queue,
@@ -561,6 +549,32 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
+}
+
+/** Inject a pre-existing durable proof between the real mutation read and its guarded commit. */
+function withSnapshotProofCollision(
+    durable: ClientStateService,
+    repository: FakeRuntimeStateRepository,
+    requestId: string | undefined
+): ClientStateService {
+    if (requestId === undefined) {
+        return durable;
+    }
+    return {
+        ...durable,
+        read: async (command) => {
+            const read = await durable.read(command);
+            if (command.requestId === requestId) {
+                const mutation = computeClientMutation({ command, read });
+                const [proof] = computeClientSnapshotProvenance(mutation);
+                if (!proof) {
+                    throw new Error('Expected an exact principal proof collision candidate');
+                }
+                await repository.upsert(proof.namespace, proof.key, 'occupied-proof', Number.MAX_SAFE_INTEGER);
+            }
+            return read;
+        }
+    };
 }
 
 /** Changes durable membership after the accepted observation and before transaction entry. */
@@ -697,7 +711,7 @@ function connectClient(producer: SnapshotProducerFixture, principalId = 'alice')
 
 function createForeignReceiver(repository: FakeRuntimeStateRepository, sessionId = 'alice-session'): ForeignReceiverFixture {
     const authentication = { scope: SCOPE, now: Date.now() };
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => authentication.now });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => authentication.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://foreign');
     native.open();

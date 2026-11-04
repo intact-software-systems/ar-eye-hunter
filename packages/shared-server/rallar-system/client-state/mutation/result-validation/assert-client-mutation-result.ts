@@ -108,34 +108,13 @@ function assertAppliedWriteResult(value: ValidationRecord): void {
             'idempotency',
             'stateSync',
             'outbox',
-            'partyViewPublication',
+            'viewPublication',
             'principalAudienceSessionIds',
             'persistence'
         ],
         'Client mutation computed'
     );
-    const principalCandidate = validateConditionalCandidate(value.principal, 'Client mutation computed.principal');
-    if (principalCandidate.operation === 'none') {
-        rejectClientMutation('Client mutation computed principal guard is required');
-    }
-    validateClientPrincipal(principalCandidate.value, 'Client mutation computed.principal.value');
-    if (principalCandidate.operation === 'update') {
-        requireTimestamp(principalCandidate.expectedRevision, 'Client mutation computed.principal.expectedRevision');
-    }
-    const instanceCandidate = validateConditionalCandidate(value.instance, 'Client mutation computed.instance');
-    if (instanceCandidate.operation !== 'none') {
-        validateClientInstance(instanceCandidate.value, 'Client mutation computed.instance.value');
-    }
-    if (instanceCandidate.operation === 'update') {
-        requireTimestamp(instanceCandidate.expectedRevision, 'Client mutation computed.instance.expectedRevision');
-    }
-    const sessionCandidate = validateConditionalCandidate(value.session, 'Client mutation computed.session');
-    if (sessionCandidate.operation !== 'none') {
-        validateClientSession(sessionCandidate.value, 'Client mutation computed.session.value');
-    }
-    if (sessionCandidate.operation === 'update') {
-        requireTimestamp(sessionCandidate.expectedRevision, 'Client mutation computed.session.expectedRevision');
-    }
+    assertClientRecordCandidates(value);
     validateClientEvent(value.event, 'Client mutation computed.event');
     validateAuthoritativeClientSnapshot(value.snapshot);
     validateClientMutationReceipt(value.receipt, 'Client mutation computed.receipt');
@@ -162,6 +141,31 @@ function assertAppliedWriteResult(value: ValidationRecord): void {
         rejectClientMutation('Client mutation computed principal audience is invalid');
     }
     assertClientPersistenceShape(value.persistence);
+}
+
+function assertClientRecordCandidates(value: ValidationRecord): void {
+    const principalCandidate = validateConditionalCandidate(value.principal, 'Client mutation computed.principal');
+    if (principalCandidate.operation === 'none') {
+        rejectClientMutation('Client mutation computed principal guard is required');
+    }
+    validateClientPrincipal(principalCandidate.value, 'Client mutation computed.principal.value');
+    if (principalCandidate.operation === 'update') {
+        requireTimestamp(principalCandidate.expectedRevision, 'Client mutation computed.principal.expectedRevision');
+    }
+    const instanceCandidate = validateConditionalCandidate(value.instance, 'Client mutation computed.instance');
+    if (instanceCandidate.operation !== 'none') {
+        validateClientInstance(instanceCandidate.value, 'Client mutation computed.instance.value');
+    }
+    if (instanceCandidate.operation === 'update') {
+        requireTimestamp(instanceCandidate.expectedRevision, 'Client mutation computed.instance.expectedRevision');
+    }
+    const sessionCandidate = validateConditionalCandidate(value.session, 'Client mutation computed.session');
+    if (sessionCandidate.operation !== 'none') {
+        validateClientSession(sessionCandidate.value, 'Client mutation computed.session.value');
+    }
+    if (sessionCandidate.operation === 'update') {
+        requireTimestamp(sessionCandidate.expectedRevision, 'Client mutation computed.session.expectedRevision');
+    }
 }
 
 function validateConditionalCandidate(

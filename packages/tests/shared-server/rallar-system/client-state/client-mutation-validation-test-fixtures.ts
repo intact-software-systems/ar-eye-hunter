@@ -1,3 +1,4 @@
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import {
     type ClientMutationAuthority,
     type ClientMutationCommand,
@@ -5,13 +6,18 @@ import {
     type ClientMutationOperation,
     type ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type {
+    AuditStamp,
+    ClientPrincipal,
+    ClientPrincipalRef
+} from '@shared/api/client-types.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const CLIENT_MUTATION_TEST_SCOPE = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1'
 } as const;
-export function clientMutationPrincipalRef(principalId: string) {
+export function clientMutationPrincipalRef(principalId: string): ClientPrincipalRef {
     return { ...CLIENT_MUTATION_TEST_SCOPE, principalId };
 }
 
@@ -124,6 +130,7 @@ export function emptyClientMutationRead(sessionId = 'session-1'): ClientMutation
         audienceObservedAtEpochMs: 1_000,
         audienceGroupSnapshots: [],
         partyMemberView: null,
+        friendsPresence: null,
         audienceCoMemberSessions: []
     };
 }
@@ -153,7 +160,7 @@ export function validAuthority(
     };
 }
 
-export function validAuthoritySession(sessionId = 'authority-session') {
+export function validAuthoritySession(sessionId = 'authority-session'): PersistedAuthSession {
     return {
         clientId: 'alice',
         accessTokenDigest: `sha256:${sessionId}-token`,
@@ -164,16 +171,25 @@ export function validAuthoritySession(sessionId = 'authority-session') {
     } as const;
 }
 
-export function validPrincipalValue() {
-    const audit = {
+export function validPrincipalValue(): ClientPrincipal {
+    const audit: AuditStamp = {
         atEpochMs: 1_000,
-        byPrincipalId: 'alice',
-        byServiceId: 'client-service'
+        actor: { kind: 'principal', principalId: 'alice' },
+        reason: null,
+        traceId: null,
+        requestId: null
     };
     return {
         ...clientMutationPrincipalRef('alice'),
         username: 'alice',
-        status: 'active' as const,
+        status: 'active',
+        disabled: null,
+        deleted: null,
+        displayName: null,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        lastSeenAtEpochMs: null,
         roles: [],
         metadata: {},
         snapshotVersion: 1,

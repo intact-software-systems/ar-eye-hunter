@@ -2,10 +2,20 @@ import { Temporal } from '@js-temporal/polyfill';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import {
+    toClientMutationIssuedSessionAuthority,
+    toClientMutationSystemAuthority
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-import type { ClientMutationCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type {
+    ClientMutationCommand,
+    ClientMutationCommandInput,
+    ClientMutationComputed,
+    ClientMutationRead
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
@@ -16,17 +26,40 @@ import { PartyReader } from '@shared-server/rallar-system/parties/party-reader.t
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { decodeViewInvalidation } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidation, type ViewInvalidation } from '@shared/api/view-invalidation.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import type { ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { putAuthorisedWsTestTicket } from '../client-state/authorised-ws-test-ticket.ts';
-import { createRuntime, ref } from './party-service-fixture.ts';
+import {
+    createRuntime,
+    ref,
+    type PartyServiceFixture
+} from './party-service-fixture.ts';
 
-async function presenceFixture(storage: ResourceInboxTestStorage) {
+interface PartyPresenceAttempt {
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly computed: ClientMutationComputed;
+}
+
+interface PartyPresenceFixture {
+    readonly party: PartyServiceFixture;
+    readonly clients: ClientStateService;
+    readonly reader: PartyReader;
+    notices(): Promise<readonly ViewInvalidation[]>;
+    prepare(input: ClientMutationCommandInput): Promise<PartyPresenceAttempt>;
+    write(attempt: PartyPresenceAttempt): Promise<void>;
+}
+
+async function presenceFixture(storage: ResourceInboxTestStorage): Promise<PartyPresenceFixture> {
     const party = await createRuntime(storage, 3);
     await party.run(party.command('alice', 'create', { ref, expectedRosterRevision: null, intent: { action: 'create' } }));
     await party.run(
@@ -49,7 +82,7 @@ async function presenceFixture(storage: ResourceInboxTestStorage) {
         >`select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated' order by ri_resource_id`;
         return rows.map((row) => decodeViewInvalidation(JSON.parse(JSON.parse(row.ri_resource).payload.resource)));
     };
-    const prepare = async (input: ClientMutationCommandInput) => {
+    const prepare = async (input: ClientMutationCommandInput): Promise<PartyPresenceAttempt> => {
         const session = await party.auth.findBySessionId('sessionId' in input ? input.sessionId : `session-${input.aggregateRef.principalId}`);
         if (!session) {
             throw new Error('Missing test authority');
@@ -66,18 +99,8 @@ async function presenceFixture(storage: ResourceInboxTestStorage) {
                 disconnectedSessionRetentionMs: 600000
             },
             input.operation === 'expireSession'
-                ? { kind: 'system', version: 1, serviceId: 'presence-test', operation: 'expireSession' }
-                : {
-                    kind: 'issued-session',
-                    version: 1,
-                    principalId: session.clientId,
-                    sessionId: session.sessionId,
-                    sessionIssuedAtEpochMs: session.issuedAtEpochMs,
-                    sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-                    applicationId: ref.applicationId,
-                    workspaceId: ref.workspaceId,
-                    operation: input.operation
-                }
+                ? toClientMutationSystemAuthority('presence-test')
+                : toClientMutationIssuedSessionAuthority(session, ref, input.operation)
         );
         const read = await clients.read(command);
         const computed = computeClientMutation({ command, read });
@@ -85,7 +108,7 @@ async function presenceFixture(storage: ResourceInboxTestStorage) {
         expect(validateClientMutationAuthorityPolicy(command, read)).toEqual([]);
         return { command, read, computed };
     };
-    const write = async (attempt: Awaited<ReturnType<typeof prepare>>) => {
+    const write = async (attempt: PartyPresenceAttempt) => {
         const computed = attempt.computed;
         if (computed.outcome === 'write' || (computed.outcome === 'no-op' && computed.persistIdempotency)) {
             await storage.sql.begin((transaction) => clients.write(transaction, computed));
@@ -379,9 +402,8 @@ describe('party views follow semantic client presence', () => {
                     }
                 });
                 await expect.poll(async () =>
-                    (await storage.sql<
-                        { count: string; }[]
-                    >`select count(*)::text as count from resource_inbox where ri_topic_id='app-inbox.client-state'`)[0]?.count
+                    (await storage.sql<{ count: string; }[]>`select count(*)::text as count from resource_inbox where ri_topic_id='app-inbox.client-state'`)[0]
+                        ?.count
                 ).toBe(generationId === 'generation-new' ? '1' : '2');
                 await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
                 expect((await pending).right?.status).toBe(generationId === 'generation-new' ? 'ok' : 'ticket-rejected');

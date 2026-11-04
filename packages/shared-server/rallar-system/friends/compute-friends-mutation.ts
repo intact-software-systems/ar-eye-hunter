@@ -1,8 +1,10 @@
 import type { FriendsRefusal } from '@shared/api/friends/friends-request.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
+    RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchGuard,
     RuntimeStateGuardedBatchUpdate,
     RuntimeStateGuardedBatchWrite
@@ -10,12 +12,16 @@ import type {
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { materializeGroupStateAuthorityGuard } from '../group-state/persistence/aggregate/group-aggregate-repository.ts';
 
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
+import { computeViewInvalidationPublication } from '../websocket/outbox/compute-view-invalidation-publication.ts';
 import { computeFriendProfiles } from './compute-friend-profiles.ts';
 import type {
     FriendsMutationComputed,
-    FriendsMutationRead
+    FriendsMutationRead,
+    FriendsProfileRead
 } from './friends-mutation-contracts.ts';
 import {
+    areMutualFriends,
     decodeFriendsProfile,
     FRIENDS_PROFILE_NAMESPACE,
     friendsProfileKey,
@@ -28,27 +34,39 @@ export function computeFriendsMutation(read: FriendsMutationRead): FriendsMutati
         ? computeFriendProfiles(read)
         : Either.ofLeft<FriendsRefusal, readonly FriendsProfile[]>('unauthorized');
     if (decision.left !== undefined) {
-        return {
-            read,
-            profiles: [],
-            storage: null,
-            result: { ...identity, status: 'refused', code: decision.left }
-        };
+        return refusedFriendsMutation(read, decision.left);
     }
     const profiles = decision.right!;
     if (profiles.some((profile) => exceedsFriendsCapacity(read, profile))) {
-        return {
-            read,
-            profiles: [],
-            storage: null,
-            result: { ...identity, status: 'refused', code: 'capacity' }
-        };
+        return refusedFriendsMutation(read, 'capacity');
     }
+    const audience = friendsViewAudience(read, profiles);
+    const publication = computeViewInvalidationPublication({
+        resource: 'friends',
+        scope: null,
+        principalIds: audience,
+        changeId: computeSha256CanonicalJson({ principalId: read.input.principalId, requestId: read.input.requestId }),
+        createdAtEpochMs: read.nowEpochMs,
+        retentionMs: read.finishedRetentionMs,
+        serviceId: read.serviceId,
+        traceId: read.traceId
+    });
     return {
         read,
         profiles,
-        storage: computeFriendsStorage(read, profiles),
+        outbox: publication.outbox,
+        storage: computeFriendsStorage(read, profiles, publication.provenance),
         result: { ...identity, status: 'applied' }
+    };
+}
+
+function refusedFriendsMutation(read: FriendsMutationRead, code: FriendsRefusal): FriendsMutationComputed {
+    return {
+        read,
+        profiles: [],
+        storage: null,
+        outbox: [],
+        result: { principalId: read.input.principalId, requestId: read.input.requestId, status: 'refused', code }
     };
 }
 
@@ -71,7 +89,8 @@ function exceedsFriendsCapacity(read: FriendsMutationRead, profile: FriendsProfi
 
 function computeFriendsStorage(
     read: FriendsMutationRead,
-    profiles: readonly FriendsProfile[]
+    profiles: readonly FriendsProfile[],
+    provenance: readonly RuntimeStateGuardedBatchEffect[]
 ): RuntimeStateGuardedBatchWrite {
     const writes = profiles.map((profile) => toFriendsProfileWrite(read, profile)).toSorted((a, b) =>
         a.key < b.key ? -1 : a.key > b.key ? 1 : 0
@@ -79,7 +98,7 @@ function computeFriendsStorage(
     const [guard, ...effects] = [...computeFriendsAuthorityGuards(read), ...writes];
     return computeRuntimeStateGuardedBatchWrite({
         guard: guard!,
-        effects: effects.map((effect, index) => ({ ...effect, effectId: `friends:${index}` }))
+        effects: [...effects.map((effect, index) => ({ ...effect, effectId: `friends:${index}` })), ...provenance]
     });
 }
 
@@ -125,5 +144,36 @@ function computeFriendsAuthorityGuards(read: FriendsMutationRead): readonly Runt
     if (read.input.request.action === 'invite' && read.destination !== null) {
         guards.push(materializeGroupStateAuthorityGuard(read.destination.authorityGuard));
     }
+    for (const peer of mutualFriendsViewPeers(read)) {
+        if (peer.entry === null) {
+            throw new TypeError('Mutual friendship requires a persisted peer profile');
+        }
+        guards.push({
+            operation: 'update',
+            namespace: FRIENDS_PROFILE_NAMESPACE,
+            key: peer.entry.key,
+            value: peer.entry.value,
+            expectedRevision: peer.entry.revision,
+            expireAtTimestamp: peer.entry.expireAtTimestamp
+        });
+    }
     return guards;
+}
+
+function mutualFriendsViewPeers(read: FriendsMutationRead): readonly FriendsProfileRead[] {
+    return read.input.request.action !== 'visibility'
+        ? []
+        : read.peers.filter(({ profile }) => areMutualFriends(read.actor.profile, profile));
+}
+
+function friendsViewAudience(read: FriendsMutationRead, profiles: readonly FriendsProfile[]): readonly string[] {
+    const changed = profiles.filter((profile) =>
+        !jsonEquals(
+            profile,
+            profile.principalId === read.actor.profile.principalId ? read.actor.profile : read.target?.profile
+        )
+    ).map((profile) => profile.principalId);
+    return read.input.request.action === 'visibility' && changed.includes(read.input.principalId)
+        ? [...changed, ...mutualFriendsViewPeers(read).map(({ profile }) => profile.principalId)]
+        : changed;
 }

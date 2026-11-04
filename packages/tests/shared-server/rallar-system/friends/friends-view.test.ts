@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { toFriendsView } from '@shared-server/rallar-system/friends/to-friends-view.ts';
+import { decodeFriendsView } from '@shared/api/friends/friends-view.ts';
 
 const roomRef = { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId: 'private-arena' };
 const profile = {
@@ -29,9 +34,12 @@ describe('private friends read projection', () => {
     it('keeps room references exclusively inside explicit, unexpired invitations', () => {
         const visible = toFriendsView({ profile, peers: [peer], nowEpochMs: 50 });
         expect(visible.invitations).toEqual(profile.invitations);
+        expect(visible.observedAtEpochMs).toBe(50);
+        expect(decodeFriendsView(visible)).toEqual(visible);
+        expect(() => decodeFriendsView({ ...visible, observedAtEpochMs: -1 })).toThrow();
         expect(JSON.stringify(visible.contacts)).not.toContain('private-arena');
         expect(toFriendsView({ profile, peers: [peer], nowEpochMs: 100 }).invitations).toEqual([]);
-        expect(Object.keys(visible).sort()).toEqual(['contacts', 'invitations', 'principalId', 'shareOnline']);
+        expect(Object.keys(visible).sort()).toEqual(['contacts', 'invitations', 'observedAtEpochMs', 'principalId', 'shareOnline']);
     });
 
     it('does not disclose online status for requests or blocked contacts', () => {

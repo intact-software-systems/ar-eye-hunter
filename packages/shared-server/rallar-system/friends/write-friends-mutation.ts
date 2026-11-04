@@ -1,6 +1,7 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import { writeRuntimeStateGuardedBatch } from '../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
+import { writeAppOutboxInserts } from '../app-outbox/app-outbox-insert.ts';
 import type { FriendsMutationComputed } from './friends-mutation-contracts.ts';
 
 export async function writeFriendsMutation(transaction: PSqlSql, computed: FriendsMutationComputed): Promise<void> {
@@ -11,4 +12,5 @@ export async function writeFriendsMutation(transaction: PSqlSql, computed: Frien
     if (result.guard.status !== 'applied' || result.effects.some((effect) => effect.status !== 'applied')) {
         throw new RuntimeStateWriteConflictError();
     }
+    await writeAppOutboxInserts(transaction, computed.outbox);
 }

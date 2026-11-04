@@ -8,8 +8,8 @@ import {
     writeAuthWsTicketConsumption,
     type AuthWsTicketConsumptionClaim
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
-import { writePartyMemberViewPublication } from '../../parties/party-member-view-publication.ts';
 import type { ClientSessionExpiryCandidate } from '../../presence/session-expiry.ts';
+import { writeGuardedViewPublication } from '../../websocket/outbox/guarded-view-publication.ts';
 import {
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts
@@ -415,7 +415,7 @@ export class ClientStateInboxHandler {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
                         await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
-                        await writePartyMemberViewPublication(transaction, computed.partyViewPublication);
+                        await writeGuardedViewPublication(transaction, computed.viewPublication);
                         if (computed.successorWrite !== null) {
                             await this.dependencies.expiryContinuationWriter.write(
                                 transaction,

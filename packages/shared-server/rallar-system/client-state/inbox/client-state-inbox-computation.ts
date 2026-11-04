@@ -27,9 +27,9 @@ import {
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import {
-    combinePartyMemberViewPublications,
-    type PartyMemberViewPublication
-} from '../../parties/party-member-view-publication.ts';
+    combineGuardedViewPublications,
+    type GuardedViewPublication
+} from '../../websocket/outbox/guarded-view-publication.ts';
 import {
     computeWsSessionConnectGuard,
     computeWsSessionGenerationClosed,
@@ -145,7 +145,7 @@ export type ExpiredSessionsOperationComputed =
         sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
         committedSnapshots: readonly ClientSnapshot[];
         successorWrite: AppOutboxInsert | null;
-        partyViewPublication: PartyMemberViewPublication | null;
+        viewPublication: GuardedViewPublication | null;
     }>;
 
 export interface ClientExpiredSessionMutationRead {
@@ -419,10 +419,10 @@ export function computeExpiredSessionsOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: completedMutations.filter(requiresClientWrite).map((mutation) =>
-            mutation.outcome === 'write' ? { ...mutation, partyViewPublication: null } : mutation
+            mutation.outcome === 'write' ? { ...mutation, viewPublication: null } : mutation
         ),
-        partyViewPublication: combinePartyMemberViewPublications(
-            applied.map((mutation) => mutation.partyViewPublication)
+        viewPublication: combineGuardedViewPublications(
+            applied.map((mutation) => mutation.viewPublication)
         ),
         sidecarWrites: completedMutations.flatMap(computeClientSnapshotProvenance),
         committedSnapshots: applied.map((mutation) => mutation.snapshot),

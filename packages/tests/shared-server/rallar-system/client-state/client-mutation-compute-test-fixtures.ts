@@ -1,5 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { ComputeAuthorisedWsConnectOperationInput } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import {
@@ -10,6 +12,7 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import type {
     ClientMutationCommand,
     ClientMutationCommandInput,
+    ClientMutationComputed,
     ClientMutationComputedAppliedWrite,
     ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
@@ -22,9 +25,17 @@ import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-syst
 import { toWsSessionLifecycleKey } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
+import type {
+    ClientInstance,
+    ClientPrincipal,
+    ClientSession
+} from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -155,22 +166,21 @@ export function expiryCommand(
     return command({ ...input, commandId, requestId: commandId }, 8_000);
 }
 
-export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOperationInput {
-    const authSession = {
-        clientId: 'alice',
-        username: 'alice',
-        sessionId: 'session-1',
-        accessToken: 'test-token',
-        issuedAtEpochMs: 0,
-        expiresAtEpochMs: 10_000
-    };
-    const connection = toAuthorisedWsClientConnection({
-        authSession,
-        generationId: 'generation-1',
-        input: { ...TEST_SCOPE, clientInstanceId: 'browser', connectedAtEpochMs: 2_000, expiresAtEpochMs: 8_000 }
-    });
+const authorisedConnectSession: IssuedAuthSession = {
+    clientId: 'alice',
+    username: 'alice',
+    sessionId: 'session-1',
+    accessToken: 'test-token',
+    issuedAtEpochMs: 0,
+    expiresAtEpochMs: 10_000
+};
+
+function authorisedConnectCommand(
+    connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
+    authSession: IssuedAuthSession
+): ClientMutationCommand {
     const requestId = `authorised-ws:connect:${authSession.sessionId}:${connection.generationId}`;
-    const command = toClientMutationCommand(
+    return toClientMutationCommand(
         toConnectClientSessionMutationInput({
             operation: 'connectAuthorisedWsSession',
             scope: TEST_SCOPE,
@@ -202,6 +212,16 @@ export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOpe
         },
         toClientMutationIssuedSessionAuthority(authSession, TEST_SCOPE, 'connectAuthorisedWsSession')
     );
+}
+
+export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOperationInput {
+    const authSession = authorisedConnectSession;
+    const connection = toAuthorisedWsClientConnection({
+        authSession,
+        generationId: 'generation-1',
+        input: { ...TEST_SCOPE, clientInstanceId: 'browser', connectedAtEpochMs: 2_000, expiresAtEpochMs: 8_000 }
+    });
+    const command = authorisedConnectCommand(connection, authSession);
     const identity = {
         scope: { kind: 'client', ...TEST_SCOPE, principalId: 'alice', clientInstanceId: 'browser' },
         sessionId: authSession.sessionId
@@ -276,6 +296,7 @@ export function emptyRead(command: ClientMutationCommand): ClientMutationRead {
         audienceObservedAtEpochMs: command.facts.nowEpochMs,
         audienceGroupSnapshots: [],
         partyMemberView: null,
+        friendsPresence: null,
         audienceCoMemberSessions: []
     };
 }
@@ -308,7 +329,7 @@ export function entryValue<T>(value: T, revision: number): RuntimeStateEntryValu
 }
 
 export function requireWrite(
-    computed: ReturnType<typeof import('@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts').computeClientMutation>
+    computed: ClientMutationComputed
 ): ClientMutationComputedAppliedWrite {
     if (computed.outcome !== 'write') {
         throw new Error(`Expected client mutation write, received ${computed.outcome}`);

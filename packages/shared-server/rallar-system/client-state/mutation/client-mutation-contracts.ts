@@ -20,10 +20,12 @@ import type {
     AuthWsTicketConsumptionClaim,
     AuthWsTicketConsumptionRead
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
-import type { PartyMemberViewPublication, PartyMemberViewRead } from '../../parties/party-member-view-publication.ts';
+import type { FriendsPresenceRead } from '../../friends/friends-presence-publication.ts';
+import type { PartyMemberViewRead } from '../../parties/party-member-view-publication.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
+import type { GuardedViewPublication } from '../../websocket/outbox/guarded-view-publication.ts';
 import type {
     WsSessionGenerationLifecycleRead,
     WsSessionHighWaterIdentity
@@ -231,6 +233,7 @@ export type ClientMutationRead = Readonly<{
     snapshot: ClientSnapshot | null;
     receiptEvent: ClientEvent | null;
     partyMemberView: PartyMemberViewRead | null;
+    friendsPresence: FriendsPresenceRead | null;
     audienceObservedAtEpochMs: number;
     audienceGroupSnapshots: readonly GroupSnapshot[];
     audienceCoMemberSessions: readonly PrincipalAudienceSessions[];
@@ -302,7 +305,7 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     snapshot: ClientSnapshot;
     receipt: ClientMutationReceipt;
     idempotency: ClientMutationIdempotencyRecord | null;
-    partyViewPublication: PartyMemberViewPublication | null;
+    viewPublication: GuardedViewPublication | null;
     stateSync: readonly ComputedClientStateSync[];
     outbox: readonly ClientMutationOutboxWrite[];
     principalAudienceSessionIds: readonly string[];
