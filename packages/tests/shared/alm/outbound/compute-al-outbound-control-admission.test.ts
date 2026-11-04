@@ -218,6 +218,23 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
             });
         });
 
+        // I2: the origin reads a direct hop's confirms-nobody completion as its NACK, as every relay does.
+        it('records a not-subscribed hop outside from its completion ACK when its NACK was lost', async () => {
+            const origin = await createOriginFixture('outside-nack-lost', DIRECT_HOPS);
+
+            await origin.accept(toRelayedAck(origin.msg, 'r1', { fromPeerId: 'r1', status: 'delivered' }));
+            expect(await origin.accept(toRelayedAck(origin.msg, 'r2', { fromPeerId: 'r2', status: 'subtree-complete-not-subscribed' })))
+                .toBe('committed');
+
+            expect(toAcknowledgements(origin.facts).at(-1)).toEqual({
+                confirmed: ['r1'],
+                unconfirmed: [],
+                outside: ['r2'],
+                confirmedHops: ['r1', 'r2'],
+                complete: true
+            });
+        });
+
         it('states the hops the ACKs completed when a NACK completes the receipt after them', async () => {
             const origin = await createOriginFixture('outside-after-ack', DIRECT_HOPS);
 

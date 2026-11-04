@@ -11,6 +11,7 @@ import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-m
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 
 export interface TrackALPendingAckSnapshotInput {
@@ -140,7 +141,7 @@ export function acceptALPendingAckPayload(
     const relayed = isALRecipientConfirmationAck(ack) &&
         isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId) &&
         !input.acks.some((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId);
-    const outside = isImpliedNotSubscribedNack(current, input.acks, ack);
+    const outside = isALImpliedNotSubscribedNack(ack, toOwedUpwardRecipientPeerIds(current, input.acks));
     return toALPendingAckTransition({
         msgId: ack.ackedMsgId,
         previous: current,
@@ -156,17 +157,15 @@ export function acceptALPendingAckPayload(
     });
 }
 
-/** The hop completion of a frozen recipient not yet recorded outside, and never confirmed, stands for its NACK. */
-function isImpliedNotSubscribedNack(
+/** The frozen recipients of the row's upward audience not yet recorded outside, and never confirmed. */
+function toOwedUpwardRecipientPeerIds(
     current: ALPendingAckSnapshot,
-    acks: readonly ALAckPayload[],
-    ack: ALAckPayload
-): boolean {
-    const recipientPeerId = ack.logicalRecipientPeerId;
-    return isALHopCompletionAck(ack) && !isALRecipientConfirmationAck(ack) &&
-        current.upwardAudiencePeerIds?.includes(recipientPeerId) === true &&
+    acks: readonly ALAckPayload[]
+): readonly string[] {
+    return (current.upwardAudiencePeerIds ?? []).filter((recipientPeerId) =>
         !current.outsideAudiencePeerIds.includes(recipientPeerId) &&
-        !acks.some((prior) => prior.logicalRecipientPeerId === recipientPeerId && isALRecipientConfirmationAck(prior));
+        !acks.some((prior) => prior.logicalRecipientPeerId === recipientPeerId && isALRecipientConfirmationAck(prior))
+    );
 }
 
 /**

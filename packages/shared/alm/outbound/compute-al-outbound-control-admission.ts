@@ -12,6 +12,7 @@ import type {
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -22,6 +23,7 @@ import {
     resolveALOutboundRelayRejection,
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -230,12 +232,18 @@ function computePendingAckWrite(
     history: ALControlHistory
 ): ALPendingAckWrite {
     if (read.parsed.type === 'ack' && history.kind === 'acks') {
-        const next = acceptALOutboundPendingAckSnapshot({
-            current: read.pending,
-            acks: [],
-            ack: read.parsed.payload
-        });
-        return next ? { kind: 'set', value: next } : { kind: 'remove' };
+        const ack = read.parsed.payload;
+        const next = acceptALOutboundPendingAckSnapshot({ current: read.pending, acks: [], ack });
+        if (next === undefined) {
+            return { kind: 'remove' };
+        }
+        const owedPeerIds = toALOutboundReceiptClasses(next).unconfirmedPeerIds;
+        return {
+            kind: 'set',
+            value: isALImpliedNotSubscribedNack(ack, owedPeerIds)
+                ? acceptALOutboundNotSubscribedNack(next, ack.logicalRecipientPeerId)
+                : next
+        };
     }
     if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed' && read.pending) {
         return {
