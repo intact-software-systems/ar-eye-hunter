@@ -193,6 +193,7 @@ describe('pull-request release workflow', () => {
         expect(workflow.jobs['release-gate']?.with?.changed_repo_style_base).toContain(
             'contains(github.event.pull_request.labels.*.name, \'skip-changed-gates\')'
         );
+        expect(workflow.jobs['games-release-gate']?.with?.candidate_ref).toBe(pullRequestHead);
         expect(workflow.jobs['branch-release-result']).toMatchObject({
             name: 'Branch Release Gate result',
             if: '${{ always() }}'
@@ -206,7 +207,7 @@ describe('pull-request release workflow', () => {
     it('lets a superseded run cancel every job except the fail-closed result', () => {
         const workflow = readWorkflow('.github/workflows/branch-release-gate.yml');
 
-        for (const jobId of ['release-gate', 'publish-validation-evidence', 'rtc-observation-integrity']) {
+        for (const jobId of ['release-gate', 'games-release-gate', 'publish-validation-evidence', 'rtc-observation-integrity']) {
             const condition = workflow.jobs[jobId].if;
             expect(condition?.startsWith('${{ !cancelled() && ')).toBe(true);
             expect(condition).not.toContain('always()');
@@ -220,7 +221,8 @@ describe('pull-request release workflow', () => {
         const sources = [
             '.github/workflows/branch-release-gate.yml',
             '.github/workflows/governance-gate.yml',
-            '.github/workflows/release-gate.yml'
+            '.github/workflows/release-gate.yml',
+            '.github/workflows/games-release-gate.yml'
         ].map(readSource);
         const source = sources.join('\n');
 

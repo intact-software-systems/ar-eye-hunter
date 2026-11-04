@@ -26,7 +26,8 @@ describe('Branch Release Gate result', () => {
                 reuse: '',
                 releaseResult,
                 publicationResult,
-                rtcObservationResult
+                rtcObservationResult,
+                gamesResult: 'skipped'
             });
 
             expect(issues).toHaveLength(1);
@@ -37,12 +38,12 @@ describe('Branch Release Gate result', () => {
     );
 
     it.each([
-        ['fresh validation', 'broad', 'false', 'success', 'success', 'skipped'],
-        ['same-PR content reuse', 'reuse', 'true', 'skipped', 'skipped', 'skipped'],
-        ['RTC observation integrity', 'rtc-observation', 'false', 'skipped', 'skipped', 'success']
+        ['fresh validation', 'broad', 'false', 'success', 'success', 'skipped', 'success'],
+        ['same-PR content reuse', 'reuse', 'true', 'skipped', 'skipped', 'skipped', 'skipped'],
+        ['RTC observation integrity', 'rtc-observation', 'false', 'skipped', 'skipped', 'success', 'skipped']
     ])(
         'accepts successful %s',
-        (_name, mode, reuse, releaseResult, publicationResult, rtcObservationResult) => {
+        (_name, mode, reuse, releaseResult, publicationResult, rtcObservationResult, gamesResult) => {
             expect(
                 validateBranchReleaseConclusion({
                     governanceResult: 'success',
@@ -51,11 +52,27 @@ describe('Branch Release Gate result', () => {
                     reuse,
                     releaseResult,
                     publicationResult,
-                    rtcObservationResult
+                    rtcObservationResult,
+                    gamesResult
                 })
             ).toEqual([]);
         }
     );
+
+    it('accepts a platform-only pull request that skips the games gate', () => {
+        expect(
+            validateBranchReleaseConclusion({
+                governanceResult: 'success',
+                selectionResult: 'success',
+                mode: 'broad',
+                reuse: 'false',
+                releaseResult: 'success',
+                publicationResult: 'success',
+                rtcObservationResult: 'skipped',
+                gamesResult: 'skipped'
+            })
+        ).toEqual([]);
+    });
 
     it('rejects every failed constituent without an external deviation', () => {
         expect(
@@ -66,12 +83,14 @@ describe('Branch Release Gate result', () => {
                 reuse: 'false',
                 releaseResult: 'failure',
                 publicationResult: 'failure',
-                rtcObservationResult: 'failure'
+                rtcObservationResult: 'failure',
+                gamesResult: 'failure'
             })
         ).toEqual([
             'Governance Gate did not succeed',
             'validation-evidence selection did not succeed',
             'broad Release Gate did not succeed',
+            'broad Games Release Gate did not succeed',
             'fresh validation evidence was not published',
             'broad validation requires RTC observation integrity to be skipped'
         ]);
@@ -86,7 +105,8 @@ describe('Branch Release Gate result', () => {
                 reuse: 'false',
                 releaseResult: 'skipped',
                 publicationResult: 'skipped',
-                rtcObservationResult: 'skipped'
+                rtcObservationResult: 'skipped',
+                gamesResult: 'skipped'
             })
         ).toContain('validation mode must be broad, reuse, or rtc-observation');
     });
@@ -100,7 +120,8 @@ describe('Branch Release Gate result', () => {
                 reuse: 'false',
                 releaseResult: 'skipped',
                 publicationResult: 'skipped',
-                rtcObservationResult: 'skipped'
+                rtcObservationResult: 'skipped',
+                gamesResult: 'skipped'
             })
         ).toEqual(['RTC observation store change is not an exact verified append']);
     });

@@ -28,8 +28,11 @@ export async function roomSharingCacheRecoveryJourney(page: Page, game: 'arena' 
         await route.continue();
     });
     try {
-        await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-        await expect(roomLink).toHaveCount(0);
+        // A live update during refresh correctly preserves the newer snapshot. Refresh again to establish the gap.
+        await expect.poll(async () => {
+            await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+            return roomLink.count();
+        }, { timeout: 15000, intervals: [500] }).toBe(0);
     }
     finally {
         resumePointReads.resolve();

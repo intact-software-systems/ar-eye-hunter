@@ -1,10 +1,13 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { ArenaTournamentClient } from './arena-tournament-client.ts';
+import { ArenaTournamentsEnabled } from './arena-tournaments-enabled.ts';
 
 /** A room is classified before the browser director may start; failed reads never select casual authority. */
 export function useArenaTournament(roomId: string | undefined, session: AuthSession | undefined) {
-    const owner = useMemo(() => roomId && session ? ArenaTournamentClient.createBrowser(roomId) : null, [
+    const enabled = useContext(ArenaTournamentsEnabled);
+    const owner = useMemo(() => enabled && roomId && session ? ArenaTournamentClient.createBrowser(roomId) : null, [
+        enabled,
         roomId,
         session?.clientId,
         session?.sessionId
@@ -23,6 +26,7 @@ export function useArenaTournament(roomId: string | undefined, session: AuthSess
     }, [owner]);
     const state = observed.owner === owner ? observed.state : undefined;
     return {
+        enabled,
         owner,
         mode: owner === null
             ? 'casual' as const
