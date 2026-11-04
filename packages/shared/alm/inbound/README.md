@@ -163,7 +163,8 @@ receipted: the WS copy meets the first admission in the shared session store, is
 `not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
 its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers below)
 -- the receipt the WS leg needs from every member of the frozen audience.
-The message-owner row records whether the recipient delivers the message, at once or on its ordered release (`deliveredLocally`; a row written
+The message-owner row records whether the recipient delivers the message, at once or on its ordered release
+(`deliveredLocally`; a row written
 before the field existed reads as delivered), so a WS copy that meets the RTC admission of a frozen recipient that
 answered `not-subscribed` answers `subtree-complete-not-subscribed`, never `delivered`, and the WS server's receipt
 aggregation records that recipient in `outsideAudienceRecipientPeerIds`, never as a confirmation.
