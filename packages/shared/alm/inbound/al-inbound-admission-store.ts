@@ -76,7 +76,10 @@ export interface ALInboundMessageOwner {
     readonly senderId: string;
     readonly source: ALInboundMessageRuntime.Source;
     readonly supersedenceKey: string | null;
-    /** Whether the admission that wrote the row delivers the message here; a later copy is never delivered again. */
+    /**
+     * Whether the admission that wrote the row delivers the message here, now or on its release from a gap's buffer;
+     * a later copy is never delivered again.
+     */
     readonly deliveredLocally: boolean;
 }
 

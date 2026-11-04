@@ -49,7 +49,11 @@ import {
     toALInboundDeliveryMutations,
     toALInboundSupersedenceMutations
 } from './al-inbound-delivery-mutations.ts';
-import { isALInboundNotSubscribedPlan, toALInboundHopCompletionStatus } from './al-inbound-not-subscribed-plan.ts';
+import {
+    isALInboundDeliveringPlan,
+    isALInboundNotSubscribedPlan,
+    toALInboundHopCompletionStatus
+} from './al-inbound-not-subscribed-plan.ts';
 import { computeALInboundDuplicateChanges } from './compute-al-inbound-duplicate-changes.ts';
 
 interface ALInboundAdmissionChanges {
@@ -223,7 +227,7 @@ export function computeALInboundBufferedRelease(
                     senderId: read.snapshot.msg.id.senderId,
                     source: read.source,
                     supersedenceKey: read.snapshot.plan.supersedence.key ?? null,
-                    deliveredLocally: read.snapshot.plan.localDelivery.enabled
+                    deliveredLocally: isALInboundDeliveringPlan(plan)
                 },
                 expireAtTimestamp: Math.max(
                     computeALInboundMessageOwnerExpiryMs(read, expireAtTimestamp),
@@ -307,9 +311,7 @@ function toImmediateAckStatus(plan: ALMessageHandlingPlan, shouldForward: boolea
     if (shouldForward) {
         return 'forwarded';
     }
-    return plan.localDelivery.enabled || plan.localDelivery.deferred
-        ? 'delivered'
-        : toALInboundHopCompletionStatus(plan);
+    return isALInboundDeliveringPlan(plan) ? 'delivered' : toALInboundHopCompletionStatus(plan);
 }
 
 function toControlOwnerMutation(
