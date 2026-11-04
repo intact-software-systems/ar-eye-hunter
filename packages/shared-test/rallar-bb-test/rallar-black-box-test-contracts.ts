@@ -368,7 +368,6 @@ export type RallarBlackBoxTestRtcSendCommand =
         roomRef?: RallarBlackBoxTestRecord;
         minSnapshotVersion?: number;
         transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
-        /** `rejected`: a rejected typed handle is the command's value, any other end fails it; absent, a failed end fails it. */
         observe?: 'rejected';
     }>;
 

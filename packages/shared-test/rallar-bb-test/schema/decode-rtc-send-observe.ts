@@ -2,7 +2,11 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from './rallar-black-box-command-fields.ts';
 
-/** `not-failed`: an absent `observe`, where a rejected, failed, expired, cancelled or superseded handle fails the send. */
+/**
+ * The end of a typed send an `rtc.send` reads as its value. `rejected`, its `observe` option: a rejected handle is the
+ * value and any other end fails the command. `not-failed`, an absent `observe`: a rejected, failed, expired, cancelled
+ * or superseded handle fails it.
+ */
 export type RtcSendExpectation = 'not-failed' | 'rejected';
 
 const OBSERVE_MESSAGE = `rtc.send.observe must be ${
