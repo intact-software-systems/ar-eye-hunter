@@ -1,7 +1,7 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
-    ALDeliveryCarrier,
     ALDeliveryFallbackReason,
     ALDeliveryRefusalReason,
     ALDeliverySettlement,

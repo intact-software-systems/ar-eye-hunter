@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -5,7 +6,6 @@ import {
     AL_DELIVERY_STATES,
     type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttemptOutcome,
-    type ALDeliveryCarrier,
     type ALDeliveryCarrierFallback,
     type ALDeliveryDurabilityDowngrade,
     type ALDeliveryFallbackReason,

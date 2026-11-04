@@ -5,13 +5,13 @@ import type {
     ALPeerControlMessage,
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import type {
     ALOutboundRepairHint,

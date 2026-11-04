@@ -1,4 +1,4 @@
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import type {
     ALOutboundRuntimeStores,
     ALOutboundSettlementEmitter

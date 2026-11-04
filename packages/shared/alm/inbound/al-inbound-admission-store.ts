@@ -6,6 +6,7 @@ import type {
     ALReadyable
 } from '../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
 import {
     PersistenceWriteExpiredError,
     requireLivePersistenceWrite
@@ -19,7 +20,6 @@ import {
     decodeALAdmissionSupersedenceValue
 } from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type { ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';

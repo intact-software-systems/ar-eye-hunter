@@ -1,7 +1,8 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
 import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
@@ -42,8 +43,6 @@ export const AL_DELIVERY_STATES: readonly ALDeliveryState[] = [
 export const AL_DELIVERY_ADMITTED_STATES: readonly ALDeliveryState[] = AL_DELIVERY_STATES.filter(
     (state) => state !== 'submitted'
 );
-
-export type ALDeliveryCarrier = 'rtc' | 'ws';
 
 /** What one carrier attempt settled to; the seven transport outcomes plus an unroutable or refused admission. */
 export type ALDeliveryAttemptOutcome =

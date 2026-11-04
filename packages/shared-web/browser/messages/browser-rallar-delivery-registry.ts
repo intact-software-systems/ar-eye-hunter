@@ -11,11 +11,11 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { toALCorrId } from '@shared/al-contracts/reply/to-al-reply-actions.ts';
 import {
     createInitialALDeliveryLifecycle,
     isALDeliveryTerminal,
-    type ALDeliveryCarrier,
     type ALDeliveryLifecycle,
     type ALDeliverySettlement,
     type ALDeliveryState

@@ -30,13 +30,10 @@ import {
     type ALNackReason,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import {
-    isALDeliveryTerminal,
-    type ALDeliveryCarrier,
-    type ALDeliverySettlement
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { isALDeliveryTerminal, type ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';

@@ -1,4 +1,4 @@
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
 import { computeALReceiptRetentionExpiryMs } from './compute-al-receipt-retention-expiry-ms.ts';
 
 /** A memory pair's control rows, volatile or checkpointed, stop at the message deadline plus the receipt grace. */

@@ -25,12 +25,9 @@ import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/brow
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/rallar.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import {
-    AL_DELIVERY_STATES,
-    type ALDeliveryAdmissionVerdict,
-    type ALDeliveryCarrier
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';

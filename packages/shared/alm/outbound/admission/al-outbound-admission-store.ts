@@ -6,6 +6,7 @@ import type {
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessageRow } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALReadyable, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
@@ -22,7 +23,6 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {

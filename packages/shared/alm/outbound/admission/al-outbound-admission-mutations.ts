@@ -1,4 +1,5 @@
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import { jsonEquals } from '../../../repository/state-utils.ts';
 import {
     decodeALAdmissionString,
@@ -10,7 +11,6 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALLatestSupersedenceValue,

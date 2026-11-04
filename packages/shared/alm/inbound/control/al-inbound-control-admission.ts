@@ -1,10 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALControlAcceptance, ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {

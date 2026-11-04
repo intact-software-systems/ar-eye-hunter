@@ -1,9 +1,9 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
 import { toALMessageTraceOrNull } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';

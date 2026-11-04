@@ -7,10 +7,10 @@ import {
     type ALNackPayload,
     type ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 

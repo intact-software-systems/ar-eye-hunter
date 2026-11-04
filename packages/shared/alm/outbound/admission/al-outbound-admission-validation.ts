@@ -6,6 +6,7 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
@@ -14,7 +15,6 @@ import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot
 } from '../../al-runtime-state-stores.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';

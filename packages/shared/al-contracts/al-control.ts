@@ -1,4 +1,3 @@
-import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
 import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
@@ -18,6 +17,7 @@ import {
     decodeALReceiptWirePayload,
     decodeALRepairPayload
 } from './al-control-value-codec.ts';
+import type { ALDeliveryCarrier } from './al-delivery-carrier.ts';
 import {
     decodeALMessageValue,
     type ALMessageRejection

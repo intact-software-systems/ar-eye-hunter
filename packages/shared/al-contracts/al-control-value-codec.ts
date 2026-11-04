@@ -1,4 +1,3 @@
-import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALAckPayload,
     ALAckStatus,
@@ -9,6 +8,7 @@ import type {
     ALRepairPayload,
     ALRepairReason
 } from './al-control.ts';
+import type { ALDeliveryCarrier } from './al-delivery-carrier.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 import { decodeALSeqRanges } from './al-seq-range.ts';

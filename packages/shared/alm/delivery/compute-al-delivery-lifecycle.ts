@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryFailure } from './al-delivery-failure.ts';
@@ -5,7 +6,6 @@ import {
     isALDeliveryTerminal,
     type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttempt,
-    type ALDeliveryCarrier,
     type ALDeliveryEvidence,
     type ALDeliveryLifecycle,
     type ALDeliveryReceiptDowngrade,

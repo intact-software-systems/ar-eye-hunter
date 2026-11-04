@@ -7,6 +7,7 @@ import {
     type ALAckPayload,
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import {
     createInMemoryALAdmissionState,
@@ -16,7 +17,6 @@ import {
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionStore,

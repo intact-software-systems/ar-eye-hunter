@@ -3,6 +3,8 @@ import {
     decodeALPeerControlMessage,
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -10,10 +12,8 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../../al-admission-work-backend.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALStorageUnavailable } from '../../storage/al-storage-unavailable.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';

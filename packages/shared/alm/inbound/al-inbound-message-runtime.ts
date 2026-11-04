@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
@@ -9,7 +10,6 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryLane, ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';

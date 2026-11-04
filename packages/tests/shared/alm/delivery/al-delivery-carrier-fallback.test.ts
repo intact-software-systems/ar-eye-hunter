@@ -1,6 +1,6 @@
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import {
     createInitialALDeliveryLifecycle,
-    type ALDeliveryCarrier,
     type ALDeliveryLifecycle,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

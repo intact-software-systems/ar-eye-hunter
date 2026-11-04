@@ -1,9 +1,9 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '../../../al-contracts/al-control-type-ids.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALCheckpointPort } from '../../checkpoint/al-checkpoint.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';

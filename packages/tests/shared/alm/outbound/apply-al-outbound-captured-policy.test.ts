@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import type { ALStoreDurability } from '@shared/alm/al-runtime-stores.ts';
+import type { ALStoreDurability } from '@shared/al-contracts/al-store-durability.ts';
 import {
     applyALOutboundCapturedPolicy,
     captureALOutboundPolicy,

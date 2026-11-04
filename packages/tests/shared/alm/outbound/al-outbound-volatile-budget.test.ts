@@ -6,9 +6,9 @@ import {
     newALNackControlMessage,
     newALReceiptControlMessage
 } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { normalizeALQosPolicy, type ALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import {

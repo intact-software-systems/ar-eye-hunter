@@ -1,5 +1,6 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { PersistedALRecord } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -10,7 +11,6 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundControlOwnerIndex, ALInboundMessageOwner } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 

@@ -4,10 +4,10 @@ import {
     newALNackControlMessage,
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
