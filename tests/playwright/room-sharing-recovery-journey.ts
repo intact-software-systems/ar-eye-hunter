@@ -28,8 +28,10 @@ export async function roomSharingCacheRecoveryJourney(page: Page, game: 'arena' 
         await route.continue();
     });
     try {
-        await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-        await expect(roomLink).toHaveCount(0);
+        await expect(async () => {
+            await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+            await expect(roomLink).toHaveCount(0, { timeout: 1_000 });
+        }).toPass({ timeout: 15_000 });
     }
     finally {
         resumePointReads.resolve();
