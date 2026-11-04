@@ -20,6 +20,7 @@ import type { GroupStateRepository } from '../group-state/persistence/group-stat
 import { computeTournamentMutation } from './compute-tournament-mutation.ts';
 import { decodeTournamentCommand } from './decode-tournament-command.ts';
 import { decodeTournamentGameProfiles, type TournamentGameProfile } from './tournament-game-profile.ts';
+import type { TournamentPublicationRead } from './tournament-publication.ts';
 import type { TournamentRepository } from './tournament-repository.ts';
 import { TOURNAMENT_SIGNAL_RETENTION_MS } from './tournament-signal.ts';
 
@@ -57,6 +58,7 @@ export namespace TournamentService {
         readonly command: Command;
         readonly nowEpochMs: number;
         readonly bracket: TournamentRepository.Read;
+        readonly publication: TournamentPublicationRead | null;
         readonly sessions: readonly RuntimeStateEntryValue<PersistedAuthSession>[];
         readonly admission: NewGroupCohortAdmissionInput | null;
         readonly serviceId: string;
@@ -128,6 +130,9 @@ export class TournamentService {
         return {
             command,
             bracket,
+            publication: request.type === 'publish' || request.type === 'unlist'
+                ? await this.dependencies.repository.readPublication(command.ref)
+                : null,
             sessions,
             admission,
             nowEpochMs,

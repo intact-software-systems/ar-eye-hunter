@@ -9,6 +9,7 @@ import { openArenaOperations } from '../room-player-journey.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     cancelPlayingTournament,
+    recoverTournamentFromHistory,
     registerTournament,
     startTournamentMatch,
     tournamentMatch
@@ -25,7 +26,7 @@ tournamentBrowserTest(
             'Requires the native game server and built SPA.'
         );
         tournamentBrowserTest.setTimeout(600000);
-        await registerTournament(players, 'arena');
+        const title = await registerTournament(players, 'arena');
         const entrants = await page.getByRole('region', { name: 'Tournaments', exact: true })
             .locator('ol li').allTextContents();
         for (
@@ -36,11 +37,27 @@ tournamentBrowserTest(
             ] as const
         ) {
             await startTournamentMatch(page, [winner, opponent], slot);
+            if (slot === 'semifinal-1') {
+                const watcher = players[2];
+                await tournamentMatch(watcher, slot).getByRole('button', {
+                    name: 'Watch tournament match',
+                    exact: true
+                }).click();
+                await expect(
+                    watcher.getByRole('region', { name: 'Shared room entry', exact: true }).getByText(/^Entered /)
+                ).toBeVisible();
+                await expect(watcher.getByLabel('AR Eye Hunter gameplay canvas', { exact: true })).toHaveAttribute(
+                    'data-arena-match-id',
+                    /.+/
+                );
+            }
             await playArenaTournament(winner, opponent);
             await expect(tournamentMatch(page, slot)).toContainText(`Winner: ${winnerId} · score`, {
                 timeout: 30000
             });
         }
+        await expect(page.getByRole('status').filter({ hasText: `Champion: ${entrants[0]}` })).toBeVisible();
+        await recoverTournamentFromHistory(page, 'arena', title);
         await expect(page.getByRole('status').filter({ hasText: `Champion: ${entrants[0]}` })).toBeVisible();
     }
 );

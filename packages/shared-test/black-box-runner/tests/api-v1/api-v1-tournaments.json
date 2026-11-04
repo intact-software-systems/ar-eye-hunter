@@ -38,7 +38,7 @@
       "eq": 0
     }
   ],
-  "description": "Four-player tournament API: scoped registration, exact replay/conflict, forged authority/result refusal, durable no-show advancement through a complete bracket, and cancellation. Native game scoring is verified in game-owner and clickable SPA tests.",
+  "description": "Four-player tournament API: scoped registration, exact replay/conflict, forged authority/result refusal, durable no-show advancement through a complete bracket, and cancellation. Native game scoring is verified in game-owner and clickable SPA tests. Organizer publishing, default-unlisted scoped discovery, private personal history and completed-catalogue exclusion.",
   "steps": [
     {
       "name": "registeralice",
@@ -322,6 +322,194 @@
       }
     },
     {
+      "name": "defaultUnlisted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "nonOrganizerPublish",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-nonOrganizerPublish-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "type": "publish"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "refused",
+          "code": "organizer-required"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "publish",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-publish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "publish"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "discover",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "ref": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "tournamentId": "cup-{runId}"
+              },
+              "title": "Black-box cup",
+              "activeEntrantCount": 0,
+              "status": "registration"
+            }
+          ]
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "privateHistory",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog?view=mine&principalId={aliceClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{bobClientId}",
+          "entries": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "unlist",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-unlist-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "unlist"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "undiscover",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "republish",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-republish-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "publish"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
       "name": "replay",
       "type": "http",
       "connection": "api",
@@ -520,6 +708,32 @@
         "body": {
           "status": "applied",
           "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "participantHistory",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog?view=mine",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "ref": {
+                "tournamentId": "cup-{runId}"
+              }
+            }
+          ]
         },
         "comparison": "compatible-complete"
       }
@@ -984,6 +1198,77 @@
             "status": "complete",
             "championPrincipalId": "{aliceClientId}"
           }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "completedAbsentFromDiscovery",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": []
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "completedInHistory",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog?view=mine",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "status": "complete",
+              "ref": {
+                "tournamentId": "cup-{runId}"
+              }
+            }
+          ]
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "cannotPublishFinished",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-cannotPublishFinished-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "publish"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "refused",
+          "code": "tournament-finished"
         },
         "comparison": "compatible-complete"
       }

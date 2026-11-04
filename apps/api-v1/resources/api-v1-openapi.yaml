@@ -4306,6 +4306,37 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog:
+    get:
+      tags: [Tournaments]
+      summary: Discover published tournaments or read your participation history
+      description: Authenticated game/workspace-scoped storage-order pages. Scans at most 200 candidates and returns a continuation even for an empty filtered page. My tournaments uses only the authenticated account. Opening a card grants no registration or room admission.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: view
+          in: query
+          schema: { type: string, enum: [public, mine], default: public }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          description: Opaque continuation bound to this scope, account and view.
+          schema: { type: string, minLength: 1, maxLength: 4096 }
+      responses:
+        '200':
+          description: A private non-cacheable catalogue page. Empty entries with a continuation do not imply the end of the collection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TournamentCatalogPage' }
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/{tournamentId}:
     get:
       tags: [Tournaments]
@@ -10695,7 +10726,7 @@ components:
           additionalProperties: false
           required: [type]
           properties:
-            type: { enum: [register, withdraw, launch, cancel] }
+            type: { enum: [register, withdraw, launch, cancel, publish, unlist] }
         - type: object
           additionalProperties: false
           required: [type, slot, attemptId]
@@ -10719,14 +10750,40 @@ components:
         requestId: { type: string }
         status: { enum: [applied, refused] }
         code: { type: [string, 'null'] }
+    TournamentCatalogPage:
+      type: object
+      additionalProperties: false
+      required: [scope, principalId, view, observedAtEpochMs, entries, nextCursor]
+      properties:
+        scope: { $ref: '#/components/schemas/StateScope' }
+        principalId: { type: string }
+        view: { enum: [public, mine] }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        nextCursor: { type: [string, 'null'] }
+        entries:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/TournamentCatalogEntry' }
+    TournamentCatalogEntry:
+      type: object
+      additionalProperties: false
+      required: [ref, title, organizerPrincipalId, status, activeEntrantCount, nextScheduledAtEpochMs]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        organizerPrincipalId: { type: string }
+        status: { enum: [registration, active, complete, cancelled] }
+        activeEntrantCount: { type: integer, minimum: 0, maximum: 4 }
+        nextScheduledAtEpochMs: { type: [integer, 'null'], minimum: 0 }
     TournamentSnapshot:
       type: object
       additionalProperties: false
-      required: [ref, principalId, observedAtEpochMs, tournament]
+      required: [ref, principalId, observedAtEpochMs, tournament, listing]
       properties:
         ref: { $ref: '#/components/schemas/TournamentRef' }
         principalId: { type: string }
         observedAtEpochMs: { type: integer, minimum: 0 }
+        listing: { enum: [listed, unlisted] }
         tournament:
           oneOf:
             - { $ref: '#/components/schemas/Tournament' }

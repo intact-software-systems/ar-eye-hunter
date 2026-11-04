@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { TournamentPanel } from '@shared-react/tournament-panel.tsx';
+import { RallarTournamentCatalog } from '@shared-web/browser/tournaments/rallar-tournament-catalog.ts';
 import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { createTournament } from '@shared/tournaments/compute-tournament.ts';
@@ -25,6 +26,7 @@ it('opens a linked bracket without registering or leaving a room, then registers
                 ref,
                 principalId: 'alice',
                 observedAtEpochMs: 1000,
+                listing: 'unlisted',
                 tournament: createTournament({
                     ref,
                     title: 'Friday cup',
@@ -36,12 +38,18 @@ it('opens a linked bracket without registering or leaving a room, then registers
             })
         }
     }, { scope, tournamentId: 'cup', refreshIntervalMs: 10000 });
+    const catalog = new RallarTournamentCatalog({
+        auth: { session: () => session, onChange: () => () => {} },
+        activity: { isActive: () => true, onChange: () => () => {} },
+        timers: createDefaultTimers(),
+        api: { read: async ({ view }) => ({ scope, principalId: 'alice', view, observedAtEpochMs: 1000, entries: [], nextCursor: null }) }
+    }, { scope, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 });
     window.location.hash = '#rallar-tournament?applicationId=game&workspaceId=default&tournamentId=cup';
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);
     try {
-        await act(async () => root.render(createElement(TournamentPanel, { scope, createOwner: () => owner })));
+        await act(async () => root.render(createElement(TournamentPanel, { scope, catalog, createOwner: () => owner })));
         expect(container.textContent).toContain('Friday cup');
         expect(change).not.toHaveBeenCalled();
         expect(enter).not.toHaveBeenCalled();

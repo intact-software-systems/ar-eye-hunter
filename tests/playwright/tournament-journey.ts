@@ -7,33 +7,78 @@ import { openArenaOperations } from './room-player-journey.ts';
 export async function registerTournament(
     players: readonly [Page, Page, Page, Page],
     game: 'arena' | 'relic'
-): Promise<void> {
+): Promise<string> {
     for (const [index, page] of players.entries()) {
         await registerHunter(page, game, index);
     }
     const host = players[0];
+    const title = `Four hunter cup ${crypto.randomUUID().slice(0, 8)}`;
     await panel(host).getByRole('button', { name: 'New tournament', exact: true }).click();
-    await panel(host).getByLabel('Tournament title', { exact: true }).fill('Four hunter cup');
+    await panel(host).getByLabel('Tournament title', { exact: true }).fill(title);
     await panel(host).getByRole('button', { name: 'Create tournament', exact: true }).click();
     const share = panel(host).getByLabel('Tournament share link', { exact: true });
     await expect(share).toHaveValue(/#rallar-tournament\?/);
-    const link = await share.inputValue();
+    await expect(panel(host).getByText('Unlisted · available through its share link', { exact: true })).toBeVisible();
+    await panel(players[1]).getByRole('button', { name: 'Refresh tournaments', exact: true }).click();
+    await expect(panel(players[1]).getByRole('article', { name: `Tournament ${title}`, exact: true })).toHaveCount(0);
+    // An unlisted share link stays usable without adding an entrant or changing rooms.
+    const linkGuest = players[3];
+    await panel(linkGuest).getByLabel('Tournament link', { exact: true }).fill(await share.inputValue());
+    await panel(linkGuest).getByRole('button', { name: 'Preview tournament', exact: true }).click();
+    await expect(panel(linkGuest).getByRole('article', { name: 'Tournament bracket', exact: true })).toContainText(
+        title
+    );
+    await expect(panel(host).locator('ol li')).toHaveCount(0);
+    await panel(host).getByRole('button', { name: 'Publish tournament', exact: true }).click();
     for (const [index, page] of players.entries()) {
         if (index !== 0) {
-            await panel(page).getByLabel('Tournament link', { exact: true }).fill(link);
-            await panel(page).getByRole('button', { name: 'Preview tournament', exact: true }).click();
+            await panel(page).getByRole('button', { name: 'Refresh tournaments', exact: true }).click();
+            await panel(page).getByRole('article', { name: `Tournament ${title}`, exact: true }).getByRole('button', {
+                name: 'Open tournament',
+                exact: true
+            }).click();
         }
-        await expect(panel(page)).toContainText('Four hunter cup');
+        await expect(panel(page).getByRole('article', { name: 'Tournament bracket', exact: true })).toContainText(
+            title
+        );
         await expect(panel(page).getByRole('button', { name: 'Enter tournament match', exact: true })).toHaveCount(0);
+        await expect(panel(host).locator('ol li')).toHaveCount(index);
         await panel(page).getByRole('button', { name: 'Register for tournament', exact: true }).click();
         await expect(panel(host).locator('ol li')).toHaveCount(index + 1);
+        if (index === 1) {
+            await withdrawAndRegisterAgain(page, title);
+        }
     }
-    await host.reload();
-    if (game === 'arena') {
-        await openArenaOperations(host);
-    }
+    await recoverTournamentFromHistory(host, game, title);
     await expect(panel(host).locator('ol li')).toHaveCount(4);
+    await panel(host).getByRole('button', { name: 'Unlist tournament', exact: true }).click();
+    await panel(players[1]).getByRole('button', { name: 'Refresh tournaments', exact: true }).click();
+    await expect(panel(players[1]).getByRole('article', { name: `Tournament ${title}`, exact: true })).toHaveCount(0);
+    await expect(panel(players[1]).locator('ol li')).toHaveCount(4);
     await panel(host).getByRole('button', { name: 'Launch bracket', exact: true }).click();
+    return title;
+}
+
+async function withdrawAndRegisterAgain(page: Page, title: string): Promise<void> {
+    await panel(page).getByRole('button', { name: 'Withdraw from tournament', exact: true }).click();
+    await panel(page).getByRole('button', { name: 'Confirm withdraw from tournament', exact: true }).click();
+    await panel(page).getByRole('button', { name: 'My tournaments', exact: true }).click();
+    await expect(panel(page).getByText('No tournaments found.', { exact: true })).toBeVisible();
+    await expect(panel(page).getByRole('article', { name: `Tournament ${title}`, exact: true })).toHaveCount(0);
+    await panel(page).getByRole('button', { name: 'Register for tournament', exact: true }).click();
+    await panel(page).getByRole('button', { name: 'Discover', exact: true }).click();
+}
+
+export async function recoverTournamentFromHistory(page: Page, game: 'arena' | 'relic', title: string): Promise<void> {
+    await page.reload();
+    if (game === 'arena') {
+        await openArenaOperations(page);
+    }
+    await panel(page).getByRole('button', { name: 'My tournaments', exact: true }).click();
+    const card = panel(page).getByRole('article', { name: `Tournament ${title}`, exact: true });
+    await expect(card).toBeVisible();
+    await card.getByRole('button', { name: 'Open tournament', exact: true }).click();
+    await expect(panel(page).getByRole('article', { name: 'Tournament bracket', exact: true })).toContainText(title);
 }
 
 export async function startTournamentMatch(

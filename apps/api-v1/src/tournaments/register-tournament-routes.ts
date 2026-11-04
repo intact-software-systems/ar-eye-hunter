@@ -8,7 +8,11 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import { changeTournament } from './change-tournament.ts';
 import { readTournament } from './read-tournament.ts';
 
+import type { TournamentCatalogReader } from '@shared-server/rallar-system/tournaments/catalog/tournament-catalog-reader.ts';
+import { readTournamentCatalog } from './read-tournament-catalog.ts';
+
 export interface TournamentRouteDependencies {
+    readonly catalog: Pick<TournamentCatalogReader, 'read'>;
     readonly reader: Pick<TournamentReader, 'read'>;
     readonly mutation: Pick<
         RallarServerAppInbox.Operation<TournamentService.Command, TournamentMutationResult>,
@@ -20,6 +24,10 @@ export interface TournamentRouteDependencies {
 
 export function registerTournamentRoutes(app: Hono, dependencies: TournamentRouteDependencies): void {
     const path = '/api/tournaments/apps/:applicationId/workspaces/:workspaceId/tournaments/:tournamentId';
+    app.get(
+        '/api/tournaments/apps/:applicationId/workspaces/:workspaceId/catalog',
+        (context) => readTournamentCatalog(context, dependencies)
+    );
     app.get(path, (context) => readTournament(context, dependencies));
     app.post(`${path}/requests/:requestId`, (context) => changeTournament(context, dependencies));
 }
