@@ -341,6 +341,7 @@ export type ClientRuntimePersistenceOperation =
 
 export type ClientMutationPersistence = Readonly<{
     runtimeWrites: readonly ClientRuntimePersistenceOperation[];
+    outboxWrites: readonly AppOutboxInsert[];
     eventWrite:
         | Readonly<{
             event: ClientEvent;

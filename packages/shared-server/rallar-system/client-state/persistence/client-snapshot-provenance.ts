@@ -120,7 +120,7 @@ export function requireClientSnapshotProvenanceApplied(
     }
 }
 
-function toClientSnapshotProvenanceEffectId(insert: ClientSnapshotProvenanceInsert): string {
+export function toClientSnapshotProvenanceEffectId(insert: ClientSnapshotProvenanceInsert): string {
     return `provenance:${insert.key}`;
 }
 

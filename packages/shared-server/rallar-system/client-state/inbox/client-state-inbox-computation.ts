@@ -419,7 +419,13 @@ export function computeExpiredSessionsOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: completedMutations.filter(requiresClientWrite).map((mutation) =>
-            mutation.outcome === 'write' ? { ...mutation, viewPublication: null } : mutation
+            mutation.outcome === 'write'
+                ? {
+                    ...mutation,
+                    viewPublication: null,
+                    persistence: { ...mutation.persistence, outboxWrites: mutation.outbox.map(({ write }) => write) }
+                }
+                : mutation
         ),
         viewPublication: combineGuardedViewPublications(
             applied.map((mutation) => mutation.viewPublication)

@@ -23,12 +23,12 @@ export interface PartyMemberViewRead {
     readonly party: PartyRepository.Read;
 }
 
-/** An indexed account lookup followed by its one current party, never a scope scan or a co-group audience. */
+/** The captured account selects one current party; its account link is rechecked against that dependent snapshot. */
 export async function readPartyMemberView(
     parties: PartyRepository,
-    ref: ClientPrincipalRef
+    ref: ClientPrincipalRef,
+    account: PartyRepository.AccountRead
 ): Promise<PartyMemberViewRead | null> {
-    const account = await parties.readAccount(ref, ref.principalId);
     if (account.account.partyId === null) {
         // Create and accept CAS this same client principal: a concurrent join invalidates the client's predecessor.
         return null;

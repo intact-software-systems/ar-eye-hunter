@@ -24,13 +24,14 @@ import type { FriendsMutationComputed } from '@shared-server/rallar-system/frien
 import { assertFriendsPresenceRead, isFriendOnline } from '@shared-server/rallar-system/friends/friends-presence-publication.ts';
 import { FRIENDS_PROFILE_NAMESPACE, friendsProfileKey } from '@shared-server/rallar-system/friends/friends-profile.ts';
 import { writeFriendsMutation } from '@shared-server/rallar-system/friends/write-friends-mutation.ts';
+import { PARTY_ACCOUNTS_NAMESPACE, partyAccountKey } from '@shared-server/rallar-system/parties/persistence/party-account.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { decodeViewInvalidationMessage, type ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import {
@@ -46,7 +47,7 @@ interface FriendsPresenceFixture {
     readonly clients: ClientStateService;
     prepare(input: ClientMutationCommandInput): Promise<ClientExpiryAttempt>;
     write(attempt: ClientExpiryAttempt): Promise<void>;
-    notices(): Promise<readonly ViewInvalidation[]>;
+    notices(): Promise<readonly (ViewInvalidation.ScopedAccount | ViewInvalidation.Account)[]>;
 }
 
 async function fixture(storage: ResourceInboxTestStorage): Promise<FriendsPresenceFixture> {
@@ -69,7 +70,13 @@ async function fixture(storage: ResourceInboxTestStorage): Promise<FriendsPresen
         async notices() {
             const rows = await storage.sql<readonly { ri_resource: string; }[]>`
                 select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated' order by ri_resource_id`;
-            return rows.map((row) => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource))));
+            return rows.map((row) => {
+                const notice = decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource)));
+                if (notice.principalId === null) {
+                    throw new Error('Private presence fixture received a public catalog notice');
+                }
+                return notice;
+            });
         }
     };
 }
@@ -421,6 +428,74 @@ it('rejects incomplete or altered captured consent before a client presence muta
         expect(await test.notices()).toEqual([]);
     }
     finally {
+        await storage.close();
+    }
+});
+
+it.each(
+    [
+        ['party-account', 'key'],
+        ['party-account', 'expired'],
+        ['party-account', 'finite'],
+        ['friends-profile', 'key'],
+        ['friends-profile', 'expired'],
+        ['friends-profile', 'finite']
+    ] as const
+)('rejects a corrupt captured %s companion with %s metadata', async (selectorId, corruption) => {
+    const storage = await createResourceInboxTestStorage(`social_companion_${selectorId}_${corruption}`);
+    try {
+        const test = await fixture(storage);
+        await test.party.runtime.upsert({
+            namespace: PARTY_ACCOUNTS_NAMESPACE,
+            key: partyAccountKey(scope, 'alice'),
+            value: JSON.stringify({ scope, principalId: 'alice', partyId: null, invitations: [] }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+        const read = test.party.runtime.readRuntimeStateBatch.bind(test.party.runtime);
+        vi.spyOn(test.party.runtime, 'readRuntimeStateBatch').mockImplementation(async (selectors) => {
+            const result = await read(selectors);
+            return result.map((selection) =>
+                selection.selectorId !== selectorId ? selection : {
+                    ...selection,
+                    entries: selection.entries.map((entry) => ({
+                        ...entry,
+                        key: corruption === 'key' ? 'wrong-key' : entry.key,
+                        expireAtTimestamp: corruption === 'expired' ? 1 : corruption === 'finite' ? Date.now() + 60000 : entry.expireAtTimestamp
+                    }))
+                }
+            );
+        });
+        await expect(test.prepare(disconnect())).rejects.toThrow(/identity|lifetime|expiry/i);
+    }
+    finally {
+        vi.restoreAllMocks();
+        await storage.close();
+    }
+});
+
+it('fences sharing changed after the initial client and own-profile statement', async () => {
+    const storage = await createResourceInboxTestStorage('friends_captured_consent');
+    try {
+        const test = await fixture(storage);
+        const read = test.party.runtime.readRuntimeStateBatch.bind(test.party.runtime);
+        let changed = false;
+        vi.spyOn(test.party.runtime, 'readRuntimeStateBatch').mockImplementation(async (selectors) => {
+            const captured = await read(selectors);
+            if (!changed && selectors.some((selector) => selector.selectorId === 'friends-profile')) {
+                changed = true;
+                await shareOnline(test, true);
+            }
+            return captured;
+        });
+        const stale = await test.prepare(disconnect());
+        expect(changed).toBe(true);
+        expect(stale.read.friendsPresence?.own.profile.shareOnline).toBe(false);
+        await expect(test.write(stale)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        await test.write(await test.prepare(disconnect()));
+        expect((await test.notices()).map((notice) => notice.principalId)).toEqual(['bob']);
+    }
+    finally {
+        vi.restoreAllMocks();
         await storage.close();
     }
 });

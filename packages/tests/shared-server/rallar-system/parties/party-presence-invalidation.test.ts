@@ -32,7 +32,8 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 import type { ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
@@ -414,4 +415,30 @@ describe('party views follow semantic client presence', () => {
             await storage.close();
         }
     });
+});
+
+it('retries when a party account changes between the captured client statement and dependent party read', async () => {
+    const storage = await createResourceInboxTestStorage('party_captured_account');
+    try {
+        const fixture = await presenceFixture(storage);
+        const read = fixture.party.runtime.readRuntimeStateBatch.bind(fixture.party.runtime);
+        let changed = false;
+        vi.spyOn(fixture.party.runtime, 'readRuntimeStateBatch').mockImplementation(async (selectors) => {
+            const captured = await read(selectors);
+            if (!changed && selectors.some((selector) => selector.selectorId === 'party-account')) {
+                changed = true;
+                await fixture.party.run(fixture.party.command('alice', 'leave-captured', { ref, expectedRosterRevision: 1, intent: { action: 'leave' } }));
+            }
+            return captured;
+        });
+        await expect(fixture.prepare(disconnect())).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(changed).toBe(true);
+        const retried = await fixture.prepare(disconnect());
+        expect(retried.read.partyMemberView).toBeNull();
+        await fixture.write(retried);
+    }
+    finally {
+        vi.restoreAllMocks();
+        await storage.close();
+    }
 });

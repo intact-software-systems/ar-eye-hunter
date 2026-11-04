@@ -27,9 +27,8 @@ export interface FriendsPresenceRead {
 /** Friendship is account-wide; presence is read and notified only inside the caller's game/workspace. */
 export async function readFriendsPresence(
     profiles: FriendsRepository,
-    principalId: string
+    own: FriendsProfileRead
 ): Promise<FriendsPresenceRead> {
-    const own = await profiles.readProfile(principalId);
     const peers = own.profile.shareOnline
         ? await profiles.readProfiles(
             own.profile.contacts.filter((contact) => contact.status === 'friend').map((contact) => contact.principalId)

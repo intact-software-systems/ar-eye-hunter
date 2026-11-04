@@ -132,7 +132,7 @@ describe('authenticated friends commands through AppInbox', () => {
             const admission = await fixture.service.mutate.enqueue({ command, traceId: 'empty-visibility' });
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await admission.right!.wait()).right).toMatchObject({ status: 'applied' });
-            expect((await readFriendsPresence(fixture.profiles, 'alice')).peers).toEqual([]);
+            expect((await readFriendsPresence(fixture.profiles, await fixture.profiles.readProfile('alice'))).peers).toEqual([]);
             const reader = new FriendsReader({
                 profiles: fixture.profiles,
                 accounts: fixture.accounts,

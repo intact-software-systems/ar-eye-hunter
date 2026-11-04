@@ -2,6 +2,11 @@ import type { ClientInstanceRef, ClientSessionRef } from '@shared/api/client-typ
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ViewWatchRepository } from '../../view-watch/view-watch-repository.ts';
 import { readViewWatchSessionCleanup } from '../../view-watch/view-watch-session-cleanup.ts';
+import {
+    clientMutationSocialSelectors,
+    decodeClientMutationSocialRead,
+    type ClientMutationSocialRead
+} from './client-mutation-social-read.ts';
 
 import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
@@ -16,7 +21,7 @@ import {
 import { decodeWebSocketTicketByDigestEntry } from '../../auth/persistence/auth-ticket-persistence.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { AuthWsTicketConsumptionClaim } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
-import { isFriendOnline, readFriendsPresence } from '../../friends/friends-presence-publication.ts';
+import { readFriendsPresence } from '../../friends/friends-presence-publication.ts';
 import type { FriendsRepository } from '../../friends/friends-repository.ts';
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
@@ -80,6 +85,7 @@ interface ClientMutationCompanionRead {
 }
 
 interface ClientMutationStateBatchRead {
+    readonly social: ClientMutationSocialRead;
     readonly state: ClientMutationStateRead;
     readonly authSessions: ReadonlyMap<string, RuntimeStateEntryValue<PersistedAuthSession>>;
     readonly companions: readonly RuntimeStateReadBatchLiveSelection<JsonWireValue>[];
@@ -95,11 +101,11 @@ const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
 export async function readClientMutation(
     input: ReadClientMutationInput
 ): Promise<ClientMutationRead> {
-    const { state } = await timeClientStateReadPhase(
+    const { state, social } = await timeClientStateReadPhase(
         { timing: input.timing, command: input.command, operation: 'mutation.read-state' },
         () => readClientMutationState(input, NO_COMPANIONS)
     );
-    return await readClientMutationAudience(input, state);
+    return await readClientMutationAudience(input, state, social);
 }
 
 /** The connect's ticket, its session and close high-water join the mutation's own point statement. */
@@ -107,7 +113,7 @@ export async function readAuthorisedWsConnectMutation(
     input: ReadAuthorisedWsConnectMutationInput
 ): Promise<ClientAuthorisedWsConnectRead> {
     const { ticketClaim, lifecycle } = input;
-    const { state, authSessions, companions } = await timeClientStateReadPhase(
+    const { state, authSessions, companions, social } = await timeClientStateReadPhase(
         { timing: input.timing, command: input.command, operation: 'mutation.read-state' },
         () =>
             readClientMutationState(input, {
@@ -126,13 +132,14 @@ export async function readAuthorisedWsConnectMutation(
             lifecycle,
             highWater.entries[0]?.entry ?? highWater.expiredEntries[0]
         ),
-        mutation: await readClientMutationAudience(input, state)
+        mutation: await readClientMutationAudience(input, state, social)
     };
 }
 
 async function readClientMutationAudience(
     input: ReadClientMutationInput,
-    state: ClientMutationStateRead
+    state: ClientMutationStateRead,
+    social: ClientMutationSocialRead
 ): Promise<ClientMutationRead> {
     const { repository, command, audienceObservedAtEpochMs, timing } = input;
     const receiptEvent = await timeClientStateReadPhase(
@@ -144,14 +151,12 @@ async function readClientMutationAudience(
         ? await readPrincipalAudience(input)
         : EMPTY_AUDIENCE_READ;
 
-    const partyMemberView = needsPartyMemberRead(command, state, audienceObservedAtEpochMs)
-        ? await readPartyMemberView(input.parties, command.aggregateRef)
-        : null;
-    const needsFriends = state.idempotency === null && command.operation !== 'upsertInstance' &&
-        (command.operation !== 'heartbeatSession' || !isFriendOnline(state.snapshot, audienceObservedAtEpochMs));
-    const friendsPresence = needsFriends
-        ? await readFriendsPresence(input.friends, command.aggregateRef.principalId)
-        : null;
+    const partyMemberView = social.partyAccount === null
+        ? null
+        : await readPartyMemberView(input.parties, command.aggregateRef, social.partyAccount);
+    const friendsPresence = social.friendsProfile === null
+        ? null
+        : await readFriendsPresence(input.friends, social.friendsProfile);
     const viewWatchCleanup = state.idempotency === null
         ? await readViewWatchSessionCleanup(input.viewWatches, command)
         : null;
@@ -174,30 +179,39 @@ async function readClientMutationState(
     const targets = toClientMutationTargetRefs(command);
     const authorityIds = command.authority.kind === 'issued-session' ? [command.authority.sessionId] : [];
     const authSessionIds = [...new Set([...authorityIds, ...companion.authSessionIds])];
+    const socialSelectors = command.operation === 'upsertInstance' ? [] : clientMutationSocialSelectors(command);
     const batch = await repository.readMutationState({
         principalRef: command.aggregateRef,
         instanceRef: targets.instanceRef,
         sessionRef: targets.sessionRef,
         requestId: command.requestId,
-        companionSelectors: [...authSessionIds.map(toAuthSessionSelector), ...companion.selectors]
+        companionSelectors: [...authSessionIds.map(toAuthSessionSelector), ...companion.selectors, ...socialSelectors]
     });
     const authSessions = new Map(authSessionIds.flatMap((sessionId, index) => {
         const [stored] = batch.companions[index].entries;
         return stored ? [[sessionId, decodeAuthSessionBySessionIdEntry(sessionId, stored)] as const] : [];
     }));
     const [authorityId] = authorityIds;
+    const state: ClientMutationStateRead = {
+        authoritySession: authorityId === undefined ? null : authSessions.get(authorityId)?.value ?? null,
+        idempotency: batch.idempotency ?? null,
+        principal: batch.principalSnapshot?.principal ?? null,
+        instance: batch.instance ?? null,
+        session: batch.session.value ?? null,
+        expiredSessionEntry: batch.session.expiredEntry ?? null,
+        snapshot: batch.principalSnapshot?.snapshot ?? null
+    };
+    const socialOffset = authSessionIds.length + companion.selectors.length;
     return {
-        state: {
-            authoritySession: authorityId === undefined ? null : authSessions.get(authorityId)?.value ?? null,
-            idempotency: batch.idempotency ?? null,
-            principal: batch.principalSnapshot?.principal ?? null,
-            instance: batch.instance ?? null,
-            session: batch.session.value ?? null,
-            expiredSessionEntry: batch.session.expiredEntry ?? null,
-            snapshot: batch.principalSnapshot?.snapshot ?? null
-        },
+        state,
         authSessions,
-        companions: batch.companions.slice(authSessionIds.length)
+        companions: batch.companions.slice(authSessionIds.length, socialOffset),
+        social: decodeClientMutationSocialRead({
+            command,
+            state,
+            selections: batch.companions.slice(socialOffset),
+            audienceObservedAtEpochMs: input.audienceObservedAtEpochMs
+        })
     };
 }
 
@@ -308,22 +322,4 @@ async function readReceiptEvent(
         );
     }
     return receiptEvent;
-}
-
-function needsPartyMemberRead(
-    command: ClientMutationCommand,
-    state: ClientMutationStateRead,
-    observedAtEpochMs: number
-): boolean {
-    if (state.idempotency !== null || command.operation === 'upsertInstance') {
-        return false;
-    }
-    if (command.operation !== 'heartbeatSession') {
-        return true;
-    }
-    return state.principal?.value.status === 'active' &&
-        !state.snapshot?.activeSessions.some((session) =>
-            session.status === 'active' && session.disconnectedAtEpochMs === null &&
-            session.expiresAtEpochMs > observedAtEpochMs
-        );
 }

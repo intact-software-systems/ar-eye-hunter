@@ -1,6 +1,9 @@
 import type { RallarServerAppInbox } from '@shared-server/mod.ts';
+import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
+import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import assert from 'node:assert/strict';
 import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
+import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -39,6 +42,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     assert.equal(complete.rtcTopologyReplay, runtime.rtcTopologyReplay);
     assert.equal(complete.appAuthInboxService, runtime.appAuthInboxService);
     assert.equal(complete.appInbox, additions.appInbox);
+    assert.equal(complete.viewWatches, additions.viewWatches);
     assert.equal(complete.authSessionRepository, additions.authSessionRepository);
     assert.equal(
         complete.clientRestSnapshotReadSelector,
@@ -116,6 +120,7 @@ interface RuntimeFailureCase {
 
 interface RuntimeAdditions {
     readonly appInbox: RallarServerAppInbox;
+    readonly viewWatches: ViewWatchService;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -146,8 +151,16 @@ function createRuntimeCandidate(
 }
 
 function createRuntimeAdditions(): RuntimeAdditions {
+    const appInbox = createTestServerAppInbox();
     return {
-        appInbox: createTestServerAppInbox(),
+        appInbox,
+        viewWatches: new ViewWatchService({
+            appInbox,
+            repository: new ViewWatchRepository(new FakeRuntimeStateRepository()),
+            clients: { listSessionsForPrincipal: async () => [], findSessionEntry: async () => undefined },
+            authorizer: { read: async () => null },
+            nowEpochMs: Date.now
+        }),
         authSessionRepository: {} as AuthSessionRepository,
         passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
         clientRestSnapshotReadSelector: {} as ClientRestSnapshotReadSelector,

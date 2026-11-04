@@ -5,10 +5,10 @@ import { writeRuntimeStateGuardedBatch } from '../../../runtime-state/postgres/w
 import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
 import { ClientStateEventCollisionError } from '../../state-events/client-state-event-store.ts';
 import type { ClientStateEventCollisionRow } from '../../state-events/postgres/client-state-event-row-codec.ts';
-import { writeGuardedViewPublication } from '../../websocket/outbox/guarded-view-publication.ts';
-import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '../../websocket/outbox/ws-outbox-provenance.ts';
+import { writeGuardedViewPublicationStorage } from '../../websocket/outbox/guarded-view-publication.ts';
 import {
     requireClientSnapshotProvenanceApplied,
+    toClientSnapshotProvenanceEffectId,
     type ClientSnapshotProvenanceInsert
 } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationReceipt } from '../persistence/client-state-persistence-contracts.ts';
@@ -25,6 +25,14 @@ export async function writeClientMutation(
     for (const operation of computed.persistence.runtimeWrites) {
         await writeRuntimeState(transaction, operation);
     }
+    if (computed.outcome === 'write') {
+        if (computed.viewPublication !== null) {
+            await writeGuardedViewPublicationStorage(transaction, computed.viewPublication.storage);
+        }
+        if (computed.viewWatchCleanup !== null) {
+            await writeClientRuntimeBatch(transaction, computed.viewWatchCleanup, []);
+        }
+    }
     return await writeClientMutationRecords(transaction, computed);
 }
 
@@ -36,13 +44,7 @@ export async function writeClientMutationRecords(
     if (computed.persistence.eventWrite) {
         await writeClientEvent(transaction, computed.persistence.eventWrite);
     }
-    if (computed.outcome === 'write') {
-        await writeGuardedViewPublication(transaction, computed.viewPublication);
-        if (computed.viewWatchCleanup !== null) {
-            await writeClientRuntimeBatch(transaction, computed.viewWatchCleanup, []);
-        }
-        await writeAppOutboxInserts(transaction, computed.outbox.map(({ write }) => write));
-    }
+    await writeAppOutboxInserts(transaction, computed.persistence.outboxWrites);
     return computed.receipt;
 }
 
@@ -58,7 +60,8 @@ export async function writeClientRuntimeBatch(
     const result = await writeRuntimeStateGuardedBatch(transaction, batch);
     const isConflict = result.guard.status === 'conflict' ||
         result.effects.some((effect) =>
-            effect.status !== 'applied' && effect.namespace !== WS_OUTBOX_PROVENANCE_NAMESPACE
+            effect.status !== 'applied' &&
+            !provenance.some((insert) => effect.effectId === toClientSnapshotProvenanceEffectId(insert))
         );
     if (isConflict) {
         throw new RuntimeStateWriteConflictError();

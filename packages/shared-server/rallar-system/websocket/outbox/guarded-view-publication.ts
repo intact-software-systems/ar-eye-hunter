@@ -46,7 +46,15 @@ export async function writeGuardedViewPublication(
     if (publication === null) {
         return;
     }
-    const storage = publication.storage;
+    await writeGuardedViewPublicationStorage(transaction, publication.storage);
+    await writeAppOutboxInserts(transaction, publication.outbox);
+}
+
+/** Storage-only write for an owner that bulk-inserts all of its already prepared outbox rows together. */
+export async function writeGuardedViewPublicationStorage(
+    transaction: PSqlSql,
+    storage: GuardedViewPublication['storage']
+): Promise<void> {
     if ('operation' in storage) {
         const result = await writeRuntimeStateConditional(transaction, storage);
         if (result.status !== 'applied') {
@@ -56,7 +64,6 @@ export async function writeGuardedViewPublication(
     else {
         await writeRuntimeStateConditionalBatch(transaction, { creation: null, inserts: [], batch: storage });
     }
-    await writeAppOutboxInserts(transaction, publication.outbox);
 }
 
 /** Atomic view publications can share consent or membership predecessors; guard each exact observation once in the same transaction. */
