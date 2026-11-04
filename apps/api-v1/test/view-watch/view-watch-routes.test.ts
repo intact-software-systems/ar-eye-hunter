@@ -3,7 +3,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { ViewWatchCommand } from '@shared-server/rallar-system/view-watch/view-watch-command.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
-import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../../src/routes/register-view-watch-routes.ts';
+import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../../src/view-watch/register-view-watch-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const session: IssuedAuthSession = {

@@ -1,6 +1,6 @@
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../routes/register-view-watch-routes.ts';
+import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../view-watch/register-view-watch-routes.ts';
 import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
