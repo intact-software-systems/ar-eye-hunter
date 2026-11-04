@@ -2055,7 +2055,7 @@ status prose to this document.
 Release 8 is complete. Release 9, the
 [publication QoS and pub/sub addendum](alm-publication-qos-addendum.md)'s Slice 1 (S1-i and S1-ii) and Slice 2
 (S2-i and S2-ii), is complete, and Release 10, its Slice 3 (S3-i and S3-ii), is complete. The addendum's later
-outcomes, ordered subscription establishment first, are designed in their own pull request. Decision numbers
+outcomes are unsliced; the maintainer chooses the next slice from a candidate survey, and it is designed in its own pull request. Decision numbers
 continue from D524.
 
 ## Revision history
