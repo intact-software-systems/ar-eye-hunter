@@ -195,7 +195,8 @@
     "test:e2e:rallar-black-box:exhaustive:real": "npm run test:rallar:exhaustive:postgres",
     "test:integration:rallar:real": "npm run test:integration:rallar:postgres",
     "test:integration:rallar:real:live": "npm run test:integration:rallar:live",
-    "test:api-v1:black-box:postgres:view-push": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:view-push --"
+    "test:api-v1:black-box:postgres:view-push": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:view-push --",
+    "test:rallar:full-stack:postgres:view-push": "RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-view-push.spec.ts"
   },
   "devDependencies": {
     "@babel/parser": "^8.0.4",

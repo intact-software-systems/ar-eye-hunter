@@ -2,6 +2,7 @@ import {
     createAlmScaleDiagnosticEntries,
     createAlmScaleManifestEntries
 } from './hetzner/create-alm-scale-manifest-entries.ts';
+import { createViewPushManifestEntry } from './hetzner/create-view-push-manifest-entry.ts';
 import {
     createAlmConformance2AgentEntry,
     createAlmConformance3AgentEntry
@@ -60,6 +61,7 @@ export function createHetznerDistributedManifestCatalog(): readonly HetznerDistr
         ...createAlmScaleManifestEntries(),
         createAlmConformance3AgentEntry(),
         createRtcMessagesPrincipal15Agent78m2hzTreeEntry(),
+        createViewPushManifestEntry(),
         ...createAlmScaleDiagnosticEntries(),
         createDiagnosticBarrierHealth2AgentEntry(),
         createDiagnosticExpectedFailure1AgentEntry(),
@@ -70,10 +72,3 @@ export function createHetznerDistributedManifestCatalog(): readonly HetznerDistr
         ...createRtcMessagesMediumScaleMatrixEntries()
     ];
 }
-
-export {
-    HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
-    HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER,
-    HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-    type HetznerDistributedManifestEntry
-} from './hetzner/hetzner-manifest-entry.ts';

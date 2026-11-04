@@ -13,11 +13,11 @@ import type {
     RallarBlackBoxTestWaitMatch
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import {
-    createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
-} from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
+} from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
 import { toHetznerManifestCommands } from './hetzner-manifest-test-commands.ts';
 
 /**
