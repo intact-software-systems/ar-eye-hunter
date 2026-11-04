@@ -56,11 +56,8 @@ export interface GrantedRtcDelivery {
     readonly reliability: NonNullable<RallarBlackBoxTestMessagesSendCommand['reliability']>;
 }
 
-/** The one shape RTC carries a granted publication in: a room multicast asking no receipt. */
+/** A publication asking no receipt, which only the receiver's cue confirms. */
 export const UNRECEIPTED_DELIVERY: GrantedRtcDelivery = { ack: 'none', reliability: 'best-effort' };
-
-/** A receipt the RTC carrier cannot give a granted publication. */
-export const RECEIPTED_DELIVERY: GrantedRtcDelivery = { ack: 'receiver', reliability: 'at-least-once' };
 
 interface GrantedRtcRefusalPollInput {
     readonly step: AlmConformanceStepInput;

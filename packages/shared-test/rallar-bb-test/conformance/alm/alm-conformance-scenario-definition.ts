@@ -62,7 +62,6 @@ export type AlmConformanceScenarioId =
     | 'granted-rtc-forged-sender'
     | 'granted-rtc-publish-refused'
     | 'granted-rtc-missing-proof'
-    | 'granted-rtc-receipted-unsupported'
     | 'leader-confirms'
     | 'leader-outside-list'
     | 'no-fallback-after-deadline'

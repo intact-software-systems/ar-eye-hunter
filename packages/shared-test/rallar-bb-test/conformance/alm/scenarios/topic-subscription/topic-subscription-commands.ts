@@ -22,7 +22,7 @@ import {
 } from './topic-subscription-polls.ts';
 
 /**
- * Every cell is a granted-topic proof of the WS path: a granted topic rides RTC only as a signed `ack: 'none'` room
+ * Every cell is a granted-topic proof over ws and the fallback cell: a granted topic rides RTC only as a signed room
  * multicast with a verified publisher proof, delivered to `subscribe(handler)`; every other granted send goes over WS.
  */
 export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];

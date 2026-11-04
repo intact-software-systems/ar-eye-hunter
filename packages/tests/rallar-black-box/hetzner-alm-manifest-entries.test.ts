@@ -201,8 +201,7 @@ describe('ALM conformance hosted lane families', () => {
             ...[
                 'granted-rtc-delivered',
                 'granted-rtc-missing-proof',
-                'granted-rtc-publish-refused',
-                'granted-rtc-receipted-unsupported'
+                'granted-rtc-publish-refused'
             ].map((key) => `alm-rtc-${key}`)
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());

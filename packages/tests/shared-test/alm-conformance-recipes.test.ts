@@ -95,14 +95,13 @@ const FOUR_ROLE_KEYS_BY_CARRIER = {
 } as const;
 
 /**
- * A granted topic rides RTC as a signed `ack: 'none'` room multicast: its cells run over rtc alone, the two-agent ones
+ * A granted topic rides RTC as a signed room multicast: its cells run over rtc alone, the two-agent ones
  * before the congestion and fairness cells and the forged sender last, on three agents.
  */
 const GRANTED_RTC_TWO_AGENT_KEYS = [
     'granted-rtc-delivered',
     'granted-rtc-missing-proof',
-    'granted-rtc-publish-refused',
-    'granted-rtc-receipted-unsupported'
+    'granted-rtc-publish-refused'
 ] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';

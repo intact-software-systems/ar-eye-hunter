@@ -60,7 +60,6 @@ import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-deliver
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
 import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
 import { grantedRtcPublishRefused } from './scenarios/granted-rtc/granted-rtc-publish-refused.ts';
-import { grantedRtcReceiptedUnsupported } from './scenarios/granted-rtc/granted-rtc-receipted-unsupported.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
@@ -198,7 +197,6 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcDelivered,
     grantedRtcMissingProof,
     grantedRtcPublishRefused,
-    grantedRtcReceiptedUnsupported,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,

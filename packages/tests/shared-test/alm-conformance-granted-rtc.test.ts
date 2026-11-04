@@ -80,7 +80,6 @@ describe('the granted rtc cells', () => {
                         ['granted-rtc-delivered', 'two-agent'],
                         ['granted-rtc-missing-proof', 'two-agent'],
                         ['granted-rtc-publish-refused', 'two-agent'],
-                        ['granted-rtc-receipted-unsupported', 'two-agent'],
                         ['granted-rtc-forged-sender', 'three-agent']
                     ]
                     : []
@@ -106,8 +105,7 @@ describe('the granted rtc cells', () => {
         expect(pair.filter(namesPrincipal).map(({ scenarioKey }) => scenarioKey)).toEqual([
             'granted-rtc-delivered',
             'granted-rtc-missing-proof',
-            'granted-rtc-publish-refused',
-            'granted-rtc-receipted-unsupported'
+            'granted-rtc-publish-refused'
         ]);
     });
 
@@ -131,13 +129,12 @@ describe('the granted rtc cells', () => {
         }
     });
 
-    it('states ack on every granted send: none for a publication, receiver for the receipted refusal', () => {
+    it('states ack: none on every granted send', () => {
         const acks = [
             'granted-rtc-delivered',
             'granted-rtc-forged-sender',
             'granted-rtc-missing-proof',
-            'granted-rtc-publish-refused',
-            'granted-rtc-receipted-unsupported'
+            'granted-rtc-publish-refused'
         ].map((scenarioId) => {
             const scenario = toGrantedRtcScenario(scenarioId);
             const sends = [...toGrantedSends(scenario.sender), ...toGrantedSends(scenario.receiver)];
@@ -148,8 +145,7 @@ describe('the granted rtc cells', () => {
             ['granted-rtc-delivered', ['none']],
             ['granted-rtc-forged-sender', ['none']],
             ['granted-rtc-missing-proof', ['none']],
-            ['granted-rtc-publish-refused', ['none']],
-            ['granted-rtc-receipted-unsupported', ['receiver']]
+            ['granted-rtc-publish-refused', ['none']]
         ]);
     });
 
@@ -209,19 +205,13 @@ describe('the granted rtc cells', () => {
         ]);
     });
 
-    it('refuses the subscribe-only receiver\'s rtc publication no-publish-grant and a receipted one unsupported, before any attempt', () => {
+    it('refuses the subscribe-only receiver\'s rtc publication no-publish-grant before any attempt', () => {
         const publishRefused = toGrantedRtcScenario('granted-rtc-publish-refused');
-        const receipted = toGrantedRtcScenario('granted-rtc-receipted-unsupported');
 
         expect(toGrantedSends(publishRefused.sender)).toEqual([]);
         expect(toVerdictFacts(publishRefused.receiver)).toEqual([
             ['failure.kind', 'refused'],
             ['failure.reason', 'no-publish-grant'],
-            ['attempts', 0]
-        ]);
-        expect(toVerdictFacts(receipted.sender)).toEqual([
-            ['failure.kind', 'refused'],
-            ['failure.reason', 'unsupported'],
             ['attempts', 0]
         ]);
         // The cell's receiver opens no granted channel: only the snapshot's grant makes its send a granted one.
