@@ -37,6 +37,11 @@ describe('computeRtcRepairTargetAdmission', () => {
         }
     );
 
+    it('keeps both recipient checks for a repair that tracks no receipt: only hop receipts target relays', () => {
+        expect(computeRtcRepairTargetAdmission({ ...toInput(createRoom({ c: SUBSCRIBE_ONLY }), 'd'), receiptMode: 'none' }).left)
+            .toEqual({ kind: 'outside-frozen-audience' });
+    });
+
     it.each<[string, GroupSnapshot]>([
         ['subscribe revoked after the freeze', createRoom({ c: PUBLISH_ONLY })],
         ['no grant row any more', createRoom({ b: SUBSCRIBE_ONLY })],

@@ -1,5 +1,4 @@
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
-import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
 import { Either } from '../../resilience/Either.ts';
 import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts';
@@ -25,9 +24,9 @@ export interface RtcRepairTargetRefusal {
 /**
  * A responder repairs a granted publication toward a recipient only if its origin froze it and its live session's
  * principal still holds `subscribe` in the responder's own snapshot (S3-R8): a repair never widens the signed audience,
- * and a revoked subscriber gets no copy. Only a logical receipt (`receiver`, `leader`) targets recipients; under `hop`
- * or `subtree` a target is a hop, which may be a pure relay asking a copy for its subtree (R-S2c-ii-9). The receiver's
- * own admission stays the backstop for a stale responder.
+ * and a revoked subscriber gets no copy. Under a `hop` or `subtree` receipt a target is a hop, which may be a pure relay
+ * asking a copy for its subtree (R-S2c-ii-9); every other repair, one that tracks no receipt included, targets
+ * recipients. The receiver's own admission stays the backstop for a stale responder.
  */
 export function computeRtcRepairTargetAdmission(
     input: RtcRepairTargetAdmissionInput
@@ -36,7 +35,7 @@ export function computeRtcRepairTargetAdmission(
     if (snapshot === null || resolveRoomObservationDenial(snapshot.group, snapshot, input.nowEpochMs) !== undefined) {
         return Either.ofLeft({ kind: 'no-authority' });
     }
-    if (!isALLogicalReceiptMode(input.receiptMode)) {
+    if (input.receiptMode === 'hop' || input.receiptMode === 'subtree') {
         return Either.ofRight('admitted');
     }
     if (!input.frozenRecipientPeerIds.includes(targetPeerId)) {
