@@ -1,10 +1,15 @@
+import type { SelectedViewWatch } from '@shared-web/browser/api/selected-view-watch.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
+import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { TournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import type { Tournament } from '@shared/api/tournaments/tournament-types.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { computeTournament, createTournament } from '@shared/tournaments/compute-tournament.ts';
 import type { TournamentCommand } from '@shared/tournaments/tournament-command.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
+import { createManualTimers, type ManualTimers } from '../../shared/resilience/manual-timers.ts';
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const ref = { ...scope, tournamentId: 'cup' };
@@ -12,45 +17,73 @@ const session = { clientId: 'alice', username: 'alice', sessionId: 'alice-sessio
 const owners: RallarTournament[] = [];
 afterEach(() => owners.splice(0).forEach((owner) => owner.stop()));
 
-function browser() {
+interface TournamentFixture {
+    readonly owner: RallarTournament;
+    readonly api: { readonly read: Mock<RallarTournament.Api['read']>; readonly change: Mock<RallarTournament.Api['change']>; };
+    readonly watch: { readonly select: Mock<SelectedViewWatch['select']>; readonly release: Mock<SelectedViewWatch['release']>; };
+    readonly timers: ManualTimers;
+    readonly enter: MockInstance<RallarRoomEntry['enter']>;
+    readonly entry: RallarRoomEntry;
+    activeRegistration(): SelectedViewWatch.Selection | null;
+    releasedRegistrations(): readonly SelectedViewWatch.Selection[];
+    snapshot(next: TournamentSnapshot): void;
+    changed(): void;
+    authenticate(next: AuthSession | undefined): void;
+}
+
+function browser(): TournamentFixture {
+    let currentSession: AuthSession | undefined = session;
+    const authentication = new SynchronousNotifications<RallarAuthState>((error) => {
+        throw error;
+    });
     let snapshot: TournamentSnapshot = { ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament: null };
     const api = {
         read: vi.fn<RallarTournament.Api['read']>(async () => snapshot),
         change: vi.fn<RallarTournament.Api['change']>(async (input) => ({ ref, requestId: input.requestId, status: 'applied', code: null }))
     };
-    const saved = new Map<string, string>();
-    const entry = new RallarRoomEntry({
-        auth: { session: () => session, onChange: () => () => {} },
-        rooms: {
-            onChange: () => () => {},
-            join: async () => {
-                throw new Error('No admission is requested in this owner test');
+    const timers = createManualTimers(1000);
+    const changes = new SynchronousNotifications<void>((error) => {
+        throw error;
+    });
+    let activeRegistration: SelectedViewWatch.Selection | null = null;
+    const releasedRegistrations: SelectedViewWatch.Selection[] = [];
+    const watch = {
+        select: vi.fn<SelectedViewWatch['select']>(async (selection) => {
+            activeRegistration = selection;
+        }),
+        release: vi.fn<SelectedViewWatch['release']>(async () => {
+            if (activeRegistration !== null) {
+                releasedRegistrations.push(activeRegistration);
             }
-        },
-        storage: {
-            getItem: (key) => saved.get(key) ?? null,
-            setItem: (key, value) => {
-                saved.set(key, value);
-            },
-            removeItem: (key) => {
-                saved.delete(key);
-            }
-        },
-        location: { read: () => 'https://game.example/', replace: () => {}, onChange: () => () => {} }
-    }, { scope });
+            activeRegistration = null;
+        })
+    };
+    const entry = createTournamentRoomEntry();
     const enter = vi.spyOn(entry, 'enter');
     const owner = new RallarTournament({
-        auth: { session: () => session, onChange: () => () => {} },
+        auth: { session: () => currentSession, onChange: (listener) => authentication.subscribe(listener).unsubscribe },
         activity: { isActive: () => true, onChange: () => () => {} },
-        timers: createDefaultTimers(),
+        timers,
+        onChanged: (listener) => changes.subscribe(listener).unsubscribe,
+        watch,
+        readConnectionGeneration: async () => 'generation',
         createId: () => crypto.randomUUID(),
         api,
         entry
-    }, { scope, tournamentId: 'cup', refreshIntervalMs: 10000 });
+    }, { scope, tournamentId: 'cup' });
     owners.push(owner);
     return {
         owner,
         api,
+        watch,
+        timers,
+        activeRegistration: () => activeRegistration,
+        releasedRegistrations: () => releasedRegistrations,
+        changed: () => changes.publishLatest(),
+        authenticate(next) {
+            currentSession = next;
+            authentication.publishLatest({ authenticated: next !== undefined, session: next, reason: next ? 'login' : 'logout' });
+        },
         enter,
         entry,
         snapshot(next: TournamentSnapshot) {
@@ -60,6 +93,75 @@ function browser() {
 }
 
 describe('Tournament browser ownership', () => {
+    it('registers a nonentrant bracket watch before reading and releases it on stop', async () => {
+        const test = browser();
+        const registered = Promise.withResolvers<void>();
+        const started = Promise.withResolvers<void>();
+        const select = test.watch.select.getMockImplementation()!;
+        test.watch.select.mockImplementationOnce(async (selection) => {
+            await select(selection);
+            started.resolve();
+            await registered.promise;
+        });
+        const starting = test.owner.start();
+        await started.promise;
+        expect(test.api.read).not.toHaveBeenCalled();
+        registered.resolve();
+        await starting;
+        expect(test.watch.select).toHaveBeenCalledWith(
+            expect.objectContaining({ resourceId: ref.tournamentId, session, connectionGenerationId: 'generation' })
+        );
+        expect(test.owner.getState().view).toMatchObject({ ref, principalId: 'alice' });
+        expect(test.activeRegistration()).toMatchObject({ resourceId: ref.tournamentId, session });
+        test.owner.stop();
+        expect(test.activeRegistration()).toBeNull();
+    });
+
+    it('releases the old account watch and fences its delayed registration before canonical reads', async () => {
+        const test = browser();
+        const registered = Promise.withResolvers<void>();
+        const started = Promise.withResolvers<void>();
+        const select = test.watch.select.getMockImplementation()!;
+        test.watch.select.mockImplementationOnce(async (selection) => {
+            await select(selection);
+            started.resolve();
+            await registered.promise;
+        });
+        const starting = test.owner.start();
+        await started.promise;
+        const bob = { ...session, clientId: 'bob', sessionId: 'bob-session' };
+        test.snapshot({ ref, principalId: 'bob', observedAtEpochMs: 1000, listing: 'unlisted', tournament: null });
+        test.authenticate(bob);
+        await vi.waitFor(() => expect(test.owner.getState().view?.principalId).toBe('bob'));
+        registered.resolve();
+        await starting;
+        expect(test.api.read).toHaveBeenCalledTimes(1);
+        expect(test.api.read).toHaveBeenCalledWith(expect.objectContaining({ session: bob }));
+        expect(test.releasedRegistrations().map((selection) => selection.session.clientId)).toEqual(['alice']);
+        expect(test.activeRegistration()?.session).toEqual(bob);
+        test.authenticate(undefined);
+        expect(test.owner.getState().view).toBeNull();
+        expect(test.releasedRegistrations().map((selection) => selection.session.clientId)).toEqual(['alice', 'bob']);
+        expect(test.activeRegistration()).toBeNull();
+    });
+
+    it('reads at scheduled start once and on push, without recurring bracket polling', async () => {
+        const test = browser();
+        const tournament = createScheduledTournament(3000);
+        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
+        await test.owner.start();
+        await test.timers.advance(1999);
+        expect(test.api.read).toHaveBeenCalledTimes(1);
+        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 3000, listing: 'unlisted', tournament });
+        await test.timers.advance(1);
+        await vi.waitFor(() => expect(test.owner.getState().view?.observedAtEpochMs).toBe(3000));
+        expect(test.api.read).toHaveBeenCalledTimes(2);
+        await test.timers.advance(60000);
+        expect(test.api.read).toHaveBeenCalledTimes(2);
+        test.changed();
+        await vi.waitFor(() => expect(test.api.read).toHaveBeenCalledTimes(3));
+    });
+
     it('rejects responses belonging to another tournament or account', async () => {
         const test = browser();
         test.snapshot({ ref: { ...ref, tournamentId: 'other' }, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament: null });
@@ -84,22 +186,10 @@ describe('Tournament browser ownership', () => {
     });
     it('enters only a freshly verified playing match with the authenticated participation role', async () => {
         const test = browser();
-        let tournament = createTournament({
-            ref,
-            title: 'Cup',
-            organizerPrincipalId: 'alice',
-            rulesId: 'native-v1',
-            createdAtEpochMs: 1,
-            noShowGraceMs: 600000
-        });
+        let tournament = createScheduledTournament(1000);
         const apply = (command: TournamentCommand, actorPrincipalId = 'alice') => {
             tournament = computeTournament({ state: tournament, command, actorPrincipalId, nowEpochMs: 1000, results: [] }).state;
         };
-        for (const actor of ['alice', 'bob', 'carol', 'dave']) {
-            apply({ type: 'register' }, actor);
-        }
-        apply({ type: 'launch' });
-        apply({ type: 'schedule', slot: 'semifinal-1', attemptId: 'attempt', roomId: 'room', gameId: 'room', scheduledAtEpochMs: 1000 });
         test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
         await test.owner.start();
         await test.owner.enter('semifinal-1');
@@ -150,3 +240,41 @@ describe('Tournament browser ownership', () => {
         expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
     });
 });
+
+function createScheduledTournament(scheduledAtEpochMs: number): Tournament {
+    let state = createTournament({ ref, title: 'Cup', organizerPrincipalId: 'alice', rulesId: 'native-v1', createdAtEpochMs: 1, noShowGraceMs: 600000 });
+    for (const actorPrincipalId of ['alice', 'bob', 'carol', 'dave']) {
+        state = computeTournament({ state, command: { type: 'register' }, actorPrincipalId, nowEpochMs: 1000, results: [] }).state;
+    }
+    state = computeTournament({ state, command: { type: 'launch' }, actorPrincipalId: 'alice', nowEpochMs: 1000, results: [] }).state;
+    return computeTournament({
+        state,
+        command: { type: 'schedule', slot: 'semifinal-1', attemptId: 'attempt', roomId: 'room', gameId: 'room', scheduledAtEpochMs },
+        actorPrincipalId: 'alice',
+        nowEpochMs: 1000,
+        results: []
+    }).state;
+}
+
+function createTournamentRoomEntry(): RallarRoomEntry {
+    const saved = new Map<string, string>();
+    return new RallarRoomEntry({
+        auth: { session: () => session, onChange: () => () => {} },
+        rooms: {
+            onChange: () => () => {},
+            join: async () => {
+                throw new Error('No admission is requested in this owner test');
+            }
+        },
+        storage: {
+            getItem: (key) => saved.get(key) ?? null,
+            setItem: (key, value) => {
+                saved.set(key, value);
+            },
+            removeItem: (key) => {
+                saved.delete(key);
+            }
+        },
+        location: { read: () => 'https://game.example/', replace: () => {}, onChange: () => () => {} }
+    }, { scope });
+}

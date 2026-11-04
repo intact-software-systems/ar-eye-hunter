@@ -13,6 +13,10 @@
     "clientPassword": {
       "default": "tournament-test-password",
       "secret": true
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
     }
   },
   "execution": {
@@ -29,6 +33,10 @@
         "Content-Type": "application/json"
       },
       "timeoutMs": 10000
+    },
+    "danaPreviewSocket": {
+      "type": "ws",
+      "timeoutMs": 20000
     }
   },
   "postRunAssertions": [
@@ -38,7 +46,7 @@
       "eq": 0
     }
   ],
-  "description": "Four-player tournament API: scoped registration, exact replay/conflict, forged authority/result refusal, durable no-show advancement through a complete bracket, and cancellation. Native game scoring is verified in game-owner and clickable SPA tests. Organizer publishing, default-unlisted scoped discovery, private personal history and completed-catalogue exclusion.",
+  "description": "Four-player tournament API: scoped registration, exact replay/conflict, forged authority/result refusal, durable no-show advancement through a complete bracket, and cancellation. Native game scoring is verified in game-owner and clickable SPA tests. Organizer publishing, default-unlisted scoped discovery, private personal history and completed-catalogue exclusion. A nonentrant registers before creation without entering personal history; exact private bracket and scope-public catalog WS notices cover creation, publish and unlist, while unlisted creation remains private.",
   "steps": [
     {
       "name": "registeralice",
@@ -297,6 +305,146 @@
       }
     },
     {
+      "name": "createPreviewWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-tournament-preview-ticket-{runId}",
+        "headers": {
+          "Authorization": "{danaAuthHeader}",
+          "x-client-id": "{danaClientId}"
+        },
+        "outputs": {
+          "danaPreviewTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivePreviewWsUrl",
+      "type": "set",
+      "output": "danaPreviewWsUrl",
+      "secret": true,
+      "redactAs": "danaPreviewWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.danaSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.danaPreviewTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openPreviewSocket",
+      "type": "ws.open",
+      "connection": "danaPreviewSocket",
+      "request": {
+        "url": "{danaPreviewWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        },
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "readPreviewConnectionGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{danaClientId}",
+        "headers": {
+          "Authorization": "{danaAuthHeader}",
+          "x-client-id": "{danaClientId}"
+        },
+        "outputs": {
+          "danaConnectionGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{danaSessionId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "watchBracketBeforeCreation",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/tournament/requests/bb-tournament-preview-watch-{runId}",
+        "headers": {
+          "Authorization": "{danaAuthHeader}",
+          "x-client-id": "{danaClientId}"
+        },
+        "body": {
+          "resourceId": "cup-{runId}",
+          "connectionGenerationId": "{danaConnectionGenerationId}",
+          "expectedRegistrationId": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "requestId": "bb-tournament-preview-watch-{runId}",
+          "registrationId": "bb-tournament-preview-watch-{runId}",
+          "resourceId": "cup-{runId}"
+        }
+      }
+    },
+    {
+      "name": "replayBracketWatch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/tournament/requests/bb-tournament-preview-watch-{runId}",
+        "headers": {
+          "Authorization": "{danaAuthHeader}",
+          "x-client-id": "{danaClientId}"
+        },
+        "body": {
+          "resourceId": "cup-{runId}",
+          "connectionGenerationId": "{danaConnectionGenerationId}",
+          "expectedRegistrationId": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "requestId": "bb-tournament-preview-watch-{runId}",
+          "registrationId": "bb-tournament-preview-watch-{runId}",
+          "resourceId": "cup-{runId}"
+        }
+      }
+    },
+    {
       "name": "create",
       "type": "http",
       "connection": "api",
@@ -305,7 +453,8 @@
         "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-create-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "x-client-id": "{aliceClientId}",
+          "x-request-id": "bb-tournament-create-changed-{runId}"
         },
         "body": {
           "type": "create",
@@ -317,6 +466,123 @@
         "body": {
           "status": "applied",
           "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "absentBracketWatcherReceivesCreation",
+      "type": "ws.wait",
+      "connection": "danaPreviewSocket",
+      "expect": {
+        "connection": "danaPreviewSocket",
+        "withinMs": 10000,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "id": {
+            "traceId": "bb-tournament-create-changed-{runId}"
+          },
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "principalId": "{danaClientId}"
+            }
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "tournament",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": "{danaClientId}"
+            }
+          }
+        },
+        "consume": true
+      },
+      "request": {
+        "outputs": {
+          "createdBracketResource": "matchedMessage.data.payload.resource"
+        }
+      }
+    },
+    {
+      "name": "capturecreatedBracketChange",
+      "type": "set",
+      "output": "createdBracketChangeId",
+      "transform": {
+        "get": [
+          {
+            "jsonParse": {
+              "path": "outputs.createdBracketResource"
+            }
+          },
+          "changeId"
+        ]
+      }
+    },
+    {
+      "name": "unlistedCreationNeverPublishesPublicIdentity",
+      "type": "ws.wait",
+      "connection": "danaPreviewSocket",
+      "expect": {
+        "connection": "danaPreviewSocket",
+        "withinMs": 1500,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "absent": {
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "world"
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "tournament-catalog",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": null,
+              "changeId": "{createdBracketChangeId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "watchDoesNotAddPersonalHistory",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog?view=mine&principalId={aliceClientId}",
+        "headers": {
+          "Authorization": "{danaAuthHeader}",
+          "x-client-id": "{danaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principalId": "{danaClientId}",
+          "entries": []
         },
         "comparison": "compatible-complete"
       }
@@ -374,7 +640,8 @@
         "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-publish-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "x-client-id": "{aliceClientId}",
+          "x-request-id": "bb-tournament-publish-changed-{runId}"
         },
         "body": {
           "type": "publish"
@@ -387,6 +654,103 @@
           "code": null
         },
         "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "nonentrantWatcherReceivesListingChange",
+      "type": "ws.wait",
+      "connection": "danaPreviewSocket",
+      "expect": {
+        "connection": "danaPreviewSocket",
+        "withinMs": 10000,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "id": {
+            "traceId": "bb-tournament-publish-changed-{runId}"
+          },
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "principalId": "{danaClientId}"
+            }
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "tournament",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": "{danaClientId}"
+            }
+          }
+        },
+        "consume": true
+      },
+      "request": {
+        "outputs": {
+          "publishedBracketResource": "matchedMessage.data.payload.resource"
+        }
+      }
+    },
+    {
+      "name": "capturepublishedBracketChange",
+      "type": "set",
+      "output": "publishedBracketChangeId",
+      "transform": {
+        "get": [
+          {
+            "jsonParse": {
+              "path": "outputs.publishedBracketResource"
+            }
+          },
+          "changeId"
+        ]
+      }
+    },
+    {
+      "name": "publicDiscoveryReceivesPublish",
+      "type": "ws.wait",
+      "connection": "danaPreviewSocket",
+      "expect": {
+        "connection": "danaPreviewSocket",
+        "withinMs": 10000,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "world"
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "tournament-catalog",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": null,
+              "changeId": "{publishedBracketChangeId}"
+            }
+          }
+        },
+        "consume": true
       }
     },
     {
@@ -450,7 +814,8 @@
         "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-unlist-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "x-client-id": "{aliceClientId}",
+          "x-request-id": "bb-tournament-unlist-changed-{runId}"
         },
         "body": {
           "type": "unlist"
@@ -463,6 +828,103 @@
           "code": null
         },
         "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "nonentrantWatcherReceivesUnlisting",
+      "type": "ws.wait",
+      "connection": "danaPreviewSocket",
+      "expect": {
+        "connection": "danaPreviewSocket",
+        "withinMs": 10000,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "id": {
+            "traceId": "bb-tournament-unlist-changed-{runId}"
+          },
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "principalId": "{danaClientId}"
+            }
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "tournament",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": "{danaClientId}"
+            }
+          }
+        },
+        "consume": true
+      },
+      "request": {
+        "outputs": {
+          "unlistedBracketResource": "matchedMessage.data.payload.resource"
+        }
+      }
+    },
+    {
+      "name": "captureunlistedBracketChange",
+      "type": "set",
+      "output": "unlistedBracketChangeId",
+      "transform": {
+        "get": [
+          {
+            "jsonParse": {
+              "path": "outputs.unlistedBracketResource"
+            }
+          },
+          "changeId"
+        ]
+      }
+    },
+    {
+      "name": "publicDiscoveryReceivesRemoval",
+      "type": "ws.wait",
+      "connection": "danaPreviewSocket",
+      "expect": {
+        "connection": "danaPreviewSocket",
+        "withinMs": 10000,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "world"
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "tournament-catalog",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": null,
+              "changeId": "{unlistedBracketChangeId}"
+            }
+          }
+        },
+        "consume": true
       }
     },
     {
@@ -1342,6 +1804,15 @@
           }
         },
         "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "closeBracketPreviewSocket",
+      "type": "ws.close",
+      "connection": "danaPreviewSocket",
+      "request": {
+        "code": 1000,
+        "reason": "tournament-preview-complete"
       }
     }
   ]

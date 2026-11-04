@@ -1,6 +1,6 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { sendApiHttpRequest } from '@shared-web/browser/api/send-api-http-request.ts';
-import { changeSessionPreviewWatch, scheduledSessionHttpApi } from '@shared-web/browser/rooms/sessions/scheduled-session-http-api.ts';
+import { scheduledSessionHttpApi } from '@shared-web/browser/rooms/sessions/scheduled-session-http-api.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
@@ -13,27 +13,6 @@ const session = { clientId: 'alice', sessionId: 'alice-session', username: 'alic
 beforeEach(() => vi.resetAllMocks());
 
 describe('scheduled-session HTTP acknowledgement', () => {
-    it('preserves registration identity and predecessor after a lost acknowledgement', async () => {
-        const requestId = 'session-preview-watch-request-0001';
-        vi.mocked(sendApiHttpRequest).mockRejectedValueOnce(new Error('Response lost')).mockResolvedValue({
-            status: 'applied',
-            requestId,
-            registrationId: requestId,
-            groupId: ref.groupId
-        });
-        const request = { groupId: ref.groupId, connectionGenerationId: 'connection-1', expectedRegistrationId: 'previous' };
-        await expect(changeSessionPreviewWatch(scope, { requestId, request, session, signal: new AbortController().signal }))
-            .resolves.toMatchObject({ status: 'applied', registrationId: requestId });
-        expect(sendApiHttpRequest).toHaveBeenCalledTimes(2);
-        for (const [call] of vi.mocked(sendApiHttpRequest).mock.calls) {
-            expect(call).toMatchObject({
-                path: `/api/state/apps/game/workspaces/default/view-watches/session-preview/requests/${requestId}`,
-                body: request,
-                options: { authSession: session }
-            });
-        }
-    });
-
     it('keeps a missing preview absent and propagates an authority denial', async () => {
         vi.mocked(sendApiHttpRequest).mockRejectedValueOnce(new ApiHttpError('GET', '/session', 404, 'Missing'));
         await expect(scheduledSessionHttpApi.read(ref, session, new AbortController().signal)).resolves.toBeNull();

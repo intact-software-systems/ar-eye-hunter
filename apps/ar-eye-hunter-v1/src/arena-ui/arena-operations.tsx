@@ -86,7 +86,6 @@ function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
                     browser={rallar}
                     entry={arenaRoomEntry}
                     catalogConfig={{ scope: ARENA_ROOM_SCOPE, limit: 20, timeoutMs: 10000 }}
-                    bracketRefreshIntervalMs={1000}
                 />
             )}
             {arena.session && <PartyPanel owner={party} friends={friends} />}

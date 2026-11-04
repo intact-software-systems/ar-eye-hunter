@@ -105,7 +105,6 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
                     browser={rallar}
                     entry={game.roomEntry}
                     catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, timeoutMs: 10000 }}
-                    bracketRefreshIntervalMs={1000}
                 />
             )}
             {game.session && <PartyPanel owner={party} friends={friends} />}

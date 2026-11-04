@@ -10,7 +10,8 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
-import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { matchmakingHttpApi } from './matchmaking-http-api.ts';
@@ -47,7 +48,7 @@ export class RallarMatchmaking extends AuthenticatedResource<MatchmakingSnapshot
     private readonly createId: () => string;
 
     static createBrowser(
-        browser: SubscribeViewInvalidations.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         entry: RallarRoomEntry,
         config: RallarMatchmaking.Config
     ): RallarMatchmaking {

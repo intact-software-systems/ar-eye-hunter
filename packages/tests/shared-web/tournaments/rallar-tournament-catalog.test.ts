@@ -101,11 +101,15 @@ describe('tournament catalogue browser lifetime', () => {
         test.read.mockResolvedValueOnce(page('second'));
         await test.owner.loadMore();
         const delayed = Promise.withResolvers<TournamentCatalogPage>();
-        test.read.mockResolvedValueOnce(page('changed', 'second')).mockReturnValueOnce(delayed.promise);
+        const started = Promise.withResolvers<void>();
+        test.read.mockResolvedValueOnce(page('changed', 'second')).mockImplementationOnce(() => {
+            started.resolve();
+            return delayed.promise;
+        });
         const first = test.owner.refresh();
         test.read.mockResolvedValueOnce(page('changed', 'second')).mockResolvedValueOnce(page('last'));
         const second = test.owner.refresh();
-        await vi.waitFor(() => expect(test.read).toHaveBeenCalledTimes(4));
+        await started.promise;
         expect(test.owner.getState().entries.map((entry) => entry.title)).toEqual(['first', 'second']);
         delayed.resolve(page('last'));
         await Promise.all([first, second]);
@@ -127,9 +131,13 @@ describe('tournament catalogue browser lifetime', () => {
         const test = browser();
         await test.owner.start();
         const delayed = Promise.withResolvers<TournamentCatalogPage>();
-        test.read.mockReturnValueOnce(delayed.promise).mockResolvedValueOnce(page('latest'));
+        const started = Promise.withResolvers<void>();
+        test.read.mockImplementationOnce(() => {
+            started.resolve();
+            return delayed.promise;
+        }).mockResolvedValueOnce(page('latest'));
         const reading = test.owner.refresh();
-        await vi.waitFor(() => expect(test.read).toHaveBeenCalledTimes(2));
+        await started.promise;
         test.changed();
         test.changed();
         delayed.resolve(page('older'));
@@ -172,9 +180,13 @@ describe('tournament catalogue browser lifetime', () => {
     it('aborts reads on stop and ignores a late completion', async () => {
         const test = browser();
         const delayed = Promise.withResolvers<TournamentCatalogPage>();
-        test.read.mockReturnValueOnce(delayed.promise);
+        const started = Promise.withResolvers<void>();
+        test.read.mockImplementationOnce(() => {
+            started.resolve();
+            return delayed.promise;
+        });
         const starting = test.owner.start();
-        await vi.waitFor(() => expect(test.read).toHaveBeenCalledTimes(1));
+        await started.promise;
         const signal = test.read.mock.calls[0][0].signal;
         test.owner.stop();
         expect(signal.aborted).toBe(true);
@@ -188,9 +200,13 @@ describe('tournament catalogue browser lifetime', () => {
     it('clears personal data on account replacement and ignores the old account response', async () => {
         const test = browser();
         const old = Promise.withResolvers<TournamentCatalogPage>();
-        test.read.mockReturnValueOnce(old.promise);
+        const started = Promise.withResolvers<void>();
+        test.read.mockImplementationOnce(() => {
+            started.resolve();
+            return old.promise;
+        });
         const starting = test.owner.start();
-        await vi.waitFor(() => expect(test.read).toHaveBeenCalledTimes(1));
+        await started.promise;
         test.read.mockResolvedValueOnce({ ...page('bob-cup'), principalId: 'bob' });
         test.authenticate({ ...alice, clientId: 'bob', sessionId: 'bob-session' });
         await vi.waitFor(() => expect(test.owner.getState().entries.map((entry) => entry.title)).toEqual(['bob-cup']));
@@ -204,9 +220,13 @@ describe('tournament catalogue browser lifetime', () => {
     it('fences view changes and rejects a response for another scope', async () => {
         const test = browser();
         const old = Promise.withResolvers<TournamentCatalogPage>();
-        test.read.mockReturnValueOnce(old.promise);
+        const started = Promise.withResolvers<void>();
+        test.read.mockImplementationOnce(() => {
+            started.resolve();
+            return old.promise;
+        });
         const starting = test.owner.start();
-        await vi.waitFor(() => expect(test.read).toHaveBeenCalledTimes(1));
+        await started.promise;
         test.read.mockResolvedValueOnce({ ...page('mine'), view: 'mine' });
         await test.owner.changeView('mine');
         old.resolve(page('public'));

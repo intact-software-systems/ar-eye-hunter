@@ -13,10 +13,12 @@ import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { changeSelectedViewWatch } from '../../api/change-selected-view-watch.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
 import { SelectedViewWatch } from '../../api/selected-view-watch.ts';
 import { subscribeViewDeadline } from '../../api/subscribe-view-deadline.ts';
-import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
+import { subscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../../api/subscribe-view-recovery.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../../browser-activity.ts';
 import type { RallarConnectionOperations } from '../../rallar-connection-facade.ts';
@@ -24,7 +26,7 @@ import type { RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import type { RallarRoomEntry } from '../entry/rallar-room-entry.ts';
 import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
-import { changeSessionPreviewWatch, scheduledSessionHttpApi } from './scheduled-session-http-api.ts';
+import { scheduledSessionHttpApi } from './scheduled-session-http-api.ts';
 import { earliestSessionDeadline, ScheduledSessionViewReader } from './scheduled-session-view-reader.ts';
 
 export namespace RallarScheduledSessions {
@@ -130,7 +132,7 @@ export class RallarScheduledSessions {
 
     public static createBrowser(
         browser:
-            & SubscribeViewInvalidations.Browser
+            & SubscribeViewRecovery.Browser
             & Pick<RallarRoomEntry.Browser, 'auth'>
             & Pick<RallarConnectionOperations, 'connect'>,
         entry: RallarRoomEntry,
@@ -147,7 +149,7 @@ export class RallarScheduledSessions {
                 subscribeViewInvalidations({ browser, scope: config.scope, resource: 'sessions', changed }),
             watch: new SelectedViewWatch({
                 createId: () => crypto.randomUUID(),
-                change: (input) => changeSessionPreviewWatch(config.scope, input)
+                change: (input) => changeSelectedViewWatch({ ...config.scope, family: 'session-preview' }, input)
             }),
             readConnectionGeneration: async (signal) => {
                 const context = await browser.connect({ scope: config.scope, signal });

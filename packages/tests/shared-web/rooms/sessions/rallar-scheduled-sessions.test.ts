@@ -146,14 +146,18 @@ describe('scheduled-session browser ownership', () => {
         const test = new ScheduleBrowserFixture();
         await test.owner.start();
         const registered = Promise.withResolvers<void>();
-        test.watch.select.mockReturnValueOnce(registered.promise);
+        const started = Promise.withResolvers<void>();
+        test.watch.select.mockImplementationOnce(() => {
+            started.resolve();
+            return registered.promise;
+        });
         const selecting = test.owner.select(ref);
-        await vi.waitFor(() => expect(test.watch.select).toHaveBeenCalled());
+        await started.promise;
         expect(test.api.read).not.toHaveBeenCalled();
         registered.resolve();
         await selecting;
         expect(test.owner.getState().selected).toEqual(preview);
-        expect(test.watch.select).toHaveBeenCalledWith(expect.objectContaining({ groupId: ref.groupId, session: alice }));
+        expect(test.watch.select).toHaveBeenCalledWith(expect.objectContaining({ resourceId: ref.groupId, session: alice }));
     });
 
     it('reads server authority once when the observed lobby boundary is reached', async () => {
@@ -211,7 +215,11 @@ describe('scheduled-session browser ownership', () => {
         );
         await test.owner.start();
         const registered = Promise.withResolvers<void>();
-        test.watch.select.mockReturnValueOnce(registered.promise);
+        const started = Promise.withResolvers<void>();
+        test.watch.select.mockImplementationOnce(() => {
+            started.resolve();
+            return registered.promise;
+        });
         const selecting = test.owner.select(ref);
         await vi.advanceTimersByTimeAsync(0);
         await vi.advanceTimersByTimeAsync(10_000);

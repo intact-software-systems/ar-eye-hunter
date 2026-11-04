@@ -51,7 +51,7 @@ export class ScheduledSessionViewReader {
         }
         await this.dependencies.watch.select({
             session: attempt.session,
-            groupId: ref.groupId,
+            resourceId: ref.groupId,
             connectionGenerationId,
             signal: attempt.signal
         });

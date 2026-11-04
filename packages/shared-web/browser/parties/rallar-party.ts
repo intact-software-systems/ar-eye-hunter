@@ -11,7 +11,8 @@ import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
 import { subscribeViewDeadline } from '../api/subscribe-view-deadline.ts';
-import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { partyHttpApi } from './party-http-api.ts';
@@ -52,7 +53,7 @@ export class RallarParty extends AuthenticatedResource<PartyView, PartyRequest> 
     private readonly partyDependencies: RallarParty.Dependencies;
 
     static createBrowser(
-        browser: SubscribeViewInvalidations.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         config: RallarParty.Config
     ): RallarParty {
         return new RallarParty({

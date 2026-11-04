@@ -17,6 +17,9 @@ it('opens a linked bracket without registering or leaving a room, then registers
     const owner = new RallarTournament({
         auth: { session: () => session, onChange: () => () => {} },
         activity: { isActive: () => true, onChange: () => () => {} },
+        watch: { select: async () => {}, release: async () => {} },
+        readConnectionGeneration: async () => 'generation',
+        onChanged: () => () => {},
         createId: () => crypto.randomUUID(),
         timers: createDefaultTimers(),
         entry: { enter, getState: () => ({ status: 'idle', destination: null, principalId: null, failure: null }) },
@@ -37,7 +40,7 @@ it('opens a linked bracket without registering or leaving a room, then registers
                 })
             })
         }
-    }, { scope, tournamentId: 'cup', refreshIntervalMs: 10000 });
+    }, { scope, tournamentId: 'cup' });
     const catalog = new RallarTournamentCatalog({
         onChanged: () => () => {},
         auth: { session: () => session, onChange: () => () => {} },

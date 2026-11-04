@@ -1,5 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { SessionPreviewWatchRequest, SessionPreviewWatchResult } from '@shared/api/views/view-watch.ts';
+import type { ViewWatchRequest, ViewWatchResult } from '@shared/api/views/view-watch.ts';
 import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
 import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
@@ -7,18 +7,18 @@ import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 export namespace SelectedViewWatch {
     export interface Selection {
         readonly session: AuthSession;
-        readonly groupId: string | null;
+        readonly resourceId: string | null;
         readonly connectionGenerationId: string;
         readonly signal: AbortSignal;
     }
     export interface ChangeInput {
         readonly session: AuthSession;
         readonly requestId: string;
-        readonly request: SessionPreviewWatchRequest;
+        readonly request: ViewWatchRequest;
         readonly signal: AbortSignal;
     }
     export interface Dependencies {
-        change(input: ChangeInput): Promise<SessionPreviewWatchResult>;
+        change(input: ChangeInput): Promise<ViewWatchResult>;
         createId(): string;
     }
 }
@@ -31,7 +31,7 @@ interface WatchRegistration {
     /** The observed predecessor may belong to another owner; only applied own tokens may be cleaned up. */
     registrationId: string | null;
     ownedRegistrationId: string | null;
-    groupId: string | null;
+    resourceId: string | null;
     pending: SelectedViewWatch.ChangeInput | null;
 }
 
@@ -61,7 +61,7 @@ export class SelectedViewWatch {
                 settled: false,
                 registrationId: null,
                 ownedRegistrationId: null,
-                groupId: null,
+                resourceId: null,
                 pending: null
             };
         }
@@ -108,18 +108,19 @@ export class SelectedViewWatch {
                     return;
                 }
                 if (
-                    registration.settled && registration.pending === null && registration.groupId === selection.groupId
+                    registration.settled && registration.pending === null &&
+                    registration.resourceId === selection.resourceId
                 ) {
                     return;
                 }
-                const pending = registration.pending?.request.groupId === selection.groupId
+                const pending = registration.pending?.request.resourceId === selection.resourceId
                     ? { ...registration.pending, signal: selection.signal }
-                    : this.createChange(registration, selection.groupId, selection.signal);
+                    : this.createChange(registration, selection.resourceId, selection.signal);
                 registration.pending = pending;
                 const result = await this.dependencies.change(pending);
                 this.validateResult(pending, result);
                 registration.registrationId = result.registrationId;
-                registration.groupId = result.groupId;
+                registration.resourceId = result.resourceId;
                 registration.pending = null;
                 registration.settled = result.status === 'applied';
                 if (result.status === 'applied') {
@@ -133,7 +134,7 @@ export class SelectedViewWatch {
 
     private createChange(
         registration: WatchRegistration,
-        groupId: string | null,
+        resourceId: string | null,
         signal: AbortSignal
     ): SelectedViewWatch.ChangeInput {
         return {
@@ -141,18 +142,18 @@ export class SelectedViewWatch {
             requestId: this.dependencies.createId(),
             signal,
             request: {
-                groupId,
+                resourceId,
                 connectionGenerationId: registration.connectionGenerationId,
                 expectedRegistrationId: registration.registrationId
             }
         };
     }
 
-    private validateResult(input: SelectedViewWatch.ChangeInput, result: SessionPreviewWatchResult): void {
+    private validateResult(input: SelectedViewWatch.ChangeInput, result: ViewWatchResult): void {
         if (
             result.requestId !== input.requestId ||
-            (result.status === 'applied' && (result.groupId !== input.request.groupId ||
-                result.registrationId !== (input.request.groupId === null ? null : input.requestId)))
+            (result.status === 'applied' && (result.resourceId !== input.request.resourceId ||
+                result.registrationId !== (input.request.resourceId === null ? null : input.requestId)))
         ) {
             throw new TypeError('Preview registration result belongs to another command');
         }

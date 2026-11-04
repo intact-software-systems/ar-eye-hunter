@@ -1,6 +1,6 @@
 import { SelectedViewWatch } from '@shared-web/browser/api/selected-view-watch.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { SessionPreviewWatchResult } from '@shared/api/views/view-watch.ts';
+import type { ViewWatchResult } from '@shared/api/views/view-watch.ts';
 import { describe, expect, it, onTestFinished, vi, type Mock } from 'vitest';
 
 const session: AuthSession = {
@@ -12,17 +12,17 @@ const session: AuthSession = {
 };
 const input: SelectedViewWatch.Selection = {
     session,
-    groupId: 'friday',
+    resourceId: 'friday',
     connectionGenerationId: 'connection-1',
     signal: new AbortController().signal
 };
 
-function applied(call: SelectedViewWatch.ChangeInput): SessionPreviewWatchResult {
+function applied(call: SelectedViewWatch.ChangeInput): ViewWatchResult {
     return {
         status: 'applied',
         requestId: call.requestId,
-        registrationId: call.request.groupId === null ? null : call.requestId,
-        groupId: call.request.groupId
+        registrationId: call.request.resourceId === null ? null : call.requestId,
+        resourceId: call.request.resourceId
     };
 }
 
@@ -39,15 +39,19 @@ function fixture(): WatchFixture {
 describe('selected preview watch lifecycle', () => {
     it('awaits committed registration and reuses it until the selection or connection changes', async () => {
         const test = fixture();
-        const answer = Promise.withResolvers<SessionPreviewWatchResult>();
-        test.change.mockImplementationOnce(() => answer.promise);
+        const answer = Promise.withResolvers<ViewWatchResult>();
+        const started = Promise.withResolvers<SelectedViewWatch.ChangeInput>();
+        test.change.mockImplementationOnce((call) => {
+            started.resolve(call);
+            return answer.promise;
+        });
         let ready = false;
         const registering = test.owner.select(input).then(() => {
             ready = true;
         });
-        await vi.waitFor(() => expect(test.change).toHaveBeenCalledOnce());
+        const pending = await started.promise;
         expect(ready).toBe(false);
-        answer.resolve(applied(test.change.mock.calls[0]![0]));
+        answer.resolve(applied(pending));
         await registering;
         await test.owner.select(input);
         expect(test.change).toHaveBeenCalledOnce();
@@ -62,14 +66,14 @@ describe('selected preview watch lifecycle', () => {
                 status: 'conflict',
                 requestId: call.requestId,
                 registrationId: 'prior-owner',
-                groupId: 'old-room'
+                resourceId: 'old-room'
             })
         );
         await test.owner.select(input);
         const [first, second] = test.change.mock.calls.map(([call]) => call);
         expect(second!.request.expectedRegistrationId).toBe('prior-owner');
         expect(second!.requestId).not.toBe(first!.requestId);
-        expect(second!.request.groupId).toBe('friday');
+        expect(second!.request.resourceId).toBe('friday');
     });
 
     it('reasserts the same target after a conflict and can clear a slot after an owner restart', async () => {
@@ -79,14 +83,21 @@ describe('selected preview watch lifecycle', () => {
                 status: 'conflict',
                 requestId: call.requestId,
                 registrationId: 'prior-generation',
-                groupId: 'friday'
+                resourceId: 'friday'
             })
         );
         await test.owner.select(input);
-        expect(test.change).toHaveBeenCalledTimes(2);
+        const recovery = test.change.mock.calls.map(([call]) => call).find((call) => call.request.expectedRegistrationId === 'prior-generation');
+        expect(recovery?.request.resourceId).toBe('friday');
+        expect(recovery?.requestId).not.toBe(test.change.mock.calls[0]![0].requestId);
         await test.owner.release();
-        await test.owner.select({ ...input, groupId: null });
-        expect(test.change).toHaveBeenCalledTimes(4);
+        expect(test.change).toHaveBeenCalledWith(
+            expect.objectContaining({ request: expect.objectContaining({ resourceId: null, expectedRegistrationId: recovery!.requestId }) })
+        );
+        await test.owner.select({ ...input, resourceId: null });
+        expect(test.change).toHaveBeenCalledWith(
+            expect.objectContaining({ request: expect.objectContaining({ resourceId: null, expectedRegistrationId: null }) })
+        );
     });
 
     it('retries uncertain registration with the same command identity and body', async () => {
@@ -108,18 +119,18 @@ describe('selected preview watch lifecycle', () => {
                 status: 'conflict',
                 requestId: call.requestId,
                 registrationId: 'new-owner',
-                groupId: 'new-room'
+                resourceId: 'new-room'
             })
         );
         await test.owner.release();
         expect(test.change).toHaveBeenCalledTimes(2);
-        expect(test.change.mock.calls[1]![0].request).toMatchObject({ groupId: null, expectedRegistrationId: registration });
+        expect(test.change.mock.calls[1]![0].request).toMatchObject({ resourceId: null, expectedRegistrationId: registration });
     });
 
     it.each([false, true])('replays an uncertain owned registration before cleanup (replacement=%s)', async (replacement) => {
         const test = fixture();
         if (replacement) {
-            await test.owner.select({ ...input, groupId: 'earlier' });
+            await test.owner.select({ ...input, resourceId: 'earlier' });
         }
         test.change.mockRejectedValueOnce(new Error('Committed response lost'));
         await expect(test.owner.select(input)).rejects.toThrow('Committed response lost');
@@ -127,19 +138,21 @@ describe('selected preview watch lifecycle', () => {
         await test.owner.release();
         const calls = test.change.mock.calls.map(([call]) => call);
         expect(calls.at(-2)!.requestId).toBe(uncertain.requestId);
-        expect(calls.at(-1)!.request).toMatchObject({ groupId: null, expectedRegistrationId: uncertain.requestId });
+        expect(calls.at(-1)!.request).toMatchObject({ resourceId: null, expectedRegistrationId: uncertain.requestId });
     });
 
     it('never clears a foreign token learned during conflict backoff', async () => {
         vi.useFakeTimers();
-        onTestFinished(() => { vi.useRealTimers(); });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
         const test = fixture();
         test.change.mockImplementation((call) =>
             Promise.resolve({
                 status: 'conflict',
                 requestId: call.requestId,
                 registrationId: 'another-owner',
-                groupId: 'another-room'
+                resourceId: 'another-room'
             })
         );
         const selecting = test.owner.select(input);
@@ -152,13 +165,17 @@ describe('selected preview watch lifecycle', () => {
 
     it('new authentication does not wait for an obsolete pending registration', async () => {
         const test = fixture();
-        const answer = Promise.withResolvers<SessionPreviewWatchResult>();
-        test.change.mockImplementationOnce(() => answer.promise);
+        const answer = Promise.withResolvers<ViewWatchResult>();
+        const started = Promise.withResolvers<SelectedViewWatch.ChangeInput>();
+        test.change.mockImplementationOnce((call) => {
+            started.resolve(call);
+            return answer.promise;
+        });
         const old = test.owner.select(input);
-        await vi.waitFor(() => expect(test.change).toHaveBeenCalledOnce());
+        const pending = await started.promise;
         await test.owner.select({ ...input, session: { ...session, clientId: 'bob', sessionId: 'bob-session' } });
         expect(test.change.mock.calls[1]![0].session.clientId).toBe('bob');
-        answer.resolve(applied(test.change.mock.calls[0]![0]));
+        answer.resolve(applied(pending));
         await old;
         await test.owner.select({ ...input, session: { ...session, clientId: 'bob', sessionId: 'bob-session' } });
         expect(test.change).toHaveBeenCalledTimes(2);

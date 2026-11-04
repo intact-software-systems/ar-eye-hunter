@@ -6,7 +6,8 @@ import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
 import { subscribeViewDeadline } from '../api/subscribe-view-deadline.ts';
-import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { friendsHttpApi } from './friends-http-api.ts';
@@ -42,7 +43,7 @@ export class RallarFriends extends AuthenticatedResource<FriendsView, FriendsReq
     private readonly friendsDependencies: RallarFriends.Dependencies;
 
     static createBrowser(
-        browser: SubscribeViewInvalidations.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         entry: RallarRoomEntry,
         config: RallarFriends.Config
     ): RallarFriends {

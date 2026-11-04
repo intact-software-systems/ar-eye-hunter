@@ -12,7 +12,8 @@ import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../api/http-error.ts';
-import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
@@ -82,7 +83,7 @@ export class RallarTournamentCatalog {
     private operation: 'append' | 'refresh' | null = null;
 
     static createBrowser(
-        browser: SubscribeViewInvalidations.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         config: RallarTournamentCatalog.Config
     ): RallarTournamentCatalog {
         return new RallarTournamentCatalog({

@@ -377,7 +377,7 @@
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "groupId": "future-{runId}",
+          "resourceId": "future-{runId}",
           "connectionGenerationId": "{bobConnectionGenerationId}",
           "expectedRegistrationId": null
         }
@@ -388,7 +388,7 @@
           "status": "applied",
           "requestId": "bb-session-preview-watch-{runId}",
           "registrationId": "bb-session-preview-watch-{runId}",
-          "groupId": "future-{runId}"
+          "resourceId": "future-{runId}"
         }
       }
     },
@@ -404,7 +404,7 @@
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "groupId": "future-{runId}",
+          "resourceId": "future-{runId}",
           "connectionGenerationId": "{bobConnectionGenerationId}",
           "expectedRegistrationId": null
         }
@@ -415,7 +415,7 @@
           "status": "applied",
           "requestId": "bb-session-preview-watch-{runId}",
           "registrationId": "bb-session-preview-watch-{runId}",
-          "groupId": "future-{runId}"
+          "resourceId": "future-{runId}"
         }
       }
     },
@@ -431,7 +431,7 @@
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "groupId": "lobby-{runId}",
+          "resourceId": "lobby-{runId}",
           "connectionGenerationId": "{bobConnectionGenerationId}",
           "expectedRegistrationId": null
         }
@@ -441,7 +441,7 @@
         "body": {
           "status": "conflict",
           "registrationId": "bb-session-preview-watch-{runId}",
-          "groupId": "future-{runId}"
+          "resourceId": "future-{runId}"
         }
       }
     },
@@ -561,7 +561,7 @@
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "groupId": null,
+          "resourceId": null,
           "connectionGenerationId": "{bobConnectionGenerationId}",
           "expectedRegistrationId": "bb-session-preview-watch-{runId}"
         }
@@ -571,7 +571,7 @@
         "body": {
           "status": "applied",
           "registrationId": null,
-          "groupId": null
+          "resourceId": null
         }
       }
     },

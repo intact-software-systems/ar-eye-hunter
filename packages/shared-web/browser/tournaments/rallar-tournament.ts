@@ -8,12 +8,20 @@ import { decodeTournamentRequest, type TournamentRequest } from '@shared/api/tou
 import { decodeTournamentSnapshot, type TournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
 import type { TournamentMatch, TournamentRef } from '@shared/api/tournaments/tournament-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
+import { changeSelectedViewWatch } from '../api/change-selected-view-watch.ts';
+import { SelectedViewWatch } from '../api/selected-view-watch.ts';
+import { subscribeViewDeadline } from '../api/subscribe-view-deadline.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
+import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../browser-activity.ts';
+import type { RallarConnectionOperations } from '../rallar-connection-facade.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
+import { requireOwnWsConnectionGenerationId } from '../rooms/require-own-ws-connection-generation-id.ts';
 import { tournamentHttpApi } from './tournament-http-api.ts';
 
 export namespace RallarTournament {
@@ -29,11 +37,13 @@ export namespace RallarTournament {
     }
     export interface Dependencies extends AuthenticatedResource.Dependencies {
         readonly api: Api;
+        readonly watch: Pick<SelectedViewWatch, 'select' | 'release'>;
+        onChanged(listener: () => Promise<void>): () => void;
+        readConnectionGeneration(signal: AbortSignal): Promise<string>;
         readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
     }
     export interface Config {
         readonly scope: StateScope;
-        readonly refreshIntervalMs: number;
         readonly tournamentId: string;
     }
 }
@@ -42,9 +52,13 @@ export namespace RallarTournament {
 export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, TournamentRequest> {
     readonly ref: TournamentRef;
     private readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
+    private readonly tournamentDependencies: RallarTournament.Dependencies;
 
     static createBrowser(
-        browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
+        browser:
+            & SubscribeViewRecovery.Browser
+            & Pick<RallarRoomEntry.Browser, 'auth'>
+            & Pick<RallarConnectionOperations, 'connect'>,
         entry: RallarRoomEntry,
         config: RallarTournament.Config
     ): RallarTournament {
@@ -54,6 +68,16 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
                 onChange: (listener, options) => browser.auth.onChange(listener, options)
             },
             api: tournamentHttpApi,
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'tournament', changed }),
+            watch: new SelectedViewWatch({
+                createId: () => crypto.randomUUID(),
+                change: (input) => changeSelectedViewWatch({ ...config.scope, family: 'tournament' }, input)
+            }),
+            readConnectionGeneration: async (signal) => {
+                const context = await browser.connect({ scope: config.scope, signal });
+                return await requireOwnWsConnectionGenerationId(context, signal);
+            },
             entry,
             activity: new BrowserActivity(),
             timers: createDefaultTimers(),
@@ -65,15 +89,13 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
         const ref = decodeTournamentRef({ ...config.scope, tournamentId: config.tournamentId });
         super(dependencies, {
             scope: config.scope,
-            subscribeRefresh: (run) =>
-                startRepeating({
-                    timers: dependencies.timers,
-                    intervalMs: config.refreshIntervalMs,
-                    firstRun: 'after-interval',
-                    run
-                })
+            subscribeRefresh: (refresh) => this.subscribeRefresh(refresh)
         }, {
             async read(attempt) {
+                const connectionGenerationId = await dependencies.readConnectionGeneration(attempt.signal);
+                attempt.signal.throwIfAborted();
+                await dependencies.watch.select({ ...attempt, resourceId: ref.tournamentId, connectionGenerationId });
+                attempt.signal.throwIfAborted();
                 const snapshot = decodeTournamentSnapshot(await dependencies.api.read({ ...attempt, ref }));
                 if (!jsonEquals(snapshot.ref, ref) || snapshot.principalId !== attempt.session.clientId) {
                     throw new TypeError('Tournament response belongs to another account or tournament');
@@ -91,6 +113,40 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
         });
         this.ref = ref;
         this.entry = dependencies.entry;
+        this.tournamentDependencies = dependencies;
+    }
+
+    private subscribeRefresh(refresh: () => Promise<void>): () => void {
+        const dependencies = this.tournamentDependencies;
+        const subscriptions = new SubscriptionScope();
+        let key = this.watchAccountKey();
+        subscriptions.add(dependencies.auth.onChange(() => {
+            const next = this.watchAccountKey();
+            if (next !== key) {
+                key = next;
+                this.releaseWatch();
+            }
+        }, { emitCurrent: false }));
+        subscriptions.add(dependencies.onChanged(refresh));
+        subscriptions.add(subscribeViewDeadline<TournamentSnapshot>({
+            onChange: (listener) => this.onChange(listener),
+            timers: dependencies.timers,
+            remainingMs: tournamentStartDelay,
+            refresh
+        }));
+        subscriptions.add(() => this.releaseWatch());
+        return () => subscriptions.unsubscribe();
+    }
+
+    private watchAccountKey(): string | null {
+        const session = this.tournamentDependencies.auth.session();
+        return session === undefined ? null : toAuthSessionKey(session);
+    }
+
+    private releaseWatch(): void {
+        void this.tournamentDependencies.watch.release().catch((error) => {
+            console.error('Tournament watch cleanup failed', toError(error));
+        });
     }
 
     async enter(slot: TournamentMatch['slot']): Promise<void> {
@@ -144,6 +200,20 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
             this.finishOperation(attempt);
         }
     }
+}
+
+/** Starting is authorized against server time; a future schedule requires one canonical observation at its boundary. */
+function tournamentStartDelay(snapshot: TournamentSnapshot): number | null {
+    if (snapshot.tournament?.status !== 'active') {
+        return null;
+    }
+    const starts = snapshot.tournament.matches.flatMap((match) =>
+        match.status === 'scheduled' && match.attempt !== null &&
+            match.attempt.scheduledAtEpochMs > snapshot.observedAtEpochMs
+            ? [match.attempt.scheduledAtEpochMs]
+            : []
+    );
+    return starts.length === 0 ? null : Math.min(...starts) - snapshot.observedAtEpochMs;
 }
 
 function tournamentRefusalMessage(code: string): string {
