@@ -80,7 +80,7 @@ class PartyServiceFixture {
             clients: this.clients,
             nowEpochMs: () => this.clock.now,
             timing: (event) => this.timing.push(event)
-        }, { defaultPolicy: { ...policy, maxMembers: players }, policiesByApplication: {}, finishedRetentionMs: 60000 });
+        }, { serviceId: 'party-test', defaultPolicy: { ...policy, maxMembers: players }, policiesByApplication: {}, finishedRetentionMs: 60000 });
     }
 
     private createMatchmakingService(players: number): MatchmakingService {

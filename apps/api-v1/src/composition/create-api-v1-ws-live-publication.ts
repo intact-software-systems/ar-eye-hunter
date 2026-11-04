@@ -1,4 +1,4 @@
-import { isClientSnapshotSessionLive } from '@shared-server/rallar-system/presence/snapshot-presence.ts';
+import { readPrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 
@@ -28,25 +28,6 @@ export function createApiV1WsLivePublication(
         transport: createPostgresLiveWsNoticeTransport(input.notification, input.nowEpochMs),
         channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
         publisherId: myPublisherId,
-        readPrincipalSessionIds: async (ref: ClientPrincipalRef) => {
-            const snapshot = await input.readClientSnapshot(ref);
-            if (
-                !snapshot || snapshot.principal.status !== 'active' ||
-                snapshot.principal.applicationId !== ref.applicationId ||
-                snapshot.principal.workspaceId !== ref.workspaceId ||
-                snapshot.principal.principalId !== ref.principalId
-            ) {
-                return undefined;
-            }
-            const now = input.nowEpochMs();
-            return snapshot.activeSessions
-                .filter((session) =>
-                    session.applicationId === ref.applicationId &&
-                    session.workspaceId === ref.workspaceId &&
-                    session.principalId === ref.principalId &&
-                    isClientSnapshotSessionLive(session, now)
-                )
-                .map((session) => session.sessionId);
-        }
+        readPrincipalSessionIds: (ref) => readPrincipalSessionIds(ref, input)
     };
 }

@@ -10,6 +10,7 @@ import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-serve
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { writeViewResync } from '../websocket/write-view-resync.ts';
 
 import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-command-identity.ts';
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
@@ -79,6 +80,11 @@ export function createRallarMiddlewareInfrastructure(
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
+            onSubscribed: () =>
+                writeViewResync(wsQBoxServerService, {
+                    messageId: crypto.randomUUID(),
+                    createdAtEpochMs: (options.now ?? Date.now)()
+                }),
             filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
             wsQBoxServerService,
             receiptObserver: options.wsReceiptObserver,
@@ -209,6 +215,11 @@ function installMiddlewareLiveWsNoticeSubscriber(
     const targetResolution = new WsQueueBoxServerTargetResolution({ socket: webSocketServer, targetResolver });
     return installLiveWsNoticeSubscriber({
         ...options.liveWsNoticeSubscriber,
+        onSubscribed: () =>
+            writeViewResync(wsQBoxServerService, {
+                messageId: crypto.randomUUID(),
+                createdAtEpochMs: (options.now ?? Date.now)()
+            }),
         inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
         resolveBroadRecipientSessionIds: (message) =>
             targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
@@ -230,6 +241,12 @@ function installMiddlewareLiveWsNoticeSubscriber(
 }
 
 function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
+    if (
+        message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated ||
+        message.route.topicId === AppTopics.viewResync || message.payload.typeId === AppTopics.viewResync
+    ) {
+        return Either.ofLeft({ code: 'unauthorized', message: 'Account view notices are server publications only' });
+    }
     if (
         isStateSnapshotTopic(message.route.topicId) || isStateSnapshotTopic(message.payload.typeId) ||
         message.route.topicId === AppTopics.clientStateEvent || message.payload.typeId === AppTopics.clientStateEvent ||

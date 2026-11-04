@@ -36,13 +36,20 @@ export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';
 
 export interface WsOutboxProvenance {
     readonly version: 1;
-    readonly producerKind: 'state-sync' | 'auth-session-invalidation' | 'crdt' | 'rtc-topology' | 'room-application';
+    readonly producerKind:
+        | 'view-invalidation'
+        | 'state-sync'
+        | 'auth-session-invalidation'
+        | 'crdt'
+        | 'rtc-topology'
+        | 'room-application';
     readonly queueKey: Key;
     readonly typeId: string;
     readonly messageId: string;
     readonly senderId: string;
     readonly expiresAtMs: number;
     readonly target:
+        | WsOutboxAccountViewTarget
         | WsOutboxScopedUnicastTarget
         | WsOutboxInvalidatedSessionTarget
         | WsOutboxScopedRoomBroadcastTarget
@@ -86,6 +93,11 @@ export function computeWsOutboxProvenanceRecord(input: ComputeWsOutboxProvenance
         value: JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) }),
         expireAtTimestamp: expiresAtMs
     };
+}
+
+export interface WsOutboxAccountViewTarget {
+    readonly kind: 'scoped-account-view';
+    readonly principalRef: ClientPrincipalRef;
 }
 
 export interface WsOutboxInvalidatedSessionTarget {
@@ -136,6 +148,8 @@ export namespace WsOutboxProvenanceReader {
     export interface Dependencies {
         readonly repository: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>;
         readonly nowMs: () => number;
+        /** Required for account-view producers; resolved after their mutation has committed. */
+        readonly readPrincipalSessionIds?: (ref: ClientPrincipalRef) => Promise<readonly string[] | undefined>;
     }
 }
 
@@ -157,6 +171,28 @@ export class WsOutboxProvenanceReader {
     }
 
     async readProducerProvenance(message: ALMessage, entry: ResourceEntry): Promise<WsOutboxProducerAuthority> {
+        const proof = await this.readVerifiedProvenance(message, entry);
+        if (proof.target.kind !== 'scoped-account-view') {
+            return toProducerAuthority(proof.target, message);
+        }
+        if (this.dependencies.readPrincipalSessionIds === undefined) {
+            throw new ALAdmissionCorruptionError(
+                toWsOutboxProvenanceKey(entry.key),
+                new TypeError('Account view publication has no durable own-session reader')
+            );
+        }
+        const admittedAudience = await this.dependencies.readPrincipalSessionIds(proof.target.principalRef) ?? [];
+        return {
+            admittedAudience,
+            principalTargetId: proof.target.principalRef.principalId,
+            recipientScope: {
+                applicationId: proof.target.principalRef.applicationId,
+                workspaceId: proof.target.principalRef.workspaceId
+            }
+        };
+    }
+
+    private async readVerifiedProvenance(message: ALMessage, entry: ResourceEntry): Promise<WsOutboxProvenance> {
         const key = toWsOutboxProvenanceKey(entry.key);
         const stored = await this.proofReads.read(key);
         try {
@@ -177,7 +213,7 @@ export class WsOutboxProvenanceReader {
             if (proof.expiresAtMs <= this.dependencies.nowMs()) {
                 throw new TypeError('WS producer provenance expired during verification');
             }
-            return toProducerAuthority(proof.target, message);
+            return proof;
         }
         catch (cause) {
             throw new ALAdmissionCorruptionError(key, toError(cause));
@@ -186,7 +222,10 @@ export class WsOutboxProvenanceReader {
 }
 
 /** Converts already verified durable authority into the dequeue contract. */
-function toProducerAuthority(target: WsOutboxProvenance['target'], message: ALMessage): WsOutboxProducerAuthority {
+function toProducerAuthority(
+    target: Exclude<WsOutboxProvenance['target'], WsOutboxAccountViewTarget>,
+    message: ALMessage
+): WsOutboxProducerAuthority {
     if (target.kind === 'exact-invalidated-session') {
         return {
             admittedAudience: target.admittedAudience,
@@ -270,7 +309,8 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
     ]);
     if (
         proof.version !== 1 ||
-        (proof.producerKind !== 'state-sync' && proof.producerKind !== 'auth-session-invalidation' &&
+        (proof.producerKind !== 'view-invalidation' && proof.producerKind !== 'state-sync' &&
+            proof.producerKind !== 'auth-session-invalidation' &&
             proof.producerKind !== 'crdt' && proof.producerKind !== 'rtc-topology' &&
             proof.producerKind !== 'room-application')
     ) {
@@ -305,6 +345,10 @@ function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['tar
     if (target.kind === 'scoped-world-broadcast') {
         decodeALAdmissionRecord(value, ['kind', 'scope']);
         return { kind: 'scoped-world-broadcast', scope: decodeALOutboundRecipientScope(target.scope) };
+    }
+    if (target.kind === 'scoped-account-view') {
+        decodeALAdmissionRecord(value, ['kind', 'principalRef']);
+        return { kind: 'scoped-account-view', principalRef: decodePrincipalRef(target.principalRef) };
     }
     const admittedAudience = decodeProvenanceAudience(target.admittedAudience);
     if (target.kind === 'exact-invalidated-session') {
@@ -385,6 +429,9 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
     const { message, entry, proof, nowMs } = input;
     const issues: string[] = [];
     const expiresAtMs = resolveALMessageExpireAtMs(message);
+    if ((proof.producerKind === 'view-invalidation') !== (proof.target.kind === 'scoped-account-view')) {
+        issues.push('View invalidation producer differs from its own-account authority');
+    }
     if (proof.producerKind === 'rtc-topology' || proof.producerKind === 'room-application') {
         const principalPublication = proof.producerKind === 'room-application' &&
             proof.target.kind === 'scoped-principal-broadcast';

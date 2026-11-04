@@ -41,7 +41,12 @@ export function createApiV1PartyServices(
         clients: runtime.clientsRepository,
         nowEpochMs,
         timing: input.timing
-    }, { defaultPolicy, policiesByApplication, finishedRetentionMs: configuration.appInbox.finishedRetentionMs });
+    }, {
+        serviceId: runtime.wsQBoxServerService.name,
+        defaultPolicy,
+        policiesByApplication,
+        finishedRetentionMs: configuration.appInbox.finishedRetentionMs
+    });
     return {
         mutation: service.mutate,
         reader: new PartyReader({ parties, clients: runtime.clientsRepository, nowEpochMs }, {

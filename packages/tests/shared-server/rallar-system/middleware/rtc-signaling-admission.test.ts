@@ -31,6 +31,8 @@ const invalidIngressCases = [
     'topic',
     'payload-type',
     'page',
+    AppTopics.viewInvalidated,
+    AppTopics.viewResync,
     AppTopics.overlayTopology,
     AppTopics.groupStateSnapshot,
     AppTopics.groupDirectorySnapshot,
@@ -121,6 +123,9 @@ function signalingMessage(): ALMessage {
 }
 
 function invalidMessage(message: ALMessage, corruption: InvalidIngressCase): ALMessage {
+    if (corruption === AppTopics.viewInvalidated || corruption === AppTopics.viewResync) {
+        return { ...message, route: { ...message.route, topicId: corruption }, payload: { ...message.payload, typeId: corruption, resource: '{"version":1}' } };
+    }
     if (isStateSnapshotTopic(corruption) || corruption === 'page') {
         return {
             ...message,

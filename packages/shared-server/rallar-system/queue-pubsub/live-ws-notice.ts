@@ -96,7 +96,12 @@ export type EncodeLiveWsNoticeResult =
 
 export interface LiveWsNoticeTransport {
     publish(notice: LiveWsNotice): Promise<void>;
-    subscribe(channel: string, onNotice: (notice: LiveWsNotice) => Promise<void> | void): Promise<void>;
+    /** Called after initial LISTEN and every successful resubscription, when prior notices may have been lost. */
+    subscribe(
+        channel: string,
+        onNotice: (notice: LiveWsNotice) => Promise<void> | void,
+        onSubscribed?: () => void
+    ): Promise<void>;
 }
 
 interface EncodedLiveWsNotice {

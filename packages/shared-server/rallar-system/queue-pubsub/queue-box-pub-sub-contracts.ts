@@ -20,7 +20,8 @@ export interface QueueBoxPubSubBridge {
     publish(channel: string, message: QueueBoxPubSubMessage): Promise<void>;
     subscribe(
         channel: string,
-        onMessage: (message: JsonWireValue) => Promise<void> | void
+        onMessage: (message: JsonWireValue) => Promise<void> | void,
+        onSubscribed?: () => void
     ): Promise<void>;
 }
 

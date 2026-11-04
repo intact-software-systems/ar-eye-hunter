@@ -73,6 +73,7 @@ export interface QueueBoxPubSubWsService {
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
+    readonly onSubscribed?: () => void;
     readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly clock?: ALOutboundMessageRuntime.Clock;
     readonly wsQBoxServerService: QueueBoxPubSubWsService;
@@ -212,7 +213,7 @@ export function installQueueBoxPubSubBridge(
                     filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
                     heldSends
                 });
-            });
+            }, options.onSubscribed);
         }
     );
     void readiness.catch((error) => {

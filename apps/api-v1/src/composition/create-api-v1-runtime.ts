@@ -43,6 +43,7 @@ import {
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { readPrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import type { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
@@ -474,7 +475,13 @@ function createSharedMiddleware(
     });
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
         repository: mutation.runtimeStateRepository,
-        nowMs: input.nowEpochMs
+        nowMs: input.nowEpochMs,
+        readPrincipalSessionIds: (ref) =>
+            readPrincipalSessionIds(ref, {
+                readClientSnapshot: async (principalRef) =>
+                    (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
+                nowEpochMs: input.nowEpochMs
+            })
     });
     return createRallarMiddleware({
         inbox: mutation.queueBox,

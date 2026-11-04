@@ -3,6 +3,8 @@ import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admis
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 
+import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
+
 import type { WsOutboxProvenance } from './ws-outbox-provenance.ts';
 
 export function validateWsOutboxProvenanceTarget(
@@ -31,6 +33,9 @@ export function validateWsOutboxProvenanceTarget(
             ? []
             : ['WS provenance target differs from scoped room identity'];
     }
+    if (target.kind === 'scoped-account-view') {
+        return validateAccountViewTarget(message, target);
+    }
     if (target.kind === 'scoped-principal-broadcast') {
         const principalRef = targets?.mode === 'broadcast' && targets.scope === 'principal'
             ? targets.principalRef
@@ -50,4 +55,21 @@ export function validateWsOutboxProvenanceTarget(
             targets.toPeerId === target.peerId && target.admittedAudience.every((peerId) => peerId === target.peerId)
         ? []
         : ['WS provenance target differs from public unicast identity'];
+}
+
+function validateAccountViewTarget(
+    message: ALMessage,
+    target: Extract<WsOutboxProvenance['target'], { kind: 'scoped-account-view'; }>
+): readonly string[] {
+    try {
+        const notice = decodeViewInvalidationMessage(message);
+        return notice.principalId === target.principalRef.principalId &&
+                notice.scope.applicationId === target.principalRef.applicationId &&
+                notice.scope.workspaceId === target.principalRef.workspaceId
+            ? []
+            : ['Account view scope or principal differs from its provenance'];
+    }
+    catch {
+        return ['Account view invalidation payload or target is malformed'];
+    }
 }

@@ -18,6 +18,7 @@ import {
 
 export interface InstallLiveWsNoticeSubscriberInput {
     readonly transport: LiveWsNoticeTransport;
+    readonly onSubscribed?: () => void;
     readonly channel: string;
     readonly publisherId: string;
     readonly nowMs: () => number;
@@ -50,7 +51,7 @@ export function installLiveWsNoticeSubscriber(input: InstallLiveWsNoticeSubscrib
         catch (error) {
             console.error('Live WS notice receive failed:', error);
         }
-    });
+    }, input.onSubscribed);
 }
 
 async function receiveLiveWsNotice(

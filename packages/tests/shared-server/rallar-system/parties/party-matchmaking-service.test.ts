@@ -143,7 +143,7 @@ describe('party matchmaking through authenticated AppInbox', () => {
                 clients: fixture.clients,
                 nowEpochMs: () => fixture.clock.now,
                 timing: undefined
-            }, { defaultPolicy: policy, policiesByApplication: {}, finishedRetentionMs: 60000 });
+            }, { serviceId: 'party-test', defaultPolicy: policy, policiesByApplication: {}, finishedRetentionMs: 60000 });
             competingQueue.inbox.start();
             const readAdmission = fixture.groups.readMutationExactEntries.bind(fixture.groups);
             vi.spyOn(fixture.groups, 'readMutationExactEntries').mockImplementationOnce(async (input) => {

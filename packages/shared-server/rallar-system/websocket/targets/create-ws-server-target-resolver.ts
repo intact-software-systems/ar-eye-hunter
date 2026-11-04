@@ -77,6 +77,9 @@ function resolveBroadcastRecipients(input: ResolveBroadcastRecipientsInput): rea
         });
     }
     const clientRecipients = resolveWsClientTargetRecipients({ message, webSocketServer, options });
+    if (scope === 'principal') {
+        return clientRecipients ?? [];
+    }
     return clientRecipients ?? [...webSocketServer.connections.values()]
         .filter((context) => context.isOpen)
         .map((context) => ({ peerId: context.id, connectionId: context.id }));

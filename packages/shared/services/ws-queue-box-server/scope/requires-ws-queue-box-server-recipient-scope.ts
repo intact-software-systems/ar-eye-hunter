@@ -7,7 +7,9 @@ import {
     type ALOutboundScopeAuthority
 } from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
+import { AppTopics } from '../../../api/api-config.ts';
 import type { StateScope } from '../../../api/state-types.ts';
+import { decodeViewInvalidationMessage } from '../../../api/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
 
 /** A unicast that names no group needs the scope its producer proved; a fully decoded AL control envelope is exempt. */
@@ -60,6 +62,12 @@ export function validateWsQueueBoxServerRecipientAuthority(
     >,
     referenceKey: Key | undefined
 ): readonly string[] {
+    if (
+        (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) &&
+        (authority.recipientScope === undefined || authority.principalTargetId === undefined)
+    ) {
+        return ['Account view requires authenticated principal delivery'];
+    }
     const resolved = resolveALOutboundScopeAuthority(message, authority);
     if (resolved.left) {
         return resolved.left;
@@ -103,6 +111,9 @@ function validateWsQueueBoxServerScopedRowAuthority(
     input: ValidateWsQueueBoxServerScopedRowAuthorityInput
 ): readonly string[] {
     const { message, scope, admittedAudience, referenceKey } = input;
+    if (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) {
+        return validateViewInvalidationAuthority(message, scope, admittedAudience);
+    }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         return validateWsQueueBoxServerDirectPrincipalBroadcastAuthority(
             message,
@@ -144,4 +155,22 @@ function validateWsQueueBoxServerDirectPrincipalBroadcastAuthority(
             principalRef.workspaceId === scope.recipientScope.workspaceId
         ? []
         : ['Direct broadcast row scope differs from captured authority'];
+}
+
+function validateViewInvalidationAuthority(
+    message: ALMessage,
+    scope: Extract<ALOutboundScopeAuthority, { kind: 'recipient-scope'; }>,
+    admittedAudience: readonly string[] | undefined
+): readonly string[] {
+    try {
+        const notice = decodeViewInvalidationMessage(message);
+        return admittedAudience !== undefined && scope.principalTargetId === notice.principalId &&
+                scope.recipientScope.applicationId === notice.scope.applicationId &&
+                scope.recipientScope.workspaceId === notice.scope.workspaceId
+            ? []
+            : ['Account view requires its exact scoped principal authority'];
+    }
+    catch {
+        return ['Account view envelope is malformed'];
+    }
 }

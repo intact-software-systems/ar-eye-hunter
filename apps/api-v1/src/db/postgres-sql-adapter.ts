@@ -29,14 +29,22 @@ export interface PostgresTransactionSqlSource extends PostgresSqlSource {
 export interface PostgresSqlClientSource extends PostgresSqlSource {
     begin<T>(write: (transaction: PostgresTransactionSqlSource) => Promise<T>): Promise<T>;
     notify(channel: string, payload: string): Promise<void | object>;
-    listen(channel: string, onMessage: (payload: string) => void | Promise<void>): Promise<void | object>;
+    listen(
+        channel: string,
+        onMessage: (payload: string) => void | Promise<void>,
+        onSubscribed?: () => void
+    ): Promise<void | object>;
     end(): Promise<void>;
 }
 
 export interface PostgresSql extends PSqlSql {
     getExecutorCounters(): PSqlExecutorCounters;
     notify(channel: string, payload: string): Promise<void | object>;
-    listen(channel: string, onMessage: (payload: string) => void | Promise<void>): Promise<void | object>;
+    listen(
+        channel: string,
+        onMessage: (payload: string) => void | Promise<void>,
+        onSubscribed?: () => void
+    ): Promise<void | object>;
     end(): Promise<void>;
 }
 
@@ -90,8 +98,8 @@ export function createPostgresSqlClient(
             ),
         getExecutorCounters: (): PSqlExecutorCounters => ({ ...recording.counters }),
         notify: (channel: string, payload: string) => client.notify(channel, payload),
-        listen: (channel: string, onMessage: (payload: string) => void | Promise<void>) =>
-            client.listen(channel, onMessage),
+        listen: (channel: string, onMessage: (payload: string) => void | Promise<void>, onSubscribed?: () => void) =>
+            client.listen(channel, onMessage, onSubscribed),
         end: () => client.end()
     });
 }

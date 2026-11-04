@@ -1,9 +1,9 @@
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     decodeLiveWsNotice,
     MAX_LIVE_WS_NOTICE_BYTES,
     type LiveWsNoticeTransport
 } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 
 export function createPostgresLiveWsNoticeTransport(
@@ -17,7 +17,7 @@ export function createPostgresLiveWsNoticeTransport(
             }
             await notification.notify(notice.channel, notice);
         },
-        subscribe: async (channel, onNotice) => {
+        subscribe: async (channel, onNotice, onSubscribed) => {
             await notification.listen(channel, async (payload) => {
                 if (new TextEncoder().encode(payload).length >= MAX_LIVE_WS_NOTICE_BYTES) {
                     return;
@@ -33,7 +33,7 @@ export function createPostgresLiveWsNoticeTransport(
                 if (notice) {
                     await onNotice(notice);
                 }
-            });
+            }, onSubscribed);
         }
     };
 }
