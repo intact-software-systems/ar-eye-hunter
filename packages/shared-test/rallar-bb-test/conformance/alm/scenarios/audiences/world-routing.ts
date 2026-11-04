@@ -2,8 +2,8 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
-    RTC_REFUSAL_FACTS,
     toAdmissionCommands,
+    toRtcRefusalFacts,
     toSendCommand,
     toVerdictCommands,
     type AlmConformanceVerdictFact
@@ -63,7 +63,7 @@ function toWorldVerdictCommands(sender: AlmConformanceStepInput): readonly Ralla
         case 'ws':
             return toAdmissionCommands({ ...sender, index: 1 });
         case 'rtc':
-            return toVerdictCommands(sender, 'rejected', RTC_REFUSAL_FACTS);
+            return toVerdictCommands(sender, 'rejected', toRtcRefusalFacts('unsupported'));
         case 'rtc-with-ws-fallback':
             return toVerdictCommands(sender, 'transport-accepted', WS_ROUTE_FACTS);
     }

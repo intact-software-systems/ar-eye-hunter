@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import {
-    RTC_REFUSAL_FACTS,
+    toRtcRefusalFacts,
     toVerdictCommands,
     type AlmConformanceVerdictFact
 } from '../../alm-conformance-message-commands.ts';
@@ -44,7 +44,7 @@ export function toHeldByOtherVerdictCommands(step: AlmConformanceStepInput): rea
 /** An exclusive send takes the route a world send takes: WS at once where the strategy allows it, refused on RTC. */
 export function toClaimRouteCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return step.input.carrier === 'rtc'
-        ? toVerdictCommands(step, 'rejected', RTC_REFUSAL_FACTS)
+        ? toVerdictCommands(step, 'rejected', toRtcRefusalFacts('unsupported'))
         : toVerdictCommands(step, 'acknowledged', WS_ROUTE_FACTS);
 }
 

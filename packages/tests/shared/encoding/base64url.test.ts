@@ -58,14 +58,13 @@ describe('base64url', () => {
         expect(decodeBase64Url(noncanonical).left).toEqual(INVALID_BASE64URL);
     });
 
-    it.each<[unknown, number, boolean]>([
+    it.each<[string, number, boolean]>([
         ['Zm9v', 3, true],
         ['Zm9v', 2, false],
         ['Zm9vYg', 4, true],
         ['Zm9vYh', 4, false],
         ['Zm9v+g', 4, false],
-        [3, 3, false],
-        [undefined, 0, false]
+        ['', 0, true]
     ])('judges %j as strict base64url text of %d bytes: %s', (value, byteLength, expected) => {
         expect(isBase64UrlOfByteLength(value, byteLength)).toBe(expected);
     });

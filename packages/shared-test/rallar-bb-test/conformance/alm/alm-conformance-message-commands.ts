@@ -96,7 +96,10 @@ export type AlmConformanceVerdictFact = readonly [
     expected: string | number | boolean
 ];
 
-/** A send refused before its first carrier attempt for `reason`, so no carrier, WS included, carries it. */
+/**
+ * A send refused before its first carrier attempt for `reason`, so no carrier, WS included, carries it. The RTC carrier
+ * refuses a send it cannot carry `unsupported` at admission, a carrier-unsupported rejection no carrier attempt follows.
+ */
 export function toRtcRefusalFacts(reason: ALDeliveryRefusalReason): readonly AlmConformanceVerdictFact[] {
     return [
         ['refused', 'failure.kind', 'equals', 'refused'],
@@ -104,12 +107,6 @@ export function toRtcRefusalFacts(reason: ALDeliveryRefusalReason): readonly Alm
         ['no-attempt', 'attempts', 'equals', 0]
     ];
 }
-
-/**
- * The RTC carrier refuses a send it cannot carry at admission, a carrier-unsupported rejection that no carrier
- * attempt follows, so no WS leg carries it either.
- */
-export const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = toRtcRefusalFacts('unsupported');
 
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;

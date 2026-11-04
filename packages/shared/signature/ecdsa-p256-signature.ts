@@ -192,5 +192,5 @@ function toPublicJwkMemberIssues(jwk: ApiJsonObject): RallarValidationIssue[] {
 }
 
 function isEcdsaP256Coordinate(value: ApiJsonValue): boolean {
-    return isBase64UrlOfByteLength(value, ECDSA_P256_COORDINATE_BYTES);
+    return typeof value === 'string' && isBase64UrlOfByteLength(value, ECDSA_P256_COORDINATE_BYTES);
 }

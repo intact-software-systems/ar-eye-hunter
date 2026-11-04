@@ -60,5 +60,5 @@ function toPublicationKeyIdIssues(key: ApiJsonObject): RallarValidationIssue[] {
 }
 
 function isPublicationKeyId(value: ApiJsonValue): boolean {
-    return isBase64UrlOfByteLength(value, ECDSA_P256_KEY_ID_BYTES);
+    return typeof value === 'string' && isBase64UrlOfByteLength(value, ECDSA_P256_KEY_ID_BYTES);
 }

@@ -13,10 +13,10 @@ export function assertPersistedALProof(value: PersistedALValue): void {
     if (proof.alg !== 'ES256') {
         throw new TypeError('Persisted AL proof algorithm is invalid');
     }
-    if (!isBase64UrlOfByteLength(proof.keyId, ECDSA_P256_KEY_ID_BYTES)) {
+    if (typeof proof.keyId !== 'string' || !isBase64UrlOfByteLength(proof.keyId, ECDSA_P256_KEY_ID_BYTES)) {
         throw new TypeError('Persisted AL proof key id is invalid');
     }
-    if (!isBase64UrlOfByteLength(proof.signature, ECDSA_P256_SIGNATURE_BYTES)) {
+    if (typeof proof.signature !== 'string' || !isBase64UrlOfByteLength(proof.signature, ECDSA_P256_SIGNATURE_BYTES)) {
         throw new TypeError('Persisted AL proof signature is invalid');
     }
 }

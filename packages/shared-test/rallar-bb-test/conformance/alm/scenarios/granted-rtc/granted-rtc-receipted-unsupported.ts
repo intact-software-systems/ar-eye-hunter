@@ -1,4 +1,4 @@
-import { RTC_REFUSAL_FACTS } from '../../alm-conformance-message-commands.ts';
+import { toRtcRefusalFacts } from '../../alm-conformance-message-commands.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import { TOPIC_SUBSCRIPTION_SELECTOR, toTopicGrantCommand } from '../topic-subscription/topic-subscription-commands.ts';
 import { GRANTED_RTC_CARRIERS, RECEIPTED_DELIVERY, toGrantedRefusalPollCommand } from './granted-rtc-commands.ts';
@@ -17,7 +17,11 @@ export const grantedRtcReceiptedUnsupported: AlmConformanceScenarioDefinition = 
     principalRoles: ['sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
     toSenderCommands: (sender) => [
-        toGrantedRefusalPollCommand({ step: sender, delivery: RECEIPTED_DELIVERY, facts: RTC_REFUSAL_FACTS })
+        toGrantedRefusalPollCommand({
+            step: sender,
+            delivery: RECEIPTED_DELIVERY,
+            facts: toRtcRefusalFacts('unsupported')
+        })
     ],
     toRecipientCommands: (receiver) => [
         toTopicGrantCommand({ step: receiver, operation: 'grant', grantee: 'sender', publish: true, subscribe: false })

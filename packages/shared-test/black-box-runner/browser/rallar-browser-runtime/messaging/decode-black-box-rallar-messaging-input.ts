@@ -98,11 +98,18 @@ export function decodeBlackBoxRallarFaultInput(
         case 'product-socket':
             return decodeProductSocketFault(value);
         default:
-            return decodeAlmFaultRewrite(value).fold(
-                (message) => toInputIssue(message),
-                (rewrite) => rewrite === null ? decodeTransportFault(value) : decodeRewriteFault(value, rewrite)
-            );
+            return decodeCarrierFault(value);
     }
+}
+
+/** A WS or RTC fault: a rewrite the fault names, judged by its one decoder, else any other transport fault. */
+function decodeCarrierFault(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, ScriptedTransportFault | BlackBoxRallarRewriteFault> {
+    return decodeAlmFaultRewrite(value).fold(
+        (message) => toInputIssue(message),
+        (rewrite) => rewrite === null ? decodeTransportFault(value) : decodeRewriteFault(value, rewrite)
+    );
 }
 
 function decodeRewriteFault(
