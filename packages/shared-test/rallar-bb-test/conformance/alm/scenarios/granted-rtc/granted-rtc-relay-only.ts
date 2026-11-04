@@ -35,8 +35,9 @@ const PATH_TOPOLOGY = { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } as
  * The owner reshapes the room into a path before the sender publishes, so a path leaf's connect waits for its one next
  * hop. The receiver holds `subscribe` and an election, recipient-b `publish` alone, so the sender's `ack: 'none'`
  * publication is frozen to the receiver. Whichever of the two the path puts in the middle, recipient-b admits the
- * frame over RTC and delivers nothing: as the middle it forwards the frame to the receiver, as a leaf it only admits it. Each page records its
- * next hops, which name the layout the run drew; the cell asserts neither which agent relays nor the hop count.
+ * frame over RTC and delivers nothing: as the middle it forwards the frame to the receiver, as a leaf it only admits
+ * it. Each page records its next hops, which name the layout the run drew; the cell asserts neither which agent
+ * relays nor the hop count.
  */
 export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-relay-only',

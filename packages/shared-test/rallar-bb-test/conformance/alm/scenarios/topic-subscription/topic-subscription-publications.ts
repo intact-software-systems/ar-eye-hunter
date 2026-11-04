@@ -54,10 +54,11 @@ interface PayloadWaitInput {
 
 /**
  * Publishes on the granted topic until one copy's receipt expects exactly `confirmations` plus `outsideAudience`
- * recipients, `confirmations` of them confirm it and the rest end outside, then tells the recipients so. Until every subscriber's election holds, an attempt reaches fewer, or
- * none when the page's own room snapshot does not yet hold its publish grant: a probe makes those attempts without a
- * publication's payload. A recipient that drops out of the audience before the cue would leave every later attempt
- * short, so each recipient holds its election and its socket until `toConfirmedCueWait` hears the cue.
+ * recipients, `confirmations` of them confirm it and the rest end outside, then tells the recipients so. Until every
+ * subscriber's election holds, an attempt reaches fewer, or none when the page's own room snapshot does not yet hold
+ * its publish grant: a probe makes those attempts without a publication's payload. A recipient that drops out of the
+ * audience before the cue would leave every later attempt short, so each recipient holds its election and its socket
+ * until `toConfirmedCueWait` hears the cue.
  */
 export function toPublishUntilConfirmedCommands(
     publication: TopicPublicationInput
@@ -129,7 +130,8 @@ export function toPublishCommands(step: AlmConformanceStepInput, name: string): 
 
 /**
  * One publication on the granted topic that must settle `rejected` for `reason`: a send whose publisher's grant the
- * room revoked, refused by the sender's own snapshot or, if that still held the grant, by a re-plan or the WS admission.
+ * room revoked, refused by the sender's own snapshot or, if that still held the grant, by a re-plan or the WS
+ * admission.
  */
 export function toRejectedPublishCommands(
     step: AlmConformanceStepInput,
